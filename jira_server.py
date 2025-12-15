@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 import requests
 import base64
@@ -9,6 +9,9 @@ import re
 import json
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+import io
 
 # Load environment variables from .env file
 load_dotenv()
@@ -540,6 +543,76 @@ def debug_fields():
     except Exception as e:
         return jsonify({
             'error': str(e)
+        }), 500
+
+
+@app.route('/api/export-excel', methods=['POST'])
+def export_excel():
+    """Export selected tasks to Excel file"""
+    try:
+        data = request.get_json()
+        tasks = data.get('tasks', [])
+
+        if not tasks:
+            return jsonify({'error': 'No tasks provided'}), 400
+
+        print(f'\n📊 Exporting {len(tasks)} tasks to Excel...')
+
+        # Create a new workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Sprint Tasks'
+
+        # Define header style
+        header_fill = PatternFill(start_color='107C41', end_color='107C41', fill_type='solid')
+        header_font = Font(bold=True, color='FFFFFF', size=12)
+        header_alignment = Alignment(horizontal='center', vertical='center')
+
+        # Add headers
+        headers = ['ID', 'Subject', 'Story Points']
+        for col_num, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+
+        # Add data
+        for row_num, task in enumerate(tasks, 2):
+            ws.cell(row=row_num, column=1, value=task.get('key', ''))
+            ws.cell(row=row_num, column=2, value=task.get('summary', ''))
+            ws.cell(row=row_num, column=3, value=task.get('storyPoints', 0))
+
+        # Auto-adjust column widths
+        ws.column_dimensions['A'].width = 15
+        ws.column_dimensions['B'].width = 60
+        ws.column_dimensions['C'].width = 15
+
+        # Align Story Points column to center
+        for row in range(2, len(tasks) + 2):
+            ws.cell(row=row, column=3).alignment = Alignment(horizontal='center')
+
+        # Save to BytesIO
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        print(f'✅ Excel file generated successfully')
+
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f'sprint_tasks_{datetime.now().strftime("%Y-%m-%d")}.xlsx'
+        )
+
+    except Exception as e:
+        print(f'❌ Export error: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': 'Failed to export to Excel',
+            'message': str(e)
         }), 500
 
 

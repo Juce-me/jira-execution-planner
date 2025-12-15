@@ -86,6 +86,34 @@
             text-transform: uppercase;
             letter-spacing: 0.1em;
             animation: slideDown 0.8s ease-out 0.4s both;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .search-input {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.875rem;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            text-transform: none;
+            letter-spacing: normal;
+            width: 300px;
+            transition: all 0.2s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(212, 56, 13, 0.1);
+        }
+
+        .search-input::placeholder {
+            color: var(--text-secondary);
+            opacity: 0.6;
         }
 
         .sprint-selector {
@@ -656,26 +684,22 @@
         .planning-panel {
             background: var(--bg-secondary);
             border: 1px solid var(--border);
-            padding: 1rem;
             margin-top: 1rem;
             margin-bottom: 1rem;
-            animation: expandDown 0.6s ease-out;
             overflow: hidden;
+            transform-origin: top;
+            max-height: 0;
+            padding: 0 1rem;
+            opacity: 0;
+            transform: scaleY(0);
+            transition: max-height 0.6s ease, opacity 0.6s ease, transform 0.6s ease, padding 0.6s ease;
         }
 
-        @keyframes expandDown {
-            from {
-                opacity: 0;
-                max-height: 0;
-                padding-top: 0;
-                padding-bottom: 0;
-            }
-            to {
-                opacity: 1;
-                max-height: 200px;
-                padding-top: 1rem;
-                padding-bottom: 1rem;
-            }
+        .planning-panel.open {
+            max-height: 200px;
+            padding: 1rem;
+            opacity: 1;
+            transform: scaleY(1);
         }
 
         .planning-stats {
@@ -714,6 +738,45 @@
             background: transparent;
             color: var(--text-secondary);
             border-color: var(--border);
+        }
+
+        .excel-button {
+            background: #107c41;
+            color: white;
+            border: 1px solid #107c41;
+            padding: 0.4rem 1rem;
+            font-size: 0.7rem;
+            margin: 0;
+            margin-left: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .excel-button:hover {
+            background: #0d6b37;
+            border-color: #0d6b37;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 124, 65, 0.3);
+        }
+
+        .excel-button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .excel-button:disabled:hover {
+            background: #107c41;
+            border-color: #107c41;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .excel-button svg {
+            width: 1rem;
+            height: 1rem;
         }
 
         .planning-stat {
@@ -841,6 +904,7 @@
                 return getCookie('selectedTasks') || {};
             });
             const [showPlanning, setShowPlanning] = useState(false);
+            const [searchQuery, setSearchQuery] = useState('');
 
             useEffect(() => {
                 // Load config and sprints on component mount
@@ -987,6 +1051,15 @@
             const productTasks = tasks.filter(t => !t.key.startsWith('TECH-'));
 
             const visibleTasks = tasks.filter(task => {
+                // Filter by search query
+                if (searchQuery.trim() !== '') {
+                    const summary = task.fields.summary?.toLowerCase() || '';
+                    const query = searchQuery.toLowerCase();
+                    if (!summary.includes(query)) {
+                        return false;
+                    }
+                }
+
                 // Filter by Killed status
                 if (!showKilled && task.fields.status?.name === 'Killed') {
                     return false;
@@ -1081,11 +1154,65 @@
                 visibleTasks.some(task => task.key === key)
             ).length;
 
+            const exportToExcel = async () => {
+                try {
+                    // Collect selected tasks data
+                    const selectedTasksData = visibleTasks
+                        .filter(task => selectedTasks[task.key])
+                        .map(task => ({
+                            key: task.key,
+                            summary: task.fields.summary,
+                            storyPoints: task.fields.customfield_10004 || 0
+                        }));
+
+                    if (selectedTasksData.length === 0) {
+                        alert('No tasks selected');
+                        return;
+                    }
+
+                    // Send request to backend
+                    const response = await fetch(`${BACKEND_URL}/api/export-excel`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ tasks: selectedTasksData })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Export failed: ${response.status}`);
+                    }
+
+                    // Download the file
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `sprint_tasks_${new Date().toISOString().split('T')[0]}.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                } catch (err) {
+                    console.error('Export error:', err);
+                    alert(`Failed to export: ${err.message}`);
+                }
+            };
+
             return (
                 <div className="container">
                     <header>
                         <h1>Sprint Tasks</h1>
-                        <p className="subtitle">Product & Tech Team · {sprintName}</p>
+                        <div className="subtitle">
+                            <span>Product & Tech Team · {sprintName}</span>
+                            <input
+                                type="text"
+                                className="search-input"
+                                placeholder="Search tickets..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
                         <div className="sprint-selector">
                             <label>Select Sprint:</label>
                             <select
@@ -1121,6 +1248,14 @@
                                 {sprintsLoading ? 'Loading...' : 'Refresh Sprints'}
                             </button>
                             <button
+                                className="secondary"
+                                onClick={fetchTasks}
+                                disabled={loading || selectedSprint === null}
+                                title="Refresh tasks from Jira"
+                            >
+                                {loading ? 'Loading...' : 'Refresh Page'}
+                            </button>
+                            <button
                                 className={`planning-button ${showPlanning ? 'active' : ''}`}
                                 onClick={() => setShowPlanning(!showPlanning)}
                                 title="Toggle sprint planning panel"
@@ -1131,28 +1266,36 @@
                                 </svg>
                             </button>
                         </div>
-                        {showPlanning && (
-                            <div className="planning-panel">
-                                <div className="planning-stats">
-                                    <div className="planning-stat">
-                                        <span className="planning-stat-label">Selected Tasks:</span>
-                                        <span className="planning-stat-value">{selectedCount}</span>
-                                    </div>
-                                    <div className="planning-stat">
-                                        <span className="planning-stat-label">Sum SP:</span>
-                                        <span className="planning-stat-value">{selectedSP.toFixed(1)}</span>
-                                    </div>
-                                    <button
-                                        className="uncheck-button"
-                                        onClick={clearSelectedTasks}
-                                        disabled={selectedCount === 0}
-                                        title="Clear all selected tasks"
-                                    >
-                                        Uncheck Selected
-                                    </button>
+                        <div className={`planning-panel ${showPlanning ? 'open' : ''}`}>
+                            <div className="planning-stats">
+                                <div className="planning-stat">
+                                    <span className="planning-stat-label">Selected Tasks:</span>
+                                    <span className="planning-stat-value">{selectedCount}</span>
                                 </div>
+                                <div className="planning-stat">
+                                    <span className="planning-stat-label">Sum SP:</span>
+                                    <span className="planning-stat-value">{selectedSP.toFixed(1)}</span>
+                                </div>
+                                <button
+                                    className="uncheck-button"
+                                    onClick={clearSelectedTasks}
+                                    disabled={selectedCount === 0}
+                                    title="Clear all selected tasks"
+                                >
+                                    Uncheck Selected
+                                </button>
+                                <button
+                                    className="excel-button"
+                                    onClick={exportToExcel}
+                                    disabled={selectedCount === 0}
+                                    title="Export to Excel"
+                                >
+                                    <svg viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 13h-2v2h2v-2zm0-4h-2v2h2v-2zm0-4h-2v2h2v-2zM13 9V3.5L18.5 9H13z"/>
+                                    </svg>
+                                </button>
                             </div>
-                        )}
+                        </div>
                     </header>
 
                     {loading ? (

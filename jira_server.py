@@ -26,7 +26,11 @@ JIRA_EMAIL = os.getenv('JIRA_EMAIL')
 JIRA_TOKEN = os.getenv('JIRA_TOKEN')
 JQL_QUERY = os.getenv('JQL_QUERY', 'project IN (PRODUCT, TECH) ORDER BY created DESC')
 JIRA_BOARD_ID = os.getenv('JIRA_BOARD_ID')  # Optional: board ID for faster sprint fetching
-SERVER_PORT = int(os.getenv('SERVER_PORT', '5000'))
+JIRA_TEAM_FIELD_ID = os.getenv('JIRA_TEAM_FIELD_ID', 'customfield_30101')  # Optional: custom field id for Team[Team]
+JIRA_TEAM_FALLBACK_FIELD_ID = 'customfield_30101'
+JIRA_PRODUCT_PROJECT = os.getenv('JIRA_PRODUCT_PROJECT', 'PRODUCT ROADMAPS')
+JIRA_TECH_PROJECT = os.getenv('JIRA_TECH_PROJECT', 'TECHNICAL ROADMAP')
+SERVER_PORT = int(os.getenv('SERVER_PORT', '5050'))
 
 # Cache settings
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
@@ -35,7 +39,7 @@ CACHE_EXPIRY_HOURS = 24
 def parse_args():
     """Parse CLI arguments to optionally override environment variables."""
     parser = argparse.ArgumentParser(description='Jira proxy server')
-    parser.add_argument('--server_port', type=int, help='Port to run the server on (defaults to 5000 or SERVER_PORT env)')
+    parser.add_argument('--server_port', type=int, help='Port to run the server on (defaults to 5050 or SERVER_PORT env)')
     parser.add_argument('--jira_email', help='Jira account email (overrides JIRA_EMAIL env)')
     parser.add_argument('--jira_token', help='Jira API token (overrides JIRA_TOKEN env)')
     parser.add_argument('--jira_url', help='Base Jira URL, e.g. https://your-domain.atlassian.net (overrides JIRA_URL env)')
@@ -52,6 +56,87 @@ def add_clause_to_jql(jql: str, clause: str) -> str:
         parts = jql.split('ORDER BY')
         return f"{parts[0].strip()} AND {clause} ORDER BY {parts[1].strip()}"
     return f"{jql} AND {clause}"
+
+
+TEAM_FIELD_CACHE = None
+
+
+def resolve_team_field_id(headers):
+    """Resolve the Jira custom field ID for Team[Team]."""
+    global TEAM_FIELD_CACHE
+    if TEAM_FIELD_CACHE:
+        return TEAM_FIELD_CACHE
+    if JIRA_TEAM_FIELD_ID:
+        TEAM_FIELD_CACHE = JIRA_TEAM_FIELD_ID
+        return TEAM_FIELD_CACHE
+
+    try:
+        response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
+        if response.status_code != 200:
+            return None
+
+        fields = response.json() or []
+        for field in fields:
+            name = str(field.get('name', '')).strip().lower()
+            if name == 'team[team]':
+                TEAM_FIELD_CACHE = field.get('id')
+                return TEAM_FIELD_CACHE
+    except Exception:
+        return None
+
+    return None
+
+
+def extract_team_name(value):
+    """Extract a readable team name from Jira Team field values."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        names = [extract_team_name(item) for item in value]
+        names = [name for name in names if name]
+        return ', '.join(names) if names else None
+    if isinstance(value, dict):
+        for key in ('name', 'title', 'value', 'displayName', 'teamName'):
+            if value.get(key):
+                return value.get(key)
+        return value.get('id')
+    return str(value)
+
+
+def normalize_team_value(value):
+    """Normalize Team field values to human-readable names."""
+    if isinstance(value, list):
+        return [normalize_team_value(item) for item in value if item]
+    if isinstance(value, dict):
+        return value.get('name') or value.get('value') or value.get('displayName') or value.get('teamName') or value.get('title') or value.get('id')
+    return value
+
+
+def build_team_value(raw_team):
+    """Build a consistent team payload with id/name when possible."""
+    if isinstance(raw_team, dict):
+        return {
+            'id': raw_team.get('id') or raw_team.get('teamId'),
+            'name': raw_team.get('name') or raw_team.get('title') or raw_team.get('value') or raw_team.get('displayName')
+        }
+    return raw_team
+
+
+def jira_search_request(headers, payload):
+    """Call Jira search endpoint using query parameters for /search/jql."""
+    url = f'{JIRA_URL}/rest/api/3/search/jql'
+    params = {}
+
+    def to_csv(value):
+        if isinstance(value, list):
+            return ','.join(value)
+        return value
+
+    for key in ('jql', 'startAt', 'maxResults', 'expand', 'fields', 'fieldsByKeys'):
+        if key in payload and payload[key] is not None:
+            params[key] = to_csv(payload[key])
+
+    return requests.get(url, params=params, headers=headers, timeout=30)
 
 
 # Cache helper functions
@@ -168,12 +253,7 @@ def fetch_sprints_from_jira():
             'fields': ['customfield_10101']  # Only get sprint field
         }
 
-        response = requests.post(
-            f'{JIRA_URL}/rest/api/3/search',
-            json=payload,
-            headers=headers,
-            timeout=30
-        )
+        response = jira_search_request(headers, payload)
 
         if response.status_code == 200:
             data = response.json()
@@ -209,13 +289,13 @@ def fetch_sprints_from_jira():
     return formatted_sprints
 
 
-@app.route('/api/tasks', methods=['GET'])
-def get_tasks():
-    """Fetch tasks from Jira API"""
+def fetch_tasks(include_team_name=False):
+    """Fetch tasks from Jira API."""
     try:
         # Get sprint parameter from query string
         sprint = request.args.get('sprint', '')
         team = request.args.get('team', '').strip()
+        project_filter = request.args.get('project', '').strip().lower()
 
         # Prepare authorization
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
@@ -237,69 +317,100 @@ def get_tasks():
         if team and team.lower() != 'all':
             jql = add_clause_to_jql(jql, f'"Team[Team]" = {team}')
 
-        # Prepare request body for new API endpoint
-        payload = {
-            'jql': jql,
-            'maxResults': 100,
-            'fields': [
-                'summary',
-                'status',
-                'priority',
-                'issuetype',
-                'assignee',
-                'created',
-                'updated',
-                'customfield_10004',  # Story Points
-                'customfield_10101',  # Sprint
-                'parent',
-                'reporter'
-            ],
-            'expand': ['names']
-        }
-        
+        if project_filter in ('product', 'tech'):
+            project_name = JIRA_PRODUCT_PROJECT if project_filter == 'product' else JIRA_TECH_PROJECT
+            jql = add_clause_to_jql(jql, f'project = "{project_name}"')
+
+        team_field_id = resolve_team_field_id(headers)
+
+        # Prepare request parameters for search endpoint
+        fields_list = [
+            'summary',
+            'status',
+            'priority',
+            'issuetype',
+            'assignee',
+            'updated',
+            'customfield_10004',  # Story Points
+            'parent'
+        ]
+        if team_field_id:
+            fields_list.append(team_field_id)
+        if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
+            fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
+        if not team_field_id:
+            print('⚠️ Team field id not resolved; using customfield_30101 fallback.')
+
+        max_results = 250
+        start_at = 0
+        collected_issues = []
+        names_map = {}
+        total_issues = None
+
         print(f'\n🔍 Making request to Jira API...')
-        print(f'URL: {JIRA_URL}/rest/api/3/search')
+        print(f'URL: {JIRA_URL}/rest/api/3/search/jql')
         print(f'Sprint: {sprint if sprint else "All"}')
         print(f'JQL: {jql}')
-        
-        # Make request to NEW Jira API endpoint
-        response = requests.post(
-            f'{JIRA_URL}/rest/api/3/search',
-            json=payload,
-            headers=headers,
-            timeout=30
-        )
-        
-        print(f'📊 Response Status: {response.status_code}')
-        
-        # Check if request was successful
-        if response.status_code != 200:
-            error_text = response.text
-            print(f'❌ Error Response: {error_text}')
-            
-            try:
-                error_json = response.json()
-                print(f'Error Details: {error_json}')
-            except:
-                pass
-            
-            error_response = jsonify({
-                'error': f'Jira API error: {response.status_code}',
-                'details': error_text,
-                'jql_used': jql
-            })
-            error_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-            error_response.headers['Pragma'] = 'no-cache'
-            error_response.headers['Expires'] = '0'
-            return error_response, response.status_code
-        
-        # Return the data
-        data = response.json()
-        issues = data.get('issues', [])
-        names_map = data.get('names', {}) or {}
 
-        # Dynamically detect important custom fields
-        team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
+        while len(collected_issues) < max_results:
+            payload = {
+                'jql': jql,
+                'startAt': start_at,
+                'maxResults': max_results,
+                'fields': fields_list
+            }
+
+            response = jira_search_request(headers, payload)
+            print(f'📊 Response Status: {response.status_code}')
+
+            if response.status_code != 200:
+                error_text = response.text
+                print(f'❌ Error Response: {error_text}')
+
+                try:
+                    error_json = response.json()
+                    print(f'Error Details: {error_json}')
+                except:
+                    pass
+
+                error_response = jsonify({
+                    'error': f'Jira API error: {response.status_code}',
+                    'details': error_text,
+                    'jql_used': jql
+                })
+                error_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+                error_response.headers['Pragma'] = 'no-cache'
+                error_response.headers['Expires'] = '0'
+                return error_response, response.status_code
+
+            data = response.json()
+            if not names_map:
+                names_map = data.get('names', {}) or {}
+            total_issues = data.get('total', total_issues)
+
+            issues = data.get('issues', [])
+            if not issues:
+                break
+
+            collected_issues.extend(issues)
+            if len(collected_issues) >= max_results:
+                collected_issues = collected_issues[:max_results]
+                break
+
+            start_at += len(issues)
+            if total_issues is not None and start_at >= total_issues:
+                break
+
+        data = {
+            'issues': collected_issues,
+            'names': names_map,
+            'total': total_issues,
+            'startAt': 0,
+            'maxResults': max_results
+        }
+
+        if not team_field_id:
+            team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
         epic_link_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic link'), None)
         epic_name_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic name'), None)
 
@@ -308,8 +419,21 @@ def get_tasks():
         for issue in issues:
             fields = issue.get('fields', {})
 
-            if team_field_id and fields.get(team_field_id):
-                fields['team'] = fields.get(team_field_id)
+            raw_team = None
+            if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
+                raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
+            elif team_field_id and fields.get(team_field_id) is not None:
+                raw_team = fields.get(team_field_id)
+
+            if raw_team is not None:
+                team_name = extract_team_name(raw_team)
+                fields['team'] = build_team_value(raw_team)
+                fields['teamName'] = team_name
+                fields['teamId'] = fields['team'].get('id') if isinstance(fields['team'], dict) else None
+
+            parent_fields = fields.get('parent', {}).get('fields', {})
+            if parent_fields.get('summary'):
+                fields['parentSummary'] = parent_fields.get('summary')
 
             epic_key = None
             if epic_link_field and fields.get(epic_link_field):
@@ -353,7 +477,33 @@ def get_tasks():
                 except Exception as epic_error:
                     print(f'⚠️ Epic fetch error for {epic_key}: {epic_error}')
 
-        data['issues'] = issues
+        slim_issues = []
+        for issue in issues:
+            fields = issue.get('fields', {})
+            status = fields.get('status') or {}
+            priority = fields.get('priority') or {}
+            issuetype = fields.get('issuetype') or {}
+            assignee = fields.get('assignee') or {}
+            slim_issues.append({
+                'id': issue.get('id'),
+                'key': issue.get('key'),
+                'fields': {
+                    'summary': fields.get('summary'),
+                    'status': {'name': status.get('name')} if status else None,
+                    'priority': {'name': priority.get('name')} if priority else None,
+                    'issuetype': {'name': issuetype.get('name')} if issuetype else None,
+                    'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
+                    'updated': fields.get('updated'),
+                    'customfield_10004': fields.get('customfield_10004'),
+                    'team': fields.get('team'),
+                    'teamName': fields.get('teamName'),
+                    'teamId': fields.get('teamId'),
+                    'epicKey': fields.get('epicKey'),
+                    'parentSummary': fields.get('parentSummary')
+                }
+            })
+
+        data['issues'] = slim_issues
         data['epics'] = epic_details
         data['teamFieldId'] = team_field_id
 
@@ -375,6 +525,18 @@ def get_tasks():
         })
         error_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         return error_response, 500
+
+
+@app.route('/api/tasks', methods=['GET'])
+def get_tasks():
+    """Fetch tasks from Jira API."""
+    return fetch_tasks(include_team_name=False)
+
+
+@app.route('/api/tasks-with-team-name', methods=['GET'])
+def get_tasks_with_team_name():
+    """Fetch tasks with team name derived from Jira Team field."""
+    return fetch_tasks(include_team_name=True)
 
 
 @app.route('/api/boards', methods=['GET'])
@@ -531,12 +693,7 @@ def test_connection():
         print(f'\n🧪 Testing Jira connection...')
         print(f'Test JQL: {test_payload["jql"]}')
 
-        response = requests.post(
-            f'{JIRA_URL}/rest/api/3/search',
-            json=test_payload,
-            headers=headers,
-            timeout=30
-        )
+        response = jira_search_request(headers, test_payload)
 
         print(f'Test Response Status: {response.status_code}')
 
@@ -584,12 +741,7 @@ def debug_fields():
 
         print(f'\n🔍 Fetching all fields for debugging...')
 
-        response = requests.post(
-            f'{JIRA_URL}/rest/api/3/search',
-            json=payload,
-            headers=headers,
-            timeout=30
-        )
+        response = jira_search_request(headers, payload)
 
         if response.status_code != 200:
             return jsonify({
@@ -619,6 +771,57 @@ def debug_fields():
                 'error': 'No issues found',
                 'jql': JQL_QUERY
             }), 404
+
+    except Exception as e:
+        return jsonify({
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks-fields', methods=['GET'])
+def get_tasks_fields():
+    """Return all available fields and values for issues matching JQL_QUERY."""
+    try:
+        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+        auth_bytes = auth_string.encode('ascii')
+        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+
+        headers = {
+            'Authorization': f'Basic {auth_base64}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+
+        limit = request.args.get('limit', '5')
+        try:
+            limit_value = max(1, min(int(limit), 50))
+        except ValueError:
+            limit_value = 5
+
+        payload = {
+            'jql': JQL_QUERY,
+            'maxResults': limit_value,
+            'fields': ['*all']
+        }
+
+        print(f'\n🔍 Fetching all fields for {limit_value} issues...')
+
+        response = jira_search_request(headers, payload)
+
+        if response.status_code != 200:
+            return jsonify({
+                'error': f'Jira API error: {response.status_code}',
+                'details': response.text
+            }), response.status_code
+
+        data = response.json()
+        issues = data.get('issues', [])
+
+        return jsonify({
+            'total': data.get('total'),
+            'returned': len(issues),
+            'issues': issues
+        })
 
     except Exception as e:
         return jsonify({
@@ -725,6 +928,7 @@ if __name__ == '__main__':
     print(f'💾 Cache expires after: {CACHE_EXPIRY_HOURS} hours')
     print('\n📋 Endpoints:')
     print(f'   • http://localhost:{SERVER_PORT}/api/tasks - Get sprint tasks')
+    print(f'   • http://localhost:{SERVER_PORT}/api/tasks-with-team-name - Get sprint tasks with team names')
     print(f'   • http://localhost:{SERVER_PORT}/api/sprints - Get available sprints (cached)')
     print(f'   • http://localhost:{SERVER_PORT}/api/sprints?refresh=true - Force refresh sprints cache')
     print(f'   • http://localhost:{SERVER_PORT}/api/boards - Get all boards (to find board ID)')

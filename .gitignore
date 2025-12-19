@@ -30,3 +30,8 @@ Thumbs.db
 
 # Cache
 sprints_cache.json
+
+# Local artifacts
+avaliablefields.txt
+tasks-with-team-name.output.txt
+jira-dashboard.html.har

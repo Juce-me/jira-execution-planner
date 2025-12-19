@@ -34,7 +34,7 @@ If you just want to see the dashboard working locally:
 2. Copy the env template: `cp .env.example .env`
 3. Edit `.env` and set **JIRA_URL**, **JIRA_EMAIL**, **JIRA_TOKEN**, and **JQL_QUERY** (leave the sample JQL if it already fits your projects/teams).
 4. Start the backend: `python3 jira_server.py`
-5. Visit `http://localhost:5000/api/test` in your browser to confirm connectivity.
+5. Visit `http://localhost:5050/api/test` in your browser to confirm connectivity.
 6. Open `jira-dashboard.html` in your browser to view the UI. Tasks should load automatically using your JQL and sprint selection.
 
 More detailed setup guidance remains below if you need it.
@@ -95,6 +95,9 @@ JQL_QUERY=project IN (PROJECT1, PROJECT2) AND issuetype = Story ORDER BY priorit
 
 # Optional: Board ID for faster sprint fetching (leave empty if unknown)
 JIRA_BOARD_ID=
+
+# Optional: Team custom field id (e.g. customfield_12345) if Team values are missing
+JIRA_TEAM_FIELD_ID=
 ```
 
 **How to get Jira API token:**
@@ -130,17 +133,23 @@ You should see:
 
 📋 Endpoints:
    • http://localhost:<PORT>/api/tasks - Get sprint tasks
+   • http://localhost:<PORT>/api/tasks-with-team-name - Get sprint tasks with a derived teamName field
    • http://localhost:<PORT>/api/sprints - Get available sprints (cached)
    • http://localhost:<PORT>/api/sprints?refresh=true - Force refresh sprints cache
    • http://localhost:<PORT>/api/boards - Get all boards (to find board ID)
    • http://localhost:<PORT>/api/config - Get public configuration
    • http://localhost:<PORT>/api/test - Test connection
+   • http://localhost:<PORT>/api/tasks-fields?limit=5 - Get issues with all fields for JQL_QUERY
    • http://localhost:<PORT>/health - Health check
 
 ✅ Server ready! Open jira-dashboard.html in your browser
 ```
 
-`<PORT>` will be `5000` by default, or whatever you set via `SERVER_PORT` in `.env` or the `--server_port` flag.
+`<PORT>` will be `5050` by default, or whatever you set via `SERVER_PORT` in `.env` or the `--server_port` flag.
+
+Jira API docs used:
+- Issue search (JQL): https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-search/#api-rest-api-3-search-jql-get
+- Field metadata: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-fields/#api-rest-api-3-field-get
 
 ### Step 5: Open the dashboard
 
@@ -149,7 +158,7 @@ Open `jira-dashboard.html` in your browser. Tasks will load automatically!
 ## 🔧 How it works
 
 1. **Backend** (`jira_server.py`):
-   - Runs on `localhost:5000` by default (overridable via `SERVER_PORT` or `--server_port`)
+   - Runs on `localhost:5050` by default (overridable via `SERVER_PORT` or `--server_port`)
    - Reads credentials from `.env` file
    - Makes secure READ-ONLY API requests to Jira
    - Caches sprint list for 24 hours (reduces API load)
@@ -206,6 +215,9 @@ The dashboard supports dynamic sprint selection:
 - Verify the JQL query matches your Jira setup
 - Check that the sprint exists and has tasks
 - Try simplifying the query in `.env`
+
+**"Team name missing" in tasks output:**
+- Set `JIRA_TEAM_FIELD_ID` in `.env` (use the Team[Team] custom field id, e.g. `customfield_12345`)
 
 **"No sprints available" in dropdown:**
 - Option 1: Set `JIRA_BOARD_ID` in `.env` file (faster method)

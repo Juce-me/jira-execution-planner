@@ -169,7 +169,7 @@ def fetch_sprints_from_jira():
         }
 
         response = requests.post(
-            f'{JIRA_URL}/rest/api/3/search/jql',
+            f'{JIRA_URL}/rest/api/3/search',
             json=payload,
             headers=headers,
             timeout=30
@@ -258,13 +258,13 @@ def get_tasks():
         }
         
         print(f'\n🔍 Making request to Jira API...')
-        print(f'URL: {JIRA_URL}/rest/api/3/search/jql')
+        print(f'URL: {JIRA_URL}/rest/api/3/search')
         print(f'Sprint: {sprint if sprint else "All"}')
         print(f'JQL: {jql}')
         
         # Make request to NEW Jira API endpoint
         response = requests.post(
-            f'{JIRA_URL}/rest/api/3/search/jql',
+            f'{JIRA_URL}/rest/api/3/search',
             json=payload,
             headers=headers,
             timeout=30
@@ -286,7 +286,7 @@ def get_tasks():
             error_response = jsonify({
                 'error': f'Jira API error: {response.status_code}',
                 'details': error_text,
-                'jql_used': JQL_QUERY
+                'jql_used': jql
             })
             error_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             error_response.headers['Pragma'] = 'no-cache'
@@ -532,7 +532,7 @@ def test_connection():
         print(f'Test JQL: {test_payload["jql"]}')
 
         response = requests.post(
-            f'{JIRA_URL}/rest/api/3/search/jql',
+            f'{JIRA_URL}/rest/api/3/search',
             json=test_payload,
             headers=headers,
             timeout=30
@@ -585,7 +585,7 @@ def debug_fields():
         print(f'\n🔍 Fetching all fields for debugging...')
 
         response = requests.post(
-            f'{JIRA_URL}/rest/api/3/search/jql',
+            f'{JIRA_URL}/rest/api/3/search',
             json=payload,
             headers=headers,
             timeout=30

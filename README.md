@@ -216,11 +216,11 @@ The dashboard supports dynamic sprint selection:
 **Sprints loading slowly:**
 - First load fetches from Jira (may take a few seconds)
 - Subsequent loads use 24-hour cache (instant)
-- To find board ID for faster loading: visit `http://localhost:5000/api/boards`
+- To find board ID for faster loading: visit `http://localhost:5050/api/boards`
 
 **Want to refresh sprint list manually:**
 - Click "Refresh Sprints" button in the dashboard
-- Or visit: `http://localhost:5000/api/sprints?refresh=true`
+- Or visit: `http://localhost:5050/api/sprints?refresh=true`
 
 **Browser shows old errors after fixing:**
 - Do a hard refresh: `Ctrl+Shift+R` (Windows/Linux) or `Cmd+Shift+R` (Mac)

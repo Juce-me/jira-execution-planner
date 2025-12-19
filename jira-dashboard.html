@@ -909,7 +909,11 @@
         const { useState, useEffect } = React;
 
         // Backend server URL
-        const BACKEND_URL = 'http://localhost:5000';
+        const DEFAULT_BACKEND_PORT = 5050;
+        const BACKEND_URL = window.BACKEND_URL ||
+            (window.location.protocol.startsWith('http')
+                ? `${window.location.protocol}//${window.location.hostname}:${DEFAULT_BACKEND_PORT}`
+                : `http://localhost:${DEFAULT_BACKEND_PORT}`);
 
         // Get current quarter in format "2025Q1"
         function getCurrentQuarter() {

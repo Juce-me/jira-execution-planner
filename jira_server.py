@@ -3,6 +3,7 @@
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 import requests
+import argparse
 import base64
 import os
 import re
@@ -25,16 +26,32 @@ JIRA_EMAIL = os.getenv('JIRA_EMAIL')
 JIRA_TOKEN = os.getenv('JIRA_TOKEN')
 JQL_QUERY = os.getenv('JQL_QUERY', 'project IN (PRODUCT, TECH) ORDER BY created DESC')
 JIRA_BOARD_ID = os.getenv('JIRA_BOARD_ID')  # Optional: board ID for faster sprint fetching
+SERVER_PORT = int(os.getenv('SERVER_PORT', '5000'))
 
 # Cache settings
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
 CACHE_EXPIRY_HOURS = 24
 
-# Validate configuration
-if not JIRA_URL or not JIRA_EMAIL or not JIRA_TOKEN:
-    print('\n❌ ERROR: JIRA_URL, JIRA_EMAIL and JIRA_TOKEN must be set in .env file!')
-    print('📝 Please copy .env.example to .env and fill in your credentials\n')
-    exit(1)
+def parse_args():
+    """Parse CLI arguments to optionally override environment variables."""
+    parser = argparse.ArgumentParser(description='Jira proxy server')
+    parser.add_argument('--server_port', type=int, help='Port to run the server on (defaults to 5000 or SERVER_PORT env)')
+    parser.add_argument('--jira_email', help='Jira account email (overrides JIRA_EMAIL env)')
+    parser.add_argument('--jira_token', help='Jira API token (overrides JIRA_TOKEN env)')
+    parser.add_argument('--jira_url', help='Base Jira URL, e.g. https://your-domain.atlassian.net (overrides JIRA_URL env)')
+    parser.add_argument('--jira_query', help='JQL query to use for fetching issues (overrides JQL_QUERY env)')
+    return parser.parse_args()
+
+
+def add_clause_to_jql(jql: str, clause: str) -> str:
+    """Append a clause to JQL before ORDER BY if present."""
+    if not clause:
+        return jql
+
+    if 'ORDER BY' in jql:
+        parts = jql.split('ORDER BY')
+        return f"{parts[0].strip()} AND {clause} ORDER BY {parts[1].strip()}"
+    return f"{jql} AND {clause}"
 
 
 # Cache helper functions
@@ -198,6 +215,7 @@ def get_tasks():
     try:
         # Get sprint parameter from query string
         sprint = request.args.get('sprint', '')
+        team = request.args.get('team', '').strip()
 
         # Prepare authorization
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
@@ -214,13 +232,10 @@ def get_tasks():
         # Build JQL query with sprint filter if provided
         jql = JQL_QUERY
         if sprint:
-            # Add sprint filter to the JQL query using sprint ID
-            if 'ORDER BY' in jql:
-                # Insert sprint filter before ORDER BY
-                parts = jql.split('ORDER BY')
-                jql = f"{parts[0].strip()} AND Sprint = {sprint} ORDER BY {parts[1].strip()}"
-            else:
-                jql = f"{jql} AND Sprint = {sprint}"
+            jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
+
+        if team and team.lower() != 'all':
+            jql = add_clause_to_jql(jql, f'"Team[Team]" = {team}')
 
         # Prepare request body for new API endpoint
         payload = {
@@ -235,8 +250,11 @@ def get_tasks():
                 'created',
                 'updated',
                 'customfield_10004',  # Story Points
-                'customfield_10101'   # Sprint
-            ]
+                'customfield_10101',  # Sprint
+                'parent',
+                'reporter'
+            ],
+            'expand': ['names']
         }
         
         print(f'\n🔍 Making request to Jira API...')
@@ -277,8 +295,70 @@ def get_tasks():
         
         # Return the data
         data = response.json()
+        issues = data.get('issues', [])
+        names_map = data.get('names', {}) or {}
+
+        # Dynamically detect important custom fields
+        team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
+        epic_link_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic link'), None)
+        epic_name_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic name'), None)
+
+        epic_keys = set()
+
+        for issue in issues:
+            fields = issue.get('fields', {})
+
+            if team_field_id and fields.get(team_field_id):
+                fields['team'] = fields.get(team_field_id)
+
+            epic_key = None
+            if epic_link_field and fields.get(epic_link_field):
+                epic_key = fields.get(epic_link_field)
+            elif fields.get('parent') and fields['parent'].get('key') and \
+                    fields['parent'].get('fields', {}).get('issuetype', {}).get('name', '').lower() == 'epic':
+                epic_key = fields['parent'].get('key')
+
+            if epic_key:
+                fields['epicKey'] = epic_key
+                epic_keys.add(epic_key)
+
+        epic_details = {}
+        if epic_keys:
+            for epic_key in epic_keys:
+                epic_fields = ['summary', 'reporter']
+                if epic_name_field:
+                    epic_fields.append(epic_name_field)
+                else:
+                    epic_fields.append('customfield_10011')
+
+                try:
+                    epic_resp = requests.get(
+                        f'{JIRA_URL}/rest/api/3/issue/{epic_key}',
+                        headers=headers,
+                        params={'fields': ','.join(epic_fields)},
+                        timeout=20
+                    )
+
+                    if epic_resp.status_code == 200:
+                        epic_data = epic_resp.json()
+                        epic_fields_data = epic_data.get('fields', {})
+                        epic_details[epic_key] = {
+                            'key': epic_key,
+                            'summary': epic_fields_data.get('summary'),
+                            'reporter': (epic_fields_data.get('reporter') or {}).get('displayName'),
+                            'epicName': epic_fields_data.get(epic_name_field) if epic_name_field else epic_fields_data.get('customfield_10011')
+                        }
+                    else:
+                        print(f'⚠️ Failed to fetch epic {epic_key}: {epic_resp.status_code}')
+                except Exception as epic_error:
+                    print(f'⚠️ Epic fetch error for {epic_key}: {epic_error}')
+
+        data['issues'] = issues
+        data['epics'] = epic_details
+        data['teamFieldId'] = team_field_id
+
         print(f'✅ Success! Found {len(data.get("issues", []))} issues')
-        
+
         success_response = jsonify(data)
         success_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         success_response.headers['Pragma'] = 'no-cache'
@@ -617,6 +697,26 @@ def export_excel():
 
 
 if __name__ == '__main__':
+    args = parse_args()
+
+    # Apply CLI overrides while keeping env defaults as fallbacks
+    if args.jira_url:
+        JIRA_URL = args.jira_url
+    if args.jira_email:
+        JIRA_EMAIL = args.jira_email
+    if args.jira_token:
+        JIRA_TOKEN = args.jira_token
+    if args.jira_query:
+        JQL_QUERY = args.jira_query
+    if args.server_port:
+        SERVER_PORT = args.server_port
+
+    # Validate configuration
+    if not JIRA_URL or not JIRA_EMAIL or not JIRA_TOKEN:
+        print('\n❌ ERROR: JIRA_URL, JIRA_EMAIL and JIRA_TOKEN must be set via environment or CLI!')
+        print('📝 Please copy .env.example to .env, fill in your credentials, or pass them as flags.\n')
+        exit(1)
+
     print('\n🚀 Jira Proxy Server starting...')
     print(f'📧 Using email: {JIRA_EMAIL}')
     print(f'🔗 Jira URL: {JIRA_URL}')
@@ -624,12 +724,12 @@ if __name__ == '__main__':
     print(f'📝 JQL Query: {JQL_QUERY[:80]}...' if len(JQL_QUERY) > 80 else f'📝 JQL Query: {JQL_QUERY}')
     print(f'💾 Cache expires after: {CACHE_EXPIRY_HOURS} hours')
     print('\n📋 Endpoints:')
-    print('   • http://localhost:5000/api/tasks - Get sprint tasks')
-    print('   • http://localhost:5000/api/sprints - Get available sprints (cached)')
-    print('   • http://localhost:5000/api/sprints?refresh=true - Force refresh sprints cache')
-    print('   • http://localhost:5000/api/boards - Get all boards (to find board ID)')
-    print('   • http://localhost:5000/api/test - Test connection')
-    print('   • http://localhost:5000/health - Health check')
+    print(f'   • http://localhost:{SERVER_PORT}/api/tasks - Get sprint tasks')
+    print(f'   • http://localhost:{SERVER_PORT}/api/sprints - Get available sprints (cached)')
+    print(f'   • http://localhost:{SERVER_PORT}/api/sprints?refresh=true - Force refresh sprints cache')
+    print(f'   • http://localhost:{SERVER_PORT}/api/boards - Get all boards (to find board ID)')
+    print(f'   • http://localhost:{SERVER_PORT}/api/test - Test connection')
+    print(f'   • http://localhost:{SERVER_PORT}/health - Health check')
     print('\n✅ Server ready! Open jira-dashboard.html in your browser\n')
-    
-    app.run(host='0.0.0.0', port=5000, debug=True)
+
+    app.run(host='0.0.0.0', port=SERVER_PORT, debug=True)

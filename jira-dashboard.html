@@ -491,6 +491,65 @@
             flex-wrap: wrap;
         }
 
+        .task-team {
+            background: #f0f5ff;
+            color: #2f54eb;
+            padding: 0.25rem 0.5rem;
+            border-radius: 2px;
+            border: 1px solid #adc6ff;
+        }
+
+        .epic-block {
+            border: 1px solid var(--border);
+            margin-bottom: 1.5rem;
+            background: var(--bg-secondary);
+            padding: 1rem;
+        }
+
+        .epic-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .epic-title {
+            font-size: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+        }
+
+        .epic-title small {
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--text-secondary);
+            letter-spacing: 0.05em;
+        }
+
+        .epic-meta {
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .team-group {
+            margin-bottom: 1rem;
+        }
+
+        .team-heading {
+            font-family: 'IBM Plex Mono', monospace;
+            color: #2f54eb;
+            margin-bottom: 0.5rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
         .task-meta > span:not(.task-status) {
             display: flex;
             align-items: center;
@@ -905,6 +964,8 @@
             });
             const [showPlanning, setShowPlanning] = useState(false);
             const [searchQuery, setSearchQuery] = useState('');
+            const [selectedTeam, setSelectedTeam] = useState('all');
+            const [epicDetails, setEpicDetails] = useState({});
 
             useEffect(() => {
                 // Load config and sprints on component mount
@@ -930,11 +991,11 @@
             };
 
             useEffect(() => {
-                // Load tasks when sprint changes (only if sprint is selected)
+                // Load tasks when sprint or team changes (only if sprint is selected)
                 if (selectedSprint !== null) {
                     fetchTasks();
                 }
-            }, [selectedSprint]);
+            }, [selectedSprint, selectedTeam]);
 
             const loadSprints = async (forceRefresh = false) => {
                 setSprintsLoading(true);
@@ -996,6 +1057,13 @@
                 'Lowest': 5
             };
 
+            const getTeamInfo = (task) => {
+                const team = task.fields?.team;
+                const teamName = team?.name || team?.displayName || team?.teamName || 'Unknown Team';
+                const teamId = team?.id || team?.teamId || team?.key || teamName;
+                return { id: teamId, name: teamName };
+            };
+
             const fetchTasks = async () => {
                 setLoading(true);
                 setError('');
@@ -1004,7 +1072,8 @@
                     // Add cache busting parameter and sprint parameter
                     const params = new URLSearchParams({
                         t: Date.now().toString(),
-                        sprint: selectedSprint
+                        sprint: selectedSprint || '',
+                        team: selectedTeam
                     });
                     const response = await fetch(`${BACKEND_URL}/api/tasks?${params}`, {
                         method: 'GET',
@@ -1029,12 +1098,13 @@
                     console.log('Success! Received data:', data);
 
                     // Sort by priority
-                    const sortedTasks = data.issues.sort((a, b) => {
+                    const sortedTasks = (data.issues || []).sort((a, b) => {
                         const priorityA = priorityOrder[a.fields.priority?.name] || 999;
                         const priorityB = priorityOrder[b.fields.priority?.name] || 999;
                         return priorityA - priorityB;
                     });
 
+                    setEpicDetails(data.epics || {});
                     setTasks(sortedTasks);
                 } catch (err) {
                     const errorMsg = `Failed to load tasks: ${err.message}. Make sure the Python server is running on ${BACKEND_URL}`;
@@ -1050,12 +1120,24 @@
             const techTasks = tasks.filter(t => t.key.startsWith('TECH-'));
             const productTasks = tasks.filter(t => !t.key.startsWith('TECH-'));
 
+            const teamOptions = ['all', ...new Set(tasks.map(t => getTeamInfo(t).id || 'unknown'))]
+                .map(id => ({ id, name: id === 'all' ? 'All Teams' : getTeamInfo(tasks.find(t => getTeamInfo(t).id === id) || {}).name }))
+                .filter((team, index, arr) => arr.findIndex(t => t.id === team.id) === index);
+
             const visibleTasks = tasks.filter(task => {
                 // Filter by search query
                 if (searchQuery.trim() !== '') {
                     const summary = task.fields.summary?.toLowerCase() || '';
                     const query = searchQuery.toLowerCase();
                     if (!summary.includes(query)) {
+                        return false;
+                    }
+                }
+
+                // Filter by Team
+                if (selectedTeam !== 'all') {
+                    const teamInfo = getTeamInfo(task);
+                    if (teamInfo.id !== selectedTeam) {
                         return false;
                     }
                 }
@@ -1095,6 +1177,32 @@
 
                 return true;
             });
+
+            const groupTasksByEpic = (taskList) => {
+                const grouped = {};
+                taskList.forEach(task => {
+                    const epicKey = task.fields.epicKey || 'NO_EPIC';
+                    if (!grouped[epicKey]) {
+                        grouped[epicKey] = {
+                            epic: epicDetails[epicKey] || null,
+                            key: epicKey,
+                            teams: {}
+                        };
+                    }
+
+                    const teamInfo = getTeamInfo(task);
+                    if (!grouped[epicKey].teams[teamInfo.id]) {
+                        grouped[epicKey].teams[teamInfo.id] = {
+                            name: teamInfo.name,
+                            tasks: []
+                        };
+                    }
+                    grouped[epicKey].teams[teamInfo.id].tasks.push(task);
+                });
+                return grouped;
+            };
+
+            const epicGroups = groupTasksByEpic(visibleTasks);
 
             const highPriorityCount = tasks.filter(t => {
                 const priority = t.fields.priority?.name;
@@ -1153,6 +1261,30 @@
             const selectedCount = Object.keys(selectedTasks).filter(key =>
                 visibleTasks.some(task => task.key === key)
             ).length;
+
+            const selectedTeamStats = visibleTasks.reduce((acc, task) => {
+                if (selectedTasks[task.key]) {
+                    const teamInfo = getTeamInfo(task);
+                    const sp = parseFloat(task.fields.customfield_10004 || 0);
+                    if (!acc[teamInfo.id]) {
+                        acc[teamInfo.id] = { name: teamInfo.name, storyPoints: 0 };
+                    }
+                    acc[teamInfo.id].storyPoints += sp;
+                }
+                return acc;
+            }, {});
+
+            const selectedProjectStats = visibleTasks.reduce((acc, task) => {
+                if (selectedTasks[task.key]) {
+                    const projectKey = task.key.split('-')[0];
+                    const sp = parseFloat(task.fields.customfield_10004 || 0);
+                    if (!acc[projectKey]) {
+                        acc[projectKey] = 0;
+                    }
+                    acc[projectKey] += sp;
+                }
+                return acc;
+            }, {});
 
             const exportToExcel = async () => {
                 try {
@@ -1239,6 +1371,16 @@
                                     ))
                                 )}
                             </select>
+                            <label>Select Team:</label>
+                            <select
+                                value={selectedTeam}
+                                onChange={(e) => setSelectedTeam(e.target.value)}
+                                disabled={tasks.length === 0 && loading}
+                            >
+                                {teamOptions.map(team => (
+                                    <option key={team.id} value={team.id}>{team.name}</option>
+                                ))}
+                            </select>
                             <button
                                 className="secondary"
                                 onClick={() => loadSprints(true)}
@@ -1294,6 +1436,39 @@
                                         <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 13h-2v2h2v-2zm0-4h-2v2h2v-2zm0-4h-2v2h2v-2zM13 9V3.5L18.5 9H13z"/>
                                     </svg>
                                 </button>
+                            </div>
+                            <div className="planning-stats" style={{ marginTop: '0.5rem', justifyContent: 'flex-start' }}>
+                                <div className="planning-stat">
+                                    <span className="planning-stat-label">Selected SP by Team:</span>
+                                </div>
+                                {Object.entries(selectedTeamStats).map(([teamId, info]) => (
+                                    <div key={teamId} className="planning-stat">
+                                        <span className="planning-stat-label">{info.name}:</span>
+                                        <span className="planning-stat-value">{info.storyPoints.toFixed(1)} SP</span>
+                                    </div>
+                                ))}
+                                {Object.keys(selectedTeamStats).length === 0 && (
+                                    <div className="planning-stat">
+                                        <span className="planning-stat-value">No tasks selected</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="planning-stats" style={{ marginTop: '0.5rem', justifyContent: 'flex-start' }}>
+                                <div className="planning-stat">
+                                    <span className="planning-stat-label">Selected SP by Project:</span>
+                                </div>
+                                {Object.entries(selectedProjectStats).map(([projectKey, sp]) => (
+                                    <div key={projectKey} className="planning-stat">
+                                        <span className="planning-stat-label">{projectKey}:</span>
+                                        <span className="planning-stat-value">{sp.toFixed(1)} SP</span>
+                                    </div>
+                                ))}
+                                {Object.keys(selectedProjectStats).length > 0 && (
+                                    <div className="planning-stat">
+                                        <span className="planning-stat-label">Total:</span>
+                                        <span className="planning-stat-value">{selectedSP.toFixed(1)} SP</span>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </header>
@@ -1389,64 +1564,91 @@
                                 </div>
                             ) : (
                                 <div className="task-list">
-                                    {visibleTasks.map(task => {
-                                        const isKilled = task.fields.status?.name === 'Killed';
-                                        const isDone = task.fields.status?.name === 'Done';
+                                    {Object.values(epicGroups).map(epicGroup => {
+                                        const epicInfo = epicGroup.epic;
+                                        const teamEntries = Object.entries(epicGroup.teams);
+
                                         return (
-                                            <div
-                                                key={task.key}
-                                                className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''}`}
-                                            >
-                                                <div className="task-header">
-                                                    <button
-                                                        className="task-remove"
-                                                        onClick={() => removeTask(task.key)}
-                                                        title="Remove task from view"
-                                                    >
-                                                        ×
-                                                    </button>
-                                                    <div className="task-checkbox-container">
-                                                        <span className="task-key">
-                                                            {task.key}
-                                                            {task.fields.customfield_10004 && (
-                                                                <span className="task-story-points-small">
-                                                                    {task.fields.customfield_10004} SP
-                                                                </span>
-                                                            )}
-                                                        </span>
-                                                        {showPlanning && (
-                                                            <input
-                                                                type="checkbox"
-                                                                className="task-checkbox"
-                                                                checked={!!selectedTasks[task.key]}
-                                                                onChange={() => toggleTaskSelection(task.key)}
-                                                                title="Select for sprint planning"
-                                                            />
+                                            <div key={epicGroup.key} className="epic-block">
+                                                <div className="epic-header">
+                                                    <div className="epic-title">
+                                                        <strong>{epicInfo?.epicName || epicInfo?.summary || (epicGroup.key === 'NO_EPIC' ? 'No Epic Linked' : epicGroup.key)}</strong>
+                                                        <small>{epicGroup.key === 'NO_EPIC' ? 'Unassigned Epic' : epicGroup.key}</small>
+                                                    </div>
+                                                    <div className="epic-meta">
+                                                        {epicInfo?.reporter && (
+                                                            <span>Reporter: {epicInfo.reporter}</span>
                                                         )}
                                                     </div>
-                                                    <span className={`task-priority ${task.fields.priority?.name.toLowerCase()}`}>
-                                                        {task.fields.priority?.name || 'None'}
-                                                    </span>
                                                 </div>
-                                                <h3 className="task-title">
-                                                    <a href={`${jiraUrl}/browse/${task.key}`} target="_blank" rel="noopener noreferrer">
-                                                        {task.fields.summary}
-                                                    </a>
-                                                </h3>
-                                                <div className="task-meta">
-                                                    <span className={`task-status ${task.fields.status?.name.toLowerCase().replace(/\s+/g, '-')}`}>
-                                                        {task.fields.status?.name}
-                                                    </span>
-                                                    <span>{task.fields.issuetype?.name}</span>
-                                                    {task.fields.assignee && (
-                                                        <span>{task.fields.assignee.displayName}</span>
-                                                    )}
-                                                    {task.fields.updated && (
-                                                        <span className="task-updated">
-                                                            Last Update: {new Date(task.fields.updated).toLocaleDateString('en-CA')}
-                                                        </span>
-                                                    )}
-                                                </div>
+                                                {teamEntries.map(([teamId, teamData]) => (
+                                                    <div key={`${epicGroup.key}-${teamId}`} className="team-group">
+                                                        <div className="team-heading">Team: {teamData.name}</div>
+                                                        {teamData.tasks.map(task => {
+                                                            const isKilled = task.fields.status?.name === 'Killed';
+                                                            const isDone = task.fields.status?.name === 'Done';
+                                                            const teamInfo = getTeamInfo(task);
+                                                            return (
+                                                                <div
+                                                                    key={task.key}
+                                                                    className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''}`}
+                                                                >
+                                                                    <div className="task-header">
+                                                                        <button
+                                                                            className="task-remove"
+                                                                            onClick={() => removeTask(task.key)}
+                                                                            title="Remove task from view"
+                                                                        >
+                                                                            ×
+                                                                        </button>
+                                                                        <div className="task-checkbox-container">
+                                                                            <span className="task-key">
+                                                                                {task.key}
+                                                                                {task.fields.customfield_10004 && (
+                                                                                    <span className="task-story-points-small">
+                                                                                        {task.fields.customfield_10004} SP
+                                                                                    </span>
+                                                                                )}
+                                                                            </span>
+                                                                            {showPlanning && (
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    className="task-checkbox"
+                                                                                    checked={!!selectedTasks[task.key]}
+                                                                                    onChange={() => toggleTaskSelection(task.key)}
+                                                                                    title="Select for sprint planning"
+                                                                                />
+                                                                            )}
+                                                                        </div>
+                                                                        <span className={`task-priority ${task.fields.priority?.name.toLowerCase()}`}>
+                                                                            {task.fields.priority?.name || 'None'}
+                                                                        </span>
+                                                                    </div>
+                                                                    <h3 className="task-title">
+                                                                        <a href={`${jiraUrl}/browse/${task.key}`} target="_blank" rel="noopener noreferrer">
+                                                                            {task.fields.summary}
+                                                                        </a>
+                                                                    </h3>
+                                                                    <div className="task-meta">
+                                                                        <span className={`task-status ${task.fields.status?.name.toLowerCase().replace(/\s+/g, '-')}`}>
+                                                                            {task.fields.status?.name}
+                                                                        </span>
+                                                                        <span className="task-team">{teamInfo.name}</span>
+                                                                        <span>{task.fields.issuetype?.name}</span>
+                                                                        {task.fields.assignee && (
+                                                                            <span>{task.fields.assignee.displayName}</span>
+                                                                        )}
+                                                                        {task.fields.updated && (
+                                                                            <span className="task-updated">
+                                                                                Last Update: {new Date(task.fields.updated).toLocaleDateString('en-CA')}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                ))}
                                             </div>
                                         );
                                     })}

@@ -35,5 +35,11 @@ sprints_cache.json
 avaliablefields.txt
 tasks-with-team-name.output.txt
 jira-dashboard.html.har
+
+# Local test data
+*.test.local.json
+
+# Screenshots
+Screenshot *.png
 *.juce-me
 *.pub

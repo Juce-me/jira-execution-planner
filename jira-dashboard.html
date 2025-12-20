@@ -637,6 +637,11 @@
             color: white;
         }
 
+        .task-status.postponed {
+            background: #fa8c16;
+            color: white;
+        }
+
         .loading {
             text-align: center;
             padding: 4rem 0;
@@ -792,8 +797,8 @@
         }
 
         .planning-panel.open {
-            max-height: 900px;
-            padding: 1rem;
+            max-height: 1600px;
+            padding: 0.75rem;
             opacity: 1;
             overflow: visible;
             position: sticky;
@@ -805,8 +810,8 @@
         .capacity-panel {
             background: var(--bg-secondary);
             border: 1px solid var(--border);
-            padding: 0.75rem 1rem;
-            margin: 0 0 1.5rem;
+            padding: 0.6rem 0.75rem;
+            margin: 0 0 1rem;
         }
 
         .capacity-header {
@@ -819,7 +824,7 @@
 
         .capacity-title {
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             text-transform: uppercase;
             letter-spacing: 0.08em;
             color: var(--text-secondary);
@@ -827,7 +832,7 @@
 
         .capacity-subtitle {
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.65rem;
+            font-size: 0.6rem;
             color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -835,55 +840,71 @@
 
         .capacity-grid {
             display: grid;
-            gap: 0.35rem;
+            gap: 0.2rem;
         }
 
         .capacity-row {
-            display: flex;
+            display: grid;
+            grid-template-columns: minmax(160px, 1.4fr) repeat(9, minmax(64px, 0.5fr));
             align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-            border-top: 1px dashed var(--border);
-            padding-top: 0.35rem;
         }
 
-        .capacity-row:first-child {
-            border-top: none;
-            padding-top: 0;
+        .capacity-group-row {
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.25rem;
+            margin-bottom: 0.1rem;
+        }
+
+        .capacity-group-cell {
+            grid-column: span 3;
+            text-align: center;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+        }
+
+        .capacity-group-cell.product {
+            grid-column: 2 / span 3;
+        }
+
+        .capacity-group-cell.tech {
+            grid-column: 5 / span 3;
+        }
+
+        .capacity-group-cell.total {
+            grid-column: 8 / span 3;
+        }
+
+        .capacity-cell {
+            padding: 0.3rem 0.4rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--text-primary);
+        }
+
+        .capacity-cell.metric {
+            border-left: 1px solid var(--border);
+            text-align: right;
+        }
+
+        .capacity-header-row .capacity-cell {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+        }
+
+        .capacity-divider {
+            border-top: 1px dashed var(--border);
         }
 
         .capacity-team {
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.75rem;
             color: var(--text-primary);
         }
 
-        .capacity-values {
-            display: flex;
-            gap: 0.5rem;
-            align-items: center;
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.7rem;
-        }
-
-        .capacity-chip {
-            padding: 0.2rem 0.45rem;
-            border-radius: 2px;
-            border: 1px solid var(--border);
-            background: var(--bg-primary);
-        }
-
-        .capacity-chip.todo {
-            border-color: #91a7ff;
-            color: #2f54eb;
-            background: #f0f5ff;
-        }
-
-        .capacity-chip.accepted {
-            border-color: #b37feb;
-            color: #722ed1;
-            background: #f9f0ff;
-        }
 
         .capacity-total {
             font-weight: 500;
@@ -903,6 +924,21 @@
             justify-content: center;
             font-family: 'IBM Plex Mono', monospace;
             flex-wrap: wrap;
+        }
+
+        .planning-stats.compact {
+            gap: 1rem;
+            font-size: 0.7rem;
+            justify-content: flex-start;
+        }
+
+        .planning-stats.compact .planning-stat-label {
+            font-size: 0.7rem;
+            letter-spacing: 0.04em;
+        }
+
+        .planning-stats.compact .planning-stat-value {
+            font-size: 0.7rem;
         }
 
         .uncheck-button {
@@ -1134,6 +1170,10 @@
                     });
                     return next;
                 });
+                if (!techLoaded) {
+                    loadTechTasks();
+                    setShowTech(true);
+                }
             }, [showPlanning, tasks]);
 
             useEffect(() => {
@@ -1491,29 +1531,56 @@
                 if (!acc[teamInfo.id]) {
                     acc[teamInfo.id] = {
                         name: teamInfo.name,
-                        todoPending: 0,
-                        accepted: 0
+                        product: { todoPending: 0, accepted: 0, postponed: 0 },
+                        tech: { todoPending: 0, accepted: 0, postponed: 0 }
                     };
                 }
 
+                const bucket = task.key.startsWith('TECH-') ? 'tech' : 'product';
                 if (status === 'to do' || status === 'pending') {
-                    acc[teamInfo.id].todoPending += sp;
+                    acc[teamInfo.id][bucket].todoPending += sp;
                 }
                 if (status === 'accepted') {
-                    acc[teamInfo.id].accepted += sp;
+                    acc[teamInfo.id][bucket].accepted += sp;
+                }
+                if (status === 'postponed') {
+                    acc[teamInfo.id][bucket].postponed += sp;
                 }
 
                 return acc;
             }, {});
 
             const teamCapacityEntries = Object.entries(teamCapacityStats)
-                .sort((a, b) => a[1].name.localeCompare(b[1].name));
+                .map(([id, info]) => ({
+                    id,
+                    name: info.name,
+                    product: info.product,
+                    tech: info.tech,
+                    total: {
+                        todoPending: info.product.todoPending + info.tech.todoPending,
+                        accepted: info.product.accepted + info.tech.accepted,
+                        postponed: info.product.postponed + info.tech.postponed
+                    }
+                }))
+                .sort((a, b) => a.name.localeCompare(b.name));
 
-            const capacityTotals = teamCapacityEntries.reduce((acc, [, info]) => {
-                acc.todoPending += info.todoPending;
-                acc.accepted += info.accepted;
+            const capacityTotals = teamCapacityEntries.reduce((acc, info) => {
+                acc.product.todoPending += info.product.todoPending;
+                acc.product.accepted += info.product.accepted;
+                acc.product.postponed += info.product.postponed;
+                acc.tech.todoPending += info.tech.todoPending;
+                acc.tech.accepted += info.tech.accepted;
+                acc.tech.postponed += info.tech.postponed;
+                acc.total.todoPending += info.total.todoPending;
+                acc.total.accepted += info.total.accepted;
+                acc.total.postponed += info.total.postponed;
                 return acc;
-            }, { todoPending: 0, accepted: 0 });
+            }, {
+                product: { todoPending: 0, accepted: 0, postponed: 0 },
+                tech: { todoPending: 0, accepted: 0, postponed: 0 },
+                total: { todoPending: 0, accepted: 0, postponed: 0 }
+            });
+
 
             useEffect(() => {
                 if (!showPlanning) {
@@ -1661,25 +1728,53 @@
                         <div className="capacity-panel">
                             <div className="capacity-header">
                                 <div className="capacity-title">Team Capacity</div>
-                                <div className="capacity-subtitle">To Do / Pending vs Accepted (SP)</div>
+                                <div className="capacity-subtitle">To Do / Pending / Postponed vs Accepted (SP)</div>
                             </div>
                             <div className="capacity-grid">
-                                {teamCapacityEntries.map(([teamId, info]) => (
-                                    <div key={teamId} className="capacity-row">
-                                        <div className="capacity-team">{info.name}</div>
-                                        <div className="capacity-values">
-                                            <span className="capacity-chip todo">{info.todoPending.toFixed(1)} SP</span>
-                                            <span className="capacity-chip accepted">{info.accepted.toFixed(1)} SP</span>
-                                        </div>
+                                <div className="capacity-row capacity-group-row">
+                                    <div className="capacity-cell"></div>
+                                    <div className="capacity-group-cell product">Product</div>
+                                    <div className="capacity-group-cell tech">Tech</div>
+                                    <div className="capacity-group-cell total">Total</div>
+                                </div>
+                                <div className="capacity-row capacity-header-row">
+                                    <div className="capacity-cell">Team</div>
+                                    <div className="capacity-cell metric">To Do / Pending</div>
+                                    <div className="capacity-cell metric">Postponed</div>
+                                    <div className="capacity-cell metric">Accepted</div>
+                                    <div className="capacity-cell metric">To Do / Pending</div>
+                                    <div className="capacity-cell metric">Postponed</div>
+                                    <div className="capacity-cell metric">Accepted</div>
+                                    <div className="capacity-cell metric">To Do / Pending</div>
+                                    <div className="capacity-cell metric">Postponed</div>
+                                    <div className="capacity-cell metric">Accepted</div>
+                                </div>
+                                {teamCapacityEntries.map((info) => (
+                                    <div key={info.id} className="capacity-row capacity-divider">
+                                        <div className="capacity-cell capacity-team">{info.name}</div>
+                                        <div className="capacity-cell metric">{info.product.todoPending.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric">{info.product.postponed.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric">{info.product.accepted.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric">{info.tech.todoPending.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric">{info.tech.postponed.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric">{info.tech.accepted.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric">{info.total.todoPending.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric">{info.total.postponed.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric">{info.total.accepted.toFixed(1)} SP</div>
                                     </div>
                                 ))}
                                 {teamCapacityEntries.length > 0 && (
-                                    <div className="capacity-row">
-                                        <div className="capacity-team capacity-total">Total</div>
-                                        <div className="capacity-values">
-                                            <span className="capacity-chip todo capacity-total">{capacityTotals.todoPending.toFixed(1)} SP</span>
-                                            <span className="capacity-chip accepted capacity-total">{capacityTotals.accepted.toFixed(1)} SP</span>
-                                        </div>
+                                    <div className="capacity-row capacity-divider">
+                                        <div className="capacity-cell capacity-team capacity-total">Total</div>
+                                        <div className="capacity-cell metric capacity-total">{capacityTotals.product.todoPending.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric capacity-total">{capacityTotals.product.postponed.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric capacity-total">{capacityTotals.product.accepted.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric capacity-total">{capacityTotals.tech.todoPending.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric capacity-total">{capacityTotals.tech.postponed.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric capacity-total">{capacityTotals.tech.accepted.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric capacity-total">{capacityTotals.total.todoPending.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric capacity-total">{capacityTotals.total.postponed.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric capacity-total">{capacityTotals.total.accepted.toFixed(1)} SP</div>
                                     </div>
                                 )}
                                 {teamCapacityEntries.length === 0 && (
@@ -1718,7 +1813,7 @@
                                 </svg>
                             </button>
                         </div>
-                        <div className="planning-stats" style={{ marginTop: '0.5rem', justifyContent: 'flex-start' }}>
+                        <div className="planning-stats compact" style={{ marginTop: '0.4rem' }}>
                             <div className="planning-stat">
                                 <span className="planning-stat-label">Selected SP by Team:</span>
                             </div>
@@ -1734,7 +1829,7 @@
                                 </div>
                             )}
                         </div>
-                        <div className="planning-stats" style={{ marginTop: '0.5rem', justifyContent: 'flex-start' }}>
+                        <div className="planning-stats compact" style={{ marginTop: '0.35rem' }}>
                             <div className="planning-stat">
                                 <span className="planning-stat-label">Selected SP by Project:</span>
                             </div>

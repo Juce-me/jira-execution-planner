@@ -13,12 +13,16 @@ from dotenv import load_dotenv
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 import io
+from requests import Session
 
 # Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
+
+# Reuse a single HTTP session to avoid reconnect overhead on repeated calls
+HTTP_SESSION = Session()
 
 # CONFIGURATION - Load from environment variables
 JIRA_URL = os.getenv('JIRA_URL')
@@ -136,7 +140,7 @@ def jira_search_request(headers, payload):
         if key in payload and payload[key] is not None:
             params[key] = to_csv(payload[key])
 
-    return requests.get(url, params=params, headers=headers, timeout=30)
+    return HTTP_SESSION.get(url, params=params, headers=headers, timeout=30)
 
 
 # Cache helper functions
@@ -289,6 +293,47 @@ def fetch_sprints_from_jira():
     return formatted_sprints
 
 
+def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
+    """Fetch epic details in small batches to avoid per-epic network calls."""
+    epic_details = {}
+    if not epic_keys:
+        return epic_details
+
+    epic_field = epic_name_field or 'customfield_10011'
+    keys_list = list(epic_keys)
+    batch_size = 40  # keep JQL length reasonable for GET
+
+    for start in range(0, len(keys_list), batch_size):
+        batch_keys = keys_list[start:start + batch_size]
+        jql = f'issueKey in ({",".join(batch_keys)})'
+        payload = {
+            'jql': jql,
+            'maxResults': len(batch_keys),
+            'fields': ['summary', 'reporter', epic_field]
+        }
+
+        try:
+            resp = jira_search_request(headers, payload)
+            if resp.status_code != 200:
+                print(f'⚠️ Epic batch {start}-{start + len(batch_keys)} failed: {resp.status_code}')
+                continue
+
+            data = resp.json()
+            for issue in data.get('issues', []):
+                fields = issue.get('fields', {}) or {}
+                key = issue.get('key')
+                epic_details[key] = {
+                    'key': key,
+                    'summary': fields.get('summary'),
+                    'reporter': (fields.get('reporter') or {}).get('displayName'),
+                    'epicName': fields.get(epic_field)
+                }
+        except Exception as exc:
+            print(f'⚠️ Epic batch fetch error: {exc}')
+
+    return epic_details
+
+
 def fetch_tasks(include_team_name=False):
     """Fetch tasks from Jira API."""
     try:
@@ -393,6 +438,9 @@ def fetch_tasks(include_team_name=False):
                 break
 
             collected_issues.extend(issues)
+            # Stop when Jira signals we're at the end or when the last page is smaller than the request size
+            if len(issues) < payload['maxResults']:
+                break
             if len(collected_issues) >= max_results:
                 collected_issues = collected_issues[:max_results]
                 break
@@ -409,6 +457,9 @@ def fetch_tasks(include_team_name=False):
             'maxResults': max_results
         }
 
+        if total_issues is None:
+            total_issues = len(collected_issues)
+
         if not team_field_id:
             team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
         epic_link_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic link'), None)
@@ -416,7 +467,7 @@ def fetch_tasks(include_team_name=False):
 
         epic_keys = set()
 
-        for issue in issues:
+        for issue in collected_issues:
             fields = issue.get('fields', {})
 
             raw_team = None
@@ -446,39 +497,9 @@ def fetch_tasks(include_team_name=False):
                 fields['epicKey'] = epic_key
                 epic_keys.add(epic_key)
 
-        epic_details = {}
-        if epic_keys:
-            for epic_key in epic_keys:
-                epic_fields = ['summary', 'reporter']
-                if epic_name_field:
-                    epic_fields.append(epic_name_field)
-                else:
-                    epic_fields.append('customfield_10011')
-
-                try:
-                    epic_resp = requests.get(
-                        f'{JIRA_URL}/rest/api/3/issue/{epic_key}',
-                        headers=headers,
-                        params={'fields': ','.join(epic_fields)},
-                        timeout=20
-                    )
-
-                    if epic_resp.status_code == 200:
-                        epic_data = epic_resp.json()
-                        epic_fields_data = epic_data.get('fields', {})
-                        epic_details[epic_key] = {
-                            'key': epic_key,
-                            'summary': epic_fields_data.get('summary'),
-                            'reporter': (epic_fields_data.get('reporter') or {}).get('displayName'),
-                            'epicName': epic_fields_data.get(epic_name_field) if epic_name_field else epic_fields_data.get('customfield_10011')
-                        }
-                    else:
-                        print(f'⚠️ Failed to fetch epic {epic_key}: {epic_resp.status_code}')
-                except Exception as epic_error:
-                    print(f'⚠️ Epic fetch error for {epic_key}: {epic_error}')
-
+        epic_details = fetch_epic_details_bulk(epic_keys, headers, epic_name_field)
         slim_issues = []
-        for issue in issues:
+        for issue in collected_issues:
             fields = issue.get('fields', {})
             status = fields.get('status') or {}
             priority = fields.get('priority') or {}

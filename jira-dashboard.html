@@ -642,6 +642,16 @@
             gap: 0.5rem;
         }
 
+        .task-key-link {
+            color: inherit;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+        }
+
+        .task-key-link:hover {
+            border-bottom-color: var(--accent);
+        }
+
         .task-inline-sp {
             color: #d48806;
             font-weight: 600;
@@ -716,6 +726,27 @@
             border: 1px solid #c7b8ff;
         }
 
+        .task-assignee {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            color: var(--text-secondary);
+        }
+
+        .task-assignee-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            color: #8c8c8c;
+        }
+
+        .task-assignee-icon svg {
+            width: 14px;
+            height: 14px;
+        }
+
         .epic-block {
             border: 1px solid var(--border);
             margin-bottom: 1.1rem;
@@ -748,6 +779,31 @@
             display: flex;
             align-items: center;
             gap: 0.5rem;
+        }
+
+        .epic-link {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 0.45rem;
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .epic-link:hover {
+            text-decoration: underline;
+            text-decoration-thickness: 1px;
+            text-underline-offset: 3px;
+        }
+
+        .epic-name {
+            font-weight: 600;
+        }
+
+        .epic-key {
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            letter-spacing: 0.02em;
         }
 
         .epic-icon,
@@ -1198,6 +1254,19 @@
             color: var(--accent);
         }
 
+        .todo-link {
+            opacity: 0.6;
+            font-size: 0.85em;
+            text-decoration: none;
+            color: inherit;
+            transition: opacity 0.2s ease, color 0.2s ease;
+        }
+
+        .postponed-cell:hover .todo-link {
+            opacity: 1;
+            color: var(--accent);
+        }
+
         .planning-stats {
             display: flex;
             gap: 3rem;
@@ -1484,6 +1553,8 @@
             const planningPanelRef = useRef(null);
             const [showMissingAlert, setShowMissingAlert] = useState(savedPrefsRef.current.showMissingAlert ?? true);
             const [showBlockedAlert, setShowBlockedAlert] = useState(savedPrefsRef.current.showBlockedAlert ?? true);
+            const epicOrderRef = useRef({});
+            const epicOrderCounterRef = useRef(0);
 
             useEffect(() => {
                 // Load config and sprints on component mount
@@ -1509,18 +1580,7 @@
                     });
                     return next;
                 });
-                if (!techLoaded) {
-                    loadTechTasks();
-                    setShowTech(true);
-                }
             }, [showPlanning, tasks]);
-
-            useEffect(() => {
-                if (showTech && selectedSprint !== null) {
-                    loadTechTasks();
-                }
-            }, [showTech]);
-
 
             useEffect(() => {
                 // Save selected tasks to cookie whenever they change
@@ -1568,16 +1628,21 @@
             };
 
             useEffect(() => {
-                // Load tasks when sprint or team changes (only if sprint is selected)
+                // Load tasks when sprint changes (team is filtered client-side)
                 if (selectedSprint !== null) {
                     loadProductTasks();
                     loadTechTasks();
                 }
-            }, [selectedSprint, selectedTeam]);
+            }, [selectedSprint]);
 
             useEffect(() => {
                 setTechLoaded(false);
-            }, [selectedSprint, selectedTeam]);
+            }, [selectedSprint]);
+
+            useEffect(() => {
+                epicOrderRef.current = {};
+                epicOrderCounterRef.current = 0;
+            }, [selectedSprint]);
 
             const loadSprints = async (forceRefresh = false) => {
                 setSprintsLoading(true);
@@ -1789,6 +1854,9 @@
                 taskList.forEach(task => {
                     const epicKey = task.fields.epicKey || 'NO_EPIC';
                     if (!grouped[epicKey]) {
+                        if (epicOrderRef.current[epicKey] === undefined) {
+                            epicOrderRef.current[epicKey] = epicOrderCounterRef.current++;
+                        }
                         grouped[epicKey] = {
                             epic: epicDetails[epicKey] || null,
                             key: epicKey,
@@ -1810,7 +1878,8 @@
                 return grouped;
             };
 
-            const epicGroups = groupTasksByEpic(visibleTasks);
+            const epicGroups = Object.values(groupTasksByEpic(visibleTasks))
+                .sort((a, b) => (epicOrderRef.current[a.key] ?? 999999) - (epicOrderRef.current[b.key] ?? 999999));
 
             const highPriorityCount = tasks.filter(t => {
                 const priority = t.fields.priority?.name;
@@ -1866,7 +1935,7 @@
                 return sum;
             };
 
-            const selectedTasksList = tasks.filter(task => selectedTasks[task.key]);
+            const selectedTasksList = visibleTasks.filter(task => selectedTasks[task.key]);
             const selectedSP = selectedTasksList.reduce((sum, task) => {
                 const sp = parseFloat(task.fields.customfield_10004 || 0);
                 return sum + (Number.isNaN(sp) ? 0 : sp);
@@ -1937,13 +2006,21 @@
                 }))
                 .sort((a, b) => a.name.localeCompare(b.name));
 
-            const selectedTeamEntries = teamCapacityEntries.map((team) => ({
+            const displayedTeamCapacityEntries = selectedTeam !== 'all'
+                ? teamCapacityEntries.filter(entry => entry.id === selectedTeam)
+                : teamCapacityEntries;
+
+            const capacityTeamIds = selectedTeam !== 'all'
+                ? [selectedTeam]
+                : teamCapacityEntries.map(entry => entry.id);
+
+            const selectedTeamEntries = displayedTeamCapacityEntries.map((team) => ({
                 id: team.id,
                 name: team.name,
                 storyPoints: selectedTeamStats[team.id]?.storyPoints || 0
             }));
 
-            const capacityTotals = teamCapacityEntries.reduce((acc, info) => {
+            const capacityTotals = displayedTeamCapacityEntries.reduce((acc, info) => {
                 acc.product.todoPending += info.product.todoPending;
                 acc.product.accepted += info.product.accepted;
                 acc.product.postponed += info.product.postponed;
@@ -1960,7 +2037,7 @@
                 total: { todoPending: 0, accepted: 0, postponed: 0 }
             });
 
-            const showTotalsRow = teamCapacityEntries.length > 1;
+            const showTotalsRow = displayedTeamCapacityEntries.length > 1;
 
             const formatCapacityValue = (value) => {
                 const num = Number(value || 0);
@@ -1981,14 +2058,44 @@
                 return 'metric-value';
             };
 
-            const buildPostponedLink = (teamId) => {
-                if (!jiraUrl || !teamId) return '';
-                const clauses = [`"Team[Team]" = "${teamId}"`, 'status = "Postponed"'];
+            const buildTeamStatusLink = ({ teamId, teamIds, projectName, projectNames, statuses }) => {
+                const ids = teamIds || (teamId ? [teamId] : []);
+                if (!jiraUrl || !ids.length) return '';
+                const clauses = [];
+                const projects = projectNames || (projectName ? [projectName] : []);
+                if (projects.length === 1) {
+                    clauses.push(`project = "${projects[0]}"`);
+                } else if (projects.length > 1) {
+                    const quoted = projects.map(p => `"${p}"`).join(', ');
+                    clauses.push(`project in (${quoted})`);
+                }
+                if (ids.length === 1) {
+                    clauses.push(`"Team[Team]" = "${ids[0]}"`);
+                } else {
+                    const quotedTeams = ids.map(id => `"${id}"`).join(', ');
+                    clauses.push(`"Team[Team]" in (${quotedTeams})`);
+                }
                 if (selectedSprint) {
                     clauses.push(`Sprint = ${selectedSprint}`);
                 }
+                if (statuses && statuses.length) {
+                    if (statuses.length === 1) {
+                        clauses.push(`status = "${statuses[0]}"`);
+                    } else {
+                        const quoted = statuses.map(s => `"${s}"`).join(', ');
+                        clauses.push(`status in (${quoted})`);
+                    }
+                }
                 const jql = encodeURIComponent(clauses.join(' AND '));
                 return `${jiraUrl}/issues/?jql=${jql}`;
+            };
+
+            const buildPostponedLink = ({ teamId, teamIds, projectName, projectNames }) => {
+                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['Postponed'] });
+            };
+
+            const buildTodoPendingLink = ({ teamId, teamIds, projectName, projectNames }) => {
+                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['To Do', 'Pending'] });
             };
 
             const hasStoryPoints = (task) => {
@@ -2207,18 +2314,46 @@
                                         <div className="capacity-cell metric total-col">Postponed</div>
                                         <div className="capacity-cell metric total-col divider-right">Accepted</div>
                                     </div>
-                                    {teamCapacityEntries.map((info) => (
+                                    {displayedTeamCapacityEntries.map((info) => (
                                         <div key={info.id} className="capacity-row capacity-divider">
                                             <div className="capacity-cell capacity-team">{info.name}</div>
                                             <div className="capacity-cell metric product-col">
-                                                <span className={getMetricClass(info.product.todoPending, 'todo', info.product.accepted)}>
-                                                    {formatCapacityValue(info.product.todoPending)}
-                                                </span>
+                                                <div className="postponed-cell">
+                                                    <span className={getMetricClass(info.product.todoPending, 'todo', info.product.accepted)}>
+                                                        {formatCapacityValue(info.product.todoPending)}
+                                                    </span>
+                                                    {buildTodoPendingLink({ teamId: info.id, projectName: 'PRODUCT ROADMAPS' }) && (
+                                                        <a
+                                                            className="todo-link"
+                                                            href={buildTodoPendingLink({ teamId: info.id, projectName: 'PRODUCT ROADMAPS' })}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            title="View To Do / Pending tasks for this team in Jira"
+                                                            aria-label="Open To Do / Pending tasks in Jira"
+                                                        >
+                                                            ↗
+                                                        </a>
+                                                    )}
+                                                </div>
                                             </div>
                                             <div className="capacity-cell metric product-col">
-                                                <span className="metric-value">
-                                                    {formatCapacityValue(info.product.postponed)}
-                                                </span>
+                                                <div className="postponed-cell">
+                                                    <span className="metric-value">
+                                                        {formatCapacityValue(info.product.postponed)}
+                                                    </span>
+                                                    {buildPostponedLink({ teamId: info.id, projectName: 'PRODUCT ROADMAPS' }) && (
+                                                        <a
+                                                            className="postponed-link"
+                                                            href={buildPostponedLink({ teamId: info.id, projectName: 'PRODUCT ROADMAPS' })}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            title="View postponed tasks for this team in Jira"
+                                                            aria-label="Open postponed tasks in Jira"
+                                                        >
+                                                            ↗
+                                                        </a>
+                                                    )}
+                                                </div>
                                             </div>
                                             <div className="capacity-cell metric product-col divider-right">
                                                 <span className={getMetricClass(info.product.accepted, 'accepted')}>
@@ -2227,14 +2362,42 @@
                                             </div>
 
                                             <div className="capacity-cell metric tech-col">
-                                                <span className={getMetricClass(info.tech.todoPending, 'todo', info.tech.accepted)}>
-                                                    {formatCapacityValue(info.tech.todoPending)}
-                                                </span>
+                                                <div className="postponed-cell">
+                                                    <span className={getMetricClass(info.tech.todoPending, 'todo', info.tech.accepted)}>
+                                                        {formatCapacityValue(info.tech.todoPending)}
+                                                    </span>
+                                                    {buildTodoPendingLink({ teamId: info.id, projectName: 'TECHNICAL ROADMAP' }) && (
+                                                        <a
+                                                            className="todo-link"
+                                                            href={buildTodoPendingLink({ teamId: info.id, projectName: 'TECHNICAL ROADMAP' })}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            title="View To Do / Pending tasks for this team in Jira"
+                                                            aria-label="Open To Do / Pending tasks in Jira"
+                                                        >
+                                                            ↗
+                                                        </a>
+                                                    )}
+                                                </div>
                                             </div>
                                             <div className="capacity-cell metric tech-col">
-                                                <span className="metric-value">
-                                                    {formatCapacityValue(info.tech.postponed)}
-                                                </span>
+                                                <div className="postponed-cell">
+                                                    <span className="metric-value">
+                                                        {formatCapacityValue(info.tech.postponed)}
+                                                    </span>
+                                                    {buildPostponedLink({ teamId: info.id, projectName: 'TECHNICAL ROADMAP' }) && (
+                                                        <a
+                                                            className="postponed-link"
+                                                            href={buildPostponedLink({ teamId: info.id, projectName: 'TECHNICAL ROADMAP' })}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            title="View postponed tasks for this team in Jira"
+                                                            aria-label="Open postponed tasks in Jira"
+                                                        >
+                                                            ↗
+                                                        </a>
+                                                    )}
+                                                </div>
                                             </div>
                                             <div className="capacity-cell metric tech-col divider-right">
                                                 <span className={getMetricClass(info.tech.accepted, 'accepted')}>
@@ -2243,19 +2406,33 @@
                                             </div>
 
                                             <div className="capacity-cell metric total-col">
-                                                <span className={getMetricClass(info.total.todoPending, 'todo', info.total.accepted)}>
-                                                    {formatCapacityValue(info.total.todoPending)}
-                                                </span>
+                                                <div className="postponed-cell">
+                                                    <span className={getMetricClass(info.total.todoPending, 'todo', info.total.accepted)}>
+                                                        {formatCapacityValue(info.total.todoPending)}
+                                                    </span>
+                                                    {buildTodoPendingLink({ teamId: info.id, projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'] }) && (
+                                                        <a
+                                                            className="todo-link"
+                                                            href={buildTodoPendingLink({ teamId: info.id, projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'] })}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            title="View To Do / Pending tasks for this team in Jira"
+                                                            aria-label="Open To Do / Pending tasks in Jira"
+                                                        >
+                                                            ↗
+                                                        </a>
+                                                    )}
+                                                </div>
                                             </div>
                                             <div className="capacity-cell metric total-col">
                                                 <div className="postponed-cell">
                                                     <span className="metric-value">
                                                         {formatCapacityValue(info.total.postponed)}
                                                     </span>
-                                                    {buildPostponedLink(info.id) && (
+                                                    {buildPostponedLink({ teamId: info.id, projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'] }) && (
                                                         <a
                                                             className="postponed-link"
-                                                            href={buildPostponedLink(info.id)}
+                                                            href={buildPostponedLink({ teamId: info.id, projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'] })}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             title="View postponed tasks for this team in Jira"
@@ -2273,51 +2450,135 @@
                                             </div>
                                         </div>
                                     ))}
-                                    {showTotalsRow && teamCapacityEntries.length > 0 && (
+                                    {showTotalsRow && displayedTeamCapacityEntries.length > 0 && (
                                         <div className="capacity-row capacity-divider">
                                             <div className="capacity-cell capacity-team capacity-total">Total</div>
-                                            <div className="capacity-cell metric product-col capacity-total">
+                                        <div className="capacity-cell metric product-col capacity-total">
+                                            <div className="postponed-cell">
                                                 <span className={getMetricClass(capacityTotals.product.todoPending, 'todo', capacityTotals.product.accepted)}>
                                                     {formatCapacityValue(capacityTotals.product.todoPending)}
                                                 </span>
+                                                {buildTodoPendingLink({ teamIds: capacityTeamIds, projectName: 'PRODUCT ROADMAPS' }) && (
+                                                    <a
+                                                        className="todo-link"
+                                                        href={buildTodoPendingLink({ teamIds: capacityTeamIds, projectName: 'PRODUCT ROADMAPS' })}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        title="View To Do / Pending tasks for selected teams in Jira"
+                                                        aria-label="Open To Do / Pending tasks in Jira"
+                                                    >
+                                                        ↗
+                                                    </a>
+                                                )}
                                             </div>
-                                            <div className="capacity-cell metric product-col capacity-total">
+                                        </div>
+                                        <div className="capacity-cell metric product-col capacity-total">
+                                            <div className="postponed-cell">
                                                 <span className="metric-value">
                                                     {formatCapacityValue(capacityTotals.product.postponed)}
                                                 </span>
+                                                {buildPostponedLink({ teamIds: capacityTeamIds, projectName: 'PRODUCT ROADMAPS' }) && (
+                                                    <a
+                                                        className="postponed-link"
+                                                        href={buildPostponedLink({ teamIds: capacityTeamIds, projectName: 'PRODUCT ROADMAPS' })}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        title="View postponed tasks for selected teams in Jira"
+                                                        aria-label="Open postponed tasks in Jira"
+                                                    >
+                                                        ↗
+                                                    </a>
+                                                )}
                                             </div>
-                                            <div className="capacity-cell metric product-col divider-right capacity-total">
-                                                <span className={getMetricClass(capacityTotals.product.accepted, 'accepted')}>
-                                                    {formatCapacityValue(capacityTotals.product.accepted)}
-                                                </span>
+                                        </div>
+                                        <div className="capacity-cell metric product-col divider-right capacity-total">
+                                            <span className={getMetricClass(capacityTotals.product.accepted, 'accepted')}>
+                                                {formatCapacityValue(capacityTotals.product.accepted)}
+                                            </span>
                                             </div>
 
-                                            <div className="capacity-cell metric tech-col capacity-total">
+                                        <div className="capacity-cell metric tech-col capacity-total">
+                                            <div className="postponed-cell">
                                                 <span className={getMetricClass(capacityTotals.tech.todoPending, 'todo', capacityTotals.tech.accepted)}>
                                                     {formatCapacityValue(capacityTotals.tech.todoPending)}
                                                 </span>
+                                                {buildTodoPendingLink({ teamIds: capacityTeamIds, projectName: 'TECHNICAL ROADMAP' }) && (
+                                                    <a
+                                                        className="todo-link"
+                                                        href={buildTodoPendingLink({ teamIds: capacityTeamIds, projectName: 'TECHNICAL ROADMAP' })}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        title="View To Do / Pending tasks for selected teams in Jira"
+                                                        aria-label="Open To Do / Pending tasks in Jira"
+                                                    >
+                                                        ↗
+                                                    </a>
+                                                )}
                                             </div>
-                                            <div className="capacity-cell metric tech-col capacity-total">
+                                        </div>
+                                        <div className="capacity-cell metric tech-col capacity-total">
+                                            <div className="postponed-cell">
                                                 <span className="metric-value">
                                                     {formatCapacityValue(capacityTotals.tech.postponed)}
                                                 </span>
+                                                {buildPostponedLink({ teamIds: capacityTeamIds, projectName: 'TECHNICAL ROADMAP' }) && (
+                                                    <a
+                                                        className="postponed-link"
+                                                        href={buildPostponedLink({ teamIds: capacityTeamIds, projectName: 'TECHNICAL ROADMAP' })}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        title="View postponed tasks for selected teams in Jira"
+                                                        aria-label="Open postponed tasks in Jira"
+                                                    >
+                                                        ↗
+                                                    </a>
+                                                )}
                                             </div>
-                                            <div className="capacity-cell metric tech-col divider-right capacity-total">
-                                                <span className={getMetricClass(capacityTotals.tech.accepted, 'accepted')}>
-                                                    {formatCapacityValue(capacityTotals.tech.accepted)}
-                                                </span>
+                                        </div>
+                                        <div className="capacity-cell metric tech-col divider-right capacity-total">
+                                            <span className={getMetricClass(capacityTotals.tech.accepted, 'accepted')}>
+                                                {formatCapacityValue(capacityTotals.tech.accepted)}
+                                            </span>
                                             </div>
 
-                                            <div className="capacity-cell metric total-col capacity-total">
+                                        <div className="capacity-cell metric total-col capacity-total">
+                                            <div className="postponed-cell">
                                                 <span className={getMetricClass(capacityTotals.total.todoPending, 'todo', capacityTotals.total.accepted)}>
                                                     {formatCapacityValue(capacityTotals.total.todoPending)}
                                                 </span>
+                                                {buildTodoPendingLink({ teamIds: capacityTeamIds, projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'] }) && (
+                                                    <a
+                                                        className="todo-link"
+                                                        href={buildTodoPendingLink({ teamIds: capacityTeamIds, projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'] })}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        title="View To Do / Pending tasks for selected teams in Jira"
+                                                        aria-label="Open To Do / Pending tasks in Jira"
+                                                    >
+                                                        ↗
+                                                    </a>
+                                                )}
                                             </div>
-                                            <div className="capacity-cell metric total-col capacity-total">
+                                        </div>
+                                        <div className="capacity-cell metric total-col capacity-total">
+                                            <div className="postponed-cell">
                                                 <span className="metric-value">
                                                     {formatCapacityValue(capacityTotals.total.postponed)}
                                                 </span>
+                                                {buildPostponedLink({ teamIds: capacityTeamIds, projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'] }) && (
+                                                    <a
+                                                        className="postponed-link"
+                                                        href={buildPostponedLink({ teamIds: capacityTeamIds, projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'] })}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        title="View postponed tasks for selected teams in Jira"
+                                                        aria-label="Open postponed tasks in Jira"
+                                                    >
+                                                        ↗
+                                                    </a>
+                                                )}
                                             </div>
+                                        </div>
                                             <div className="capacity-cell metric total-col divider-right capacity-total">
                                                 <span className={getMetricClass(capacityTotals.total.accepted, 'accepted')}>
                                                     {formatCapacityValue(capacityTotals.total.accepted)}
@@ -2325,11 +2586,11 @@
                                             </div>
                                         </div>
                                     )}
-                                    {teamCapacityEntries.length === 0 && (
+                                    {displayedTeamCapacityEntries.length === 0 && (
                                         <div className="capacity-empty">No capacity data for current filters.</div>
                                     )}
                                 </div>
-                                {teamCapacityEntries.length > 5 && (
+                                {displayedTeamCapacityEntries.length > 5 && (
                                     <div className="capacity-scroll-hint">Scroll for more teams</div>
                                 )}
                             </div>
@@ -2616,16 +2877,12 @@
                                 <button
                                     className={`toggle ${showTech ? 'active' : ''}`}
                                     onClick={() => {
-                                        const next = !showTech;
-                                        setShowTech(next);
-                                        if (next && !techLoaded) {
-                                            loadTechTasks();
-                                        }
+                                        setShowTech(!showTech);
                                     }}
                                 >
                                     {showTech
                                         ? `Hide Tech Tasks (${techTasksCount})`
-                                        : `${techLoaded ? 'Show' : 'Load'} Tech Tasks (${techTasksCount})`}
+                                        : `Show Tech Tasks (${techTasksCount})`}
                                 </button>
                                 <button
                                     className={`toggle ${showProduct ? 'active' : ''}`}
@@ -2658,7 +2915,7 @@
                                 </div>
                             ) : (
                                 <div className="task-list">
-                                    {Object.values(epicGroups).map(epicGroup => {
+                                    {epicGroups.map(epicGroup => {
                                         const epicInfo = epicGroup.epic;
                                         const epicTitle = epicInfo?.epicName || epicInfo?.summary || epicGroup.parentSummary ||
                                             (epicGroup.key === 'NO_EPIC' ? 'No Epic Linked' : epicGroup.key);
@@ -2669,15 +2926,29 @@
                                                 <div className="epic-header">
                                                     <div className="epic-title">
                                                         <div className="epic-title-row">
-                                                            <span className="epic-icon" aria-hidden="true">
+                                                            <span className="epic-icon" aria-hidden="true" title="EPIC">
                                                                 <svg viewBox="0 0 24 24" fill="none">
                                                                     <rect x="3" y="3" width="18" height="18" rx="3" stroke="#1D7AFC" strokeWidth="2"/>
                                                                     <path d="M7.5 12.5l3 3 6-6" stroke="#1D7AFC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                                                                 </svg>
                                                             </span>
-                                                            <strong>{epicTitle}</strong>
+                                                            {epicGroup.key !== 'NO_EPIC' ? (
+                                                                <a
+                                                                    className="epic-link"
+                                                                    href={`${jiraUrl}/browse/${epicGroup.key}`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                >
+                                                                    <span className="epic-name">{epicTitle}</span>
+                                                                    <span className="epic-key">{epicGroup.key}</span>
+                                                                </a>
+                                                            ) : (
+                                                                <>
+                                                                    <span className="epic-name">{epicTitle}</span>
+                                                                    <span className="epic-key">Unassigned</span>
+                                                                </>
+                                                            )}
                                                         </div>
-                                                        <small>{epicGroup.key === 'NO_EPIC' ? 'Unassigned Epic' : epicGroup.key}</small>
                                                     </div>
                                                     <div className="epic-meta">
                                                         <span>SP: {epicTotalSp.toFixed(1)}</span>
@@ -2701,7 +2972,7 @@
                                                                     ×
                                                                 </button>
                                                                 <div className="task-headline">
-                                                                    <span className="story-icon" aria-hidden="true">
+                                                                    <span className="story-icon" aria-hidden="true" title="STORY">
                                                                         <svg viewBox="0 0 24 24" fill="none">
                                                                             <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
                                                                         </svg>
@@ -2712,7 +2983,14 @@
                                                                         </a>
                                                                     </h3>
                                                                     <span className="task-inline-meta">
-                                                                        <span>{task.key}</span>
+                                                                        <a
+                                                                            className="task-key-link"
+                                                                            href={`${jiraUrl}/browse/${task.key}`}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                        >
+                                                                            {task.key}
+                                                                        </a>
                                                                         {task.fields.customfield_10004 && (
                                                                             <span className="task-inline-sp">
                                                                                 {task.fields.customfield_10004} SP
@@ -2738,9 +3016,16 @@
                                                                     {task.fields.status?.name}
                                                                 </span>
                                                                 <span className="task-team">{teamInfo.name}</span>
-                                                                <span>{task.fields.issuetype?.name}</span>
                                                                 {task.fields.assignee && (
-                                                                    <span>{task.fields.assignee.displayName}</span>
+                                                                    <span className="task-assignee">
+                                                                        <span className="task-assignee-icon" aria-hidden="true">
+                                                                            <svg viewBox="0 0 24 24" fill="none">
+                                                                                <path d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Z" stroke="currentColor" strokeWidth="1.6"/>
+                                                                                <path d="M4 20c1.8-4 6-5.5 8-5.5S18.2 16 20 20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                                                                            </svg>
+                                                                        </span>
+                                                                        {task.fields.assignee.displayName}
+                                                                    </span>
                                                                 )}
                                                                 {task.fields.updated && (
                                                                     <span className="task-updated">

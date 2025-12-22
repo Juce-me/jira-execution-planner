@@ -38,6 +38,7 @@ jira-dashboard.html.har
 
 # Local test data
 *.test.local.json
+verify.*.json
 
 # Screenshots
 Screenshot *.png

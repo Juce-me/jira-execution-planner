@@ -35,9 +35,7 @@ JIRA_TEAM_FALLBACK_FIELD_ID = 'customfield_30101'
 JIRA_PRODUCT_PROJECT = os.getenv('JIRA_PRODUCT_PROJECT', 'PRODUCT ROADMAPS')
 JIRA_TECH_PROJECT = os.getenv('JIRA_TECH_PROJECT', 'TECHNICAL ROADMAP')
 SERVER_PORT = int(os.getenv('SERVER_PORT', '5050'))
-LOCAL_TASKS_FILE = os.getenv('LOCAL_TASKS_FILE')
-LOCAL_TASKS_FILE_PRODUCT = os.getenv('LOCAL_TASKS_FILE_PRODUCT', 'product.test.local.json')
-LOCAL_TASKS_FILE_TECH = os.getenv('LOCAL_TASKS_FILE_TECH', 'tech.test.local.json')
+LOCAL_TASKS_FILE = os.getenv('LOCAL_TASKS_FILE', 'tasks.test.local.json')
 
 # Cache settings
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
@@ -574,25 +572,12 @@ def get_local_tasks():
     """
     Serve tasks from local JSON files for development.
     - If ?file=/path/to/file.json is provided, that file is used.
-    - If project=product or project=tech, the respective LOCAL_TASKS_FILE_PRODUCT/LOCAL_TASKS_FILE_TECH is used.
-    - Otherwise attempts LOCAL_TASKS_FILE, or falls back to combining product+tech files.
+    - Otherwise reads LOCAL_TASKS_FILE (default tasks.test.local.json).
     """
     try:
-        project_filter = request.args.get('project', 'all').strip().lower()
         file_override = request.args.get('file', '').strip()
 
-        candidates = []
-        if file_override:
-            candidates = [file_override]
-        elif project_filter == 'product':
-            candidates = [LOCAL_TASKS_FILE_PRODUCT]
-        elif project_filter == 'tech':
-            candidates = [LOCAL_TASKS_FILE_TECH]
-        else:
-            if LOCAL_TASKS_FILE:
-                candidates = [LOCAL_TASKS_FILE]
-            else:
-                candidates = [LOCAL_TASKS_FILE_PRODUCT, LOCAL_TASKS_FILE_TECH]
+        candidates = [file_override] if file_override else [LOCAL_TASKS_FILE]
 
         issues = []
         epics = {}
@@ -630,7 +615,6 @@ def get_local_tasks():
 
         response = jsonify({
             'source': 'local-file',
-            'project': project_filter,
             'filesUsed': used_files,
             'issues': issues,
             'epics': epics,

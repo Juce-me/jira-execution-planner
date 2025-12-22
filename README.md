@@ -39,6 +39,23 @@ If you just want to see the dashboard working locally:
 
 More detailed setup guidance remains below if you need it.
 
+### Local mock data (dev)
+
+If you want to develop without hitting Jira, the backend can serve tasks from local JSON files:
+
+- Put your sample responses in the repo (e.g. `product.test.local.json`, `tech.test.local.json`, or a single combined file).
+- Optionally point to them in `.env`:
+  - `LOCAL_TASKS_FILE` — a single combined file with an `issues` array (and optional `epics`).
+  - `LOCAL_TASKS_FILE_PRODUCT` — product-only file (default `product.test.local.json`).
+  - `LOCAL_TASKS_FILE_TECH` — tech-only file (default `tech.test.local.json`).
+- Start the server and hit:
+  - `http://localhost:5050/api/local-tasks` (uses the combined file if set, else both product/tech defaults).
+  - `http://localhost:5050/api/local-tasks?project=product` (product file only).
+  - `http://localhost:5050/api/local-tasks?project=tech` (tech file only).
+  - `http://localhost:5050/api/local-tasks?file=/full/path/to/snapshot.json` (explicit file override).
+
+The endpoint returns the same shape as `/api/tasks-with-team-name` (issues + epics), so you can wire it into the UI or use curl/Postman during frontend work.
+
 ### Step 1: Clone the repository
 
 ```bash

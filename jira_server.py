@@ -35,6 +35,9 @@ JIRA_TEAM_FALLBACK_FIELD_ID = 'customfield_30101'
 JIRA_PRODUCT_PROJECT = os.getenv('JIRA_PRODUCT_PROJECT', 'PRODUCT ROADMAPS')
 JIRA_TECH_PROJECT = os.getenv('JIRA_TECH_PROJECT', 'TECHNICAL ROADMAP')
 SERVER_PORT = int(os.getenv('SERVER_PORT', '5050'))
+LOCAL_TASKS_FILE = os.getenv('LOCAL_TASKS_FILE')
+LOCAL_TASKS_FILE_PRODUCT = os.getenv('LOCAL_TASKS_FILE_PRODUCT', 'product.test.local.json')
+LOCAL_TASKS_FILE_TECH = os.getenv('LOCAL_TASKS_FILE_TECH', 'tech.test.local.json')
 
 # Cache settings
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
@@ -171,6 +174,12 @@ def save_sprints_cache(sprints):
     except Exception as e:
         print(f'⚠️ Failed to save cache: {e}')
         return False
+
+
+def load_local_json(path):
+    """Load JSON from a local file and return dict; raises on failure."""
+    with open(path, 'r') as handle:
+        return json.load(handle)
 
 
 def is_cache_valid():
@@ -558,6 +567,91 @@ def get_tasks():
 def get_tasks_with_team_name():
     """Fetch tasks with team name derived from Jira Team field."""
     return fetch_tasks(include_team_name=True)
+
+
+@app.route('/api/local-tasks', methods=['GET'])
+def get_local_tasks():
+    """
+    Serve tasks from local JSON files for development.
+    - If ?file=/path/to/file.json is provided, that file is used.
+    - If project=product or project=tech, the respective LOCAL_TASKS_FILE_PRODUCT/LOCAL_TASKS_FILE_TECH is used.
+    - Otherwise attempts LOCAL_TASKS_FILE, or falls back to combining product+tech files.
+    """
+    try:
+        project_filter = request.args.get('project', 'all').strip().lower()
+        file_override = request.args.get('file', '').strip()
+
+        candidates = []
+        if file_override:
+            candidates = [file_override]
+        elif project_filter == 'product':
+            candidates = [LOCAL_TASKS_FILE_PRODUCT]
+        elif project_filter == 'tech':
+            candidates = [LOCAL_TASKS_FILE_TECH]
+        else:
+            if LOCAL_TASKS_FILE:
+                candidates = [LOCAL_TASKS_FILE]
+            else:
+                candidates = [LOCAL_TASKS_FILE_PRODUCT, LOCAL_TASKS_FILE_TECH]
+
+        issues = []
+        epics = {}
+        names = {}
+        used_files = []
+
+        for path in candidates:
+            if not path:
+                continue
+            if not os.path.exists(path):
+                print(f'⚠️ Local tasks file not found: {path}')
+                continue
+
+            try:
+                data = load_local_json(path)
+                used_files.append(path)
+
+                if isinstance(data, list):
+                    issues.extend(data)
+                    continue
+
+                if isinstance(data, dict):
+                    issues.extend(data.get('issues') or data.get('tasks') or [])
+                    epics.update(data.get('epics') or {})
+                    names.update(data.get('names') or {})
+            except Exception as file_error:
+                print(f'⚠️ Failed to read {path}: {file_error}')
+                continue
+
+        if not issues:
+            return jsonify({
+                'error': 'No local data found',
+                'searched_files': candidates
+            }), 404
+
+        response = jsonify({
+            'source': 'local-file',
+            'project': project_filter,
+            'filesUsed': used_files,
+            'issues': issues,
+            'epics': epics,
+            'names': names,
+            'count': len(issues)
+        })
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+
+    except Exception as e:
+        print(f'❌ Local tasks error: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        error_response = jsonify({
+            'error': 'Failed to load local tasks',
+            'message': str(e)
+        })
+        error_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        return error_response, 500
 
 
 @app.route('/api/boards', methods=['GET'])
@@ -950,6 +1044,7 @@ if __name__ == '__main__':
     print('\n📋 Endpoints:')
     print(f'   • http://localhost:{SERVER_PORT}/api/tasks - Get sprint tasks')
     print(f'   • http://localhost:{SERVER_PORT}/api/tasks-with-team-name - Get sprint tasks with team names')
+    print(f'   • http://localhost:{SERVER_PORT}/api/local-tasks - Get tasks from local JSON files (dev)')
     print(f'   • http://localhost:{SERVER_PORT}/api/sprints - Get available sprints (cached)')
     print(f'   • http://localhost:{SERVER_PORT}/api/sprints?refresh=true - Force refresh sprints cache')
     print(f'   • http://localhost:{SERVER_PORT}/api/boards - Get all boards (to find board ID)')

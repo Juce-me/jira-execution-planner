@@ -1004,7 +1004,11 @@
 
         .capacity-row {
             display: grid;
-            grid-template-columns: minmax(160px, 1.4fr) repeat(9, minmax(64px, 0.5fr));
+            grid-template-columns:
+                minmax(160px, 1.4fr)
+                minmax(94px, 0.55fr) minmax(64px, 0.5fr) minmax(64px, 0.5fr)
+                minmax(94px, 0.55fr) minmax(64px, 0.5fr) minmax(64px, 0.5fr)
+                minmax(94px, 0.55fr) minmax(64px, 0.5fr) minmax(64px, 0.5fr);
             align-items: center;
         }
 
@@ -1789,6 +1793,8 @@
                 total: { todoPending: 0, accepted: 0, postponed: 0 }
             });
 
+            const showTotalsRow = teamCapacityEntries.length > 1;
+
             const formatCapacityValue = (value) => {
                 const num = Number(value || 0);
                 return num.toFixed(1);
@@ -2099,7 +2105,7 @@
                                         </div>
                                     </div>
                                 ))}
-                                {teamCapacityEntries.length > 0 && (
+                                {showTotalsRow && teamCapacityEntries.length > 0 && (
                                     <div className="capacity-row capacity-divider">
                                         <div className="capacity-cell capacity-team capacity-total">Total</div>
                                         <div className="capacity-cell metric product-col capacity-total">

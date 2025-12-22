@@ -24,6 +24,9 @@
             --text-primary: #1a1a1a;
             --text-secondary: #666666;
             --accent: #d4380d;
+            --good: #389e0d;
+            --warn: #cf1322;
+            --muted: #bfbfbf;
             --alert-missing: #fa8c16;
             --alert-blocked: #d4380d;
             --border: #e0ddd7;
@@ -1045,6 +1048,22 @@
             text-align: right;
         }
 
+        .capacity-cell.product-col {
+            background: #fff7e6;
+        }
+
+        .capacity-cell.tech-col {
+            background: #e6f7ff;
+        }
+
+        .capacity-cell.total-col {
+            background: #f6ffed;
+        }
+
+        .capacity-cell.divider-right {
+            border-right: 2px solid var(--border);
+        }
+
         .capacity-header-row .capacity-cell {
             font-size: 0.6rem;
             text-transform: uppercase;
@@ -1071,6 +1090,41 @@
             font-size: 0.75rem;
             color: var(--text-secondary);
             padding: 0.25rem 0;
+        }
+
+        .metric-value {
+            font-weight: 600;
+        }
+
+        .metric-muted {
+            color: var(--muted);
+        }
+
+        .metric-accepted {
+            color: var(--good);
+        }
+
+        .metric-warn {
+            color: var(--warn);
+        }
+
+        .postponed-cell {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.2rem;
+        }
+
+        .postponed-link {
+            opacity: 0.6;
+            font-size: 0.85em;
+            text-decoration: none;
+            color: inherit;
+            transition: opacity 0.2s ease, color 0.2s ease;
+        }
+
+        .postponed-cell:hover .postponed-link {
+            opacity: 1;
+            color: var(--accent);
         }
 
         .planning-stats {
@@ -1735,6 +1789,35 @@
                 total: { todoPending: 0, accepted: 0, postponed: 0 }
             });
 
+            const formatCapacityValue = (value) => {
+                const num = Number(value || 0);
+                return num.toFixed(1);
+            };
+
+            const getMetricClass = (value, type, acceptedValue) => {
+                const num = Number(value || 0);
+                if (num === 0) {
+                    return 'metric-value metric-muted';
+                }
+                if (type === 'accepted') {
+                    return 'metric-value metric-accepted';
+                }
+                if (type === 'todo' && acceptedValue !== undefined && acceptedValue < num) {
+                    return 'metric-value metric-warn';
+                }
+                return 'metric-value';
+            };
+
+            const buildPostponedLink = (teamId) => {
+                if (!jiraUrl || !teamId) return '';
+                const clauses = [`"Team[Team]" = "${teamId}"`, 'status = "Postponed"'];
+                if (selectedSprint) {
+                    clauses.push(`Sprint = ${selectedSprint}`);
+                }
+                const jql = encodeURIComponent(clauses.join(' AND '));
+                return `${jiraUrl}/issues/?jql=${jql}`;
+            };
+
             const hasStoryPoints = (task) => {
                 const sp = task.fields.customfield_10004;
                 if (sp === null || sp === undefined || sp === '') {
@@ -1929,7 +2012,7 @@
                         <div className="capacity-panel">
                             <div className="capacity-header">
                                 <div className="capacity-title">Team Capacity</div>
-                                <div className="capacity-subtitle">To Do / Pending / Postponed vs Accepted (SP)</div>
+                                <div className="capacity-subtitle">To Do / Pending / Postponed vs Accepted</div>
                             </div>
                             <div className="capacity-grid">
                                 <div className="capacity-row capacity-group-row">
@@ -1940,42 +2023,132 @@
                                 </div>
                                 <div className="capacity-row capacity-header-row">
                                     <div className="capacity-cell">Team</div>
-                                    <div className="capacity-cell metric">To Do / Pending</div>
-                                    <div className="capacity-cell metric">Postponed</div>
-                                    <div className="capacity-cell metric">Accepted</div>
-                                    <div className="capacity-cell metric">To Do / Pending</div>
-                                    <div className="capacity-cell metric">Postponed</div>
-                                    <div className="capacity-cell metric">Accepted</div>
-                                    <div className="capacity-cell metric">To Do / Pending</div>
-                                    <div className="capacity-cell metric">Postponed</div>
-                                    <div className="capacity-cell metric">Accepted</div>
+                                    <div className="capacity-cell metric product-col">To Do / Pending</div>
+                                    <div className="capacity-cell metric product-col">Postponed</div>
+                                    <div className="capacity-cell metric product-col divider-right">Accepted</div>
+                                    <div className="capacity-cell metric tech-col">To Do / Pending</div>
+                                    <div className="capacity-cell metric tech-col">Postponed</div>
+                                    <div className="capacity-cell metric tech-col divider-right">Accepted</div>
+                                    <div className="capacity-cell metric total-col">To Do / Pending</div>
+                                    <div className="capacity-cell metric total-col">Postponed</div>
+                                    <div className="capacity-cell metric total-col divider-right">Accepted</div>
                                 </div>
                                 {teamCapacityEntries.map((info) => (
                                     <div key={info.id} className="capacity-row capacity-divider">
                                         <div className="capacity-cell capacity-team">{info.name}</div>
-                                        <div className="capacity-cell metric">{info.product.todoPending.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric">{info.product.postponed.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric">{info.product.accepted.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric">{info.tech.todoPending.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric">{info.tech.postponed.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric">{info.tech.accepted.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric">{info.total.todoPending.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric">{info.total.postponed.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric">{info.total.accepted.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric product-col">
+                                            <span className={getMetricClass(info.product.todoPending, 'todo', info.product.accepted)}>
+                                                {formatCapacityValue(info.product.todoPending)}
+                                            </span>
+                                        </div>
+                                        <div className="capacity-cell metric product-col">
+                                            <span className="metric-value">
+                                                {formatCapacityValue(info.product.postponed)}
+                                            </span>
+                                        </div>
+                                        <div className="capacity-cell metric product-col divider-right">
+                                            <span className={getMetricClass(info.product.accepted, 'accepted')}>
+                                                {formatCapacityValue(info.product.accepted)}
+                                            </span>
+                                        </div>
+
+                                        <div className="capacity-cell metric tech-col">
+                                            <span className={getMetricClass(info.tech.todoPending, 'todo', info.tech.accepted)}>
+                                                {formatCapacityValue(info.tech.todoPending)}
+                                            </span>
+                                        </div>
+                                        <div className="capacity-cell metric tech-col">
+                                            <span className="metric-value">
+                                                {formatCapacityValue(info.tech.postponed)}
+                                            </span>
+                                        </div>
+                                        <div className="capacity-cell metric tech-col divider-right">
+                                            <span className={getMetricClass(info.tech.accepted, 'accepted')}>
+                                                {formatCapacityValue(info.tech.accepted)}
+                                            </span>
+                                        </div>
+
+                                        <div className="capacity-cell metric total-col">
+                                            <span className={getMetricClass(info.total.todoPending, 'todo', info.total.accepted)}>
+                                                {formatCapacityValue(info.total.todoPending)}
+                                            </span>
+                                        </div>
+                                        <div className="capacity-cell metric total-col">
+                                            <div className="postponed-cell">
+                                                <span className="metric-value">
+                                                    {formatCapacityValue(info.total.postponed)}
+                                                </span>
+                                                {buildPostponedLink(info.id) && (
+                                                    <a
+                                                        className="postponed-link"
+                                                        href={buildPostponedLink(info.id)}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        title="View postponed tasks for this team in Jira"
+                                                        aria-label="Open postponed tasks in Jira"
+                                                    >
+                                                        ↗
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="capacity-cell metric total-col divider-right">
+                                            <span className={getMetricClass(info.total.accepted, 'accepted')}>
+                                                {formatCapacityValue(info.total.accepted)}
+                                            </span>
+                                        </div>
                                     </div>
                                 ))}
                                 {teamCapacityEntries.length > 0 && (
                                     <div className="capacity-row capacity-divider">
                                         <div className="capacity-cell capacity-team capacity-total">Total</div>
-                                        <div className="capacity-cell metric capacity-total">{capacityTotals.product.todoPending.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric capacity-total">{capacityTotals.product.postponed.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric capacity-total">{capacityTotals.product.accepted.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric capacity-total">{capacityTotals.tech.todoPending.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric capacity-total">{capacityTotals.tech.postponed.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric capacity-total">{capacityTotals.tech.accepted.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric capacity-total">{capacityTotals.total.todoPending.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric capacity-total">{capacityTotals.total.postponed.toFixed(1)} SP</div>
-                                        <div className="capacity-cell metric capacity-total">{capacityTotals.total.accepted.toFixed(1)} SP</div>
+                                        <div className="capacity-cell metric product-col capacity-total">
+                                            <span className={getMetricClass(capacityTotals.product.todoPending, 'todo', capacityTotals.product.accepted)}>
+                                                {formatCapacityValue(capacityTotals.product.todoPending)}
+                                            </span>
+                                        </div>
+                                        <div className="capacity-cell metric product-col capacity-total">
+                                            <span className="metric-value">
+                                                {formatCapacityValue(capacityTotals.product.postponed)}
+                                            </span>
+                                        </div>
+                                        <div className="capacity-cell metric product-col divider-right capacity-total">
+                                            <span className={getMetricClass(capacityTotals.product.accepted, 'accepted')}>
+                                                {formatCapacityValue(capacityTotals.product.accepted)}
+                                            </span>
+                                        </div>
+
+                                        <div className="capacity-cell metric tech-col capacity-total">
+                                            <span className={getMetricClass(capacityTotals.tech.todoPending, 'todo', capacityTotals.tech.accepted)}>
+                                                {formatCapacityValue(capacityTotals.tech.todoPending)}
+                                            </span>
+                                        </div>
+                                        <div className="capacity-cell metric tech-col capacity-total">
+                                            <span className="metric-value">
+                                                {formatCapacityValue(capacityTotals.tech.postponed)}
+                                            </span>
+                                        </div>
+                                        <div className="capacity-cell metric tech-col divider-right capacity-total">
+                                            <span className={getMetricClass(capacityTotals.tech.accepted, 'accepted')}>
+                                                {formatCapacityValue(capacityTotals.tech.accepted)}
+                                            </span>
+                                        </div>
+
+                                        <div className="capacity-cell metric total-col capacity-total">
+                                            <span className={getMetricClass(capacityTotals.total.todoPending, 'todo', capacityTotals.total.accepted)}>
+                                                {formatCapacityValue(capacityTotals.total.todoPending)}
+                                            </span>
+                                        </div>
+                                        <div className="capacity-cell metric total-col capacity-total">
+                                            <span className="metric-value">
+                                                {formatCapacityValue(capacityTotals.total.postponed)}
+                                            </span>
+                                        </div>
+                                        <div className="capacity-cell metric total-col divider-right capacity-total">
+                                            <span className={getMetricClass(capacityTotals.total.accepted, 'accepted')}>
+                                                {formatCapacityValue(capacityTotals.total.accepted)}
+                                            </span>
+                                        </div>
                                     </div>
                                 )}
                                 {teamCapacityEntries.length === 0 && (

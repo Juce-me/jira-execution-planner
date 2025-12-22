@@ -1435,19 +1435,40 @@
             return null;
         }
 
+        const UI_PREFS_KEY = 'jira_dashboard_ui_prefs_v1';
+
+        function loadUiPrefs() {
+            try {
+                const raw = window.localStorage.getItem(UI_PREFS_KEY);
+                if (!raw) return null;
+                return JSON.parse(raw);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function saveUiPrefs(prefs) {
+            try {
+                window.localStorage.setItem(UI_PREFS_KEY, JSON.stringify(prefs));
+            } catch (e) {
+                // ignore
+            }
+        }
+
         function App() {
+            const savedPrefsRef = useRef(loadUiPrefs() || {});
             const [productTasks, setProductTasks] = useState([]);
             const [techTasks, setTechTasks] = useState([]);
             const [techLoaded, setTechLoaded] = useState(false);
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
-            const [showKilled, setShowKilled] = useState(false);
-            const [showDone, setShowDone] = useState(true);
-            const [showTech, setShowTech] = useState(true);
-            const [showProduct, setShowProduct] = useState(true);
+            const [showKilled, setShowKilled] = useState(savedPrefsRef.current.showKilled ?? false);
+            const [showDone, setShowDone] = useState(savedPrefsRef.current.showDone ?? true);
+            const [showTech, setShowTech] = useState(savedPrefsRef.current.showTech ?? true);
+            const [showProduct, setShowProduct] = useState(savedPrefsRef.current.showProduct ?? true);
             const [sprintName, setSprintName] = useState('Sprint');
-            const [statusFilter, setStatusFilter] = useState(null); // null = show all, 'in-progress', 'todo-accepted', 'done', 'high-priority'
-            const [selectedSprint, setSelectedSprint] = useState(null); // Sprint ID
+            const [statusFilter, setStatusFilter] = useState(savedPrefsRef.current.statusFilter ?? null); // null = show all, 'in-progress', 'todo-accepted', 'done', 'high-priority'
+            const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
             const [availableSprints, setAvailableSprints] = useState([]);
             const [sprintsLoading, setSprintsLoading] = useState(true);
             const [jiraUrl, setJiraUrl] = useState('');
@@ -1455,14 +1476,14 @@
                 // Load from cookie on init
                 return getCookie('selectedTasks') || {};
             });
-            const [showPlanning, setShowPlanning] = useState(false);
-            const [searchQuery, setSearchQuery] = useState('');
-            const [selectedTeam, setSelectedTeam] = useState('all');
+            const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
+            const [searchQuery, setSearchQuery] = useState(savedPrefsRef.current.searchQuery ?? '');
+            const [selectedTeam, setSelectedTeam] = useState(savedPrefsRef.current.selectedTeam ?? 'all');
             const [epicDetails, setEpicDetails] = useState({});
             const [planningOffset, setPlanningOffset] = useState(0);
             const planningPanelRef = useRef(null);
-            const [showMissingAlert, setShowMissingAlert] = useState(true);
-            const [showBlockedAlert, setShowBlockedAlert] = useState(true);
+            const [showMissingAlert, setShowMissingAlert] = useState(savedPrefsRef.current.showMissingAlert ?? true);
+            const [showBlockedAlert, setShowBlockedAlert] = useState(savedPrefsRef.current.showBlockedAlert ?? true);
 
             useEffect(() => {
                 // Load config and sprints on component mount
@@ -1505,6 +1526,34 @@
                 // Save selected tasks to cookie whenever they change
                 setCookie('selectedTasks', selectedTasks);
             }, [selectedTasks]);
+
+            useEffect(() => {
+                saveUiPrefs({
+                    selectedSprint,
+                    selectedTeam,
+                    showPlanning,
+                    showTech,
+                    showProduct,
+                    showDone,
+                    showKilled,
+                    statusFilter,
+                    searchQuery,
+                    showMissingAlert,
+                    showBlockedAlert
+                });
+            }, [
+                selectedSprint,
+                selectedTeam,
+                showPlanning,
+                showTech,
+                showProduct,
+                showDone,
+                showKilled,
+                statusFilter,
+                searchQuery,
+                showMissingAlert,
+                showBlockedAlert
+            ]);
 
             const loadConfig = async () => {
                 try {
@@ -1555,17 +1604,25 @@
                     const sprints = data.sprints || [];
                     setAvailableSprints(sprints);
 
-                    // Auto-select current quarter if available
-                    const currentQuarter = getCurrentQuarter();
-                    const currentSprint = sprints.find(s => s.name === currentQuarter);
-                    if (currentSprint) {
-                        setSelectedSprint(currentSprint.id);
-                        setSprintName(currentSprint.name);
-                    } else if (sprints.length > 0) {
-                        // If current quarter not found, select the last sprint
-                        const lastSprint = sprints[sprints.length - 1];
-                        setSelectedSprint(lastSprint.id);
-                        setSprintName(lastSprint.name);
+                    const preferredSprintId = savedPrefsRef.current.selectedSprint;
+                    const preferredSprint = preferredSprintId ? sprints.find(s => String(s.id) === String(preferredSprintId)) : null;
+
+                    if (preferredSprint) {
+                        setSelectedSprint(preferredSprint.id);
+                        setSprintName(preferredSprint.name);
+                    } else {
+                        // Auto-select current quarter if available
+                        const currentQuarter = getCurrentQuarter();
+                        const currentSprint = sprints.find(s => s.name === currentQuarter);
+                        if (currentSprint) {
+                            setSelectedSprint(currentSprint.id);
+                            setSprintName(currentSprint.name);
+                        } else if (sprints.length > 0) {
+                            // If current quarter not found, select the last sprint
+                            const lastSprint = sprints[sprints.length - 1];
+                            setSelectedSprint(lastSprint.id);
+                            setSprintName(lastSprint.name);
+                        }
                     }
 
                     console.log('✅ Loaded sprints:', sprints);

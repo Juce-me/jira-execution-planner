@@ -341,6 +341,57 @@
             font-family: 'IBM Plex Mono', monospace;
         }
 
+        .alert-toggle {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            padding: 0;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .alert-toggle:hover {
+            background: transparent;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .alert-toggle-icon {
+            width: 1.15rem;
+            height: 1.15rem;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            color: #444;
+        }
+
+        .alert-toggle-chevron {
+            width: 0.7rem;
+            height: 0.7rem;
+            display: block;
+            transition: transform 0.2s ease;
+        }
+
+        .alert-toggle-chevron.collapsed {
+            transform: rotate(-90deg);
+        }
+
+        .alert-toggle-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            letter-spacing: 0.02em;
+        }
+
+        .alert-card-body {
+            margin-top: 0.5rem;
+        }
+
         .alert-epic {
             border: 1px solid var(--border);
             padding: 0.85rem;
@@ -1410,6 +1461,8 @@
             const [epicDetails, setEpicDetails] = useState({});
             const [planningOffset, setPlanningOffset] = useState(0);
             const planningPanelRef = useRef(null);
+            const [showMissingAlert, setShowMissingAlert] = useState(true);
+            const [showBlockedAlert, setShowBlockedAlert] = useState(true);
 
             useEffect(() => {
                 // Load config and sprints on component mount
@@ -2309,120 +2362,156 @@
                                     {missingInfoTasks.length > 0 && (
                                         <div className="alert-card missing">
                                             <div className="alert-card-header">
-                                                <div className="alert-title">🧮 Missing Story Points</div>
+                                                <button
+                                                    className="alert-toggle"
+                                                    onClick={() => setShowMissingAlert(prev => !prev)}
+                                                    title={showMissingAlert ? 'Collapse missing story points panel' : 'Expand missing story points panel'}
+                                                >
+                                                    <span className="alert-toggle-icon" aria-hidden="true">
+                                                        <svg className={`alert-toggle-chevron ${showMissingAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
+                                                            <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                        </svg>
+                                                    </span>
+                                                    <span className="alert-toggle-label">
+                                                        {showMissingAlert ? 'Hide' : 'Show'}
+                                                    </span>
+                                                </button>
+                                                <div className="alert-title">📄 Missing Story Points</div>
                                                 <div className="alert-subtitle">These stories are wandering point-less—give them a quick estimate so planning can stop guessing.</div>
                                                 <span className="alert-chip">
                                                     {missingInfoTasks.length} {missingInfoTasks.length === 1 ? 'story' : 'stories'}
                                                 </span>
                                             </div>
-                                            {missingInfoGroups.map(group => {
-                                                const epicTitle = group.epic?.epicName || group.epic?.summary || group.parentSummary ||
-                                                    (group.key === 'NO_EPIC' ? 'No Epic Linked' : group.key);
-                                                return (
-                                                    <div key={group.key} className="alert-epic">
-                                                        <div className="alert-epic-head">
-                                                            <div className="alert-epic-title">
-                                                                <span className="alert-pill">EPIC</span>
-                                                                <span>{epicTitle}</span>
-                                                            </div>
-                                                            {group.key !== 'NO_EPIC' && (
-                                                                <a
-                                                                    className="alert-epic-link"
-                                                                    href={`${jiraUrl}/browse/${group.key}`}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                >
-                                                                    Open epic ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                        <div className="alert-stories">
-                                                            {group.tasks.map(task => {
-                                                                const teamInfo = getTeamInfo(task);
-                                                                return (
-                                                                    <div key={task.key} className="alert-story">
-                                                                        <span className="alert-pill team">{teamInfo.name}</span>
-                                                                    <div className="alert-story-main">
+                                            {showMissingAlert && (
+                                                <div className="alert-card-body">
+                                                    {missingInfoGroups.map(group => {
+                                                        const epicTitle = group.epic?.epicName || group.epic?.summary || group.parentSummary ||
+                                                            (group.key === 'NO_EPIC' ? 'No Epic Linked' : group.key);
+                                                        return (
+                                                            <div key={group.key} className="alert-epic">
+                                                                <div className="alert-epic-head">
+                                                                    <div className="alert-epic-title">
+                                                                        <span className="alert-pill">EPIC</span>
+                                                                        <span>{epicTitle}</span>
+                                                                    </div>
+                                                                    {group.key !== 'NO_EPIC' && (
                                                                         <a
-                                                                            className="alert-story-link"
-                                                                            href={`${jiraUrl}/browse/${task.key}`}
+                                                                            className="alert-epic-link"
+                                                                            href={`${jiraUrl}/browse/${group.key}`}
                                                                             target="_blank"
                                                                             rel="noopener noreferrer"
                                                                         >
-                                                                            {task.key} · {task.fields.summary}
+                                                                            Open epic ↗
                                                                         </a>
-                                                                    </div>
-                                                                    <a
-                                                                        className="alert-action"
-                                                                        href={`${jiraUrl}/browse/${task.key}`}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        >
-                                                                            Add estimate →
-                                                                        </a>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                                                    )}
+                                                                </div>
+                                                                <div className="alert-stories">
+                                                                    {group.tasks.map(task => {
+                                                                        const teamInfo = getTeamInfo(task);
+                                                                        return (
+                                                                            <div key={task.key} className="alert-story">
+                                                                                <span className="alert-pill team">{teamInfo.name}</span>
+                                                                                <div className="alert-story-main">
+                                                                                    <a
+                                                                                        className="alert-story-link"
+                                                                                        href={`${jiraUrl}/browse/${task.key}`}
+                                                                                        target="_blank"
+                                                                                        rel="noopener noreferrer"
+                                                                                    >
+                                                                                        {task.key} · {task.fields.summary}
+                                                                                    </a>
+                                                                                </div>
+                                                                                <a
+                                                                                    className="alert-action"
+                                                                                    href={`${jiraUrl}/browse/${task.key}`}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                >
+                                                                                    Add estimate →
+                                                                                </a>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
                                     {blockedTasks.length > 0 && (
                                         <div className="alert-card blocked">
                                             <div className="alert-card-header">
+                                                <button
+                                                    className="alert-toggle"
+                                                    onClick={() => setShowBlockedAlert(prev => !prev)}
+                                                    title={showBlockedAlert ? 'Collapse blocked panel' : 'Expand blocked panel'}
+                                                >
+                                                    <span className="alert-toggle-icon" aria-hidden="true">
+                                                        <svg className={`alert-toggle-chevron ${showBlockedAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
+                                                            <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                        </svg>
+                                                    </span>
+                                                    <span className="alert-toggle-label">
+                                                        {showBlockedAlert ? 'Hide' : 'Show'}
+                                                    </span>
+                                                </button>
                                                 <div className="alert-title">⛔️ Blocked</div>
                                                 <div className="alert-subtitle">Let’s unblock these fast—call out what’s stuck, who’s needed, and what “done” looks like.</div>
                                                 <span className="alert-chip">{blockedTasks.length} blocked</span>
                                             </div>
-                                            {blockedGroups.map(group => {
-                                                const epicTitle = group.epic?.epicName || group.epic?.summary || group.parentSummary ||
-                                                    (group.key === 'NO_EPIC' ? 'No Epic Linked' : group.key);
-                                                return (
-                                                    <div key={group.key} className="alert-epic">
-                                                        <div className="alert-epic-head">
-                                                            <div className="alert-epic-title">
-                                                                <span className="alert-pill">EPIC</span>
-                                                                <span>{epicTitle}</span>
-                                                            </div>
-                                                            {group.key !== 'NO_EPIC' && (
-                                                                <a
-                                                                    className="alert-epic-link"
-                                                                    href={`${jiraUrl}/browse/${group.key}`}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                >
-                                                                    Open epic ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                        <div className="alert-stories">
-                                                            {group.tasks.map(task => {
-                                                                const teamInfo = getTeamInfo(task);
-                                                                const statusLabel = task.fields.status?.name || 'Blocked';
-                                                                return (
-                                                                    <div key={task.key} className="alert-story">
-                                                                        <span className="alert-pill team">{teamInfo.name}</span>
-                                                                    <div className="alert-story-main">
+                                            {showBlockedAlert && (
+                                                <div className="alert-card-body">
+                                                    {blockedGroups.map(group => {
+                                                        const epicTitle = group.epic?.epicName || group.epic?.summary || group.parentSummary ||
+                                                            (group.key === 'NO_EPIC' ? 'No Epic Linked' : group.key);
+                                                        return (
+                                                            <div key={group.key} className="alert-epic">
+                                                                <div className="alert-epic-head">
+                                                                    <div className="alert-epic-title">
+                                                                        <span className="alert-pill">EPIC</span>
+                                                                        <span>{epicTitle}</span>
+                                                                    </div>
+                                                                    {group.key !== 'NO_EPIC' && (
                                                                         <a
-                                                                            className="alert-story-link"
-                                                                            href={`${jiraUrl}/browse/${task.key}`}
+                                                                            className="alert-epic-link"
+                                                                            href={`${jiraUrl}/browse/${group.key}`}
                                                                             target="_blank"
                                                                             rel="noopener noreferrer"
                                                                         >
-                                                                            {task.key} · {task.fields.summary}
+                                                                            Open epic ↗
                                                                         </a>
-                                                                    </div>
-                                                                    <span className="alert-pill status">{statusLabel}</span>
+                                                                    )}
                                                                 </div>
-                                                            );
-                                                        })}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                                                <div className="alert-stories">
+                                                                    {group.tasks.map(task => {
+                                                                        const teamInfo = getTeamInfo(task);
+                                                                        const statusLabel = task.fields.status?.name || 'Blocked';
+                                                                        return (
+                                                                            <div key={task.key} className="alert-story">
+                                                                                <span className="alert-pill team">{teamInfo.name}</span>
+                                                                                <div className="alert-story-main">
+                                                                                    <a
+                                                                                        className="alert-story-link"
+                                                                                        href={`${jiraUrl}/browse/${task.key}`}
+                                                                                        target="_blank"
+                                                                                        rel="noopener noreferrer"
+                                                                                    >
+                                                                                        {task.key} · {task.fields.summary}
+                                                                                    </a>
+                                                                                </div>
+                                                                                <span className="alert-pill status">{statusLabel}</span>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>

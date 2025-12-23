@@ -36,6 +36,7 @@ JIRA_PRODUCT_PROJECT = os.getenv('JIRA_PRODUCT_PROJECT', 'PRODUCT ROADMAPS')
 JIRA_TECH_PROJECT = os.getenv('JIRA_TECH_PROJECT', 'TECHNICAL ROADMAP')
 SERVER_PORT = int(os.getenv('SERVER_PORT', '5050'))
 LOCAL_TASKS_FILE = os.getenv('LOCAL_TASKS_FILE', 'tasks.test.local.json')
+EPIC_EMPTY_EXCLUDED_STATUSES = [s.strip() for s in os.getenv('EPIC_EMPTY_EXCLUDED_STATUSES', 'Killed,Done,Incomplete').split(',') if s.strip()]
 
 # Cache settings
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
@@ -342,6 +343,89 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
     return epic_details
 
 
+def derive_epic_jql(base_jql: str) -> str:
+    """Attempt to derive an epic query from a story query by swapping Story→Epic."""
+    if not base_jql:
+        base_jql = ''
+
+    jql = base_jql
+    replacements = [
+        ('type = Story', 'type = Epic'),
+        ('type=Story', 'type=Epic'),
+        ('type = "Story"', 'type = "Epic"'),
+        ("type = 'Story'", "type = 'Epic'"),
+        ('issuetype = Story', 'issuetype = Epic'),
+        ('issuetype=Story', 'issuetype=Epic'),
+        ('issuetype = "Story"', 'issuetype = "Epic"'),
+        ("issuetype = 'Story'", "issuetype = 'Epic'"),
+    ]
+    replaced = False
+    for old, new in replacements:
+        if old in jql:
+            jql = jql.replace(old, new)
+            replaced = True
+
+    if not replaced:
+        jql = add_clause_to_jql(jql, 'type = Epic') if jql else 'type = Epic'
+
+    if EPIC_EMPTY_EXCLUDED_STATUSES:
+        quoted = ', '.join(f'"{s}"' for s in EPIC_EMPTY_EXCLUDED_STATUSES)
+        jql = add_clause_to_jql(jql, f'status not in ({quoted})')
+    return jql
+
+
+def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field):
+    """Fetch epics matching the current sprint/team filters so UI can flag epics with 0 stories."""
+    epic_jql = derive_epic_jql(jql)
+    epic_field = epic_name_field or 'customfield_10011'
+
+    fields_list = ['summary', 'status', 'assignee', epic_field]
+    if team_field_id and team_field_id not in fields_list:
+        fields_list.append(team_field_id)
+    if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
+        fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
+
+    payload = {
+        'jql': epic_jql,
+        'startAt': 0,
+        'maxResults': 250,
+        'fields': fields_list
+    }
+    resp = jira_search_request(headers, payload)
+    if resp.status_code != 200:
+        print(f'⚠️ Epic empty-state fetch failed: {resp.status_code}')
+        return []
+
+    data = resp.json() or {}
+    issues = data.get('issues', []) or []
+    epics = []
+    for issue in issues:
+        fields = issue.get('fields', {}) or {}
+
+        raw_team = None
+        if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
+            raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
+        elif team_field_id and fields.get(team_field_id) is not None:
+            raw_team = fields.get(team_field_id)
+
+        team_value = build_team_value(raw_team) if raw_team is not None else None
+        team_name = extract_team_name(raw_team) if raw_team is not None else None
+
+        assignee = fields.get('assignee') or {}
+        status = fields.get('status') or {}
+        epics.append({
+            'key': issue.get('key'),
+            'summary': fields.get('summary'),
+            'status': {'name': status.get('name')} if status else None,
+            'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
+            'epicName': fields.get(epic_field),
+            'team': team_value,
+            'teamName': team_name,
+            'teamId': team_value.get('id') if isinstance(team_value, dict) else None,
+        })
+    return epics
+
+
 def fetch_tasks(include_team_name=False):
     """Fetch tasks from Jira API."""
     try:
@@ -506,6 +590,7 @@ def fetch_tasks(include_team_name=False):
                 epic_keys.add(epic_key)
 
         epic_details = fetch_epic_details_bulk(epic_keys, headers, epic_name_field)
+        epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field)
         slim_issues = []
         for issue in collected_issues:
             fields = issue.get('fields', {})
@@ -534,6 +619,7 @@ def fetch_tasks(include_team_name=False):
 
         data['issues'] = slim_issues
         data['epics'] = epic_details
+        data['epicsInScope'] = epics_in_scope
         data['teamFieldId'] = team_field_id
 
         print(f'✅ Success! Found {len(data.get("issues", []))} issues')

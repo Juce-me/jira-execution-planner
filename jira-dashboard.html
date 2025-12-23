@@ -312,6 +312,10 @@
             border-left-color: #722ed1;
         }
 
+        .alert-card.empty-epic {
+            border-left-color: #fa8c16;
+        }
+
         .alert-card-header {
             display: flex;
             align-items: center;
@@ -1568,11 +1572,13 @@
 
 	        function App() {
 	            const savedPrefsRef = useRef(loadUiPrefs() || {});
-            const [productTasks, setProductTasks] = useState([]);
-            const [techTasks, setTechTasks] = useState([]);
-            const [techLoaded, setTechLoaded] = useState(false);
-            const [loading, setLoading] = useState(false);
-            const [error, setError] = useState('');
+	            const [productTasks, setProductTasks] = useState([]);
+	            const [techTasks, setTechTasks] = useState([]);
+	            const [productEpicsInScope, setProductEpicsInScope] = useState([]);
+	            const [techEpicsInScope, setTechEpicsInScope] = useState([]);
+	            const [techLoaded, setTechLoaded] = useState(false);
+	            const [loading, setLoading] = useState(false);
+	            const [error, setError] = useState('');
             const [showKilled, setShowKilled] = useState(savedPrefsRef.current.showKilled ?? false);
             const [showDone, setShowDone] = useState(savedPrefsRef.current.showDone ?? true);
             const [showTech, setShowTech] = useState(savedPrefsRef.current.showTech ?? true);
@@ -1596,6 +1602,7 @@
 	            const [showMissingAlert, setShowMissingAlert] = useState(savedPrefsRef.current.showMissingAlert ?? true);
 	            const [showBlockedAlert, setShowBlockedAlert] = useState(savedPrefsRef.current.showBlockedAlert ?? true);
 	            const [showNoEpicAlert, setShowNoEpicAlert] = useState(savedPrefsRef.current.showNoEpicAlert ?? true);
+	            const [showEmptyEpicAlert, setShowEmptyEpicAlert] = useState(savedPrefsRef.current.showEmptyEpicAlert ?? true);
 	            const epicOrderRef = useRef({});
 	            const epicOrderCounterRef = useRef(0);
 
@@ -1633,7 +1640,8 @@
 	                    searchQuery,
 	                    showMissingAlert,
 	                    showBlockedAlert,
-	                    showNoEpicAlert
+	                    showNoEpicAlert,
+	                    showEmptyEpicAlert
 	                });
 	            }, [
 	                selectedSprint,
@@ -1647,7 +1655,8 @@
 	                searchQuery,
 	                showMissingAlert,
 	                showBlockedAlert,
-	                showNoEpicAlert
+	                showNoEpicAlert,
+	                showEmptyEpicAlert
 	            ]);
 
             const loadConfig = async () => {
@@ -1662,13 +1671,16 @@
                 }
             };
 
-            useEffect(() => {
-                // Load tasks when sprint changes (team is filtered client-side)
-                if (selectedSprint !== null) {
-                    loadProductTasks();
-                    loadTechTasks();
-                }
-            }, [selectedSprint]);
+	            useEffect(() => {
+	                // Load tasks when sprint changes (team is filtered client-side)
+	                if (selectedSprint !== null) {
+	                    setEpicDetails({});
+	                    setProductEpicsInScope([]);
+	                    setTechEpicsInScope([]);
+	                    loadProductTasks();
+	                    loadTechTasks();
+	                }
+	            }, [selectedSprint]);
 
             useEffect(() => {
                 setTechLoaded(false);
@@ -1754,9 +1766,9 @@
                 return { id: teamId, name: teamName };
             };
 
-            const fetchTasks = async (project) => {
-                setLoading(true);
-                setError('');
+	            const fetchTasks = async (project) => {
+	                setLoading(true);
+	                setError('');
 
                 try {
                     // Add cache busting parameter and sprint parameter
@@ -1796,9 +1808,14 @@
                         return priorityA - priorityB;
                     });
 
-                    setEpicDetails(data.epics || {});
-                    return sortedTasks;
-                } catch (err) {
+	                    setEpicDetails(prev => ({ ...prev, ...(data.epics || {}) }));
+	                    if (project === 'product') {
+	                        setProductEpicsInScope(data.epicsInScope || []);
+	                    } else if (project === 'tech') {
+	                        setTechEpicsInScope(data.epicsInScope || []);
+	                    }
+	                    return sortedTasks;
+	                } catch (err) {
                     const errorMsg = `Failed to load tasks: ${err.message}. Make sure the Python server is running on ${BACKEND_URL}`;
                     setError(errorMsg);
                     console.error('Full error details:', err);
@@ -1819,8 +1836,18 @@
                 setTechLoaded(true);
             };
 
-            const tasks = showTech ? [...productTasks, ...techTasks] : [...productTasks];
-            const capacityTasks = [...productTasks, ...techTasks];
+	            const tasks = showTech ? [...productTasks, ...techTasks] : [...productTasks];
+	            const capacityTasks = [...productTasks, ...techTasks];
+	            const epicsInScope = React.useMemo(() => {
+	                const seen = new Set();
+	                const merged = [...productEpicsInScope, ...techEpicsInScope].filter(epic => {
+	                    if (!epic?.key) return false;
+	                    if (seen.has(epic.key)) return false;
+	                    seen.add(epic.key);
+	                    return true;
+	                });
+	                return merged;
+	            }, [productEpicsInScope, techEpicsInScope]);
             const killedTasks = tasks.filter(t => t.fields.status?.name === 'Killed');
             const doneTasks = tasks.filter(t => t.fields.status?.name === 'Done');
             const techTasksCount = techTasks.length;
@@ -2194,6 +2221,22 @@
                 return !task.fields.epicKey;
             });
 
+            const emptyEpics = epicsInScope
+                .filter(epic => {
+                    const status = normalizeStatus(epic.status?.name);
+                    if (status === 'killed' || status === 'done' || status === 'incomplete') return false;
+                    if (selectedTeam !== 'all' && epic.teamId && epic.teamId !== selectedTeam) return false;
+                    return true;
+                })
+                .filter(epic => {
+                    const hasStory = capacityTasks.some(task => {
+                        if (!task.fields?.epicKey) return false;
+                        if (selectedTeam !== 'all' && getTeamInfo(task).id !== selectedTeam) return false;
+                        return task.fields.epicKey === epic.key;
+                    });
+                    return !hasStory;
+                });
+
             const sortByPriorityThenSummary = (a, b) => {
                 const priorityA = priorityOrder[a.fields.priority?.name] || 999;
                 const priorityB = priorityOrder[b.fields.priority?.name] || 999;
@@ -2220,6 +2263,7 @@
             const missingInfoGroups = buildAlertGroups(missingInfoTasks);
             const blockedGroups = buildAlertGroups(blockedTasks);
             const noEpicTasksSorted = [...noEpicTasks].sort(sortByPriorityThenSummary);
+            const emptyEpicsSorted = [...emptyEpics].sort((a, b) => (a.teamName || '').localeCompare(b.teamName || '') || (a.summary || '').localeCompare(b.summary || ''));
 
 
             useEffect(() => {
@@ -2823,7 +2867,7 @@
                         </div>
                     ) : (
                         <>
-	                            {(missingInfoTasks.length > 0 || blockedTasks.length > 0 || noEpicTasks.length > 0) && (
+	                            {(missingInfoTasks.length > 0 || blockedTasks.length > 0 || noEpicTasks.length > 0 || emptyEpics.length > 0) && (
 	                                <div className="alert-panels">
 	                                    {missingInfoTasks.length > 0 && (
 	                                        <div className="alert-card missing">
@@ -3031,6 +3075,62 @@
 	                                                                </div>
 	                                                            );
 	                                                        })}
+	                                                    </div>
+	                                                </div>
+	                                            )}
+	                                        </div>
+	                                    )}
+
+	                                    {emptyEpics.length > 0 && (
+	                                        <div className="alert-card empty-epic">
+	                                            <div className="alert-card-header">
+	                                                <button
+	                                                    className="alert-toggle"
+	                                                    onClick={() => setShowEmptyEpicAlert(prev => !prev)}
+	                                                    title={showEmptyEpicAlert ? 'Collapse empty epic panel' : 'Expand empty epic panel'}
+	                                                >
+	                                                    <span className="alert-toggle-icon" aria-hidden="true">
+	                                                        <svg className={`alert-toggle-chevron ${showEmptyEpicAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
+	                                                            <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+	                                                        </svg>
+	                                                    </span>
+	                                                    <span className="alert-toggle-label">
+	                                                        {showEmptyEpicAlert ? 'Hide' : 'Show'}
+	                                                    </span>
+	                                                </button>
+	                                                <div className="alert-title">🧺 Empty Epic</div>
+	                                                <div className="alert-subtitle">These epics have zero stories—please review and create at least one story to make them actionable.</div>
+	                                                <span className="alert-chip">{emptyEpics.length} {emptyEpics.length === 1 ? 'epic' : 'epics'}</span>
+	                                            </div>
+	                                            {showEmptyEpicAlert && (
+	                                                <div className="alert-card-body">
+	                                                    <div className="alert-stories">
+	                                                        {emptyEpicsSorted.map(epic => (
+	                                                            <div key={epic.key} className="alert-story">
+	                                                                <span className="alert-pill team">{epic.teamName || 'Unknown Team'}</span>
+	                                                                <div className="alert-story-main">
+	                                                                    <a
+	                                                                        className="alert-story-link"
+	                                                                        href={`${jiraUrl}/browse/${epic.key}`}
+	                                                                        target="_blank"
+	                                                                        rel="noopener noreferrer"
+	                                                                    >
+	                                                                        {epic.key} · {epic.epicName || epic.summary}
+	                                                                    </a>
+	                                                                </div>
+	                                                                {epic.status?.name && (
+	                                                                    <span className="alert-pill status">{epic.status.name}</span>
+	                                                                )}
+	                                                                <a
+	                                                                    className="alert-action"
+	                                                                    href={`${jiraUrl}/browse/${epic.key}`}
+	                                                                    target="_blank"
+	                                                                    rel="noopener noreferrer"
+	                                                                >
+	                                                                    Create story →
+	                                                                </a>
+	                                                            </div>
+	                                                        ))}
 	                                                    </div>
 	                                                </div>
 	                                            )}

@@ -351,6 +351,15 @@
             border-radius: 999px;
             font-size: 0.8rem;
             font-family: 'IBM Plex Mono', monospace;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            cursor: pointer;
+        }
+
+        .alert-chip:hover {
+            background: #2a2a2a;
         }
 
         .alert-toggle {
@@ -2202,6 +2211,18 @@
                 return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['Accepted'] });
             };
 
+            const buildKeyListLink = (keys, { addSprint } = {}) => {
+                if (!jiraUrl) return '';
+                const list = (keys || []).filter(Boolean);
+                if (!list.length) return '';
+                const clauses = [`key in (${list.join(', ')})`];
+                if (addSprint && selectedSprint) {
+                    clauses.push(`Sprint = ${selectedSprint}`);
+                }
+                const jql = encodeURIComponent(clauses.join(' AND '));
+                return `${jiraUrl}/issues/?jql=${jql}`;
+            };
+
             const hasStoryPoints = (task) => {
                 const sp = task.fields.customfield_10004;
                 if (sp === null || sp === undefined || sp === '') {
@@ -2241,23 +2262,24 @@
                 })
                 .filter(epic => typeof epic.totalStories === 'number' && epic.totalStories === 0);
 
-            const doneStoryEpics = epicsInScope
-                .filter(epic => {
-                    const status = normalizeStatus(epic.status?.name);
-                    if (status === 'killed' || status === 'done' || status === 'incomplete') return false;
-                    if (selectedTeam !== 'all' && epic.teamId && epic.teamId !== selectedTeam) return false;
-                    return true;
-                })
-                .filter(epic => {
-                    const epicStories = capacityTasks.filter(task => {
-                        if (!task.fields?.epicKey) return false;
-                        if (task.fields.epicKey !== epic.key) return false;
-                        if (selectedTeam !== 'all' && getTeamInfo(task).id !== selectedTeam) return false;
-                        return true;
-                    });
-                    if (epicStories.length === 0) return false;
-                    return epicStories.every(task => normalizeStatus(task.fields.status?.name) === 'done');
-                });
+	            const doneStoryEpics = epicsInScope
+	                .filter(epic => {
+	                    const status = normalizeStatus(epic.status?.name);
+	                    if (status === 'killed' || status === 'done' || status === 'incomplete') return false;
+	                    if (selectedTeam !== 'all' && epic.teamId && epic.teamId !== selectedTeam) return false;
+	                    return true;
+	                })
+	                .filter(epic => {
+	                    const epicStories = capacityTasks.filter(task => {
+	                        if (!task.fields?.epicKey) return false;
+	                        if (task.fields.epicKey !== epic.key) return false;
+	                        if (selectedTeam !== 'all' && getTeamInfo(task).id !== selectedTeam) return false;
+	                        return true;
+	                    });
+	                    if (epicStories.length === 0) return false;
+	                    if (epicStories.some(task => normalizeStatus(task.fields.status?.name) === 'postponed')) return false;
+	                    return epicStories.every(task => normalizeStatus(task.fields.status?.name) === 'done');
+	                });
 
             const sortByPriorityThenSummary = (a, b) => {
                 const priorityA = priorityOrder[a.fields.priority?.name] || 999;
@@ -2911,10 +2933,16 @@
                                                 </button>
                                                 <div className="alert-title">📄 Missing Story Points</div>
                                                 <div className="alert-subtitle">These stories are wandering point-less—give them a quick estimate so planning can stop guessing.</div>
-                                                <span className="alert-chip">
-                                                    {missingInfoTasks.length} {missingInfoTasks.length === 1 ? 'story' : 'stories'}
-                                                </span>
-                                            </div>
+	                                                <a
+	                                                    className="alert-chip"
+	                                                    href={buildKeyListLink(missingInfoTasks.map(t => t.key), { addSprint: true })}
+	                                                    target="_blank"
+	                                                    rel="noopener noreferrer"
+	                                                    title="Open these stories in Jira"
+	                                                >
+	                                                    {missingInfoTasks.length} {missingInfoTasks.length === 1 ? 'story' : 'stories'}
+	                                                </a>
+	                                            </div>
                                             {showMissingAlert && (
                                                 <div className="alert-card-body">
                                                     {missingInfoGroups.map(group => {
@@ -2993,8 +3021,16 @@
                                                 </button>
                                                 <div className="alert-title">⛔️ Blocked</div>
                                                 <div className="alert-subtitle">Let’s unblock these fast—call out what’s stuck, who’s needed, and what “done” looks like.</div>
-                                                <span className="alert-chip">{blockedTasks.length} blocked</span>
-                                            </div>
+	                                                <a
+	                                                    className="alert-chip"
+	                                                    href={buildKeyListLink(blockedTasks.map(t => t.key), { addSprint: true })}
+	                                                    target="_blank"
+	                                                    rel="noopener noreferrer"
+	                                                    title="Open blocked stories in Jira"
+	                                                >
+	                                                    {blockedTasks.length} blocked
+	                                                </a>
+	                                            </div>
 	                                            {showBlockedAlert && (
 	                                                <div className="alert-card-body">
 	                                                    {blockedGroups.map(group => {
@@ -3067,7 +3103,15 @@
 	                                                </button>
 	                                                <div className="alert-title">🧩 Missing Epic</div>
 	                                                <div className="alert-subtitle">These stories have no parent epic—pick one so they land in the right bucket.</div>
-	                                                <span className="alert-chip">{noEpicTasks.length} {noEpicTasks.length === 1 ? 'story' : 'stories'}</span>
+	                                                <a
+	                                                    className="alert-chip"
+	                                                    href={buildKeyListLink(noEpicTasks.map(t => t.key), { addSprint: true })}
+	                                                    target="_blank"
+	                                                    rel="noopener noreferrer"
+	                                                    title="Open these stories in Jira"
+	                                                >
+	                                                    {noEpicTasks.length} {noEpicTasks.length === 1 ? 'story' : 'stories'}
+	                                                </a>
 	                                            </div>
 		                                            {showNoEpicAlert && (
 		                                                <div className="alert-card-body">
@@ -3125,7 +3169,15 @@
 	                                                </button>
 	                                                <div className="alert-title">🧺 Empty Epic</div>
 	                                                <div className="alert-subtitle">These epics have zero stories—please review and create at least one story to make them actionable.</div>
-	                                                <span className="alert-chip">{emptyEpics.length} {emptyEpics.length === 1 ? 'epic' : 'epics'}</span>
+	                                                <a
+	                                                    className="alert-chip"
+	                                                    href={buildKeyListLink(emptyEpics.map(e => e.key))}
+	                                                    target="_blank"
+	                                                    rel="noopener noreferrer"
+	                                                    title="Open these epics in Jira"
+	                                                >
+	                                                    {emptyEpics.length} {emptyEpics.length === 1 ? 'epic' : 'epics'}
+	                                                </a>
 	                                            </div>
 		                                            {showEmptyEpicAlert && (
 		                                                <div className="alert-card-body">
@@ -3181,7 +3233,15 @@
 	                                                </button>
 	                                                <div className="alert-title">✅ Epic Ready to Close</div>
 	                                                <div className="alert-subtitle">All stories are done, but the epic is still open—time to close the loop.</div>
-	                                                <span className="alert-chip">{doneStoryEpics.length} {doneStoryEpics.length === 1 ? 'epic' : 'epics'}</span>
+	                                                <a
+	                                                    className="alert-chip"
+	                                                    href={buildKeyListLink(doneStoryEpics.map(e => e.key))}
+	                                                    target="_blank"
+	                                                    rel="noopener noreferrer"
+	                                                    title="Open these epics in Jira"
+	                                                >
+	                                                    {doneStoryEpics.length} {doneStoryEpics.length === 1 ? 'epic' : 'epics'}
+	                                                </a>
 	                                            </div>
 	                                            {showDoneEpicAlert && (
 	                                                <div className="alert-card-body">

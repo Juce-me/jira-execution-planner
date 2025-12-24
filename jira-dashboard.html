@@ -1576,23 +1576,23 @@
         }
 
         function saveUiPrefs(prefs) {
-            try {
-                window.localStorage.setItem(UI_PREFS_KEY, JSON.stringify(prefs));
-            } catch (e) {
-                // ignore
-            }
-        }
+	            try {
+	                window.localStorage.setItem(UI_PREFS_KEY, JSON.stringify(prefs));
+	            } catch (e) {
+	                // ignore
+	            }
+	        }
 
-	        function App() {
-	            const savedPrefsRef = useRef(loadUiPrefs() || {});
-	            const [productTasks, setProductTasks] = useState([]);
-	            const [techTasks, setTechTasks] = useState([]);
-	            const [missingPlanningInfoTasks, setMissingPlanningInfoTasks] = useState([]);
-	            const [productEpicsInScope, setProductEpicsInScope] = useState([]);
-	            const [techEpicsInScope, setTechEpicsInScope] = useState([]);
-	            const [techLoaded, setTechLoaded] = useState(false);
-	            const [loading, setLoading] = useState(false);
-	            const [error, setError] = useState('');
+        function App() {
+            const savedPrefsRef = useRef(loadUiPrefs() || {});
+            const [productTasks, setProductTasks] = useState([]);
+            const [techTasks, setTechTasks] = useState([]);
+            const [missingPlanningInfoTasks, setMissingPlanningInfoTasks] = useState([]);
+            const [productEpicsInScope, setProductEpicsInScope] = useState([]);
+            const [techEpicsInScope, setTechEpicsInScope] = useState([]);
+            const [techLoaded, setTechLoaded] = useState(false);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
             const [showKilled, setShowKilled] = useState(savedPrefsRef.current.showKilled ?? false);
             const [showDone, setShowDone] = useState(savedPrefsRef.current.showDone ?? true);
             const [showTech, setShowTech] = useState(savedPrefsRef.current.showTech ?? true);
@@ -1613,14 +1613,12 @@
             const [epicDetails, setEpicDetails] = useState({});
             const [planningOffset, setPlanningOffset] = useState(0);
             const planningPanelRef = useRef(null);
-	            const [showMissingAlert, setShowMissingAlert] = useState(savedPrefsRef.current.showMissingAlert ?? true);
-	            const [showBlockedAlert, setShowBlockedAlert] = useState(savedPrefsRef.current.showBlockedAlert ?? true);
-	            const [showNoEpicAlert, setShowNoEpicAlert] = useState(savedPrefsRef.current.showNoEpicAlert ?? true);
-	            const [showEmptyEpicAlert, setShowEmptyEpicAlert] = useState(savedPrefsRef.current.showEmptyEpicAlert ?? true);
-	            const [showDoneEpicAlert, setShowDoneEpicAlert] = useState(savedPrefsRef.current.showDoneEpicAlert ?? true);
-	            const [showMissingPlanningAlert, setShowMissingPlanningAlert] = useState(savedPrefsRef.current.showMissingPlanningAlert ?? true);
-	            const epicOrderRef = useRef({});
-	            const epicOrderCounterRef = useRef(0);
+            const [showMissingAlert, setShowMissingAlert] = useState(savedPrefsRef.current.showMissingAlert ?? true);
+            const [showBlockedAlert, setShowBlockedAlert] = useState(savedPrefsRef.current.showBlockedAlert ?? true);
+            const [showEmptyEpicAlert, setShowEmptyEpicAlert] = useState(savedPrefsRef.current.showEmptyEpicAlert ?? true);
+            const [showDoneEpicAlert, setShowDoneEpicAlert] = useState(savedPrefsRef.current.showDoneEpicAlert ?? true);
+            const epicOrderRef = useRef({});
+            const epicOrderCounterRef = useRef(0);
 
             useEffect(() => {
                 // Load config and sprints on component mount
@@ -1643,41 +1641,37 @@
                 setCookie('selectedTasks', selectedTasks);
             }, [selectedTasks]);
 
-	            useEffect(() => {
-	                saveUiPrefs({
-	                    selectedSprint,
-	                    selectedTeam,
-	                    showPlanning,
-	                    showTech,
-	                    showProduct,
-	                    showDone,
-	                    showKilled,
-	                    statusFilter,
-	                    searchQuery,
-	                    showMissingAlert,
-	                    showBlockedAlert,
-	                    showNoEpicAlert,
-	                    showEmptyEpicAlert,
-	                    showDoneEpicAlert,
-	                    showMissingPlanningAlert
-	                });
-	            }, [
-	                selectedSprint,
-	                selectedTeam,
-	                showPlanning,
-	                showTech,
-	                showProduct,
-	                showDone,
-	                showKilled,
-	                statusFilter,
-	                searchQuery,
-	                showMissingAlert,
-	                showBlockedAlert,
-	                showNoEpicAlert,
-	                showEmptyEpicAlert,
-	                showDoneEpicAlert,
-	                showMissingPlanningAlert
-	            ]);
+            useEffect(() => {
+                saveUiPrefs({
+                    selectedSprint,
+                    selectedTeam,
+                    showPlanning,
+                    showTech,
+                    showProduct,
+                    showDone,
+                    showKilled,
+                    statusFilter,
+                    searchQuery,
+                    showMissingAlert,
+                    showBlockedAlert,
+                    showEmptyEpicAlert,
+                    showDoneEpicAlert
+                });
+            }, [
+                selectedSprint,
+                selectedTeam,
+                showPlanning,
+                showTech,
+                showProduct,
+                showDone,
+                showKilled,
+                statusFilter,
+                searchQuery,
+                showMissingAlert,
+                showBlockedAlert,
+                showEmptyEpicAlert,
+                showDoneEpicAlert
+            ]);
 
             const loadConfig = async () => {
                 try {
@@ -2255,34 +2249,68 @@
                 return !Number.isNaN(numeric) && numeric > 0;
             };
 
-            const isExcludedStatus = (status) => status === 'killed' || status === 'postponed';
-
-            const missingInfoTasks = visibleTasks.filter(task => {
-                const status = normalizeStatus(task.fields.status?.name);
-                return !isExcludedStatus(status) && !hasStoryPoints(task);
-            });
+            const isExcludedStatus = (status) => status === 'killed' || status === 'postponed' || status === 'done';
 
             const blockedTasks = visibleTasks.filter(task => {
                 const status = normalizeStatus(task.fields.status?.name);
                 if (!status) return false;
-                if (isExcludedStatus(status) || status === 'done') return false;
+                if (isExcludedStatus(status)) return false;
                 return status.includes('blocked');
             });
 
-            const noEpicTasks = visibleTasks.filter(task => {
-                const status = normalizeStatus(task.fields.status?.name);
-                if (!status) return false;
-                if (isExcludedStatus(status) || status === 'done') return false;
-                return !task.fields.epicKey;
-            });
+            const consolidatedMissingStories = React.useMemo(() => {
+                const byKey = new Map();
 
-            const missingPlanningInfoVisible = missingPlanningInfoTasks.filter(task => {
-                const teamInfo = getTeamInfo(task);
-                if (selectedTeam !== 'all' && teamInfo.id !== selectedTeam) return false;
-                const status = normalizeStatus(task.fields.status?.name);
-                if (status === 'postponed' || status === 'killed' || status === 'done') return false;
-                return true;
-            });
+                const shouldIncludeByTeam = (task) => {
+                    if (selectedTeam === 'all') return true;
+                    const teamId = task?.fields?.teamId;
+                    const teamName = task?.fields?.teamName;
+                    if (!teamId && !teamName) {
+                        return true; // can't filter reliably, keep it visible
+                    }
+                    return getTeamInfo(task).id === selectedTeam;
+                };
+
+                const excluded = (task) => {
+                    const status = normalizeStatus(task.fields.status?.name);
+                    return isExcludedStatus(status);
+                };
+
+                // Start with server-provided missing info (covers missing Sprint)
+                (missingPlanningInfoTasks || []).forEach((task) => {
+                    if (!task?.key || excluded(task) || !shouldIncludeByTeam(task)) return;
+                    const missing = new Set(task.fields?.missingFields || []);
+                    if (missing.size === 0) return;
+                    byKey.set(task.key, { task, missing });
+                });
+
+                // Merge client-side checks (covers missing Story Points / Epic / Team)
+                visibleTasks.forEach((task) => {
+                    if (!task?.key || excluded(task) || !shouldIncludeByTeam(task)) return;
+                    const current = byKey.get(task.key) || { task, missing: new Set() };
+
+                    if (!hasStoryPoints(task)) current.missing.add('Story Points');
+                    if (!task.fields?.epicKey) current.missing.add('Epic');
+                    if (!task.fields?.teamId && !task.fields?.teamName) current.missing.add('Team');
+
+                    if (current.missing.size > 0) {
+                        // Prefer the server task object if present (may carry extra fields)
+                        current.task = current.task || task;
+                        byKey.set(task.key, current);
+                    }
+                });
+
+                return [...byKey.values()]
+                    .map(({ task, missing }) => ({ task, missingFields: [...missing] }))
+                    .sort((a, b) => {
+                        const diff = b.missingFields.length - a.missingFields.length;
+                        if (diff !== 0) return diff;
+                        const priorityA = priorityOrder[a.task.fields.priority?.name] || 999;
+                        const priorityB = priorityOrder[b.task.fields.priority?.name] || 999;
+                        if (priorityA !== priorityB) return priorityA - priorityB;
+                        return (a.task.fields.summary || '').localeCompare(b.task.fields.summary || '');
+                    });
+            }, [missingPlanningInfoTasks, visibleTasks, selectedTeam]);
 
             const emptyEpics = epicsInScope
                 .filter(epic => {
@@ -2335,9 +2363,7 @@
                     });
             };
 
-            const missingInfoGroups = buildAlertGroups(missingInfoTasks);
             const blockedGroups = buildAlertGroups(blockedTasks);
-            const noEpicTasksSorted = [...noEpicTasks].sort(sortByPriorityThenSummary);
             const emptyEpicsSorted = [...emptyEpics].sort((a, b) => (a.teamName || '').localeCompare(b.teamName || '') || (a.summary || '').localeCompare(b.summary || ''));
             const doneStoryEpicsSorted = [...doneStoryEpics].sort((a, b) => (a.teamName || '').localeCompare(b.teamName || '') || (a.summary || '').localeCompare(b.summary || ''));
 
@@ -2943,95 +2969,72 @@
                         </div>
                     ) : (
                         <>
-	                            {(missingInfoTasks.length > 0 || blockedTasks.length > 0 || noEpicTasks.length > 0 || missingPlanningInfoVisible.length > 0 || emptyEpics.length > 0 || doneStoryEpics.length > 0) && (
-	                                <div className="alert-panels">
-	                                    {missingInfoTasks.length > 0 && (
-	                                        <div className="alert-card missing">
-                                            <div className="alert-card-header">
-                                                <button
-                                                    className="alert-toggle"
-                                                    onClick={() => setShowMissingAlert(prev => !prev)}
-                                                    title={showMissingAlert ? 'Collapse missing story points panel' : 'Expand missing story points panel'}
-                                                >
-                                                    <span className="alert-toggle-icon" aria-hidden="true">
-                                                        <svg className={`alert-toggle-chevron ${showMissingAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-                                                            <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                        </svg>
-                                                    </span>
-                                                    <span className="alert-toggle-label">
-                                                        {showMissingAlert ? 'Hide' : 'Show'}
-                                                    </span>
-                                                </button>
-                                                <div className="alert-title">📄 Missing Story Points</div>
-                                                <div className="alert-subtitle">These stories are wandering point-less—give them a quick estimate so planning can stop guessing.</div>
-	                                                <a
-	                                                    className="alert-chip"
-	                                                    href={buildKeyListLink(missingInfoTasks.map(t => t.key), { addSprint: true })}
-	                                                    target="_blank"
-	                                                    rel="noopener noreferrer"
-	                                                    title="Open these stories in Jira"
+		                            {(consolidatedMissingStories.length > 0 || blockedTasks.length > 0 || emptyEpics.length > 0 || doneStoryEpics.length > 0) && (
+		                                <div className="alert-panels">
+		                                    {consolidatedMissingStories.length > 0 && (
+		                                        <div className="alert-card missing">
+	                                            <div className="alert-card-header">
+	                                                <button
+	                                                    className="alert-toggle"
+	                                                    onClick={() => setShowMissingAlert(prev => !prev)}
+	                                                    title={showMissingAlert ? 'Collapse missing info panel' : 'Expand missing info panel'}
 	                                                >
-	                                                    {missingInfoTasks.length} {missingInfoTasks.length === 1 ? 'story' : 'stories'}
-	                                                </a>
-	                                            </div>
-                                            {showMissingAlert && (
-                                                <div className="alert-card-body">
-                                                    {missingInfoGroups.map(group => {
-                                                        const epicTitle = group.epic?.summary || group.parentSummary ||
-                                                            (group.key === 'NO_EPIC' ? 'No Epic Linked' : group.key);
-                                                        return (
-                                                            <div key={group.key} className="alert-epic">
-                                                                <div className="alert-epic-head">
-                                                                    <div className="alert-epic-title">
-                                                                        <span className="alert-pill">EPIC</span>
-                                                                        <span>{epicTitle}</span>
-                                                                    </div>
-                                                                    {group.key !== 'NO_EPIC' && (
-                                                                        <a
-                                                                            className="alert-epic-link"
-                                                                            href={`${jiraUrl}/browse/${group.key}`}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                        >
-                                                                            Open epic ↗
-                                                                        </a>
-                                                                    )}
-                                                                </div>
-                                                                <div className="alert-stories">
-                                                                    {group.tasks.map(task => {
-                                                                        const teamInfo = getTeamInfo(task);
-                                                                        return (
-                                                                            <div key={task.key} className="alert-story">
-                                                                                <span className="alert-pill team">{teamInfo.name}</span>
-                                                                                <div className="alert-story-main">
-                                                                                    <a
-                                                                                        className="alert-story-link"
-                                                                                        href={`${jiraUrl}/browse/${task.key}`}
-                                                                                        target="_blank"
-                                                                                        rel="noopener noreferrer"
-                                                                                    >
-                                                                                        {task.key} · {task.fields.summary}
-                                                                                    </a>
-                                                                                </div>
-                                                                                <a
-                                                                                    className="alert-action"
-                                                                                    href={`${jiraUrl}/browse/${task.key}`}
-                                                                                    target="_blank"
-                                                                                    rel="noopener noreferrer"
-                                                                                >
-                                                                                    Add estimate →
-                                                                                </a>
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
+	                                                    <span className="alert-toggle-icon" aria-hidden="true">
+	                                                        <svg className={`alert-toggle-chevron ${showMissingAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
+	                                                            <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+	                                                        </svg>
+	                                                    </span>
+	                                                    <span className="alert-toggle-label">
+	                                                        {showMissingAlert ? 'Hide' : 'Show'}
+	                                                    </span>
+	                                                </button>
+	                                                <div className="alert-title">🧾 Missing Info</div>
+	                                                <div className="alert-subtitle">These stories are missing planning essentials—fill the fields so they can be scheduled and estimated.</div>
+		                                                <a
+		                                                    className="alert-chip"
+		                                                    href={buildKeyListLink(consolidatedMissingStories.map(item => item.task.key))}
+		                                                    target="_blank"
+		                                                    rel="noopener noreferrer"
+		                                                    title="Open these stories in Jira"
+		                                                >
+		                                                    {consolidatedMissingStories.length} {consolidatedMissingStories.length === 1 ? 'story' : 'stories'}
+		                                                </a>
+		                                            </div>
+	                                            {showMissingAlert && (
+	                                                <div className="alert-card-body">
+	                                                    <div className="alert-stories">
+	                                                        {consolidatedMissingStories.map(({ task, missingFields }) => {
+	                                                            const teamInfo = getTeamInfo(task);
+	                                                            return (
+	                                                                <div key={task.key} className="alert-story">
+	                                                                    <span className="alert-pill team">{teamInfo.name}</span>
+	                                                                    <div className="alert-story-main">
+	                                                                        <a
+	                                                                            className="alert-story-link"
+	                                                                            href={`${jiraUrl}/browse/${task.key}`}
+	                                                                            target="_blank"
+	                                                                            rel="noopener noreferrer"
+	                                                                        >
+	                                                                            {task.key} · {task.fields.summary}
+	                                                                        </a>
+	                                                                    </div>
+	                                                                    <span className="alert-pill status">Missing: {missingFields.join(', ')}</span>
+	                                                                    <a
+	                                                                        className="alert-action"
+	                                                                        href={`${jiraUrl}/browse/${task.key}`}
+	                                                                        target="_blank"
+	                                                                        rel="noopener noreferrer"
+	                                                                    >
+	                                                                        Fix fields →
+	                                                                    </a>
+	                                                                </div>
+	                                                            );
+	                                                        })}
+	                                                    </div>
+	                                                </div>
+	                                            )}
+	                                        </div>
+	                                    )}
 
 	                                    {blockedTasks.length > 0 && (
 	                                        <div className="alert-card blocked">
@@ -3114,72 +3117,6 @@
 	                                            )}
 	                                        </div>
 	                                    )}
-
-	                                    {noEpicTasks.length > 0 && (
-	                                        <div className="alert-card no-epic">
-	                                            <div className="alert-card-header">
-	                                                <button
-	                                                    className="alert-toggle"
-	                                                    onClick={() => setShowNoEpicAlert(prev => !prev)}
-	                                                    title={showNoEpicAlert ? 'Collapse missing epic panel' : 'Expand missing epic panel'}
-	                                                >
-	                                                    <span className="alert-toggle-icon" aria-hidden="true">
-	                                                        <svg className={`alert-toggle-chevron ${showNoEpicAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-	                                                            <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-	                                                        </svg>
-	                                                    </span>
-	                                                    <span className="alert-toggle-label">
-	                                                        {showNoEpicAlert ? 'Hide' : 'Show'}
-	                                                    </span>
-	                                                </button>
-	                                                <div className="alert-title">🧩 Missing Epic</div>
-	                                                <div className="alert-subtitle">These stories have no parent epic—pick one so they land in the right bucket.</div>
-	                                                <a
-	                                                    className="alert-chip"
-	                                                    href={buildKeyListLink(noEpicTasks.map(t => t.key), { addSprint: true })}
-	                                                    target="_blank"
-	                                                    rel="noopener noreferrer"
-	                                                    title="Open these stories in Jira"
-	                                                >
-	                                                    {noEpicTasks.length} {noEpicTasks.length === 1 ? 'story' : 'stories'}
-	                                                </a>
-	                                            </div>
-		                                            {showNoEpicAlert && (
-		                                                <div className="alert-card-body">
-		                                                    <div className="alert-stories">
-		                                                        {noEpicTasksSorted.map(task => {
-	                                                            const teamInfo = getTeamInfo(task);
-	                                                            const statusLabel = task.fields.status?.name || 'Unknown';
-	                                                            return (
-	                                                                <div key={task.key} className="alert-story">
-	                                                                    <span className="alert-pill team">{teamInfo.name}</span>
-	                                                                    <div className="alert-story-main">
-	                                                                        <a
-	                                                                            className="alert-story-link"
-	                                                                            href={`${jiraUrl}/browse/${task.key}`}
-	                                                                            target="_blank"
-	                                                                            rel="noopener noreferrer"
-	                                                                        >
-	                                                                            {task.key} · {task.fields.summary}
-	                                                                        </a>
-	                                                                    </div>
-	                                                                    <span className="alert-pill status">{statusLabel}</span>
-	                                                                    <a
-	                                                                        className="alert-action"
-	                                                                        href={`${jiraUrl}/browse/${task.key}`}
-	                                                                        target="_blank"
-	                                                                        rel="noopener noreferrer"
-	                                                                    >
-	                                                                        Choose epic →
-	                                                                    </a>
-	                                                                </div>
-	                                                            );
-		                                                        })}
-		                                                    </div>
-		                                                </div>
-		                                            )}
-		                                        </div>
-		                                    )}
 
 	                                    {emptyEpics.length > 0 && (
 	                                        <div className="alert-card empty-epic">
@@ -3309,73 +3246,6 @@
 	                                        </div>
 	                                    )}
 
-	                                    {missingPlanningInfoVisible.length > 0 && (
-	                                        <div className="alert-card no-epic">
-	                                            <div className="alert-card-header">
-	                                                <button
-	                                                    className="alert-toggle"
-	                                                    onClick={() => setShowMissingPlanningAlert(prev => !prev)}
-	                                                    title="Collapse/expand missing info panel"
-	                                                >
-	                                                    <span className="alert-toggle-icon" aria-hidden="true">
-	                                                        <svg className={`alert-toggle-chevron ${showMissingPlanningAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-	                                                            <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-	                                                        </svg>
-	                                                    </span>
-	                                                    <span className="alert-toggle-label">
-	                                                        {showMissingPlanningAlert ? 'Hide' : 'Show'}
-	                                                    </span>
-	                                                </button>
-	                                                <div className="alert-title">🧾 Missing Planning Info</div>
-	                                                <div className="alert-subtitle">Some stories under planned epics are missing required fields—fill them in so planning doesn’t go blind.</div>
-	                                                <a
-	                                                    className="alert-chip"
-	                                                    href={buildKeyListLink(missingPlanningInfoVisible.map(t => t.key))}
-	                                                    target="_blank"
-	                                                    rel="noopener noreferrer"
-	                                                    title="Open these stories in Jira"
-	                                                >
-	                                                    {missingPlanningInfoVisible.length} {missingPlanningInfoVisible.length === 1 ? 'story' : 'stories'}
-	                                                </a>
-	                                            </div>
-	                                            {showMissingPlanningAlert && (
-	                                                <div className="alert-card-body">
-	                                                    <div className="alert-stories">
-	                                                        {missingPlanningInfoVisible.map(task => {
-	                                                            const teamInfo = getTeamInfo(task);
-	                                                            const missing = task.fields.missingFields || [];
-	                                                            return (
-	                                                                <div key={task.key} className="alert-story">
-	                                                                    <span className="alert-pill team">{teamInfo.name}</span>
-	                                                                    <div className="alert-story-main">
-	                                                                        <a
-	                                                                            className="alert-story-link"
-	                                                                            href={`${jiraUrl}/browse/${task.key}`}
-	                                                                            target="_blank"
-	                                                                            rel="noopener noreferrer"
-	                                                                        >
-	                                                                            {task.key} · {task.fields.summary}
-	                                                                        </a>
-	                                                                    </div>
-	                                                                    {missing.length > 0 && (
-	                                                                        <span className="alert-pill status">Missing: {missing.join(', ')}</span>
-	                                                                    )}
-	                                                                    <a
-	                                                                        className="alert-action"
-	                                                                        href={`${jiraUrl}/browse/${task.key}`}
-	                                                                        target="_blank"
-	                                                                        rel="noopener noreferrer"
-	                                                                    >
-	                                                                        Fix fields →
-	                                                                    </a>
-	                                                                </div>
-	                                                            );
-	                                                        })}
-	                                                    </div>
-	                                                </div>
-	                                            )}
-	                                        </div>
-	                                    )}
 	                                </div>
 	                            )}
 		                            <div className="stats">

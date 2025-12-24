@@ -865,9 +865,9 @@ def get_missing_info():
 
             link_clause = f'"Epic Link" in ({",".join(batch)})'
             parent_clause = f'parent in ({",".join(batch)})'
-            story_jql = f'({link_clause} OR {parent_clause}) AND issuetype = Story AND status != Killed'
-            if scope_clause:
-                story_jql = add_clause_to_jql(story_jql, scope_clause)
+            # Important: do NOT scope stories by component/team here because the whole point is to
+            # find stories missing those fields. We only scope epics, then pull every story under them.
+            story_jql = f'({link_clause} OR {parent_clause}) AND issuetype = Story AND status not in (Killed, Done, Postponed)'
 
             start_at = 0
             while True:

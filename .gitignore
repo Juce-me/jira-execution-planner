@@ -30,6 +30,7 @@ Thumbs.db
 
 # Cache
 sprints_cache.json
+stats_cache.json
 
 # Local artifacts
 avaliablefields.txt
@@ -39,6 +40,12 @@ jira-dashboard.html.har
 # Local test data
 *.test.local.json
 verify.*.json
+
+# Example data
+*example*.json
+*example*.csv
+*example*.tsv
+*example*.xlsx
 
 # Screenshots
 Screenshot *.png

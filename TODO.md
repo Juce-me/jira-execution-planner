@@ -1,7 +1,4 @@
 # Monday TODO
 
-- Sprint planning results panel: write specs and requirements.
-- Use local test data for tests:
-  - `tech.test.local.json`
-  - `product.test.local.json`
+- how to fetch teams data per sprint on capacity and people automatically?
 - Visualize and fetch dependencies between tasks; decide if a new panel is needed.

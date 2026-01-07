@@ -109,6 +109,19 @@
             transition: all 0.2s;
         }
 
+        .header-actions {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: nowrap;
+        }
+
+        .secondary.compact {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.7rem;
+        }
+
         .search-input:focus {
             outline: none;
             border-color: var(--accent);
@@ -120,13 +133,47 @@
             opacity: 0.6;
         }
 
+        .search-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .search-clear {
+            position: absolute;
+            right: 0.35rem;
+            background: transparent;
+            border: none;
+            font-size: 1rem;
+            line-height: 1;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 0.1rem 0.3rem;
+        }
+
+        .search-clear:hover {
+            color: var(--text-primary);
+        }
+
         .sprint-selector {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            margin-top: 1rem;
+            position: relative;
+        }
+
+        .sprint-filters {
             display: flex;
             align-items: center;
             gap: 1rem;
-            margin-top: 1rem;
             flex-wrap: wrap;
-            position: relative;
+        }
+
+        .sprint-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
         }
 
         .sprint-selector label {
@@ -292,6 +339,11 @@
 	            margin: 1.5rem 0 1.75rem;
 	        }
 
+        .alert-panels.collapsed {
+            gap: 0.6rem;
+            margin: 0.85rem 0 1.1rem;
+        }
+
 	        .alert-card {
 	            background: var(--bg-secondary);
 	            border: 1px solid var(--border);
@@ -299,6 +351,18 @@
 	            padding: 1.2rem 1.4rem;
 	            box-shadow: 0 10px 30px var(--shadow);
 	        }
+
+        .alert-card.collapsed {
+            padding: 0.7rem 1rem;
+        }
+
+        .alert-card.collapsed .alert-card-header {
+            margin-bottom: 0;
+        }
+
+        .alert-card.collapsed .alert-subtitle {
+            display: none;
+        }
 
         .alert-card.missing {
             border-left-color: var(--alert-missing);
@@ -990,6 +1054,14 @@
             background: #f0f5ff;
         }
 
+        .stat-card.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+            pointer-events: none;
+        }
+
         .stat-card:nth-child(1) { animation-delay: 0.5s; }
         .stat-card:nth-child(2) { animation-delay: 0.6s; }
         .stat-card:nth-child(3) { animation-delay: 0.7s; }
@@ -1055,7 +1127,7 @@
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            margin-left: auto;
+            margin-left: 0;
         }
 
         .planning-button:hover {
@@ -1100,6 +1172,367 @@
             top: 0.5rem;
             z-index: 4;
             box-shadow: 0 8px 24px rgba(26, 26, 26, 0.08);
+        }
+
+        .stats-panel {
+            background: transparent;
+            border: 1px solid transparent;
+            margin-top: 0.35rem;
+            margin-bottom: 0.35rem;
+            overflow: hidden;
+            max-height: 0;
+            padding: 0;
+            opacity: 0;
+            transition: max-height 0.6s ease, opacity 0.6s ease, padding 0.6s ease, margin 0.6s ease, border-color 0.6s ease, background 0.6s ease;
+        }
+
+        .stats-panel.open {
+            background: var(--bg-secondary);
+            border-color: var(--border);
+            max-height: 2000px;
+            padding: 0.75rem;
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+            opacity: 1;
+            overflow: visible;
+            box-shadow: 0 8px 24px rgba(26, 26, 26, 0.08);
+        }
+
+        .stats-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.6rem;
+            align-items: end;
+            margin-bottom: 0.8rem;
+        }
+
+        .stats-control-group label {
+            display: block;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            margin-bottom: 0.3rem;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        .stats-actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+            gap: 0.35rem;
+        }
+
+        .stats-actions button {
+            width: 100%;
+            min-height: 32px;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.7rem;
+        }
+
+        .stats-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .stats-card {
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: 0.6rem;
+            padding: 0.75rem;
+            box-shadow: 0 8px 18px rgba(29, 29, 29, 0.06);
+        }
+
+        .stats-card h4 {
+            margin: 0 0 0.35rem;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        .stats-card .stat-value {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .stats-note {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-top: 0.4rem;
+        }
+
+        .stats-bars {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+            gap: 0.75rem;
+            align-items: start;
+            margin-bottom: 0.5rem;
+        }
+
+        .stats-bar {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .stats-bar-value {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .stats-bar-track {
+            width: 100%;
+            height: 140px;
+            background: rgba(29, 122, 252, 0.08);
+            border-radius: 0.6rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stats-bar-fill {
+            width: 100%;
+            background: linear-gradient(180deg, #1d7afc, #0bb5ff);
+            border-radius: 0.6rem;
+            position: absolute;
+            left: 0;
+            bottom: 0;
+        }
+
+        .stats-bar-fill.good {
+            background: linear-gradient(180deg, #1d9a6c, #2cb67d);
+        }
+
+        .stats-bar-fill.warn {
+            background: linear-gradient(180deg, #f59e0b, #f06b3b);
+        }
+
+        .stats-bar-fill.bad {
+            background: linear-gradient(180deg, #ef4444, #f87171);
+        }
+
+        .stats-bar-fill.secondary {
+            background: linear-gradient(180deg, #f06b3b, #f59e0b);
+        }
+
+        .stats-bar-fill.tech {
+            background: linear-gradient(180deg, #2cb67d, #1d9a6c);
+        }
+
+        .stats-bar-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-align: center;
+            max-width: 100%;
+            line-height: 1.1;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .stats-category {
+            margin-top: 0.8rem;
+        }
+
+        .stats-category-title {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            margin-bottom: 0.4rem;
+        }
+
+        .stats-view-toggle {
+            display: inline-flex;
+            gap: 0.4rem;
+            margin: 0.6rem 0 0.8rem;
+            flex-wrap: wrap;
+        }
+
+        .stats-view {
+            opacity: 0;
+            transform: translateY(6px);
+            max-height: 0;
+            overflow: hidden;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease, max-height 0.2s ease;
+        }
+
+        .stats-view.open {
+            opacity: 1;
+            transform: translateY(0);
+            max-height: 2400px;
+            pointer-events: auto;
+        }
+
+        .priority-radar {
+            width: 100%;
+            max-width: 620px;
+            height: auto;
+            margin: 0 auto 1rem;
+            display: block;
+        }
+
+        .priority-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem 1rem;
+            justify-content: center;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.9rem;
+        }
+
+        .priority-legend span {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            cursor: pointer;
+        }
+
+        .priority-legend i {
+            width: 10px;
+            height: 10px;
+            border-radius: 3px;
+            display: inline-block;
+        }
+
+        .epic-stat-toggle {
+            margin-left: 0.5rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            padding: 0.25rem 0.45rem;
+            background: #fff;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .epic-stat-toggle.active {
+            background: #111;
+            color: #fff;
+            border-color: #111;
+        }
+
+        .epic-stat-toggle svg {
+            width: 0.75rem;
+            height: 0.75rem;
+        }
+
+        .stats-toggle {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            padding: 0.3rem 0.7rem;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-family: 'IBM Plex Mono', monospace;
+            transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+        }
+
+        .stats-toggle.active {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            border-color: var(--text-primary);
+        }
+
+        .stats-toggle:hover {
+            background: transparent;
+            color: var(--text);
+            border-color: rgba(22, 119, 255, 0.35);
+            transform: none;
+        }
+
+        .stats-card.selectable {
+            cursor: pointer;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+        }
+
+        .stats-card.selectable:hover {
+            border-color: rgba(22, 119, 255, 0.35);
+            transform: translateY(-1px);
+        }
+
+        .stats-card.active {
+            border-color: #111;
+            box-shadow: 0 10px 22px rgba(26, 26, 26, 0.12);
+        }
+
+        @media (min-width: 1200px) {
+            .stats-bars {
+                grid-template-columns: repeat(8, minmax(90px, 1fr));
+            }
+        }
+
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.7rem;
+            font-family: 'IBM Plex Mono', monospace;
+            border-top: 1px solid var(--border);
+            margin-top: 0.6rem;
+        }
+
+        .stats-table th,
+        .stats-table td {
+            padding: 0.35rem 0.5rem;
+            border-bottom: 1px dashed var(--border);
+        }
+
+        .stats-table th {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+        }
+
+        .stats-table th.metric,
+        .stats-table td.metric {
+            text-align: right;
+        }
+
+        .stats-table th.dimension,
+        .stats-table td.dimension {
+            text-align: left;
+        }
+
+        .stats-table .stats-group-row th {
+            border-bottom: 1px solid var(--border);
+            font-size: 0.58rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            text-align: center;
+            padding-top: 0.5rem;
+            padding-bottom: 0.4rem;
+        }
+
+        .stats-col.product {
+            background: #fff7e6;
+        }
+
+        .stats-col.tech {
+            background: #e6f7ff;
+        }
+
+        .stats-col.total {
+            background: #f6ffed;
         }
 
         .capacity-panel {
@@ -1305,6 +1738,19 @@
         }
 
         .postponed-cell:hover .accepted-link {
+            opacity: 1;
+            color: var(--accent);
+        }
+
+        .stats-link {
+            opacity: 0.6;
+            font-size: 0.85em;
+            text-decoration: none;
+            color: inherit;
+            transition: opacity 0.2s ease, color 0.2s ease;
+        }
+
+        .postponed-cell:hover .stats-link {
             opacity: 1;
             color: var(--accent);
         }
@@ -1612,11 +2058,18 @@
                 return getCookie('selectedTasks') || {};
             });
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
+            const [showStats, setShowStats] = useState(savedPrefsRef.current.showStats ?? false);
             const [searchQuery, setSearchQuery] = useState(savedPrefsRef.current.searchQuery ?? '');
             const [selectedTeam, setSelectedTeam] = useState(savedPrefsRef.current.selectedTeam ?? 'all');
             const [epicDetails, setEpicDetails] = useState({});
             const [planningOffset, setPlanningOffset] = useState(0);
             const planningPanelRef = useRef(null);
+            const resolveStatsView = (value) => (value === 'teams' || value === 'priority') ? value : 'teams';
+            const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
+            const [statsView, setStatsView] = useState(resolveStatsView(savedPrefsRef.current.statsView));
+            const [statsGraphMode, setStatsGraphMode] = useState(resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode));
+            const [priorityHoverIndex, setPriorityHoverIndex] = useState(null);
+            const [excludedStatsEpics, setExcludedStatsEpics] = useState(savedPrefsRef.current.excludedStatsEpics ?? []);
             const [showMissingAlert, setShowMissingAlert] = useState(savedPrefsRef.current.showMissingAlert ?? true);
             const [showBlockedAlert, setShowBlockedAlert] = useState(savedPrefsRef.current.showBlockedAlert ?? true);
             const [showEmptyEpicAlert, setShowEmptyEpicAlert] = useState(savedPrefsRef.current.showEmptyEpicAlert ?? true);
@@ -1642,6 +2095,18 @@
             }, [showPlanning]);
 
             useEffect(() => {
+                if (showPlanning) {
+                    setShowStats(false);
+                }
+            }, [showPlanning]);
+
+            useEffect(() => {
+                if (showStats) {
+                    setShowPlanning(false);
+                }
+            }, [showStats]);
+
+            useEffect(() => {
                 // Save selected tasks to cookie whenever they change
                 setCookie('selectedTasks', selectedTasks);
             }, [selectedTasks]);
@@ -1651,12 +2116,16 @@
                     selectedSprint,
                     selectedTeam,
                     showPlanning,
+                    showStats,
                     showTech,
                     showProduct,
                     showDone,
                     showKilled,
                     statusFilter,
                     searchQuery,
+                    statsView,
+                    statsGraphMode,
+                    excludedStatsEpics,
                     showMissingAlert,
                     showBlockedAlert,
                     showEmptyEpicAlert,
@@ -1666,12 +2135,16 @@
                 selectedSprint,
                 selectedTeam,
                 showPlanning,
+                showStats,
                 showTech,
                 showProduct,
                 showDone,
                 showKilled,
                 statusFilter,
                 searchQuery,
+                statsView,
+                statsGraphMode,
+                excludedStatsEpics,
                 showMissingAlert,
                 showBlockedAlert,
                 showEmptyEpicAlert,
@@ -1797,6 +2270,17 @@
                 'Lowest': 5
             };
 
+            const priorityAxis = ['Blocker', 'Critical', 'Major', 'Minor', 'Low', 'Trivial'];
+            const priorityLabelByKey = {
+                blocker: 'Blocker',
+                critical: 'Critical',
+                major: 'Major',
+                minor: 'Minor',
+                low: 'Low',
+                trivial: 'Trivial'
+            };
+            const radarPalette = ['#1d7afc', '#2cb67d', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#ec4899', '#f97316'];
+
             const getTeamInfo = (task) => {
                 const team = task.fields?.team;
                 const teamName = task.fields?.teamName || team?.name || team?.displayName || team?.teamName || 'Unknown Team';
@@ -1912,10 +2396,176 @@
 	                setReadyToCloseTechTasks(data);
 	            };
 
-	            useEffect(() => {
-	                loadReadyToCloseProductTasks();
-	                loadReadyToCloseTechTasks();
-	            }, []);
+            useEffect(() => {
+                loadReadyToCloseProductTasks();
+                loadReadyToCloseTechTasks();
+            }, []);
+
+
+            const formatPercent = (value) => `${(value * 100).toFixed(2)}%`;
+
+            const priorityWeights = {
+                blocker: 0.4,
+                critical: 0.3,
+                major: 0.2,
+                minor: 0.06,
+                low: 0.03,
+                trivial: 0.01
+            };
+
+            const priorityAliases = {
+                highest: 'blocker',
+                high: 'major',
+                medium: 'minor',
+                lowest: 'trivial'
+            };
+
+            const normalizePriority = (name) => {
+                const key = String(name || '').toLowerCase().trim();
+                return priorityAliases[key] || key;
+            };
+
+            const getPriorityLabel = (name) => {
+                const key = normalizePriority(name);
+                return priorityLabelByKey[key] || name;
+            };
+
+            const computePriorityWeighted = (priorities) => {
+                const totals = { done: 0, incomplete: 0, killed: 0 };
+                Object.entries(priorities || {}).forEach(([priorityName, counts]) => {
+                    const normalized = normalizePriority(priorityName);
+                    const weight = priorityWeights[normalized] || 0;
+                    totals.done += weight * (counts.done || 0);
+                    totals.incomplete += weight * (counts.incomplete || 0);
+                    totals.killed += weight * (counts.killed || 0);
+                });
+                return totals;
+            };
+
+            const computeRate = (metrics) => {
+                const done = metrics.done || 0;
+                const incomplete = metrics.incomplete || 0;
+                const denom = done + incomplete;
+                return denom > 0 ? done / denom : 0;
+            };
+
+            const getRateClass = (rate) => {
+                if (rate >= 1) return 'good';
+                if (rate >= 0.6 && rate < 0.8) return 'warn';
+                if (rate < 0.6) return 'bad';
+                return '';
+            };
+
+            const buildRadarPoints = ({ values, radius, center, maxValue, axes }) => {
+                const count = axes.length;
+                return axes.map((axis, index) => {
+                    const value = Math.max(0, values[axis] || 0);
+                    const ratio = maxValue > 0 ? value / maxValue : 0;
+                    const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
+                    const r = ratio * radius;
+                    const x = center + r * Math.cos(angle);
+                    const y = center + r * Math.sin(angle);
+                    return `${x.toFixed(2)},${y.toFixed(2)}`;
+                }).join(' ');
+            };
+
+            const buildLocalStatsFromTasks = (taskList, excludedSet) => {
+                const teams = {};
+                const projectsSummary = {
+                    product: { done: 0, incomplete: 0, killed: 0, priorities: {} },
+                    tech: { done: 0, incomplete: 0, killed: 0, priorities: {} }
+                };
+                const totals = { done: 0, incomplete: 0, killed: 0 };
+
+                const bumpPriority = (target, priorityName, bucket) => {
+                    if (!target.priorities) target.priorities = {};
+                    if (!target.priorities[priorityName]) {
+                        target.priorities[priorityName] = { done: 0, incomplete: 0, killed: 0 };
+                    }
+                    target.priorities[priorityName][bucket] += 1;
+                };
+
+                const bumpPriorityPoints = (target, priorityName, points) => {
+                    if (!target.priorityPoints) target.priorityPoints = {};
+                    if (!target.priorityPoints[priorityName]) {
+                        target.priorityPoints[priorityName] = 0;
+                    }
+                    target.priorityPoints[priorityName] += points;
+                };
+
+                (taskList || []).forEach(task => {
+                    const epicKey = task.fields?.epicKey || 'NO_EPIC';
+                    if (excludedSet?.has(epicKey)) {
+                        return;
+                    }
+                    const status = normalizeStatus(task.fields?.status?.name);
+                    const isKilled = status === 'killed';
+                    const isDone = status === 'done';
+                    const priorityName = task.fields?.priority?.name || 'Unspecified';
+                    const pointsRaw = task.fields?.customfield_10004;
+                    const pointsValue = Number(pointsRaw);
+                    const storyPoints = Number.isFinite(pointsValue) ? pointsValue : 0;
+                    const teamInfo = getTeamInfo(task);
+                    const teamKey = teamInfo.id || teamInfo.name || 'unknown';
+                    const projectBucket = String(task.key || '').startsWith('TECH-') ? 'tech' : 'product';
+
+                    if (!teams[teamKey]) {
+                        teams[teamKey] = {
+                            id: teamInfo.id || teamKey,
+                            name: teamInfo.name || teamKey,
+                            done: 0,
+                            incomplete: 0,
+                            killed: 0,
+                            priorities: {},
+                            priorityPoints: {},
+                            projects: {
+                                product: { done: 0, incomplete: 0, killed: 0, priorities: {} },
+                                tech: { done: 0, incomplete: 0, killed: 0, priorities: {} }
+                            }
+                        };
+                    }
+
+                    const teamEntry = teams[teamKey];
+                    if (isKilled) {
+                        teamEntry.killed += 1;
+                        teamEntry.projects[projectBucket].killed += 1;
+                        projectsSummary[projectBucket].killed += 1;
+                        totals.killed += 1;
+                        bumpPriority(teamEntry, priorityName, 'killed');
+                        bumpPriority(teamEntry.projects[projectBucket], priorityName, 'killed');
+                        bumpPriority(projectsSummary[projectBucket], priorityName, 'killed');
+                        return;
+                    }
+
+                    bumpPriorityPoints(teamEntry, priorityName, storyPoints);
+                    if (isDone) {
+                        teamEntry.done += 1;
+                        teamEntry.projects[projectBucket].done += 1;
+                        projectsSummary[projectBucket].done += 1;
+                        totals.done += 1;
+                        bumpPriority(teamEntry, priorityName, 'done');
+                        bumpPriority(teamEntry.projects[projectBucket], priorityName, 'done');
+                        bumpPriority(projectsSummary[projectBucket], priorityName, 'done');
+                        return;
+                    }
+
+                    teamEntry.incomplete += 1;
+                    teamEntry.projects[projectBucket].incomplete += 1;
+                    projectsSummary[projectBucket].incomplete += 1;
+                    totals.incomplete += 1;
+                    bumpPriority(teamEntry, priorityName, 'incomplete');
+                    bumpPriority(teamEntry.projects[projectBucket], priorityName, 'incomplete');
+                    bumpPriority(projectsSummary[projectBucket], priorityName, 'incomplete');
+                });
+
+                const sortedTeams = Object.values(teams).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                return {
+                    sprint: selectedSprintInfo?.name || '',
+                    totals,
+                    projects: projectsSummary,
+                    teams: sortedTeams
+                };
+            };
 
 	            const tasks = showTech ? [...productTasks, ...techTasks] : [...productTasks];
 	            const capacityTasks = [...productTasks, ...techTasks];
@@ -1948,20 +2598,60 @@
             const teamOptions = ['all', ...new Set(capacityTasks.map(t => getTeamInfo(t).id || 'unknown'))]
                 .map(id => ({ id, name: id === 'all' ? 'All Teams' : getTeamInfo(capacityTasks.find(t => getTeamInfo(t).id === id) || {}).name }))
                 .filter((team, index, arr) => arr.findIndex(t => t.id === team.id) === index);
+            const teamNameById = React.useMemo(() => {
+                const map = new Map();
+                teamOptions.forEach(team => {
+                    if (team.id && team.id !== 'all') {
+                        map.set(team.id, team.name);
+                    }
+                });
+                return map;
+            }, [teamOptions]);
 
-	            const visibleTasks = tasks.filter(task => {
-	                // Filter by search query
-	                if (searchQuery.trim() !== '') {
+            const selectedSprintInfo = React.useMemo(() => {
+                if (!selectedSprint) return null;
+                return (availableSprints || []).find(sprint => String(sprint.id) === String(selectedSprint)) || null;
+            }, [availableSprints, selectedSprint]);
+            const selectedSprintState = (selectedSprintInfo?.state || '').toLowerCase();
+            const isCompletedSprintSelected = selectedSprintState === 'closed';
+            const isFutureSprintSelected = selectedSprintState === 'future';
+
+            const excludedEpicSet = React.useMemo(() => new Set(excludedStatsEpics || []), [excludedStatsEpics]);
+            const localStatsData = React.useMemo(() => {
+                if (!capacityTasks.length) return null;
+                return buildLocalStatsFromTasks(capacityTasks, excludedEpicSet);
+            }, [capacityTasks, selectedSprintInfo?.name, excludedEpicSet]);
+
+            const effectiveStatsData = localStatsData;
+
+            useEffect(() => {
+                if (isCompletedSprintSelected && showPlanning) {
+                    setShowPlanning(false);
+                }
+            }, [isCompletedSprintSelected, showPlanning]);
+
+            useEffect(() => {
+                if (isFutureSprintSelected && showStats) {
+                    setShowStats(false);
+                }
+            }, [isFutureSprintSelected, showStats]);
+
+            const visibleTasks = tasks.filter(task => {
+                // Filter by search query
+                if (searchQuery.trim() !== '') {
 	                    const query = searchQuery.toLowerCase();
 	                    const summary = task.fields.summary?.toLowerCase() || '';
 	                    const key = String(task.key || '').toLowerCase();
 	                    const assignee = task.fields.assignee?.displayName?.toLowerCase() || '';
-	                    const epicAssignee = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.assignee?.displayName?.toLowerCase() || '') : '';
+                    const epicKey = String(task.fields.epicKey || '').toLowerCase();
+                    const epicSummary = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.summary?.toLowerCase() || '') : '';
+                    const epicAssignee = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.assignee?.displayName?.toLowerCase() || '') : '';
 
-	                    if (!summary.includes(query) && !key.includes(query) && !assignee.includes(query) && !epicAssignee.includes(query)) {
-	                        return false;
-	                    }
-	                }
+                    if (!summary.includes(query) && !key.includes(query) && !assignee.includes(query) &&
+                        !epicAssignee.includes(query) && !epicKey.includes(query) && !epicSummary.includes(query)) {
+                        return false;
+                    }
+                }
 
                 // Filter by Team
                 if (selectedTeam !== 'all') {
@@ -2005,6 +2695,160 @@
                 }
 
                 return true;
+            });
+
+            const statsTeams = effectiveStatsData?.teams || [];
+            const allowedStatsTeamIds = React.useMemo(() => {
+                if (selectedTeam && selectedTeam !== 'all') {
+                    return new Set([selectedTeam]);
+                }
+                return null;
+            }, [selectedTeam]);
+
+            const filteredStatsTeams = statsTeams.filter(team => {
+                if (!allowedStatsTeamIds) return true;
+                const id = team.id || team.name || 'unknown';
+                return allowedStatsTeamIds.has(id);
+            });
+
+            const priorityTeamIds = React.useMemo(() => {
+                if (selectedTeam && selectedTeam !== 'all') {
+                    return [selectedTeam];
+                }
+                return teamOptions
+                    .map(team => team.id)
+                    .filter(id => id && id !== 'all');
+            }, [selectedTeam, teamOptions]);
+
+            const getStatsTeamLabel = (team) => {
+                if (!team) return 'Unknown Team';
+                if (selectedTeam && selectedTeam !== 'all' && team.id && teamNameById.has(team.id)) {
+                    return teamNameById.get(team.id);
+                }
+                return team.name || team.id || 'Unknown Team';
+            };
+
+            const priorityRows = React.useMemo(() => {
+                const totals = {};
+                (filteredStatsTeams || []).forEach(team => {
+                    Object.entries(team.priorities || {}).forEach(([priorityName, counts]) => {
+                        const label = getPriorityLabel(priorityName);
+                        if (!totals[label]) {
+                            totals[label] = { done: 0, incomplete: 0, killed: 0 };
+                        }
+                        totals[label].done += counts.done || 0;
+                        totals[label].incomplete += counts.incomplete || 0;
+                        totals[label].killed += counts.killed || 0;
+                    });
+                });
+                return Object.entries(totals)
+                    .map(([name, counts]) => ({
+                        name,
+                        done: counts.done,
+                        incomplete: counts.incomplete,
+                        killed: counts.killed,
+                        rate: computeRate(counts)
+                    }))
+                    .sort((a, b) => {
+                        const orderA = priorityOrder[a.name] || 999;
+                        const orderB = priorityOrder[b.name] || 999;
+                        if (orderA !== orderB) return orderA - orderB;
+                        return String(a.name || '').localeCompare(String(b.name || ''));
+                    });
+            }, [filteredStatsTeams, priorityOrder]);
+
+            const priorityRadar = React.useMemo(() => {
+                const series = (filteredStatsTeams || []).map(team => {
+                    const pointsByPriority = {};
+                    Object.entries(team.priorityPoints || {}).forEach(([priorityName, points]) => {
+                        const label = getPriorityLabel(priorityName);
+                        pointsByPriority[label] = (pointsByPriority[label] || 0) + (points || 0);
+                    });
+                    return {
+                        id: team.id || team.name || 'unknown',
+                        name: getStatsTeamLabel(team),
+                        pointsByPriority
+                    };
+                });
+                const maxValue = Math.max(
+                    1,
+                    ...series.flatMap(item => priorityAxis.map(axis => item.pointsByPriority[axis] || 0))
+                );
+                return { series, maxValue };
+            }, [filteredStatsTeams, getStatsTeamLabel, priorityAxis]);
+
+            const getTeamScopedMetrics = (team, projectKey = 'all') => {
+                if (!team) {
+                    return { done: 0, incomplete: 0, killed: 0, priorities: {} };
+                }
+                if (projectKey === 'all') {
+                    return {
+                        done: team.done || 0,
+                        incomplete: team.incomplete || 0,
+                        killed: team.killed || 0,
+                        priorities: team.priorities || {}
+                    };
+                }
+                const projectScope = team.projects?.[projectKey];
+                return {
+                    done: projectScope?.done || 0,
+                    incomplete: projectScope?.incomplete || 0,
+                    killed: projectScope?.killed || 0,
+                    priorities: projectScope?.priorities || {}
+                };
+            };
+
+            const statsTeamRows = filteredStatsTeams.map(team => {
+                const scoped = getTeamScopedMetrics(team);
+                const scopedProduct = getTeamScopedMetrics(team, 'product');
+                const scopedTech = getTeamScopedMetrics(team, 'tech');
+                const weighted = computePriorityWeighted(scoped.priorities);
+                const weightedProduct = computePriorityWeighted(scopedProduct.priorities);
+                const weightedTech = computePriorityWeighted(scopedTech.priorities);
+                const straightRate = computeRate(scoped);
+                const weightedRate = computeRate(weighted);
+                return {
+                    id: team.id || team.name || 'unknown',
+                    name: getStatsTeamLabel(team),
+                    straight: scoped,
+                    product: scopedProduct,
+                    tech: scopedTech,
+                    weighted,
+                    weightedProduct,
+                    weightedTech,
+                    straightRate,
+                    weightedRate,
+                    priorityPoints: team.priorityPoints || {}
+                };
+            });
+
+            const statsTotals = statsTeamRows.reduce((acc, row) => {
+                acc.straight.done += row.straight.done;
+                acc.straight.incomplete += row.straight.incomplete;
+                acc.straight.killed += row.straight.killed;
+                acc.product.done += row.product.done;
+                acc.product.incomplete += row.product.incomplete;
+                acc.product.killed += row.product.killed;
+                acc.tech.done += row.tech.done;
+                acc.tech.incomplete += row.tech.incomplete;
+                acc.tech.killed += row.tech.killed;
+                acc.weighted.done += row.weighted.done;
+                acc.weighted.incomplete += row.weighted.incomplete;
+                acc.weighted.killed += row.weighted.killed;
+                acc.weightedProduct.done += row.weightedProduct.done;
+                acc.weightedProduct.incomplete += row.weightedProduct.incomplete;
+                acc.weightedProduct.killed += row.weightedProduct.killed;
+                acc.weightedTech.done += row.weightedTech.done;
+                acc.weightedTech.incomplete += row.weightedTech.incomplete;
+                acc.weightedTech.killed += row.weightedTech.killed;
+                return acc;
+            }, {
+                straight: { done: 0, incomplete: 0, killed: 0 },
+                product: { done: 0, incomplete: 0, killed: 0 },
+                tech: { done: 0, incomplete: 0, killed: 0 },
+                weighted: { done: 0, incomplete: 0, killed: 0 },
+                weightedProduct: { done: 0, incomplete: 0, killed: 0 },
+                weightedTech: { done: 0, incomplete: 0, killed: 0 }
             });
 
             const groupTasksByEpic = (taskList) => {
@@ -2243,7 +3087,7 @@
                 return 'metric-value';
             };
 
-            const buildTeamStatusLink = ({ teamId, teamIds, projectName, projectNames, statuses }) => {
+            const buildTeamStatusLink = ({ teamId, teamIds, projectName, projectNames, statuses, excludeStatuses, priorityName }) => {
                 const ids = teamIds || (teamId ? [teamId] : []);
                 if (!jiraUrl || !ids.length) return '';
                 const clauses = [];
@@ -2270,9 +3114,36 @@
                         const quoted = statuses.map(s => `"${s}"`).join(', ');
                         clauses.push(`status in (${quoted})`);
                     }
+                } else if (excludeStatuses && excludeStatuses.length) {
+                    const quoted = excludeStatuses.map(s => `"${s}"`).join(', ');
+                    clauses.push(`status not in (${quoted})`);
+                }
+                if (priorityName) {
+                    clauses.push(`priority = "${priorityName}"`);
                 }
                 const jql = encodeURIComponent(clauses.join(' AND '));
                 return `${jiraUrl}/issues/?jql=${jql}`;
+            };
+
+            const buildStatLink = (value, options) => {
+                const count = Number(value || 0);
+                if (!count) return '';
+                return buildTeamStatusLink(options);
+            };
+
+            const buildPriorityStatusLink = ({ priorityName, statuses, excludeStatuses }) => {
+                return buildTeamStatusLink({
+                    teamIds: priorityTeamIds,
+                    statuses,
+                    excludeStatuses,
+                    priorityName
+                });
+            };
+
+            const buildPriorityStatLink = (value, options) => {
+                const count = Number(value || 0);
+                if (!count) return '';
+                return buildPriorityStatusLink(options);
             };
 
             const buildPostponedLink = ({ teamId, teamIds, projectName, projectNames }) => {
@@ -2457,85 +3328,119 @@
                         <h1>Sprint Tasks</h1>
                         <div className="subtitle">
                             <span>Product & Tech Projects · {sprintName}</span>
-                            <input
-                                type="text"
-                                className="search-input"
-                                placeholder="Search tickets..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                            />
+                            <div className="header-actions">
+                                <button
+                                    className="secondary compact"
+                                    onClick={() => loadSprints(true)}
+                                    disabled={sprintsLoading}
+                                    title="Refresh sprints list from Jira"
+                                >
+                                    {sprintsLoading ? 'Loading...' : 'Refresh Sprints'}
+                                </button>
+                                <button
+                                    className="secondary compact"
+                                    onClick={() => {
+                                        loadProductTasks();
+                                        loadTechTasks();
+                                        loadReadyToCloseProductTasks();
+                                        loadReadyToCloseTechTasks();
+                                    }}
+                                    disabled={loading || selectedSprint === null}
+                                    title="Refresh tasks from Jira"
+                                >
+                                    {loading ? 'Loading...' : 'Refresh Page'}
+                                </button>
+                                <div className="search-wrap">
+                                    <input
+                                        type="text"
+                                        className="search-input"
+                                        placeholder="Search tickets..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                    />
+                                    {searchQuery && (
+                                        <button
+                                            className="search-clear"
+                                            onClick={() => setSearchQuery('')}
+                                            title="Clear search"
+                                            aria-label="Clear search"
+                                        >
+                                            ×
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                         <div className="sprint-selector">
-                            <label>Select Sprint:</label>
-                            <select
-                                value={selectedSprint || ''}
-                                onChange={(e) => {
-                                    const sprintId = parseInt(e.target.value);
-                                    setSelectedSprint(sprintId);
-                                    const sprint = availableSprints.find(s => s.id === sprintId);
-                                    if (sprint) {
-                                        setSprintName(sprint.name);
-                                    }
-                                }}
-                                disabled={sprintsLoading || availableSprints.length === 0}
-                            >
-                                {sprintsLoading ? (
-                                    <option value="">Loading sprints...</option>
-                                ) : availableSprints.length === 0 ? (
-                                    <option value="">No sprints available</option>
-                                ) : (
-                                    availableSprints.map(sprint => (
-                                        <option key={sprint.id} value={sprint.id}>
-                                            {sprint.name} ({sprint.state})
-                                        </option>
-                                    ))
-                                )}
-                            </select>
-                            <label>Select Team:</label>
-                            <select
-                                value={selectedTeam}
-                                onChange={(e) => setSelectedTeam(e.target.value)}
-                                disabled={tasks.length === 0 && loading}
-                            >
-                                {teamOptions.map(team => (
-                                    <option key={team.id} value={team.id}>{team.name}</option>
-                                ))}
-                            </select>
+                            <div className="sprint-filters">
+                                <label>Select Sprint:</label>
+                                <select
+                                    value={selectedSprint || ''}
+                                    onChange={(e) => {
+                                        const sprintId = parseInt(e.target.value);
+                                        setSelectedSprint(sprintId);
+                                        const sprint = availableSprints.find(s => s.id === sprintId);
+                                        if (sprint) {
+                                            setSprintName(sprint.name);
+                                        }
+                                    }}
+                                    disabled={sprintsLoading || availableSprints.length === 0}
+                                >
+                                    {sprintsLoading ? (
+                                        <option value="">Loading sprints...</option>
+                                    ) : availableSprints.length === 0 ? (
+                                        <option value="">No sprints available</option>
+                                    ) : (
+                                        availableSprints.map(sprint => {
+                                            const state = (sprint.state || '').toLowerCase();
+                                            const marker = state === 'closed' ? '[C]' : state === 'active' ? '[A]' : '[F]';
+                                            return (
+                                                <option key={sprint.id} value={sprint.id}>
+                                                    {marker} {sprint.name}
+                                                </option>
+                                            );
+                                        })
+                                    )}
+                                </select>
+                                <label>Select Team:</label>
+                                <select
+                                    value={selectedTeam}
+                                    onChange={(e) => setSelectedTeam(e.target.value)}
+                                    disabled={tasks.length === 0 && loading}
+                                >
+                                    {teamOptions.map(team => (
+                                        <option key={team.id} value={team.id}>{team.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="sprint-actions">
+                                <button
+                                    className={`planning-button ${showPlanning ? 'active' : ''}`}
+                                    onClick={() => setShowPlanning(!showPlanning)}
+                                    disabled={isCompletedSprintSelected}
+                                    title="Toggle sprint planning panel"
+                                >
+                                    Sprint Planning
+                                    <svg viewBox="0 0 12 12" fill="currentColor">
+                                        <path d="M6 9L1 4h10z"/>
+                                    </svg>
+                                </button>
                             <button
-                                className="secondary"
-                                onClick={() => loadSprints(true)}
-                                disabled={sprintsLoading}
-                                title="Refresh sprints list from Jira"
+                                className={`planning-button ${showStats ? 'active' : ''}`}
+                                onClick={() => setShowStats(!showStats)}
+                                title="Toggle sprint statistics"
+                                disabled={isFutureSprintSelected}
                             >
-                                {sprintsLoading ? 'Loading...' : 'Refresh Sprints'}
-                            </button>
-                            <button
-                                className="secondary"
-                                onClick={() => {
-                                    loadProductTasks();
-                                    loadTechTasks();
-                                    loadReadyToCloseProductTasks();
-                                    loadReadyToCloseTechTasks();
-                                }}
-                                disabled={loading || selectedSprint === null}
-                                title="Refresh tasks from Jira"
-                            >
-                                {loading ? 'Loading...' : 'Refresh Page'}
-                            </button>
-                            <button
-                                className={`planning-button ${showPlanning ? 'active' : ''}`}
-                                onClick={() => setShowPlanning(!showPlanning)}
-                                title="Toggle sprint planning panel"
-                            >
-                                Sprint Planning
+                                Statistics
                                 <svg viewBox="0 0 12 12" fill="currentColor">
                                     <path d="M6 9L1 4h10z"/>
                                 </svg>
-                            </button>
+                                </button>
+                            </div>
                         </div>
                     </header>
 
-                    {showPlanning && (
+                    {showPlanning && !isCompletedSprintSelected && (
                         <div className="capacity-panel">
                             <div className="capacity-header">
                                 <div className="capacity-title">Planned Teams Effort (Story Points)</div>
@@ -2928,7 +3833,451 @@
                         </div>
                     )}
 
-	                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning ? 'open' : ''}`}>
+                    <div className={`stats-panel ${showStats ? 'open' : ''}`}>
+                        <div className="stats-controls">
+                            <div className="stats-control-group">
+                                <label>Selected Sprint</label>
+                                <div className="stats-note">
+                                    {selectedSprintInfo?.name || 'Select a sprint'}
+                                </div>
+                            </div>
+                        </div>
+
+                        {showStats && !effectiveStatsData && (
+                            <div className="stats-note">Load stats for the selected sprint.</div>
+                        )}
+
+                        {effectiveStatsData && (
+                            <>
+                                <div className="stats-summary">
+                                    <div
+                                        className={`stats-card selectable ${statsGraphMode === 'absolute' ? 'active' : ''}`}
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={() => setStatsGraphMode('absolute')}
+                                        onKeyDown={(event) => {
+                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                event.preventDefault();
+                                                setStatsGraphMode('absolute');
+                                            }
+                                        }}
+                                        aria-pressed={statsGraphMode === 'absolute'}
+                                    >
+                                        <h4>Delivery Rate</h4>
+                                        <div className="stat-value">
+                                            {formatPercent(computeRate(statsTotals.straight))}
+                                        </div>
+                                        <div className="stats-note">Absolute rate</div>
+                                    </div>
+                                    <div
+                                        className={`stats-card selectable ${statsGraphMode === 'weighted' ? 'active' : ''}`}
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={() => setStatsGraphMode('weighted')}
+                                        onKeyDown={(event) => {
+                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                event.preventDefault();
+                                                setStatsGraphMode('weighted');
+                                            }
+                                        }}
+                                        aria-pressed={statsGraphMode === 'weighted'}
+                                    >
+                                        <h4>Weighted Rate</h4>
+                                        <div className="stat-value">
+                                            {formatPercent(computeRate(statsTotals.weighted))}
+                                        </div>
+                                        <div className="stats-note">Priority-weighted</div>
+                                    </div>
+                                    <div className="stats-card">
+                                        <h4>Totals</h4>
+                                        <div className="stat-value">{statsTotals.straight.done + statsTotals.straight.incomplete + statsTotals.straight.killed}</div>
+                                        <div className="stats-note">
+                                            {statsTotals.straight.done} done · {statsTotals.straight.incomplete} incomplete · {statsTotals.straight.killed} killed
+                                        </div>
+                                    </div>
+                                    <div className="stats-card">
+                                        <h4>Source</h4>
+                                        <div className="stat-value">Sprint tasks</div>
+                                        <div className="stats-note">Derived from the loaded sprint list</div>
+                                    </div>
+                                </div>
+
+                                <div className="stats-view-toggle">
+                                    <button
+                                        className={`stats-toggle ${statsView === 'teams' ? 'active' : ''}`}
+                                        onClick={() => setStatsView('teams')}
+                                    >
+                                        Teams
+                                    </button>
+                                    <button
+                                        className={`stats-toggle ${statsView === 'priority' ? 'active' : ''}`}
+                                        onClick={() => setStatsView('priority')}
+                                    >
+                                        Priority
+                                    </button>
+                                </div>
+
+                                <div className={`stats-view ${statsView === 'teams' ? 'open' : ''}`}>
+                                    <div className="stats-bars">
+                                        {statsTeamRows.map(team => {
+                                            const graphRate = statsGraphMode === 'weighted' ? team.weightedRate : team.straightRate;
+                                            return (
+                                                <div key={team.id} className="stats-bar">
+                                                    <div className="stats-bar-value">{formatPercent(graphRate)}</div>
+                                                    <div className="stats-bar-track">
+                                                        <div
+                                                            className={`stats-bar-fill ${getRateClass(graphRate)}`}
+                                                            style={{ height: `${Math.min(100, graphRate * 100)}%` }}
+                                                        />
+                                                    </div>
+                                                    <div className="stats-bar-label">{team.name}</div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <table className="stats-table">
+                                        <thead>
+                                            <tr className="stats-group-row">
+                                                <th className="dimension"></th>
+                                                <th className="stats-col total" colSpan="4">Total</th>
+                                                <th className="stats-col product" colSpan="4">Product</th>
+                                                <th className="stats-col tech" colSpan="4">Tech</th>
+                                            </tr>
+                                            <tr>
+                                                <th className="dimension">Team</th>
+                                                <th className="metric stats-col total">Done</th>
+                                                <th className="metric stats-col total">Incomplete</th>
+                                                <th className="metric stats-col total">Absolute</th>
+                                                <th className="metric stats-col total">Weighted</th>
+                                                <th className="metric stats-col product">Done</th>
+                                                <th className="metric stats-col product">Incomplete</th>
+                                                <th className="metric stats-col product">Absolute</th>
+                                                <th className="metric stats-col product">Weighted</th>
+                                                <th className="metric stats-col tech">Done</th>
+                                                <th className="metric stats-col tech">Incomplete</th>
+                                                <th className="metric stats-col tech">Absolute</th>
+                                                <th className="metric stats-col tech">Weighted</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {statsTeamRows.map(team => {
+                                                const totalDoneLink = buildStatLink(team.straight.done, {
+                                                    teamId: team.id,
+                                                    projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'],
+                                                    statuses: ['Done']
+                                                });
+                                                const totalIncompleteLink = buildStatLink(team.straight.incomplete, {
+                                                    teamId: team.id,
+                                                    projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'],
+                                                    excludeStatuses: ['Done', 'Killed']
+                                                });
+                                                const productDoneLink = buildStatLink(team.product.done, {
+                                                    teamId: team.id,
+                                                    projectName: 'PRODUCT ROADMAPS',
+                                                    statuses: ['Done']
+                                                });
+                                                const productIncompleteLink = buildStatLink(team.product.incomplete, {
+                                                    teamId: team.id,
+                                                    projectName: 'PRODUCT ROADMAPS',
+                                                    excludeStatuses: ['Done', 'Killed']
+                                                });
+                                                const techDoneLink = buildStatLink(team.tech.done, {
+                                                    teamId: team.id,
+                                                    projectName: 'TECHNICAL ROADMAP',
+                                                    statuses: ['Done']
+                                                });
+                                                const techIncompleteLink = buildStatLink(team.tech.incomplete, {
+                                                    teamId: team.id,
+                                                    projectName: 'TECHNICAL ROADMAP',
+                                                    excludeStatuses: ['Done', 'Killed']
+                                                });
+
+                                                return (
+                                                <tr key={team.id}>
+                                                    <td className="dimension">{team.name}</td>
+                                                    <td className="metric stats-col total">
+                                                        <div className="postponed-cell">
+                                                            <span>{team.straight.done}</span>
+                                                            {totalDoneLink && (
+                                                                <a
+                                                                    className="stats-link"
+                                                                    href={totalDoneLink}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    title="View done stories for this team in Jira"
+                                                                    aria-label="Open done stories in Jira"
+                                                                >
+                                                                    ↗
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="metric stats-col total">
+                                                        <div className="postponed-cell">
+                                                            <span>{team.straight.incomplete}</span>
+                                                            {totalIncompleteLink && (
+                                                                <a
+                                                                    className="stats-link"
+                                                                    href={totalIncompleteLink}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    title="View incomplete stories for this team in Jira"
+                                                                    aria-label="Open incomplete stories in Jira"
+                                                                >
+                                                                    ↗
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="metric stats-col total">{formatPercent(team.straightRate)}</td>
+                                                    <td className="metric stats-col total">{formatPercent(team.weightedRate)}</td>
+                                                    <td className="metric stats-col product">
+                                                        <div className="postponed-cell">
+                                                            <span>{team.product.done}</span>
+                                                            {productDoneLink && (
+                                                                <a
+                                                                    className="stats-link"
+                                                                    href={productDoneLink}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    title="View done product stories for this team in Jira"
+                                                                    aria-label="Open done product stories in Jira"
+                                                                >
+                                                                    ↗
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="metric stats-col product">
+                                                        <div className="postponed-cell">
+                                                            <span>{team.product.incomplete}</span>
+                                                            {productIncompleteLink && (
+                                                                <a
+                                                                    className="stats-link"
+                                                                    href={productIncompleteLink}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    title="View incomplete product stories for this team in Jira"
+                                                                    aria-label="Open incomplete product stories in Jira"
+                                                                >
+                                                                    ↗
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="metric stats-col product">{formatPercent(computeRate(team.product))}</td>
+                                                    <td className="metric stats-col product">{formatPercent(computeRate(team.weightedProduct))}</td>
+                                                    <td className="metric stats-col tech">
+                                                        <div className="postponed-cell">
+                                                            <span>{team.tech.done}</span>
+                                                            {techDoneLink && (
+                                                                <a
+                                                                    className="stats-link"
+                                                                    href={techDoneLink}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    title="View done tech stories for this team in Jira"
+                                                                    aria-label="Open done tech stories in Jira"
+                                                                >
+                                                                    ↗
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="metric stats-col tech">
+                                                        <div className="postponed-cell">
+                                                            <span>{team.tech.incomplete}</span>
+                                                            {techIncompleteLink && (
+                                                                <a
+                                                                    className="stats-link"
+                                                                    href={techIncompleteLink}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    title="View incomplete tech stories for this team in Jira"
+                                                                    aria-label="Open incomplete tech stories in Jira"
+                                                                >
+                                                                    ↗
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="metric stats-col tech">{formatPercent(computeRate(team.tech))}</td>
+                                                    <td className="metric stats-col tech">{formatPercent(computeRate(team.weightedTech))}</td>
+                                                </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div className={`stats-view ${statsView === 'priority' ? 'open' : ''}`}>
+                                    {priorityRadar.series.length > 0 && (
+                                        <>
+                                            <svg className="priority-radar" viewBox="0 0 360 360" role="img" aria-label="Priority distribution radar chart">
+                                                <g transform="translate(180 180)">
+                                                    {[0.25, 0.5, 0.75, 1].map((ratio, index) => (
+                                                        <polygon
+                                                            key={`grid-${index}`}
+                                                            points={buildRadarPoints({
+                                                                values: Object.fromEntries(priorityAxis.map(axis => [axis, ratio * priorityRadar.maxValue])),
+                                                                radius: 120,
+                                                                center: 0,
+                                                                maxValue: priorityRadar.maxValue,
+                                                                axes: priorityAxis
+                                                            })}
+                                                            fill="none"
+                                                            stroke="#d9d9d9"
+                                                            strokeWidth="1"
+                                                        />
+                                                    ))}
+                                                    {priorityAxis.map((axis, index) => {
+                                                        const angle = (Math.PI * 2 * index) / priorityAxis.length - Math.PI / 2;
+                                                        const x = Math.cos(angle) * 120;
+                                                        const y = Math.sin(angle) * 120;
+                                                        return (
+                                                            <line
+                                                                key={`axis-${axis}`}
+                                                                x1="0"
+                                                                y1="0"
+                                                                x2={x}
+                                                                y2={y}
+                                                                stroke="#d9d9d9"
+                                                                strokeWidth="1"
+                                                            />
+                                                        );
+                                                    })}
+                                                    {priorityRadar.series.map((series, idx) => {
+                                                        const color = radarPalette[idx % radarPalette.length];
+                                                        const isActive = priorityHoverIndex === null || priorityHoverIndex === idx;
+                                                        return (
+                                                            <polygon
+                                                                key={series.id}
+                                                                points={buildRadarPoints({
+                                                                    values: series.pointsByPriority,
+                                                                    radius: 120,
+                                                                    center: 0,
+                                                                    maxValue: priorityRadar.maxValue,
+                                                                    axes: priorityAxis
+                                                                })}
+                                                                fill={color}
+                                                                fillOpacity={isActive ? '0.18' : '0.04'}
+                                                                stroke={color}
+                                                                strokeWidth={isActive ? '2.5' : '1.2'}
+                                                                style={{ transition: 'all 0.2s ease', cursor: 'pointer' }}
+                                                                onMouseEnter={() => setPriorityHoverIndex(idx)}
+                                                                onMouseLeave={() => setPriorityHoverIndex(null)}
+                                                            />
+                                                        );
+                                                    })}
+                                                    {priorityAxis.map((axis, index) => {
+                                                        const angle = (Math.PI * 2 * index) / priorityAxis.length - Math.PI / 2;
+                                                        const x = Math.cos(angle) * 150;
+                                                        const y = Math.sin(angle) * 150;
+                                                        return (
+                                                            <text
+                                                                key={`label-${axis}`}
+                                                                x={x}
+                                                                y={y}
+                                                                textAnchor="middle"
+                                                                dominantBaseline="middle"
+                                                                fontSize="10"
+                                                                fill="#555"
+                                                                fontFamily="IBM Plex Mono, monospace"
+                                                            >
+                                                                {axis}
+                                                            </text>
+                                                        );
+                                                    })}
+                                                </g>
+                                            </svg>
+                                            <div className="priority-legend">
+                                                {priorityRadar.series.map((series, idx) => {
+                                                    const color = radarPalette[idx % radarPalette.length];
+                                                    const isActive = priorityHoverIndex === null || priorityHoverIndex === idx;
+                                                    return (
+                                                        <span
+                                                            key={series.id}
+                                                            style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+                                                            onMouseEnter={() => setPriorityHoverIndex(idx)}
+                                                            onMouseLeave={() => setPriorityHoverIndex(null)}
+                                                        >
+                                                            <i style={{ background: color, opacity: isActive ? 0.95 : 0.45 }} />
+                                                            {series.name}
+                                                        </span>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    )}
+                                    <table className="stats-table">
+                                        <thead>
+                                            <tr>
+                                                <th className="dimension">Priority</th>
+                                                <th className="metric">Done</th>
+                                                <th className="metric">Incomplete</th>
+                                                <th className="metric">Rate</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {priorityRows.map(row => {
+                                                const doneLink = buildPriorityStatLink(row.done, {
+                                                    priorityName: row.name,
+                                                    statuses: ['Done']
+                                                });
+                                                const incompleteLink = buildPriorityStatLink(row.incomplete, {
+                                                    priorityName: row.name,
+                                                    excludeStatuses: ['Done', 'Killed']
+                                                });
+
+                                                return (
+                                                    <tr key={row.name}>
+                                                        <td className="dimension">{row.name}</td>
+                                                        <td className="metric">
+                                                            <div className="postponed-cell">
+                                                                <span>{row.done}</span>
+                                                                {doneLink && (
+                                                                    <a
+                                                                        className="stats-link"
+                                                                        href={doneLink}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        title="View done stories for this priority in Jira"
+                                                                        aria-label="Open done stories in Jira"
+                                                                    >
+                                                                        ↗
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="metric">
+                                                            <div className="postponed-cell">
+                                                                <span>{row.incomplete}</span>
+                                                                {incompleteLink && (
+                                                                    <a
+                                                                        className="stats-link"
+                                                                        href={incompleteLink}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        title="View incomplete stories for this priority in Jira"
+                                                                        aria-label="Open incomplete stories in Jira"
+                                                                    >
+                                                                        ↗
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="metric">{formatPercent(row.rate)}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+	                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning && !isCompletedSprintSelected ? 'open' : ''}`}>
 	                        <div className="planning-stats">
 	                            <div className="planning-stat">
 	                                <span className="planning-stat-label">Selected Tasks:</span>
@@ -3031,9 +4380,9 @@
                     ) : (
                         <>
 		                            {(consolidatedMissingStories.length > 0 || blockedTasks.length > 0 || emptyEpics.length > 0 || doneStoryEpics.length > 0) && (
-		                                <div className="alert-panels">
+		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showEmptyEpicAlert && !showDoneEpicAlert) ? 'collapsed' : ''}`}>
 		                                    {consolidatedMissingStories.length > 0 && (
-		                                        <div className="alert-card missing">
+		                                        <div className={`alert-card missing ${showMissingAlert ? '' : 'collapsed'}`}>
 	                                            <div className="alert-card-header">
 	                                                <button
 	                                                    className="alert-toggle"
@@ -3098,7 +4447,7 @@
 	                                    )}
 
 	                                    {blockedTasks.length > 0 && (
-	                                        <div className="alert-card blocked">
+	                                        <div className={`alert-card blocked ${showBlockedAlert ? '' : 'collapsed'}`}>
                                             <div className="alert-card-header">
                                                 <button
                                                     className="alert-toggle"
@@ -3180,7 +4529,7 @@
 	                                    )}
 
 	                                    {emptyEpics.length > 0 && (
-	                                        <div className="alert-card empty-epic">
+		                                        <div className={`alert-card empty-epic ${showEmptyEpicAlert ? '' : 'collapsed'}`}>
 	                                            <div className="alert-card-header">
 	                                                <button
 	                                                    className="alert-toggle"
@@ -3244,7 +4593,7 @@
 		                                    )}
 
 		                                    {doneStoryEpics.length > 0 && (
-		                                        <div className="alert-card done-epic">
+		                                        <div className={`alert-card done-epic ${showDoneEpicAlert ? '' : 'collapsed'}`}>
 	                                            <div className="alert-card-header">
 	                                                <button
 	                                                    className="alert-toggle"
@@ -3309,38 +4658,53 @@
 
 	                                </div>
 	                            )}
-		                            <div className="stats">
+                            <div className="stats">
                                 <div
-                                    className={`stat-card total ${statusFilter === null ? 'active' : ''}`}
-                                    onClick={() => setStatusFilter(null)}
+                                    className={`stat-card total ${statusFilter === null ? 'active' : ''} ${tasks.length === 0 ? 'disabled' : ''}`}
+                                    onClick={() => {
+                                        if (tasks.length === 0) return;
+                                        setStatusFilter(null);
+                                    }}
                                 >
                                     <div className="stat-value">{tasks.length}</div>
                                     <div className="stat-label">Total Tasks</div>
                                 </div>
                                 <div
-                                    className={`stat-card done ${statusFilter === 'done' ? 'active' : ''}`}
-                                    onClick={() => setStatusFilter(statusFilter === 'done' ? null : 'done')}
+                                    className={`stat-card done ${statusFilter === 'done' ? 'active' : ''} ${doneTasksCount === 0 ? 'disabled' : ''}`}
+                                    onClick={() => {
+                                        if (doneTasksCount === 0) return;
+                                        setStatusFilter(statusFilter === 'done' ? null : 'done');
+                                    }}
                                 >
                                     <div className="stat-value">{doneTasksCount}</div>
                                     <div className="stat-label">Done Tasks</div>
                                 </div>
                                 <div
-                                    className={`stat-card high-priority ${statusFilter === 'high-priority' ? 'active' : ''}`}
-                                    onClick={() => setStatusFilter(statusFilter === 'high-priority' ? null : 'high-priority')}
+                                    className={`stat-card high-priority ${statusFilter === 'high-priority' ? 'active' : ''} ${highPriorityCount === 0 ? 'disabled' : ''}`}
+                                    onClick={() => {
+                                        if (highPriorityCount === 0) return;
+                                        setStatusFilter(statusFilter === 'high-priority' ? null : 'high-priority');
+                                    }}
                                 >
                                     <div className="stat-value">{highPriorityCount}</div>
                                     <div className="stat-label">High Priority</div>
                                 </div>
                                 <div
-                                    className={`stat-card in-progress ${statusFilter === 'in-progress' ? 'active' : ''}`}
-                                    onClick={() => setStatusFilter(statusFilter === 'in-progress' ? null : 'in-progress')}
+                                    className={`stat-card in-progress ${statusFilter === 'in-progress' ? 'active' : ''} ${inProgressTasksCount === 0 ? 'disabled' : ''}`}
+                                    onClick={() => {
+                                        if (inProgressTasksCount === 0) return;
+                                        setStatusFilter(statusFilter === 'in-progress' ? null : 'in-progress');
+                                    }}
                                 >
                                     <div className="stat-value">{inProgressTasksCount}</div>
                                     <div className="stat-label">In Progress</div>
                                 </div>
                                 <div
-                                    className={`stat-card todo-accepted ${statusFilter === 'todo-accepted' ? 'active' : ''}`}
-                                    onClick={() => setStatusFilter(statusFilter === 'todo-accepted' ? null : 'todo-accepted')}
+                                    className={`stat-card todo-accepted ${statusFilter === 'todo-accepted' ? 'active' : ''} ${todoAcceptedTasksCount === 0 ? 'disabled' : ''}`}
+                                    onClick={() => {
+                                        if (todoAcceptedTasksCount === 0) return;
+                                        setStatusFilter(statusFilter === 'todo-accepted' ? null : 'todo-accepted');
+                                    }}
                                 >
                                     <div className="stat-value">{todoAcceptedTasksCount}</div>
                                     <div className="stat-label">To Do / Pending / Accepted</div>
@@ -3398,7 +4762,7 @@
                                         return (
                                             <div key={epicGroup.key} className="epic-block">
 	                                                <div className="epic-header">
-	                                                    <div className="epic-title">
+                                                        <div className="epic-title">
 	                                                        <div className="epic-title-row">
                                                             <span className="epic-icon" aria-hidden="true" title="EPIC">
                                                                 <svg viewBox="0 0 24 24" fill="none">
@@ -3421,6 +4785,30 @@
                                                                     <span className="epic-name">{epicTitle}</span>
                                                                     <span className="epic-key">Unassigned</span>
                                                                 </>
+                                                            )}
+                                                            {showStats && (
+                                                                <button
+                                                                    className={`epic-stat-toggle ${excludedEpicSet.has(epicGroup.key) ? '' : 'active'}`}
+                                                                    onClick={() => {
+                                                                        const epicKey = epicGroup.key || 'NO_EPIC';
+                                                                        setExcludedStatsEpics((prev) => {
+                                                                            const set = new Set(prev || []);
+                                                                            if (set.has(epicKey)) {
+                                                                                set.delete(epicKey);
+                                                                            } else {
+                                                                                set.add(epicKey);
+                                                                            }
+                                                                            return Array.from(set);
+                                                                        });
+                                                                    }}
+                                                                    title="Include/exclude epic in sprint stats"
+                                                                >
+                                                                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                                        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+                                                                        <path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                                                    </svg>
+                                                                    {excludedEpicSet.has(epicGroup.key) ? 'Excluded' : 'Included'}
+                                                                </button>
                                                             )}
                                                         </div>
 	                                                    </div>

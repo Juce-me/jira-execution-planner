@@ -44,3 +44,4 @@ verify.*.json
 Screenshot *.png
 *.juce-me
 *.pub
+stats_cache.json

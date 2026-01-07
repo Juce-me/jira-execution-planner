@@ -217,6 +217,107 @@
             cursor: not-allowed;
         }
 
+        .team-dropdown {
+            position: relative;
+            display: inline-block;
+            align-items: center;
+        }
+
+        .team-dropdown-toggle {
+            border: 1px solid var(--border);
+            background: transparent;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            padding: 0.5rem 1rem;
+            width: 220px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.6rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .team-dropdown-toggle span {
+            flex: 1;
+            text-align: left;
+        }
+
+        .team-dropdown-toggle:hover {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border-color: var(--border);
+        }
+
+        .team-dropdown-toggle:focus {
+            outline: none;
+            border-color: var(--border);
+            box-shadow: none;
+        }
+
+        .team-dropdown-toggle svg {
+            width: 0.75rem;
+            height: 0.75rem;
+            transition: transform 0.2s ease;
+        }
+
+        .team-dropdown-toggle.open svg {
+            transform: rotate(180deg);
+        }
+
+        .team-dropdown-panel {
+            position: absolute;
+            top: calc(100% + 0.35rem);
+            left: 0;
+            width: 240px;
+            max-height: 220px;
+            overflow-y: auto;
+            background: #fff;
+            border: 1px solid var(--border);
+            box-shadow: 0 12px 28px rgba(22, 22, 22, 0.12);
+            padding: 0.5rem 0.6rem;
+            z-index: 20;
+            text-align: left;
+            box-sizing: border-box;
+        }
+
+        .sprint-selector .team-dropdown-panel label.team-dropdown-option {
+            display: grid;
+            grid-template-columns: 14px 1fr;
+            align-items: center;
+            column-gap: 0.5rem;
+            padding: 0.25rem 0.2rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.55rem;
+            color: var(--text-primary);
+            text-align: left;
+            text-transform: none;
+            letter-spacing: normal;
+            line-height: 1.2;
+            cursor: pointer;
+            width: 100%;
+            box-sizing: border-box;
+            margin: 0;
+        }
+
+        .sprint-selector .team-dropdown-panel label.team-dropdown-option:hover {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .sprint-selector .team-dropdown-panel label.team-dropdown-option input {
+            margin: 0;
+        }
+
+        .sprint-selector .team-dropdown-panel label.team-dropdown-option span {
+            text-align: left;
+        }
+
+        .team-dropdown-option + .team-dropdown-option {
+            border-top: 1px dashed var(--border);
+        }
+
         .config-panel {
             background: var(--bg-secondary);
             border: 1px solid var(--border);
@@ -1026,7 +1127,7 @@
 
         .stats {
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
+            grid-template-columns: repeat(6, 1fr);
             gap: 1rem;
             margin-bottom: 1.5rem;
         }
@@ -1067,6 +1168,7 @@
         .stat-card:nth-child(3) { animation-delay: 0.7s; }
         .stat-card:nth-child(4) { animation-delay: 0.8s; }
         .stat-card:nth-child(5) { animation-delay: 0.9s; }
+        .stat-card:nth-child(6) { animation-delay: 1s; }
 
         .stat-value {
             font-size: 1.35rem;
@@ -1094,6 +1196,10 @@
 
         .stat-card.high-priority .stat-value {
             color: #d4380d;
+        }
+
+        .stat-card.minor .stat-value {
+            color: #64748b;
         }
 
         .stat-label {
@@ -2072,7 +2178,18 @@
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
             const [showStats, setShowStats] = useState(savedPrefsRef.current.showStats ?? false);
             const [searchQuery, setSearchQuery] = useState(savedPrefsRef.current.searchQuery ?? '');
-            const [selectedTeam, setSelectedTeam] = useState(savedPrefsRef.current.selectedTeam ?? 'all');
+            const normalizeSelectedTeams = (value) => {
+                if (Array.isArray(value)) {
+                    return value.length ? value : ['all'];
+                }
+                if (typeof value === 'string' && value.trim()) {
+                    return [value];
+                }
+                return ['all'];
+            };
+            const [selectedTeams, setSelectedTeams] = useState(
+                normalizeSelectedTeams(savedPrefsRef.current.selectedTeams ?? savedPrefsRef.current.selectedTeam ?? 'all')
+            );
             const [epicDetails, setEpicDetails] = useState({});
             const [planningOffset, setPlanningOffset] = useState(0);
             const planningPanelRef = useRef(null);
@@ -2081,6 +2198,8 @@
             const [statsView, setStatsView] = useState(resolveStatsView(savedPrefsRef.current.statsView));
             const [statsGraphMode, setStatsGraphMode] = useState(resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode));
             const [priorityHoverIndex, setPriorityHoverIndex] = useState(null);
+            const [showTeamDropdown, setShowTeamDropdown] = useState(false);
+            const teamDropdownRef = useRef(null);
             const [excludedStatsEpics, setExcludedStatsEpics] = useState(savedPrefsRef.current.excludedStatsEpics ?? []);
             const [showMissingAlert, setShowMissingAlert] = useState(savedPrefsRef.current.showMissingAlert ?? true);
             const [showBlockedAlert, setShowBlockedAlert] = useState(savedPrefsRef.current.showBlockedAlert ?? true);
@@ -2113,10 +2232,27 @@
             }, [showPlanning]);
 
             useEffect(() => {
+                if (showPlanning && !isCompletedSprintSelected) {
+                    selectPlanningTasksByStatus(['Accepted']);
+                }
+            }, [showPlanning, isCompletedSprintSelected]);
+
+            useEffect(() => {
                 if (showStats) {
                     setShowPlanning(false);
                 }
             }, [showStats]);
+
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (!teamDropdownRef.current) return;
+                    if (!teamDropdownRef.current.contains(event.target)) {
+                        setShowTeamDropdown(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, []);
 
             useEffect(() => {
                 // Save selected tasks to cookie whenever they change
@@ -2126,7 +2262,7 @@
             useEffect(() => {
                 saveUiPrefs({
                     selectedSprint,
-                    selectedTeam,
+                    selectedTeams,
                     showPlanning,
                     showStats,
                     showTech,
@@ -2145,7 +2281,7 @@
                 });
             }, [
                 selectedSprint,
-                selectedTeam,
+                selectedTeams,
                 showPlanning,
                 showStats,
                 showTech,
@@ -2488,6 +2624,7 @@
                     tech: { done: 0, incomplete: 0, killed: 0, priorities: {} }
                 };
                 const totals = { done: 0, incomplete: 0, killed: 0 };
+                const storyPointsTotals = { total: 0, done: 0, incomplete: 0, killed: 0 };
 
                 const bumpPriority = (target, priorityName, bucket) => {
                     if (!target.priorities) target.priorities = {};
@@ -2517,6 +2654,7 @@
                     const pointsRaw = task.fields?.customfield_10004;
                     const pointsValue = Number(pointsRaw);
                     const storyPoints = Number.isFinite(pointsValue) ? pointsValue : 0;
+                    storyPointsTotals.total += storyPoints;
                     const teamInfo = getTeamInfo(task);
                     const teamKey = teamInfo.id || teamInfo.name || 'unknown';
                     const projectBucket = String(task.key || '').startsWith('TECH-') ? 'tech' : 'product';
@@ -2543,6 +2681,7 @@
                         teamEntry.projects[projectBucket].killed += 1;
                         projectsSummary[projectBucket].killed += 1;
                         totals.killed += 1;
+                        storyPointsTotals.killed += storyPoints;
                         bumpPriority(teamEntry, priorityName, 'killed');
                         bumpPriority(teamEntry.projects[projectBucket], priorityName, 'killed');
                         bumpPriority(projectsSummary[projectBucket], priorityName, 'killed');
@@ -2555,6 +2694,7 @@
                         teamEntry.projects[projectBucket].done += 1;
                         projectsSummary[projectBucket].done += 1;
                         totals.done += 1;
+                        storyPointsTotals.done += storyPoints;
                         bumpPriority(teamEntry, priorityName, 'done');
                         bumpPriority(teamEntry.projects[projectBucket], priorityName, 'done');
                         bumpPriority(projectsSummary[projectBucket], priorityName, 'done');
@@ -2565,6 +2705,7 @@
                     teamEntry.projects[projectBucket].incomplete += 1;
                     projectsSummary[projectBucket].incomplete += 1;
                     totals.incomplete += 1;
+                    storyPointsTotals.incomplete += storyPoints;
                     bumpPriority(teamEntry, priorityName, 'incomplete');
                     bumpPriority(teamEntry.projects[projectBucket], priorityName, 'incomplete');
                     bumpPriority(projectsSummary[projectBucket], priorityName, 'incomplete');
@@ -2574,6 +2715,7 @@
                 return {
                     sprint: selectedSprintInfo?.name || '',
                     totals,
+                    storyPoints: storyPointsTotals,
                     projects: projectsSummary,
                     teams: sortedTeams
                 };
@@ -2627,6 +2769,33 @@
             const selectedSprintState = (selectedSprintInfo?.state || '').toLowerCase();
             const isCompletedSprintSelected = selectedSprintState === 'closed';
             const isFutureSprintSelected = selectedSprintState === 'future';
+            const selectedTeamSet = React.useMemo(() => new Set(selectedTeams.filter(id => id !== 'all')), [selectedTeams]);
+            const isAllTeamsSelected = selectedTeams.includes('all') || selectedTeamSet.size === 0;
+
+            const selectedTeamsLabel = React.useMemo(() => {
+                if (isAllTeamsSelected) return 'All Teams';
+                if (selectedTeamSet.size === 1) {
+                    const id = Array.from(selectedTeamSet)[0];
+                    return teamNameById.get(id) || '1 Team';
+                }
+                return `${selectedTeamSet.size} Teams`;
+            }, [isAllTeamsSelected, selectedTeamSet, teamNameById]);
+
+            const toggleTeamSelection = (teamId) => {
+                if (teamId === 'all') {
+                    setSelectedTeams(['all']);
+                    return;
+                }
+                setSelectedTeams((prev) => {
+                    const next = new Set((prev || []).filter(id => id !== 'all'));
+                    if (next.has(teamId)) {
+                        next.delete(teamId);
+                    } else {
+                        next.add(teamId);
+                    }
+                    return next.size ? Array.from(next) : ['all'];
+                });
+            };
 
             const excludedEpicSet = React.useMemo(() => new Set(excludedStatsEpics || []), [excludedStatsEpics]);
             const localStatsData = React.useMemo(() => {
@@ -2666,9 +2835,9 @@
                 }
 
                 // Filter by Team
-                if (selectedTeam !== 'all') {
+                if (!isAllTeamsSelected) {
                     const teamInfo = getTeamInfo(task);
-                    if (teamInfo.id !== selectedTeam) {
+                    if (!selectedTeamSet.has(teamInfo.id)) {
                         return false;
                     }
                 }
@@ -2704,6 +2873,10 @@
                     const priority = task.fields.priority?.name;
                     return priority === 'Blocker' || priority === 'Highest' ||
                            priority === 'Critical' || priority === 'High';
+                } else if (statusFilter === 'minor-priority') {
+                    const priority = task.fields.priority?.name;
+                    return priority === 'Minor' || priority === 'Low' ||
+                           priority === 'Trivial' || priority === 'Lowest';
                 }
 
                 return true;
@@ -2711,11 +2884,11 @@
 
             const statsTeams = effectiveStatsData?.teams || [];
             const allowedStatsTeamIds = React.useMemo(() => {
-                if (selectedTeam && selectedTeam !== 'all') {
-                    return new Set([selectedTeam]);
+                if (!isAllTeamsSelected) {
+                    return new Set(Array.from(selectedTeamSet));
                 }
                 return null;
-            }, [selectedTeam]);
+            }, [isAllTeamsSelected, selectedTeamSet]);
 
             const filteredStatsTeams = statsTeams.filter(team => {
                 if (!allowedStatsTeamIds) return true;
@@ -2724,17 +2897,17 @@
             });
 
             const priorityTeamIds = React.useMemo(() => {
-                if (selectedTeam && selectedTeam !== 'all') {
-                    return [selectedTeam];
+                if (!isAllTeamsSelected) {
+                    return Array.from(selectedTeamSet);
                 }
                 return teamOptions
                     .map(team => team.id)
                     .filter(id => id && id !== 'all');
-            }, [selectedTeam, teamOptions]);
+            }, [isAllTeamsSelected, selectedTeamSet, teamOptions]);
 
             const getStatsTeamLabel = (team) => {
                 if (!team) return 'Unknown Team';
-                if (selectedTeam && selectedTeam !== 'all' && team.id && teamNameById.has(team.id)) {
+                if (!isAllTeamsSelected && team.id && teamNameById.has(team.id)) {
                     return teamNameById.get(team.id);
                 }
                 return team.name || team.id || 'Unknown Team';
@@ -2868,6 +3041,7 @@
                 weightedProduct: { done: 0, incomplete: 0, killed: 0 },
                 weightedTech: { done: 0, incomplete: 0, killed: 0 }
             });
+            const statsStoryPointsTotal = effectiveStatsData?.storyPoints?.total || 0;
 
             const groupTasksByEpic = (taskList) => {
                 const grouped = {};
@@ -2907,6 +3081,12 @@
                        priority === 'Critical' || priority === 'High';
             }).length;
 
+            const minorPriorityCount = tasks.filter(t => {
+                const priority = t.fields.priority?.name;
+                return priority === 'Minor' || priority === 'Low' ||
+                       priority === 'Trivial' || priority === 'Lowest';
+            }).length;
+
             const doneTasksCount = tasks.filter(t =>
                 t.fields.status?.name === 'Done'
             ).length;
@@ -2919,6 +3099,29 @@
                 const status = t.fields.status?.name;
                 return status === 'To Do' || status === 'Pending' || status === 'Accepted';
             }).length;
+
+            const sumStoryPoints = (taskList) => taskList.reduce((sum, task) => {
+                const sp = parseFloat(task.fields.customfield_10004 || 0);
+                return sum + (Number.isNaN(sp) ? 0 : sp);
+            }, 0);
+
+            const totalStoryPoints = sumStoryPoints(tasks);
+            const doneStoryPoints = sumStoryPoints(tasks.filter(t => t.fields.status?.name === 'Done'));
+            const highPriorityStoryPoints = sumStoryPoints(tasks.filter(t => {
+                const priority = t.fields.priority?.name;
+                return priority === 'Blocker' || priority === 'Highest' ||
+                       priority === 'Critical' || priority === 'High';
+            }));
+            const minorPriorityStoryPoints = sumStoryPoints(tasks.filter(t => {
+                const priority = t.fields.priority?.name;
+                return priority === 'Minor' || priority === 'Low' ||
+                       priority === 'Trivial' || priority === 'Lowest';
+            }));
+            const inProgressStoryPoints = sumStoryPoints(tasks.filter(t => t.fields.status?.name === 'In Progress'));
+            const todoAcceptedStoryPoints = sumStoryPoints(tasks.filter(t => {
+                const status = t.fields.status?.name;
+                return status === 'To Do' || status === 'Pending' || status === 'Accepted';
+            }));
 
             const removeTask = (taskKey) => {
                 setProductTasks(prev => prev.filter(t => t.key !== taskKey));
@@ -3053,12 +3256,12 @@
                 }))
                 .sort((a, b) => a.name.localeCompare(b.name));
 
-            const displayedTeamCapacityEntries = selectedTeam !== 'all'
-                ? teamCapacityEntries.filter(entry => entry.id === selectedTeam)
+            const displayedTeamCapacityEntries = !isAllTeamsSelected
+                ? teamCapacityEntries.filter(entry => selectedTeamSet.has(entry.id))
                 : teamCapacityEntries;
 
-            const capacityTeamIds = selectedTeam !== 'all'
-                ? [selectedTeam]
+            const capacityTeamIds = !isAllTeamsSelected
+                ? Array.from(selectedTeamSet)
                 : teamCapacityEntries.map(entry => entry.id);
 
             const selectedTeamEntries = displayedTeamCapacityEntries.map((team) => ({
@@ -3214,13 +3417,13 @@
                 const byKey = new Map();
 
                 const shouldIncludeByTeam = (task) => {
-                    if (selectedTeam === 'all') return true;
+                    if (isAllTeamsSelected) return true;
                     const teamId = task?.fields?.teamId;
                     const teamName = task?.fields?.teamName;
                     if (!teamId && !teamName) {
                         return true; // can't filter reliably, keep it visible
                     }
-                    return getTeamInfo(task).id === selectedTeam;
+                    return selectedTeamSet.has(getTeamInfo(task).id);
                 };
 
                 const excluded = (task) => {
@@ -3262,13 +3465,13 @@
                         if (priorityA !== priorityB) return priorityA - priorityB;
                         return (a.task.fields.summary || '').localeCompare(b.task.fields.summary || '');
                     });
-            }, [missingPlanningInfoTasks, visibleTasks, selectedTeam]);
+            }, [missingPlanningInfoTasks, visibleTasks, isAllTeamsSelected, selectedTeamSet]);
 
             const emptyEpics = epicsInScope
                 .filter(epic => {
                     const status = normalizeStatus(epic.status?.name);
                     if (status === 'killed' || status === 'done' || status === 'incomplete' || status === 'in progress') return false;
-                    if (selectedTeam !== 'all' && epic.teamId && epic.teamId !== selectedTeam) return false;
+                    if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
                     return true;
                 })
                 .filter(epic => typeof epic.totalStories === 'number' && epic.totalStories === 0);
@@ -3278,14 +3481,14 @@
 	                .filter(epic => {
 	                    const status = normalizeStatus(epic.status?.name);
 	                    if (status === 'killed' || status === 'done' || status === 'incomplete') return false;
-	                    if (selectedTeam !== 'all' && epic.teamId && epic.teamId !== selectedTeam) return false;
+	                    if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
 	                    return true;
 	                })
 	                .filter(epic => {
 	                    const epicStories = readyToCloseTasks.filter(task => {
 	                        if (!task.fields?.epicKey) return false;
 	                        if (task.fields.epicKey !== epic.key) return false;
-	                        if (selectedTeam !== 'all' && getTeamInfo(task).id !== selectedTeam) return false;
+	                        if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return false;
 	                        return true;
 	                    });
 	                    if (epicStories.length === 0) return false;
@@ -3425,15 +3628,33 @@
                                     )}
                                 </select>
                                 <label>Select Team:</label>
-                                <select
-                                    value={selectedTeam}
-                                    onChange={(e) => setSelectedTeam(e.target.value)}
-                                    disabled={tasks.length === 0 && loading}
-                                >
-                                    {teamOptions.map(team => (
-                                        <option key={team.id} value={team.id}>{team.name}</option>
-                                    ))}
-                                </select>
+                                <div className="team-dropdown" ref={teamDropdownRef}>
+                                    <button
+                                        type="button"
+                                        className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''}`}
+                                        onClick={() => setShowTeamDropdown(!showTeamDropdown)}
+                                        disabled={tasks.length === 0 && loading}
+                                    >
+                                        <span>{selectedTeamsLabel}</span>
+                                        <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                                            <path d="M6 9L1 4h10z"/>
+                                        </svg>
+                                    </button>
+                                    {showTeamDropdown && (
+                                        <div className="team-dropdown-panel">
+                                            {teamOptions.map(team => (
+                                                <label key={team.id} className="team-dropdown-option">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={team.id === 'all' ? isAllTeamsSelected : selectedTeamSet.has(team.id)}
+                                                        onChange={() => toggleTeamSelection(team.id)}
+                                                    />
+                                                    <span>{team.name}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                             <div className="sprint-actions">
                                 <button
@@ -4390,7 +4611,7 @@
 	                                </button>
 	                            </div>
 	                        </div>
-	                        {selectedTeam === 'all' && (
+                        {isAllTeamsSelected && (
 	                            <>
 	                                <div className="planning-stats compact" style={{ marginTop: '0.4rem' }}>
 	                                    <div className="planning-stat">
@@ -4732,6 +4953,7 @@
                                 >
                                     <div className="stat-value">{tasks.length}</div>
                                     <div className="stat-label">Total Tasks</div>
+                                    <div className="stats-note">{totalStoryPoints.toFixed(1)} SP</div>
                                 </div>
                                 <div
                                     className={`stat-card done ${statusFilter === 'done' ? 'active' : ''} ${doneTasksCount === 0 ? 'disabled' : ''}`}
@@ -4742,6 +4964,7 @@
                                 >
                                     <div className="stat-value">{doneTasksCount}</div>
                                     <div className="stat-label">Done Tasks</div>
+                                    <div className="stats-note">{doneStoryPoints.toFixed(1)} SP</div>
                                 </div>
                                 <div
                                     className={`stat-card high-priority ${statusFilter === 'high-priority' ? 'active' : ''} ${highPriorityCount === 0 ? 'disabled' : ''}`}
@@ -4752,6 +4975,18 @@
                                 >
                                     <div className="stat-value">{highPriorityCount}</div>
                                     <div className="stat-label">High Priority</div>
+                                    <div className="stats-note">{highPriorityStoryPoints.toFixed(1)} SP</div>
+                                </div>
+                                <div
+                                    className={`stat-card minor ${statusFilter === 'minor-priority' ? 'active' : ''} ${minorPriorityCount === 0 ? 'disabled' : ''}`}
+                                    onClick={() => {
+                                        if (minorPriorityCount === 0) return;
+                                        setStatusFilter(statusFilter === 'minor-priority' ? null : 'minor-priority');
+                                    }}
+                                >
+                                    <div className="stat-value">{minorPriorityCount}</div>
+                                    <div className="stat-label">Minor + Lower</div>
+                                    <div className="stats-note">{minorPriorityStoryPoints.toFixed(1)} SP</div>
                                 </div>
                                 <div
                                     className={`stat-card in-progress ${statusFilter === 'in-progress' ? 'active' : ''} ${inProgressTasksCount === 0 ? 'disabled' : ''}`}
@@ -4762,6 +4997,7 @@
                                 >
                                     <div className="stat-value">{inProgressTasksCount}</div>
                                     <div className="stat-label">In Progress</div>
+                                    <div className="stats-note">{inProgressStoryPoints.toFixed(1)} SP</div>
                                 </div>
                                 <div
                                     className={`stat-card todo-accepted ${statusFilter === 'todo-accepted' ? 'active' : ''} ${todoAcceptedTasksCount === 0 ? 'disabled' : ''}`}
@@ -4772,6 +5008,7 @@
                                 >
                                     <div className="stat-value">{todoAcceptedTasksCount}</div>
                                     <div className="stat-label">To Do / Pending / Accepted</div>
+                                    <div className="stats-note">{todoAcceptedStoryPoints.toFixed(1)} SP</div>
                                 </div>
                             </div>
 

@@ -8,6 +8,7 @@ import base64
 import os
 import re
 import json
+import hashlib
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from openpyxl import Workbook
@@ -38,11 +39,18 @@ JIRA_TECH_PROJECT = os.getenv('JIRA_TECH_PROJECT', 'TECHNICAL ROADMAP')
 SERVER_PORT = int(os.getenv('SERVER_PORT', '5050'))
 EPIC_EMPTY_EXCLUDED_STATUSES = [s.strip() for s in os.getenv('EPIC_EMPTY_EXCLUDED_STATUSES', 'Killed,Done,Incomplete').split(',') if s.strip()]
 EPIC_EMPTY_TEAM_IDS = [s.strip() for s in os.getenv('EPIC_EMPTY_TEAM_IDS', '').split(',') if s.strip()]
-MISSING_INFO_COMPONENT = os.getenv('MISSING_INFO_COMPONENT', 'ATS - Bidswitch')
+MISSING_INFO_COMPONENT = os.getenv('MISSING_INFO_COMPONENT', '').strip()
 MISSING_INFO_TEAM_IDS = [s.strip() for s in os.getenv('MISSING_INFO_TEAM_IDS', '').split(',') if s.strip()]
+STATS_JQL_BASE = os.getenv('STATS_JQL_BASE', '').strip()
+STATS_JQL_ORDER_BY = os.getenv('STATS_JQL_ORDER_BY', 'ORDER BY cf[30101] ASC, status ASC').strip()
+STATS_PRODUCT_PROJECTS = [s.strip() for s in os.getenv('STATS_PRODUCT_PROJECTS', JIRA_PRODUCT_PROJECT).split(',') if s.strip()]
+STATS_TECH_PROJECTS = [s.strip() for s in os.getenv('STATS_TECH_PROJECTS', JIRA_TECH_PROJECT).split(',') if s.strip()]
+STATS_EXAMPLE_FILE = os.getenv('STATS_EXAMPLE_FILE', '2025q3.example.json').strip()
+STATS_TEAM_IDS = [s.strip() for s in os.getenv('STATS_TEAM_IDS', '').split(',') if s.strip()]
 
 # Cache settings
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
+STATS_CACHE_FILE = 'stats_cache.json'
 CACHE_EXPIRY_HOURS = 24
 
 def parse_args():
@@ -145,6 +153,21 @@ def extract_team_name(value):
     return str(value)
 
 
+def extract_team_ids(value):
+    """Extract Team[Team] ids from Jira Team field values."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        ids = []
+        for item in value:
+            ids.extend(extract_team_ids(item))
+        return [team_id for team_id in ids if team_id]
+    if isinstance(value, dict):
+        team_id = value.get('id') or value.get('teamId')
+        return [team_id] if team_id else []
+    return []
+
+
 def normalize_team_value(value):
     """Normalize Team field values to human-readable names."""
     if isinstance(value, list):
@@ -234,6 +257,83 @@ def is_cache_valid():
         return False
 
 
+def load_stats_cache():
+    """Load stats cache from disk."""
+    try:
+        if os.path.exists(STATS_CACHE_FILE):
+            with open(STATS_CACHE_FILE, 'r') as f:
+                return json.load(f)
+        return {}
+    except Exception as e:
+        print(f'⚠️ Failed to load stats cache: {e}')
+        return {}
+
+
+def save_stats_cache(cache_data):
+    """Persist stats cache to disk."""
+    try:
+        with open(STATS_CACHE_FILE, 'w') as f:
+            json.dump(cache_data, f, indent=2)
+        return True
+    except Exception as e:
+        print(f'⚠️ Failed to save stats cache: {e}')
+        return False
+
+
+def build_stats_cache_key(sprint_name, base_jql, team_ids):
+    raw = f"{sprint_name}::{base_jql}::{','.join(team_ids or [])}::{STATS_JQL_ORDER_BY}"
+    digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
+    return f"sprint:{sprint_name}:{digest}"
+
+
+def strip_sprint_clause(jql):
+    """Remove Sprint clause if the base query already includes it."""
+    if not jql:
+        return jql
+    jql = re.sub(r'\s+AND\s+Sprint\s+in\s+\([^)]+\)', '', jql, flags=re.IGNORECASE)
+    return re.sub(r'\s+AND\s+Sprint\s*=\s*[^ ]+', '', jql, flags=re.IGNORECASE)
+
+
+def extract_team_ids_from_jql(jql):
+    """Extract Team[Team] ids from a JQL clause if present."""
+    if not jql:
+        return []
+    match_in = re.search(r'"Team\[Team\]"\s+in\s*\(([^)]+)\)', jql, flags=re.IGNORECASE)
+    if match_in:
+        raw = match_in.group(1)
+        parts = [p.strip() for p in raw.split(',')]
+        ids = []
+        for part in parts:
+            part = part.strip().strip('"').strip("'")
+            if part:
+                ids.append(part)
+        return ids
+    match_eq = re.search(r'"Team\[Team\]"\s*=\s*("?)([^")\s]+)\1', jql, flags=re.IGNORECASE)
+    if match_eq:
+        return [match_eq.group(2)]
+    return []
+
+
+def get_stats_team_ids():
+    """Resolve stats team IDs from env or JQL configuration."""
+    if STATS_TEAM_IDS:
+        return STATS_TEAM_IDS
+    base_jql = STATS_JQL_BASE or JQL_QUERY
+    return extract_team_ids_from_jql(base_jql)
+
+
+def classify_project(project_name):
+    """Classify projects into product/tech buckets based on config."""
+    if not project_name:
+        return 'other'
+    normalized = str(project_name).strip().lower()
+    if any(normalized == p.lower() for p in STATS_PRODUCT_PROJECTS):
+        return 'product'
+    if any(normalized == p.lower() for p in STATS_TECH_PROJECTS):
+        return 'tech'
+    return 'other'
+
+
 def fetch_sprints_from_jira():
     """Fetch sprints from Jira (not from cache)"""
     auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
@@ -255,7 +355,7 @@ def fetch_sprints_from_jira():
             response = requests.get(
                 f'{JIRA_URL}/rest/agile/1.0/board/{JIRA_BOARD_ID}/sprint',
                 headers=headers,
-                params={'maxResults': 100},
+                params={'maxResults': 100, 'state': 'active,future,closed'},
                 timeout=30
             )
 
@@ -285,24 +385,24 @@ def fetch_sprints_from_jira():
         print(f'\n📅 Fetching sprints from issues (alternative method)...')
 
         # Build JQL query without sprint filter to get all issues
-        base_jql = JQL_QUERY
+        base_jql = STATS_JQL_BASE or JQL_QUERY
         # Remove any existing sprint filters from the query
-        base_jql = re.sub(r'\s+AND\s+Sprint\s*=\s*\d+', '', base_jql, flags=re.IGNORECASE)
+        base_jql = strip_sprint_clause(base_jql)
 
-        payload = {
-            'jql': base_jql,
-            'maxResults': 200,  # Reduced from 1000 for better performance
-            'fields': ['customfield_10101']  # Only get sprint field
-        }
+        def collect_sprints_by_jql(jql_query, sprints_dict):
+            payload = {
+                'jql': jql_query,
+                'maxResults': 200,  # Reduced from 1000 for better performance
+                'fields': ['customfield_10101']  # Only get sprint field
+            }
 
-        response = jira_search_request(headers, payload)
+            response = jira_search_request(headers, payload)
+            if response.status_code != 200:
+                return 0
 
-        if response.status_code == 200:
             data = response.json()
             issues = data.get('issues', [])
 
-            # Extract unique sprints from issues
-            sprints_dict = {}
             for issue in issues:
                 sprint_field = issue.get('fields', {}).get('customfield_10101', [])
                 if sprint_field and isinstance(sprint_field, list):
@@ -312,18 +412,21 @@ def fetch_sprints_from_jira():
                             sprint_id = sprint.get('id')
                             state = sprint.get('state', '')
 
-                            # Check if sprint name matches quarter pattern
                             if re.match(r'^\d{4}Q[1-4]$', name) and sprint_id:
                                 sprints_dict[sprint_id] = {
                                     'id': sprint_id,
                                     'name': name,
                                     'state': state
                                 }
+            return len(issues)
 
-            formatted_sprints = list(sprints_dict.values())
-            print(f'✅ Found {len(formatted_sprints)} unique sprints from {len(issues)} issues')
-        else:
-            raise Exception(f'Jira API error: {response.status_code}')
+        sprints_dict = {}
+        issues_count = collect_sprints_by_jql(base_jql, sprints_dict)
+        closed_jql = add_clause_to_jql(base_jql, 'Sprint in closedSprints()')
+        issues_count += collect_sprints_by_jql(closed_jql, sprints_dict)
+
+        formatted_sprints = list(sprints_dict.values())
+        print(f'✅ Found {len(formatted_sprints)} unique sprints from {issues_count} issues')
 
     # Sort sprints by name (will sort chronologically)
     formatted_sprints.sort(key=lambda x: x['name'])
@@ -765,6 +868,207 @@ def fetch_tasks(include_team_name=False):
         return error_response, 500
 
 
+def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):
+    """Fetch stories for a sprint and aggregate delivery stats by team/project."""
+    base_jql = STATS_JQL_BASE or f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")'
+    base_jql = strip_sprint_clause(base_jql)
+    stats_team_ids = team_ids or get_stats_team_ids()
+    if stats_team_ids and not re.search(r'"Team\[Team\]"\s+in\s*\(', base_jql, flags=re.IGNORECASE) and \
+            not re.search(r'"Team\[Team\]"\s*=\s*', base_jql, flags=re.IGNORECASE):
+        if len(stats_team_ids) == 1:
+            base_jql = add_clause_to_jql(base_jql, f'"Team[Team]" = "{stats_team_ids[0]}"')
+        else:
+            quoted = ', '.join(f'"{team_id}"' for team_id in stats_team_ids)
+            base_jql = add_clause_to_jql(base_jql, f'"Team[Team]" in ({quoted})')
+    jql = add_clause_to_jql(base_jql, f'Sprint in ("{sprint_name}")')
+    if STATS_JQL_ORDER_BY and not re.search(r'order\s+by', jql, flags=re.IGNORECASE):
+        jql = f"{jql} {STATS_JQL_ORDER_BY}"
+
+    fields_list = [
+        'status',
+        'project',
+        'priority',
+        'customfield_10004'  # Story Points
+    ]
+    if team_field_id and team_field_id not in fields_list:
+        fields_list.append(team_field_id)
+    if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
+        fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
+
+    page_size = 250
+    start_at = 0
+    collected_issues = []
+    total_issues = None
+
+    while True:
+        payload = {
+            'jql': jql,
+            'startAt': start_at,
+            'maxResults': page_size,
+            'fields': fields_list
+        }
+
+        response = jira_search_request(headers, payload)
+        if response.status_code != 200:
+            return None, response
+
+        data = response.json()
+        total_issues = data.get('total', total_issues)
+        issues = data.get('issues', [])
+        if not issues:
+            break
+
+        collected_issues.extend(issues)
+        if len(issues) < payload['maxResults']:
+            break
+        start_at += len(issues)
+        if total_issues is not None and start_at >= total_issues:
+            break
+
+    def normalize_status(value):
+        return (value or '').strip().lower()
+
+    def parse_points(value):
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except Exception:
+            return 0.0
+
+    teams = {}
+    projects_summary = {}
+    totals = {
+        'done': 0,
+        'incomplete': 0,
+        'killed': 0,
+        'donePoints': 0.0,
+        'incompletePoints': 0.0
+    }
+
+    for issue in collected_issues:
+        fields = issue.get('fields', {}) or {}
+        status_name = (fields.get('status') or {}).get('name', '')
+        status_value = normalize_status(status_name)
+        is_done = status_value == 'done'
+        is_killed = status_value == 'killed'
+        priority_name = (fields.get('priority') or {}).get('name', '') or 'Unspecified'
+
+        points = parse_points(fields.get('customfield_10004'))
+        project_name = (fields.get('project') or {}).get('name')
+        project_key = (fields.get('project') or {}).get('key')
+        project_label = project_name or project_key or 'Unknown Project'
+        project_bucket = classify_project(project_label)
+
+        raw_team = None
+        if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
+            raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
+        elif team_field_id and fields.get(team_field_id) is not None:
+            raw_team = fields.get(team_field_id)
+        team_ids = extract_team_ids(raw_team)
+        if stats_team_ids:
+            if not team_ids:
+                continue
+            if not any(team_id in stats_team_ids for team_id in team_ids):
+                continue
+
+        team_payload = build_team_value(raw_team) if raw_team is not None else {}
+        team_id = None
+        team_name = None
+        if isinstance(team_payload, dict):
+            team_id = team_payload.get('id') or (team_ids[0] if team_ids else None)
+            team_name = team_payload.get('name')
+        if not team_name:
+            team_name = extract_team_name(raw_team)
+
+        team_key = team_id or team_name or 'unknown'
+        if team_key not in teams:
+            teams[team_key] = {
+                'id': team_id,
+                'name': team_name or 'Unknown Team',
+                'done': 0,
+                'incomplete': 0,
+                'killed': 0,
+                'donePoints': 0.0,
+                'incompletePoints': 0.0,
+                'projects': {},
+                'priorities': {}
+            }
+
+        team_entry = teams[team_key]
+        if priority_name not in team_entry['priorities']:
+            team_entry['priorities'][priority_name] = {'done': 0, 'incomplete': 0, 'killed': 0}
+        if project_bucket not in team_entry['projects']:
+            team_entry['projects'][project_bucket] = {
+                'done': 0,
+                'incomplete': 0,
+                'killed': 0,
+                'donePoints': 0.0,
+                'incompletePoints': 0.0,
+                'priorities': {}
+            }
+
+        if project_bucket not in projects_summary:
+            projects_summary[project_bucket] = {
+                'done': 0,
+                'incomplete': 0,
+                'killed': 0,
+                'donePoints': 0.0,
+                'incompletePoints': 0.0
+            }
+
+        if is_killed:
+            team_entry['killed'] += 1
+            team_entry['priorities'][priority_name]['killed'] += 1
+            if priority_name not in team_entry['projects'][project_bucket]['priorities']:
+                team_entry['projects'][project_bucket]['priorities'][priority_name] = {'done': 0, 'incomplete': 0, 'killed': 0}
+            team_entry['projects'][project_bucket]['priorities'][priority_name]['killed'] += 1
+            team_entry['projects'][project_bucket]['killed'] += 1
+            projects_summary[project_bucket]['killed'] += 1
+            totals['killed'] += 1
+            continue
+
+        if is_done:
+            team_entry['done'] += 1
+            team_entry['donePoints'] += points
+            team_entry['priorities'][priority_name]['done'] += 1
+            if priority_name not in team_entry['projects'][project_bucket]['priorities']:
+                team_entry['projects'][project_bucket]['priorities'][priority_name] = {'done': 0, 'incomplete': 0, 'killed': 0}
+            team_entry['projects'][project_bucket]['priorities'][priority_name]['done'] += 1
+            team_entry['projects'][project_bucket]['done'] += 1
+            team_entry['projects'][project_bucket]['donePoints'] += points
+            projects_summary[project_bucket]['done'] += 1
+            projects_summary[project_bucket]['donePoints'] += points
+            totals['done'] += 1
+            totals['donePoints'] += points
+        else:
+            team_entry['incomplete'] += 1
+            team_entry['incompletePoints'] += points
+            team_entry['priorities'][priority_name]['incomplete'] += 1
+            if priority_name not in team_entry['projects'][project_bucket]['priorities']:
+                team_entry['projects'][project_bucket]['priorities'][priority_name] = {'done': 0, 'incomplete': 0, 'killed': 0}
+            team_entry['projects'][project_bucket]['priorities'][priority_name]['incomplete'] += 1
+            team_entry['projects'][project_bucket]['incomplete'] += 1
+            team_entry['projects'][project_bucket]['incompletePoints'] += points
+            projects_summary[project_bucket]['incomplete'] += 1
+            projects_summary[project_bucket]['incompletePoints'] += points
+            totals['incomplete'] += 1
+            totals['incompletePoints'] += points
+
+    sorted_teams = sorted(
+        teams.values(),
+        key=lambda t: (t['name'] or '').lower()
+    )
+
+    stats_payload = {
+        'sprint': sprint_name,
+        'totals': totals,
+        'projects': projects_summary,
+        'teams': sorted_teams
+    }
+    return stats_payload, None
+
+
 def build_missing_info_scope_clause(team_ids, component_name):
     clauses = []
     component_name = (component_name or '').strip()
@@ -987,6 +1291,81 @@ def get_tasks():
 def get_tasks_with_team_name():
     """Fetch tasks with team name derived from Jira Team field."""
     return fetch_tasks(include_team_name=True)
+
+
+@app.route('/api/stats', methods=['GET'])
+def get_completed_sprint_stats():
+    """Fetch cached delivery stats for a completed sprint."""
+    sprint_name = request.args.get('sprint', '').strip()
+    team_id = request.args.get('team', '').strip()
+    team_ids_raw = request.args.get('teamIds', '').strip()
+    refresh = request.args.get('refresh', '').lower() == 'true'
+
+    if not sprint_name:
+        return jsonify({'error': 'Missing sprint name'}), 400
+
+    base_jql = STATS_JQL_BASE or JQL_QUERY
+    team_ids = []
+    if team_ids_raw:
+        team_ids = [t.strip() for t in team_ids_raw.split(',') if t.strip()]
+    elif team_id:
+        team_ids = [team_id]
+    else:
+        team_ids = get_stats_team_ids()
+    cache_key = build_stats_cache_key(sprint_name, base_jql, team_ids)
+    cache_data = load_stats_cache()
+    if not refresh and cache_key in cache_data:
+        cached_payload = cache_data.get(cache_key, {})
+        response = {
+            'cached': True,
+            'generatedAt': cached_payload.get('generatedAt'),
+            'data': cached_payload.get('data')
+        }
+        return jsonify(response)
+
+    auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+    auth_bytes = auth_string.encode('ascii')
+    auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+
+    headers = {
+        'Authorization': f'Basic {auth_base64}',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+    }
+
+    team_field_id = resolve_team_field_id(headers)
+    stats_payload, error_response = fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=team_ids or None)
+    if error_response is not None:
+        return jsonify({
+            'error': 'Failed to fetch stats',
+            'details': error_response.text
+        }), error_response.status_code
+
+    generated_at = datetime.now().isoformat()
+    cache_data[cache_key] = {
+        'generatedAt': generated_at,
+        'data': stats_payload
+    }
+    save_stats_cache(cache_data)
+
+    return jsonify({
+        'cached': False,
+        'generatedAt': generated_at,
+        'data': stats_payload
+    })
+
+
+@app.route('/api/stats-example', methods=['GET'])
+def get_stats_example():
+    """Serve example stats payload if available."""
+    if not STATS_EXAMPLE_FILE or not os.path.exists(STATS_EXAMPLE_FILE):
+        return jsonify({'error': 'Stats example file not found'}), 404
+    try:
+        with open(STATS_EXAMPLE_FILE, 'r') as f:
+            payload = json.load(f)
+        return jsonify(payload)
+    except Exception as e:
+        return jsonify({'error': 'Failed to load stats example', 'details': str(e)}), 500
 
 
 @app.route('/api/boards', methods=['GET'])
@@ -1379,6 +1758,8 @@ if __name__ == '__main__':
     print('\n📋 Endpoints:')
     print(f'   • http://localhost:{SERVER_PORT}/api/tasks - Get sprint tasks')
     print(f'   • http://localhost:{SERVER_PORT}/api/tasks-with-team-name - Get sprint tasks with team names')
+    print(f'   • http://localhost:{SERVER_PORT}/api/stats?sprint=2025Q3 - Get completed sprint stats (cached)')
+    print(f'   • http://localhost:{SERVER_PORT}/api/stats-example - Get example completed sprint stats')
     print(f'   • http://localhost:{SERVER_PORT}/api/sprints - Get available sprints (cached)')
     print(f'   • http://localhost:{SERVER_PORT}/api/sprints?refresh=true - Force refresh sprints cache')
     print(f'   • http://localhost:{SERVER_PORT}/api/boards - Get all boards (to find board ID)')

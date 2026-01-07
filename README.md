@@ -17,6 +17,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Epic grouping** - Stories grouped under their epic with assignee and story-point totals
 - ✅ **Planning rollups** - Selected story points summarized per team, project, and overall
 - ✅ **Alerts** - Panels for Missing Story Points, Blocked, Missing Epic, Empty Epic, and “Epic Ready to Close” (rules: `ALERT_RULES.md`, ready-to-close uses all-time data)
+- ✅ **Sprint statistics** - Teams/Priority views with product/tech split, derived from loaded sprint tasks (with epic include/exclude toggle)
 
 ## 📋 Files
 
@@ -103,6 +104,9 @@ JIRA_BOARD_ID=
 
 # Optional: Team custom field id (e.g. customfield_12345) if Team values are missing
 JIRA_TEAM_FIELD_ID=
+
+# Optional: priority weights for stats (done/incomplete)
+STATS_PRIORITY_WEIGHTS=Blocker:0.40,Critical:0.30,Major:0.20,Minor:0.06,Low:0.03,Trivial:0.01
 ```
 
 **How to get Jira API token:**
@@ -178,6 +182,7 @@ Open `jira-dashboard.html` in your browser. Tasks will load automatically!
    - Click stat cards to filter by status
    - Refresh buttons for tasks and sprints
    - Ready-to-close alert uses all-time story data (no sprint filter)
+   - Statistics panel for active/closed sprints (derived from loaded sprint tasks)
 
 ## 🎯 Sprint Selection
 
@@ -189,7 +194,26 @@ The dashboard supports dynamic sprint selection:
 4. **Refresh button**: Manually update sprint list from Jira
 5. **Two fetch methods**:
    - Fast: Via Board API (requires `JIRA_BOARD_ID` in .env)
-   - Fallback: Via Issues API (works without board ID)
+   - Fallback: Via Issues API (uses `STATS_JQL_BASE` if set, otherwise `JQL_QUERY`)
+
+## 📊 Sprint Statistics
+
+The Statistics panel focuses on active or completed (closed) quarter sprints:
+
+- Uses the same loaded sprint tasks as the list below (no separate stats fetch).
+- Stats are available for active and completed sprints; future sprints disable the panel.
+- Teams view shows product/tech split and delivery rates by team.
+- Priority view aggregates Done vs Incomplete by priority (no team dimension).
+- Incomplete = any status except `Done` or `Killed` (killed is excluded from rate calculations).
+- Epic include/exclude toggle appears under each epic while Stats is open (selection persists locally).
+
+Priority weights used for weighted delivery:
+- Blocker 0.40
+- Critical 0.30
+- Major 0.20
+- Minor 0.06
+- Low 0.03
+- Trivial 0.01
 
 ## 🔒 Security Notes
 
@@ -262,13 +286,14 @@ JQL_QUERY=project = PROJECT1 AND assignee = currentUser() ORDER BY priority DESC
 JQL_QUERY=project = PROJECT1 AND created >= -30d ORDER BY priority DESC
 ```
 
-**Note**: Don't include `Sprint = ID` in your JQL - the app adds it automatically based on dropdown selection (ready-to-close ignores sprint filtering).
+**Note**: Don't include `Sprint = ID` in your JQL - the app adds it automatically based on dropdown selection (ready-to-close ignores sprint filtering). Statistics use the same loaded sprint tasks.
 
 ## 🔄 Updating data
 
 - **Tasks**: Click "Refresh Page" in the header (also refreshes ready-to-close data)
 - **Sprints**: Click "Refresh Sprints" button next to sprint dropdown
 - **Auto-reload**: Tasks reload automatically when you change sprint selection
+- **Stats**: Open Statistics panel; results update automatically as tasks load or epics are included/excluded
 
 ## 📦 Project Structure
 
@@ -282,7 +307,8 @@ jira-dashboard/
 ├── install.sh             # Installation script
 ├── README.md              # This file
 ├── .env                   # Your credentials (NOT in git!)
-└── sprints_cache.json     # Sprint cache (auto-generated, NOT in git!)
+├── sprints_cache.json     # Sprint cache (auto-generated, NOT in git!)
+└── tasks.test.local.json  # Local task snapshots (optional, NOT in git!)
 ```
 
 ## 🚀 Performance & Caching
@@ -293,6 +319,7 @@ The application uses intelligent caching to minimize Jira API load:
 - **Cache file**: `sprints_cache.json` (auto-generated, not committed to git)
 - **Manual refresh**: Use "Refresh Sprints" button or `?refresh=true` parameter
 - **Live task data**: Stories/epics are fetched fresh on each refresh (no cache)
+- **Stats**: Derived from loaded sprint tasks (no stats cache)
 - **Reduced API calls**: Jira queries are capped (200 for sprint discovery, 250 for task fetches)
 - **Timeout protection**: Jira requests use 20–30 second timeouts
 

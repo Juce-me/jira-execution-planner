@@ -14,6 +14,7 @@ QUICK START - New .env Based Setup
    - JIRA_EMAIL to your email
    - JIRA_TOKEN to your API token
    - JQL_QUERY if needed
+   - STATS_JQL_BASE if you want the completed sprint Statistics panel
 
 4. START SERVER:
    python3 jira_server.py

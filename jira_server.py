@@ -47,6 +47,9 @@ STATS_PRODUCT_PROJECTS = [s.strip() for s in os.getenv('STATS_PRODUCT_PROJECTS',
 STATS_TECH_PROJECTS = [s.strip() for s in os.getenv('STATS_TECH_PROJECTS', JIRA_TECH_PROJECT).split(',') if s.strip()]
 STATS_EXAMPLE_FILE = os.getenv('STATS_EXAMPLE_FILE', '2025q3.example.json').strip()
 STATS_TEAM_IDS = [s.strip() for s in os.getenv('STATS_TEAM_IDS', '').split(',') if s.strip()]
+CAPACITY_PROJECT = os.getenv('CAPACITY_PROJECT', '').strip()
+CAPACITY_FIELD_ID = os.getenv('CAPACITY_FIELD_ID', '').strip()
+CAPACITY_FIELD_NAME = os.getenv('CAPACITY_FIELD_NAME', 'Team capacity[Number]').strip()
 
 # Cache settings
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
@@ -77,6 +80,7 @@ def add_clause_to_jql(jql: str, clause: str) -> str:
 
 TEAM_FIELD_CACHE = None
 EPIC_LINK_FIELD_CACHE = None
+CAPACITY_FIELD_CACHE = None
 
 
 def resolve_team_field_id(headers):
@@ -137,6 +141,36 @@ def resolve_epic_link_field_id(headers, names_map=None):
     return None
 
 
+def resolve_capacity_field_id(headers):
+    """Resolve the Jira custom field ID for Team capacity."""
+    global CAPACITY_FIELD_CACHE
+    if CAPACITY_FIELD_CACHE:
+        return CAPACITY_FIELD_CACHE
+    if CAPACITY_FIELD_ID:
+        CAPACITY_FIELD_CACHE = CAPACITY_FIELD_ID
+        return CAPACITY_FIELD_CACHE
+
+    if not CAPACITY_FIELD_NAME:
+        return None
+
+    try:
+        response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
+        if response.status_code != 200:
+            return None
+
+        fields = response.json() or []
+        target = CAPACITY_FIELD_NAME.strip().lower()
+        for field in fields:
+            name = str(field.get('name', '')).strip().lower()
+            if name == target:
+                CAPACITY_FIELD_CACHE = field.get('id')
+                return CAPACITY_FIELD_CACHE
+    except Exception:
+        return None
+
+    return None
+
+
 def extract_team_name(value):
     """Extract a readable team name from Jira Team field values."""
     if value is None:
@@ -177,6 +211,18 @@ def normalize_team_value(value):
     return value
 
 
+def normalize_capacity_team_name(team_name):
+    """Strip prefixes to match capacity team labels."""
+    if not team_name:
+        return None
+    cleaned = str(team_name).replace('\u00a0', ' ').strip()
+    cleaned = re.sub(r'^\[archived\]\s*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'^r&d\s+', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'^(product|tech)\s*-\s*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    return cleaned.strip()
+
+
 def build_team_value(raw_team):
     """Build a consistent team payload with id/name when possible."""
     if isinstance(raw_team, dict):
@@ -202,6 +248,97 @@ def jira_search_request(headers, payload):
             params[key] = to_csv(payload[key])
 
     return HTTP_SESSION.get(url, params=params, headers=headers, timeout=30)
+
+
+def build_capacity_jql(sprint_name, team_names=None):
+    sprint_label = str(sprint_name or '').replace('"', '\\"')
+    if team_names:
+        clauses = []
+        for name in team_names:
+            cleaned = str(name).replace('"', '\\"').strip()
+            if not cleaned:
+                continue
+            phrase = f'\\"Team info {sprint_label} - {cleaned}\\"'
+            clauses.append(f'summary ~ "{phrase}"')
+        if clauses:
+            return f'project = "{CAPACITY_PROJECT}" AND ({ " OR ".join(clauses) })'
+    phrase = f'\\"Team info {sprint_label} -\\"'
+    return f'project = "{CAPACITY_PROJECT}" AND summary ~ "{phrase}"'
+
+
+def fetch_capacity_for_sprint(sprint_name, headers, debug=False, team_names=None):
+    if not CAPACITY_PROJECT:
+        return {
+            'enabled': False,
+            'capacities': {}
+        }, None
+
+    capacity_field_id = resolve_capacity_field_id(headers)
+    if not capacity_field_id:
+        return {
+            'enabled': False,
+            'capacities': {},
+            'message': 'Missing Team capacity field ID'
+        }, None
+
+    capacities = {}
+    debug_items = []
+    issues = []
+    jqls = []
+    chunk_size = 20
+    team_chunks = [team_names[i:i + chunk_size] for i in range(0, len(team_names or []), chunk_size)]
+    if not team_chunks:
+        team_chunks = [None]
+
+    for chunk in team_chunks:
+        jql = build_capacity_jql(sprint_name, chunk)
+        jqls.append(jql)
+        payload = {
+            'jql': jql,
+            'startAt': 0,
+            'maxResults': 200,
+            'fields': ['summary', capacity_field_id]
+        }
+        response = jira_search_request(headers, payload)
+        if response.status_code != 200:
+            return None, response.text
+        data = response.json() or {}
+        issues.extend(data.get('issues') or [])
+    pattern = re.compile(rf'^Team info\s+{re.escape(str(sprint_name))}\s*-\s*(.+)$', re.IGNORECASE)
+    for issue in issues:
+        fields = issue.get('fields') or {}
+        summary = str(fields.get('summary') or '').strip()
+        match = pattern.match(summary)
+        if not match:
+            continue
+        short_name = normalize_capacity_team_name(match.group(1))
+        if not short_name:
+            continue
+        raw_capacity = fields.get(capacity_field_id)
+        if debug:
+            debug_items.append({
+                'summary': summary,
+                'rawCapacity': raw_capacity
+            })
+        try:
+            capacity_value = float(raw_capacity)
+        except (TypeError, ValueError):
+            continue
+        capacities[short_name] = capacity_value
+
+    response_payload = {
+        'enabled': True,
+        'sprint': sprint_name,
+        'capacities': capacities
+    }
+    if debug:
+        response_payload['debug'] = {
+            'jql': jqls if len(jqls) > 1 else jqls[0],
+            'issueCount': len(issues),
+            'matched': debug_items[:20],
+            'fieldId': capacity_field_id
+        }
+    return response_payload, None
 
 
 # Cache helper functions
@@ -1485,8 +1622,50 @@ def get_sprints():
 def get_config():
     """Get public configuration"""
     return jsonify({
-        'jiraUrl': JIRA_URL
+        'jiraUrl': JIRA_URL,
+        'capacityProject': CAPACITY_PROJECT
     })
+
+
+@app.route('/api/capacity', methods=['GET'])
+def get_capacity():
+    """Get estimated team capacity for a sprint."""
+    sprint_name = request.args.get('sprint', '').strip()
+    debug = request.args.get('debug', '').lower() in ('1', 'true', 'yes')
+    team_param = request.args.get('teams', '').strip()
+    team_names = [s.strip() for s in team_param.split(',') if s.strip()]
+    if not sprint_name:
+        return jsonify({'error': 'Sprint name is required'}), 400
+
+    if not CAPACITY_PROJECT:
+        return jsonify({
+            'enabled': False,
+            'capacities': {}
+        })
+
+    try:
+        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+        auth_bytes = auth_string.encode('ascii')
+        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+
+        headers = {
+            'Authorization': f'Basic {auth_base64}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+
+        payload, error_message = fetch_capacity_for_sprint(sprint_name, headers, debug=debug, team_names=team_names)
+        if error_message:
+            return jsonify({'error': error_message}), 500
+        return jsonify(payload)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/planned-capacity', methods=['GET'])
+def get_planned_capacity():
+    """Alias endpoint for planned capacity."""
+    return get_capacity()
 
 
 @app.route('/health', methods=['GET'])
@@ -1762,6 +1941,7 @@ if __name__ == '__main__':
     print(f'   • http://localhost:{SERVER_PORT}/api/stats-example - Get example completed sprint stats')
     print(f'   • http://localhost:{SERVER_PORT}/api/sprints - Get available sprints (cached)')
     print(f'   • http://localhost:{SERVER_PORT}/api/sprints?refresh=true - Force refresh sprints cache')
+    print(f'   • http://localhost:{SERVER_PORT}/api/planned-capacity?sprint=2025Q3 - Get planned team capacity')
     print(f'   • http://localhost:{SERVER_PORT}/api/boards - Get all boards (to find board ID)')
     print(f'   • http://localhost:{SERVER_PORT}/api/test - Test connection')
     print(f'   • http://localhost:{SERVER_PORT}/health - Health check')

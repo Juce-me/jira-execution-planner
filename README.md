@@ -16,6 +16,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Team-aware filtering** - Multi-team JQL plus UI dropdown to slice per team and see team name on each story
 - ✅ **Epic grouping** - Stories grouped under their epic with assignee and story-point totals
 - ✅ **Planning rollups** - Selected story points summarized per team, project, and overall
+- ✅ **Capacity planning** - Team capacity vs planning capacity (exclusions via epic toggle)
 - ✅ **Alerts** - Panels for Missing Story Points, Blocked, Missing Epic, Empty Epic, and “Epic Ready to Close” (rules: `ALERT_RULES.md`, ready-to-close uses all-time data)
 - ✅ **Sprint statistics** - Teams/Priority views with product/tech split, derived from loaded sprint tasks (with epic include/exclude toggle)
 
@@ -107,6 +108,10 @@ JIRA_TEAM_FIELD_ID=
 
 # Optional: priority weights for stats (done/incomplete)
 STATS_PRIORITY_WEIGHTS=Blocker:0.40,Critical:0.30,Major:0.20,Minor:0.06,Low:0.03,Trivial:0.01
+
+# Optional: capacity planning (team capacity project + field id)
+CAPACITY_PROJECT=
+CAPACITY_FIELD_ID=
 ```
 
 **How to get Jira API token:**
@@ -206,6 +211,14 @@ The Statistics panel focuses on active or completed (closed) quarter sprints:
 - Priority view aggregates Done vs Incomplete by priority (no team dimension).
 - Incomplete = any status except `Done` or `Killed` (killed is excluded from rate calculations).
 - Epic include/exclude toggle appears under each epic while Stats is open (selection persists locally).
+
+## 🧮 Capacity Planning
+
+Capacity planning uses the loaded sprint tasks plus a separate Jira project for team capacity:
+
+- **Team capacity**: pulled from the capacity project using `CAPACITY_PROJECT` and `CAPACITY_FIELD_ID`.
+- **Planning capacity**: team capacity minus excluded epic story points (same epic include/exclude toggle).
+- **Split**: estimated capacity split is 70% Product / 30% Tech.
 
 Priority weights used for weighted delivery:
 - Blocker 0.40

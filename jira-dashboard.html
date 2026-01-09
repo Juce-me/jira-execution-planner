@@ -1663,7 +1663,10 @@
         .capacity-grid-wrapper {
             max-height: 520px;
             overflow-y: auto;
+            overflow-x: auto;
             padding-right: 0.25rem;
+            padding-bottom: 0.25rem;
+            -webkit-overflow-scrolling: touch;
         }
 
         .capacity-header {
@@ -1693,6 +1696,7 @@
         .capacity-grid {
             display: grid;
             gap: 0.2rem;
+            min-width: 860px;
         }
 
         .capacity-row {
@@ -1875,28 +1879,27 @@
 
         .planning-stats {
             display: flex;
-            gap: 3rem;
+            gap: 0.85rem;
             align-items: center;
-            justify-content: space-between;
+            justify-content: flex-start;
             font-family: 'IBM Plex Mono', monospace;
-            flex-wrap: nowrap;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
+            flex-wrap: wrap;
+            overflow-x: hidden;
         }
 
         .planning-stats.compact {
-            gap: 1rem;
-            font-size: 0.7rem;
+            gap: 0.6rem;
+            font-size: 0.65rem;
             justify-content: flex-start;
         }
 
         .planning-stats.compact .planning-stat-label {
-            font-size: 0.7rem;
+            font-size: 0.62rem;
             letter-spacing: 0.04em;
         }
 
         .planning-stats.compact .planning-stat-value {
-            font-size: 0.7rem;
+            font-size: 0.62rem;
         }
 
         .planning-stat-separator {
@@ -1914,23 +1917,59 @@
         .team-stat-card {
             background: #fff;
             border: 1px solid var(--border);
-            padding: 0.6rem 0.75rem;
-            text-align: center;
+            padding: 0.5rem 0.6rem;
+            text-align: left;
             box-shadow: 0 6px 16px var(--shadow);
         }
 
         .team-stat-value {
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 1.1rem;
+            font-size: 0.95rem;
             font-weight: 600;
             color: var(--text-primary);
         }
 
         .team-stat-label {
-            margin-top: 0.25rem;
-            font-size: 0.7rem;
+            margin-bottom: 0.2rem;
+            font-size: 0.65rem;
             text-transform: uppercase;
             letter-spacing: 0.08em;
+            color: var(--text-secondary);
+        }
+
+        .team-stat-line {
+            display: flex;
+            align-items: baseline;
+            gap: 0.35rem;
+            flex-wrap: nowrap;
+        }
+
+        .team-stat-line .team-stat-value {
+            font-size: 0.62rem;
+            white-space: nowrap;
+        }
+
+        .project-card .team-stat-value {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .team-stat-line .team-stat-meta {
+            margin-top: 0;
+            white-space: nowrap;
+            line-height: 1;
+        }
+
+        .team-stat-meta {
+            margin-top: 0.2rem;
+            font-size: 0.6rem;
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--text-secondary);
+        }
+
+        .team-stat-value.muted {
+            font-size: 0.62rem;
+            font-weight: 500;
             color: var(--text-secondary);
         }
 
@@ -1984,6 +2023,18 @@
             transform: none;
         }
 
+        .planning-action-button.active {
+            background: #f6ffed;
+            border-color: #b7eb8f;
+            color: #389e0d;
+        }
+
+        .planning-action-button.active:hover {
+            background: #f6ffed;
+            color: #389e0d;
+            border-color: #b7eb8f;
+        }
+
         .planning-action-button:disabled {
             opacity: 0.3;
             cursor: not-allowed;
@@ -2020,21 +2071,51 @@
         .planning-stat {
             display: flex;
             align-items: baseline;
-            gap: 0.5rem;
+            gap: 0.35rem;
         }
 
         .planning-stat-label {
-            font-size: 0.875rem;
+            font-size: 0.62rem;
             color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
 
+        .planning-stat-label[data-tooltip] {
+            position: relative;
+            cursor: help;
+        }
+
+        .planning-stat-label[data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            left: 0;
+            top: 1.2rem;
+            background: #111;
+            color: #fff;
+            font-size: 0.6rem;
+            line-height: 1.2;
+            padding: 0.35rem 0.45rem;
+            border-radius: 0.3rem;
+            white-space: normal;
+            width: max-content;
+            max-width: 220px;
+            z-index: 20;
+        }
+
         .planning-stat-value {
-            font-size: 0.875rem;
+            font-size: 0.65rem;
             font-weight: 500;
-            color: #d48806;
+            color: var(--text-primary);
             line-height: 1;
+        }
+
+        .planning-stat-value.over {
+            color: #d4380d;
+        }
+
+        .planning-stat-value.under {
+            color: #d4380d;
         }
 
         .task-checkbox-container {
@@ -2200,6 +2281,9 @@
             const [priorityHoverIndex, setPriorityHoverIndex] = useState(null);
             const [showTeamDropdown, setShowTeamDropdown] = useState(false);
             const teamDropdownRef = useRef(null);
+            const [capacityEnabled, setCapacityEnabled] = useState(false);
+            const [capacityByTeam, setCapacityByTeam] = useState({});
+            const [capacityLoading, setCapacityLoading] = useState(false);
             const [excludedStatsEpics, setExcludedStatsEpics] = useState(savedPrefsRef.current.excludedStatsEpics ?? []);
             const [showMissingAlert, setShowMissingAlert] = useState(savedPrefsRef.current.showMissingAlert ?? true);
             const [showBlockedAlert, setShowBlockedAlert] = useState(savedPrefsRef.current.showBlockedAlert ?? true);
@@ -2233,7 +2317,7 @@
 
             useEffect(() => {
                 if (showPlanning && !isCompletedSprintSelected) {
-                    selectPlanningTasksByStatus(['Accepted']);
+                    includePlanningTasksByStatus(['Accepted', 'In Progress']);
                 }
             }, [showPlanning, isCompletedSprintSelected]);
 
@@ -2242,6 +2326,12 @@
                     setShowPlanning(false);
                 }
             }, [showStats]);
+
+            useEffect(() => {
+                if (!capacityEnabled) {
+                    setCapacityByTeam({});
+                }
+            }, [capacityEnabled]);
 
             useEffect(() => {
                 const handleClickOutside = (event) => {
@@ -2305,6 +2395,7 @@
                     if (response.ok) {
                         const config = await response.json();
                         setJiraUrl(config.jiraUrl || '');
+                        setCapacityEnabled(Boolean(config.capacityProject));
                     }
                 } catch (err) {
                     console.error('Failed to load config:', err);
@@ -2349,6 +2440,7 @@
                 epicOrderRef.current = {};
                 epicOrderCounterRef.current = 0;
             }, [selectedSprint]);
+
 
             const loadSprints = async (forceRefresh = false) => {
                 setSprintsLoading(true);
@@ -2416,6 +2508,47 @@
                 'Low': 4,
                 'Trivial': 5,
                 'Lowest': 5
+            };
+
+            const fetchCapacity = async (sprintName) => {
+                if (!capacityEnabled || !sprintName) return;
+                setCapacityLoading(true);
+                try {
+                    const teams = capacityTeamNames;
+                    const params = new URLSearchParams({
+                        sprint: sprintName,
+                        t: Date.now().toString()
+                    });
+                    if (teams.length) {
+                        params.append('teams', teams.join(','));
+                    }
+                    const response = await fetch(`${BACKEND_URL}/api/capacity?${params.toString()}`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' },
+                        cache: 'no-cache'
+                    });
+                    if (!response.ok) {
+                        setCapacityByTeam({});
+                        return;
+                    }
+                    const data = await response.json();
+                    if (!data?.enabled) {
+                        setCapacityByTeam({});
+                        return;
+                    }
+                    const normalized = {};
+                    Object.entries(data.capacities || {}).forEach(([name, value]) => {
+                        const key = normalizeCapacityKey(name);
+                        const numeric = Number(value);
+                        if (!key || Number.isNaN(numeric)) return;
+                        normalized[key] = numeric;
+                    });
+                    setCapacityByTeam(normalized);
+                } catch (err) {
+                    setCapacityByTeam({});
+                } finally {
+                    setCapacityLoading(false);
+                }
             };
 
             const priorityAxis = ['Blocker', 'Critical', 'Major', 'Minor', 'Low', 'Trivial'];
@@ -2602,6 +2735,29 @@
                 if (rate >= 0.6 && rate < 0.8) return 'warn';
                 if (rate < 0.6) return 'bad';
                 return '';
+            };
+
+            const normalizeCapacityKey = (name) => {
+                if (!name) return '';
+                return String(name)
+                    .replace(/\u00a0/g, ' ')
+                    .replace(/^\[archived\]\s*/i, '')
+                    .replace(/^r&d\s+/i, '')
+                    .replace(/^(product|tech)\s*-\s*/i, '')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .toLowerCase();
+            };
+
+            const toCapacityShortName = (name) => {
+                if (!name) return '';
+                return String(name)
+                    .replace(/\u00a0/g, ' ')
+                    .replace(/^\[archived\]\s*/i, '')
+                    .replace(/^r&d\s+/i, '')
+                    .replace(/^(product|tech)\s*-\s*/i, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
             };
 
             const buildRadarPoints = ({ values, radius, center, maxValue, axes }) => {
@@ -2817,7 +2973,7 @@
                 }
             }, [isFutureSprintSelected, showStats]);
 
-            const visibleTasks = tasks.filter(task => {
+            const baseFilteredTasks = tasks.filter(task => {
                 // Filter by search query
                 if (searchQuery.trim() !== '') {
 	                    const query = searchQuery.toLowerCase();
@@ -2860,25 +3016,31 @@
                 if (!isTech && !showProduct) {
                     return false;
                 }
+                return true;
+            });
 
+            const visibleTasks = baseFilteredTasks.filter(task => {
                 // Filter by status (from clickable elements)
                 if (statusFilter === 'in-progress') {
                     return task.fields.status?.name === 'In Progress';
-                } else if (statusFilter === 'todo-accepted') {
+                }
+                if (statusFilter === 'todo-accepted') {
                     const status = task.fields.status?.name;
                     return status === 'To Do' || status === 'Pending' || status === 'Accepted';
-                } else if (statusFilter === 'done') {
+                }
+                if (statusFilter === 'done') {
                     return task.fields.status?.name === 'Done';
-                } else if (statusFilter === 'high-priority') {
+                }
+                if (statusFilter === 'high-priority') {
                     const priority = task.fields.priority?.name;
                     return priority === 'Blocker' || priority === 'Highest' ||
                            priority === 'Critical' || priority === 'High';
-                } else if (statusFilter === 'minor-priority') {
+                }
+                if (statusFilter === 'minor-priority') {
                     const priority = task.fields.priority?.name;
                     return priority === 'Minor' || priority === 'Low' ||
                            priority === 'Trivial' || priority === 'Lowest';
                 }
-
                 return true;
             });
 
@@ -3041,8 +3203,6 @@
                 weightedProduct: { done: 0, incomplete: 0, killed: 0 },
                 weightedTech: { done: 0, incomplete: 0, killed: 0 }
             });
-            const statsStoryPointsTotal = effectiveStatsData?.storyPoints?.total || 0;
-
             const groupTasksByEpic = (taskList) => {
                 const grouped = {};
                 taskList.forEach(task => {
@@ -3075,27 +3235,27 @@
             const epicGroups = Object.values(groupTasksByEpic(visibleTasks))
                 .sort((a, b) => (epicOrderRef.current[a.key] ?? 999999) - (epicOrderRef.current[b.key] ?? 999999));
 
-            const highPriorityCount = tasks.filter(t => {
+            const highPriorityCount = baseFilteredTasks.filter(t => {
                 const priority = t.fields.priority?.name;
                 return priority === 'Blocker' || priority === 'Highest' ||
                        priority === 'Critical' || priority === 'High';
             }).length;
 
-            const minorPriorityCount = tasks.filter(t => {
+            const minorPriorityCount = baseFilteredTasks.filter(t => {
                 const priority = t.fields.priority?.name;
                 return priority === 'Minor' || priority === 'Low' ||
                        priority === 'Trivial' || priority === 'Lowest';
             }).length;
 
-            const doneTasksCount = tasks.filter(t =>
+            const doneTasksCount = baseFilteredTasks.filter(t =>
                 t.fields.status?.name === 'Done'
             ).length;
 
-            const inProgressTasksCount = tasks.filter(t =>
+            const inProgressTasksCount = baseFilteredTasks.filter(t =>
                 t.fields.status?.name === 'In Progress'
             ).length;
 
-            const todoAcceptedTasksCount = tasks.filter(t => {
+            const todoAcceptedTasksCount = baseFilteredTasks.filter(t => {
                 const status = t.fields.status?.name;
                 return status === 'To Do' || status === 'Pending' || status === 'Accepted';
             }).length;
@@ -3105,20 +3265,20 @@
                 return sum + (Number.isNaN(sp) ? 0 : sp);
             }, 0);
 
-            const totalStoryPoints = sumStoryPoints(tasks);
-            const doneStoryPoints = sumStoryPoints(tasks.filter(t => t.fields.status?.name === 'Done'));
-            const highPriorityStoryPoints = sumStoryPoints(tasks.filter(t => {
+            const totalStoryPoints = sumStoryPoints(baseFilteredTasks);
+            const doneStoryPoints = sumStoryPoints(baseFilteredTasks.filter(t => t.fields.status?.name === 'Done'));
+            const highPriorityStoryPoints = sumStoryPoints(baseFilteredTasks.filter(t => {
                 const priority = t.fields.priority?.name;
                 return priority === 'Blocker' || priority === 'Highest' ||
                        priority === 'Critical' || priority === 'High';
             }));
-            const minorPriorityStoryPoints = sumStoryPoints(tasks.filter(t => {
+            const minorPriorityStoryPoints = sumStoryPoints(baseFilteredTasks.filter(t => {
                 const priority = t.fields.priority?.name;
                 return priority === 'Minor' || priority === 'Low' ||
                        priority === 'Trivial' || priority === 'Lowest';
             }));
-            const inProgressStoryPoints = sumStoryPoints(tasks.filter(t => t.fields.status?.name === 'In Progress'));
-            const todoAcceptedStoryPoints = sumStoryPoints(tasks.filter(t => {
+            const inProgressStoryPoints = sumStoryPoints(baseFilteredTasks.filter(t => t.fields.status?.name === 'In Progress'));
+            const todoAcceptedStoryPoints = sumStoryPoints(baseFilteredTasks.filter(t => {
                 const status = t.fields.status?.name;
                 return status === 'To Do' || status === 'Pending' || status === 'Accepted';
             }));
@@ -3158,6 +3318,39 @@
                 });
             };
 
+            const includePlanningTasksByStatus = (statuses) => {
+                const allowed = new Set((statuses || []).map(normalizeStatus));
+                setSelectedTasks(prev => {
+                    const next = { ...prev };
+                    visibleTasks.forEach(task => {
+                        const status = normalizeStatus(task.fields.status?.name);
+                        if (allowed.has(status)) {
+                            next[task.key] = true;
+                        }
+                    });
+                    return next;
+                });
+            };
+
+            const toggleIncludeByStatus = (statuses) => {
+                const allowed = new Set((statuses || []).map(normalizeStatus));
+                setSelectedTasks(prev => {
+                    const next = { ...prev };
+                    const matching = visibleTasks.filter(task =>
+                        allowed.has(normalizeStatus(task.fields.status?.name))
+                    );
+                    const allSelected = matching.length > 0 && matching.every(task => prev[task.key]);
+                    matching.forEach(task => {
+                        if (allSelected) {
+                            delete next[task.key];
+                        } else {
+                            next[task.key] = true;
+                        }
+                    });
+                    return next;
+                });
+            };
+
             // Calculate sum of Story Points for selected tasks
             const calculateSelectedSP = () => {
                 let sum = 0;
@@ -3173,13 +3366,79 @@
             };
 
             const selectedTasksList = visibleTasks.filter(task => selectedTasks[task.key]);
+            const acceptedStatusSet = new Set(['accepted', 'in progress']);
+            const acceptedTasks = visibleTasks.filter(task =>
+                acceptedStatusSet.has(normalizeStatus(task.fields.status?.name))
+            );
+            const todoPendingTasks = visibleTasks.filter(task => {
+                const status = normalizeStatus(task.fields.status?.name);
+                return status === 'to do' || status === 'pending';
+            });
+            const isAcceptedIncluded = acceptedTasks.length > 0 &&
+                acceptedTasks.every(task => selectedTasks[task.key]);
+            const isTodoIncluded = todoPendingTasks.length > 0 &&
+                todoPendingTasks.every(task => selectedTasks[task.key]);
+
+            const selectedPlanningTasksList = selectedTasksList.filter(task => {
+                const epicKey = task.fields?.epicKey || 'NO_EPIC';
+                return !excludedEpicSet.has(epicKey);
+            });
             const selectedSP = selectedTasksList.reduce((sum, task) => {
                 const sp = parseFloat(task.fields.customfield_10004 || 0);
                 return sum + (Number.isNaN(sp) ? 0 : sp);
             }, 0);
             const selectedCount = selectedTasksList.length;
 
-            const selectedTeamStats = selectedTasksList.reduce((acc, task) => {
+            const getCapacityStatus = (selected, capacity) => {
+                if (!capacity) {
+                    return { label: '', text: '', status: '', title: '' };
+                }
+                const ratio = capacity > 0 ? selected / capacity : 0;
+                const overPercent = Math.max(0, (ratio - 1) * 100);
+                const underPercent = Math.max(0, (1 - ratio) * 100);
+                const status = ratio > 1.2 ? 'over' : ratio < 0.9 ? 'under' : '';
+                const suffix = ratio >= 1
+                    ? `${overPercent.toFixed(0)}% over`
+                    : `${underPercent.toFixed(0)}% under`;
+                const shortLabel = ratio >= 1
+                    ? `${overPercent.toFixed(0)}% over`
+                    : `${underPercent.toFixed(0)}% under`;
+                const minToRemove = ratio > 1.2 ? (ratio - 1.2) * capacity : 0;
+                const minToAdd = ratio < 0.9 ? (0.9 - ratio) * capacity : 0;
+                const title = ratio > 1.2
+                    ? `Please remove at least ${minToRemove.toFixed(1)} SP to reach 120%.`
+                    : ratio < 0.9
+                        ? `Please add at least ${minToAdd.toFixed(1)} SP to reach 90%.`
+                        : '';
+                return {
+                    label: shortLabel,
+                    text: `${selected.toFixed(1)} selected | ${capacity.toFixed(1)} capacity | ${suffix}`,
+                    status,
+                    title
+                };
+            };
+
+            const getTeamCapacityMeta = (selected, capacity) => {
+                if (!capacity) return { text: '', status: '', title: '' };
+                const delta = selected - capacity;
+                if (delta <= 0) {
+                    return {
+                        text: `${Math.abs(delta).toFixed(1)} SP left`,
+                        status: '',
+                        title: ''
+                    };
+                }
+                const pct = capacity > 0 ? (delta / capacity) * 100 : 0;
+                const status = pct >= 20 ? 'over' : '';
+                return {
+                    text: `↑ ${delta.toFixed(1)} SP · ${pct.toFixed(0)}%`,
+                    status,
+                    title: 'Please remove some story points or add capacity.'
+                };
+            };
+
+
+            const selectedTeamStats = selectedPlanningTasksList.reduce((acc, task) => {
                 const teamInfo = getTeamInfo(task);
                 const sp = parseFloat(task.fields.customfield_10004 || 0);
                 if (!acc[teamInfo.id]) {
@@ -3189,8 +3448,8 @@
                 return acc;
             }, {});
 
-            const selectedProjectStats = selectedTasksList.reduce((acc, task) => {
-                const projectKey = task.key.split('-')[0];
+            const selectedProjectStats = selectedPlanningTasksList.reduce((acc, task) => {
+                const projectKey = task.key.startsWith('TECH-') ? 'TECH' : 'PRODUCT';
                 const sp = parseFloat(task.fields.customfield_10004 || 0);
                 if (!acc[projectKey]) {
                     acc[projectKey] = 0;
@@ -3199,18 +3458,25 @@
                 return acc;
             }, {});
 
-            const selectedProjectEntries = Object.entries(selectedProjectStats)
-                .map(([id, storyPoints]) => ({ id, name: id, storyPoints }))
-                .sort((a, b) => {
-                    const order = (key) => {
-                        if (key === 'PRODUCT') return 0;
-                        if (key === 'TECH') return 1;
-                        return 99;
-                    };
-                    const diff = order(a.id) - order(b.id);
-                    if (diff !== 0) return diff;
-                    return a.name.localeCompare(b.name);
-                });
+            const selectedTeamProjectStats = selectedPlanningTasksList.reduce((acc, task) => {
+                const teamInfo = getTeamInfo(task);
+                const bucket = task.key.startsWith('TECH-') ? 'tech' : 'product';
+                const sp = parseFloat(task.fields.customfield_10004 || 0);
+                if (!acc[teamInfo.id]) {
+                    acc[teamInfo.id] = { product: 0, tech: 0 };
+                }
+                acc[teamInfo.id][bucket] += Number.isNaN(sp) ? 0 : sp;
+                return acc;
+            }, {});
+
+            const capacitySplit = { product: 0.7, tech: 0.3 };
+            const capacityMultiplier = showProduct && showTech
+                ? 1
+                : showProduct
+                    ? capacitySplit.product
+                    : showTech
+                        ? capacitySplit.tech
+                        : 1;
 
             const teamCapacityStats = capacityTasks.reduce((acc, task) => {
                 const status = normalizeStatus(task.fields.status?.name);
@@ -3260,14 +3526,109 @@
                 ? teamCapacityEntries.filter(entry => selectedTeamSet.has(entry.id))
                 : teamCapacityEntries;
 
+            const displayedTeamOptions = !isAllTeamsSelected
+                ? teamOptions.filter(team => team.id !== 'all' && selectedTeamSet.has(team.id))
+                : teamOptions.filter(team => team.id !== 'all');
+
+            const capacityTeamNames = React.useMemo(() => (
+                displayedTeamOptions
+                    .map(team => toCapacityShortName(team.name))
+                    .filter(Boolean)
+            ), [displayedTeamOptions]);
+
+            useEffect(() => {
+                if (!capacityEnabled) return;
+                if (!selectedSprintInfo?.name) return;
+                fetchCapacity(selectedSprintInfo.name);
+            }, [capacityEnabled, selectedSprintInfo?.name, capacityTeamNames.join('|')]);
+
             const capacityTeamIds = !isAllTeamsSelected
                 ? Array.from(selectedTeamSet)
                 : teamCapacityEntries.map(entry => entry.id);
 
-            const selectedTeamEntries = displayedTeamCapacityEntries.map((team) => ({
+            const getTeamCapacity = (teamName) => {
+                if (!capacityEnabled) return 0;
+                const key = normalizeCapacityKey(teamName);
+                if (!key) return 0;
+                if (capacityByTeam[key]) return capacityByTeam[key];
+                const entry = Object.entries(capacityByTeam).find(([capacityKey]) =>
+                    capacityKey.includes(key) || key.includes(capacityKey)
+                );
+                return entry ? entry[1] : 0;
+            };
+
+            const excludedCapacityByTeamId = React.useMemo(() => {
+                if (!capacityEnabled) return {};
+                return capacityTasks.reduce((acc, task) => {
+                    const epicKey = task.fields?.epicKey || 'NO_EPIC';
+                    if (!excludedEpicSet.has(epicKey)) return acc;
+                    const teamInfo = getTeamInfo(task);
+                    const sp = parseFloat(task.fields.customfield_10004 || 0);
+                    if (Number.isNaN(sp)) return acc;
+                    acc[teamInfo.id] = (acc[teamInfo.id] || 0) + sp;
+                    return acc;
+                }, {});
+            }, [capacityEnabled, capacityTasks, excludedEpicSet]);
+
+            const getTeamNetCapacity = (team) => {
+                if (!capacityEnabled) return 0;
+                const base = getTeamCapacity(team.name);
+                const excluded = excludedCapacityByTeamId[team.id] || 0;
+                return Math.max(0, base - excluded);
+            };
+
+            const totalCapacityBase = capacityEnabled
+                ? displayedTeamOptions.reduce((sum, team) => sum + getTeamCapacity(team.name), 0)
+                : 0;
+            const excludedCapacityTotal = capacityEnabled
+                ? displayedTeamOptions.reduce((sum, team) => sum + (excludedCapacityByTeamId[team.id] || 0), 0)
+                : 0;
+            const estimatedCapacityRaw = Math.max(0, totalCapacityBase - excludedCapacityTotal);
+            const totalCapacityAdjusted = totalCapacityBase * capacityMultiplier;
+            const estimatedCapacityAdjusted = estimatedCapacityRaw * capacityMultiplier;
+            const capacitySummary = getCapacityStatus(selectedSP, totalCapacityAdjusted);
+
+            const projectCapacity = displayedTeamOptions.reduce((acc, team) => {
+                const teamPlanningCapacity = getTeamNetCapacity(team);
+                if (!teamPlanningCapacity) return acc;
+                const stats = selectedTeamProjectStats[team.id] || { product: 0, tech: 0 };
+                const totalSelected = stats.product + stats.tech;
+                const techHeavy = totalSelected > 0 ? stats.tech >= stats.product : false;
+                const split = techHeavy ? { product: 0.2, tech: 0.8 } : capacitySplit;
+                acc.PRODUCT += teamPlanningCapacity * split.product;
+                acc.TECH += teamPlanningCapacity * split.tech;
+                return acc;
+            }, {
+                PRODUCT: 0,
+                TECH: 0
+            });
+            if (!showProduct) projectCapacity.PRODUCT = 0;
+            if (!showTech) projectCapacity.TECH = 0;
+
+            const selectedProjectEntries = Object.entries(selectedProjectStats)
+                .map(([id, storyPoints]) => ({
+                    id,
+                    name: id,
+                    storyPoints,
+                    capacity: capacityEnabled ? (projectCapacity[id] || 0) : null
+                }))
+                .sort((a, b) => {
+                    const order = (key) => {
+                        if (key === 'PRODUCT') return 0;
+                        if (key === 'TECH') return 1;
+                        return 99;
+                    };
+                    const diff = order(a.id) - order(b.id);
+                    if (diff !== 0) return diff;
+                    return a.name.localeCompare(b.name);
+                });
+
+            const selectedTeamEntries = displayedTeamOptions.map((team) => ({
                 id: team.id,
                 name: team.name,
-                storyPoints: selectedTeamStats[team.id]?.storyPoints || 0
+                storyPoints: selectedTeamStats[team.id]?.storyPoints || 0,
+                teamCapacity: capacityEnabled ? getTeamCapacity(team.name) * capacityMultiplier : null,
+                planningCapacity: capacityEnabled ? getTeamNetCapacity(team) * capacityMultiplier : null
             }));
 
             const capacityTotals = displayedTeamCapacityEntries.reduce((acc, info) => {
@@ -4569,25 +4930,69 @@
 	                                <span className="planning-stat-value">{selectedCount}</span>
 	                            </div>
 	                            <div className="planning-stat">
-	                                <span className="planning-stat-label">Total:</span>
+                                    <span
+                                        className="planning-stat-label"
+                                        data-tooltip="Total selected story points."
+                                    >
+                                        Selected Effort:
+                                    </span>
 	                                <span className="planning-stat-value">{selectedSP.toFixed(1)}</span>
 	                            </div>
+                                {capacityEnabled && totalCapacityAdjusted > 0 && (
+                                    <div className="planning-stat">
+                                        <span
+                                            className="planning-stat-label"
+                                            data-tooltip="Estimated team capacity for the quarter (if one team selected, that team's capacity)."
+                                        >
+                                            Team Capacity:
+                                        </span>
+                                        <span className="planning-stat-value">
+                                            {totalCapacityAdjusted.toFixed(1)} SP
+                                        </span>
+                                    </div>
+                                )}
+                                {capacityEnabled && totalCapacityAdjusted > 0 && (
+                                    <div className="planning-stat">
+                                        <span
+                                            className="planning-stat-label"
+                                            data-tooltip="Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.)."
+                                        >
+                                            Planning Capacity:
+                                        </span>
+                                        <span className="planning-stat-value">
+                                            {estimatedCapacityAdjusted.toFixed(1)} SP
+                                        </span>
+                                    </div>
+                                )}
+                                {capacityEnabled && totalCapacityAdjusted > 0 && (
+                                    <div className="planning-stat">
+                                        <span
+                                            className="planning-stat-label"
+                                            data-tooltip="Plan variance = (selected effort / team capacity - 1). Positive means over planned."
+                                        >
+                                            Plan Variance:
+                                        </span>
+                                        <span className={`planning-stat-value ${capacitySummary.status}`}>
+                                            {capacitySummary.label || '0%'}
+                                        </span>
+                                    </div>
+                                )}
 	                            <div className="planning-actions">
 	                                <button
-	                                    className="planning-action-button"
-	                                    onClick={() => selectPlanningTasksByStatus(['Accepted'])}
+	                                    className={`planning-action-button ${isAcceptedIncluded ? 'active' : ''}`}
+	                                    onClick={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
 	                                    disabled={visibleTasks.length === 0}
-	                                    title="Select all Accepted stories for the current view"
+	                                    title="Include all Accepted and In Progress stories for the current view"
 	                                >
-	                                    Select Accepted
+	                                    Include Accepted
 	                                </button>
 	                                <button
-	                                    className="planning-action-button"
-	                                    onClick={() => selectPlanningTasksByStatus(['To Do', 'Pending'])}
+	                                    className={`planning-action-button ${isTodoIncluded ? 'active' : ''}`}
+	                                    onClick={() => toggleIncludeByStatus(['To Do', 'Pending'])}
 	                                    disabled={visibleTasks.length === 0}
-	                                    title="Select all To Do / Pending stories for the current view"
+	                                    title="Include all To Do / Pending stories for the current view"
 	                                >
-	                                    Select To Do
+	                                    Include To Do
 	                                </button>
 	                                <button
 	                                    className="uncheck-button"
@@ -4611,38 +5016,73 @@
 	                                </button>
 	                            </div>
 	                        </div>
-                        {isAllTeamsSelected && (
-	                            <>
-	                                <div className="planning-stats compact" style={{ marginTop: '0.4rem' }}>
-	                                    <div className="planning-stat">
-	                                        <span className="planning-stat-label">Selected SP by Team:</span>
-	                                    </div>
-	                                </div>
-	                                <div className="team-stats-grid">
-	                                    {selectedTeamEntries.map((info) => (
-	                                        <div key={info.id} className="team-stat-card">
-	                                            <div className="team-stat-value">{info.storyPoints.toFixed(1)}</div>
-	                                            <div className="team-stat-label">{info.name}</div>
-	                                        </div>
-	                                    ))}
-	                                    {selectedTeamEntries.length === 0 && (
-	                                        <div className="planning-stat">
-	                                            <span className="planning-stat-value">No tasks selected</span>
-	                                        </div>
-	                                    )}
-	                                </div>
-	                            </>
-	                        )}
+                        {selectedTeamEntries.length > 1 && (
+                            <>
+                                <div className="planning-stats compact" style={{ marginTop: '0.4rem' }}>
+                                    <div className="planning-stat">
+                                        <span className="planning-stat-label">Selected SP by Team:</span>
+                                    </div>
+                                </div>
+                                <div className="team-stats-grid">
+                                    {selectedTeamEntries.map((info) => (
+                                        <div key={info.id} className="team-stat-card team-card">
+                                            <div className="team-stat-label">{info.name}</div>
+                                            <div className="team-stat-line">
+                                                <div className="team-stat-value">{info.storyPoints.toFixed(1)} SP</div>
+                                                <div className="team-stat-meta">Selected effort</div>
+                                            </div>
+                                            {capacityEnabled && info.teamCapacity > 0 && (
+                                                <>
+                                                    {(() => {
+                                                        const capacityMeta = getTeamCapacityMeta(info.storyPoints, info.teamCapacity);
+                                                        return (
+                                                            <div className="team-stat-line" title={capacityMeta.title}>
+                                                                <div className="team-stat-value muted">{info.teamCapacity.toFixed(1)} SP</div>
+                                                                <div className={`team-stat-meta ${capacityMeta.status ? `planning-stat-value ${capacityMeta.status}` : ''}`}>
+                                                                    {capacityMeta.text}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                </>
+                                            )}
+                                        </div>
+                                    ))}
+                                    {selectedTeamEntries.length === 0 && (
+                                        <div className="planning-stat">
+                                            <span className="planning-stat-value">No tasks selected</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
 	                        <div className="planning-stats compact" style={{ marginTop: '0.35rem' }}>
-	                            <div className="planning-stat">
-	                                <span className="planning-stat-label">Selected SP by Project:</span>
-	                            </div>
+                                <div className="planning-stat">
+                                    <span className="planning-stat-label">Selected SP by Project:</span>
+                                    {capacityEnabled && (
+                                        <span className="planning-stat-separator">
+                                            Estimated capacity split: 70% Product / 30% Tech (tech-heavy teams may aim for 10% / 90%)
+                                        </span>
+                                    )}
+                                </div>
 	                        </div>
-	                        <div className="team-stats-grid">
-	                            {selectedProjectEntries.map((info) => (
-	                                <div key={info.id} className="team-stat-card">
-	                                    <div className="team-stat-value">{info.storyPoints.toFixed(1)}</div>
-	                                    <div className="team-stat-label">{info.name}</div>
+	                                <div className="team-stats-grid">
+	                                    {selectedProjectEntries.map((info) => (
+	                                        <div key={info.id} className="team-stat-card project-card">
+	                                            <div className="team-stat-label">{info.name}</div>
+	                                            <div className="team-stat-line">
+	                                                <div className="team-stat-value">
+	                                                    {(() => {
+	                                                        const total = selectedProjectEntries.reduce((sum, entry) => sum + entry.storyPoints, 0);
+	                                                        const pct = total > 0 ? (info.storyPoints / total) * 100 : 0;
+	                                                        return `${pct.toFixed(0)}%`;
+	                                                    })()}
+	                                                </div>
+	                                            </div>
+	                                            <div className="team-stat-line">
+	                                                <div className="team-stat-value muted">{info.storyPoints.toFixed(1)} SP</div>
+	                                                <div className="team-stat-meta">Selected effort</div>
+	                                            </div>
 	                                </div>
 	                            ))}
 	                            {selectedProjectEntries.length === 0 && (
@@ -4945,13 +5385,13 @@
 	                            )}
                             <div className="stats">
                                 <div
-                                    className={`stat-card total ${statusFilter === null ? 'active' : ''} ${tasks.length === 0 ? 'disabled' : ''}`}
+                                    className={`stat-card total ${statusFilter === null ? 'active' : ''} ${baseFilteredTasks.length === 0 ? 'disabled' : ''}`}
                                     onClick={() => {
-                                        if (tasks.length === 0) return;
+                                        if (baseFilteredTasks.length === 0) return;
                                         setStatusFilter(null);
                                     }}
                                 >
-                                    <div className="stat-value">{tasks.length}</div>
+                                    <div className="stat-value">{baseFilteredTasks.length}</div>
                                     <div className="stat-label">Total Tasks</div>
                                     <div className="stats-note">{totalStoryPoints.toFixed(1)} SP</div>
                                 </div>
@@ -5087,7 +5527,7 @@
                                                                     <span className="epic-key">Unassigned</span>
                                                                 </>
                                                             )}
-                                                            {showStats && (
+                                                            {(showStats || showPlanning) && (
                                                                 <button
                                                                     className={`epic-stat-toggle ${excludedEpicSet.has(epicGroup.key) ? '' : 'active'}`}
                                                                     onClick={() => {
@@ -5102,7 +5542,7 @@
                                                                             return Array.from(set);
                                                                         });
                                                                     }}
-                                                                    title="Include/exclude epic in sprint stats"
+                                                                    title="Include/exclude epic in sprint stats and planning capacity"
                                                                 >
                                                                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                                                         <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />

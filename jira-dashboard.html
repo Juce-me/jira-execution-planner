@@ -2317,7 +2317,7 @@
 
             useEffect(() => {
                 if (showPlanning && !isCompletedSprintSelected) {
-                    includePlanningTasksByStatus(['Accepted']);
+                    includePlanningTasksByStatus(['Accepted', 'In Progress']);
                 }
             }, [showPlanning, isCompletedSprintSelected]);
 
@@ -3203,8 +3203,6 @@
                 weightedProduct: { done: 0, incomplete: 0, killed: 0 },
                 weightedTech: { done: 0, incomplete: 0, killed: 0 }
             });
-            const statsStoryPointsTotal = effectiveStatsData?.storyPoints?.total || 0;
-
             const groupTasksByEpic = (taskList) => {
                 const grouped = {};
                 taskList.forEach(task => {
@@ -3368,8 +3366,9 @@
             };
 
             const selectedTasksList = visibleTasks.filter(task => selectedTasks[task.key]);
+            const acceptedStatusSet = new Set(['accepted', 'in progress']);
             const acceptedTasks = visibleTasks.filter(task =>
-                normalizeStatus(task.fields.status?.name) === 'accepted'
+                acceptedStatusSet.has(normalizeStatus(task.fields.status?.name))
             );
             const todoPendingTasks = visibleTasks.filter(task => {
                 const status = normalizeStatus(task.fields.status?.name);
@@ -3587,10 +3586,6 @@
             const estimatedCapacityRaw = Math.max(0, totalCapacityBase - excludedCapacityTotal);
             const totalCapacityAdjusted = totalCapacityBase * capacityMultiplier;
             const estimatedCapacityAdjusted = estimatedCapacityRaw * capacityMultiplier;
-            const selectedPlanningSP = selectedPlanningTasksList.reduce((sum, task) => {
-                const sp = parseFloat(task.fields.customfield_10004 || 0);
-                return sum + (Number.isNaN(sp) ? 0 : sp);
-            }, 0);
             const capacitySummary = getCapacityStatus(selectedSP, totalCapacityAdjusted);
 
             const projectCapacity = displayedTeamOptions.reduce((acc, team) => {
@@ -4985,9 +4980,9 @@
 	                            <div className="planning-actions">
 	                                <button
 	                                    className={`planning-action-button ${isAcceptedIncluded ? 'active' : ''}`}
-	                                    onClick={() => toggleIncludeByStatus(['Accepted'])}
+	                                    onClick={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
 	                                    disabled={visibleTasks.length === 0}
-	                                    title="Include all Accepted stories for the current view"
+	                                    title="Include all Accepted and In Progress stories for the current view"
 	                                >
 	                                    Include Accepted
 	                                </button>

@@ -157,23 +157,24 @@
 
         .sprint-selector {
             display: flex;
-            flex-direction: column;
-            gap: 0.6rem;
-            margin-top: 1rem;
+            align-items: center;
+            margin-top: 0.6rem;
             position: relative;
         }
 
         .sprint-filters {
             display: flex;
             align-items: center;
-            gap: 1rem;
-            flex-wrap: wrap;
+            gap: 0.8rem;
+            flex-wrap: nowrap;
+            width: 100%;
         }
 
         .sprint-actions {
-            display: flex;
+            display: inline-flex;
             align-items: center;
             gap: 0.75rem;
+            margin-left: 0.5rem;
         }
 
         .sprint-selector label {
@@ -189,6 +190,96 @@
             padding: 0.5rem 1rem;
             font-size: 0.75rem;
             margin: 0;
+        }
+
+        .sprint-dropdown {
+            position: relative;
+            min-width: 180px;
+        }
+
+        .sprint-dropdown-toggle {
+            width: 180px;
+            padding: 0.35rem 0.6rem;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            transition: all 0.2s;
+            text-transform: none;
+            letter-spacing: normal;
+            margin-right: 0;
+            box-shadow: none;
+        }
+
+        .sprint-dropdown-toggle svg {
+            width: 0.55rem;
+            height: 0.55rem;
+            flex-shrink: 0;
+            transition: transform 0.2s ease;
+        }
+
+        .sprint-dropdown-toggle:hover {
+            border-color: var(--border);
+            transform: none;
+            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .sprint-dropdown-toggle.open {
+            border-color: var(--border);
+            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
+        }
+
+        .sprint-dropdown-toggle.open svg {
+            transform: rotate(180deg);
+        }
+
+        .sprint-dropdown-panel {
+            position: absolute;
+            top: calc(100% + 0.4rem);
+            left: 0;
+            width: 180px;
+            background: #fff;
+            border: 1px solid var(--border);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+            padding: 0.5rem;
+            z-index: 20;
+        }
+
+        .sprint-dropdown-search {
+            width: 100%;
+            padding: 0.4rem 0.5rem;
+            border: 1px solid var(--border);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .sprint-dropdown-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .sprint-dropdown-option {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.4rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+
+        .sprint-dropdown-option:hover {
+            background: #f5f5f5;
+            box-shadow: inset 0 0 0 1px #e6e1da;
         }
 
         select {
@@ -225,18 +316,20 @@
 
         .team-dropdown-toggle {
             border: 1px solid var(--border);
-            background: transparent;
+            background: var(--bg-secondary);
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.875rem;
-            color: var(--text-secondary);
-            padding: 0.5rem 1rem;
-            width: 220px;
+            font-size: 0.75rem;
+            color: var(--text-primary);
+            padding: 0.35rem 0.6rem;
+            width: 180px;
             display: inline-flex;
             align-items: center;
             justify-content: space-between;
-            gap: 0.6rem;
+            gap: 0.5rem;
             cursor: pointer;
             transition: all 0.2s;
+            text-transform: none;
+            letter-spacing: normal;
         }
 
         .team-dropdown-toggle span {
@@ -245,9 +338,10 @@
         }
 
         .team-dropdown-toggle:hover {
-            background: var(--bg-primary);
+            background: var(--bg-secondary);
             color: var(--text-primary);
             border-color: var(--border);
+            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
         }
 
         .team-dropdown-toggle:focus {
@@ -257,9 +351,10 @@
         }
 
         .team-dropdown-toggle svg {
-            width: 0.75rem;
-            height: 0.75rem;
+            width: 0.55rem;
+            height: 0.55rem;
             transition: transform 0.2s ease;
+            flex-shrink: 0;
         }
 
         .team-dropdown-toggle.open svg {
@@ -270,7 +365,7 @@
             position: absolute;
             top: calc(100% + 0.35rem);
             left: 0;
-            width: 240px;
+            width: 180px;
             max-height: 220px;
             overflow-y: auto;
             background: #fff;
@@ -382,8 +477,8 @@
         }
 
         button:hover {
-            background: var(--accent);
-            transform: translateY(-2px);
+            background: #2f2f2f;
+            transform: translateY(-1px);
             box-shadow: 0 4px 12px var(--shadow);
         }
 
@@ -449,21 +544,9 @@
 	            background: var(--bg-secondary);
 	            border: 1px solid var(--border);
 	            border-left: 6px solid var(--accent);
-	            padding: 1.2rem 1.4rem;
+	            padding: 0.9rem 1.1rem;
 	            box-shadow: 0 10px 30px var(--shadow);
 	        }
-
-        .alert-card.collapsed {
-            padding: 0.7rem 1rem;
-        }
-
-        .alert-card.collapsed .alert-card-header {
-            margin-bottom: 0;
-        }
-
-        .alert-card.collapsed .alert-subtitle {
-            display: none;
-        }
 
         .alert-card.missing {
             border-left-color: var(--alert-missing);
@@ -490,7 +573,7 @@
 	            align-items: center;
 	            justify-content: space-between;
 	            gap: 0.75rem;
-	            margin-bottom: 0.8rem;
+	            margin-bottom: 0;
 	            flex-wrap: wrap;
 	        }
 
@@ -574,9 +657,19 @@
             letter-spacing: 0.02em;
         }
 
-	        .alert-card-body {
-	            margin-top: 0.5rem;
-	        }
+        .alert-card-body {
+            margin-top: 0.35rem;
+            max-height: 1200px;
+            opacity: 1;
+            overflow: hidden;
+            transition: max-height 0.35s ease, opacity 0.25s ease, margin 0.25s ease;
+        }
+
+        .alert-card-body.collapsed {
+            max-height: 0;
+            opacity: 0;
+            margin-top: 0;
+        }
 
         .alert-epic {
             border: 1px solid var(--border);
@@ -814,7 +907,7 @@
         }
 
         .task-title a:hover {
-            border-bottom-color: var(--accent);
+            border-bottom-color: var(--text-primary);
         }
 
         .task-inline-meta {
@@ -835,7 +928,7 @@
         }
 
         .task-key-link:hover {
-            border-bottom-color: var(--accent);
+            border-bottom-color: var(--text-primary);
         }
 
         .task-inline-sp {
@@ -992,9 +1085,9 @@
         }
 
         .back-to-top:hover {
-            background: var(--accent);
+            background: #2f2f2f;
             color: #fff;
-            border-color: var(--accent);
+            border-color: #2f2f2f;
         }
 
         .epic-title {
@@ -2028,9 +2121,9 @@
         }
 
         .uncheck-button:hover {
-            background: var(--accent);
-            color: white;
-            border-color: var(--accent);
+            background: #f3f2ef;
+            color: var(--text-primary);
+            border-color: var(--border);
             transform: none;
         }
 
@@ -2060,9 +2153,9 @@
         }
 
         .planning-action-button:hover {
-            background: rgba(22, 119, 255, 0.08);
-            color: var(--text);
-            border-color: rgba(22, 119, 255, 0.25);
+            background: #f3f2ef;
+            color: var(--text-primary);
+            border-color: var(--border);
             transform: none;
         }
 
@@ -2334,6 +2427,9 @@
             const [priorityHoverIndex, setPriorityHoverIndex] = useState(null);
             const [showTeamDropdown, setShowTeamDropdown] = useState(false);
             const teamDropdownRef = useRef(null);
+            const [sprintSearch, setSprintSearch] = useState('');
+            const [showSprintDropdown, setShowSprintDropdown] = useState(false);
+            const sprintDropdownRef = useRef(null);
             const [capacityEnabled, setCapacityEnabled] = useState(false);
             const [capacityByTeam, setCapacityByTeam] = useState({});
             const [capacityLoading, setCapacityLoading] = useState(false);
@@ -2376,6 +2472,16 @@
             }, [showPlanning, isCompletedSprintSelected]);
 
             useEffect(() => {
+                if (!selectedSprint) return;
+                if (!showSprintDropdown) return;
+                const optionEl = sprintDropdownRef.current?.querySelector(`[data-sprint-id="${selectedSprint}"]`);
+                if (!optionEl) return;
+                if (optionEl.scrollIntoView) {
+                    optionEl.scrollIntoView({ block: 'center' });
+                }
+            }, [showSprintDropdown, selectedSprint, filteredSprints?.length]);
+
+            useEffect(() => {
                 if (showStats) {
                     setShowPlanning(false);
                 }
@@ -2392,6 +2498,17 @@
                     if (!teamDropdownRef.current) return;
                     if (!teamDropdownRef.current.contains(event.target)) {
                         setShowTeamDropdown(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, []);
+
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (!sprintDropdownRef.current) return;
+                    if (!sprintDropdownRef.current.contains(event.target)) {
+                        setShowSprintDropdown(false);
                     }
                 };
                 document.addEventListener('mousedown', handleClickOutside);
@@ -2976,6 +3093,17 @@
                 if (!selectedSprint) return null;
                 return (availableSprints || []).find(sprint => String(sprint.id) === String(selectedSprint)) || null;
             }, [availableSprints, selectedSprint]);
+
+            const filteredSprints = React.useMemo(() => {
+                if (!sprintSearch.trim()) return availableSprints;
+                const query = sprintSearch.trim().toLowerCase();
+                return (availableSprints || []).filter(sprint => {
+                    const nameMatch = String(sprint.name || '').toLowerCase().includes(query);
+                    const state = (sprint.state || '').toLowerCase();
+                    const stateLabel = state === 'closed' ? 'c' : state === 'active' ? 'a' : state === 'future' ? 'f' : '';
+                    return nameMatch || stateLabel === query;
+                });
+            }, [availableSprints, sprintSearch]);
             const selectedSprintState = (selectedSprintInfo?.state || '').toLowerCase();
             const isCompletedSprintSelected = selectedSprintState === 'closed';
             const isFutureSprintSelected = selectedSprintState === 'future';
@@ -3072,6 +3200,8 @@
                 }
                 return true;
             });
+
+            const selectionTasks = baseFilteredTasks;
 
             const visibleTasks = baseFilteredTasks.filter(task => {
                 // Filter by status (from clickable elements)
@@ -3362,7 +3492,7 @@
                 const allowed = new Set((statuses || []).map(normalizeStatus));
                 setSelectedTasks(() => {
                     const next = {};
-                    visibleTasks.forEach(task => {
+                    selectionTasks.forEach(task => {
                         const status = normalizeStatus(task.fields.status?.name);
                         if (allowed.has(status)) {
                             next[task.key] = true;
@@ -3376,7 +3506,7 @@
                 const allowed = new Set((statuses || []).map(normalizeStatus));
                 setSelectedTasks(prev => {
                     const next = { ...prev };
-                    visibleTasks.forEach(task => {
+                    selectionTasks.forEach(task => {
                         const status = normalizeStatus(task.fields.status?.name);
                         if (allowed.has(status)) {
                             next[task.key] = true;
@@ -3390,7 +3520,7 @@
                 const allowed = new Set((statuses || []).map(normalizeStatus));
                 setSelectedTasks(prev => {
                     const next = { ...prev };
-                    const matching = visibleTasks.filter(task =>
+                    const matching = selectionTasks.filter(task =>
                         allowed.has(normalizeStatus(task.fields.status?.name))
                     );
                     const allSelected = matching.length > 0 && matching.every(task => prev[task.key]);
@@ -3408,7 +3538,7 @@
             // Calculate sum of Story Points for selected tasks
             const calculateSelectedSP = () => {
                 let sum = 0;
-                visibleTasks.forEach(task => {
+                selectionTasks.forEach(task => {
                     if (selectedTasks[task.key]) {
                         const sp = task.fields.customfield_10004;
                         if (sp) {
@@ -3419,12 +3549,12 @@
                 return sum;
             };
 
-            const selectedTasksList = visibleTasks.filter(task => selectedTasks[task.key]);
+            const selectedTasksList = selectionTasks.filter(task => selectedTasks[task.key]);
             const acceptedStatusSet = new Set(['accepted', 'in progress']);
-            const acceptedTasks = visibleTasks.filter(task =>
+            const acceptedTasks = selectionTasks.filter(task =>
                 acceptedStatusSet.has(normalizeStatus(task.fields.status?.name))
             );
-            const todoPendingTasks = visibleTasks.filter(task => {
+            const todoPendingTasks = selectionTasks.filter(task => {
                 const status = normalizeStatus(task.fields.status?.name);
                 return status === 'to do' || status === 'pending';
             });
@@ -4000,7 +4130,7 @@
                             <div className="header-actions">
                                 <button
                                     className="secondary compact"
-                                    onClick={() => loadSprints(true)}
+                                    onClick={() => window.location.reload()}
                                     disabled={sprintsLoading}
                                     title="Refresh sprints list from Jira"
                                 >
@@ -4043,47 +4173,92 @@
                         <div className="sprint-selector">
                             <div className="sprint-filters">
                                 <label>Select Sprint:</label>
-                                <select
-                                    value={selectedSprint || ''}
-                                    onChange={(e) => {
-                                        const sprintId = parseInt(e.target.value);
-                                        setSelectedSprint(sprintId);
-                                        const sprint = availableSprints.find(s => s.id === sprintId);
-                                        if (sprint) {
-                                            setSprintName(sprint.name);
-                                        }
-                                    }}
-                                    disabled={sprintsLoading || availableSprints.length === 0}
-                                >
-                                    {sprintsLoading ? (
-                                        <option value="">Loading sprints...</option>
-                                    ) : availableSprints.length === 0 ? (
-                                        <option value="">No sprints available</option>
-                                    ) : (
-                                        availableSprints.map(sprint => {
-                                            const state = (sprint.state || '').toLowerCase();
-                                            const marker = state === 'closed' ? '[C]' : state === 'active' ? '[A]' : '[F]';
-                                            return (
-                                                <option key={sprint.id} value={sprint.id}>
-                                                    {marker} {sprint.name}
-                                                </option>
-                                            );
-                                        })
+                                <div className="sprint-dropdown" ref={sprintDropdownRef}>
+                                    <div
+                                        className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
+                                        role="button"
+                                        tabIndex={sprintsLoading || availableSprints.length === 0 ? -1 : 0}
+                                        onClick={() => {
+                                            if (sprintsLoading || availableSprints.length === 0) return;
+                                            setShowSprintDropdown(!showSprintDropdown);
+                                        }}
+                                        onKeyDown={(event) => {
+                                            if (sprintsLoading || availableSprints.length === 0) return;
+                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                event.preventDefault();
+                                                setShowSprintDropdown(!showSprintDropdown);
+                                            }
+                                        }}
+                                        aria-disabled={sprintsLoading || availableSprints.length === 0}
+                                    >
+                                        <span>{sprintName || 'Select sprint'}</span>
+                                        <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                                            <path d="M6 9L1 4h10z"/>
+                                        </svg>
+                                    </div>
+                                    {showSprintDropdown && (
+                                        <div className="sprint-dropdown-panel">
+                                            <input
+                                                type="text"
+                                                className="sprint-dropdown-search"
+                                                placeholder="Filter..."
+                                                value={sprintSearch}
+                                                onChange={(e) => setSprintSearch(e.target.value)}
+                                                aria-label="Filter sprints"
+                                            />
+                                            <div className="sprint-dropdown-list">
+                                                {sprintsLoading ? (
+                                                    <div className="sprint-dropdown-option">Loading sprints...</div>
+                                                ) : filteredSprints.length === 0 ? (
+                                                    <div className="sprint-dropdown-option">No sprints available</div>
+                                                ) : (
+                                                    filteredSprints.map(sprint => {
+                                                        const state = (sprint.state || '').toLowerCase();
+                                                        const marker = state === 'closed' ? '[C]' : state === 'active' ? '[A]' : '[F]';
+                                                        return (
+                                                            <div
+                                                                key={sprint.id}
+                                                                className="sprint-dropdown-option"
+                                                                data-sprint-id={sprint.id}
+                                                                onClick={() => {
+                                                                    setSelectedSprint(sprint.id);
+                                                                    setSprintName(sprint.name);
+                                                                    setShowSprintDropdown(false);
+                                                                }}
+                                                            >
+                                                                {marker} {sprint.name}
+                                                            </div>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        </div>
                                     )}
-                                </select>
+                                </div>
                                 <label>Select Team:</label>
                                 <div className="team-dropdown" ref={teamDropdownRef}>
-                                    <button
-                                        type="button"
+                                    <div
                                         className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''}`}
-                                        onClick={() => setShowTeamDropdown(!showTeamDropdown)}
-                                        disabled={tasks.length === 0 && loading}
+                                        role="button"
+                                        tabIndex={tasks.length === 0 && loading ? -1 : 0}
+                                        onClick={() => {
+                                            if (tasks.length === 0 && loading) return;
+                                            setShowTeamDropdown(!showTeamDropdown);
+                                        }}
+                                        onKeyDown={(event) => {
+                                            if (tasks.length === 0 && loading) return;
+                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                event.preventDefault();
+                                                setShowTeamDropdown(!showTeamDropdown);
+                                            }
+                                        }}
+                                        aria-disabled={tasks.length === 0 && loading}
                                     >
                                         <span>{selectedTeamsLabel}</span>
                                         <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
                                             <path d="M6 9L1 4h10z"/>
                                         </svg>
-                                    </button>
+                                    </div>
                                     {showTeamDropdown && (
                                         <div className="team-dropdown-panel">
                                             {teamOptions.map(team => (
@@ -4099,30 +4274,30 @@
                                         </div>
                                     )}
                                 </div>
-                            </div>
-                            <div className="sprint-actions">
-                                <button
-                                    className={`planning-button ${showPlanning ? 'active' : ''}`}
-                                    onClick={() => setShowPlanning(!showPlanning)}
-                                    disabled={isCompletedSprintSelected}
-                                    title="Toggle sprint planning panel"
-                                >
-                                    Sprint Planning
-                                    <svg viewBox="0 0 12 12" fill="currentColor">
-                                        <path d="M6 9L1 4h10z"/>
-                                    </svg>
-                                </button>
-                            <button
-                                className={`planning-button ${showStats ? 'active' : ''}`}
-                                onClick={() => setShowStats(!showStats)}
-                                title="Toggle sprint statistics"
-                                disabled={isFutureSprintSelected}
-                            >
-                                Statistics
-                                <svg viewBox="0 0 12 12" fill="currentColor">
-                                    <path d="M6 9L1 4h10z"/>
-                                </svg>
-                                </button>
+                                <div className="sprint-actions">
+                                    <button
+                                        className={`planning-button ${showPlanning ? 'active' : ''}`}
+                                        onClick={() => setShowPlanning(!showPlanning)}
+                                        disabled={isCompletedSprintSelected}
+                                        title="Toggle sprint planning panel"
+                                    >
+                                        Sprint Planning
+                                        <svg viewBox="0 0 12 12" fill="currentColor">
+                                            <path d="M6 9L1 4h10z"/>
+                                        </svg>
+                                    </button>
+                                    <button
+                                        className={`planning-button ${showStats ? 'active' : ''}`}
+                                        onClick={() => setShowStats(!showStats)}
+                                        title="Toggle sprint statistics"
+                                        disabled={isFutureSprintSelected}
+                                    >
+                                        Statistics
+                                        <svg viewBox="0 0 12 12" fill="currentColor">
+                                            <path d="M6 9L1 4h10z"/>
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </header>
@@ -5240,18 +5415,17 @@
 		                                                    {consolidatedMissingStories.length} {consolidatedMissingStories.length === 1 ? 'story' : 'stories'}
 		                                                </a>
 		                                            </div>
-	                                            {showMissingAlert && (
-	                                                <div className="alert-card-body">
-	                                                    <div className="alert-stories">
-	                                                        {consolidatedMissingStories.map(({ task, missingFields }) => {
-	                                                            const teamInfo = getTeamInfo(task);
-	                                                            return (
+                                            <div className={`alert-card-body ${showMissingAlert ? '' : 'collapsed'}`}>
+                                                    <div className="alert-stories">
+                                                        {consolidatedMissingStories.map(({ task, missingFields }) => {
+                                                            const teamInfo = getTeamInfo(task);
+                                                            return (
 	                                                                <div key={task.key} className="alert-story">
 	                                                                    <span className="alert-pill team">{teamInfo.name}</span>
 	                                                                    <div className="alert-story-main">
 	                                                                        <a
 	                                                                            className="alert-story-link"
-	                                                                            href={`${jiraUrl}/browse/${task.key}`}
+	                                                                            href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
 	                                                                            target="_blank"
 	                                                                            rel="noopener noreferrer"
 	                                                                        >
@@ -5261,7 +5435,7 @@
 	                                                                    <span className="alert-pill status">Missing: {missingFields.join(', ')}</span>
 	                                                                    <a
 	                                                                        className="alert-action"
-	                                                                        href={`${jiraUrl}/browse/${task.key}`}
+	                                                                        href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
 	                                                                        target="_blank"
 	                                                                        rel="noopener noreferrer"
 	                                                                    >
@@ -5269,10 +5443,9 @@
 	                                                                    </a>
 	                                                                </div>
 	                                                            );
-	                                                        })}
-	                                                    </div>
-	                                                </div>
-	                                            )}
+                                                        })}
+                                                    </div>
+                                            </div>
 	                                        </div>
 	                                    )}
 
@@ -5305,12 +5478,11 @@
 	                                                    {blockedTasks.length} blocked
 	                                                </a>
 	                                            </div>
-	                                            {showBlockedAlert && (
-	                                                <div className="alert-card-body">
-	                                                    {blockedGroups.map(group => {
+                                            <div className={`alert-card-body ${showBlockedAlert ? '' : 'collapsed'}`}>
+                                                    {blockedGroups.map(group => {
                                                         const epicTitle = group.epic?.summary || group.parentSummary ||
                                                             (group.key === 'NO_EPIC' ? 'No Epic Linked' : group.key);
-	                                                        return (
+                                                        return (
 	                                                            <div key={group.key} className="alert-epic">
 	                                                                <div className="alert-epic-head">
                                                                     <div className="alert-epic-title">
@@ -5320,7 +5492,7 @@
                                                                     {group.key !== 'NO_EPIC' && (
                                                                         <a
                                                                             className="alert-epic-link"
-                                                                            href={`${jiraUrl}/browse/${group.key}`}
+                                                                            href={jiraUrl ? `${jiraUrl}/browse/${group.key}` : '#'}
                                                                             target="_blank"
                                                                             rel="noopener noreferrer"
                                                                         >
@@ -5338,7 +5510,7 @@
                                                                                 <div className="alert-story-main">
                                                                                     <a
                                                                                         className="alert-story-link"
-                                                                                        href={`${jiraUrl}/browse/${task.key}`}
+                                                                                        href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
                                                                                         target="_blank"
                                                                                         rel="noopener noreferrer"
                                                                                     >
@@ -5352,9 +5524,8 @@
                                                                 </div>
                                                             </div>
                                                         );
-	                                                    })}
-	                                                </div>
-	                                            )}
+                                                    })}
+                                            </div>
 	                                        </div>
 	                                    )}
 
@@ -5387,16 +5558,15 @@
 	                                                    {emptyEpics.length} {emptyEpics.length === 1 ? 'epic' : 'epics'}
 	                                                </a>
 	                                            </div>
-		                                            {showEmptyEpicAlert && (
-		                                                <div className="alert-card-body">
-		                                                    <div className="alert-stories">
-		                                                        {emptyEpicsSorted.map(epic => (
-	                                                            <div key={epic.key} className="alert-story">
+                                            <div className={`alert-card-body ${showEmptyEpicAlert ? '' : 'collapsed'}`}>
+                                                    <div className="alert-stories">
+                                                        {emptyEpicsSorted.map(epic => (
+                                                            <div key={epic.key} className="alert-story">
 	                                                                <span className="alert-pill team">{epic.teamName || 'Unknown Team'}</span>
 	                                                                <div className="alert-story-main">
 	                                                                    <a
 	                                                                        className="alert-story-link"
-	                                                                        href={`${jiraUrl}/browse/${epic.key}`}
+	                                                                        href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
 	                                                                        target="_blank"
 	                                                                        rel="noopener noreferrer"
 	                                                                    >
@@ -5408,17 +5578,16 @@
 	                                                                )}
 	                                                                <a
 	                                                                    className="alert-action"
-	                                                                    href={`${jiraUrl}/browse/${epic.key}`}
+	                                                                    href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
 	                                                                    target="_blank"
 	                                                                    rel="noopener noreferrer"
 	                                                                >
 	                                                                    Create story →
 	                                                                </a>
 	                                                            </div>
-		                                                        ))}
-		                                                    </div>
-		                                                </div>
-		                                            )}
+                                                        ))}
+                                                    </div>
+                                            </div>
 		                                        </div>
 		                                    )}
 
@@ -5451,16 +5620,15 @@
 	                                                    {doneStoryEpics.length} {doneStoryEpics.length === 1 ? 'epic' : 'epics'}
 	                                                </a>
 	                                            </div>
-	                                            {showDoneEpicAlert && (
-	                                                <div className="alert-card-body">
-	                                                    <div className="alert-stories">
-	                                                        {doneStoryEpicsSorted.map(epic => (
-	                                                            <div key={epic.key} className="alert-story">
+                                            <div className={`alert-card-body ${showDoneEpicAlert ? '' : 'collapsed'}`}>
+                                                    <div className="alert-stories">
+                                                        {doneStoryEpicsSorted.map(epic => (
+                                                            <div key={epic.key} className="alert-story">
 	                                                                <span className="alert-pill team">{epic.teamName || 'Unknown Team'}</span>
 	                                                                <div className="alert-story-main">
 	                                                                    <a
 	                                                                        className="alert-story-link"
-	                                                                        href={`${jiraUrl}/browse/${epic.key}`}
+	                                                                        href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
 	                                                                        target="_blank"
 	                                                                        rel="noopener noreferrer"
 	                                                                    >
@@ -5472,17 +5640,16 @@
 	                                                                )}
 	                                                                <a
 	                                                                    className="alert-action"
-	                                                                    href={`${jiraUrl}/browse/${epic.key}`}
+	                                                                    href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
 	                                                                    target="_blank"
 	                                                                    rel="noopener noreferrer"
 	                                                                >
 	                                                                    Close epic →
 	                                                                </a>
 	                                                            </div>
-	                                                        ))}
-	                                                    </div>
-	                                                </div>
-	                                            )}
+                                                        ))}
+                                                    </div>
+                                            </div>
 	                                        </div>
 	                                    )}
 
@@ -5626,7 +5793,7 @@
                                                             {epicGroup.key !== 'NO_EPIC' ? (
                                                                 <a
                                                                     className="epic-link"
-                                                                    href={`${jiraUrl}/browse/${epicGroup.key}`}
+                                                                    href={jiraUrl ? `${jiraUrl}/browse/${epicGroup.key}` : '#'}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
                                                                 >
@@ -5704,14 +5871,14 @@
                                                                         </svg>
                                                                     </span>
                                                                     <h3 className="task-title">
-                                                                        <a href={`${jiraUrl}/browse/${task.key}`} target="_blank" rel="noopener noreferrer">
+                                                                        <a href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'} target="_blank" rel="noopener noreferrer">
                                                                             {task.fields.summary}
                                                                         </a>
                                                                     </h3>
                                                                     <span className="task-inline-meta">
                                                                         <a
                                                                             className="task-key-link"
-                                                                            href={`${jiraUrl}/browse/${task.key}`}
+                                                                            href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
                                                                             target="_blank"
                                                                             rel="noopener noreferrer"
                                                                         >

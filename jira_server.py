@@ -489,14 +489,19 @@ def fetch_sprints_from_jira():
     if JIRA_BOARD_ID:
         try:
             print(f'\n📅 Fetching sprints from board {JIRA_BOARD_ID}...')
-            response = requests.get(
-                f'{JIRA_URL}/rest/agile/1.0/board/{JIRA_BOARD_ID}/sprint',
-                headers=headers,
-                params={'maxResults': 100, 'state': 'active,future,closed'},
-                timeout=30
-            )
+            start_at = 0
+            while True:
+                response = requests.get(
+                    f'{JIRA_URL}/rest/agile/1.0/board/{JIRA_BOARD_ID}/sprint',
+                    headers=headers,
+                    params={'maxResults': 100, 'startAt': start_at, 'state': 'active,future,closed'},
+                    timeout=30
+                )
 
-            if response.status_code == 200:
+                if response.status_code != 200:
+                    print(f'⚠️ Board API returned {response.status_code}, trying alternative method...')
+                    break
+
                 data = response.json()
                 sprints = data.get('values', [])
 
@@ -511,6 +516,13 @@ def fetch_sprints_from_jira():
                             'name': name,
                             'state': state
                         })
+
+                if data.get('isLast', False) or not sprints:
+                    break
+
+                start_at += len(sprints)
+
+            if formatted_sprints:
                 print(f'✅ Found {len(formatted_sprints)} sprints from board')
             else:
                 print(f'⚠️ Board API returned {response.status_code}, trying alternative method...')
@@ -522,51 +534,66 @@ def fetch_sprints_from_jira():
         print(f'\n📅 Fetching sprints from issues (alternative method)...')
 
         # Build JQL query without sprint filter to get all issues
-        base_jql = STATS_JQL_BASE or JQL_QUERY
+        base_jql = STATS_JQL_BASE or f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")'
         # Remove any existing sprint filters from the query
         base_jql = strip_sprint_clause(base_jql)
 
         def collect_sprints_by_jql(jql_query, sprints_dict):
-            payload = {
-                'jql': jql_query,
-                'maxResults': 200,  # Reduced from 1000 for better performance
-                'fields': ['customfield_10101']  # Only get sprint field
-            }
+            total_issues = 0
+            start_at = 0
+            while True:
+                payload = {
+                    'jql': jql_query,
+                    'startAt': start_at,
+                    'maxResults': 200,  # Reduced from 1000 for better performance
+                    'fields': ['customfield_10101']  # Only get sprint field
+                }
 
-            response = jira_search_request(headers, payload)
-            if response.status_code != 200:
-                return 0
+                response = jira_search_request(headers, payload)
+                if response.status_code != 200:
+                    break
 
-            data = response.json()
-            issues = data.get('issues', [])
+                data = response.json()
+                issues = data.get('issues', [])
 
-            for issue in issues:
-                sprint_field = issue.get('fields', {}).get('customfield_10101', [])
-                if sprint_field and isinstance(sprint_field, list):
-                    for sprint in sprint_field:
-                        if sprint and isinstance(sprint, dict):
-                            name = sprint.get('name', '')
-                            sprint_id = sprint.get('id')
-                            state = sprint.get('state', '')
+                for issue in issues:
+                    sprint_field = issue.get('fields', {}).get('customfield_10101', [])
+                    if sprint_field and isinstance(sprint_field, list):
+                        for sprint in sprint_field:
+                            if sprint and isinstance(sprint, dict):
+                                name = sprint.get('name', '')
+                                sprint_id = sprint.get('id')
+                                state = sprint.get('state', '')
 
-                            if re.match(r'^\d{4}Q[1-4]$', name) and sprint_id:
-                                sprints_dict[sprint_id] = {
-                                    'id': sprint_id,
-                                    'name': name,
-                                    'state': state
-                                }
-            return len(issues)
+                                if re.match(r'^\d{4}Q[1-4]$', name) and sprint_id:
+                                    sprints_dict[sprint_id] = {
+                                        'id': sprint_id,
+                                        'name': name,
+                                        'state': state
+                                    }
+
+                total_issues += len(issues)
+                if len(issues) < payload['maxResults']:
+                    break
+
+                start_at += len(issues)
+
+            return total_issues
 
         sprints_dict = {}
         issues_count = collect_sprints_by_jql(base_jql, sprints_dict)
         closed_jql = add_clause_to_jql(base_jql, 'Sprint in closedSprints()')
         issues_count += collect_sprints_by_jql(closed_jql, sprints_dict)
+        future_jql = add_clause_to_jql(base_jql, 'Sprint in futureSprints()')
+        issues_count += collect_sprints_by_jql(future_jql, sprints_dict)
+        open_jql = add_clause_to_jql(base_jql, 'Sprint in openSprints()')
+        issues_count += collect_sprints_by_jql(open_jql, sprints_dict)
 
         formatted_sprints = list(sprints_dict.values())
         print(f'✅ Found {len(formatted_sprints)} unique sprints from {issues_count} issues')
 
-    # Sort sprints by name (will sort chronologically)
-    formatted_sprints.sort(key=lambda x: x['name'])
+    # Sort sprints by name (latest first)
+    formatted_sprints.sort(key=lambda x: x['name'], reverse=True)
 
     return formatted_sprints
 

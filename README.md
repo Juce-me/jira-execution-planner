@@ -18,6 +18,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Dependency focus** - Click Depends On/Dependents to highlight related tasks and show missing deps inline
 - ✅ **Planning rollups** - Selected story points summarized per team, project, and overall
 - ✅ **Capacity planning** - Team capacity vs planning capacity (exclusions via epic toggle)
+- ✅ **Scenario planner** - Timeline scheduling with capacity, WIP limits, dependencies, critical path, and slack
 - ✅ **Alerts** - Panels for Missing Story Points, Blocked, Missing Epic, Empty Epic, and “Epic Ready to Close” (rules: `ALERT_RULES.md`, ready-to-close uses all-time data)
 - ✅ **Sprint statistics** - Teams/Priority views with product/tech split, derived from loaded sprint tasks (with epic include/exclude toggle)
 
@@ -151,6 +152,7 @@ You should see:
    • http://localhost:<PORT>/api/tasks-with-team-name - Get sprint tasks with a derived teamName field
    • http://localhost:<PORT>/api/dependencies - Get issue dependencies (POST)
    • http://localhost:<PORT>/api/issues/lookup?keys=KEY-1,KEY-2 - Lookup dependency issues (GET)
+   • http://localhost:<PORT>/api/scenario - Scenario planner (GET/POST)
    • http://localhost:<PORT>/api/sprints - Get available sprints (cached)
    • http://localhost:<PORT>/api/sprints?refresh=true - Force refresh sprints cache
    • http://localhost:<PORT>/api/boards - Get all boards (to find board ID)
@@ -238,6 +240,17 @@ Priority weights used for weighted delivery:
 - Minor 0.06
 - Low 0.03
 - Trivial 0.01
+
+## 🗓️ Scenario Planner
+
+The Scenario tab builds a quarter timeline that accounts for dependencies, capacity limits, and WIP:
+
+- **Inputs**: quarter start/end dates, SP->weeks ratio, WIP limit, sickleave buffer, and team size/vacation overrides.
+- **Scheduling**: topological dependency ordering, then priority (highest -> lowest) and larger SP first when ready.
+- **Outputs**: per-issue start/end dates, critical path, slack, bottleneck lanes, and late items.
+- **Missing data**: issues with missing SP or missing dependencies are marked unschedulable.
+
+Assumption: **1 SP = 2 working weeks** by default (configurable in the Scenario panel).
 
 ## 🔒 Security Notes
 

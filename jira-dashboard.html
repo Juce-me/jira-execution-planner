@@ -1567,6 +1567,327 @@
             box-shadow: 0 8px 24px rgba(26, 26, 26, 0.08);
         }
 
+        .scenario-panel {
+            background: transparent;
+            border: 1px solid transparent;
+            margin-top: 0;
+            margin-bottom: 0;
+            overflow: hidden;
+            max-height: 0;
+            padding: 0;
+            opacity: 0;
+            transition: max-height 0.6s ease, opacity 0.6s ease, padding 0.6s ease, margin 0.6s ease, border-color 0.6s ease, background 0.6s ease;
+        }
+
+        .scenario-panel.open {
+            background: var(--bg-secondary);
+            border-color: var(--border);
+            max-height: 2400px;
+            padding: 0.75rem;
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+            opacity: 1;
+            overflow: visible;
+            box-shadow: 0 8px 24px rgba(26, 26, 26, 0.08);
+        }
+
+        .scenario-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .scenario-title {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-secondary);
+        }
+
+        .scenario-subtitle {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+
+        .scenario-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 0.6rem;
+            margin-bottom: 0.9rem;
+        }
+
+        .scenario-control label {
+            display: block;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            margin-bottom: 0.35rem;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        .scenario-input {
+            width: 100%;
+            padding: 0.45rem 0.6rem;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text-primary);
+        }
+
+        .scenario-input.small {
+            width: 90px;
+        }
+
+        .scenario-toggle-group {
+            display: flex;
+            gap: 0.4rem;
+        }
+
+        .scenario-toggle {
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+            padding: 0.35rem 0.6rem;
+        }
+
+        .scenario-toggle.active {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+        }
+
+        .scenario-team-config {
+            border: 1px solid var(--border);
+            border-radius: 0.6rem;
+            padding: 0.75rem;
+            margin-bottom: 0.9rem;
+            background: #fff;
+        }
+
+        .scenario-team-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.6rem;
+        }
+
+        .scenario-team-title {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-secondary);
+        }
+
+        .scenario-team-defaults {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        .scenario-team-default-label {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            margin-bottom: 0.2rem;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        .scenario-team-grid {
+            display: grid;
+            grid-template-columns: 1.4fr 0.6fr 0.6fr;
+            gap: 0.5rem;
+            align-items: center;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+        }
+
+        .scenario-team-grid-header {
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.6rem;
+        }
+
+        .scenario-team-name {
+            color: var(--text-primary);
+        }
+
+        .scenario-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 0.9rem;
+        }
+
+        .scenario-card {
+            border: 1px solid var(--border);
+            border-radius: 0.6rem;
+            padding: 0.7rem;
+            background: #fff;
+            box-shadow: 0 6px 16px rgba(26, 26, 26, 0.06);
+        }
+
+        .scenario-card h4 {
+            margin: 0 0 0.35rem;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--text-secondary);
+        }
+
+        .scenario-card .scenario-value {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .scenario-timeline {
+            --scenario-label-width: 180px;
+            --scenario-axis-height: 24px;
+            border: 1px solid var(--border);
+            border-radius: 0.6rem;
+            background: #fff;
+            padding: 0.75rem;
+            position: relative;
+        }
+
+        .scenario-axis {
+            display: flex;
+            justify-content: space-between;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            padding-left: var(--scenario-label-width);
+            min-height: var(--scenario-axis-height);
+        }
+
+        .scenario-lanes {
+            display: grid;
+            gap: 0.4rem;
+            position: relative;
+        }
+
+        .scenario-lane {
+            display: grid;
+            grid-template-columns: var(--scenario-label-width) 1fr;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .scenario-lane-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--text-primary);
+        }
+
+        .scenario-lane-track {
+            position: relative;
+            height: 38px;
+            background: rgba(26, 26, 26, 0.02);
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+
+        .scenario-bar {
+            position: absolute;
+            top: 6px;
+            height: 26px;
+            border-radius: 0.5rem;
+            background: rgba(29, 122, 252, 0.18);
+            border: 1px solid rgba(29, 122, 252, 0.4);
+            display: flex;
+            align-items: center;
+            padding: 0 0.35rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .scenario-bar.critical {
+            border-color: #cf1322;
+            background: rgba(207, 19, 34, 0.16);
+        }
+
+        .scenario-bar.late {
+            border-color: #d4380d;
+            background: rgba(212, 56, 13, 0.16);
+        }
+
+        .scenario-bar.blocked::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            background: rgba(212, 56, 13, 0.6);
+        }
+
+        .scenario-deadline {
+            position: absolute;
+            top: 24px;
+            bottom: 16px;
+            width: 2px;
+            background: rgba(212, 56, 13, 0.6);
+            pointer-events: none;
+        }
+
+        .scenario-deps {
+            position: absolute;
+            left: var(--scenario-label-width);
+            right: 0;
+            top: calc(var(--scenario-axis-height) + 8px);
+            bottom: 12px;
+            pointer-events: none;
+        }
+
+        .scenario-error {
+            font-size: 0.75rem;
+            color: #cf1322;
+            margin-bottom: 0.6rem;
+        }
+
+        .scenario-loading {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.6rem;
+        }
+
+        .scenario-issues-list {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-top: 0.4rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .scenario-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+        }
+
+        .scenario-link:hover {
+            text-decoration: underline;
+        }
+
         .stats-controls {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -2548,6 +2869,7 @@
             });
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
             const [showStats, setShowStats] = useState(savedPrefsRef.current.showStats ?? false);
+            const [showScenario, setShowScenario] = useState(savedPrefsRef.current.showScenario ?? false);
             const [showDependencies, setShowDependencies] = useState(savedPrefsRef.current.showDependencies ?? false);
             const [searchQuery, setSearchQuery] = useState(savedPrefsRef.current.searchQuery ?? '');
             const normalizeSelectedTeams = (value) => {
@@ -2578,6 +2900,20 @@
             const [capacityEnabled, setCapacityEnabled] = useState(false);
             const [capacityByTeam, setCapacityByTeam] = useState({});
             const [capacityLoading, setCapacityLoading] = useState(false);
+            const [scenarioLoading, setScenarioLoading] = useState(false);
+            const [scenarioError, setScenarioError] = useState('');
+            const [scenarioData, setScenarioData] = useState(null);
+            const [scenarioLaneMode, setScenarioLaneMode] = useState(savedPrefsRef.current.scenarioLaneMode ?? 'team');
+            const [scenarioStartDate, setScenarioStartDate] = useState(savedPrefsRef.current.scenarioStartDate ?? '');
+            const [scenarioEndDate, setScenarioEndDate] = useState(savedPrefsRef.current.scenarioEndDate ?? '');
+            const [scenarioSpToWeeks, setScenarioSpToWeeks] = useState(savedPrefsRef.current.scenarioSpToWeeks ?? 2);
+            const [scenarioWipLimit, setScenarioWipLimit] = useState(savedPrefsRef.current.scenarioWipLimit ?? 1);
+            const [scenarioSickleave, setScenarioSickleave] = useState(savedPrefsRef.current.scenarioSickleave ?? 10);
+            const [scenarioDefaultTeamSize, setScenarioDefaultTeamSize] = useState(savedPrefsRef.current.scenarioDefaultTeamSize ?? 2);
+            const [scenarioDefaultVacation, setScenarioDefaultVacation] = useState(savedPrefsRef.current.scenarioDefaultVacation ?? 0);
+            const [scenarioTeamOverrides, setScenarioTeamOverrides] = useState(savedPrefsRef.current.scenarioTeamOverrides ?? {});
+            const scenarioTimelineRef = useRef(null);
+            const [scenarioLayout, setScenarioLayout] = useState({ width: 0, height: 0 });
             const [dependencyData, setDependencyData] = useState({});
             const [dependencyFocus, setDependencyFocus] = useState(null);
             const [dependencyLookupCache, setDependencyLookupCache] = useState({});
@@ -2602,6 +2938,14 @@
                 return (status || '').toLowerCase().replace(/\s+/g, ' ').trim();
             };
 
+            const formatDateInput = (value) => {
+                if (!value) return '';
+                const year = value.getFullYear();
+                const month = `${value.getMonth() + 1}`.padStart(2, '0');
+                const day = `${value.getDate()}`.padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            };
+
 
             useEffect(() => {
                 if (!showPlanning) {
@@ -2612,6 +2956,7 @@
             useEffect(() => {
                 if (showPlanning) {
                     setShowStats(false);
+                    setShowScenario(false);
                 }
             }, [showPlanning]);
 
@@ -2634,8 +2979,29 @@
             useEffect(() => {
                 if (showStats) {
                     setShowPlanning(false);
+                    setShowScenario(false);
                 }
             }, [showStats]);
+
+            useEffect(() => {
+                if (showScenario) {
+                    setShowPlanning(false);
+                    setShowStats(false);
+                }
+            }, [showScenario]);
+
+            useEffect(() => {
+                if (!showScenario) return;
+                const today = new Date();
+                if (!scenarioStartDate) {
+                    setScenarioStartDate(formatDateInput(today));
+                }
+                if (!scenarioEndDate) {
+                    const end = new Date(today);
+                    end.setDate(end.getDate() + 90);
+                    setScenarioEndDate(formatDateInput(end));
+                }
+            }, [showScenario]);
 
             useEffect(() => {
                 if (!capacityEnabled) {
@@ -2676,6 +3042,7 @@
                     selectedTeams,
                     showPlanning,
                     showStats,
+                    showScenario,
                     showDependencies,
                     showTech,
                     showProduct,
@@ -2685,6 +3052,15 @@
                     searchQuery,
                     statsView,
                     statsGraphMode,
+                    scenarioLaneMode,
+                    scenarioStartDate,
+                    scenarioEndDate,
+                    scenarioSpToWeeks,
+                    scenarioWipLimit,
+                    scenarioSickleave,
+                    scenarioDefaultTeamSize,
+                    scenarioDefaultVacation,
+                    scenarioTeamOverrides,
                     excludedStatsEpics,
                     showMissingAlert,
                     showBlockedAlert,
@@ -2696,6 +3072,7 @@
                 selectedTeams,
                 showPlanning,
                 showStats,
+                showScenario,
                 showDependencies,
                 showTech,
                 showProduct,
@@ -2705,6 +3082,15 @@
                 searchQuery,
                 statsView,
                 statsGraphMode,
+                scenarioLaneMode,
+                scenarioStartDate,
+                scenarioEndDate,
+                scenarioSpToWeeks,
+                scenarioWipLimit,
+                scenarioSickleave,
+                scenarioDefaultTeamSize,
+                scenarioDefaultVacation,
+                scenarioTeamOverrides,
                 excludedStatsEpics,
                 showMissingAlert,
                 showBlockedAlert,
@@ -2763,6 +3149,11 @@
                 epicOrderRef.current = {};
                 epicOrderCounterRef.current = 0;
             }, [selectedSprint]);
+
+            useEffect(() => {
+                setScenarioData(null);
+                setScenarioError('');
+            }, [selectedSprint, selectedTeams]);
 
 
             const loadSprints = async (forceRefresh = false) => {
@@ -3010,6 +3401,72 @@
                     setDependencyData(data.dependencies || {});
                 } catch (err) {
                     console.error('Dependencies fetch error:', err);
+                }
+            };
+
+            const parseScenarioDate = (value) => {
+                if (!value) return null;
+                return new Date(`${value}T00:00:00`);
+            };
+
+            const buildScenarioPayload = () => {
+                const teamSizes = {};
+                const vacationWeeks = {};
+                scenarioTeamNames.forEach((name) => {
+                    const override = scenarioTeamOverrides[name] || {};
+                    const rawSize = override.size === '' || override.size === undefined ? scenarioDefaultTeamSize : override.size;
+                    const rawVacation = override.vacation === '' || override.vacation === undefined ? scenarioDefaultVacation : override.vacation;
+                    const size = Number(rawSize);
+                    const vacation = Number(rawVacation);
+                    if (!Number.isNaN(size) && size > 0) {
+                        teamSizes[name] = size;
+                    }
+                    if (!Number.isNaN(vacation) && vacation > 0) {
+                        vacationWeeks[name] = vacation;
+                    }
+                });
+
+                return {
+                    config: {
+                        start_date: scenarioStartDate,
+                        quarter_end_date: scenarioEndDate,
+                        sp_to_weeks: Number(scenarioSpToWeeks || 0) || 2,
+                        wip_limit: Number(scenarioWipLimit || 1),
+                        sickleave_buffer: Math.max(0, Number(scenarioSickleave || 0) / 100),
+                        team_sizes: teamSizes,
+                        vacation_weeks: vacationWeeks,
+                        lane_mode: scenarioLaneMode
+                    },
+                    filters: {
+                        sprint: selectedSprint || null,
+                        teams: scenarioTeamIds
+                    }
+                };
+            };
+
+            const runScenario = async () => {
+                if (!selectedSprint) {
+                    setScenarioError('Select a sprint to build a scenario.');
+                    return;
+                }
+                setScenarioLoading(true);
+                setScenarioError('');
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/scenario`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(buildScenarioPayload())
+                    });
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(errorData.error || `Scenario error ${response.status}`);
+                    }
+                    const data = await response.json();
+                    setScenarioData(data);
+                } catch (err) {
+                    setScenarioError(err.message || 'Failed to run scenario.');
+                } finally {
+                    setScenarioLoading(false);
                 }
             };
 
@@ -3307,6 +3764,31 @@
                 return `${selectedTeamSet.size} Teams`;
             }, [isAllTeamsSelected, selectedTeamSet, teamNameById]);
 
+            const scenarioTeamIds = React.useMemo(() => {
+                if (isAllTeamsSelected) {
+                    return teamOptions.filter(team => team.id !== 'all').map(team => team.id);
+                }
+                return Array.from(selectedTeamSet);
+            }, [isAllTeamsSelected, selectedTeamSet, teamOptions]);
+
+            const scenarioTeamNames = React.useMemo(() => {
+                return scenarioTeamIds
+                    .map(id => teamNameById.get(id))
+                    .filter(Boolean);
+            }, [scenarioTeamIds, teamNameById]);
+
+            useEffect(() => {
+                setScenarioTeamOverrides((prev) => {
+                    const next = {};
+                    scenarioTeamNames.forEach((name) => {
+                        if (prev[name]) {
+                            next[name] = prev[name];
+                        }
+                    });
+                    return next;
+                });
+            }, [scenarioTeamNames.join('|')]);
+
             const toggleTeamSelection = (teamId) => {
                 if (teamId === 'all') {
                     setSelectedTeams(['all']);
@@ -3330,6 +3812,121 @@
             }, [capacityTasks, selectedSprintInfo?.name, excludedEpicSet]);
 
             const effectiveStatsData = localStatsData;
+            const scenarioIssues = scenarioData?.issues || [];
+            const scenarioConfig = scenarioData?.config || {};
+            const scenarioSummary = scenarioData?.summary || {};
+            const scenarioDependencies = scenarioData?.dependencies || {};
+            const scenarioStart = parseScenarioDate(scenarioConfig.start_date || scenarioStartDate);
+            const scenarioDeadline = parseScenarioDate(scenarioConfig.quarter_end_date || scenarioEndDate);
+            const scenarioEnd = React.useMemo(() => {
+                if (!scenarioDeadline) return null;
+                let latest = scenarioDeadline;
+                scenarioIssues.forEach(issue => {
+                    if (!issue.end_date) return;
+                    const end = parseScenarioDate(issue.end_date);
+                    if (end && end > latest) {
+                        latest = end;
+                    }
+                });
+                return latest;
+            }, [scenarioDeadline, scenarioIssues]);
+            const scenarioLanes = React.useMemo(() => {
+                const lanes = scenarioIssues.map(issue => issue.lane || 'Unassigned');
+                return Array.from(new Set(lanes)).sort((a, b) => a.localeCompare(b));
+            }, [scenarioIssues]);
+            const scenarioIssuesByLane = React.useMemo(() => {
+                const groups = new Map();
+                scenarioIssues.forEach(issue => {
+                    const lane = issue.lane || 'Unassigned';
+                    if (!groups.has(lane)) {
+                        groups.set(lane, []);
+                    }
+                    groups.get(lane).push(issue);
+                });
+                groups.forEach(list => {
+                    list.sort((a, b) => (a.start_date || '').localeCompare(b.start_date || ''));
+                });
+                return groups;
+            }, [scenarioIssues]);
+            const scenarioUnschedulable = React.useMemo(() => {
+                return scenarioIssues.filter(issue => !issue.start_date || !issue.end_date);
+            }, [scenarioIssues]);
+            const scenarioTicks = React.useMemo(() => {
+                if (!scenarioStart || !scenarioEnd) return [];
+                const totalMs = Math.max(1, scenarioEnd - scenarioStart);
+                const steps = 4;
+                return Array.from({ length: steps + 1 }, (_, idx) => {
+                    const ratio = idx / steps;
+                    const date = new Date(scenarioStart.getTime() + totalMs * ratio);
+                    return {
+                        label: date.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }),
+                        ratio
+                    };
+                });
+            }, [scenarioStart, scenarioEnd]);
+            const SCENARIO_LANE_HEIGHT = 44;
+            const SCENARIO_BAR_HEIGHT = 26;
+
+            useEffect(() => {
+                if (!showScenario || !scenarioTimelineRef.current) return;
+                const updateLayout = () => {
+                    const container = scenarioTimelineRef.current;
+                    const track = container.querySelector('.scenario-lane-track');
+                    const trackWidth = track ? track.clientWidth : 0;
+                    const labelWidth = 180;
+                    const height = scenarioLanes.length * SCENARIO_LANE_HEIGHT;
+                    setScenarioLayout({
+                        width: trackWidth,
+                        height,
+                        labelWidth
+                    });
+                };
+                updateLayout();
+                window.addEventListener('resize', updateLayout);
+                return () => window.removeEventListener('resize', updateLayout);
+            }, [showScenario, scenarioLanes.length, scenarioData]);
+
+            const scenarioPositions = React.useMemo(() => {
+                if (!scenarioStart || !scenarioEnd) return {};
+                if (!scenarioLayout.width) return {};
+                const totalMs = Math.max(1, scenarioEnd - scenarioStart);
+                const laneIndex = new Map(scenarioLanes.map((lane, idx) => [lane, idx]));
+                const positions = {};
+                scenarioIssues.forEach(issue => {
+                    if (!issue.start_date || !issue.end_date) return;
+                    const start = parseScenarioDate(issue.start_date);
+                    const end = parseScenarioDate(issue.end_date);
+                    if (!start || !end) return;
+                    const lane = issue.lane || 'Unassigned';
+                    const idx = laneIndex.get(lane) ?? 0;
+                    const startRatio = Math.max(0, (start - scenarioStart) / totalMs);
+                    const endRatio = Math.min(1, (end - scenarioStart) / totalMs);
+                    const xStart = startRatio * scenarioLayout.width;
+                    const xEnd = Math.max(xStart + 6, endRatio * scenarioLayout.width);
+                    const y = idx * SCENARIO_LANE_HEIGHT + SCENARIO_LANE_HEIGHT / 2;
+                    positions[issue.key] = { xStart, xEnd, y };
+                });
+                return positions;
+            }, [scenarioIssues, scenarioStart, scenarioEnd, scenarioLayout, scenarioLanes]);
+
+            const scenarioEdges = React.useMemo(() => {
+                const edges = [];
+                Object.entries(scenarioDependencies || {}).forEach(([issueKey, deps]) => {
+                    (deps || []).forEach(dep => {
+                        if (!scenarioPositions[issueKey] || !scenarioPositions[dep]) return;
+                        edges.push({ from: dep, to: issueKey });
+                    });
+                });
+                return edges;
+            }, [scenarioDependencies, scenarioPositions]);
+
+            const scenarioDeadlineLeft = React.useMemo(() => {
+                if (!scenarioStart || !scenarioEnd || !scenarioDeadline) return 0;
+                if (!scenarioLayout.width) return 0;
+                const totalMs = Math.max(1, scenarioEnd - scenarioStart);
+                const ratio = Math.max(0, Math.min(1, (scenarioDeadline - scenarioStart) / totalMs));
+                return scenarioLayout.labelWidth + scenarioLayout.width * ratio;
+            }, [scenarioStart, scenarioEnd, scenarioDeadline, scenarioLayout]);
 
             useEffect(() => {
                 if (isCompletedSprintSelected && showPlanning) {
@@ -4626,6 +5223,17 @@
                                             <path d="M6 9L1 4h10z"/>
                                         </svg>
                                     </button>
+                                    <button
+                                        className={`planning-button ${showScenario ? 'active' : ''}`}
+                                        onClick={() => setShowScenario(!showScenario)}
+                                        title="Toggle scenario planner"
+                                        disabled={!selectedSprint}
+                                    >
+                                        Scenario
+                                        <svg viewBox="0 0 12 12" fill="currentColor">
+                                            <path d="M6 9L1 4h10z"/>
+                                        </svg>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -5506,6 +6114,335 @@
                                         </tbody>
                                     </table>
                                 </div>
+                            </>
+                        )}
+                    </div>
+
+                    <div className={`scenario-panel ${showScenario ? 'open' : ''}`}>
+                        <div className="scenario-header">
+                            <div>
+                                <div className="scenario-title">Scenario Planner</div>
+                                <div className="scenario-subtitle">Assumption: 1 SP = {scenarioSpToWeeks} working weeks.</div>
+                            </div>
+                            <button
+                                className="secondary"
+                                onClick={runScenario}
+                                disabled={scenarioLoading || !selectedSprint}
+                            >
+                                {scenarioLoading ? 'Running...' : 'Run Scenario'}
+                            </button>
+                        </div>
+
+                        <div className="scenario-controls">
+                            <div className="scenario-control">
+                                <label>Start Date</label>
+                                <input
+                                    className="scenario-input"
+                                    type="date"
+                                    value={scenarioStartDate}
+                                    onChange={(e) => setScenarioStartDate(e.target.value)}
+                                />
+                            </div>
+                            <div className="scenario-control">
+                                <label>Quarter End</label>
+                                <input
+                                    className="scenario-input"
+                                    type="date"
+                                    value={scenarioEndDate}
+                                    onChange={(e) => setScenarioEndDate(e.target.value)}
+                                />
+                            </div>
+                            <div className="scenario-control">
+                                <label>SP -> Weeks</label>
+                                <input
+                                    className="scenario-input"
+                                    type="number"
+                                    min="0.1"
+                                    step="0.1"
+                                    value={scenarioSpToWeeks}
+                                    onChange={(e) => setScenarioSpToWeeks(e.target.value)}
+                                />
+                            </div>
+                            <div className="scenario-control">
+                                <label>WIP Limit</label>
+                                <input
+                                    className="scenario-input"
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    value={scenarioWipLimit}
+                                    onChange={(e) => setScenarioWipLimit(e.target.value)}
+                                />
+                            </div>
+                            <div className="scenario-control">
+                                <label>Sickleave Buffer %</label>
+                                <input
+                                    className="scenario-input"
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="1"
+                                    value={scenarioSickleave}
+                                    onChange={(e) => setScenarioSickleave(e.target.value)}
+                                />
+                            </div>
+                            <div className="scenario-control">
+                                <label>Lane Mode</label>
+                                <div className="scenario-toggle-group">
+                                    <button
+                                        className={`scenario-toggle ${scenarioLaneMode === 'team' ? 'active' : ''}`}
+                                        onClick={() => setScenarioLaneMode('team')}
+                                    >
+                                        Team
+                                    </button>
+                                    <button
+                                        className={`scenario-toggle ${scenarioLaneMode === 'assignee' ? 'active' : ''}`}
+                                        onClick={() => setScenarioLaneMode('assignee')}
+                                    >
+                                        Assignee
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="scenario-team-config">
+                            <div className="scenario-team-header">
+                                <div>
+                                    <div className="scenario-team-title">Team Overrides</div>
+                                    <div className="scenario-subtitle">Defaults apply unless overridden below.</div>
+                                </div>
+                                <div className="scenario-team-defaults">
+                                    <div>
+                                        <div className="scenario-team-default-label">Default size</div>
+                                        <input
+                                            className="scenario-input small"
+                                            type="number"
+                                            min="1"
+                                            step="1"
+                                            value={scenarioDefaultTeamSize}
+                                            onChange={(e) => setScenarioDefaultTeamSize(e.target.value)}
+                                        />
+                                    </div>
+                                    <div>
+                                        <div className="scenario-team-default-label">Vacation weeks</div>
+                                        <input
+                                            className="scenario-input small"
+                                            type="number"
+                                            min="0"
+                                            step="0.5"
+                                            value={scenarioDefaultVacation}
+                                            onChange={(e) => setScenarioDefaultVacation(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="scenario-team-grid">
+                                <div className="scenario-team-grid-header">Team</div>
+                                <div className="scenario-team-grid-header">Size</div>
+                                <div className="scenario-team-grid-header">Vacation</div>
+                                {scenarioTeamNames.length === 0 && (
+                                    <>
+                                        <div className="scenario-team-name">No teams selected</div>
+                                        <div>-</div>
+                                        <div>-</div>
+                                    </>
+                                )}
+                                {scenarioTeamNames.map((team) => (
+                                    <React.Fragment key={team}>
+                                        <div className="scenario-team-name">{team}</div>
+                                        <input
+                                            className="scenario-input"
+                                            type="number"
+                                            min="1"
+                                            step="1"
+                                            value={scenarioTeamOverrides[team]?.size ?? ''}
+                                            placeholder={scenarioDefaultTeamSize}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setScenarioTeamOverrides(prev => ({
+                                                    ...prev,
+                                                    [team]: { ...(prev[team] || {}), size: value }
+                                                }));
+                                            }}
+                                        />
+                                        <input
+                                            className="scenario-input"
+                                            type="number"
+                                            min="0"
+                                            step="0.5"
+                                            value={scenarioTeamOverrides[team]?.vacation ?? ''}
+                                            placeholder={scenarioDefaultVacation}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setScenarioTeamOverrides(prev => ({
+                                                    ...prev,
+                                                    [team]: { ...(prev[team] || {}), vacation: value }
+                                                }));
+                                            }}
+                                        />
+                                    </React.Fragment>
+                                ))}
+                            </div>
+                        </div>
+
+                        {scenarioError && <div className="scenario-error">{scenarioError}</div>}
+                        {scenarioLoading && <div className="scenario-loading">Computing scenario timeline...</div>}
+
+                        {scenarioData && (
+                            <>
+                                <div className="scenario-summary">
+                                    <div className="scenario-card">
+                                        <h4>Deadline</h4>
+                                        <div className="scenario-value">
+                                            {scenarioSummary.deadline_met ? 'On track' : 'At risk'}
+                                        </div>
+                                        <div className="scenario-subtitle">
+                                            {scenarioSummary.late_items?.length || 0} finishing after quarter end
+                                        </div>
+                                        <div className="scenario-issues-list">
+                                            {(scenarioSummary.late_items || []).slice(0, 4).map(key => (
+                                                <a
+                                                    key={key}
+                                                    className="scenario-link"
+                                                    href={jiraUrl ? `${jiraUrl}/browse/${key}` : '#'}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                >
+                                                    {key}
+                                                </a>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="scenario-card">
+                                        <h4>Critical Path</h4>
+                                        <div className="scenario-value">
+                                            {scenarioSummary.critical_path?.length || 0} items
+                                        </div>
+                                        <div className="scenario-issues-list">
+                                            {(scenarioSummary.critical_path || []).slice(0, 6).map(key => (
+                                                <a
+                                                    key={key}
+                                                    className="scenario-link"
+                                                    href={jiraUrl ? `${jiraUrl}/browse/${key}` : '#'}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                >
+                                                    {key}
+                                                </a>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="scenario-card">
+                                        <h4>Bottlenecks</h4>
+                                        <div className="scenario-value">
+                                            {(scenarioSummary.bottleneck_lanes || []).slice(0, 2).join(', ') || 'None'}
+                                        </div>
+                                        <div className="scenario-subtitle">
+                                            {(scenarioSummary.bottleneck_lanes || []).length} lanes flagged
+                                        </div>
+                                    </div>
+                                    <div className="scenario-card">
+                                        <h4>Unschedulable</h4>
+                                        <div className="scenario-value">{scenarioSummary.unschedulable?.length || 0}</div>
+                                        <div className="scenario-subtitle">Missing SP or dependencies</div>
+                                    </div>
+                                </div>
+
+                                <div className="scenario-timeline" ref={scenarioTimelineRef}>
+                                    <div className="scenario-axis">
+                                        {scenarioTicks.map((tick) => (
+                                            <span key={tick.label}>{tick.label}</span>
+                                        ))}
+                                    </div>
+                                    <div className="scenario-lanes">
+                                        {scenarioLanes.map((lane) => (
+                                            <div key={lane} className="scenario-lane">
+                                                <div className="scenario-lane-label">{lane}</div>
+                                                <div className="scenario-lane-track">
+                                                    {(scenarioIssuesByLane.get(lane) || []).map(issue => {
+                                                        if (!issue.start_date || !issue.end_date || !scenarioStart || !scenarioEnd) {
+                                                            return null;
+                                                        }
+                                                        const start = parseScenarioDate(issue.start_date);
+                                                        const end = parseScenarioDate(issue.end_date);
+                                                        if (!start || !end) return null;
+                                                        const totalMs = Math.max(1, scenarioEnd - scenarioStart);
+                                                        const startRatio = Math.max(0, (start - scenarioStart) / totalMs);
+                                                        const endRatio = Math.min(1, (end - scenarioStart) / totalMs);
+                                                        const left = `${startRatio * 100}%`;
+                                                        const width = `${Math.max(2, (endRatio - startRatio) * 100)}%`;
+                                                        return (
+                                                            <div
+                                                                key={issue.key}
+                                                                className={`scenario-bar ${issue.is_critical ? 'critical' : ''} ${issue.is_late ? 'late' : ''} ${(issue.blocked_by || []).length > 0 ? 'blocked' : ''}`}
+                                                                style={{ left, width, height: `${SCENARIO_BAR_HEIGHT}px` }}
+                                                                title={`${issue.key} · ${issue.summary}${issue.slack_weeks !== null && issue.slack_weeks !== undefined ? ` · Slack ${issue.slack_weeks.toFixed(1)}w` : ''}`}
+                                                            >
+                                                                {issue.key}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {scenarioLayout.width > 0 && (
+                                        <svg
+                                            className="scenario-deps"
+                                            viewBox={`0 0 ${scenarioLayout.width} ${scenarioLayout.height}`}
+                                            preserveAspectRatio="none"
+                                            style={{ height: `${scenarioLayout.height}px` }}
+                                        >
+                                            <defs>
+                                                <marker id="scenario-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                                                    <path d="M0,0 L6,3 L0,6 z" fill="#94a3b8" />
+                                                </marker>
+                                            </defs>
+                                            {scenarioEdges.map((edge, index) => {
+                                                const from = scenarioPositions[edge.from];
+                                                const to = scenarioPositions[edge.to];
+                                                if (!from || !to) return null;
+                                                const midX = from.xEnd + 6;
+                                                return (
+                                                    <path
+                                                        key={`${edge.from}-${edge.to}-${index}`}
+                                                        d={`M ${from.xEnd} ${from.y} L ${midX} ${from.y} L ${midX} ${to.y} L ${to.xStart} ${to.y}`}
+                                                        fill="none"
+                                                        stroke="#94a3b8"
+                                                        strokeWidth="1"
+                                                        markerEnd="url(#scenario-arrow)"
+                                                    />
+                                                );
+                                            })}
+                                        </svg>
+                                    )}
+                                    {scenarioLayout.width > 0 && (
+                                        <div
+                                            className="scenario-deadline"
+                                            style={{ left: `${scenarioDeadlineLeft}px` }}
+                                        />
+                                    )}
+                                </div>
+
+                                {scenarioUnschedulable.length > 0 && (
+                                    <div className="scenario-issues-list">
+                                        <strong>Unscheduled:</strong>
+                                        {scenarioUnschedulable.slice(0, 8).map(issue => (
+                                            <span key={issue.key}>
+                                                <a
+                                                    className="scenario-link"
+                                                    href={jiraUrl ? `${jiraUrl}/browse/${issue.key}` : '#'}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                >
+                                                    {issue.key}
+                                                </a>
+                                                {' · '}
+                                                {issue.scheduled_reason}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
                             </>
                         )}
                     </div>

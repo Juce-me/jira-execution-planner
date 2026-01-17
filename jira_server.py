@@ -9,12 +9,13 @@ import os
 import re
 import json
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from dotenv import load_dotenv
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 import io
 from requests import Session
+from planning import Issue, ScenarioConfig, compute_slack, schedule_issues
 
 # Load environment variables from .env file
 load_dotenv()
@@ -51,6 +52,8 @@ CAPACITY_PROJECT = os.getenv('CAPACITY_PROJECT', '').strip()
 CAPACITY_FIELD_ID = os.getenv('CAPACITY_FIELD_ID', '').strip()
 CAPACITY_FIELD_NAME = os.getenv('CAPACITY_FIELD_NAME', 'Team capacity[Number]').strip()
 
+SCENARIO_CACHE = {'generatedAt': None, 'data': None}
+
 # Cache settings
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
 STATS_CACHE_FILE = 'stats_cache.json'
@@ -76,6 +79,15 @@ def add_clause_to_jql(jql: str, clause: str) -> str:
         parts = jql.split('ORDER BY')
         return f"{parts[0].strip()} AND {clause} ORDER BY {parts[1].strip()}"
     return f"{jql} AND {clause}"
+
+
+def parse_iso_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date()
+    except Exception:
+        return None
 
 
 TEAM_FIELD_CACHE = None
@@ -1057,6 +1069,62 @@ def fetch_issues_by_keys(keys, headers, fields_list):
     return results
 
 
+def fetch_issues_by_jql(jql, headers, fields_list, max_results=500):
+    """Fetch issues by JQL with pagination."""
+    results = []
+    start_at = 0
+    while len(results) < max_results:
+        payload = {
+            'jql': jql,
+            'startAt': start_at,
+            'maxResults': min(250, max_results - len(results)),
+            'fields': fields_list
+        }
+        response = jira_search_request(headers, payload)
+        if response.status_code != 200:
+            print(f'❌ Scenario fetch error: {response.status_code} {response.text}')
+            break
+        data = response.json() or {}
+        issues = data.get('issues', []) or []
+        if not issues:
+            break
+        results.extend(issues)
+        start_at += len(issues)
+        total = data.get('total')
+        if total is not None and start_at >= total:
+            break
+        if len(issues) < payload['maxResults']:
+            break
+    return results
+
+
+def build_scenario_jql(filters):
+    jql = JQL_QUERY
+    sprint = filters.get('sprint')
+    if sprint:
+        if str(sprint).isdigit():
+            jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
+        else:
+            jql = add_clause_to_jql(jql, f'Sprint = "{sprint}"')
+
+    teams = [t for t in (filters.get('teams') or []) if t]
+    if teams:
+        quoted = ', '.join(f'"{t}"' for t in teams)
+        jql = add_clause_to_jql(jql, f'"Team[Team]" in ({quoted})')
+
+    projects = [p for p in (filters.get('projects') or []) if p]
+    if projects:
+        quoted = ', '.join(f'"{p}"' for p in projects)
+        jql = add_clause_to_jql(jql, f'project in ({quoted})')
+
+    epics = [e for e in (filters.get('epics') or []) if e]
+    if epics:
+        quoted = ', '.join(f'"{e}"' for e in epics)
+        jql = add_clause_to_jql(jql, f'("Epic Link" in ({quoted}) OR parent in ({quoted}))')
+
+    return jql
+
+
 def build_issue_snapshot(issue, team_field_id=None, epic_link_field_id=None):
     """Build a compact issue snapshot for dependency rendering."""
     fields = issue.get('fields', {}) or {}
@@ -1093,16 +1161,106 @@ def build_issue_snapshot(issue, team_field_id=None, epic_link_field_id=None):
     }
 
 
+def collect_dependencies(keys, headers):
+    """Fetch dependency links for a set of issues."""
+    keys = sorted({str(k).strip() for k in keys if str(k).strip()})
+    if not keys:
+        return {}
+
+    team_field_id = resolve_team_field_id(headers)
+    epic_link_field_id = resolve_epic_link_field_id(headers)
+
+    fields_list = [
+        'summary',
+        'status',
+        'issuetype',
+        'customfield_10004',
+        'parent',
+        'issuelinks'
+    ]
+    if epic_link_field_id and epic_link_field_id not in fields_list:
+        fields_list.append(epic_link_field_id)
+    if team_field_id and team_field_id not in fields_list:
+        fields_list.append(team_field_id)
+    if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
+        fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
+
+    issues = fetch_issues_by_keys(keys, headers, fields_list)
+    issue_map = {}
+    linked_keys = set()
+    for issue in issues:
+        snapshot = build_issue_snapshot(issue, team_field_id, epic_link_field_id)
+        if snapshot.get('key'):
+            issue_map[snapshot['key']] = snapshot
+        for link in issue.get('fields', {}).get('issuelinks', []) or []:
+            linked = link.get('outwardIssue') or link.get('inwardIssue')
+            if linked and linked.get('key'):
+                linked_keys.add(linked['key'])
+
+    missing_linked = sorted(linked_keys - set(issue_map.keys()))
+    if missing_linked:
+        linked_issues = fetch_issues_by_keys(missing_linked, headers, fields_list)
+        for issue in linked_issues:
+            snapshot = build_issue_snapshot(issue, team_field_id, epic_link_field_id)
+            if snapshot.get('key'):
+                issue_map[snapshot['key']] = snapshot
+
+    dependencies = {}
+    for issue in issues:
+        base_key = issue.get('key')
+        if not base_key:
+            continue
+        links = issue.get('fields', {}).get('issuelinks', []) or []
+        entries = []
+        for link in links:
+            linked_issue = link.get('outwardIssue')
+            direction = 'outward'
+            relation = link.get('type', {}).get('outward')
+            if linked_issue is None:
+                linked_issue = link.get('inwardIssue')
+                direction = 'inward'
+                relation = link.get('type', {}).get('inward')
+            if not linked_issue or not linked_issue.get('key'):
+                continue
+            relation_lower = str(relation or '').lower()
+            category = None
+            if 'depend' in relation_lower:
+                category = 'dependency'
+            elif 'block' in relation_lower:
+                category = 'block'
+            if category is None:
+                continue
+            linked_key = linked_issue.get('key')
+            linked_snapshot = issue_map.get(linked_key)
+            if not linked_snapshot:
+                linked_snapshot = {
+                    'key': linked_key,
+                    'summary': linked_issue.get('fields', {}).get('summary'),
+                    'issuetype': linked_issue.get('fields', {}).get('issuetype', {}).get('name'),
+                    'status': linked_issue.get('fields', {}).get('status', {}).get('name'),
+                    'storyPoints': linked_issue.get('fields', {}).get('customfield_10004'),
+                    'teamName': None,
+                    'teamId': None,
+                    'epicKey': None
+                }
+            entries.append({
+                **linked_snapshot,
+                'direction': direction,
+                'relation': relation or link.get('type', {}).get('name'),
+                'category': category
+            })
+        if entries:
+            dependencies[base_key] = entries
+
+    return dependencies
+
+
 @app.route('/api/dependencies', methods=['POST'])
 def get_dependencies():
     """Fetch dependency links for a set of issues."""
     try:
         payload = request.get_json(silent=True) or {}
         keys = payload.get('keys') or []
-        if not keys:
-            return jsonify({'dependencies': {}})
-
-        keys = sorted({str(k).strip() for k in keys if str(k).strip()})
         if not keys:
             return jsonify({'dependencies': {}})
 
@@ -1116,91 +1274,7 @@ def get_dependencies():
             'Content-Type': 'application/json'
         }
 
-        team_field_id = resolve_team_field_id(headers)
-        epic_link_field_id = resolve_epic_link_field_id(headers)
-
-        fields_list = [
-            'summary',
-            'status',
-            'issuetype',
-            'customfield_10004',
-            'parent',
-            'issuelinks'
-        ]
-        if epic_link_field_id and epic_link_field_id not in fields_list:
-            fields_list.append(epic_link_field_id)
-        if team_field_id and team_field_id not in fields_list:
-            fields_list.append(team_field_id)
-        if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
-            fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
-
-        issues = fetch_issues_by_keys(keys, headers, fields_list)
-        issue_map = {}
-        linked_keys = set()
-        for issue in issues:
-            snapshot = build_issue_snapshot(issue, team_field_id, epic_link_field_id)
-            if snapshot.get('key'):
-                issue_map[snapshot['key']] = snapshot
-            for link in issue.get('fields', {}).get('issuelinks', []) or []:
-                linked = link.get('outwardIssue') or link.get('inwardIssue')
-                if linked and linked.get('key'):
-                    linked_keys.add(linked['key'])
-
-        missing_linked = sorted(linked_keys - set(issue_map.keys()))
-        if missing_linked:
-            linked_issues = fetch_issues_by_keys(missing_linked, headers, fields_list)
-            for issue in linked_issues:
-                snapshot = build_issue_snapshot(issue, team_field_id, epic_link_field_id)
-                if snapshot.get('key'):
-                    issue_map[snapshot['key']] = snapshot
-
-        dependencies = {}
-        for issue in issues:
-            base_key = issue.get('key')
-            if not base_key:
-                continue
-            links = issue.get('fields', {}).get('issuelinks', []) or []
-            entries = []
-            for link in links:
-                linked_issue = link.get('outwardIssue')
-                direction = 'outward'
-                relation = link.get('type', {}).get('outward')
-                if linked_issue is None:
-                    linked_issue = link.get('inwardIssue')
-                    direction = 'inward'
-                    relation = link.get('type', {}).get('inward')
-                if not linked_issue or not linked_issue.get('key'):
-                    continue
-                relation_lower = str(relation or '').lower()
-                category = None
-                if 'depend' in relation_lower:
-                    category = 'dependency'
-                elif 'block' in relation_lower:
-                    category = 'block'
-                if category is None:
-                    continue
-                linked_key = linked_issue.get('key')
-                linked_snapshot = issue_map.get(linked_key)
-                if not linked_snapshot:
-                    linked_snapshot = {
-                        'key': linked_key,
-                        'summary': linked_issue.get('fields', {}).get('summary'),
-                        'issuetype': linked_issue.get('fields', {}).get('issuetype', {}).get('name'),
-                        'status': linked_issue.get('fields', {}).get('status', {}).get('name'),
-                        'storyPoints': linked_issue.get('fields', {}).get('customfield_10004'),
-                        'teamName': None,
-                        'teamId': None,
-                        'epicKey': None
-                    }
-                entries.append({
-                    **linked_snapshot,
-                    'direction': direction,
-                    'relation': relation or link.get('type', {}).get('name'),
-                    'category': category
-                })
-            if entries:
-                dependencies[base_key] = entries
-
+        dependencies = collect_dependencies(keys, headers)
         return jsonify({'dependencies': dependencies})
     except Exception as e:
         print(f'❌ Dependencies error: {e}')
@@ -1280,6 +1354,178 @@ def lookup_issues():
         import traceback
         traceback.print_exc()
         return jsonify({'error': 'Failed to lookup issues', 'message': str(e)}), 500
+
+
+@app.route('/api/scenario', methods=['GET', 'POST'])
+def scenario_planner():
+    """Scenario planner endpoint."""
+    if request.method == 'GET':
+        if not SCENARIO_CACHE.get('data'):
+            return jsonify({'error': 'No scenario cached'}), 404
+        return jsonify(SCENARIO_CACHE)
+
+    try:
+        payload = request.get_json(silent=True) or {}
+        config_payload = payload.get('config') or {}
+        filters = payload.get('filters') or {}
+
+        start_date = parse_iso_date(config_payload.get('start_date')) or date.today()
+        quarter_end_date = parse_iso_date(config_payload.get('quarter_end_date')) or (start_date + timedelta(days=90))
+
+        scenario_config = ScenarioConfig(
+            start_date=start_date,
+            quarter_end_date=quarter_end_date,
+            sp_to_weeks=float(config_payload.get('sp_to_weeks', 2.0)),
+            team_sizes=config_payload.get('team_sizes') or {},
+            vacation_weeks=config_payload.get('vacation_weeks') or {},
+            sickleave_buffer=float(config_payload.get('sickleave_buffer', 0.1)),
+            wip_limit=int(config_payload.get('wip_limit', 1)),
+            lane_mode=config_payload.get('lane_mode', 'team'),
+        )
+
+        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+        auth_bytes = auth_string.encode('ascii')
+        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+        headers = {
+            'Authorization': f'Basic {auth_base64}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+
+        team_field_id = resolve_team_field_id(headers)
+        epic_link_field_id = resolve_epic_link_field_id(headers)
+
+        fields_list = [
+            'summary',
+            'status',
+            'priority',
+            'issuetype',
+            'assignee',
+            'updated',
+            'customfield_10004',
+            'parent'
+        ]
+        if epic_link_field_id and epic_link_field_id not in fields_list:
+            fields_list.append(epic_link_field_id)
+        if team_field_id and team_field_id not in fields_list:
+            fields_list.append(team_field_id)
+        if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
+            fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
+
+        scenario_jql = build_scenario_jql(filters)
+        issues_raw = fetch_issues_by_jql(scenario_jql, headers, fields_list)
+
+        issues = []
+        issue_keys = []
+        for issue in issues_raw:
+            fields = issue.get('fields', {}) or {}
+            raw_team = None
+            if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
+                raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
+            elif team_field_id and fields.get(team_field_id) is not None:
+                raw_team = fields.get(team_field_id)
+            team_name = extract_team_name(raw_team) if raw_team is not None else None
+
+            epic_key = None
+            if epic_link_field_id and fields.get(epic_link_field_id):
+                epic_key = fields.get(epic_link_field_id)
+            elif fields.get('parent') and fields['parent'].get('key') and \
+                    fields['parent'].get('fields', {}).get('issuetype', {}).get('name', '').lower() == 'epic':
+                epic_key = fields['parent'].get('key')
+
+            assignee = fields.get('assignee') or {}
+            issue_obj = Issue(
+                key=issue.get('key'),
+                summary=fields.get('summary') or '',
+                issue_type=(fields.get('issuetype') or {}).get('name') or '',
+                team=team_name,
+                assignee=assignee.get('displayName'),
+                story_points=fields.get('customfield_10004'),
+                priority=(fields.get('priority') or {}).get('name'),
+                status=(fields.get('status') or {}).get('name'),
+                epic_key=epic_key,
+            )
+            if issue_obj.key:
+                issues.append(issue_obj)
+                issue_keys.append(issue_obj.key)
+
+        dependencies = collect_dependencies(issue_keys, headers)
+        dependency_edges = {}
+        for issue_key, deps in dependencies.items():
+            depends_on = [d['key'] for d in deps if d.get('category') == 'dependency' and d.get('direction') == 'outward']
+            if depends_on:
+                dependency_edges[issue_key] = depends_on
+
+        scheduled_list, scheduled_map = schedule_issues(issues, dependency_edges, scenario_config)
+        slack, critical = compute_slack(scheduled_map, dependency_edges, scenario_config.quarter_end_date)
+
+        total_weeks = max(1.0, (scenario_config.quarter_end_date - scenario_config.start_date).days / 7.0)
+        lane_usage = {}
+        for item in scheduled_list:
+            if item.duration_weeks is None:
+                continue
+            lane_usage[item.lane] = lane_usage.get(item.lane, 0.0) + item.duration_weeks
+
+        bottleneck_lanes = sorted(lane_usage.keys(), key=lambda lane: lane_usage[lane], reverse=True)[:3]
+        late_items = []
+        unschedulable = []
+
+        for item in scheduled_list:
+            if item.key in slack:
+                item.slack_weeks = slack[item.key]
+                item.is_critical = item.key in critical
+            if item.end_date and item.end_date > scenario_config.quarter_end_date:
+                item.is_late = True
+                late_items.append(item.key)
+            if item.scheduled_reason != 'scheduled' and item.scheduled_reason != 'already_done':
+                unschedulable.append(item.key)
+
+        response_issues = []
+        for item in scheduled_list:
+            response_issues.append({
+                'key': item.key,
+                'summary': item.summary,
+                'lane': item.lane,
+                'start_date': item.start_date.isoformat() if item.start_date else None,
+                'end_date': item.end_date.isoformat() if item.end_date else None,
+                'blocked_by': item.blocked_by,
+                'scheduled_reason': item.scheduled_reason,
+                'duration_weeks': item.duration_weeks,
+                'slack_weeks': item.slack_weeks,
+                'is_critical': item.is_critical,
+                'is_late': item.is_late,
+            })
+
+        result = {
+            'generatedAt': datetime.now().isoformat(),
+            'config': {
+                'start_date': scenario_config.start_date.isoformat(),
+                'quarter_end_date': scenario_config.quarter_end_date.isoformat(),
+                'sp_to_weeks': scenario_config.sp_to_weeks,
+                'wip_limit': scenario_config.wip_limit,
+                'sickleave_buffer': scenario_config.sickleave_buffer,
+                'lane_mode': scenario_config.lane_mode,
+            },
+            'summary': {
+                'critical_path': critical,
+                'bottleneck_lanes': bottleneck_lanes,
+                'late_items': late_items,
+                'unschedulable': unschedulable,
+                'deadline_met': len(late_items) == 0 and len(unschedulable) == 0,
+            },
+            'issues': response_issues,
+            'dependencies': dependency_edges,
+        }
+
+        SCENARIO_CACHE['generatedAt'] = result['generatedAt']
+        SCENARIO_CACHE['data'] = result
+
+        return jsonify(result)
+    except Exception as e:
+        print(f'❌ Scenario error: {e}')
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Failed to compute scenario', 'message': str(e)}), 500
 
 
 def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):
@@ -2216,6 +2462,7 @@ if __name__ == '__main__':
     print(f'   • http://localhost:{SERVER_PORT}/api/tasks-with-team-name - Get sprint tasks with team names')
     print(f'   • http://localhost:{SERVER_PORT}/api/dependencies - Get issue dependencies (POST)')
     print(f'   • http://localhost:{SERVER_PORT}/api/issues/lookup?keys=KEY-1,KEY-2 - Lookup issues (GET)')
+    print(f'   • http://localhost:{SERVER_PORT}/api/scenario - Scenario planner (GET/POST)')
     print(f'   • http://localhost:{SERVER_PORT}/api/stats?sprint=2025Q3 - Get completed sprint stats (cached)')
     print(f'   • http://localhost:{SERVER_PORT}/api/stats-example - Get example completed sprint stats')
     print(f'   • http://localhost:{SERVER_PORT}/api/sprints - Get available sprints (cached)')

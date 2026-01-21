@@ -161,14 +161,14 @@
             color: var(--text-primary);
         }
 
-        .sprint-selector {
+        .view-selector {
             display: flex;
             align-items: center;
             margin-top: 0.6rem;
             position: relative;
         }
 
-        .sprint-filters {
+        .view-filters {
             display: flex;
             align-items: center;
             gap: 0.8rem;
@@ -176,14 +176,14 @@
             width: 100%;
         }
 
-        .sprint-actions {
+        .view-actions {
             display: inline-flex;
             align-items: center;
             gap: 0.75rem;
             margin-left: 0.5rem;
         }
 
-        .sprint-selector label {
+        .view-selector label {
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.75rem;
             color: var(--text-secondary);
@@ -192,7 +192,7 @@
             margin: 0;
         }
 
-        .sprint-selector button {
+        .view-selector button {
             padding: 0.5rem 1rem;
             font-size: 0.75rem;
             margin: 0;
@@ -286,6 +286,253 @@
         .sprint-dropdown-option:hover {
             background: #f5f5f5;
             box-shadow: inset 0 0 0 1px #e6e1da;
+        }
+
+        .group-dropdown {
+            position: relative;
+            min-width: 200px;
+        }
+
+        .group-dropdown-toggle {
+            width: 200px;
+            padding: 0.35rem 0.6rem;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            transition: all 0.2s;
+            text-transform: none;
+            letter-spacing: normal;
+            margin-right: 0;
+            box-shadow: none;
+        }
+
+        .group-dropdown-toggle span {
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .group-dropdown-toggle svg {
+            width: 0.55rem;
+            height: 0.55rem;
+            flex-shrink: 0;
+            transition: transform 0.2s ease;
+        }
+
+        .group-dropdown-toggle:hover {
+            border-color: var(--border);
+            transform: none;
+            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .group-dropdown-toggle.open {
+            border-color: var(--border);
+            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
+        }
+
+        .group-dropdown-toggle.open svg {
+            transform: rotate(180deg);
+        }
+
+        .group-dropdown-panel {
+            position: absolute;
+            top: calc(100% + 0.4rem);
+            left: 0;
+            width: 240px;
+            background: #fff;
+            border: 1px solid var(--border);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+            padding: 0.5rem;
+            z-index: 22;
+        }
+
+        .group-dropdown-option {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0.5rem;
+            padding: 0.35rem 0.4rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+
+        .group-dropdown-option:hover {
+            background: #f5f5f5;
+            box-shadow: inset 0 0 0 1px #e6e1da;
+        }
+
+        .group-option-meta {
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .group-option-default {
+            font-size: 0.6rem;
+            font-weight: 600;
+            color: var(--accent);
+            letter-spacing: 0.08em;
+        }
+
+        .group-option-tags {
+            margin-left: auto;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .group-manage-button {
+            padding: 0.35rem 0.6rem;
+            font-size: 0.7rem;
+        }
+
+        .group-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(19, 16, 12, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 80;
+        }
+
+        .group-modal {
+            background: #fff;
+            width: min(920px, 95vw);
+            max-height: 85vh;
+            border: 1px solid var(--border);
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .group-modal-header {
+            padding: 0.9rem 1.2rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .group-modal-title {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-secondary);
+        }
+
+        .group-modal-body {
+            padding: 1rem 1.2rem 1.2rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.9rem;
+        }
+
+        .group-modal-row {
+            display: grid;
+            grid-template-columns: minmax(160px, 1fr) minmax(240px, 2fr) auto;
+            gap: 0.6rem;
+            align-items: center;
+        }
+
+        .group-modal-row input,
+        .group-modal-row textarea {
+            width: 100%;
+            padding: 0.4rem 0.6rem;
+            border: 1px solid var(--border);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem;
+        }
+
+        .group-modal-row textarea {
+            min-height: 3.5rem;
+            resize: vertical;
+        }
+
+        .group-modal-body textarea {
+            width: 100%;
+            padding: 0.4rem 0.6rem;
+            border: 1px solid var(--border);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem;
+            min-height: 4rem;
+            resize: vertical;
+        }
+
+        .group-modal-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .group-modal-meta {
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+        }
+
+        .group-modal-warning {
+            padding: 0.5rem 0.7rem;
+            border: 1px dashed #f59e0b;
+            background: #fff6df;
+            color: #8a5a00;
+            font-size: 0.7rem;
+        }
+
+        .group-modal-footer {
+            padding: 0.8rem 1.2rem;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.8rem;
+            background: #faf8f4;
+        }
+
+        .group-modal-button-row {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+        }
+
+        .group-modal-button-row button.compact {
+            min-width: 96px;
+        }
+
+        .group-star-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            border: 1px solid var(--border);
+            background: #fff;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .group-star-button.active {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .group-star-button svg {
+            width: 14px;
+            height: 14px;
         }
 
         select {
@@ -383,7 +630,7 @@
             box-sizing: border-box;
         }
 
-        .sprint-selector .team-dropdown-panel label.team-dropdown-option {
+        .view-selector .team-dropdown-panel label.team-dropdown-option {
             display: grid;
             grid-template-columns: 14px 1fr;
             align-items: center;
@@ -402,16 +649,16 @@
             margin: 0;
         }
 
-        .sprint-selector .team-dropdown-panel label.team-dropdown-option:hover {
+        .view-selector .team-dropdown-panel label.team-dropdown-option:hover {
             background: var(--bg-primary);
             color: var(--text-primary);
         }
 
-        .sprint-selector .team-dropdown-panel label.team-dropdown-option input {
+        .view-selector .team-dropdown-panel label.team-dropdown-option input {
             margin: 0;
         }
 
-        .sprint-selector .team-dropdown-panel label.team-dropdown-option span {
+        .view-selector .team-dropdown-panel label.team-dropdown-option span {
             text-align: left;
         }
 
@@ -502,6 +749,12 @@
         button.secondary:hover {
             background: var(--bg-primary);
             transform: none;
+        }
+
+        button.compact {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.7rem;
+            letter-spacing: 0.06em;
         }
 
         button.toggle {
@@ -707,6 +960,44 @@
             text-decoration: none;
         }
 
+        .alert-team-group {
+            border: 1px solid var(--border);
+            padding: 0.75rem;
+            margin-bottom: 0.6rem;
+            background: #faf9f7;
+        }
+
+        .alert-team-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.6rem;
+            margin-bottom: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .alert-team-title {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        .alert-team-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-size: 0.8rem;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .alert-team-link:hover {
+            color: var(--accent);
+        }
+
         .alert-stories {
             display: flex;
             flex-direction: column;
@@ -721,6 +1012,7 @@
             border-radius: 6px;
             border: 1px dashed var(--border);
             background: #fff;
+            position: relative;
         }
 
         .alert-story:hover {
@@ -751,6 +1043,8 @@
 
         .alert-story-main {
             flex: 1;
+            min-width: 0;
+            cursor: pointer;
         }
 
         .alert-story-link {
@@ -776,6 +1070,53 @@
             white-space: nowrap;
         }
 
+        .alert-celebration {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 9999;
+        }
+
+        .alert-confetti {
+            position: absolute;
+            top: -12px;
+            border-radius: 2px;
+            opacity: 0;
+            animation: confettiFall 2.2s ease-out forwards;
+        }
+
+        @keyframes confettiFall {
+            0% {
+                transform: translateY(-10px) rotate(0deg);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(110vh) rotate(360deg);
+                opacity: 0;
+            }
+        }
+
+        .alert-remove {
+            position: static;
+            width: 1.3rem;
+            height: 1.3rem;
+            opacity: 1;
+            border-radius: 999px;
+            margin-left: 0.2rem;
+        }
+
+        .alert-story .alert-remove {
+            border-color: var(--border);
+        }
+
+        .alert-story .alert-remove:hover {
+            transform: none;
+        }
+
         .task-list {
             animation: fadeIn 0.8s ease-out 0.6s both;
         }
@@ -799,6 +1140,19 @@
         .task-item:hover {
             transform: translateX(4px);
             box-shadow: -6px 0 18px var(--shadow);
+        }
+
+        .task-item.task-highlight {
+            animation: taskHighlight 1.8s ease-in-out;
+        }
+
+        @keyframes taskHighlight {
+            0% { background-color: var(--bg-secondary); }
+            20% { background-color: rgba(239, 68, 68, 0.12); }
+            40% { background-color: var(--bg-secondary); }
+            60% { background-color: rgba(239, 68, 68, 0.1); }
+            80% { background-color: var(--bg-secondary); }
+            100% { background-color: var(--bg-secondary); }
         }
 
         /* Standard Jira priorities */
@@ -881,6 +1235,8 @@
             padding: 0;
             margin: 0;
             border-radius: 2px;
+            letter-spacing: 0;
+            text-transform: none;
         }
 
         .task-item:hover .task-remove {
@@ -892,6 +1248,19 @@
             color: white;
             border-color: var(--accent);
             transform: none;
+        }
+
+        .alert-story .alert-remove {
+            position: static;
+            opacity: 1;
+            width: 1.3rem;
+            height: 1.3rem;
+            border-radius: 999px;
+            margin-left: 0.2rem;
+            display: grid;
+            place-items: center;
+            font-size: 0.85rem;
+            line-height: 1;
         }
 
         .task-headline {
@@ -1150,6 +1519,10 @@
             font-size: 0.55rem;
             color: var(--text-secondary);
             margin-bottom: 0.25rem;
+        }
+
+        .dependency-missing-label.hidden {
+            color: #b45309;
         }
 
         .dependency-missing-item {
@@ -2881,9 +3254,15 @@
 
         .team-stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            grid-template-columns: repeat(6, minmax(140px, 1fr));
             gap: 0.75rem;
             margin-top: 0.5rem;
+        }
+
+        @media (max-width: 1100px) {
+            .team-stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            }
         }
 
         .team-stat-card {
@@ -3222,6 +3601,7 @@
             const [techTasks, setTechTasks] = useState([]);
             const [loadedProductTasks, setLoadedProductTasks] = useState([]);
             const [loadedTechTasks, setLoadedTechTasks] = useState([]);
+            const [tasksFetched, setTasksFetched] = useState(false);
             const [readyToCloseProductTasks, setReadyToCloseProductTasks] = useState([]);
             const [readyToCloseTechTasks, setReadyToCloseTechTasks] = useState([]);
             const [missingPlanningInfoTasks, setMissingPlanningInfoTasks] = useState([]);
@@ -3241,16 +3621,28 @@
             const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
             const [availableSprints, setAvailableSprints] = useState([]);
             const [sprintsLoading, setSprintsLoading] = useState(true);
+            const [groupsConfig, setGroupsConfig] = useState({ version: 1, groups: [], defaultGroupId: '' });
+            const [groupsLoading, setGroupsLoading] = useState(true);
+            const [groupsError, setGroupsError] = useState('');
+            const [groupWarnings, setGroupWarnings] = useState([]);
+            const [groupConfigSource, setGroupConfigSource] = useState('');
+            const [activeGroupId, setActiveGroupId] = useState(null);
+            const [showGroupDropdown, setShowGroupDropdown] = useState(false);
+            const groupDropdownRef = useRef(null);
+            const [showGroupManage, setShowGroupManage] = useState(false);
+            const [groupDraft, setGroupDraft] = useState(null);
+            const [groupDraftError, setGroupDraftError] = useState('');
+            const [groupImportText, setGroupImportText] = useState('');
+            const [groupSaving, setGroupSaving] = useState(false);
+            const [groupQueryTemplateEnabled, setGroupQueryTemplateEnabled] = useState(false);
             const [jiraUrl, setJiraUrl] = useState('');
-            const [selectedTasks, setSelectedTasks] = useState(() => {
-                // Load from cookie on init
-                return getCookie('selectedTasks') || {};
-            });
+            const [selectedTasks, setSelectedTasks] = useState({});
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
             const [showStats, setShowStats] = useState(savedPrefsRef.current.showStats ?? false);
             const [showScenario, setShowScenario] = useState(savedPrefsRef.current.showScenario ?? false);
             const [showDependencies, setShowDependencies] = useState(savedPrefsRef.current.showDependencies ?? false);
             const [searchQuery, setSearchQuery] = useState(savedPrefsRef.current.searchQuery ?? '');
+            const [searchInput, setSearchInput] = useState(savedPrefsRef.current.searchQuery ?? '');
             const normalizeSelectedTeams = (value) => {
                 if (Array.isArray(value)) {
                     return value.length ? value : ['all'];
@@ -3296,6 +3688,7 @@
             const scenarioSkipAutoCollapseRef = useRef(false);
             const scenarioTeamCollapseInitRef = useRef(false);
             const scenarioEdgeUpdatePendingRef = useRef(false);
+            const scenarioEdgeFrameRef = useRef(null);
             const scenarioScrollFrameRef = useRef(null);
             const scenarioResizeFrameRef = useRef(null);
             const scenarioPendingScrollRef = useRef(null);
@@ -3317,19 +3710,46 @@
             const [dependencyLookupCache, setDependencyLookupCache] = useState({});
             const [dependencyLookupLoading, setDependencyLookupLoading] = useState(false);
             const [excludedStatsEpics, setExcludedStatsEpics] = useState(savedPrefsRef.current.excludedStatsEpics ?? []);
+            const [hideExcludedStats, setHideExcludedStats] = useState(savedPrefsRef.current.hideExcludedStats ?? true);
             const [showMissingAlert, setShowMissingAlert] = useState(savedPrefsRef.current.showMissingAlert ?? true);
             const [showBlockedAlert, setShowBlockedAlert] = useState(savedPrefsRef.current.showBlockedAlert ?? true);
             const [showEmptyEpicAlert, setShowEmptyEpicAlert] = useState(savedPrefsRef.current.showEmptyEpicAlert ?? true);
             const [showDoneEpicAlert, setShowDoneEpicAlert] = useState(savedPrefsRef.current.showDoneEpicAlert ?? true);
+            const [dismissedAlertKeys, setDismissedAlertKeys] = useState([]);
+            const [alertCelebrationPieces, setAlertCelebrationPieces] = useState([]);
+            const alertDismissedRef = useRef(false);
+            const alertPrevCountRef = useRef(0);
+            const alertCelebrationTimeoutRef = useRef(null);
+            const alertHighlightRef = useRef(null);
+            const alertHighlightTimeoutRef = useRef(null);
+            const [showBackToTop, setShowBackToTop] = useState(false);
             const epicOrderRef = useRef({});
             const epicOrderCounterRef = useRef(0);
             const epicRefMap = useRef(new Map());
+            const groupStateRef = useRef(new Map());
+            const restoringGroupRef = useRef(false);
+            const activeGroupRef = useRef(null);
+            const sprintFetchControllersRef = useRef(new Set());
 
             useEffect(() => {
                 // Load config and sprints on component mount
                 loadConfig();
+                loadGroupsConfig();
                 loadSprints();
             }, []);
+
+            useEffect(() => {
+                return () => {
+                    abortSprintFetches();
+                };
+            }, [abortSprintFetches]);
+
+            useEffect(() => {
+                if (!showGroupManage) return;
+                setGroupDraft(normalizeGroupsConfig(groupsConfig));
+                setGroupDraftError('');
+                setGroupImportText('');
+            }, [showGroupManage, groupsConfig]);
 
 
             const normalizeStatus = (status) => {
@@ -3340,6 +3760,229 @@
                 const text = String(summary || '').trim();
                 if (!text) return '';
                 return text.replace(/^issue\.\s*/i, '');
+            };
+
+            const normalizeGroupsConfig = (config) => {
+                const rawGroups = Array.isArray(config?.groups) ? config.groups : [];
+                const groups = rawGroups
+                    .map(group => ({
+                        id: String(group?.id || '').trim(),
+                        name: String(group?.name || '').trim(),
+                        teamIds: Array.isArray(group?.teamIds)
+                            ? group.teamIds.map(id => String(id || '').trim()).filter(Boolean)
+                            : []
+                    }))
+                    .filter(group => group.id && group.name);
+                return {
+                    version: Number(config?.version) || 1,
+                    groups,
+                    defaultGroupId: String(config?.defaultGroupId || '').trim()
+                };
+            };
+
+            const resolveInitialGroupId = (config) => {
+                if (!config?.groups?.length) return null;
+                if (config.defaultGroupId && config.groups.some(group => group.id === config.defaultGroupId)) {
+                    return config.defaultGroupId;
+                }
+                const defaultGroup = config.groups.find(group => group.name.toLowerCase() === 'default');
+                if (defaultGroup) return defaultGroup.id;
+                return config.groups[0].id;
+            };
+
+            const loadGroupsConfig = async () => {
+                setGroupsLoading(true);
+                setGroupsError('');
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/groups-config`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' },
+                        cache: 'no-cache'
+                    });
+                    if (!response.ok) {
+                        throw new Error(`Groups config error ${response.status}`);
+                    }
+                    const payload = await response.json();
+                    const normalized = normalizeGroupsConfig(payload);
+                    setGroupsConfig(normalized);
+                    setGroupWarnings(payload.warnings || []);
+                    setGroupConfigSource(payload.source || '');
+                    setActiveGroupId(prev => {
+                        if (prev && normalized.groups.some(group => group.id === prev)) {
+                            return prev;
+                        }
+                        return resolveInitialGroupId(normalized);
+                    });
+                } catch (err) {
+                    setGroupsError(err.message || 'Failed to load groups config.');
+                } finally {
+                    setGroupsLoading(false);
+                }
+            };
+
+            const buildGroupId = (name, existingIds) => {
+                const base = String(name || 'group')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/(^-|-$)/g, '') || 'group';
+                let candidate = base;
+                let index = 1;
+                while (existingIds.has(candidate)) {
+                    candidate = `${base}-${index}`;
+                    index += 1;
+                }
+                return candidate;
+            };
+
+            const parseTeamIdList = (raw) => {
+                return String(raw || '')
+                    .split(',')
+                    .map(value => value.trim())
+                    .filter(Boolean);
+            };
+
+            const handleGroupDraftChange = (updater) => {
+                setGroupDraft(prev => {
+                    if (!prev) return prev;
+                    return updater(prev);
+                });
+            };
+
+            const openGroupManage = () => {
+                setShowGroupManage(true);
+            };
+
+            const closeGroupManage = () => {
+                setShowGroupManage(false);
+                setGroupDraftError('');
+                setGroupImportText('');
+            };
+
+            const addGroupDraftRow = () => {
+                handleGroupDraftChange(prev => {
+                    const existingIds = new Set((prev.groups || []).map(group => group.id));
+                    const nextId = buildGroupId('New Group', existingIds);
+                    const nextGroup = { id: nextId, name: 'New Group', teamIds: [] };
+                    return {
+                        ...prev,
+                        groups: [...(prev.groups || []), nextGroup]
+                    };
+                });
+            };
+
+            const updateGroupDraftName = (groupId, name) => {
+                handleGroupDraftChange(prev => ({
+                    ...prev,
+                    groups: (prev.groups || []).map(group =>
+                        group.id === groupId ? { ...group, name } : group
+                    )
+                }));
+            };
+
+            const updateGroupDraftTeams = (groupId, rawTeams) => {
+                const teamIds = parseTeamIdList(rawTeams);
+                handleGroupDraftChange(prev => ({
+                    ...prev,
+                    groups: (prev.groups || []).map(group =>
+                        group.id === groupId ? { ...group, teamIds } : group
+                    )
+                }));
+            };
+
+            const removeGroupDraft = (groupId) => {
+                handleGroupDraftChange(prev => {
+                    const nextGroups = (prev.groups || []).filter(group => group.id !== groupId);
+                    const nextDefault = prev.defaultGroupId === groupId ? '' : prev.defaultGroupId;
+                    return {
+                        ...prev,
+                        groups: nextGroups,
+                        defaultGroupId: nextDefault
+                    };
+                });
+            };
+
+            const toggleDefaultGroupDraft = (groupId) => {
+                handleGroupDraftChange(prev => ({
+                    ...prev,
+                    defaultGroupId: prev.defaultGroupId === groupId ? '' : groupId
+                }));
+            };
+
+            const saveGroupsConfig = async () => {
+                if (!groupDraft) return;
+                setGroupSaving(true);
+                setGroupDraftError('');
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/groups-config`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            version: groupDraft.version || 1,
+                            groups: groupDraft.groups || [],
+                            defaultGroupId: groupDraft.defaultGroupId || ''
+                        })
+                    });
+                    if (!response.ok) {
+                        const errorPayload = await response.json().catch(() => ({}));
+                        const errorMessage = (errorPayload.errors || []).join(' ') || errorPayload.error || `Save failed (${response.status})`;
+                        throw new Error(errorMessage);
+                    }
+                    const payload = await response.json();
+                    const normalized = normalizeGroupsConfig(payload);
+                    setGroupsConfig(normalized);
+                    setGroupWarnings(payload.warnings || []);
+                    setGroupConfigSource(payload.source || '');
+                    setActiveGroupId(prev => {
+                        if (prev && normalized.groups.some(group => group.id === prev)) {
+                            return prev;
+                        }
+                        return resolveInitialGroupId(normalized);
+                    });
+                    closeGroupManage();
+                } catch (err) {
+                    setGroupDraftError(err.message || 'Failed to save groups.');
+                } finally {
+                    setGroupSaving(false);
+                }
+            };
+
+            const exportGroupsConfig = async () => {
+                const payload = {
+                    version: groupsConfig.version || 1,
+                    groups: groupsConfig.groups || [],
+                    defaultGroupId: groupsConfig.defaultGroupId || ''
+                };
+                const json = JSON.stringify(payload, null, 2);
+                if (navigator.clipboard && window.isSecureContext) {
+                    try {
+                        await navigator.clipboard.writeText(json);
+                        return;
+                    } catch (err) {
+                        // fallback below
+                    }
+                }
+                const temp = document.createElement('textarea');
+                temp.value = json;
+                document.body.appendChild(temp);
+                temp.select();
+                document.execCommand('copy');
+                document.body.removeChild(temp);
+            };
+
+            const importGroupsConfig = () => {
+                if (!groupImportText.trim()) return;
+                try {
+                    const parsed = JSON.parse(groupImportText);
+                    const normalized = normalizeGroupsConfig(parsed);
+                    if (!normalized.groups.length) {
+                        throw new Error('Imported config has no groups.');
+                    }
+                    setGroupDraft(normalized);
+                    setGroupDraftError('');
+                    setGroupImportText('');
+                } catch (err) {
+                    setGroupDraftError(err.message || 'Invalid JSON.');
+                }
             };
 
             const matchesScenarioSearch = (issue, query) => {
@@ -3367,6 +4010,345 @@
                     map.delete(issueKey);
                 }
             };
+
+            const registerSprintFetch = () => {
+                const controller = new AbortController();
+                sprintFetchControllersRef.current.add(controller);
+                return controller;
+            };
+
+            const cleanupSprintFetch = (controller) => {
+                if (!controller) return;
+                sprintFetchControllersRef.current.delete(controller);
+            };
+
+            const abortSprintFetches = React.useCallback(() => {
+                sprintFetchControllersRef.current.forEach(controller => {
+                    try {
+                        controller.abort();
+                    } catch (err) {
+                        // ignore abort errors
+                    }
+                });
+                sprintFetchControllersRef.current.clear();
+            }, []);
+
+            const activeGroup = React.useMemo(() => {
+                return (groupsConfig.groups || []).find(group => group.id === activeGroupId) || null;
+            }, [groupsConfig, activeGroupId]);
+
+            const activeGroupTeamIds = React.useMemo(() => {
+                const seen = new Set();
+                const ids = [];
+                (activeGroup?.teamIds || []).forEach(teamId => {
+                    const value = String(teamId || '').trim();
+                    if (!value || seen.has(value)) return;
+                    seen.add(value);
+                    ids.push(value);
+                });
+                return ids;
+            }, [activeGroup]);
+
+            const activeGroupTeamSet = React.useMemo(() => new Set(activeGroupTeamIds), [activeGroupTeamIds]);
+
+            const buildDefaultGroupState = (groupId) => {
+                const selectedTasksCookie = groupId ? (getCookie(`selectedTasks_${groupId}`) || {}) : {};
+                return {
+                    sprintId: selectedSprint,
+                    teamIdsSignature: activeGroupTeamIds.join('|'),
+                    productTasks: [],
+                    techTasks: [],
+                    loadedProductTasks: [],
+                    loadedTechTasks: [],
+                    tasksFetched: false,
+                    readyToCloseProductTasks: [],
+                    readyToCloseTechTasks: [],
+                    missingPlanningInfoTasks: [],
+                    productEpicsInScope: [],
+                    techEpicsInScope: [],
+                    readyToCloseProductEpicsInScope: [],
+                    readyToCloseTechEpicsInScope: [],
+                    techLoaded: false,
+                    error: '',
+                    showKilled: savedPrefsRef.current.showKilled ?? false,
+                    showDone: savedPrefsRef.current.showDone ?? true,
+                    showTech: savedPrefsRef.current.showTech ?? true,
+                    showProduct: savedPrefsRef.current.showProduct ?? true,
+                    statusFilter: savedPrefsRef.current.statusFilter ?? null,
+                    searchQuery: savedPrefsRef.current.searchQuery ?? '',
+                    selectedTeams: normalizeSelectedTeams(savedPrefsRef.current.selectedTeams ?? savedPrefsRef.current.selectedTeam ?? 'all'),
+                    selectedTasks: selectedTasksCookie,
+                    showPlanning: savedPrefsRef.current.showPlanning ?? false,
+                    showStats: savedPrefsRef.current.showStats ?? false,
+                    showScenario: false,
+                    showDependencies: savedPrefsRef.current.showDependencies ?? false,
+                    epicDetails: {},
+                    statsView: resolveStatsView(savedPrefsRef.current.statsView),
+                    statsGraphMode: resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode),
+                    scenarioData: null,
+                    scenarioError: '',
+                    scenarioLaneMode: savedPrefsRef.current.scenarioLaneMode ?? 'team',
+                    scenarioCollapsedLanes: {},
+                    scenarioEpicFocus: null,
+                    scenarioRangeOverride: null,
+                    scenarioScrollTop: 0,
+                    scenarioViewportHeight: 0,
+                    scenarioHoverKey: null,
+                    scenarioFlashKey: null,
+                    scenarioLayout: { width: 0, height: 0 },
+                    scenarioEdgeRender: { width: 0, height: 0, paths: [] },
+                    scenarioTooltip: {
+                        visible: false,
+                        x: 0,
+                        y: 0,
+                        summary: '',
+                        key: '',
+                        sp: null,
+                        note: ''
+                    },
+                    excludedStatsEpics: savedPrefsRef.current.excludedStatsEpics ?? [],
+                    hideExcludedStats: savedPrefsRef.current.hideExcludedStats ?? true,
+                    showMissingAlert: savedPrefsRef.current.showMissingAlert ?? true,
+                    showBlockedAlert: savedPrefsRef.current.showBlockedAlert ?? true,
+                    showEmptyEpicAlert: savedPrefsRef.current.showEmptyEpicAlert ?? true,
+                    showDoneEpicAlert: savedPrefsRef.current.showDoneEpicAlert ?? true,
+                    dismissedAlertKeys: [],
+                    dependencyData: {},
+                    dependencyFocus: null,
+                    dependencyLookupCache: {},
+                    dependencyLookupLoading: false
+                };
+            };
+
+            const buildGroupStateSnapshot = () => ({
+                sprintId: selectedSprint,
+                teamIdsSignature: activeGroupTeamIds.join('|'),
+                productTasks,
+                techTasks,
+                loadedProductTasks,
+                loadedTechTasks,
+                tasksFetched,
+                readyToCloseProductTasks,
+                readyToCloseTechTasks,
+                missingPlanningInfoTasks,
+                productEpicsInScope,
+                techEpicsInScope,
+                readyToCloseProductEpicsInScope,
+                readyToCloseTechEpicsInScope,
+                techLoaded,
+                error,
+                showKilled,
+                showDone,
+                showTech,
+                showProduct,
+                statusFilter,
+                searchQuery,
+                selectedTeams,
+                selectedTasks,
+                showPlanning,
+                showStats,
+                showScenario,
+                showDependencies,
+                epicDetails,
+                statsView,
+                statsGraphMode,
+                scenarioData,
+                scenarioError,
+                scenarioLaneMode,
+                scenarioCollapsedLanes,
+                scenarioEpicFocus,
+                scenarioRangeOverride,
+                scenarioScrollTop,
+                scenarioViewportHeight,
+                scenarioHoverKey,
+                scenarioFlashKey,
+                scenarioLayout,
+                scenarioEdgeRender,
+                scenarioTooltip,
+                excludedStatsEpics,
+                hideExcludedStats,
+                showMissingAlert,
+                showBlockedAlert,
+                showEmptyEpicAlert,
+                showDoneEpicAlert,
+                dismissedAlertKeys,
+                dependencyData,
+                dependencyFocus,
+                dependencyLookupCache,
+                dependencyLookupLoading
+            });
+
+            const applyGroupState = (state) => {
+                const nextState = state || buildDefaultGroupState(activeGroupId);
+                restoringGroupRef.current = true;
+                scenarioIssueRefMap.current.clear();
+                scenarioEdgeUpdatePendingRef.current = false;
+                scenarioFocusRestoreRef.current = null;
+                scenarioSkipAutoCollapseRef.current = false;
+                scenarioTeamCollapseInitRef.current = false;
+                if (scenarioEdgeFrameRef.current) {
+                    window.cancelAnimationFrame(scenarioEdgeFrameRef.current);
+                    scenarioEdgeFrameRef.current = null;
+                }
+                alertDismissedRef.current = false;
+                alertPrevCountRef.current = 0;
+                if (scenarioScrollFrameRef.current) {
+                    window.cancelAnimationFrame(scenarioScrollFrameRef.current);
+                    scenarioScrollFrameRef.current = null;
+                }
+                if (scenarioResizeFrameRef.current) {
+                    window.cancelAnimationFrame(scenarioResizeFrameRef.current);
+                    scenarioResizeFrameRef.current = null;
+                }
+                scenarioPendingScrollRef.current = null;
+                epicRefMap.current = new Map();
+                setProductTasks(nextState.productTasks || []);
+                setTechTasks(nextState.techTasks || []);
+                setLoadedProductTasks(nextState.loadedProductTasks || []);
+                setLoadedTechTasks(nextState.loadedTechTasks || []);
+                setTasksFetched(Boolean(nextState.tasksFetched));
+                setReadyToCloseProductTasks(nextState.readyToCloseProductTasks || []);
+                setReadyToCloseTechTasks(nextState.readyToCloseTechTasks || []);
+                setMissingPlanningInfoTasks(nextState.missingPlanningInfoTasks || []);
+                setProductEpicsInScope(nextState.productEpicsInScope || []);
+                setTechEpicsInScope(nextState.techEpicsInScope || []);
+                setReadyToCloseProductEpicsInScope(nextState.readyToCloseProductEpicsInScope || []);
+                setReadyToCloseTechEpicsInScope(nextState.readyToCloseTechEpicsInScope || []);
+                setTechLoaded(Boolean(nextState.techLoaded));
+                setError(nextState.error || '');
+                setShowKilled(nextState.showKilled ?? false);
+                setShowDone(nextState.showDone ?? true);
+                setShowTech(nextState.showTech ?? true);
+                setShowProduct(nextState.showProduct ?? true);
+                setStatusFilter(nextState.statusFilter ?? null);
+                setSearchQuery(nextState.searchQuery ?? '');
+                setSelectedTeams(normalizeSelectedTeams(nextState.selectedTeams));
+                setSelectedTasks(nextState.selectedTasks || {});
+                setShowPlanning(nextState.showPlanning ?? false);
+                setShowStats(nextState.showStats ?? false);
+                setShowScenario(nextState.showScenario ?? false);
+                setShowDependencies(nextState.showDependencies ?? false);
+                setEpicDetails(nextState.epicDetails || {});
+                setStatsView(resolveStatsView(nextState.statsView));
+                setStatsGraphMode(resolveStatsGraphMode(nextState.statsGraphMode));
+                setScenarioData(nextState.scenarioData || null);
+                setScenarioError(nextState.scenarioError || '');
+                setScenarioLaneMode(nextState.scenarioLaneMode || 'team');
+                setScenarioCollapsedLanes(nextState.scenarioCollapsedLanes || {});
+                setScenarioEpicFocus(nextState.scenarioEpicFocus || null);
+                setScenarioRangeOverride(nextState.scenarioRangeOverride || null);
+                setScenarioScrollTop(nextState.scenarioScrollTop || 0);
+                setScenarioViewportHeight(nextState.scenarioViewportHeight || 0);
+                setScenarioHoverKey(nextState.scenarioHoverKey || null);
+                setScenarioFlashKey(nextState.scenarioFlashKey || null);
+                setScenarioLayout(nextState.scenarioLayout || { width: 0, height: 0 });
+                setScenarioEdgeRender(nextState.scenarioEdgeRender || { width: 0, height: 0, paths: [] });
+                setScenarioTooltip(nextState.scenarioTooltip || {
+                    visible: false,
+                    x: 0,
+                    y: 0,
+                    summary: '',
+                    key: '',
+                    sp: null,
+                    note: ''
+                });
+                setExcludedStatsEpics(nextState.excludedStatsEpics || []);
+                setHideExcludedStats(nextState.hideExcludedStats ?? true);
+                setShowMissingAlert(nextState.showMissingAlert ?? true);
+                setShowBlockedAlert(nextState.showBlockedAlert ?? true);
+                setShowEmptyEpicAlert(nextState.showEmptyEpicAlert ?? true);
+                setShowDoneEpicAlert(nextState.showDoneEpicAlert ?? true);
+                setDismissedAlertKeys(nextState.dismissedAlertKeys || []);
+                setAlertCelebrationPieces([]);
+                setDependencyData(nextState.dependencyData || {});
+                setDependencyFocus(nextState.dependencyFocus || null);
+                setDependencyLookupCache(nextState.dependencyLookupCache || {});
+                setDependencyLookupLoading(false);
+                setLoading(false);
+                setScenarioLoading(false);
+                window.setTimeout(() => {
+                    restoringGroupRef.current = false;
+                }, 0);
+            };
+
+            const groupStateSnapshot = React.useMemo(() => buildGroupStateSnapshot(), [
+                selectedSprint,
+                activeGroupTeamIds.join('|'),
+                productTasks,
+                techTasks,
+                loadedProductTasks,
+                loadedTechTasks,
+                tasksFetched,
+                readyToCloseProductTasks,
+                readyToCloseTechTasks,
+                missingPlanningInfoTasks,
+                productEpicsInScope,
+                techEpicsInScope,
+                readyToCloseProductEpicsInScope,
+                readyToCloseTechEpicsInScope,
+                techLoaded,
+                error,
+                showKilled,
+                showDone,
+                showTech,
+                showProduct,
+                statusFilter,
+                searchQuery,
+                selectedTeams,
+                selectedTasks,
+                showPlanning,
+                showStats,
+                showScenario,
+                showDependencies,
+                epicDetails,
+                statsView,
+                statsGraphMode,
+                scenarioData,
+                scenarioError,
+                scenarioLaneMode,
+                scenarioCollapsedLanes,
+                scenarioEpicFocus,
+                scenarioRangeOverride,
+                scenarioScrollTop,
+                scenarioViewportHeight,
+                scenarioHoverKey,
+                scenarioFlashKey,
+                scenarioLayout,
+                scenarioEdgeRender,
+                scenarioTooltip,
+                excludedStatsEpics,
+                hideExcludedStats,
+                showMissingAlert,
+                showBlockedAlert,
+                showEmptyEpicAlert,
+                showDoneEpicAlert,
+                dismissedAlertKeys,
+                dependencyData,
+                dependencyFocus,
+                dependencyLookupCache,
+                dependencyLookupLoading
+            ]);
+
+            useEffect(() => {
+                if (!activeGroupId) return;
+                if (activeGroupRef.current !== activeGroupId) return;
+                groupStateRef.current.set(activeGroupId, groupStateSnapshot);
+            }, [activeGroupId, groupStateSnapshot]);
+
+            useEffect(() => {
+                if (!activeGroupId) return;
+                if (activeGroupRef.current === activeGroupId) return;
+                activeGroupRef.current = activeGroupId;
+                const cached = groupStateRef.current.get(activeGroupId);
+                if (cached) {
+                    applyGroupState(cached);
+                } else {
+                    const fallback = buildDefaultGroupState(activeGroupId);
+                    groupStateRef.current.set(activeGroupId, fallback);
+                    applyGroupState(fallback);
+                }
+                setShowGroupDropdown(false);
+            }, [activeGroupId]);
 
 
             useEffect(() => {
@@ -3398,6 +4380,41 @@
                 }
             }, [showSprintDropdown, selectedSprint, filteredSprints?.length]);
 
+            const resetSprintScopedState = React.useCallback(() => {
+                abortSprintFetches();
+                setDependencyData({});
+                setDependencyFocus(null);
+                setDependencyLookupCache({});
+                setDependencyLookupLoading(false);
+                setMissingPlanningInfoTasks([]);
+                setScenarioData(null);
+                setScenarioError('');
+                setScenarioRangeOverride(null);
+                setScenarioEpicFocus(null);
+                scenarioIssueRefMap.current.clear();
+                scenarioPendingScrollRef.current = null;
+                scenarioEdgeUpdatePendingRef.current = false;
+                scenarioTooltipAnchorRef.current = null;
+                if (scenarioEdgeFrameRef.current) {
+                    window.cancelAnimationFrame(scenarioEdgeFrameRef.current);
+                    scenarioEdgeFrameRef.current = null;
+                }
+                setScenarioEdgeRender({ width: 0, height: 0, paths: [] });
+                setScenarioHoverKey(null);
+                setScenarioFlashKey(null);
+                setScenarioTooltip(prev => (prev.visible ? { ...prev, visible: false } : prev));
+            }, [abortSprintFetches]);
+
+            useEffect(() => {
+                if (!selectedSprint) return;
+                resetSprintScopedState();
+            }, [selectedSprint, resetSprintScopedState]);
+
+            useEffect(() => {
+                if (!selectedSprint) return;
+                setTasksFetched(false);
+            }, [selectedSprint]);
+
             useEffect(() => {
                 if (showStats) {
                     setShowPlanning(false);
@@ -3413,7 +4430,7 @@
             }, [showScenario]);
 
             useEffect(() => {
-                if (showScenario) {
+                if (showScenario && !restoringGroupRef.current) {
                     setScenarioData(null);
                     setScenarioError('');
                 }
@@ -3423,6 +4440,10 @@
                 if (showScenario) return;
                 scenarioIssueRefMap.current.clear();
                 scenarioEdgeUpdatePendingRef.current = false;
+                if (scenarioEdgeFrameRef.current) {
+                    window.cancelAnimationFrame(scenarioEdgeFrameRef.current);
+                    scenarioEdgeFrameRef.current = null;
+                }
                 if (scenarioScrollFrameRef.current) {
                     window.cancelAnimationFrame(scenarioScrollFrameRef.current);
                     scenarioScrollFrameRef.current = null;
@@ -3468,9 +4489,43 @@
             }, []);
 
             useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (!groupDropdownRef.current) return;
+                    if (!groupDropdownRef.current.contains(event.target)) {
+                        setShowGroupDropdown(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, []);
+
+            useEffect(() => {
+                const handle = window.setTimeout(() => {
+                    setSearchQuery(searchInput);
+                }, 200);
+                return () => window.clearTimeout(handle);
+            }, [searchInput]);
+
+            useEffect(() => {
+                if (searchInput !== searchQuery) {
+                    setSearchInput(searchQuery || '');
+                }
+            }, [searchQuery]);
+
+            useEffect(() => {
+                const handleScroll = () => {
+                    setShowBackToTop(window.scrollY > 120);
+                };
+                handleScroll();
+                window.addEventListener('scroll', handleScroll, { passive: true });
+                return () => window.removeEventListener('scroll', handleScroll);
+            }, []);
+
+            useEffect(() => {
                 // Save selected tasks to cookie whenever they change
-                setCookie('selectedTasks', selectedTasks);
-            }, [selectedTasks]);
+                if (!activeGroupId) return;
+                setCookie(`selectedTasks_${activeGroupId}`, selectedTasks);
+            }, [selectedTasks, activeGroupId]);
 
             useEffect(() => {
                 saveUiPrefs({
@@ -3490,6 +4545,7 @@
                     statsGraphMode,
                     scenarioLaneMode,
                     excludedStatsEpics,
+                    hideExcludedStats,
                     showMissingAlert,
                     showBlockedAlert,
                     showEmptyEpicAlert,
@@ -3512,6 +4568,7 @@
                 statsGraphMode,
                 scenarioLaneMode,
                 excludedStatsEpics,
+                hideExcludedStats,
                 showMissingAlert,
                 showBlockedAlert,
                 showEmptyEpicAlert,
@@ -3525,40 +4582,63 @@
                         const config = await response.json();
                         setJiraUrl(config.jiraUrl || '');
                         setCapacityEnabled(Boolean(config.capacityProject));
+                        setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
                     }
                 } catch (err) {
                     console.error('Failed to load config:', err);
                 }
             };
 
-	            useEffect(() => {
-	                // Load tasks when sprint changes (team is filtered client-side)
-	                if (selectedSprint !== null) {
-	                    setEpicDetails({});
-	                    setProductEpicsInScope([]);
-	                    setTechEpicsInScope([]);
-	                    setMissingPlanningInfoTasks([]);
-	                    loadProductTasks();
-	                    loadTechTasks();
-	                    fetchMissingPlanningInfo(selectedSprint);
-	                }
-	            }, [selectedSprint]);
+            useEffect(() => {
+                // Load tasks when sprint changes (team is filtered client-side)
+                if (selectedSprint === null || !activeGroupId) {
+                    return;
+                }
+                const cached = groupStateRef.current.get(activeGroupId);
+                if (
+                    cached &&
+                    cached.sprintId === selectedSprint &&
+                    cached.teamIdsSignature === activeGroupTeamIds.join('|') &&
+                    cached.tasksFetched
+                ) {
+                    return;
+                }
+                setEpicDetails({});
+                setProductEpicsInScope([]);
+                setTechEpicsInScope([]);
+                setMissingPlanningInfoTasks([]);
+                loadProductTasks();
+                loadTechTasks();
+                fetchMissingPlanningInfo(selectedSprint);
+            }, [selectedSprint, activeGroupId, activeGroupTeamIds.join('|')]);
 
-	            const fetchMissingPlanningInfo = async (sprintId) => {
-	                try {
-	                    if (!sprintId) return;
-	                    const params = new URLSearchParams({ sprint: String(sprintId), t: Date.now().toString() });
-	                    const response = await fetch(`${BACKEND_URL}/api/missing-info?${params.toString()}`, {
-	                        method: 'GET',
-	                        headers: { 'Content-Type': 'application/json' },
-	                        cache: 'no-cache'
-	                    });
+            const fetchMissingPlanningInfo = async (sprintId) => {
+                const controller = registerSprintFetch();
+                try {
+                    if (!sprintId) return;
+                    if (activeGroupId && activeGroupTeamIds.length === 0) {
+                        setMissingPlanningInfoTasks([]);
+                        return;
+                    }
+                    const params = new URLSearchParams({ sprint: String(sprintId), t: Date.now().toString() });
+                    if (activeGroupTeamIds.length) {
+                        params.set('teamIds', activeGroupTeamIds.join(','));
+                    }
+                    const response = await fetch(`${BACKEND_URL}/api/missing-info?${params.toString()}`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' },
+                        cache: 'no-cache',
+                        signal: controller.signal
+                    });
 	                    if (!response.ok) return;
 	                    const data = await response.json();
 	                    setMissingPlanningInfoTasks(data.issues || []);
 	                } catch (e) {
+                        if (e.name === 'AbortError') return;
 	                    // ignore (alerts are best-effort)
-	                }
+	                } finally {
+                        cleanupSprintFetch(controller);
+                    }
 	            };
 
             useEffect(() => {
@@ -3694,12 +4774,46 @@
                 low: 'Low',
                 trivial: 'Trivial'
             };
-            const radarPalette = ['#1d7afc', '#2cb67d', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#ec4899', '#f97316'];
+            const radarPalette = [
+                '#2563eb',
+                '#0ea5e9',
+                '#14b8a6',
+                '#10b981',
+                '#22c55e',
+                '#84cc16',
+                '#eab308',
+                '#f59e0b',
+                '#f97316',
+                '#a855f7',
+                '#6366f1',
+                '#64748b'
+            ];
+
+            const hashTeamId = (value) => {
+                const str = String(value || '');
+                let hash = 5381;
+                for (let i = 0; i < str.length; i += 1) {
+                    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+                }
+                return Math.abs(hash);
+            };
+
+            const resolveTeamColor = (teamId) => {
+                if (!radarPalette.length) return '#94a3b8';
+                const index = hashTeamId(teamId) % radarPalette.length;
+                return radarPalette[index];
+            };
 
             const getTeamInfo = (task) => {
                 const team = task.fields?.team;
                 const teamName = task.fields?.teamName || team?.name || team?.displayName || team?.teamName || 'Unknown Team';
                 const teamId = task.fields?.teamId || team?.id || team?.teamId || team?.key || teamName;
+                return { id: teamId, name: teamName };
+            };
+
+            const getEpicTeamInfo = (epic) => {
+                const teamName = epic?.teamName || epic?.team?.name || epic?.team?.displayName || 'Unknown Team';
+                const teamId = epic?.teamId || epic?.team?.id || teamName;
                 return { id: teamId, name: teamName };
             };
 
@@ -3714,32 +4828,45 @@
                 return Array.from(groups.entries()).map(([teamName, items]) => ({ teamName, items }));
             };
 
-	            const fetchTasks = async (project, options = {}) => {
-	                const useLoading = options.useLoading !== false;
-	                const setErrors = options.setErrorOnFailure !== false;
-	                if (useLoading) {
-	                    setLoading(true);
-	                }
-	                if (setErrors && options.clearError !== false) {
-	                    setError('');
-	                }
+            const filterTasksForActiveGroup = (items) => {
+                if (!activeGroupTeamIds.length) return [];
+                return (items || []).filter(task => activeGroupTeamSet.has(getTeamInfo(task).id));
+            };
 
+            const fetchTasks = async (project, options = {}) => {
+                const useLoading = options.useLoading !== false;
+                const setErrors = options.setErrorOnFailure !== false;
+                if (useLoading) {
+                    setLoading(true);
+                }
+                if (setErrors && options.clearError !== false) {
+                    setError('');
+                }
+
+                const controller = registerSprintFetch();
                 try {
                     const sprintParam = options.sprintOverride !== undefined ? options.sprintOverride : (selectedSprint || '');
+                    const groupTeamIds = activeGroupTeamIds;
+                    const useGroupTemplate = groupQueryTemplateEnabled && groupTeamIds.length > 0;
                     // Add cache busting parameter and sprint parameter
                     const params = new URLSearchParams({
                         t: Date.now().toString(),
                         sprint: sprintParam,
                         // always pull all teams; filtering happens client-side so capacity table can show every team
                         team: 'all',
-                        project: project || 'all'
+                        project: project || 'all',
+                        groupId: activeGroupId || ''
                     });
+                    if (useGroupTemplate) {
+                        params.set('teamIds', groupTeamIds.join(','));
+                    }
                     const response = await fetch(`${BACKEND_URL}/api/tasks-with-team-name?${params}`, {
                         method: 'GET',
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        cache: 'no-cache'
+                        cache: 'no-cache',
+                        signal: controller.signal
                     });
 
                     console.log('Response status:', response.status);
@@ -3763,19 +4890,38 @@
                         return priorityA - priorityB;
                     });
 
+                    const filteredTasks = filterTasksForActiveGroup(sortedTasks);
+                    const filteredEpicsInScope = activeGroupTeamIds.length
+                        ? (data.epicsInScope || []).filter(epic => epic?.teamId && activeGroupTeamSet.has(epic.teamId))
+                        : [];
+                    const epicKeys = new Set(
+                        filteredTasks
+                            .map(task => task.fields?.epicKey)
+                            .filter(Boolean)
+                    );
+                    const filteredEpics = {};
+                    Object.entries(data.epics || {}).forEach(([key, epic]) => {
+                        if (epicKeys.has(key)) {
+                            filteredEpics[key] = epic;
+                        }
+                    });
+
 	                    if (options.updateEpics !== false) {
-	                        setEpicDetails(prev => ({ ...prev, ...(data.epics || {}) }));
+	                        setEpicDetails(prev => ({ ...prev, ...filteredEpics }));
 	                        if (project === 'product') {
-	                            setProductEpicsInScope(data.epicsInScope || []);
+	                            setProductEpicsInScope(filteredEpicsInScope);
 	                        } else if (project === 'tech') {
-	                            setTechEpicsInScope(data.epicsInScope || []);
+	                            setTechEpicsInScope(filteredEpicsInScope);
 	                        }
 	                    }
 	                    if (options.epicsInScopeSetter) {
-	                        options.epicsInScopeSetter(data.epicsInScope || []);
+	                        options.epicsInScopeSetter(filteredEpicsInScope);
 	                    }
-	                    return sortedTasks;
-	                } catch (err) {
+	                    return filteredTasks;
+                } catch (err) {
+                    if (err.name === 'AbortError') {
+                        return [];
+                    }
                     if (setErrors) {
                         const errorMsg = `Failed to load tasks: ${err.message}. Make sure the Python server is running on ${BACKEND_URL}`;
                         setError(errorMsg);
@@ -3783,6 +4929,7 @@
                     console.error('Full error details:', err);
                     return [];
                 } finally {
+                    cleanupSprintFetch(controller);
                     if (useLoading) {
                         setLoading(false);
                     }
@@ -3790,16 +4937,31 @@
             };
 
             const loadProductTasks = async () => {
+                if (activeGroupId && activeGroupTeamIds.length === 0) {
+                    setProductTasks([]);
+                    setLoadedProductTasks([]);
+                    setTasksFetched(true);
+                    return;
+                }
                 const data = await fetchTasks('product');
                 setProductTasks(data);
                 setLoadedProductTasks(data);
+                setTasksFetched(true);
             };
 
             const loadTechTasks = async () => {
+                if (activeGroupId && activeGroupTeamIds.length === 0) {
+                    setTechTasks([]);
+                    setLoadedTechTasks([]);
+                    setTechLoaded(true);
+                    setTasksFetched(true);
+                    return;
+                }
                 const data = await fetchTasks('tech');
                 setTechTasks(data);
                 setLoadedTechTasks(data);
                 setTechLoaded(true);
+                setTasksFetched(true);
             };
 
             const fetchDependencies = async (keys) => {
@@ -3807,11 +4969,13 @@
                     setDependencyData({});
                     return;
                 }
+                const controller = registerSprintFetch();
                 try {
                     const response = await fetch(`${BACKEND_URL}/api/dependencies`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ keys })
+                        body: JSON.stringify({ keys }),
+                        signal: controller.signal
                     });
                     if (!response.ok) {
                         console.error('Dependencies fetch failed:', response.status);
@@ -3820,7 +4984,10 @@
                     const data = await response.json();
                     setDependencyData(data.dependencies || {});
                 } catch (err) {
+                    if (err.name === 'AbortError') return;
                     console.error('Dependencies fetch error:', err);
+                } finally {
+                    cleanupSprintFetch(controller);
                 }
             };
 
@@ -3848,11 +5015,13 @@
                 }
                 setScenarioLoading(true);
                 setScenarioError('');
+                const controller = registerSprintFetch();
                 try {
                     const response = await fetch(`${BACKEND_URL}/api/scenario`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(buildScenarioPayload())
+                        body: JSON.stringify(buildScenarioPayload()),
+                        signal: controller.signal
                     });
                     if (!response.ok) {
                         const errorData = await response.json().catch(() => ({}));
@@ -3861,39 +5030,54 @@
                     const data = await response.json();
                     setScenarioData(data);
                 } catch (err) {
+                    if (err.name === 'AbortError') {
+                        return;
+                    }
                     setScenarioError(err.message || 'Failed to run scenario.');
                 } finally {
+                    cleanupSprintFetch(controller);
                     setScenarioLoading(false);
                 }
             };
 
-	            const loadReadyToCloseProductTasks = async () => {
-	                const data = await fetchTasks('product', {
-	                    sprintOverride: '',
-	                    updateEpics: false,
-	                    epicsInScopeSetter: setReadyToCloseProductEpicsInScope,
-	                    useLoading: false,
-	                    setErrorOnFailure: false
-	                });
-	                setReadyToCloseProductTasks(data);
-	            };
+            const loadReadyToCloseProductTasks = async () => {
+                if (activeGroupId && activeGroupTeamIds.length === 0) {
+                    setReadyToCloseProductTasks([]);
+                    setReadyToCloseProductEpicsInScope([]);
+                    return;
+                }
+                const data = await fetchTasks('product', {
+                    sprintOverride: '',
+                    updateEpics: false,
+                    epicsInScopeSetter: setReadyToCloseProductEpicsInScope,
+                    useLoading: false,
+                    setErrorOnFailure: false
+                });
+                setReadyToCloseProductTasks(data);
+            };
 
-	            const loadReadyToCloseTechTasks = async () => {
-	                const data = await fetchTasks('tech', {
-	                    sprintOverride: '',
-	                    updateEpics: false,
-	                    epicsInScopeSetter: setReadyToCloseTechEpicsInScope,
-	                    useLoading: false,
-	                    setErrorOnFailure: false
-	                });
-	                setReadyToCloseTechTasks(data);
-	            };
+            const loadReadyToCloseTechTasks = async () => {
+                if (activeGroupId && activeGroupTeamIds.length === 0) {
+                    setReadyToCloseTechTasks([]);
+                    setReadyToCloseTechEpicsInScope([]);
+                    return;
+                }
+                const data = await fetchTasks('tech', {
+                    sprintOverride: '',
+                    updateEpics: false,
+                    epicsInScopeSetter: setReadyToCloseTechEpicsInScope,
+                    useLoading: false,
+                    setErrorOnFailure: false
+                });
+                setReadyToCloseTechTasks(data);
+            };
 
 
             useEffect(() => {
+                if (!activeGroupId) return;
                 loadReadyToCloseProductTasks();
                 loadReadyToCloseTechTasks();
-            }, []);
+            }, [activeGroupId, activeGroupTeamIds.join('|')]);
 
 
             const formatPercent = (value) => `${(value * 100).toFixed(2)}%`;
@@ -4118,9 +5302,18 @@
             const techTasksCount = techTasks.length;
             const productTasksCount = productTasks.length;
 
-            const teamOptions = ['all', ...new Set(capacityTasks.map(t => getTeamInfo(t).id || 'unknown'))]
-                .map(id => ({ id, name: id === 'all' ? 'All Teams' : getTeamInfo(capacityTasks.find(t => getTeamInfo(t).id === id) || {}).name }))
-                .filter((team, index, arr) => arr.findIndex(t => t.id === team.id) === index);
+            const teamOptions = React.useMemo(() => {
+                const base = ['all', ...new Set(capacityTasks.map(t => getTeamInfo(t).id || 'unknown'))]
+                    .map(id => ({
+                        id,
+                        name: id === 'all' ? 'All Teams' : getTeamInfo(capacityTasks.find(t => getTeamInfo(t).id === id) || {}).name
+                    }))
+                    .filter((team, index, arr) => arr.findIndex(t => t.id === team.id) === index);
+                if (!activeGroupTeamIds.length) {
+                    return base.length ? base : [{ id: 'all', name: 'All Teams' }];
+                }
+                return base.filter(team => team.id === 'all' || activeGroupTeamSet.has(team.id));
+            }, [capacityTasks, activeGroupTeamIds, activeGroupTeamSet]);
             const teamNameById = React.useMemo(() => {
                 const map = new Map();
                 teamOptions.forEach(team => {
@@ -4146,11 +5339,47 @@
                     return nameMatch || stateLabel === query;
                 });
             }, [availableSprints, sprintSearch]);
+            const firstFutureSprintId = React.useMemo(() => {
+                const future = (availableSprints || []).filter(sprint => (sprint.state || '').toLowerCase() === 'future');
+                if (!future.length) return null;
+                const ordered = [...future].sort((a, b) => {
+                    const aTime = Date.parse(a.startDate || '');
+                    const bTime = Date.parse(b.startDate || '');
+                    if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) {
+                        return aTime - bTime;
+                    }
+                    return String(a.name || '').localeCompare(String(b.name || ''));
+                });
+                return ordered[0]?.id ?? null;
+            }, [availableSprints]);
             const selectedSprintState = (selectedSprintInfo?.state || '').toLowerCase();
             const isCompletedSprintSelected = selectedSprintState === 'closed';
             const isFutureSprintSelected = selectedSprintState === 'future';
+            const isFirstFutureSprintSelected = firstFutureSprintId
+                && selectedSprint !== null
+                && String(firstFutureSprintId) === String(selectedSprint);
             const selectedTeamSet = React.useMemo(() => new Set(selectedTeams.filter(id => id !== 'all')), [selectedTeams]);
             const isAllTeamsSelected = selectedTeams.includes('all') || selectedTeamSet.size === 0;
+
+            useEffect(() => {
+                if (!activeGroupId) return;
+                if (!activeGroupTeamIds.length) {
+                    if (!selectedTeams.includes('all')) {
+                        setSelectedTeams(['all']);
+                    }
+                    return;
+                }
+                setSelectedTeams(prev => {
+                    const normalized = normalizeSelectedTeams(prev);
+                    if (normalized.includes('all')) return ['all'];
+                    const filtered = normalized.filter(id => activeGroupTeamSet.has(id));
+                    if (!filtered.length) return ['all'];
+                    if (filtered.length === normalized.length && filtered.every((id, idx) => id === normalized[idx])) {
+                        return prev;
+                    }
+                    return filtered;
+                });
+            }, [activeGroupId, activeGroupTeamIds.join('|')]);
 
             const selectedTeamsLabel = React.useMemo(() => {
                 if (isAllTeamsSelected) return 'All Teams';
@@ -4186,10 +5415,18 @@
             };
 
             const excludedEpicSet = React.useMemo(() => new Set(excludedStatsEpics || []), [excludedStatsEpics]);
+            const statsTaskList = React.useMemo(() => {
+                if (!capacityTasks.length) return [];
+                if (!hideExcludedStats) return capacityTasks;
+                return capacityTasks.filter(task => {
+                    const epicKey = task.fields?.epicKey || 'NO_EPIC';
+                    return !excludedEpicSet.has(epicKey);
+                });
+            }, [capacityTasks, hideExcludedStats, excludedEpicSet]);
             const localStatsData = React.useMemo(() => {
-                if (!capacityTasks.length) return null;
-                return buildLocalStatsFromTasks(capacityTasks, excludedEpicSet);
-            }, [capacityTasks, selectedSprintInfo?.name, excludedEpicSet]);
+                if (!statsTaskList.length) return null;
+                return buildLocalStatsFromTasks(statsTaskList, new Set());
+            }, [statsTaskList, selectedSprintInfo?.name]);
 
             const effectiveStatsData = localStatsData;
             const scenarioIssues = scenarioData?.issues || [];
@@ -5184,9 +6421,11 @@
 
             const scheduleScenarioEdgeUpdate = React.useCallback(() => {
                 if (!showScenario) return;
+                if (scenarioEdgeFrameRef.current) return;
                 if (scenarioEdgeUpdatePendingRef.current) return;
                 scenarioEdgeUpdatePendingRef.current = true;
-                window.requestAnimationFrame(() => {
+                scenarioEdgeFrameRef.current = window.requestAnimationFrame(() => {
+                    scenarioEdgeFrameRef.current = null;
                     scenarioEdgeUpdatePendingRef.current = false;
                     setScenarioEdgeRender(computeScenarioEdgePaths());
                 });
@@ -5334,6 +6573,15 @@
                 }
                 return true;
             });
+            const visibleTaskKeySet = React.useMemo(() => {
+                const keys = new Set();
+                visibleTasks.forEach(task => {
+                    if (task?.key) {
+                        keys.add(task.key);
+                    }
+                });
+                return keys;
+            }, [visibleTasks]);
 
             const statsTeams = effectiveStatsData?.teams || [];
             const allowedStatsTeamIds = React.useMemo(() => {
@@ -5623,6 +6871,49 @@
                 setTechTasks(prev => prev.filter(t => t.key !== taskKey));
             };
 
+            const prefersReducedMotion = () => (
+                window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+            );
+
+            const highlightTaskItem = (element) => {
+                if (!element) return;
+                if (alertHighlightRef.current && alertHighlightRef.current !== element) {
+                    alertHighlightRef.current.classList.remove('task-highlight');
+                }
+                alertHighlightRef.current = element;
+                element.classList.add('task-highlight');
+                if (alertHighlightTimeoutRef.current) {
+                    window.clearTimeout(alertHighlightTimeoutRef.current);
+                }
+                alertHighlightTimeoutRef.current = window.setTimeout(() => {
+                    element.classList.remove('task-highlight');
+                }, 2200);
+            };
+
+            const scrollToTaskItem = (taskKey) => {
+                if (!taskKey) return false;
+                const element = document.querySelector(`[data-issue-key="${taskKey}"]`);
+                if (!element) return false;
+                element.scrollIntoView({
+                    behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+                    block: 'center'
+                });
+                highlightTaskItem(element);
+                return true;
+            };
+
+            const handleAlertStoryClick = (taskKey) => {
+                if (!scrollToTaskItem(taskKey) && jiraUrl) {
+                    window.open(`${jiraUrl}/browse/${taskKey}`, '_blank', 'noopener,noreferrer');
+                }
+            };
+
+            const dismissAlertItem = (taskKey) => {
+                if (!taskKey) return;
+                alertDismissedRef.current = true;
+                setDismissedAlertKeys(prev => (prev.includes(taskKey) ? prev : [...prev, taskKey]));
+            };
+
             const getDependencyKeys = React.useCallback((taskKey, action) => {
                 if (!taskKey) return [];
                 const entries = (dependencyData[taskKey] || [])
@@ -5659,6 +6950,7 @@
                         taskKey,
                         action,
                         relatedKeys,
+                        dependencyKeys,
                         missingKeys
                     });
                     return;
@@ -5684,11 +6976,13 @@
                 const missingKeys = (dependencyFocus.missingKeys || []).filter(key => !dependencyLookupCache[key]);
                 if (!missingKeys.length) return;
                 let isCancelled = false;
+                const controller = registerSprintFetch();
                 const fetchLookup = async () => {
                     setDependencyLookupLoading(true);
                     try {
                         const response = await fetch(
-                            `${BACKEND_URL}/api/issues/lookup?keys=${encodeURIComponent(missingKeys.join(','))}`
+                            `${BACKEND_URL}/api/issues/lookup?keys=${encodeURIComponent(missingKeys.join(','))}`,
+                            { signal: controller.signal }
                         );
                         if (!response.ok) {
                             console.error('Dependency lookup failed:', response.status);
@@ -5707,16 +7001,23 @@
                             return next;
                         });
                     } catch (err) {
+                        if (err.name === 'AbortError') return;
                         console.error('Dependency lookup error:', err);
                     } finally {
                         if (!isCancelled) {
                             setDependencyLookupLoading(false);
                         }
+                        cleanupSprintFetch(controller);
                     }
                 };
                 fetchLookup();
                 return () => {
                     isCancelled = true;
+                    try {
+                        controller.abort();
+                    } catch (err) {
+                        // ignore
+                    }
                 };
             }, [dependencyFocus, dependencyLookupCache]);
 
@@ -6227,16 +7528,39 @@
             };
 
             const isExcludedStatus = (status) => status === 'killed' || status === 'postponed' || status === 'done';
+            const dismissedAlertSet = React.useMemo(() => new Set(dismissedAlertKeys || []), [dismissedAlertKeys]);
+            const sprintMissingKeySet = React.useMemo(() => {
+                const keys = new Set();
+                (missingPlanningInfoTasks || []).forEach(task => {
+                    if (!task?.key) return;
+                    const missing = task.fields?.missingFields || [];
+                    if (missing.includes('Sprint')) {
+                        keys.add(task.key);
+                    }
+                });
+                return keys;
+            }, [missingPlanningInfoTasks]);
 
             const blockedTasks = visibleTasks.filter(task => {
                 const status = normalizeStatus(task.fields.status?.name);
                 if (!status) return false;
                 if (isExcludedStatus(status)) return false;
+                if (dismissedAlertSet.has(task.key)) return false;
                 return status.includes('blocked');
             });
 
             const consolidatedMissingStories = React.useMemo(() => {
                 const byKey = new Map();
+                const allowSprintMissing = isFirstFutureSprintSelected;
+                const shouldIncludeUnknownTeam = (task, missing) => {
+                    const teamMissing = !task?.fields?.teamId && !task?.fields?.teamName;
+                    if (!teamMissing) return true;
+                    if (!allowSprintMissing) return false;
+                    const sprintMissing = missing.has('Sprint') || sprintMissingKeySet.has(task.key);
+                    if (!sprintMissing) return false;
+                    missing.add('Sprint');
+                    return true;
+                };
 
                 const shouldIncludeByTeam = (task) => {
                     if (isAllTeamsSelected) return true;
@@ -6249,6 +7573,8 @@
                 };
 
                 const excluded = (task) => {
+                    if (!task?.key) return true;
+                    if (dismissedAlertSet.has(task.key)) return true;
                     const status = normalizeStatus(task.fields.status?.name);
                     return isExcludedStatus(status);
                 };
@@ -6257,6 +7583,10 @@
                 (missingPlanningInfoTasks || []).forEach((task) => {
                     if (!task?.key || excluded(task) || !shouldIncludeByTeam(task)) return;
                     const missing = new Set(task.fields?.missingFields || []);
+                    if (!allowSprintMissing) {
+                        missing.delete('Sprint');
+                    }
+                    if (!shouldIncludeUnknownTeam(task, missing)) return;
                     if (missing.size === 0) return;
                     byKey.set(task.key, { task, missing });
                 });
@@ -6269,6 +7599,7 @@
                     if (!hasStoryPoints(task)) current.missing.add('Story Points');
                     if (!task.fields?.epicKey) current.missing.add('Epic');
                     if (!task.fields?.teamId && !task.fields?.teamName) current.missing.add('Team');
+                    if (!shouldIncludeUnknownTeam(task, current.missing)) return;
 
                     if (current.missing.size > 0) {
                         // Prefer the server task object if present (may carry extra fields)
@@ -6287,7 +7618,7 @@
                         if (priorityA !== priorityB) return priorityA - priorityB;
                         return (a.task.fields.summary || '').localeCompare(b.task.fields.summary || '');
                     });
-            }, [missingPlanningInfoTasks, visibleTasks, isAllTeamsSelected, selectedTeamSet]);
+            }, [missingPlanningInfoTasks, visibleTasks, isAllTeamsSelected, selectedTeamSet, isFirstFutureSprintSelected, dismissedAlertKeys, sprintMissingKeySet]);
 
             const emptyEpics = epicsInScope
                 .filter(epic => {
@@ -6296,7 +7627,8 @@
                     if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
                     return true;
                 })
-                .filter(epic => typeof epic.totalStories === 'number' && epic.totalStories === 0);
+                .filter(epic => typeof epic.totalStories === 'number' && epic.totalStories === 0)
+                .filter(epic => !dismissedAlertSet.has(epic.key));
 
 	            const readyToCloseStoryStatuses = new Set(['done', 'killed', 'incomplete']);
 	            const doneStoryEpics = readyToCloseEpicsInScope
@@ -6315,7 +7647,8 @@
 	                    });
 	                    if (epicStories.length === 0) return false;
 	                    return epicStories.every(task => readyToCloseStoryStatuses.has(normalizeStatus(task.fields.status?.name)));
-	                });
+	                })
+                    .filter(epic => !dismissedAlertSet.has(epic.key));
 
             const sortByPriorityThenSummary = (a, b) => {
                 const priorityA = priorityOrder[a.fields.priority?.name] || 999;
@@ -6324,25 +7657,74 @@
                 return (a.fields.summary || '').localeCompare(b.fields.summary || '');
             };
 
-            const buildAlertGroups = (taskList) => {
-                const grouped = groupTasksByEpic(taskList);
-                return Object.values(grouped)
-                    .map(group => ({
-                        ...group,
-                        tasks: [...group.tasks].sort(sortByPriorityThenSummary)
-                    }))
-                    .sort((a, b) => {
-                        const diff = (b.tasks?.length || 0) - (a.tasks?.length || 0);
-                        if (diff !== 0) return diff;
-                        const nameA = (a.epic?.summary || a.parentSummary || a.key);
-                        const nameB = (b.epic?.summary || b.parentSummary || b.key);
-                        return nameA.localeCompare(nameB);
-                    });
+            const groupAlertsByTeam = (items, resolveTeam, sortItems) => {
+                const groups = new Map();
+                (items || []).forEach(item => {
+                    const team = resolveTeam(item) || { id: 'unknown', name: 'Unknown Team' };
+                    const id = team.id || team.name || 'unknown';
+                    const name = team.name || 'Unknown Team';
+                    const entry = groups.get(id) || { id, name, items: [] };
+                    entry.items.push(item);
+                    groups.set(id, entry);
+                });
+                const list = Array.from(groups.values());
+                list.forEach(group => {
+                    if (sortItems) {
+                        group.items.sort(sortItems);
+                    }
+                });
+                return list.sort((a, b) => a.name.localeCompare(b.name));
             };
 
-            const blockedGroups = buildAlertGroups(blockedTasks);
-            const emptyEpicsSorted = [...emptyEpics].sort((a, b) => (a.teamName || '').localeCompare(b.teamName || '') || (a.summary || '').localeCompare(b.summary || ''));
-            const doneStoryEpicsSorted = [...doneStoryEpics].sort((a, b) => (a.teamName || '').localeCompare(b.teamName || '') || (a.summary || '').localeCompare(b.summary || ''));
+            const missingAlertTeams = groupAlertsByTeam(consolidatedMissingStories, (item) => getTeamInfo(item.task));
+            const blockedAlertTeams = groupAlertsByTeam(blockedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
+            const emptyEpicTeams = groupAlertsByTeam(emptyEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const doneEpicTeams = groupAlertsByTeam(doneStoryEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const alertItemCount = consolidatedMissingStories.length + blockedTasks.length + emptyEpics.length + doneStoryEpics.length;
+
+            const triggerAlertCelebration = React.useCallback(() => {
+                if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                    return;
+                }
+                const colors = ['#f97316', '#f59e0b', '#22c55e', '#0ea5e9', '#a855f7', '#14b8a6'];
+                const pieces = Array.from({ length: 26 }).map((_, index) => ({
+                    id: `${Date.now()}-${index}`,
+                    left: Math.random() * 100,
+                    size: 6 + Math.random() * 6,
+                    delay: Math.random() * 0.3,
+                    color: colors[index % colors.length]
+                }));
+                setAlertCelebrationPieces(pieces);
+                if (alertCelebrationTimeoutRef.current) {
+                    window.clearTimeout(alertCelebrationTimeoutRef.current);
+                }
+                alertCelebrationTimeoutRef.current = window.setTimeout(() => {
+                    setAlertCelebrationPieces([]);
+                }, 2300);
+            }, []);
+
+            useEffect(() => {
+                if (!alertDismissedRef.current) {
+                    alertPrevCountRef.current = alertItemCount;
+                    return;
+                }
+                if (alertPrevCountRef.current > 0 && alertItemCount === 0) {
+                    triggerAlertCelebration();
+                    alertDismissedRef.current = false;
+                }
+                alertPrevCountRef.current = alertItemCount;
+            }, [alertItemCount, triggerAlertCelebration]);
+
+            useEffect(() => {
+                return () => {
+                    if (alertCelebrationTimeoutRef.current) {
+                        window.clearTimeout(alertCelebrationTimeoutRef.current);
+                    }
+                    if (alertHighlightTimeoutRef.current) {
+                        window.clearTimeout(alertHighlightTimeoutRef.current);
+                    }
+                };
+            }, []);
 
 
             useEffect(() => {
@@ -6404,13 +7786,13 @@
                                         type="text"
                                         className="search-input"
                                         placeholder="Search tickets..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        value={searchInput}
+                                        onChange={(e) => setSearchInput(e.target.value)}
                                     />
-                                    {searchQuery && (
+                                    {searchInput && (
                                         <button
                                             className="search-clear"
-                                            onClick={() => setSearchQuery('')}
+                                            onClick={() => setSearchInput('')}
                                             title="Clear search"
                                             aria-label="Clear search"
                                         >
@@ -6420,9 +7802,76 @@
                                 </div>
                             </div>
                         </div>
-                        <div className="sprint-selector">
-                            <div className="sprint-filters">
-                                <label>Select Sprint:</label>
+                        <div className="view-selector">
+                            <div className="view-filters">
+                                {((groupsConfig.groups || []).length > 1) && (
+                                    <>
+                                        <label>Group:</label>
+                                        <div className="group-dropdown" ref={groupDropdownRef}>
+                                            <div
+                                                className={`group-dropdown-toggle ${showGroupDropdown ? 'open' : ''}`}
+                                                role="button"
+                                                tabIndex={groupsLoading ? -1 : 0}
+                                                onClick={() => {
+                                                    if (groupsLoading) return;
+                                                    setShowGroupDropdown(!showGroupDropdown);
+                                                }}
+                                                onKeyDown={(event) => {
+                                                    if (groupsLoading) return;
+                                                    if (event.key === 'Enter' || event.key === ' ') {
+                                                        event.preventDefault();
+                                                        setShowGroupDropdown(!showGroupDropdown);
+                                                    }
+                                                }}
+                                                aria-disabled={groupsLoading}
+                                            >
+                                                <span>{activeGroup?.name || (groupsLoading ? 'Loading...' : 'Group')}</span>
+                                                <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                                                    <path d="M6 9L1 4h10z"/>
+                                                </svg>
+                                            </div>
+                                            {showGroupDropdown && (
+                                                <div className="group-dropdown-panel">
+                                                    {groupsLoading ? (
+                                                        <div className="group-dropdown-option">Loading groups...</div>
+                                                    ) : (groupsConfig.groups || []).length === 0 ? (
+                                                        <div className="group-dropdown-option">No groups yet</div>
+                                                    ) : (
+                                                        (groupsConfig.groups || []).map(group => (
+                                                            <div
+                                                                key={group.id}
+                                                                className="group-dropdown-option"
+                                                                onClick={() => {
+                                                                    setActiveGroupId(group.id);
+                                                                    setShowGroupDropdown(false);
+                                                                }}
+                                                            >
+                                                                <span>{group.name}</span>
+                                                                <div className="group-option-tags">
+                                                                    {groupsConfig.defaultGroupId === group.id && (
+                                                                        <span className="group-option-default">★ Default</span>
+                                                                    )}
+                                                                    <span className="group-option-meta">
+                                                                        {group.teamIds?.length || 0} teams
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+                                <button
+                                    className="secondary compact group-manage-button"
+                                    onClick={openGroupManage}
+                                    disabled={groupsLoading}
+                                    title="Manage team groups"
+                                >
+                                    Manage
+                                </button>
+                                <label>Sprint:</label>
                                 <div className="sprint-dropdown" ref={sprintDropdownRef}>
                                     <div
                                         className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
@@ -6441,7 +7890,7 @@
                                         }}
                                         aria-disabled={sprintsLoading || availableSprints.length === 0}
                                     >
-                                        <span>{sprintName || 'Select sprint'}</span>
+                                        <span>{sprintName || 'Sprint'}</span>
                                         <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
                                             <path d="M6 9L1 4h10z"/>
                                         </svg>
@@ -6485,7 +7934,7 @@
                                         </div>
                                     )}
                                 </div>
-                                <label>Select Team:</label>
+                                <label>Team:</label>
                                 <div className="team-dropdown" ref={teamDropdownRef}>
                                     <div
                                         className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''}`}
@@ -6524,7 +7973,7 @@
                                         </div>
                                     )}
                                 </div>
-                                <div className="sprint-actions">
+                                <div className="view-actions">
                                     <button
                                         className={`planning-button ${showPlanning ? 'active' : ''}`}
                                         onClick={() => setShowPlanning(!showPlanning)}
@@ -6961,8 +8410,17 @@
                             <div className="stats-control-group">
                                 <label>Selected Sprint</label>
                                 <div className="stats-note">
-                                    {selectedSprintInfo?.name || 'Select a sprint'}
+                                    {selectedSprintInfo?.name || 'Sprint'}
                                 </div>
+                            </div>
+                            <div className="stats-control-group">
+                                <label>Excluded Epics</label>
+                                <button
+                                    className={`stats-toggle ${hideExcludedStats ? 'active' : ''}`}
+                                    onClick={() => setHideExcludedStats(prev => !prev)}
+                                >
+                                    {hideExcludedStats ? 'Hide excluded' : 'Show excluded'}
+                                </button>
                             </div>
                         </div>
 
@@ -7276,7 +8734,7 @@
                                                         );
                                                     })}
                                                     {priorityRadar.series.map((series, idx) => {
-                                                        const color = radarPalette[idx % radarPalette.length];
+                                                        const color = resolveTeamColor(series.id);
                                                         const isActive = priorityHoverIndex === null || priorityHoverIndex === idx;
                                                         return (
                                                             <polygon
@@ -7335,7 +8793,7 @@
                                             </svg>
                                             <div className="priority-legend">
                                                 {priorityRadar.series.map((series, idx) => {
-                                                    const color = radarPalette[idx % radarPalette.length];
+                                                    const color = resolveTeamColor(series.id);
                                                     const isActive = priorityHoverIndex === null || priorityHoverIndex === idx;
                                                     return (
                                                         <span
@@ -8003,9 +9461,11 @@
                             )}
                         </div>
                     </div>
-                    <button className="back-to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-                        Back to top
-                    </button>
+                    {showBackToTop && (
+                        <button className="back-to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+                            Back to top
+                        </button>
+                    )}
 
                     {loading ? (
                         <div className="loading">Loading tasks...</div>
@@ -8018,7 +9478,24 @@
                         </div>
                     ) : (
                         <>
-		                            {(consolidatedMissingStories.length > 0 || blockedTasks.length > 0 || emptyEpics.length > 0 || doneStoryEpics.length > 0) && (
+                                {alertCelebrationPieces.length > 0 && (
+                                    <div className="alert-celebration" aria-hidden="true">
+                                        {alertCelebrationPieces.map(piece => (
+                                            <span
+                                                key={piece.id}
+                                                className="alert-confetti"
+                                                style={{
+                                                    left: `${piece.left}%`,
+                                                    width: `${piece.size}px`,
+                                                    height: `${piece.size * 0.7}px`,
+                                                    background: piece.color,
+                                                    animationDelay: `${piece.delay}s`
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                )}
+		                            {alertItemCount > 0 && (
 		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showEmptyEpicAlert && !showDoneEpicAlert) ? 'collapsed' : ''}`}>
 		                                    {consolidatedMissingStories.length > 0 && (
 		                                        <div className={`alert-card missing ${showMissingAlert ? '' : 'collapsed'}`}>
@@ -8050,35 +9527,84 @@
 		                                                </a>
 		                                            </div>
                                             <div className={`alert-card-body ${showMissingAlert ? '' : 'collapsed'}`}>
-                                                    <div className="alert-stories">
-                                                        {consolidatedMissingStories.map(({ task, missingFields }) => {
-                                                            const teamInfo = getTeamInfo(task);
-                                                            return (
-	                                                                <div key={task.key} className="alert-story">
-	                                                                    <span className="alert-pill team">{teamInfo.name}</span>
-	                                                                    <div className="alert-story-main">
-	                                                                        <a
-	                                                                            className="alert-story-link"
-	                                                                            href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-	                                                                            target="_blank"
-	                                                                            rel="noopener noreferrer"
-	                                                                        >
-	                                                                            {task.key} · {task.fields.summary}
-	                                                                        </a>
-	                                                                    </div>
-	                                                                    <span className="alert-pill status">Missing: {missingFields.join(', ')}</span>
-	                                                                    <a
-	                                                                        className="alert-action"
-	                                                                        href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-	                                                                        target="_blank"
-	                                                                        rel="noopener noreferrer"
-	                                                                    >
-	                                                                        Fix fields →
-	                                                                    </a>
-	                                                                </div>
-	                                                            );
-                                                        })}
-                                                    </div>
+                                                    {missingAlertTeams.map(group => {
+                                                        const keys = group.items.map(item => item.task.key);
+                                                        const teamLink = buildKeyListLink(keys);
+                                                        return (
+                                                            <div key={group.id} className="alert-team-group">
+                                                                <div className="alert-team-header">
+                                                                    {teamLink ? (
+                                                                        <a
+                                                                            className="alert-team-link"
+                                                                            href={teamLink}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                        >
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
+                                                                        </a>
+                                                                    ) : (
+                                                                        <div className="alert-team-title">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <div className="alert-stories">
+                                                                    {group.items.map(({ task, missingFields }) => (
+                                                                        <div key={task.key} className="alert-story">
+                                                                            <div
+                                                                                className="alert-story-main"
+                                                                                role="button"
+                                                                                tabIndex={0}
+                                                                                onClick={() => handleAlertStoryClick(task.key)}
+                                                                                onKeyDown={(event) => {
+                                                                                    if (event.key === 'Enter' || event.key === ' ') {
+                                                                                        event.preventDefault();
+                                                                                        handleAlertStoryClick(task.key);
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                <a
+                                                                                    className="alert-story-link"
+                                                                                    href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                    onClick={(event) => {
+                                                                                        event.preventDefault();
+                                                                                        event.stopPropagation();
+                                                                                        handleAlertStoryClick(task.key);
+                                                                                    }}
+                                                                                >
+                                                                                    {task.key} · {task.fields.summary}
+                                                                                </a>
+                                                                            </div>
+                                                                            <span className="alert-pill status">Missing: {missingFields.join(', ')}</span>
+                                                                            <a
+                                                                                className="alert-action"
+                                                                                href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                            >
+                                                                                Fix fields →
+                                                                            </a>
+                                                                            <button
+                                                                                className="task-remove alert-remove"
+                                                                                onClick={(event) => {
+                                                                                    event.stopPropagation();
+                                                                                    dismissAlertItem(task.key);
+                                                                                }}
+                                                                                title="Dismiss from alerts"
+                                                                                type="button"
+                                                                            >
+                                                                                ×
+                                                                            </button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
                                             </div>
 	                                        </div>
 	                                    )}
@@ -8113,45 +9639,72 @@
 	                                                </a>
 	                                            </div>
                                             <div className={`alert-card-body ${showBlockedAlert ? '' : 'collapsed'}`}>
-                                                    {blockedGroups.map(group => {
-                                                        const epicTitle = group.epic?.summary || group.parentSummary ||
-                                                            (group.key === 'NO_EPIC' ? 'No Epic Linked' : group.key);
+                                                    {blockedAlertTeams.map(group => {
+                                                        const keys = group.items.map(item => item.key);
+                                                        const teamLink = buildKeyListLink(keys, { addSprint: true });
                                                         return (
-	                                                            <div key={group.key} className="alert-epic">
-	                                                                <div className="alert-epic-head">
-                                                                    <div className="alert-epic-title">
-                                                                        <span className="alert-pill">EPIC</span>
-                                                                        <span>{epicTitle}</span>
-                                                                    </div>
-                                                                    {group.key !== 'NO_EPIC' && (
+                                                            <div key={group.id} className="alert-team-group">
+                                                                <div className="alert-team-header">
+                                                                    {teamLink ? (
                                                                         <a
-                                                                            className="alert-epic-link"
-                                                                            href={jiraUrl ? `${jiraUrl}/browse/${group.key}` : '#'}
+                                                                            className="alert-team-link"
+                                                                            href={teamLink}
                                                                             target="_blank"
                                                                             rel="noopener noreferrer"
                                                                         >
-                                                                            Open epic ↗
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
                                                                         </a>
+                                                                    ) : (
+                                                                        <div className="alert-team-title">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
+                                                                        </div>
                                                                     )}
                                                                 </div>
                                                                 <div className="alert-stories">
-                                                                    {group.tasks.map(task => {
-                                                                        const teamInfo = getTeamInfo(task);
+                                                                    {group.items.map(task => {
                                                                         const statusLabel = task.fields.status?.name || 'Blocked';
                                                                         return (
                                                                             <div key={task.key} className="alert-story">
-                                                                                <span className="alert-pill team">{teamInfo.name}</span>
-                                                                                <div className="alert-story-main">
+                                                                                <div
+                                                                                    className="alert-story-main"
+                                                                                    role="button"
+                                                                                    tabIndex={0}
+                                                                                    onClick={() => handleAlertStoryClick(task.key)}
+                                                                                    onKeyDown={(event) => {
+                                                                                        if (event.key === 'Enter' || event.key === ' ') {
+                                                                                            event.preventDefault();
+                                                                                            handleAlertStoryClick(task.key);
+                                                                                        }
+                                                                                    }}
+                                                                                >
                                                                                     <a
                                                                                         className="alert-story-link"
                                                                                         href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
                                                                                         target="_blank"
                                                                                         rel="noopener noreferrer"
+                                                                                        onClick={(event) => {
+                                                                                            event.preventDefault();
+                                                                                            event.stopPropagation();
+                                                                                            handleAlertStoryClick(task.key);
+                                                                                        }}
                                                                                     >
                                                                                         {task.key} · {task.fields.summary}
                                                                                     </a>
                                                                                 </div>
                                                                                 <span className="alert-pill status">{statusLabel}</span>
+                                                                                <button
+                                                                                    className="task-remove alert-remove"
+                                                                                    onClick={(event) => {
+                                                                                        event.stopPropagation();
+                                                                                        dismissAlertItem(task.key);
+                                                                                    }}
+                                                                                    title="Dismiss from alerts"
+                                                                                    type="button"
+                                                                                >
+                                                                                    ×
+                                                                                </button>
                                                                             </div>
                                                                         );
                                                                     })}
@@ -8193,34 +9746,86 @@
 	                                                </a>
 	                                            </div>
                                             <div className={`alert-card-body ${showEmptyEpicAlert ? '' : 'collapsed'}`}>
-                                                    <div className="alert-stories">
-                                                        {emptyEpicsSorted.map(epic => (
-                                                            <div key={epic.key} className="alert-story">
-	                                                                <span className="alert-pill team">{epic.teamName || 'Unknown Team'}</span>
-	                                                                <div className="alert-story-main">
-	                                                                    <a
-	                                                                        className="alert-story-link"
-	                                                                        href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
-	                                                                        target="_blank"
-	                                                                        rel="noopener noreferrer"
-	                                                                    >
-	                                                                        {epic.key} · {epic.summary}
-	                                                                    </a>
-	                                                                </div>
-	                                                                {epic.status?.name && (
-	                                                                    <span className="alert-pill status">{epic.status.name}</span>
-	                                                                )}
-	                                                                <a
-	                                                                    className="alert-action"
-	                                                                    href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
-	                                                                    target="_blank"
-	                                                                    rel="noopener noreferrer"
-	                                                                >
-	                                                                    Create story →
-	                                                                </a>
-	                                                            </div>
-                                                        ))}
-                                                    </div>
+                                                    {emptyEpicTeams.map(group => {
+                                                        const keys = group.items.map(item => item.key);
+                                                        const teamLink = buildKeyListLink(keys);
+                                                        return (
+                                                            <div key={group.id} className="alert-team-group">
+                                                                <div className="alert-team-header">
+                                                                    {teamLink ? (
+                                                                        <a
+                                                                            className="alert-team-link"
+                                                                            href={teamLink}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                        >
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                        </a>
+                                                                    ) : (
+                                                                        <div className="alert-team-title">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <div className="alert-stories">
+                                                                    {group.items.map(epic => (
+                                                                        <div key={epic.key} className="alert-story">
+                                                                            <div
+                                                                                className="alert-story-main"
+                                                                                role="button"
+                                                                                tabIndex={0}
+                                                                                onClick={() => handleAlertStoryClick(epic.key)}
+                                                                                onKeyDown={(event) => {
+                                                                                    if (event.key === 'Enter' || event.key === ' ') {
+                                                                                        event.preventDefault();
+                                                                                        handleAlertStoryClick(epic.key);
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                <a
+                                                                                    className="alert-story-link"
+                                                                                    href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                    onClick={(event) => {
+                                                                                        event.preventDefault();
+                                                                                        event.stopPropagation();
+                                                                                        handleAlertStoryClick(epic.key);
+                                                                                    }}
+                                                                                >
+                                                                                    {epic.key} · {epic.summary}
+                                                                                </a>
+                                                                            </div>
+                                                                            {epic.status?.name && (
+                                                                                <span className="alert-pill status">{epic.status.name}</span>
+                                                                            )}
+                                                                            <a
+                                                                                className="alert-action"
+                                                                                href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                            >
+                                                                                Create story →
+                                                                            </a>
+                                                                            <button
+                                                                                className="task-remove alert-remove"
+                                                                                onClick={(event) => {
+                                                                                    event.stopPropagation();
+                                                                                    dismissAlertItem(epic.key);
+                                                                                }}
+                                                                                title="Dismiss from alerts"
+                                                                                type="button"
+                                                                            >
+                                                                                ×
+                                                                            </button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
                                             </div>
 		                                        </div>
 		                                    )}
@@ -8255,34 +9860,86 @@
 	                                                </a>
 	                                            </div>
                                             <div className={`alert-card-body ${showDoneEpicAlert ? '' : 'collapsed'}`}>
-                                                    <div className="alert-stories">
-                                                        {doneStoryEpicsSorted.map(epic => (
-                                                            <div key={epic.key} className="alert-story">
-	                                                                <span className="alert-pill team">{epic.teamName || 'Unknown Team'}</span>
-	                                                                <div className="alert-story-main">
-	                                                                    <a
-	                                                                        className="alert-story-link"
-	                                                                        href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
-	                                                                        target="_blank"
-	                                                                        rel="noopener noreferrer"
-	                                                                    >
-	                                                                        {epic.key} · {epic.summary}
-	                                                                    </a>
-	                                                                </div>
-	                                                                {epic.assignee?.displayName && (
-	                                                                    <span className="alert-pill status">{epic.assignee.displayName}</span>
-	                                                                )}
-	                                                                <a
-	                                                                    className="alert-action"
-	                                                                    href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
-	                                                                    target="_blank"
-	                                                                    rel="noopener noreferrer"
-	                                                                >
-	                                                                    Close epic →
-	                                                                </a>
-	                                                            </div>
-                                                        ))}
-                                                    </div>
+                                                    {doneEpicTeams.map(group => {
+                                                        const keys = group.items.map(item => item.key);
+                                                        const teamLink = buildKeyListLink(keys);
+                                                        return (
+                                                            <div key={group.id} className="alert-team-group">
+                                                                <div className="alert-team-header">
+                                                                    {teamLink ? (
+                                                                        <a
+                                                                            className="alert-team-link"
+                                                                            href={teamLink}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                        >
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                        </a>
+                                                                    ) : (
+                                                                        <div className="alert-team-title">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <div className="alert-stories">
+                                                                    {group.items.map(epic => (
+                                                                        <div key={epic.key} className="alert-story">
+                                                                            <div
+                                                                                className="alert-story-main"
+                                                                                role="button"
+                                                                                tabIndex={0}
+                                                                                onClick={() => handleAlertStoryClick(epic.key)}
+                                                                                onKeyDown={(event) => {
+                                                                                    if (event.key === 'Enter' || event.key === ' ') {
+                                                                                        event.preventDefault();
+                                                                                        handleAlertStoryClick(epic.key);
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                <a
+                                                                                    className="alert-story-link"
+                                                                                    href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                    onClick={(event) => {
+                                                                                        event.preventDefault();
+                                                                                        event.stopPropagation();
+                                                                                        handleAlertStoryClick(epic.key);
+                                                                                    }}
+                                                                                >
+                                                                                    {epic.key} · {epic.summary}
+                                                                                </a>
+                                                                            </div>
+                                                                            {epic.assignee?.displayName && (
+                                                                                <span className="alert-pill status">{epic.assignee.displayName}</span>
+                                                                            )}
+                                                                            <a
+                                                                                className="alert-action"
+                                                                                href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                            >
+                                                                                Close epic →
+                                                                            </a>
+                                                                            <button
+                                                                                className="task-remove alert-remove"
+                                                                                onClick={(event) => {
+                                                                                    event.stopPropagation();
+                                                                                    dismissAlertItem(epic.key);
+                                                                                }}
+                                                                                title="Dismiss from alerts"
+                                                                                type="button"
+                                                                            >
+                                                                                ×
+                                                                            </button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
                                             </div>
 	                                        </div>
 	                                    )}
@@ -8523,6 +10180,11 @@
                                                     const isUpstream = isFocusActive && dependencyFocus.action === 'depends-on' && !isFocused && focusRelatedSet.has(task.key);
                                                     const isDownstream = isFocusActive && dependencyFocus.action === 'dependents' && !isFocused && focusRelatedSet.has(task.key);
                                                     const missingKeys = isFocused ? (dependencyFocus?.missingKeys || []) : [];
+                                                    const dependencyKeyList = dependencyFocus?.dependencyKeys
+                                                        || (dependencyFocus?.relatedKeys || []).filter(key => key !== task.key);
+                                                    const hiddenKeys = isFocused
+                                                        ? dependencyKeyList.filter(key => issueByKey.has(key) && !visibleTaskKeySet.has(key))
+                                                        : [];
                                                     const missingInfoByKey = {};
                                                     uniqueDeps.forEach(dep => {
                                                         if (dep.key) {
@@ -8537,12 +10199,21 @@
                                                         const teamName = lookup?.teamName || info.teamName || 'Unknown team';
                                                         return { key, status, summary, teamName };
                                                     });
+                                                    const hiddenLines = hiddenKeys.map(key => {
+                                                        const lookup = issueByKey.get(key);
+                                                        const info = missingInfoByKey[key] || {};
+                                                        const status = lookup?.fields?.status?.name || lookup?.status?.name || lookup?.status || info.status || 'Unknown';
+                                                        const summary = lookup?.fields?.summary || lookup?.summary || info.summary || 'Unknown summary';
+                                                        const teamName = lookup?.fields?.teamName || lookup?.teamName || info.teamName || 'Unknown team';
+                                                        return { key, status, summary, teamName };
+                                                    });
                                                     return (
                                                         <div
                                                             key={task.key}
                                                             className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isFocusActive && !isRelated ? 'is-dimmed' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''}`}
                                                             data-task-key={task.key}
                                                             data-task-id={task.id || task.key}
+                                                            data-issue-key={task.key}
                                                         >
                                                             <div className="task-header">
                                                                 <button
@@ -8654,16 +10325,30 @@
                                                                     )}
                                                                 </div>
                                                             )}
-                                                            {showDependencies && isFocused && missingLines.length > 0 && (
+                                                            {showDependencies && isFocused && (missingLines.length > 0 || hiddenLines.length > 0) && (
                                                                 <div className="dependency-missing">
-                                                                    <div className="dependency-missing-label">Not loaded</div>
-                                                                    {missingLines.map(item => (
-                                                                        <div className="dependency-missing-item" key={`missing-${item.key}`}>
-                                                                            {item.key} · {item.status} · {item.summary} · {item.teamName}
-                                                                        </div>
-                                                                    ))}
-                                                                    {dependencyLookupLoading && (
-                                                                        <div className="dependency-missing-item">Loading issue details...</div>
+                                                                    {hiddenLines.length > 0 && (
+                                                                        <>
+                                                                            <div className="dependency-missing-label hidden">Hidden by filter</div>
+                                                                            {hiddenLines.map(item => (
+                                                                                <div className="dependency-missing-item" key={`hidden-${item.key}`}>
+                                                                                    {item.key} · {item.status} · {item.summary} · {item.teamName}
+                                                                                </div>
+                                                                            ))}
+                                                                        </>
+                                                                    )}
+                                                                    {missingLines.length > 0 && (
+                                                                        <>
+                                                                            <div className="dependency-missing-label">Not loaded</div>
+                                                                            {missingLines.map(item => (
+                                                                                <div className="dependency-missing-item" key={`missing-${item.key}`}>
+                                                                                    {item.key} · {item.status} · {item.summary} · {item.teamName}
+                                                                                </div>
+                                                                            ))}
+                                                                            {dependencyLookupLoading && (
+                                                                                <div className="dependency-missing-item">Loading issue details...</div>
+                                                                            )}
+                                                                        </>
                                                                     )}
                                                                 </div>
                                                             )}
@@ -8682,6 +10367,111 @@
                                 </button>
                             </div>
                         </>
+                    )}
+
+                    {showGroupManage && (
+                        <div
+                            className="group-modal-backdrop"
+                            role="dialog"
+                            aria-modal="true"
+                            onClick={closeGroupManage}
+                        >
+                            <div className="group-modal" onClick={(event) => event.stopPropagation()}>
+                                <div className="group-modal-header">
+                                    <div>
+                                        <div className="group-modal-title">Manage Groups</div>
+                                        <div className="group-modal-meta">
+                                            {groupConfigSource ? `Source: ${groupConfigSource}` : 'Source: local'}
+                                        </div>
+                                    </div>
+                                    <button className="secondary compact" onClick={closeGroupManage}>
+                                        Close
+                                    </button>
+                                </div>
+                                <div className="group-modal-body">
+                                    {groupsError && (
+                                        <div className="group-modal-warning">{groupsError}</div>
+                                    )}
+                                    {(groupWarnings || []).length > 0 && (
+                                        <div className="group-modal-warning">
+                                            {(groupWarnings || []).join(' ')}
+                                        </div>
+                                    )}
+                                    {groupDraftError && (
+                                        <div className="group-modal-warning">{groupDraftError}</div>
+                                    )}
+                                    {(groupDraft?.groups || []).length === 0 && (
+                                        <div className="group-modal-meta">No groups yet. Add one below.</div>
+                                    )}
+                                    {(groupDraft?.groups || []).map(group => (
+                                        <div className="group-modal-row" key={group.id}>
+                                            <input
+                                                type="text"
+                                                value={group.name}
+                                                onChange={(event) => updateGroupDraftName(group.id, event.target.value)}
+                                                placeholder="Group name"
+                                            />
+                                            <textarea
+                                                value={(group.teamIds || []).join(', ')}
+                                                onChange={(event) => updateGroupDraftTeams(group.id, event.target.value)}
+                                                placeholder="Team IDs (comma separated, max 12)"
+                                            />
+                                            <div className="group-modal-actions">
+                                                <button
+                                                    className={`group-star-button ${groupDraft?.defaultGroupId === group.id ? 'active' : ''}`}
+                                                    onClick={() => toggleDefaultGroupDraft(group.id)}
+                                                    title="Set as default group"
+                                                    type="button"
+                                                >
+                                                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                                        <path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.6 9.6l5.8-.8L12 3.5z"/>
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    className="secondary compact"
+                                                    onClick={() => removeGroupDraft(group.id)}
+                                                    type="button"
+                                                >
+                                                    Delete
+                                                </button>
+                                                <span className="group-modal-meta">
+                                                    {(group.teamIds || []).length}/12 teams
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <div className="group-modal-meta">Import JSON (overwrites current draft).</div>
+                                    <textarea
+                                        value={groupImportText}
+                                        onChange={(event) => setGroupImportText(event.target.value)}
+                                        placeholder='{"version":1,"groups":[...]}'
+                                    />
+                                    <div className="group-modal-actions">
+                                        <button className="secondary compact" onClick={importGroupsConfig} type="button">
+                                            Import
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="group-modal-footer">
+                                    <div className="group-modal-button-row">
+                                        <button className="secondary compact" onClick={addGroupDraftRow} type="button">
+                                            Add Group
+                                        </button>
+                                        <button className="secondary compact" onClick={exportGroupsConfig} type="button">
+                                            Export JSON
+                                        </button>
+                                    </div>
+                                    <div className="group-modal-button-row">
+                                        <button className="secondary compact" onClick={closeGroupManage} type="button">
+                                            Cancel
+                                        </button>
+                                        <button className="compact" onClick={saveGroupsConfig} disabled={groupSaving} type="button">
+                                            {groupSaving ? 'Saving...' : 'Save'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     )}
                 </div>
             );

@@ -9,6 +9,7 @@ import os
 import re
 import json
 import hashlib
+import time
 from datetime import datetime, timedelta, date
 from dotenv import load_dotenv
 from openpyxl import Workbook
@@ -51,13 +52,20 @@ STATS_TEAM_IDS = [s.strip() for s in os.getenv('STATS_TEAM_IDS', '').split(',') 
 CAPACITY_PROJECT = os.getenv('CAPACITY_PROJECT', '').strip()
 CAPACITY_FIELD_ID = os.getenv('CAPACITY_FIELD_ID', '').strip()
 CAPACITY_FIELD_NAME = os.getenv('CAPACITY_FIELD_NAME', 'Team capacity[Number]').strip()
+GROUPS_CONFIG_PATH = os.getenv('GROUPS_CONFIG_PATH', '').strip()
+TEAM_GROUPS_JSON = os.getenv('TEAM_GROUPS_JSON', '').strip()
+JQL_QUERY_TEMPLATE = os.getenv('JQL_QUERY_TEMPLATE', '').strip()
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
+TASKS_CACHE = {}
+TASKS_CACHE_TTL_SECONDS = 60 * 20
 
 # Cache settings
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
 STATS_CACHE_FILE = 'stats_cache.json'
 CACHE_EXPIRY_HOURS = 24
+GROUPS_CONFIG_VERSION = 1
+GROUPS_MAX_TEAMS = 12
 
 def parse_args():
     """Parse CLI arguments to optionally override environment variables."""
@@ -546,8 +554,8 @@ def save_stats_cache(cache_data):
         return False
 
 
-def build_stats_cache_key(sprint_name, base_jql, team_ids):
-    raw = f"{sprint_name}::{base_jql}::{','.join(team_ids or [])}::{STATS_JQL_ORDER_BY}"
+def build_stats_cache_key(sprint_name, base_jql, team_ids, group_id=None):
+    raw = f"{sprint_name}::{base_jql}::{','.join(team_ids or [])}::{STATS_JQL_ORDER_BY}::{group_id or ''}"
     digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
     return f"sprint:{sprint_name}:{digest}"
 
@@ -586,6 +594,138 @@ def get_stats_team_ids():
         return STATS_TEAM_IDS
     base_jql = STATS_JQL_BASE or JQL_QUERY
     return extract_team_ids_from_jql(base_jql)
+
+
+def normalize_team_ids(team_ids):
+    seen = set()
+    normalized = []
+    for team_id in team_ids or []:
+        value = str(team_id or '').strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    return normalized
+
+
+def resolve_groups_config_path():
+    return GROUPS_CONFIG_PATH or './team-groups.json'
+
+
+def load_groups_config_file(path):
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path, 'r') as handle:
+            return json.load(handle)
+    except Exception as e:
+        print(f'⚠️ Failed to read groups config: {e}')
+        return None
+
+
+def parse_groups_config_env():
+    if not TEAM_GROUPS_JSON:
+        return None
+    try:
+        return json.loads(TEAM_GROUPS_JSON)
+    except Exception as e:
+        print(f'⚠️ Failed to parse TEAM_GROUPS_JSON: {e}')
+        return None
+
+
+def validate_groups_config(payload, allow_empty=False):
+    errors = []
+    warnings = []
+    if not isinstance(payload, dict):
+        errors.append('Config must be an object.')
+        return None, errors, warnings
+
+    groups_raw = payload.get('groups')
+    if not isinstance(groups_raw, list):
+        errors.append('groups must be a list.')
+        return None, errors, warnings
+
+    normalized_groups = []
+    seen_ids = set()
+    seen_names = set()
+    for idx, group in enumerate(groups_raw):
+        if not isinstance(group, dict):
+            errors.append(f'Group at index {idx} must be an object.')
+            continue
+        group_id = str(group.get('id') or '').strip()
+        name = str(group.get('name') or '').strip()
+        if not group_id:
+            errors.append(f'Group at index {idx} is missing id.')
+            continue
+        if not name:
+            errors.append(f'Group "{group_id}" is missing name.')
+            continue
+        if group_id.lower() in seen_ids:
+            errors.append(f'Duplicate group id "{group_id}".')
+            continue
+        if name.lower() in seen_names:
+            errors.append(f'Duplicate group name "{name}".')
+            continue
+        seen_ids.add(group_id.lower())
+        seen_names.add(name.lower())
+
+        team_ids = normalize_team_ids(group.get('teamIds') or [])
+        if not team_ids and not allow_empty:
+            errors.append(f'Group "{name}" must include at least one team.')
+        if len(team_ids) > GROUPS_MAX_TEAMS:
+            errors.append(f'Group "{name}" exceeds {GROUPS_MAX_TEAMS} teams.')
+        normalized_groups.append({
+            'id': group_id,
+            'name': name,
+            'teamIds': team_ids
+        })
+
+    default_group_id = str(payload.get('defaultGroupId') or '').strip()
+    if default_group_id:
+        if default_group_id not in {g['id'] for g in normalized_groups}:
+            errors.append('defaultGroupId must reference an existing group.')
+
+    normalized = {
+        'version': payload.get('version') or GROUPS_CONFIG_VERSION,
+        'groups': normalized_groups,
+        'defaultGroupId': default_group_id
+    }
+    return normalized, errors, warnings
+
+
+def build_default_groups_config():
+    warnings = []
+    team_ids = normalize_team_ids(extract_team_ids_from_jql(JQL_QUERY))
+    if len(team_ids) > GROUPS_MAX_TEAMS:
+        warnings.append(f'Found more than {GROUPS_MAX_TEAMS} teams in JQL_QUERY; truncated to first {GROUPS_MAX_TEAMS}.')
+        team_ids = team_ids[:GROUPS_MAX_TEAMS]
+    if not team_ids:
+        warnings.append('No teams found in JQL_QUERY. Default group is empty; add teams manually.')
+
+    config = {
+        'version': GROUPS_CONFIG_VERSION,
+        'groups': [{
+            'id': 'default',
+            'name': 'Default',
+            'teamIds': team_ids
+        }],
+        'defaultGroupId': 'default'
+    }
+    return config, warnings
+
+
+def apply_team_ids_to_template(team_ids):
+    if not JQL_QUERY_TEMPLATE:
+        return None
+    ids = normalize_team_ids(team_ids)
+    quoted = ', '.join(f'"{team_id}"' for team_id in ids)
+    return JQL_QUERY_TEMPLATE.replace('{TEAM_IDS}', quoted)
+
+
+def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, include_team_name, use_template):
+    raw = f"{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{include_team_name}::{use_template}"
+    digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
+    return f"tasks:{digest}"
 
 
 def classify_project(project_name):
@@ -944,7 +1084,26 @@ def fetch_tasks(include_team_name=False):
         # Get sprint parameter from query string
         sprint = request.args.get('sprint', '')
         team = request.args.get('team', '').strip()
+        group_id = request.args.get('groupId', '').strip() or 'default'
+        team_ids_param = request.args.get('teamIds', '').strip()
         project_filter = request.args.get('project', '').strip().lower()
+        team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
+        use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
+        cache_key = build_tasks_cache_key(
+            sprint,
+            group_id,
+            project_filter,
+            team_ids if use_template else [],
+            include_team_name,
+            use_template
+        )
+        cached_entry = TASKS_CACHE.get(cache_key)
+        if cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
+            cached_response = jsonify(cached_entry.get('data') or {})
+            cached_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            cached_response.headers['Pragma'] = 'no-cache'
+            cached_response.headers['Expires'] = '0'
+            return cached_response
 
         # Prepare authorization
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
@@ -959,11 +1118,16 @@ def fetch_tasks(include_team_name=False):
         }
 
         # Build JQL query with sprint filter if provided
-        jql = JQL_QUERY
+        if use_template:
+            jql = apply_team_ids_to_template(team_ids)
+            if not jql:
+                jql = JQL_QUERY
+        else:
+            jql = JQL_QUERY
         if sprint:
             jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
 
-        if team and team.lower() != 'all':
+        if team and team.lower() != 'all' and not use_template:
             jql = add_clause_to_jql(jql, f'"Team[Team]" = {team}')
 
         if project_filter in ('product', 'tech'):
@@ -1142,6 +1306,10 @@ def fetch_tasks(include_team_name=False):
         data['teamFieldId'] = team_field_id
 
         print(f'✅ Success! Found {len(data.get("issues", []))} issues')
+        TASKS_CACHE[cache_key] = {
+            'timestamp': time.time(),
+            'data': data
+        }
 
         success_response = jsonify(data)
         success_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -1216,18 +1384,21 @@ def fetch_issues_by_jql(jql, headers, fields_list, max_results=500):
 
 
 def build_scenario_jql(filters):
-    jql = JQL_QUERY
     sprint = filters.get('sprint')
+    teams = [t for t in (filters.get('teams') or []) if t]
+    if teams and JQL_QUERY_TEMPLATE:
+        jql = apply_team_ids_to_template(teams)
+    else:
+        jql = JQL_QUERY
+        if teams:
+            quoted = ', '.join(f'"{t}"' for t in teams)
+            jql = add_clause_to_jql(jql, f'"Team[Team]" in ({quoted})')
+
     if sprint:
         if str(sprint).isdigit():
             jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
         else:
             jql = add_clause_to_jql(jql, f'Sprint = "{sprint}"')
-
-    teams = [t for t in (filters.get('teams') or []) if t]
-    if teams:
-        quoted = ', '.join(f'"{t}"' for t in teams)
-        jql = add_clause_to_jql(jql, f'"Team[Team]" in ({quoted})')
 
     projects = [p for p in (filters.get('projects') or []) if p]
     if projects:
@@ -2131,6 +2302,8 @@ def get_missing_info():
     """Find stories under epics in a given sprint that are missing key planning fields (sprint/SP/team)."""
     try:
         sprint = request.args.get('sprint', '').strip()
+        team_ids_param = request.args.get('teamIds', '').strip()
+        team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
         if not sprint:
             return jsonify({'error': 'Missing required query param: sprint'}), 400
 
@@ -2149,7 +2322,7 @@ def get_missing_info():
         team_field_id = resolve_team_field_id(headers)
         epic_link_field_id = resolve_epic_link_field_id(headers)
 
-        scope_clause = build_missing_info_scope_clause(MISSING_INFO_TEAM_IDS, MISSING_INFO_COMPONENT)
+        scope_clause = build_missing_info_scope_clause(team_ids or MISSING_INFO_TEAM_IDS, MISSING_INFO_COMPONENT)
 
         # 1) Fetch epics that are in the sprint (future sprint planning), scoped by component/team.
         epic_jql = f'Sprint = {sprint} AND issuetype = Epic'
@@ -2335,6 +2508,7 @@ def get_completed_sprint_stats():
     sprint_name = request.args.get('sprint', '').strip()
     team_id = request.args.get('team', '').strip()
     team_ids_raw = request.args.get('teamIds', '').strip()
+    group_id = request.args.get('groupId', '').strip()
     refresh = request.args.get('refresh', '').lower() == 'true'
 
     if not sprint_name:
@@ -2348,7 +2522,7 @@ def get_completed_sprint_stats():
         team_ids = [team_id]
     else:
         team_ids = get_stats_team_ids()
-    cache_key = build_stats_cache_key(sprint_name, base_jql, team_ids)
+    cache_key = build_stats_cache_key(sprint_name, base_jql, team_ids, group_id=group_id)
     cache_data = load_stats_cache()
     if not refresh and cache_key in cache_data:
         cached_payload = cache_data.get(cache_key, {})
@@ -2522,8 +2696,67 @@ def get_config():
     """Get public configuration"""
     return jsonify({
         'jiraUrl': JIRA_URL,
-        'capacityProject': CAPACITY_PROJECT
+        'capacityProject': CAPACITY_PROJECT,
+        'groupsConfigPath': resolve_groups_config_path(),
+        'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE)
     })
+
+
+@app.route('/api/groups-config', methods=['GET'])
+def get_groups_config():
+    """Return the saved team groups configuration."""
+    warnings = []
+    config_source = 'auto'
+    config_path = resolve_groups_config_path()
+    config = load_groups_config_file(config_path)
+    if config:
+        config_source = 'file'
+    else:
+        config = parse_groups_config_env()
+        if config:
+            config_source = 'env'
+
+    if not config:
+        config, auto_warnings = build_default_groups_config()
+        warnings.extend(auto_warnings)
+    else:
+        normalized, errors, validate_warnings = validate_groups_config(config, allow_empty=True)
+        warnings.extend(validate_warnings)
+        if errors:
+            warnings.append('Invalid groups config; falling back to auto Default group.')
+            warnings.extend(errors)
+            normalized, auto_warnings = build_default_groups_config()
+            warnings.extend(auto_warnings)
+        config = normalized
+
+    if warnings:
+        config['warnings'] = warnings
+    config['source'] = config_source
+    return jsonify(config)
+
+
+@app.route('/api/groups-config', methods=['POST'])
+def save_groups_config():
+    """Persist team groups configuration to disk."""
+    payload = request.get_json(silent=True) or {}
+    normalized, errors, warnings = validate_groups_config(payload, allow_empty=False)
+    if errors:
+        return jsonify({'errors': errors}), 400
+
+    path = resolve_groups_config_path()
+    try:
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(path, 'w') as handle:
+            json.dump(normalized, handle, indent=2)
+    except Exception as e:
+        return jsonify({'error': 'Failed to save groups config', 'message': str(e)}), 500
+
+    if warnings:
+        normalized['warnings'] = warnings
+    normalized['source'] = 'file'
+    return jsonify(normalized)
 
 
 @app.route('/api/capacity', methods=['GET'])

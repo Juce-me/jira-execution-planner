@@ -14,6 +14,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Auto-refresh** - Reload button for tasks and sprints
 - ✅ **Secure Credentials** - All sensitive data in .env file
 - ✅ **Team-aware filtering** - Multi-team JQL plus UI dropdown to slice per team and see team name on each story
+- ✅ **Team groups** - Define multiple named team groups (1-12 teams), choose a default, and scope the dashboard per group
 - ✅ **Epic grouping** - Stories grouped under their epic with assignee and story-point totals
 - ✅ **Dependency focus** - Click Depends On/Dependents to highlight related tasks and show missing deps inline
 - ✅ **Planning rollups** - Selected story points summarized per team, project, and overall
@@ -102,6 +103,15 @@ JIRA_TOKEN=your-api-token-here
 # JQL Query to filter tasks (customize based on your needs)
 JQL_QUERY=project IN (PROJECT1, PROJECT2) AND issuetype = Story ORDER BY priority DESC
 
+# Optional: shareable team groups config path (created if missing)
+GROUPS_CONFIG_PATH=./team-groups.json
+
+# Optional: bootstrap group config if no file exists yet (JSON string)
+TEAM_GROUPS_JSON={"version":1,"groups":[{"id":"default","name":"Default","teamIds":["<team-id>"]}],"defaultGroupId":"default"}
+
+# Optional: JQL template for per-group fetches (use {TEAM_IDS} placeholder)
+JQL_QUERY_TEMPLATE=project IN (PROJECT1, PROJECT2) AND "Team[Team]" in ({TEAM_IDS}) ORDER BY priority DESC
+
 # Optional: Board ID for faster sprint fetching (leave empty if unknown)
 JIRA_BOARD_ID=
 
@@ -115,6 +125,14 @@ STATS_PRIORITY_WEIGHTS=Blocker:0.40,Critical:0.30,Major:0.20,Minor:0.06,Low:0.03
 CAPACITY_PROJECT=
 CAPACITY_FIELD_ID=
 ```
+
+### Team groups (optional)
+
+Use the Group selector to save multiple named team sets. The config is stored in a local JSON file (shareable, no auth tokens).
+
+- `GROUPS_CONFIG_PATH` (default: `./team-groups.json`) controls where the JSON is saved.
+- `TEAM_GROUPS_JSON` can bootstrap the first config if the file does not exist yet.
+- `JQL_QUERY_TEMPLATE` can be used for per-group fetches. Use the `{TEAM_IDS}` placeholder.
 
 **How to get Jira API token:**
 1. Go to https://id.atlassian.com/manage-profile/security/api-tokens

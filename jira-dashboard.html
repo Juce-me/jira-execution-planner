@@ -3578,6 +3578,8 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
+        const EMPTY_ARRAY = Object.freeze([]);
+        const EMPTY_OBJECT = Object.freeze({});
 
         // Backend server URL
         const DEFAULT_BACKEND_PORT = 5050;
@@ -3645,6 +3647,27 @@
 
         function App() {
             const savedPrefsRef = useRef(loadUiPrefs() || {});
+            const perfEnabled = React.useMemo(
+                () => new URLSearchParams(window.location.search).has('perf'),
+                []
+            );
+            const perfCountersRef = useRef({
+                renders: 0,
+                edgeRequests: 0,
+                edgeFrames: 0,
+                edgeComputes: 0,
+                layoutReads: 0,
+                scrollReads: 0,
+                laneStacking: 0,
+                statsBuild: 0
+            });
+            const perfLastRef = useRef({ ...perfCountersRef.current });
+            const perfStateRef = useRef(null);
+            const perfStateCountsRef = useRef({});
+            const perfStateLastRef = useRef({});
+            if (perfEnabled) {
+                perfCountersRef.current.renders += 1;
+            }
             const [productTasks, setProductTasks] = useState([]);
             const [techTasks, setTechTasks] = useState([]);
             const [loadedProductTasks, setLoadedProductTasks] = useState([]);
@@ -3798,6 +3821,107 @@
                 setGroupDraftError('');
                 setGroupImportText('');
             }, [showGroupManage, groupsConfig]);
+
+            useEffect(() => {
+                if (!perfEnabled) return;
+                const interval = window.setInterval(() => {
+                    const current = perfCountersRef.current;
+                    const last = perfLastRef.current;
+                    const snapshot = {
+                        renders: current.renders - last.renders,
+                        edgeRequests: current.edgeRequests - last.edgeRequests,
+                        edgeFrames: current.edgeFrames - last.edgeFrames,
+                        edgeComputes: current.edgeComputes - last.edgeComputes,
+                        layoutReads: current.layoutReads - last.layoutReads,
+                        scrollReads: current.scrollReads - last.scrollReads,
+                        laneStacking: current.laneStacking - last.laneStacking,
+                        statsBuild: (current.statsBuild || 0) - (last.statsBuild || 0)
+                    };
+                    perfLastRef.current = { ...current };
+                    const stateChanges = perfStateCountsRef.current || {};
+                    const lastStateChanges = perfStateLastRef.current || {};
+                    const stateDiff = {};
+                    Object.keys(stateChanges).forEach((key) => {
+                        const diff = (stateChanges[key] || 0) - (lastStateChanges[key] || 0);
+                        if (diff > 0) {
+                            stateDiff[key] = diff;
+                        }
+                    });
+                    perfStateLastRef.current = { ...stateChanges };
+                    console.log('[perf] 5s delta', snapshot);
+                    if (Object.keys(stateDiff).length) {
+                        console.log('[perf] state changes', stateDiff);
+                    }
+                }, 5000);
+                return () => window.clearInterval(interval);
+            }, [perfEnabled]);
+
+            useEffect(() => {
+                if (!perfEnabled) return;
+                const snapshot = {
+                    activeGroupId,
+                    selectedSprint,
+                    selectedTeams: (selectedTeams || []).join('|'),
+                    selectedTasksCount: Object.keys(selectedTasks || {}).length,
+                    searchQuery,
+                    searchInput,
+                    showPlanning,
+                    showStats,
+                    showScenario,
+                    showDependencies,
+                    statusFilter,
+                    loading,
+                    sprintsLoading,
+                    groupsLoading,
+                    tasksFetched,
+                    techLoaded,
+                    showBackToTop,
+                    planningOffset,
+                    showGroupDropdown,
+                    showTeamDropdown,
+                    showSprintDropdown,
+                    showGroupManage,
+                    groupSaving,
+                    sprintSearch,
+                    priorityHoverIndex
+                };
+                const prev = perfStateRef.current || {};
+                const counts = perfStateCountsRef.current || {};
+                Object.keys(snapshot).forEach((key) => {
+                    if (prev[key] !== snapshot[key]) {
+                        counts[key] = (counts[key] || 0) + 1;
+                    }
+                });
+                perfStateCountsRef.current = counts;
+                perfStateRef.current = snapshot;
+            }, [
+                perfEnabled,
+                activeGroupId,
+                selectedSprint,
+                selectedTeams,
+                selectedTasks,
+                searchQuery,
+                searchInput,
+                showPlanning,
+                showStats,
+                showScenario,
+                showDependencies,
+                statusFilter,
+                loading,
+                sprintsLoading,
+                groupsLoading,
+                tasksFetched,
+                techLoaded,
+                showBackToTop,
+                planningOffset,
+                showGroupDropdown,
+                showTeamDropdown,
+                showSprintDropdown,
+                showGroupManage,
+                groupSaving,
+                sprintSearch,
+                priorityHoverIndex
+            ]);
 
 
             const normalizeStatus = (status) => {
@@ -5322,9 +5446,18 @@
                 };
             };
 
-	            const tasks = showTech ? [...productTasks, ...techTasks] : [...productTasks];
-	            const capacityTasks = [...productTasks, ...techTasks];
-	            const readyToCloseTasks = [...readyToCloseProductTasks, ...readyToCloseTechTasks];
+	            const tasks = React.useMemo(
+	                () => showTech ? [...productTasks, ...techTasks] : [...productTasks],
+	                [showTech, productTasks, techTasks]
+	            );
+	            const capacityTasks = React.useMemo(
+	                () => [...productTasks, ...techTasks],
+	                [productTasks, techTasks]
+	            );
+	            const readyToCloseTasks = React.useMemo(
+	                () => [...readyToCloseProductTasks, ...readyToCloseTechTasks],
+	                [readyToCloseProductTasks, readyToCloseTechTasks]
+	            );
 	            const epicsInScope = React.useMemo(() => {
 	                const seen = new Set();
 	                const merged = [...productEpicsInScope, ...techEpicsInScope].filter(epic => {
@@ -5345,8 +5478,14 @@
 	                });
 	                return merged;
 	            }, [readyToCloseProductEpicsInScope, readyToCloseTechEpicsInScope]);
-            const killedTasks = tasks.filter(t => t.fields.status?.name === 'Killed');
-            const doneTasks = tasks.filter(t => t.fields.status?.name === 'Done');
+            const killedTasks = React.useMemo(
+                () => tasks.filter(t => t.fields.status?.name === 'Killed'),
+                [tasks]
+            );
+            const doneTasks = React.useMemo(
+                () => tasks.filter(t => t.fields.status?.name === 'Done'),
+                [tasks]
+            );
             const techTasksCount = techTasks.length;
             const productTasksCount = productTasks.length;
 
@@ -5472,16 +5611,29 @@
                 });
             }, [capacityTasks, hideExcludedStats, excludedEpicSet]);
             const localStatsData = React.useMemo(() => {
+                if (!showStats) return null;
                 if (!statsTaskList.length) return null;
-                return buildLocalStatsFromTasks(statsTaskList, new Set());
-            }, [statsTaskList, selectedSprintInfo?.name]);
+                if (perfEnabled) {
+                    perfCountersRef.current.statsBuild = (perfCountersRef.current.statsBuild || 0) + 1;
+                    performance.mark('localStatsBuild:start');
+                }
+                const result = buildLocalStatsFromTasks(statsTaskList, new Set());
+                if (perfEnabled) {
+                    performance.mark('localStatsBuild:end');
+                    performance.measure('localStatsBuild', 'localStatsBuild:start', 'localStatsBuild:end');
+                    performance.clearMarks('localStatsBuild:start');
+                    performance.clearMarks('localStatsBuild:end');
+                    performance.clearMeasures('localStatsBuild');
+                }
+                return result;
+            }, [statsTaskList, selectedSprintInfo?.name, showStats, perfEnabled]);
 
             const effectiveStatsData = localStatsData;
-            const scenarioIssues = scenarioData?.issues || [];
-            const scenarioConfig = scenarioData?.config || {};
-            const scenarioSummary = scenarioData?.summary || {};
+            const scenarioIssues = scenarioData?.issues || EMPTY_ARRAY;
+            const scenarioConfig = scenarioData?.config || EMPTY_OBJECT;
+            const scenarioSummary = scenarioData?.summary || EMPTY_OBJECT;
             const scenarioBaseUrl = scenarioData?.jira_base_url || jiraUrl || '';
-            const scenarioDependencies = scenarioData?.dependencies || [];
+            const scenarioDependencies = scenarioData?.dependencies || EMPTY_ARRAY;
             const scenarioSearchQuery = React.useMemo(
                 () => (searchQuery || '').trim().toLowerCase(),
                 [searchQuery]
@@ -5509,15 +5661,17 @@
                 });
                 return keys;
             }, [scenarioIssues, excludedEpicSet]);
+            const scenarioFocusKeys = scenarioData?.focus_set?.focused_issue_keys || EMPTY_ARRAY;
+            const scenarioContextKeys = scenarioData?.focus_set?.context_issue_keys || EMPTY_ARRAY;
             const scenarioFocusSet = React.useMemo(
-                () => new Set(scenarioData?.focus_set?.focused_issue_keys || []),
-                [scenarioData]
+                () => new Set(scenarioFocusKeys),
+                [scenarioFocusKeys]
             );
             const scenarioContextSet = React.useMemo(
-                () => new Set(scenarioData?.focus_set?.context_issue_keys || []),
-                [scenarioData]
+                () => new Set(scenarioContextKeys),
+                [scenarioContextKeys]
             );
-            const scenarioCapacityByTeam = scenarioData?.capacity_by_team || {};
+            const scenarioCapacityByTeam = scenarioData?.capacity_by_team || EMPTY_OBJECT;
             const scenarioIssueByKey = React.useMemo(() => {
                 const map = new Map();
                 scenarioIssues.forEach(issue => {
@@ -5738,6 +5892,10 @@
             const SCENARIO_TEAM_LEAD_ROWS = 1;
             const scenarioBarGap = scenarioEpicFocus ? 16 : SCENARIO_BAR_GAP;
             const scenarioLaneStacking = React.useMemo(() => {
+                if (perfEnabled) {
+                    perfCountersRef.current.laneStacking += 1;
+                    performance.mark('scenarioLaneStacking:start');
+                }
                 const rowIndexByKey = new Map();
                 const laneRowCounts = new Map();
                 const laneVisibleRows = new Map();
@@ -5801,6 +5959,17 @@
                     laneVisibleRows.set(lane, Math.max(1, visibleRows));
                     laneHiddenCounts.set(lane, Math.max(0, totalRows - visibleRows));
                 });
+                if (perfEnabled) {
+                    performance.mark('scenarioLaneStacking:end');
+                    performance.measure(
+                        'scenarioLaneStacking',
+                        'scenarioLaneStacking:start',
+                        'scenarioLaneStacking:end'
+                    );
+                    performance.clearMarks('scenarioLaneStacking:start');
+                    performance.clearMarks('scenarioLaneStacking:end');
+                    performance.clearMeasures('scenarioLaneStacking');
+                }
                 return { rowIndexByKey, laneRowCounts, laneVisibleRows, laneHiddenCounts };
             }, [
                 scenarioLanes,
@@ -5811,7 +5980,8 @@
                 scenarioCapacityByTeam,
                 scenarioExcludedIssueKeys,
                 isAllTeamsSelected,
-                scenarioEpicFocus
+                scenarioEpicFocus,
+                perfEnabled
             ]);
             const scenarioLaneMeta = React.useMemo(() => {
                 const meta = new Map();
@@ -5829,8 +5999,21 @@
                 });
                 return { meta, totalHeight: offset };
             }, [scenarioLanes, scenarioLaneStacking, scenarioCollapsedLanes, scenarioEpicFocus, scenarioBarGap]);
+            const areScenarioCollapsedLanesEqual = (a, b) => {
+                if (a === b) return true;
+                const aKeys = Object.keys(a || {});
+                const bKeys = Object.keys(b || {});
+                if (aKeys.length !== bKeys.length) return false;
+                for (let i = 0; i < aKeys.length; i += 1) {
+                    const key = aKeys[i];
+                    if (a[key] !== b[key]) return false;
+                }
+                return true;
+            };
 
             useEffect(() => {
+                if (!showScenario) return;
+                if (!scenarioIssues.length && !scenarioLanes.length) return;
                 if (scenarioSkipAutoCollapseRef.current) {
                     scenarioSkipAutoCollapseRef.current = false;
                     return;
@@ -5841,14 +6024,14 @@
                         scenarioLanes.forEach(lane => {
                             next[lane] = true;
                         });
-                        setScenarioCollapsedLanes(next);
+                        setScenarioCollapsedLanes(prev => (areScenarioCollapsedLanesEqual(prev, next) ? prev : next));
                         scenarioTeamCollapseInitRef.current = true;
                     }
                     return;
                 }
                 scenarioTeamCollapseInitRef.current = false;
                 if (scenarioLaneMode !== 'epic') {
-                    setScenarioCollapsedLanes({});
+                    setScenarioCollapsedLanes(prev => (Object.keys(prev || {}).length ? {} : prev));
                     return;
                 }
                 const next = {};
@@ -5860,8 +6043,16 @@
                         next[scenarioLaneForIssue(issue)] = false;
                     }
                 });
-                setScenarioCollapsedLanes(next);
-            }, [scenarioLaneMode, scenarioLanes, scenarioIssues, scenarioFocusSet, scenarioContextSet, isAllTeamsSelected]);
+                setScenarioCollapsedLanes(prev => (areScenarioCollapsedLanesEqual(prev, next) ? prev : next));
+            }, [
+                showScenario,
+                scenarioLaneMode,
+                scenarioLanes,
+                scenarioIssues,
+                scenarioFocusSet,
+                scenarioContextSet,
+                isAllTeamsSelected
+            ]);
 
             useEffect(() => {
                 scenarioTeamCollapseInitRef.current = false;
@@ -5871,18 +6062,29 @@
                 if (!showScenario || !scenarioTimelineRef.current) return;
                 const container = scenarioTimelineRef.current;
                 const readLayout = () => {
+                    if (perfEnabled) {
+                        perfCountersRef.current.layoutReads += 1;
+                    }
                     const track = container.querySelector('.scenario-lane-track');
                     const labelWidth = 190;
                     const trackWidth = track ? track.clientWidth : Math.max(0, container.clientWidth - labelWidth);
                     let height = scenarioLaneMeta.totalHeight || scenarioLanes.length * SCENARIO_LANE_HEIGHT;
-                    setScenarioLayout({
-                        width: trackWidth,
-                        height,
-                        labelWidth
+                    setScenarioLayout(prev => {
+                        if (prev.width === trackWidth && prev.height === height && prev.labelWidth === labelWidth) {
+                            return prev;
+                        }
+                        return {
+                            width: trackWidth,
+                            height,
+                            labelWidth
+                        };
                     });
                     scheduleScenarioEdgeUpdate();
                 };
                 const readScroll = () => {
+                    if (perfEnabled) {
+                        perfCountersRef.current.scrollReads += 1;
+                    }
                     const nextTop = container.scrollTop || 0;
                     const nextHeight = container.clientHeight || 0;
                     setScenarioScrollTop(prev => (prev === nextTop ? prev : nextTop));
@@ -5923,7 +6125,7 @@
                         scenarioResizeFrameRef.current = null;
                     }
                 };
-            }, [showScenario, scenarioLanes.length, scenarioData, scenarioLaneMode, scenarioIssuesByLane, scenarioLaneMeta, scheduleScenarioEdgeUpdate]);
+            }, [showScenario, scenarioLanes.length, scenarioData, scenarioLaneMode, scenarioIssuesByLane, scenarioLaneMeta, scheduleScenarioEdgeUpdate, perfEnabled]);
 
             useEffect(() => {
                 scheduleScenarioEdgeUpdate();
@@ -6206,6 +6408,22 @@
                 };
             };
 
+            const areScenarioEdgeRendersEqual = (prev, next) => {
+                if (prev.width !== next.width || prev.height !== next.height) return false;
+                if (prev.paths.length !== next.paths.length) return false;
+                for (let i = 0; i < prev.paths.length; i += 1) {
+                    const a = prev.paths[i];
+                    const b = next.paths[i];
+                    if (a.id !== b.id) return false;
+                    if (a.d !== b.d) return false;
+                    if (a.isActive !== b.isActive) return false;
+                    if (a.isFaded !== b.isFaded) return false;
+                    if (a.isContextEdge !== b.isContextEdge) return false;
+                    if (a.type !== b.type) return false;
+                }
+                return true;
+            };
+
             const computeScenarioTooltipPosition = (anchor) => {
                 const fallback = { width: 240, height: 56 };
                 const tooltipNode = scenarioTooltipRef.current;
@@ -6290,6 +6508,10 @@
             };
 
             const computeScenarioEdgePaths = React.useCallback(() => {
+                if (perfEnabled) {
+                    perfCountersRef.current.edgeComputes += 1;
+                    performance.mark('scenarioEdgeCompute:start');
+                }
                 const container = scenarioTimelineRef.current;
                 if (!container) {
                     return { width: 0, height: 0, paths: [] };
@@ -6386,11 +6608,23 @@
                         isContextEdge
                     });
                 });
-                return {
+                const result = {
                     width: container.scrollWidth || container.clientWidth,
                     height: container.scrollHeight || container.clientHeight,
                     paths
                 };
+                if (perfEnabled) {
+                    performance.mark('scenarioEdgeCompute:end');
+                    performance.measure(
+                        'scenarioEdgeCompute',
+                        'scenarioEdgeCompute:start',
+                        'scenarioEdgeCompute:end'
+                    );
+                    performance.clearMarks('scenarioEdgeCompute:start');
+                    performance.clearMarks('scenarioEdgeCompute:end');
+                    performance.clearMeasures('scenarioEdgeCompute');
+                }
+                return result;
             }, [
                 scenarioTimelineIssueKeys,
                 scenarioEpicFocus,
@@ -6401,7 +6635,8 @@
                 scenarioHoverKey,
                 scenarioFocusIssueKeys,
                 scenarioPositions,
-                scenarioLayout.labelWidth
+                scenarioLayout.labelWidth,
+                perfEnabled
             ]);
 
             const clearScenarioEpicFocus = () => {
@@ -6469,15 +6704,23 @@
 
             const scheduleScenarioEdgeUpdate = React.useCallback(() => {
                 if (!showScenario) return;
+                if (document.hidden) return;
+                if (perfEnabled) {
+                    perfCountersRef.current.edgeRequests += 1;
+                }
                 if (scenarioEdgeFrameRef.current) return;
                 if (scenarioEdgeUpdatePendingRef.current) return;
                 scenarioEdgeUpdatePendingRef.current = true;
                 scenarioEdgeFrameRef.current = window.requestAnimationFrame(() => {
                     scenarioEdgeFrameRef.current = null;
                     scenarioEdgeUpdatePendingRef.current = false;
-                    setScenarioEdgeRender(computeScenarioEdgePaths());
+                    if (perfEnabled) {
+                        perfCountersRef.current.edgeFrames += 1;
+                    }
+                    const nextRender = computeScenarioEdgePaths();
+                    setScenarioEdgeRender(prev => (areScenarioEdgeRendersEqual(prev, nextRender) ? prev : nextRender));
                 });
-            }, [computeScenarioEdgePaths, showScenario]);
+            }, [computeScenarioEdgePaths, showScenario, perfEnabled]);
 
             const scrollToScenarioIssue = (issueKey) => {
                 if (scenarioEpicFocus) {
@@ -6549,78 +6792,92 @@
                 }
             }, [isFutureSprintSelected, showStats]);
 
-            const baseFilteredTasks = tasks.filter(task => {
-                // Filter by search query
-                if (searchQuery.trim() !== '') {
-	                    const query = searchQuery.toLowerCase();
+            const baseFilteredTasks = React.useMemo(() => {
+                const query = searchQuery.trim().toLowerCase();
+                return tasks.filter(task => {
+                    // Filter by search query
+                    if (query !== '') {
 	                    const summary = task.fields.summary?.toLowerCase() || '';
 	                    const key = String(task.key || '').toLowerCase();
 	                    const assignee = task.fields.assignee?.displayName?.toLowerCase() || '';
-                    const epicKey = String(task.fields.epicKey || '').toLowerCase();
-                    const epicSummary = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.summary?.toLowerCase() || '') : '';
-                    const epicAssignee = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.assignee?.displayName?.toLowerCase() || '') : '';
+                        const epicKey = String(task.fields.epicKey || '').toLowerCase();
+                        const epicSummary = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.summary?.toLowerCase() || '') : '';
+                        const epicAssignee = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.assignee?.displayName?.toLowerCase() || '') : '';
 
-                    if (!summary.includes(query) && !key.includes(query) && !assignee.includes(query) &&
-                        !epicAssignee.includes(query) && !epicKey.includes(query) && !epicSummary.includes(query)) {
+                        if (!summary.includes(query) && !key.includes(query) && !assignee.includes(query) &&
+                            !epicAssignee.includes(query) && !epicKey.includes(query) && !epicSummary.includes(query)) {
+                            return false;
+                        }
+                    }
+
+                    // Filter by Team
+                    if (!isAllTeamsSelected) {
+                        const teamInfo = getTeamInfo(task);
+                        if (!selectedTeamSet.has(teamInfo.id)) {
+                            return false;
+                        }
+                    }
+
+                    // Filter by Killed status
+                    if (!showKilled && task.fields.status?.name === 'Killed') {
                         return false;
                     }
-                }
 
-                // Filter by Team
-                if (!isAllTeamsSelected) {
-                    const teamInfo = getTeamInfo(task);
-                    if (!selectedTeamSet.has(teamInfo.id)) {
+                    // Filter by Done status
+                    if (!showDone && task.fields.status?.name === 'Done') {
                         return false;
                     }
-                }
 
-                // Filter by Killed status
-                if (!showKilled && task.fields.status?.name === 'Killed') {
-                    return false;
-                }
-
-                // Filter by Done status
-                if (!showDone && task.fields.status?.name === 'Done') {
-                    return false;
-                }
-
-                // Filter by task type
-                const isTech = task.key.startsWith('TECH-');
-                if (isTech && !showTech) {
-                    return false;
-                }
-                if (!isTech && !showProduct) {
-                    return false;
-                }
-                return true;
-            });
+                    // Filter by task type
+                    const isTech = task.key.startsWith('TECH-');
+                    if (isTech && !showTech) {
+                        return false;
+                    }
+                    if (!isTech && !showProduct) {
+                        return false;
+                    }
+                    return true;
+                });
+            }, [
+                tasks,
+                searchQuery,
+                epicDetails,
+                isAllTeamsSelected,
+                selectedTeamSet,
+                showKilled,
+                showDone,
+                showTech,
+                showProduct
+            ]);
 
             const selectionTasks = baseFilteredTasks;
 
-            const visibleTasks = baseFilteredTasks.filter(task => {
-                // Filter by status (from clickable elements)
-                if (statusFilter === 'in-progress') {
-                    return task.fields.status?.name === 'In Progress';
-                }
-                if (statusFilter === 'todo-accepted') {
-                    const status = task.fields.status?.name;
-                    return status === 'To Do' || status === 'Pending' || status === 'Accepted';
-                }
-                if (statusFilter === 'done') {
-                    return task.fields.status?.name === 'Done';
-                }
-                if (statusFilter === 'high-priority') {
-                    const priority = task.fields.priority?.name;
-                    return priority === 'Blocker' || priority === 'Highest' ||
-                           priority === 'Critical' || priority === 'High';
-                }
-                if (statusFilter === 'minor-priority') {
-                    const priority = task.fields.priority?.name;
-                    return priority === 'Minor' || priority === 'Low' ||
-                           priority === 'Trivial' || priority === 'Lowest';
-                }
-                return true;
-            });
+            const visibleTasks = React.useMemo(() => {
+                return baseFilteredTasks.filter(task => {
+                    // Filter by status (from clickable elements)
+                    if (statusFilter === 'in-progress') {
+                        return task.fields.status?.name === 'In Progress';
+                    }
+                    if (statusFilter === 'todo-accepted') {
+                        const status = task.fields.status?.name;
+                        return status === 'To Do' || status === 'Pending' || status === 'Accepted';
+                    }
+                    if (statusFilter === 'done') {
+                        return task.fields.status?.name === 'Done';
+                    }
+                    if (statusFilter === 'high-priority') {
+                        const priority = task.fields.priority?.name;
+                        return priority === 'Blocker' || priority === 'Highest' ||
+                               priority === 'Critical' || priority === 'High';
+                    }
+                    if (statusFilter === 'minor-priority') {
+                        const priority = task.fields.priority?.name;
+                        return priority === 'Minor' || priority === 'Low' ||
+                               priority === 'Trivial' || priority === 'Lowest';
+                    }
+                    return true;
+                });
+            }, [baseFilteredTasks, statusFilter]);
             const visibleTaskKeySet = React.useMemo(() => {
                 const keys = new Set();
                 visibleTasks.forEach(task => {
@@ -6819,8 +7076,10 @@
                 return grouped;
             };
 
-            const epicGroups = Object.values(groupTasksByEpic(visibleTasks))
-                .sort((a, b) => (epicOrderRef.current[a.key] ?? 999999) - (epicOrderRef.current[b.key] ?? 999999));
+            const epicGroups = React.useMemo(() => {
+                return Object.values(groupTasksByEpic(visibleTasks))
+                    .sort((a, b) => (epicOrderRef.current[a.key] ?? 999999) - (epicOrderRef.current[b.key] ?? 999999));
+            }, [visibleTasks, epicDetails]);
 
             const dependencyTasks = React.useMemo(
                 () => [...loadedProductTasks, ...loadedTechTasks],
@@ -6864,53 +7123,68 @@
                 return new Set(dependencyFocus?.relatedKeys || []);
             }, [dependencyFocus]);
 
-            const highPriorityCount = baseFilteredTasks.filter(t => {
-                const priority = t.fields.priority?.name;
-                return priority === 'Blocker' || priority === 'Highest' ||
-                       priority === 'Critical' || priority === 'High';
-            }).length;
+            const summaryStats = React.useMemo(() => {
+                const counts = {
+                    highPriority: 0,
+                    minorPriority: 0,
+                    done: 0,
+                    inProgress: 0,
+                    todoAccepted: 0
+                };
+                const points = {
+                    total: 0,
+                    done: 0,
+                    highPriority: 0,
+                    minorPriority: 0,
+                    inProgress: 0,
+                    todoAccepted: 0
+                };
+                baseFilteredTasks.forEach(task => {
+                    const priority = task.fields.priority?.name;
+                    const status = task.fields.status?.name;
+                    const sp = parseFloat(task.fields.customfield_10004 || 0);
+                    const storyPoints = Number.isNaN(sp) ? 0 : sp;
+                    points.total += storyPoints;
 
-            const minorPriorityCount = baseFilteredTasks.filter(t => {
-                const priority = t.fields.priority?.name;
-                return priority === 'Minor' || priority === 'Low' ||
-                       priority === 'Trivial' || priority === 'Lowest';
-            }).length;
+                    const isHigh = priority === 'Blocker' || priority === 'Highest' ||
+                        priority === 'Critical' || priority === 'High';
+                    const isMinor = priority === 'Minor' || priority === 'Low' ||
+                        priority === 'Trivial' || priority === 'Lowest';
+                    if (isHigh) {
+                        counts.highPriority += 1;
+                        points.highPriority += storyPoints;
+                    }
+                    if (isMinor) {
+                        counts.minorPriority += 1;
+                        points.minorPriority += storyPoints;
+                    }
+                    if (status === 'Done') {
+                        counts.done += 1;
+                        points.done += storyPoints;
+                    }
+                    if (status === 'In Progress') {
+                        counts.inProgress += 1;
+                        points.inProgress += storyPoints;
+                    }
+                    if (status === 'To Do' || status === 'Pending' || status === 'Accepted') {
+                        counts.todoAccepted += 1;
+                        points.todoAccepted += storyPoints;
+                    }
+                });
+                return { counts, points };
+            }, [baseFilteredTasks]);
 
-            const doneTasksCount = baseFilteredTasks.filter(t =>
-                t.fields.status?.name === 'Done'
-            ).length;
-
-            const inProgressTasksCount = baseFilteredTasks.filter(t =>
-                t.fields.status?.name === 'In Progress'
-            ).length;
-
-            const todoAcceptedTasksCount = baseFilteredTasks.filter(t => {
-                const status = t.fields.status?.name;
-                return status === 'To Do' || status === 'Pending' || status === 'Accepted';
-            }).length;
-
-            const sumStoryPoints = (taskList) => taskList.reduce((sum, task) => {
-                const sp = parseFloat(task.fields.customfield_10004 || 0);
-                return sum + (Number.isNaN(sp) ? 0 : sp);
-            }, 0);
-
-            const totalStoryPoints = sumStoryPoints(baseFilteredTasks);
-            const doneStoryPoints = sumStoryPoints(baseFilteredTasks.filter(t => t.fields.status?.name === 'Done'));
-            const highPriorityStoryPoints = sumStoryPoints(baseFilteredTasks.filter(t => {
-                const priority = t.fields.priority?.name;
-                return priority === 'Blocker' || priority === 'Highest' ||
-                       priority === 'Critical' || priority === 'High';
-            }));
-            const minorPriorityStoryPoints = sumStoryPoints(baseFilteredTasks.filter(t => {
-                const priority = t.fields.priority?.name;
-                return priority === 'Minor' || priority === 'Low' ||
-                       priority === 'Trivial' || priority === 'Lowest';
-            }));
-            const inProgressStoryPoints = sumStoryPoints(baseFilteredTasks.filter(t => t.fields.status?.name === 'In Progress'));
-            const todoAcceptedStoryPoints = sumStoryPoints(baseFilteredTasks.filter(t => {
-                const status = t.fields.status?.name;
-                return status === 'To Do' || status === 'Pending' || status === 'Accepted';
-            }));
+            const highPriorityCount = summaryStats.counts.highPriority;
+            const minorPriorityCount = summaryStats.counts.minorPriority;
+            const doneTasksCount = summaryStats.counts.done;
+            const inProgressTasksCount = summaryStats.counts.inProgress;
+            const todoAcceptedTasksCount = summaryStats.counts.todoAccepted;
+            const totalStoryPoints = summaryStats.points.total;
+            const doneStoryPoints = summaryStats.points.done;
+            const highPriorityStoryPoints = summaryStats.points.highPriority;
+            const minorPriorityStoryPoints = summaryStats.points.minorPriority;
+            const inProgressStoryPoints = summaryStats.points.inProgress;
+            const todoAcceptedStoryPoints = summaryStats.points.todoAccepted;
 
             const removeTask = (task) => {
                 const taskKey = task?.key;
@@ -7192,29 +7466,44 @@
                 return sum;
             };
 
-            const selectedTasksList = selectionTasks.filter(task => selectedTasks[task.key]);
-            const acceptedStatusSet = new Set(['accepted', 'in progress']);
-            const acceptedTasks = selectionTasks.filter(task =>
-                acceptedStatusSet.has(normalizeStatus(task.fields.status?.name))
-            );
-            const todoPendingTasks = selectionTasks.filter(task => {
-                const status = normalizeStatus(task.fields.status?.name);
-                return status === 'to do' || status === 'pending';
-            });
+            const selectedTasksList = React.useMemo(() => {
+                if (!showPlanning) return [];
+                return selectionTasks.filter(task => selectedTasks[task.key]);
+            }, [showPlanning, selectionTasks, selectedTasks]);
+            const acceptedStatusSet = React.useMemo(() => new Set(['accepted', 'in progress']), []);
+            const acceptedTasks = React.useMemo(() => {
+                if (!showPlanning) return [];
+                return selectionTasks.filter(task =>
+                    acceptedStatusSet.has(normalizeStatus(task.fields.status?.name))
+                );
+            }, [showPlanning, selectionTasks, acceptedStatusSet]);
+            const todoPendingTasks = React.useMemo(() => {
+                if (!showPlanning) return [];
+                return selectionTasks.filter(task => {
+                    const status = normalizeStatus(task.fields.status?.name);
+                    return status === 'to do' || status === 'pending';
+                });
+            }, [showPlanning, selectionTasks]);
             const isAcceptedIncluded = acceptedTasks.length > 0 &&
                 acceptedTasks.every(task => selectedTasks[task.key]);
             const isTodoIncluded = todoPendingTasks.length > 0 &&
                 todoPendingTasks.every(task => selectedTasks[task.key]);
 
-            const selectedPlanningTasksList = selectedTasksList.filter(task => {
-                const epicKey = task.fields?.epicKey || 'NO_EPIC';
-                return !excludedEpicSet.has(epicKey);
-            });
-            const selectedSP = selectedTasksList.reduce((sum, task) => {
-                const sp = parseFloat(task.fields.customfield_10004 || 0);
-                return sum + (Number.isNaN(sp) ? 0 : sp);
-            }, 0);
-            const selectedCount = selectedTasksList.length;
+            const selectedPlanningTasksList = React.useMemo(() => {
+                if (!showPlanning) return [];
+                return selectedTasksList.filter(task => {
+                    const epicKey = task.fields?.epicKey || 'NO_EPIC';
+                    return !excludedEpicSet.has(epicKey);
+                });
+            }, [showPlanning, selectedTasksList, excludedEpicSet]);
+            const selectedSP = React.useMemo(() => {
+                if (!showPlanning) return 0;
+                return selectedTasksList.reduce((sum, task) => {
+                    const sp = parseFloat(task.fields.customfield_10004 || 0);
+                    return sum + (Number.isNaN(sp) ? 0 : sp);
+                }, 0);
+            }, [showPlanning, selectedTasksList]);
+            const selectedCount = showPlanning ? selectedTasksList.length : 0;
 
             const getCapacityStatus = (selected, capacity) => {
                 if (!capacity) {
@@ -7265,50 +7554,62 @@
             };
 
 
-            const selectedTeamStats = selectedTasksList.reduce((acc, task) => {
-                const teamInfo = getTeamInfo(task);
-                const sp = parseFloat(task.fields.customfield_10004 || 0);
-                if (!acc[teamInfo.id]) {
-                    acc[teamInfo.id] = { name: teamInfo.name, storyPoints: 0 };
-                }
-                acc[teamInfo.id].storyPoints += sp;
-                return acc;
-            }, {});
+            const selectedTeamStats = React.useMemo(() => {
+                if (!showPlanning) return {};
+                return selectedTasksList.reduce((acc, task) => {
+                    const teamInfo = getTeamInfo(task);
+                    const sp = parseFloat(task.fields.customfield_10004 || 0);
+                    if (!acc[teamInfo.id]) {
+                        acc[teamInfo.id] = { name: teamInfo.name, storyPoints: 0 };
+                    }
+                    acc[teamInfo.id].storyPoints += Number.isNaN(sp) ? 0 : sp;
+                    return acc;
+                }, {});
+            }, [showPlanning, selectedTasksList]);
 
-            const selectedProjectStats = selectedPlanningTasksList.reduce((acc, task) => {
-                const projectKey = task.key.startsWith('TECH-') ? 'TECH' : 'PRODUCT';
-                const sp = parseFloat(task.fields.customfield_10004 || 0);
-                if (!acc[projectKey]) {
-                    acc[projectKey] = 0;
-                }
-                acc[projectKey] += sp;
-                return acc;
-            }, {});
+            const selectedProjectStats = React.useMemo(() => {
+                if (!showPlanning) return {};
+                return selectedPlanningTasksList.reduce((acc, task) => {
+                    const projectKey = task.key.startsWith('TECH-') ? 'TECH' : 'PRODUCT';
+                    const sp = parseFloat(task.fields.customfield_10004 || 0);
+                    if (!acc[projectKey]) {
+                        acc[projectKey] = 0;
+                    }
+                    acc[projectKey] += Number.isNaN(sp) ? 0 : sp;
+                    return acc;
+                }, {});
+            }, [showPlanning, selectedPlanningTasksList]);
 
-            const selectedTeamProjectStats = selectedPlanningTasksList.reduce((acc, task) => {
-                const teamInfo = getTeamInfo(task);
-                const bucket = task.key.startsWith('TECH-') ? 'tech' : 'product';
-                const sp = parseFloat(task.fields.customfield_10004 || 0);
-                if (!acc[teamInfo.id]) {
-                    acc[teamInfo.id] = { product: 0, tech: 0 };
-                }
-                acc[teamInfo.id][bucket] += Number.isNaN(sp) ? 0 : sp;
-                return acc;
-            }, {});
+            const selectedTeamProjectStats = React.useMemo(() => {
+                if (!showPlanning) return {};
+                return selectedPlanningTasksList.reduce((acc, task) => {
+                    const teamInfo = getTeamInfo(task);
+                    const bucket = task.key.startsWith('TECH-') ? 'tech' : 'product';
+                    const sp = parseFloat(task.fields.customfield_10004 || 0);
+                    if (!acc[teamInfo.id]) {
+                        acc[teamInfo.id] = { product: 0, tech: 0 };
+                    }
+                    acc[teamInfo.id][bucket] += Number.isNaN(sp) ? 0 : sp;
+                    return acc;
+                }, {});
+            }, [showPlanning, selectedPlanningTasksList]);
 
-            const excludedProjectStats = selectedTasksList.reduce((acc, task) => {
-                const epicKey = task.fields?.epicKey || 'NO_EPIC';
-                if (!excludedEpicSet.has(epicKey)) return acc;
-                const projectKey = task.key.startsWith('TECH-') ? 'TECH' : 'PRODUCT';
-                const sp = parseFloat(task.fields.customfield_10004 || 0);
-                if (!acc[projectKey]) {
-                    acc[projectKey] = 0;
-                }
-                acc[projectKey] += Number.isNaN(sp) ? 0 : sp;
-                return acc;
-            }, {});
+            const excludedProjectStats = React.useMemo(() => {
+                if (!showPlanning) return {};
+                return selectedTasksList.reduce((acc, task) => {
+                    const epicKey = task.fields?.epicKey || 'NO_EPIC';
+                    if (!excludedEpicSet.has(epicKey)) return acc;
+                    const projectKey = task.key.startsWith('TECH-') ? 'TECH' : 'PRODUCT';
+                    const sp = parseFloat(task.fields.customfield_10004 || 0);
+                    if (!acc[projectKey]) {
+                        acc[projectKey] = 0;
+                    }
+                    acc[projectKey] += Number.isNaN(sp) ? 0 : sp;
+                    return acc;
+                }, {});
+            }, [showPlanning, selectedTasksList, excludedEpicSet]);
 
-            const capacitySplit = { product: 0.7, tech: 0.3 };
+            const capacitySplit = React.useMemo(() => ({ product: 0.7, tech: 0.3 }), []);
             const capacityMultiplier = showProduct && showTech
                 ? 1
                 : showProduct
@@ -7317,73 +7618,86 @@
                         ? capacitySplit.tech
                         : 1;
 
-            const teamCapacityStats = capacityTasks.reduce((acc, task) => {
-                const status = normalizeStatus(task.fields.status?.name);
-                const sp = parseFloat(task.fields.customfield_10004 || 0);
-                if (!sp) {
-                    return acc;
-                }
-
-                const teamInfo = getTeamInfo(task);
-                if (!acc[teamInfo.id]) {
-                    acc[teamInfo.id] = {
-                        name: teamInfo.name,
-                        product: { todoPending: 0, accepted: 0, postponed: 0 },
-                        tech: { todoPending: 0, accepted: 0, postponed: 0 }
-                    };
-                }
-
-                const bucket = task.key.startsWith('TECH-') ? 'tech' : 'product';
-                if (status === 'to do' || status === 'pending') {
-                    acc[teamInfo.id][bucket].todoPending += sp;
-                }
-                if (status === 'accepted') {
-                    acc[teamInfo.id][bucket].accepted += sp;
-                }
-                if (status === 'postponed') {
-                    acc[teamInfo.id][bucket].postponed += sp;
-                }
-
-                return acc;
-            }, {});
-
-            const teamCapacityEntries = Object.entries(teamCapacityStats)
-                .map(([id, info]) => ({
-                    id,
-                    name: info.name,
-                    product: info.product,
-                    tech: info.tech,
-                    total: {
-                        todoPending: info.product.todoPending + info.tech.todoPending,
-                        accepted: info.product.accepted + info.tech.accepted,
-                        postponed: info.product.postponed + info.tech.postponed
+            const teamCapacityStats = React.useMemo(() => {
+                if (!showPlanning || !capacityEnabled) return {};
+                return capacityTasks.reduce((acc, task) => {
+                    const status = normalizeStatus(task.fields.status?.name);
+                    const sp = parseFloat(task.fields.customfield_10004 || 0);
+                    if (!sp) {
+                        return acc;
                     }
-                }))
-                .sort((a, b) => a.name.localeCompare(b.name));
 
-            const displayedTeamCapacityEntries = !isAllTeamsSelected
-                ? teamCapacityEntries.filter(entry => selectedTeamSet.has(entry.id))
-                : teamCapacityEntries;
+                    const teamInfo = getTeamInfo(task);
+                    if (!acc[teamInfo.id]) {
+                        acc[teamInfo.id] = {
+                            name: teamInfo.name,
+                            product: { todoPending: 0, accepted: 0, postponed: 0 },
+                            tech: { todoPending: 0, accepted: 0, postponed: 0 }
+                        };
+                    }
 
-            const displayedTeamOptions = !isAllTeamsSelected
-                ? teamOptions.filter(team => team.id !== 'all' && selectedTeamSet.has(team.id))
-                : teamOptions.filter(team => team.id !== 'all');
+                    const bucket = task.key.startsWith('TECH-') ? 'tech' : 'product';
+                    if (status === 'to do' || status === 'pending') {
+                        acc[teamInfo.id][bucket].todoPending += sp;
+                    }
+                    if (status === 'accepted') {
+                        acc[teamInfo.id][bucket].accepted += sp;
+                    }
+                    if (status === 'postponed') {
+                        acc[teamInfo.id][bucket].postponed += sp;
+                    }
 
-            const capacityTeamNames = React.useMemo(() => (
-                displayedTeamOptions
+                    return acc;
+                }, {});
+            }, [showPlanning, capacityEnabled, capacityTasks]);
+
+            const teamCapacityEntries = React.useMemo(() => {
+                return Object.entries(teamCapacityStats)
+                    .map(([id, info]) => ({
+                        id,
+                        name: info.name,
+                        product: info.product,
+                        tech: info.tech,
+                        total: {
+                            todoPending: info.product.todoPending + info.tech.todoPending,
+                            accepted: info.product.accepted + info.tech.accepted,
+                            postponed: info.product.postponed + info.tech.postponed
+                        }
+                    }))
+                    .sort((a, b) => a.name.localeCompare(b.name));
+            }, [teamCapacityStats]);
+
+            const displayedTeamCapacityEntries = React.useMemo(() => {
+                return !isAllTeamsSelected
+                    ? teamCapacityEntries.filter(entry => selectedTeamSet.has(entry.id))
+                    : teamCapacityEntries;
+            }, [teamCapacityEntries, isAllTeamsSelected, selectedTeamSet]);
+
+            const displayedTeamOptions = React.useMemo(() => {
+                return !isAllTeamsSelected
+                    ? teamOptions.filter(team => team.id !== 'all' && selectedTeamSet.has(team.id))
+                    : teamOptions.filter(team => team.id !== 'all');
+            }, [teamOptions, isAllTeamsSelected, selectedTeamSet]);
+
+            const capacityTeamNames = React.useMemo(() => {
+                if (!showPlanning || !capacityEnabled) return [];
+                return displayedTeamOptions
                     .map(team => toCapacityShortName(team.name))
-                    .filter(Boolean)
-            ), [displayedTeamOptions]);
+                    .filter(Boolean);
+            }, [showPlanning, capacityEnabled, displayedTeamOptions]);
 
             useEffect(() => {
                 if (!capacityEnabled) return;
+                if (!showPlanning) return;
                 if (!selectedSprintInfo?.name) return;
                 fetchCapacity(selectedSprintInfo.name);
-            }, [capacityEnabled, selectedSprintInfo?.name, capacityTeamNames.join('|')]);
+            }, [capacityEnabled, showPlanning, selectedSprintInfo?.name, capacityTeamNames.join('|')]);
 
-            const capacityTeamIds = !isAllTeamsSelected
-                ? Array.from(selectedTeamSet)
-                : teamCapacityEntries.map(entry => entry.id);
+            const capacityTeamIds = React.useMemo(() => {
+                return !isAllTeamsSelected
+                    ? Array.from(selectedTeamSet)
+                    : teamCapacityEntries.map(entry => entry.id);
+            }, [isAllTeamsSelected, selectedTeamSet, teamCapacityEntries]);
 
             const getTeamCapacity = (teamName) => {
                 if (!capacityEnabled) return 0;
@@ -7397,7 +7711,7 @@
             };
 
             const excludedCapacityByTeamId = React.useMemo(() => {
-                if (!capacityEnabled) return {};
+                if (!capacityEnabled || !showPlanning) return {};
                 return capacityTasks.reduce((acc, task) => {
                     const epicKey = task.fields?.epicKey || 'NO_EPIC';
                     if (!excludedEpicSet.has(epicKey)) return acc;
@@ -7407,7 +7721,7 @@
                     acc[teamInfo.id] = (acc[teamInfo.id] || 0) + sp;
                     return acc;
                 }, {});
-            }, [capacityEnabled, capacityTasks, excludedEpicSet]);
+            }, [capacityEnabled, showPlanning, capacityTasks, excludedEpicSet]);
 
             const getTeamNetCapacity = (team) => {
                 if (!capacityEnabled) return 0;
@@ -7416,16 +7730,29 @@
                 return Math.max(0, base - excluded);
             };
 
-            const totalCapacityBase = capacityEnabled
-                ? displayedTeamOptions.reduce((sum, team) => sum + getTeamCapacity(team.name), 0)
-                : 0;
-            const excludedCapacityTotal = capacityEnabled
-                ? displayedTeamOptions.reduce((sum, team) => sum + (excludedCapacityByTeamId[team.id] || 0), 0)
-                : 0;
-            const estimatedCapacityRaw = Math.max(0, totalCapacityBase - excludedCapacityTotal);
-            const totalCapacityAdjusted = totalCapacityBase * capacityMultiplier;
-            const estimatedCapacityAdjusted = estimatedCapacityRaw * capacityMultiplier;
-            const excludedCapacityAdjusted = excludedCapacityTotal * capacityMultiplier;
+            const capacityTotalsSummary = React.useMemo(() => {
+                const totalCapacityBase = capacityEnabled
+                    ? displayedTeamOptions.reduce((sum, team) => sum + getTeamCapacity(team.name), 0)
+                    : 0;
+                const excludedCapacityTotal = capacityEnabled
+                    ? displayedTeamOptions.reduce((sum, team) => sum + (excludedCapacityByTeamId[team.id] || 0), 0)
+                    : 0;
+                const estimatedCapacityRaw = Math.max(0, totalCapacityBase - excludedCapacityTotal);
+                return {
+                    totalCapacityBase,
+                    excludedCapacityTotal,
+                    estimatedCapacityRaw,
+                    totalCapacityAdjusted: totalCapacityBase * capacityMultiplier,
+                    estimatedCapacityAdjusted: estimatedCapacityRaw * capacityMultiplier,
+                    excludedCapacityAdjusted: excludedCapacityTotal * capacityMultiplier
+                };
+            }, [capacityEnabled, displayedTeamOptions, excludedCapacityByTeamId, capacityMultiplier, capacityByTeam]);
+            const totalCapacityBase = capacityTotalsSummary.totalCapacityBase;
+            const excludedCapacityTotal = capacityTotalsSummary.excludedCapacityTotal;
+            const estimatedCapacityRaw = capacityTotalsSummary.estimatedCapacityRaw;
+            const totalCapacityAdjusted = capacityTotalsSummary.totalCapacityAdjusted;
+            const estimatedCapacityAdjusted = capacityTotalsSummary.estimatedCapacityAdjusted;
+            const excludedCapacityAdjusted = capacityTotalsSummary.excludedCapacityAdjusted;
             const capacitySummary = getCapacityStatus(selectedSP, totalCapacityAdjusted);
             const scrollToFirstExcludedEpic = (projectType = 'any') => {
                 const firstExcluded = epicGroups.find((epic) => {
@@ -7444,65 +7771,104 @@
                 node.classList.add('epic-flash');
             };
 
-            const projectCapacity = displayedTeamOptions.reduce((acc, team) => {
-                const teamPlanningCapacity = getTeamNetCapacity(team);
-                if (!teamPlanningCapacity) return acc;
-                const stats = selectedTeamProjectStats[team.id] || { product: 0, tech: 0 };
-                const totalSelected = stats.product + stats.tech;
-                const techHeavy = totalSelected > 0 ? stats.tech >= stats.product : false;
-                const split = techHeavy ? { product: 0.2, tech: 0.8 } : capacitySplit;
-                acc.PRODUCT += teamPlanningCapacity * split.product;
-                acc.TECH += teamPlanningCapacity * split.tech;
-                return acc;
-            }, {
-                PRODUCT: 0,
-                TECH: 0
-            });
-            if (!showProduct) projectCapacity.PRODUCT = 0;
-            if (!showTech) projectCapacity.TECH = 0;
-
-            const selectedProjectEntries = Object.entries(selectedProjectStats)
-                .map(([id, storyPoints]) => ({
-                    id,
-                    name: id,
-                    storyPoints,
-                    capacity: capacityEnabled ? (projectCapacity[id] || 0) : null
-                }))
-                .sort((a, b) => {
-                    const order = (key) => {
-                        if (key === 'PRODUCT') return 0;
-                        if (key === 'TECH') return 1;
-                        return 99;
-                    };
-                    const diff = order(a.id) - order(b.id);
-                    if (diff !== 0) return diff;
-                    return a.name.localeCompare(b.name);
+            const projectCapacity = React.useMemo(() => {
+                if (!showPlanning || !capacityEnabled) {
+                    return { PRODUCT: 0, TECH: 0 };
+                }
+                const totals = displayedTeamOptions.reduce((acc, team) => {
+                    const teamPlanningCapacity = getTeamNetCapacity(team);
+                    if (!teamPlanningCapacity) return acc;
+                    const stats = selectedTeamProjectStats[team.id] || { product: 0, tech: 0 };
+                    const totalSelected = stats.product + stats.tech;
+                    const techHeavy = totalSelected > 0 ? stats.tech >= stats.product : false;
+                    const split = techHeavy ? { product: 0.2, tech: 0.8 } : capacitySplit;
+                    acc.PRODUCT += teamPlanningCapacity * split.product;
+                    acc.TECH += teamPlanningCapacity * split.tech;
+                    return acc;
+                }, {
+                    PRODUCT: 0,
+                    TECH: 0
                 });
+                if (!showProduct) totals.PRODUCT = 0;
+                if (!showTech) totals.TECH = 0;
+                return totals;
+            }, [
+                showPlanning,
+                capacityEnabled,
+                displayedTeamOptions,
+                selectedTeamProjectStats,
+                showProduct,
+                showTech,
+                capacitySplit,
+                capacityByTeam,
+                excludedCapacityByTeamId
+            ]);
 
-            const selectedTeamEntries = displayedTeamOptions.map((team) => ({
-                id: team.id,
-                name: team.name,
-                storyPoints: selectedTeamStats[team.id]?.storyPoints || 0,
-                teamCapacity: capacityEnabled ? getTeamCapacity(team.name) * capacityMultiplier : null,
-                planningCapacity: capacityEnabled ? getTeamNetCapacity(team) * capacityMultiplier : null
-            }));
+            const selectedProjectEntries = React.useMemo(() => {
+                if (!showPlanning) return [];
+                return Object.entries(selectedProjectStats)
+                    .map(([id, storyPoints]) => ({
+                        id,
+                        name: id,
+                        storyPoints,
+                        capacity: capacityEnabled ? (projectCapacity[id] || 0) : null
+                    }))
+                    .sort((a, b) => {
+                        const order = (key) => {
+                            if (key === 'PRODUCT') return 0;
+                            if (key === 'TECH') return 1;
+                            return 99;
+                        };
+                        const diff = order(a.id) - order(b.id);
+                        if (diff !== 0) return diff;
+                        return a.name.localeCompare(b.name);
+                    });
+            }, [showPlanning, selectedProjectStats, capacityEnabled, projectCapacity]);
 
-            const capacityTotals = displayedTeamCapacityEntries.reduce((acc, info) => {
-                acc.product.todoPending += info.product.todoPending;
-                acc.product.accepted += info.product.accepted;
-                acc.product.postponed += info.product.postponed;
-                acc.tech.todoPending += info.tech.todoPending;
-                acc.tech.accepted += info.tech.accepted;
-                acc.tech.postponed += info.tech.postponed;
-                acc.total.todoPending += info.total.todoPending;
-                acc.total.accepted += info.total.accepted;
-                acc.total.postponed += info.total.postponed;
-                return acc;
-            }, {
-                product: { todoPending: 0, accepted: 0, postponed: 0 },
-                tech: { todoPending: 0, accepted: 0, postponed: 0 },
-                total: { todoPending: 0, accepted: 0, postponed: 0 }
-            });
+            const selectedTeamEntries = React.useMemo(() => {
+                if (!showPlanning) return [];
+                return displayedTeamOptions.map((team) => ({
+                    id: team.id,
+                    name: team.name,
+                    storyPoints: selectedTeamStats[team.id]?.storyPoints || 0,
+                    teamCapacity: capacityEnabled ? getTeamCapacity(team.name) * capacityMultiplier : null,
+                    planningCapacity: capacityEnabled ? getTeamNetCapacity(team) * capacityMultiplier : null
+                }));
+            }, [
+                showPlanning,
+                displayedTeamOptions,
+                selectedTeamStats,
+                capacityEnabled,
+                capacityMultiplier,
+                capacityByTeam,
+                excludedCapacityByTeamId
+            ]);
+
+            const capacityTotals = React.useMemo(() => {
+                if (!showPlanning || !capacityEnabled) {
+                    return {
+                        product: { todoPending: 0, accepted: 0, postponed: 0 },
+                        tech: { todoPending: 0, accepted: 0, postponed: 0 },
+                        total: { todoPending: 0, accepted: 0, postponed: 0 }
+                    };
+                }
+                return displayedTeamCapacityEntries.reduce((acc, info) => {
+                    acc.product.todoPending += info.product.todoPending;
+                    acc.product.accepted += info.product.accepted;
+                    acc.product.postponed += info.product.postponed;
+                    acc.tech.todoPending += info.tech.todoPending;
+                    acc.tech.accepted += info.tech.accepted;
+                    acc.tech.postponed += info.tech.postponed;
+                    acc.total.todoPending += info.total.todoPending;
+                    acc.total.accepted += info.total.accepted;
+                    acc.total.postponed += info.total.postponed;
+                    return acc;
+                }, {
+                    product: { todoPending: 0, accepted: 0, postponed: 0 },
+                    tech: { todoPending: 0, accepted: 0, postponed: 0 },
+                    total: { todoPending: 0, accepted: 0, postponed: 0 }
+                });
+            }, [showPlanning, capacityEnabled, displayedTeamCapacityEntries]);
 
             const showTotalsRow = displayedTeamCapacityEntries.length > 1;
 

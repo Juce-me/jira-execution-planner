@@ -7,9 +7,9 @@ echo ""
 if ! command -v pip3 &> /dev/null
 then
     echo "pip3 not found, trying python3 -m pip..."
-    python3 -m pip install --user flask flask-cors requests python-dotenv
+    python3 -m pip install --user flask flask-cors requests python-dotenv openpyxl "urllib3<2"
 else
-    pip3 install --user flask flask-cors requests python-dotenv
+    pip3 install --user flask flask-cors requests python-dotenv openpyxl "urllib3<2"
 fi
 
 echo ""

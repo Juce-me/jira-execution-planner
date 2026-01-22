@@ -1131,6 +1131,15 @@
             position: relative;
         }
 
+        .task-item::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: rgba(239, 68, 68, 0.12);
+            opacity: 0;
+            pointer-events: none;
+        }
+
         .task-item:nth-child(1) { animation-delay: 0.7s; }
         .task-item:nth-child(2) { animation-delay: 0.8s; }
         .task-item:nth-child(3) { animation-delay: 0.9s; }
@@ -1142,17 +1151,17 @@
             box-shadow: -6px 0 18px var(--shadow);
         }
 
-        .task-item.task-highlight {
-            animation: taskHighlight 1.8s ease-in-out;
+        .task-item.task-highlight::after {
+            animation: taskHighlightPulse 1.8s ease-in-out;
         }
 
-        @keyframes taskHighlight {
-            0% { background-color: var(--bg-secondary); }
-            20% { background-color: rgba(239, 68, 68, 0.12); }
-            40% { background-color: var(--bg-secondary); }
-            60% { background-color: rgba(239, 68, 68, 0.1); }
-            80% { background-color: var(--bg-secondary); }
-            100% { background-color: var(--bg-secondary); }
+        @keyframes taskHighlightPulse {
+            0% { opacity: 0; }
+            20% { opacity: 1; }
+            40% { opacity: 0; }
+            60% { opacity: 1; }
+            80% { opacity: 0; }
+            100% { opacity: 0; }
         }
 
         /* Standard Jira priorities */
@@ -1435,12 +1444,41 @@
             color: var(--text-primary);
             background: #f4f5f7;
             cursor: pointer;
+            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
         }
 
         .dependency-count.active {
             background: #111;
             color: #fff;
             border-color: #111;
+        }
+
+        .dependency-count[data-dep-chip="depends-on"]:hover,
+        .dependency-count[data-dep-chip="blocked-by"]:hover {
+            background: rgba(239, 68, 68, 0.12);
+            border-color: rgba(239, 68, 68, 0.4);
+            color: #7f1d1d;
+        }
+
+        .dependency-count[data-dep-chip="dependents"]:hover,
+        .dependency-count[data-dep-chip="blocks"]:hover {
+            background: rgba(59, 130, 246, 0.12);
+            border-color: rgba(59, 130, 246, 0.4);
+            color: #1d4ed8;
+        }
+
+        .dependency-count.active[data-dep-chip="depends-on"],
+        .dependency-count.active[data-dep-chip="blocked-by"] {
+            background: rgba(239, 68, 68, 0.16);
+            border-color: rgba(239, 68, 68, 0.55);
+            color: #7f1d1d;
+        }
+
+        .dependency-count.active[data-dep-chip="dependents"],
+        .dependency-count.active[data-dep-chip="blocks"] {
+            background: rgba(59, 130, 246, 0.16);
+            border-color: rgba(59, 130, 246, 0.55);
+            color: #1d4ed8;
         }
 
         .focus-mode .task-item {
@@ -1530,6 +1568,16 @@
             overflow: hidden;
             text-overflow: ellipsis;
             line-height: 1.4;
+        }
+
+        .dependency-missing-sep {
+            margin: 0 0.35rem;
+            color: var(--text-secondary);
+        }
+
+        .dependency-missing-status.done {
+            color: #15803d;
+            font-weight: 600;
         }
 
 
@@ -6932,6 +6980,52 @@
                     .filter(Boolean);
             }, [dependencyData]);
 
+            const getBlockLinkBuckets = (entries, taskKey) => {
+                const blockedBy = [];
+                const blocks = [];
+                (entries || []).forEach(dep => {
+                    if (!dep?.key || !taskKey) return;
+                    const otherKey = dep.key !== taskKey
+                        ? dep.key
+                        : (dep.prereqKey === taskKey ? dep.dependentKey : dep.prereqKey);
+                    if (!otherKey) return;
+                    if (dep.dependentKey === taskKey) {
+                        blockedBy.push(otherKey);
+                        return;
+                    }
+                    if (dep.prereqKey === taskKey) {
+                        blocks.push(otherKey);
+                        return;
+                    }
+                    if (dep.direction === 'inward') {
+                        blockedBy.push(otherKey);
+                        return;
+                    }
+                    if (dep.direction === 'outward') {
+                        blocks.push(otherKey);
+                    }
+                });
+                return {
+                    blockedBy: Array.from(new Set(blockedBy)),
+                    blocks: Array.from(new Set(blocks))
+                };
+            };
+
+            const getBlockKeys = React.useCallback((taskKey, action) => {
+                if (!taskKey) return [];
+                const entries = (dependencyData[taskKey] || [])
+                    .filter(dep => dep.key && dep.category === 'block');
+                const { blockedBy, blocks } = getBlockLinkBuckets(entries, taskKey);
+                return action === 'blocks' ? blocks : blockedBy;
+            }, [dependencyData]);
+
+            const getFocusKeys = React.useCallback((taskKey, action) => {
+                if (action === 'blocked-by' || action === 'blocks') {
+                    return getBlockKeys(taskKey, action);
+                }
+                return getDependencyKeys(taskKey, action);
+            }, [getBlockKeys, getDependencyKeys]);
+
             const handleDependencyFocusClick = (event) => {
                 const button = event.target.closest('button[data-dep-chip]');
                 if (button) {
@@ -6943,7 +7037,7 @@
                         setDependencyFocus(null);
                         return;
                     }
-                    const dependencyKeys = getDependencyKeys(taskKey, action);
+                    const dependencyKeys = getFocusKeys(taskKey, action);
                     const relatedKeys = Array.from(new Set([taskKey, ...dependencyKeys]));
                     const missingKeys = dependencyKeys.filter(key => !issueByKey.has(key));
                     setDependencyFocus({
@@ -7528,6 +7622,26 @@
             };
 
             const isExcludedStatus = (status) => status === 'killed' || status === 'postponed' || status === 'done';
+            const resolveDependencyStatus = (dep) => {
+                if (!dep?.key) return '';
+                const issue = issueByKey.get(dep.key);
+                const lookup = dependencyLookupCache[dep.key];
+                return normalizeStatus(
+                    issue?.fields?.status?.name ||
+                    issue?.status?.name ||
+                    issue?.status ||
+                    lookup?.status ||
+                    dep.status
+                );
+            };
+            const getBlockedAlertStatusLabel = (task) => {
+                const baseLabel = task.fields.status?.name || 'Blocked';
+                const entries = (dependencyData[task.key] || [])
+                    .filter(dep => dep.category === 'block' && dep.dependentKey === task.key);
+                if (!entries.length) return baseLabel;
+                const blockersDone = entries.every(dep => resolveDependencyStatus(dep) === 'done');
+                return blockersDone ? 'Unblocked' : baseLabel;
+            };
             const dismissedAlertSet = React.useMemo(() => new Set(dismissedAlertKeys || []), [dismissedAlertKeys]);
             const sprintMissingKeySet = React.useMemo(() => {
                 const keys = new Set();
@@ -9664,7 +9778,7 @@
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(task => {
-                                                                        const statusLabel = task.fields.status?.name || 'Blocked';
+                                                                        const statusLabel = getBlockedAlertStatusLabel(task);
                                                                         return (
                                                                             <div key={task.key} className="alert-story">
                                                                                 <div
@@ -10153,6 +10267,9 @@
                                                     const rawDeps = showDependencies
                                                         ? (dependencyData[task.key] || []).filter(dep => dep.key && dep.category === 'dependency')
                                                         : [];
+                                                    const rawBlockDeps = showDependencies
+                                                        ? (dependencyData[task.key] || []).filter(dep => dep.key && dep.category === 'block')
+                                                        : [];
                                                     const uniqueDeps = (() => {
                                                         const seen = new Set();
                                                         return rawDeps.filter(dep => {
@@ -10166,7 +10283,10 @@
                                                     const dependentsAll = uniqueDeps.filter(dep => dep.direction === 'inward');
                                                     const dependsOnIds = dependsOnAll.map(dep => dep.key).filter(Boolean);
                                                     const dependentIds = dependentsAll.map(dep => dep.key).filter(Boolean);
-                                                    const hasDeps = dependsOnIds.length > 0 || dependentIds.length > 0;
+                                                    const { blockedBy: blockedByIds, blocks: blocksIds } = getBlockLinkBuckets(rawBlockDeps, task.key);
+                                                    const hasBlockLinks = blockedByIds.length > 0 || blocksIds.length > 0;
+                                                    const hasDependencyLinks = dependsOnIds.length > 0 || dependentIds.length > 0;
+                                                    const hasDeps = hasDependencyLinks || hasBlockLinks;
                                                     const hasCycle = dependsOnIds.some(id => dependentIds.includes(id) && issueByKey.has(id));
                                                     const isDependsFocusActive = dependencyFocus &&
                                                         dependencyFocus.taskKey === task.key &&
@@ -10174,11 +10294,23 @@
                                                     const isDependentsFocusActive = dependencyFocus &&
                                                         dependencyFocus.taskKey === task.key &&
                                                         dependencyFocus.action === 'dependents';
+                                                    const isBlockedByFocusActive = dependencyFocus &&
+                                                        dependencyFocus.taskKey === task.key &&
+                                                        dependencyFocus.action === 'blocked-by';
+                                                    const isBlocksFocusActive = dependencyFocus &&
+                                                        dependencyFocus.taskKey === task.key &&
+                                                        dependencyFocus.action === 'blocks';
                                                     const isFocusActive = !!dependencyFocus;
                                                     const isRelated = !isFocusActive || focusRelatedSet.has(task.key);
                                                     const isFocused = isFocusActive && dependencyFocus.taskKey === task.key;
-                                                    const isUpstream = isFocusActive && dependencyFocus.action === 'depends-on' && !isFocused && focusRelatedSet.has(task.key);
-                                                    const isDownstream = isFocusActive && dependencyFocus.action === 'dependents' && !isFocused && focusRelatedSet.has(task.key);
+                                                    const isUpstream = isFocusActive &&
+                                                        (dependencyFocus.action === 'depends-on' || dependencyFocus.action === 'blocked-by') &&
+                                                        !isFocused &&
+                                                        focusRelatedSet.has(task.key);
+                                                    const isDownstream = isFocusActive &&
+                                                        (dependencyFocus.action === 'dependents' || dependencyFocus.action === 'blocks') &&
+                                                        !isFocused &&
+                                                        focusRelatedSet.has(task.key);
                                                     const missingKeys = isFocused ? (dependencyFocus?.missingKeys || []) : [];
                                                     const dependencyKeyList = dependencyFocus?.dependencyKeys
                                                         || (dependencyFocus?.relatedKeys || []).filter(key => key !== task.key);
@@ -10197,15 +10329,21 @@
                                                         const status = lookup?.status || info.status || 'Unknown';
                                                         const summary = lookup?.summary || info.summary || 'Unknown summary';
                                                         const teamName = lookup?.teamName || info.teamName || 'Unknown team';
-                                                        return { key, status, summary, teamName };
+                                                        const assignee = lookup?.assignee?.displayName || info.assignee || 'Unassigned';
+                                                        const isDone = normalizeStatus(status) === 'done';
+                                                        return { key, status, summary, teamName, assignee, isDone };
                                                     });
                                                     const hiddenLines = hiddenKeys.map(key => {
                                                         const lookup = issueByKey.get(key);
                                                         const info = missingInfoByKey[key] || {};
                                                         const status = lookup?.fields?.status?.name || lookup?.status?.name || lookup?.status || info.status || 'Unknown';
                                                         const summary = lookup?.fields?.summary || lookup?.summary || info.summary || 'Unknown summary';
-                                                        const teamName = lookup?.fields?.teamName || lookup?.teamName || info.teamName || 'Unknown team';
-                                                        return { key, status, summary, teamName };
+                                                        const teamName = lookup?.fields
+                                                            ? getTeamInfo(lookup).name
+                                                            : (lookup?.teamName || info.teamName || 'Unknown team');
+                                                        const assignee = lookup?.fields?.assignee?.displayName || lookup?.assignee?.displayName || info.assignee || 'Unassigned';
+                                                        const isDone = normalizeStatus(status) === 'done';
+                                                        return { key, status, summary, teamName, assignee, isDone };
                                                     });
                                                     return (
                                                         <div
@@ -10263,7 +10401,7 @@
                                                                     <span className={`task-priority ${task.fields.priority?.name.toLowerCase()}`}>
                                                                         {task.fields.priority?.name || 'None'}
                                                                     </span>
-                                                                    {showDependencies && hasDeps && (
+                                                                    {showDependencies && hasDependencyLinks && (
                                                                         <div className="dependency-pill-stack">
                                                                             {dependsOnIds.length > 0 && (
                                                                                 <span className="dependency-pill blocked">← BLOCKED BY</span>
@@ -10299,6 +10437,30 @@
                                                             </div>
                                                             {showDependencies && hasDeps && (
                                                                 <div className="dependency-strip">
+                                                                    {blockedByIds.length > 0 && (
+                                                                        <button
+                                                                            type="button"
+                                                                            className={`dependency-count ${isBlockedByFocusActive ? 'active' : ''}`}
+                                                                            data-dep-chip="blocked-by"
+                                                                            data-task-id={task.id || task.key}
+                                                                            data-task-key={task.key}
+                                                                            aria-label={`Blocked by ${blockedByIds.length} tasks`}
+                                                                        >
+                                                                            BLOCKED BY {blockedByIds.length}
+                                                                        </button>
+                                                                    )}
+                                                                    {blocksIds.length > 0 && (
+                                                                        <button
+                                                                            type="button"
+                                                                            className={`dependency-count ${isBlocksFocusActive ? 'active' : ''}`}
+                                                                            data-dep-chip="blocks"
+                                                                            data-task-id={task.id || task.key}
+                                                                            data-task-key={task.key}
+                                                                            aria-label={`Blocks ${blocksIds.length} tasks`}
+                                                                        >
+                                                                            BLOCKS {blocksIds.length}
+                                                                        </button>
+                                                                    )}
                                                                     {dependsOnIds.length > 0 && (
                                                                         <button
                                                                             type="button"
@@ -10332,7 +10494,15 @@
                                                                             <div className="dependency-missing-label hidden">Hidden by filter</div>
                                                                             {hiddenLines.map(item => (
                                                                                 <div className="dependency-missing-item" key={`hidden-${item.key}`}>
-                                                                                    {item.key} · {item.status} · {item.summary} · {item.teamName}
+                                                                                    <span>{item.teamName}</span>
+                                                                                    <span className="dependency-missing-sep">·</span>
+                                                                                    <span>{item.assignee}</span>
+                                                                                    <span className="dependency-missing-sep">·</span>
+                                                                                    <span>{item.summary}</span>
+                                                                                    <span className="dependency-missing-sep">·</span>
+                                                                                    <span>{item.key}</span>
+                                                                                    <span className="dependency-missing-sep">·</span>
+                                                                                    <span className={`dependency-missing-status ${item.isDone ? 'done' : ''}`}>{item.status}</span>
                                                                                 </div>
                                                                             ))}
                                                                         </>
@@ -10342,7 +10512,15 @@
                                                                             <div className="dependency-missing-label">Not loaded</div>
                                                                             {missingLines.map(item => (
                                                                                 <div className="dependency-missing-item" key={`missing-${item.key}`}>
-                                                                                    {item.key} · {item.status} · {item.summary} · {item.teamName}
+                                                                                    <span>{item.teamName}</span>
+                                                                                    <span className="dependency-missing-sep">·</span>
+                                                                                    <span>{item.assignee}</span>
+                                                                                    <span className="dependency-missing-sep">·</span>
+                                                                                    <span>{item.summary}</span>
+                                                                                    <span className="dependency-missing-sep">·</span>
+                                                                                    <span>{item.key}</span>
+                                                                                    <span className="dependency-missing-sep">·</span>
+                                                                                    <span className={`dependency-missing-status ${item.isDone ? 'done' : ''}`}>{item.status}</span>
                                                                                 </div>
                                                                             ))}
                                                                             {dependencyLookupLoading && (

@@ -70,12 +70,12 @@ chmod +x install.sh
 sudo apt install python3-pip
 
 # Then install packages:
-pip3 install --user flask flask-cors requests python-dotenv
+pip3 install --user flask flask-cors requests python-dotenv openpyxl "urllib3<2"
 ```
 
 **Option C - Using python3 directly (if pip3 not available):**
 ```bash
-python3 -m pip install --user flask flask-cors requests python-dotenv
+python3 -m pip install --user flask flask-cors requests python-dotenv openpyxl "urllib3<2"
 ```
 
 ### Step 3: Configure credentials
@@ -299,7 +299,7 @@ Scenario API response (used by the UI):
 - Make sure the Python server is running (`python3 jira_server.py`)
 
 **"ModuleNotFoundError" when starting server:**
-- Install dependencies: `python3 -m pip install --user flask flask-cors requests python-dotenv`
+- Install dependencies: `python3 -m pip install --user flask flask-cors requests python-dotenv openpyxl "urllib3<2"`
 
 **"JIRA_URL, JIRA_EMAIL and JIRA_TOKEN must be set" error:**
 - Make sure you created `.env` file from `.env.example`

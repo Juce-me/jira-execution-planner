@@ -55,6 +55,7 @@ CAPACITY_FIELD_NAME = os.getenv('CAPACITY_FIELD_NAME', 'Team capacity[Number]').
 GROUPS_CONFIG_PATH = os.getenv('GROUPS_CONFIG_PATH', '').strip()
 TEAM_GROUPS_JSON = os.getenv('TEAM_GROUPS_JSON', '').strip()
 JQL_QUERY_TEMPLATE = os.getenv('JQL_QUERY_TEMPLATE', '').strip()
+DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
@@ -294,7 +295,7 @@ def jira_search_request(headers, payload):
             return ','.join(value)
         return value
 
-    for key in ('jql', 'startAt', 'maxResults', 'expand', 'fields', 'fieldsByKeys'):
+    for key in ('jql', 'startAt', 'maxResults', 'expand', 'fields', 'fieldsByKeys', 'nextPageToken'):
         if key in payload and payload[key] is not None:
             params[key] = to_csv(payload[key])
 
@@ -586,6 +587,22 @@ def extract_team_ids_from_jql(jql):
     if match_eq:
         return [match_eq.group(2)]
     return []
+
+
+def remove_team_filter_from_jql(jql):
+    """Remove Team[Team] filter from JQL query to fetch all teams."""
+    if not jql:
+        return jql
+    # Remove "Team[Team]" in (...) pattern
+    jql = re.sub(r'\s+AND\s+"Team\[Team\]"\s+in\s*\([^)]+\)', '', jql, flags=re.IGNORECASE)
+    jql = re.sub(r'"Team\[Team\]"\s+in\s*\([^)]+\)\s+AND\s+', '', jql, flags=re.IGNORECASE)
+    # Remove "Team[Team]" = "..." pattern
+    jql = re.sub(r'\s+AND\s+"Team\[Team\]"\s*=\s*[^\s]+', '', jql, flags=re.IGNORECASE)
+    jql = re.sub(r'"Team\[Team\]"\s*=\s*[^\s]+\s+AND\s+', '', jql, flags=re.IGNORECASE)
+    # Remove standalone Team[Team] filter (if it's the only filter before ORDER BY)
+    jql = re.sub(r'"Team\[Team\]"\s+in\s*\([^)]+\)\s*(?=ORDER BY|$)', '', jql, flags=re.IGNORECASE)
+    jql = re.sub(r'"Team\[Team\]"\s*=\s*[^\s]+\s*(?=ORDER BY|$)', '', jql, flags=re.IGNORECASE)
+    return jql.strip()
 
 
 def get_stats_team_ids():
@@ -1122,12 +1139,21 @@ def fetch_tasks(include_team_name=False):
             jql = apply_team_ids_to_template(team_ids)
             if not jql:
                 jql = JQL_QUERY
+        elif team_ids:
+            # If team_ids provided (from group), filter by those teams
+            # Remove existing team filter from base JQL and add our own
+            jql = remove_team_filter_from_jql(JQL_QUERY)
+            if len(team_ids) == 1:
+                jql = add_clause_to_jql(jql, f'"Team[Team]" = "{team_ids[0]}"')
+            else:
+                quoted_teams = ', '.join(f'"{tid}"' for tid in team_ids)
+                jql = add_clause_to_jql(jql, f'"Team[Team]" in ({quoted_teams})')
         else:
             jql = JQL_QUERY
         if sprint:
             jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
 
-        if team and team.lower() != 'all' and not use_template:
+        if team and team.lower() != 'all' and not use_template and not team_ids:
             jql = add_clause_to_jql(jql, f'"Team[Team]" = {team}')
 
         if project_filter in ('product', 'tech'):
@@ -2502,6 +2528,229 @@ def get_tasks_with_team_name():
     return fetch_tasks(include_team_name=True)
 
 
+@app.route('/api/teams', methods=['GET'])
+def get_teams():
+    """Fetch all unique teams from the current sprint."""
+    try:
+        sprint = request.args.get('sprint', '')
+        team_ids_param = request.args.get('teamIds', '').strip()
+        fetch_all = request.args.get('all', '').lower() == 'true'
+        team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
+        use_template = bool(team_ids and JQL_QUERY_TEMPLATE) and not fetch_all
+
+        # Prepare authorization
+        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+        auth_bytes = auth_string.encode('ascii')
+        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+
+        headers = {
+            'Authorization': f'Basic {auth_base64}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+
+        # Build JQL query
+        if use_template:
+            jql = apply_team_ids_to_template(team_ids)
+            if not jql:
+                jql = JQL_QUERY
+        else:
+            jql = JQL_QUERY
+
+        # If fetching all teams, remove team filter from JQL
+        if fetch_all:
+            jql = remove_team_filter_from_jql(jql)
+
+        if sprint:
+            jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
+
+        team_field_id = resolve_team_field_id(headers)
+
+        # Fetch tasks - paginate through all issues
+        fields_list = ['summary', 'status']
+        if team_field_id:
+            fields_list.append(team_field_id)
+        if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
+            fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
+
+        max_results = 100
+        next_page_token = None
+        all_issues = []
+
+        while True:
+            payload = {
+                'jql': jql,
+                'maxResults': max_results,
+                'fields': fields_list
+            }
+            if next_page_token:
+                payload['nextPageToken'] = next_page_token
+
+            response = jira_search_request(headers, payload)
+            if response.status_code != 200:
+                return jsonify({'error': 'Failed to fetch teams', 'details': response.text}), response.status_code
+
+            data = response.json()
+            issues = data.get('issues', [])
+
+            if not issues:
+                break
+
+            all_issues.extend(issues)
+
+            # Check if we've fetched everything (using new pagination API)
+            is_last = data.get('isLast', True)
+            if is_last:
+                break
+
+            next_page_token = data.get('nextPageToken')
+            if not next_page_token:
+                break
+
+        names_map = data.get('names', {}) or {}
+
+        if not team_field_id:
+            team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
+
+        # Extract unique teams (no filtering - return all teams)
+        teams_map = {}
+        for issue in all_issues:
+            fields = issue.get('fields', {})
+            raw_team = None
+
+            if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
+                raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
+            elif team_field_id and fields.get(team_field_id) is not None:
+                raw_team = fields.get(team_field_id)
+
+            if raw_team is not None:
+                team_value = build_team_value(raw_team)
+                team_id = team_value.get('id') if isinstance(team_value, dict) else None
+                team_name = extract_team_name(raw_team)
+
+                if team_id and team_name:
+                    teams_map[team_id] = {
+                        'id': team_id,
+                        'name': team_name
+                    }
+
+        # Sort teams by name
+        teams_list = sorted(teams_map.values(), key=lambda t: t['name'].lower())
+
+        return jsonify({'teams': teams_list})
+
+    except Exception as e:
+        return jsonify({'error': 'Failed to fetch teams', 'details': str(e)}), 500
+
+
+@app.route('/api/teams/all', methods=['GET'])
+def get_all_teams_list():
+    """Fetch ALL teams from Jira for debugging - no filtering, simple list format."""
+    try:
+        sprint = request.args.get('sprint', '')
+
+        # Prepare authorization
+        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+        auth_bytes = auth_string.encode('ascii')
+        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+
+        headers = {
+            'Authorization': f'Basic {auth_base64}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+
+        # Build JQL query - remove team filter to get ALL teams
+        jql = remove_team_filter_from_jql(JQL_QUERY)
+        if sprint:
+            jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
+
+        team_field_id = resolve_team_field_id(headers)
+
+        # Fetch tasks
+        fields_list = ['summary', 'status']
+        if team_field_id:
+            fields_list.append(team_field_id)
+        if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
+            fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
+
+        # Paginate through ALL issues using new API
+        max_results = 100
+        next_page_token = None
+        all_issues = []
+
+        while True:
+            payload = {
+                'jql': jql,
+                'maxResults': max_results,
+                'fields': fields_list
+            }
+            if next_page_token:
+                payload['nextPageToken'] = next_page_token
+
+            response = jira_search_request(headers, payload)
+            if response.status_code != 200:
+                return jsonify({'error': 'Failed to fetch teams', 'details': response.text}), response.status_code
+
+            data = response.json()
+            issues = data.get('issues', [])
+
+            if not issues:
+                break
+
+            all_issues.extend(issues)
+
+            # Check if we've fetched everything (using new pagination API)
+            is_last = data.get('isLast', True)
+            if is_last:
+                break
+
+            next_page_token = data.get('nextPageToken')
+            if not next_page_token:
+                break
+
+        names_map = data.get('names', {}) or {}
+        if not team_field_id:
+            team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
+
+        # Extract unique teams - NO FILTERING
+        teams_map = {}
+        for issue in all_issues:
+            fields = issue.get('fields', {})
+            raw_team = None
+
+            if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
+                raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
+            elif team_field_id and fields.get(team_field_id) is not None:
+                raw_team = fields.get(team_field_id)
+
+            if raw_team is not None:
+                team_value = build_team_value(raw_team)
+                team_id = team_value.get('id') if isinstance(team_value, dict) else None
+                team_name = extract_team_name(raw_team)
+
+                if team_id and team_name:
+                    teams_map[team_id] = {
+                        'id': team_id,
+                        'name': team_name
+                    }
+
+        # Sort teams by name
+        teams_list = sorted(teams_map.values(), key=lambda t: t['name'].lower())
+
+        # Return simple format
+        return jsonify({
+            'total_teams': len(teams_list),
+            'issues_fetched': len(all_issues),
+            'sprint': sprint,
+            'jql': jql,
+            'teams': teams_list
+        })
+
+    except Exception as e:
+        return jsonify({'error': 'Failed to fetch all teams', 'details': str(e)}), 500
+
+
 @app.route('/api/stats', methods=['GET'])
 def get_completed_sprint_stats():
     """Fetch cached delivery stats for a completed sprint."""
@@ -3060,26 +3309,25 @@ if __name__ == '__main__':
         print('📝 Please copy .env.example to .env, fill in your credentials, or pass them as flags.\n')
         exit(1)
 
-    print('\n🚀 Jira Proxy Server starting...')
-    print(f'📧 Using email: {JIRA_EMAIL}')
-    print(f'🔗 Jira URL: {JIRA_URL}')
-    print(f'📊 Board ID: {JIRA_BOARD_ID}')
-    print(f'📝 JQL Query: {JQL_QUERY[:80]}...' if len(JQL_QUERY) > 80 else f'📝 JQL Query: {JQL_QUERY}')
-    print(f'💾 Cache expires after: {CACHE_EXPIRY_HOURS} hours')
-    print('\n📋 Endpoints:')
-    print(f'   • http://localhost:{SERVER_PORT}/api/tasks - Get sprint tasks')
-    print(f'   • http://localhost:{SERVER_PORT}/api/tasks-with-team-name - Get sprint tasks with team names')
-    print(f'   • http://localhost:{SERVER_PORT}/api/dependencies - Get issue dependencies (POST)')
-    print(f'   • http://localhost:{SERVER_PORT}/api/issues/lookup?keys=KEY-1,KEY-2 - Lookup issues (GET)')
-    print(f'   • http://localhost:{SERVER_PORT}/api/scenario - Scenario planner (GET/POST)')
-    print(f'   • http://localhost:{SERVER_PORT}/api/stats?sprint=2025Q3 - Get completed sprint stats (cached)')
-    print(f'   • http://localhost:{SERVER_PORT}/api/stats-example - Get example completed sprint stats')
-    print(f'   • http://localhost:{SERVER_PORT}/api/sprints - Get available sprints (cached)')
-    print(f'   • http://localhost:{SERVER_PORT}/api/sprints?refresh=true - Force refresh sprints cache')
-    print(f'   • http://localhost:{SERVER_PORT}/api/planned-capacity?sprint=2025Q3 - Get planned team capacity')
-    print(f'   • http://localhost:{SERVER_PORT}/api/boards - Get all boards (to find board ID)')
-    print(f'   • http://localhost:{SERVER_PORT}/api/test - Test connection')
-    print(f'   • http://localhost:{SERVER_PORT}/health - Health check')
-    print('\n✅ Server ready! Open jira-dashboard.html in your browser\n')
+    # Only print on first startup, not on reload
+    if not DEBUG_MODE or os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+        # Calculate current quarter for examples
+        today = date.today()
+        current_quarter = f"{today.year}Q{(today.month - 1) // 3 + 1}"
 
-    app.run(host='0.0.0.0', port=SERVER_PORT, debug=True)
+        print(f'\n✅ Jira Proxy Server starting on http://localhost:{SERVER_PORT}')
+        print(f'   Jira: {JIRA_URL}')
+        print(f'   Email: {JIRA_EMAIL}')
+        if JIRA_BOARD_ID:
+            print(f'   Board: {JIRA_BOARD_ID}')
+        if GROUPS_CONFIG_PATH and os.path.exists(GROUPS_CONFIG_PATH):
+            print(f'   Groups: {GROUPS_CONFIG_PATH}')
+        print('\n📋 Key Endpoints:')
+        print(f'   • http://localhost:{SERVER_PORT}/api/tasks?sprint={current_quarter}')
+        print(f'   • http://localhost:{SERVER_PORT}/api/teams?sprint={current_quarter}&all=true')
+        print(f'   • http://localhost:{SERVER_PORT}/api/teams/all?sprint={current_quarter}  (all teams with names)')
+        print(f'   • http://localhost:{SERVER_PORT}/api/sprints')
+        print(f'   • http://localhost:{SERVER_PORT}/api/groups-config')
+        print()
+
+    app.run(host='0.0.0.0', port=SERVER_PORT, debug=DEBUG_MODE)

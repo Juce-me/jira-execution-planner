@@ -172,7 +172,7 @@
             display: flex;
             align-items: center;
             gap: 0.8rem;
-            flex-wrap: nowrap;
+            flex-wrap: wrap;
             width: 100%;
         }
 
@@ -200,12 +200,12 @@
 
         .sprint-dropdown {
             position: relative;
-            min-width: 180px;
+            min-width: 130px;
         }
 
         .sprint-dropdown-toggle {
-            width: 180px;
-            padding: 0.35rem 0.6rem;
+            width: 130px;
+            padding: 0.35rem 0.5rem;
             border: 1px solid var(--border);
             background: var(--bg-secondary);
             font-family: 'IBM Plex Mono', monospace;
@@ -250,8 +250,8 @@
         .sprint-dropdown-panel {
             position: absolute;
             top: calc(100% + 0.4rem);
-            left: 0;
-            width: 180px;
+            right: 0;
+            width: 160px;
             background: #fff;
             border: 1px solid var(--border);
             box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
@@ -294,8 +294,8 @@
         }
 
         .group-dropdown-toggle {
-            width: 200px;
-            padding: 0.35rem 0.6rem;
+            width: 160px;
+            padding: 0.35rem 0.5rem;
             border: 1px solid var(--border);
             background: var(--bg-secondary);
             font-family: 'IBM Plex Mono', monospace;
@@ -346,8 +346,8 @@
         .group-dropdown-panel {
             position: absolute;
             top: calc(100% + 0.4rem);
-            left: 0;
-            width: 240px;
+            right: 0;
+            width: 200px;
             background: #fff;
             border: 1px solid var(--border);
             box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
@@ -378,10 +378,9 @@
         }
 
         .group-option-default {
-            font-size: 0.6rem;
-            font-weight: 600;
-            color: var(--accent);
-            letter-spacing: 0.08em;
+            font-size: 0.75rem;
+            color: #f59e0b;
+            line-height: 1;
         }
 
         .group-option-tags {
@@ -443,24 +442,134 @@
         }
 
         .group-modal-row {
-            display: grid;
-            grid-template-columns: minmax(160px, 1fr) minmax(240px, 2fr) auto;
+            display: flex;
+            flex-direction: column;
             gap: 0.6rem;
-            align-items: center;
+            padding: 0.8rem 0;
+            border-bottom: 1px solid var(--border);
         }
 
-        .group-modal-row input,
-        .group-modal-row textarea {
-            width: 100%;
+        .group-modal-row:last-of-type {
+            border-bottom: none;
+        }
+
+        .group-row-header {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .group-name-input {
+            flex: 1;
             padding: 0.4rem 0.6rem;
             border: 1px solid var(--border);
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.75rem;
+            background: #fff;
         }
 
-        .group-modal-row textarea {
-            min-height: 3.5rem;
-            resize: vertical;
+        .team-selector {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+
+        .team-selector-label {
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .team-selector-empty {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            font-style: italic;
+            padding: 0.5rem;
+        }
+
+        .team-search-wrapper {
+            position: relative;
+        }
+
+        .team-search-input {
+            width: 100%;
+            padding: 0.4rem 0.6rem;
+            border: 1px solid var(--border);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            background: #fff;
+        }
+
+        .team-search-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .team-search-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            max-height: 200px;
+            overflow-y: auto;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-top: none;
+            z-index: 10;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .team-search-result-item {
+            padding: 0.4rem 0.6rem;
+            font-size: 0.7rem;
+            cursor: pointer;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .team-search-result-item:hover {
+            background: #f8f9fa;
+        }
+
+        .team-search-result-item:last-child {
+            border-bottom: none;
+        }
+
+        .selected-teams-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+
+        .selected-team-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.3rem 0.5rem;
+            border: 1px solid var(--border);
+            background: #f8f9fa;
+            font-size: 0.7rem;
+        }
+
+        .selected-team-chip .team-name {
+            white-space: nowrap;
+        }
+
+        .selected-team-chip .remove-btn {
+            background: none;
+            border: none;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+        }
+
+        .selected-team-chip .remove-btn:hover {
+            color: var(--accent);
         }
 
         .group-modal-body textarea {
@@ -573,8 +682,8 @@
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.75rem;
             color: var(--text-primary);
-            padding: 0.35rem 0.6rem;
-            width: 180px;
+            padding: 0.35rem 0.5rem;
+            width: 140px;
             display: inline-flex;
             align-items: center;
             justify-content: space-between;
@@ -617,8 +726,8 @@
         .team-dropdown-panel {
             position: absolute;
             top: calc(100% + 0.35rem);
-            left: 0;
-            width: 180px;
+            right: 0;
+            width: 160px;
             max-height: 220px;
             overflow-y: auto;
             background: #fff;
@@ -3706,6 +3815,9 @@
             const [groupDraftError, setGroupDraftError] = useState('');
             const [groupImportText, setGroupImportText] = useState('');
             const [groupSaving, setGroupSaving] = useState(false);
+            const [availableTeams, setAvailableTeams] = useState([]);
+            const [loadingTeams, setLoadingTeams] = useState(false);
+            const [teamSearchQuery, setTeamSearchQuery] = useState({});
             const [groupQueryTemplateEnabled, setGroupQueryTemplateEnabled] = useState(false);
             const [jiraUrl, setJiraUrl] = useState('');
             const [selectedTasks, setSelectedTasks] = useState({});
@@ -4021,8 +4133,60 @@
                 });
             };
 
+            const loadTeamsFromCurrentView = () => {
+                // Use teams from already-loaded tasks (same as teams dropdown)
+                const teams = teamOptions
+                    .filter(team => team.id !== 'all')
+                    .map(team => ({ id: team.id, name: team.name }));
+                return teams;
+            };
+
+            const fetchAllTeamsFromJira = async () => {
+                setLoadingTeams(true);
+                setGroupDraftError('');
+
+                try {
+                    const sprintParam = selectedSprint || '';
+                    const url = `${BACKEND_URL}/api/teams?_t=${Date.now()}&sprint=${sprintParam}&all=true`;
+
+                    const response = await fetch(url);
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`HTTP ${response.status}: ${errorText}`);
+                    }
+
+                    const data = await response.json();
+                    const fetchedTeams = data.teams || [];
+
+                    if (fetchedTeams.length === 0) {
+                        setGroupDraftError('No teams found in Jira for this sprint.');
+                        setLoadingTeams(false);
+                        return;
+                    }
+
+                    // Merge with existing teams, avoiding duplicates
+                    setAvailableTeams(prevTeams => {
+                        const existingIds = new Set(prevTeams.map(t => t.id));
+                        const newTeams = fetchedTeams.filter(t => !existingIds.has(t.id));
+                        const merged = [...prevTeams, ...newTeams].sort((a, b) => a.name.localeCompare(b.name));
+                        console.log(`Loaded ${fetchedTeams.length} teams from Jira (${newTeams.length} new)`);
+                        return merged;
+                    });
+                } catch (err) {
+                    console.error('Error fetching teams from Jira:', err);
+                    setGroupDraftError(`Failed to fetch teams: ${err.message}`);
+                } finally {
+                    setLoadingTeams(false);
+                }
+            };
+
             const openGroupManage = () => {
                 setShowGroupManage(true);
+                setLoadingTeams(true);
+                const teams = loadTeamsFromCurrentView();
+                setAvailableTeams(teams);
+                setLoadingTeams(false);
             };
 
             const closeGroupManage = () => {
@@ -4062,6 +4226,46 @@
                 }));
             };
 
+            const toggleTeamInGroup = (groupId, teamId) => {
+                handleGroupDraftChange(prev => ({
+                    ...prev,
+                    groups: (prev.groups || []).map(group => {
+                        if (group.id !== groupId) return group;
+                        const currentTeams = group.teamIds || [];
+                        const hasTeam = currentTeams.includes(teamId);
+                        const newTeams = hasTeam
+                            ? currentTeams.filter(id => id !== teamId)
+                            : [...currentTeams, teamId];
+                        return { ...group, teamIds: newTeams };
+                    })
+                }));
+            };
+
+            const addTeamToGroup = (groupId, teamId) => {
+                handleGroupDraftChange(prev => ({
+                    ...prev,
+                    groups: (prev.groups || []).map(group => {
+                        if (group.id !== groupId) return group;
+                        const currentTeams = group.teamIds || [];
+                        if (currentTeams.includes(teamId)) return group;
+                        if (currentTeams.length >= 12) return group;
+                        return { ...group, teamIds: [...currentTeams, teamId] };
+                    })
+                }));
+                // Clear search after adding
+                setTeamSearchQuery(prev => ({ ...prev, [groupId]: '' }));
+            };
+
+            const removeTeamFromGroup = (groupId, teamId) => {
+                handleGroupDraftChange(prev => ({
+                    ...prev,
+                    groups: (prev.groups || []).map(group => {
+                        if (group.id !== groupId) return group;
+                        return { ...group, teamIds: (group.teamIds || []).filter(id => id !== teamId) };
+                    })
+                }));
+            };
+
             const removeGroupDraft = (groupId) => {
                 handleGroupDraftChange(prev => {
                     const nextGroups = (prev.groups || []).filter(group => group.id !== groupId);
@@ -4086,6 +4290,10 @@
                 setGroupSaving(true);
                 setGroupDraftError('');
                 try {
+                    // Capture the current active group's team IDs before saving
+                    const currentActiveGroup = activeGroupId ? (groupsConfig.groups || []).find(g => g.id === activeGroupId) : null;
+                    const currentTeamSignature = currentActiveGroup ? (currentActiveGroup.teamIds || []).join('|') : null;
+
                     const response = await fetch(`${BACKEND_URL}/api/groups-config`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -4102,6 +4310,18 @@
                     }
                     const payload = await response.json();
                     const normalized = normalizeGroupsConfig(payload);
+
+                    // Check if the active group's team IDs changed
+                    if (activeGroupId && currentTeamSignature !== null) {
+                        const updatedActiveGroup = (normalized.groups || []).find(g => g.id === activeGroupId);
+                        const updatedTeamSignature = updatedActiveGroup ? (updatedActiveGroup.teamIds || []).join('|') : null;
+
+                        // If team IDs changed, invalidate the cache for this group to force data reload
+                        if (currentTeamSignature !== updatedTeamSignature) {
+                            groupStateRef.current.delete(activeGroupId);
+                        }
+                    }
+
                     setGroupsConfig(normalized);
                     setGroupWarnings(payload.warnings || []);
                     setGroupConfigSource(payload.source || '');
@@ -4764,17 +4984,20 @@
 
             useEffect(() => {
                 // Load tasks when sprint changes (team is filtered client-side)
-                if (selectedSprint === null || !activeGroupId) {
+                if (selectedSprint === null) {
                     return;
                 }
-                const cached = groupStateRef.current.get(activeGroupId);
-                if (
-                    cached &&
-                    cached.sprintId === selectedSprint &&
-                    cached.teamIdsSignature === activeGroupTeamIds.join('|') &&
-                    cached.tasksFetched
-                ) {
-                    return;
+                // Check cache only if we have an active group
+                if (activeGroupId) {
+                    const cached = groupStateRef.current.get(activeGroupId);
+                    if (
+                        cached &&
+                        cached.sprintId === selectedSprint &&
+                        cached.teamIdsSignature === activeGroupTeamIds.join('|') &&
+                        cached.tasksFetched
+                    ) {
+                        return;
+                    }
                 }
                 setEpicDetails({});
                 setProductEpicsInScope([]);
@@ -5025,12 +5248,12 @@
                     const params = new URLSearchParams({
                         t: Date.now().toString(),
                         sprint: sprintParam,
-                        // always pull all teams; filtering happens client-side so capacity table can show every team
                         team: 'all',
                         project: project || 'all',
                         groupId: activeGroupId || ''
                     });
-                    if (useGroupTemplate) {
+                    // If group has teams configured, always filter by them (overrides ENV filter)
+                    if (groupTeamIds.length > 0) {
                         params.set('teamIds', groupTeamIds.join(','));
                     }
                     const response = await fetch(`${BACKEND_URL}/api/tasks-with-team-name?${params}`, {
@@ -8363,7 +8586,7 @@
                                                                 <span>{group.name}</span>
                                                                 <div className="group-option-tags">
                                                                     {groupsConfig.defaultGroupId === group.id && (
-                                                                        <span className="group-option-default">★ Default</span>
+                                                                        <span className="group-option-default" title="Default group">★</span>
                                                                     )}
                                                                     <span className="group-option-meta">
                                                                         {group.teamIds?.length || 0} teams
@@ -10957,8 +11180,11 @@
                             <div className="group-modal" onClick={(event) => event.stopPropagation()}>
                                 <div className="group-modal-header">
                                     <div>
-                                        <div className="group-modal-title">Manage Groups</div>
+                                        <div className="group-modal-title">Manage Team Groups</div>
                                         <div className="group-modal-meta">
+                                            Create groups to organize teams and filter your dashboard by specific team sets.
+                                        </div>
+                                        <div className="group-modal-meta" style={{marginTop: '0.25rem'}}>
                                             {groupConfigSource ? `Source: ${groupConfigSource}` : 'Source: local'}
                                         </div>
                                     </div>
@@ -10978,23 +11204,22 @@
                                     {groupDraftError && (
                                         <div className="group-modal-warning">{groupDraftError}</div>
                                     )}
+                                    {loadingTeams && (
+                                        <div className="group-modal-meta">Loading teams...</div>
+                                    )}
                                     {(groupDraft?.groups || []).length === 0 && (
-                                        <div className="group-modal-meta">No groups yet. Add one below.</div>
+                                        <div className="group-modal-meta">No groups yet. Click "Add Group" below to create one.</div>
                                     )}
                                     {(groupDraft?.groups || []).map(group => (
                                         <div className="group-modal-row" key={group.id}>
-                                            <input
-                                                type="text"
-                                                value={group.name}
-                                                onChange={(event) => updateGroupDraftName(group.id, event.target.value)}
-                                                placeholder="Group name"
-                                            />
-                                            <textarea
-                                                value={(group.teamIds || []).join(', ')}
-                                                onChange={(event) => updateGroupDraftTeams(group.id, event.target.value)}
-                                                placeholder="Team IDs (comma separated, max 12)"
-                                            />
-                                            <div className="group-modal-actions">
+                                            <div className="group-row-header">
+                                                <input
+                                                    type="text"
+                                                    value={group.name}
+                                                    onChange={(event) => updateGroupDraftName(group.id, event.target.value)}
+                                                    placeholder="Group name"
+                                                    className="group-name-input"
+                                                />
                                                 <button
                                                     className={`group-star-button ${groupDraft?.defaultGroupId === group.id ? 'active' : ''}`}
                                                     onClick={() => toggleDefaultGroupDraft(group.id)}
@@ -11012,22 +11237,120 @@
                                                 >
                                                     Delete
                                                 </button>
-                                                <span className="group-modal-meta">
-                                                    {(group.teamIds || []).length}/12 teams
-                                                </span>
+                                            </div>
+                                            <div className="team-selector">
+                                                <div className="team-selector-label">Selected teams ({(group.teamIds || []).length}/12 max)</div>
+                                                {(group.teamIds || []).length === 0 ? (
+                                                    <div className="team-selector-empty">
+                                                        No teams selected. Search and add teams below.
+                                                    </div>
+                                                ) : (
+                                                    <div className="selected-teams-list">
+                                                        {(group.teamIds || []).map(teamId => {
+                                                            const team = availableTeams.find(t => t.id === teamId);
+                                                            const teamName = team ? team.name : teamId;
+                                                            return (
+                                                                <div key={teamId} className="selected-team-chip">
+                                                                    <span className="team-name">{teamName}</span>
+                                                                    <button
+                                                                        className="remove-btn"
+                                                                        onClick={() => removeTeamFromGroup(group.id, teamId)}
+                                                                        type="button"
+                                                                        title="Remove team"
+                                                                    >
+                                                                        ×
+                                                                    </button>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                                {availableTeams.length === 0 && !loadingTeams ? (
+                                                    <div className="team-selector-empty">
+                                                        No teams available. Load tasks first or click "Load All Teams from Jira" below.
+                                                    </div>
+                                                ) : (group.teamIds || []).length < 12 && (
+                                                    <div className="team-search-wrapper">
+                                                        <input
+                                                            type="text"
+                                                            className="team-search-input"
+                                                            placeholder="Search teams to add..."
+                                                            value={teamSearchQuery[group.id] || ''}
+                                                            onChange={(e) => setTeamSearchQuery(prev => ({ ...prev, [group.id]: e.target.value }))}
+                                                        />
+                                                        {teamSearchQuery[group.id] && teamSearchQuery[group.id].trim() && (
+                                                            <div className="team-search-results">
+                                                                {(() => {
+                                                                    // Get teams assigned to OTHER groups (not this one)
+                                                                    const teamsInOtherGroups = new Set();
+                                                                    (groupDraft?.groups || []).forEach(g => {
+                                                                        if (g.id !== group.id) {
+                                                                            (g.teamIds || []).forEach(tid => teamsInOtherGroups.add(tid));
+                                                                        }
+                                                                    });
+
+                                                                    const currentTeams = new Set(group.teamIds || []);
+                                                                    const query = (teamSearchQuery[group.id] || '').toLowerCase();
+
+                                                                    const filteredTeams = availableTeams.filter(team => {
+                                                                        if (currentTeams.has(team.id)) return false;
+                                                                        if (teamsInOtherGroups.has(team.id)) return false;
+                                                                        // Filter out [ARCHIVED] and non-R&D teams from search
+                                                                        if (team.name.includes('[ARCHIVED]')) return false;
+                                                                        if (!team.name.startsWith('R&D ')) return false;
+                                                                        return team.name.toLowerCase().includes(query);
+                                                                    });
+
+                                                                    if (filteredTeams.length === 0) {
+                                                                        return (
+                                                                            <div className="team-search-result-item" style={{color: 'var(--text-secondary)'}}>
+                                                                                No teams found
+                                                                            </div>
+                                                                        );
+                                                                    }
+
+                                                                    return filteredTeams.slice(0, 10).map(team => (
+                                                                        <div
+                                                                            key={team.id}
+                                                                            className="team-search-result-item"
+                                                                            onClick={() => addTeamToGroup(group.id, team.id)}
+                                                                        >
+                                                                            {team.name}
+                                                                        </div>
+                                                                    ));
+                                                                })()}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
-                                    <div className="group-modal-meta">Import JSON (overwrites current draft).</div>
-                                    <textarea
-                                        value={groupImportText}
-                                        onChange={(event) => setGroupImportText(event.target.value)}
-                                        placeholder='{"version":1,"groups":[...]}'
-                                    />
-                                    <div className="group-modal-actions">
-                                        <button className="secondary compact" onClick={importGroupsConfig} type="button">
-                                            Import
-                                        </button>
+                                    <div style={{borderTop: '1px solid var(--border)', paddingTop: '1rem', marginTop: '1rem'}}>
+                                        <div className="group-modal-actions" style={{marginBottom: '0.8rem'}}>
+                                            <button
+                                                className="secondary compact"
+                                                onClick={fetchAllTeamsFromJira}
+                                                type="button"
+                                                disabled={loadingTeams}
+                                            >
+                                                {loadingTeams ? 'Loading...' : 'Load All Teams from Jira'}
+                                            </button>
+                                            <span className="group-modal-meta">
+                                                Currently showing {availableTeams.length} team{availableTeams.length !== 1 ? 's' : ''}
+                                            </span>
+                                        </div>
+                                        <div className="group-modal-meta">Import JSON (overwrites current draft).</div>
+                                        <textarea
+                                            value={groupImportText}
+                                            onChange={(event) => setGroupImportText(event.target.value)}
+                                            placeholder='{"version":1,"groups":[...]}'
+                                        />
+                                        <div className="group-modal-actions">
+                                            <button className="secondary compact" onClick={importGroupsConfig} type="button">
+                                                Import JSON
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="group-modal-footer">

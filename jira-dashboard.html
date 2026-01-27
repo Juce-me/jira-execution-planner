@@ -6252,7 +6252,7 @@
             );
             const scenarioSearchMatchSet = React.useMemo(() => {
                 const matches = new Set();
-                if (!scenarioSearchQuery) return matches;
+                if (!scenarioSearchQuery || !scenarioIssues || scenarioIssues.length === 0) return matches;
                 scenarioIssues.forEach(issue => {
                     if (issue?.key && matchesScenarioSearch(issue, scenarioSearchQuery)) {
                         matches.add(issue.key);
@@ -6266,6 +6266,7 @@
             }, [scenarioIssues, scenarioSearchQuery, scenarioSearchMatchSet]);
             const scenarioExcludedIssueKeys = React.useMemo(() => {
                 const keys = new Set();
+                if (!scenarioIssues || scenarioIssues.length === 0) return keys;
                 scenarioIssues.forEach(issue => {
                     if (excludedEpicSet.has(issue?.epicKey || '')) {
                         keys.add(issue.key);
@@ -6286,6 +6287,7 @@
             const scenarioCapacityByTeam = scenarioData?.capacity_by_team || EMPTY_OBJECT;
             const scenarioIssueByKey = React.useMemo(() => {
                 const map = new Map();
+                if (!scenarioIssues || scenarioIssues.length === 0) return map;
                 scenarioIssues.forEach(issue => {
                     if (issue?.key) {
                         map.set(issue.key, issue);
@@ -6297,6 +6299,7 @@
             const scenarioDeadline = parseScenarioDate(scenarioConfig.quarter_end_date);
             const scenarioBaseEnd = React.useMemo(() => {
                 if (!scenarioDeadline) return null;
+                if (!scenarioIssues || scenarioIssues.length === 0) return scenarioDeadline;
                 let latest = scenarioDeadline;
                 scenarioIssues.forEach(issue => {
                     if (!issue.end) return;
@@ -6312,7 +6315,7 @@
             const scenarioFocusEpicKey = scenarioEpicFocus?.key || null;
             const scenarioFocusIssueKeys = React.useMemo(() => {
                 const keys = new Set();
-                if (!scenarioFocusEpicKey) return keys;
+                if (!scenarioFocusEpicKey || !scenarioIssues || scenarioIssues.length === 0) return keys;
                 scenarioIssues.forEach(issue => {
                     if (issue.epicKey === scenarioFocusEpicKey && issue.key) {
                         keys.add(issue.key);
@@ -6346,15 +6349,20 @@
                 return new Set(scenarioTimelineIssues.map(issue => issue.key));
             }, [scenarioTimelineIssues]);
             const scenarioAssigneeConflicts = React.useMemo(() => {
+                // Early return if no data to avoid unnecessary computation
+                if (!scenarioTimelineIssues || scenarioTimelineIssues.length === 0) {
+                    return { conflicts: new Set(), conflictDetails: new Map() };
+                }
+
                 const conflicts = new Set();
-                const conflictDetails = new Map(); // key -> array of conflicting keys
+                const conflictDetails = new Map();
                 const assigneeMap = new Map();
 
                 // Group issues by assignee
                 scenarioTimelineIssues.forEach(issue => {
                     const assignee = issue.assignee;
-                    if (!assignee) return; // Skip unassigned tasks
-                    if (!issue.start || !issue.end) return; // Skip unscheduled tasks
+                    if (!assignee) return;
+                    if (!issue.start || !issue.end) return;
 
                     // Skip excluded tasks - they're just noise and shouldn't create conflicts
                     const isExcluded = excludedEpicSet.has(issue.epicKey || '');
@@ -6362,8 +6370,6 @@
 
                     const startDate = parseScenarioDate(issue.start);
                     const endDate = parseScenarioDate(issue.end);
-
-                    // Skip if date parsing failed
                     if (!startDate || !endDate) return;
 
                     if (!assigneeMap.has(assignee)) {
@@ -6381,21 +6387,19 @@
                 assigneeMap.forEach((tasks, assignee) => {
                     if (tasks.length < 2) return;
 
-                    // Sort by start date (safe now since we filtered out nulls)
+                    // Sort by start date
                     tasks.sort((a, b) => a.start - b.start);
 
-                    // Only check adjacent tasks (optimization: if tasks are serialized, only adjacent ones can overlap)
+                    // Only check adjacent tasks (optimization)
                     for (let i = 0; i < tasks.length - 1; i++) {
                         const task1 = tasks[i];
                         const task2 = tasks[i + 1];
 
                         // Check if task1 ends AFTER task2 starts (true overlap)
-                        // Use > not >= because same-day end/start is allowed
                         if (task1.end && task2.start && task1.end.getTime() > task2.start.getTime()) {
                             conflicts.add(task1.key);
                             conflicts.add(task2.key);
 
-                            // Track which tasks conflict with each other
                             if (!conflictDetails.has(task1.key)) {
                                 conflictDetails.set(task1.key, []);
                             }
@@ -6409,7 +6413,7 @@
                 });
 
                 return { conflicts, conflictDetails };
-            }, [scenarioTimelineIssues]);
+            }, [scenarioTimelineIssues, excludedEpicSet]);
             const scenarioLaneForIssue = (issue) => {
                 if (scenarioEpicFocus?.key) {
                     return scenarioEpicFocus.key;
@@ -6424,6 +6428,20 @@
             };
             const scenarioLaneInfo = React.useMemo(() => {
                 const info = new Map();
+                if (!scenarioTimelineIssues || scenarioTimelineIssues.length === 0) {
+                    if (scenarioEpicFocus?.key) {
+                        info.set(scenarioEpicFocus.key, {
+                            label: scenarioEpicFocus.summary || scenarioEpicFocus.key,
+                            key: scenarioEpicFocus.key,
+                            totalSp: 0,
+                            lateCount: 0,
+                            unschedulableCount: 0,
+                            conflictCount: 0,
+                            capacity: null
+                        });
+                    }
+                    return info;
+                }
                 scenarioTimelineIssues.forEach(issue => {
                     const lane = scenarioLaneForIssue(issue);
                     const current = info.get(lane) || {
@@ -6509,6 +6527,7 @@
             }, [scenarioLaneInfo]);
             const scenarioIssuesByLane = React.useMemo(() => {
                 const groups = new Map();
+                if (!scenarioTimelineIssues || scenarioTimelineIssues.length === 0) return groups;
                 scenarioTimelineIssues.forEach(issue => {
                     const lane = scenarioLaneForIssue(issue);
                     if (!groups.has(lane)) {
@@ -6522,9 +6541,11 @@
                 return groups;
             }, [scenarioTimelineIssues, scenarioLaneMode, scenarioEpicFocus]);
             const scenarioHasAssignees = React.useMemo(() => {
+                if (!scenarioIssues || scenarioIssues.length === 0) return false;
                 return scenarioIssues.some(issue => issue.assignee);
             }, [scenarioIssues]);
             const scenarioUnschedulable = React.useMemo(() => {
+                if (!scenarioIssues || scenarioIssues.length === 0) return [];
                 return scenarioIssues.filter(issue => !issue.start || !issue.end);
             }, [scenarioIssues]);
             const scenarioTicks = React.useMemo(() => {
@@ -6574,6 +6595,16 @@
             const SCENARIO_TEAM_LEAD_ROWS = 1;
             const scenarioBarGap = scenarioEpicFocus ? 16 : SCENARIO_BAR_GAP;
             const scenarioLaneStacking = React.useMemo(() => {
+                // Early return if no lanes to process
+                if (!scenarioLanes || scenarioLanes.length === 0) {
+                    return {
+                        rowIndexByKey: new Map(),
+                        laneRowCounts: new Map(),
+                        laneVisibleRows: new Map(),
+                        laneHiddenCounts: new Map()
+                    };
+                }
+
                 if (perfEnabled) {
                     perfCountersRef.current.laneStacking += 1;
                     performance.mark('scenarioLaneStacking:start');

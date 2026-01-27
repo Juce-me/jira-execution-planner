@@ -2335,6 +2335,19 @@
             box-shadow: 0 6px 16px rgba(26, 26, 26, 0.06);
         }
 
+        .scenario-card-warning {
+            border: 2px solid #cf1322;
+            background: rgba(207, 19, 34, 0.03);
+        }
+
+        .scenario-card-warning h4 {
+            color: #cf1322;
+        }
+
+        .scenario-card-warning .scenario-value {
+            color: #cf1322;
+        }
+
         .scenario-card h4 {
             margin: 0 0 0.35rem;
             font-size: 0.65rem;
@@ -2730,6 +2743,32 @@
             background: rgba(212, 56, 13, 0.6);
             pointer-events: none;
             z-index: 2;
+        }
+
+        .scenario-today {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: rgba(59, 130, 246, 0.7);
+            pointer-events: none;
+            z-index: 3;
+        }
+
+        .scenario-today::before {
+            content: 'Today';
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            font-size: 0.55rem;
+            font-family: 'IBM Plex Mono', monospace;
+            color: rgba(59, 130, 246, 0.9);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 1px 4px;
+            border-radius: 2px;
         }
 
         .scenario-deps {
@@ -6550,16 +6589,40 @@
             }, [scenarioIssues]);
             const scenarioTicks = React.useMemo(() => {
                 if (!scenarioViewStart || !scenarioViewEnd) return [];
-                const totalMs = Math.max(1, scenarioViewEnd - scenarioViewStart);
-                const steps = 4;
-                return Array.from({ length: steps + 1 }, (_, idx) => {
-                    const ratio = idx / steps;
-                    const date = new Date(scenarioViewStart.getTime() + totalMs * ratio);
-                    return {
-                        label: date.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }),
-                        ratio
-                    };
-                });
+                const ticks = [];
+                const start = new Date(scenarioViewStart.getTime());
+                const end = new Date(scenarioViewEnd.getTime());
+
+                // Generate ticks for each quarter boundary
+                const startQuarter = Math.floor(start.getMonth() / 3);
+                let quarterStart = new Date(start.getFullYear(), startQuarter * 3, 1);
+
+                // If view starts mid-quarter, begin at next quarter
+                if (quarterStart < start) {
+                    const nextQuarter = startQuarter + 1;
+                    const year = start.getFullYear() + Math.floor(nextQuarter / 4);
+                    const month = (nextQuarter % 4) * 3;
+                    quarterStart = new Date(year, month, 1);
+                }
+
+                let cursor = quarterStart;
+                const totalMs = Math.max(1, end - start);
+
+                while (cursor <= end) {
+                    const ratio = (cursor - start) / totalMs;
+                    if (ratio >= 0 && ratio <= 1) {
+                        const quarter = Math.floor(cursor.getMonth() / 3) + 1;
+                        const yearShort = String(cursor.getFullYear()).slice(-2);
+                        ticks.push({
+                            label: `Q${quarter}'${yearShort}`,
+                            ratio
+                        });
+                    }
+                    const nextMonth = cursor.getMonth() + 3;
+                    cursor = new Date(cursor.getFullYear() + Math.floor(nextMonth / 12), nextMonth % 12, 1);
+                }
+
+                return ticks;
             }, [scenarioViewStart, scenarioViewEnd]);
             const scenarioQuarterMarkers = React.useMemo(() => {
                 if (!scenarioViewStart || !scenarioViewEnd) return [];
@@ -6575,9 +6638,16 @@
                     quarterStart = new Date(year, month, 1);
                 }
                 let cursor = quarterStart;
+                const deadlineDate = scenarioDeadline ? new Date(scenarioDeadline.getTime()) : null;
                 while (cursor <= end) {
                     const ratio = (cursor - scenarioViewStart) / Math.max(1, scenarioViewEnd - scenarioViewStart);
-                    if (ratio >= 0 && ratio <= 1) {
+                    // Skip marker if it's the same as the deadline (avoid duplicate lines)
+                    const isDuplicateDeadline = deadlineDate &&
+                        cursor.getFullYear() === deadlineDate.getFullYear() &&
+                        cursor.getMonth() === deadlineDate.getMonth() &&
+                        cursor.getDate() === deadlineDate.getDate();
+
+                    if (ratio >= 0 && ratio <= 1 && !isDuplicateDeadline) {
                         markers.push({
                             date: new Date(cursor.getTime()),
                             ratio
@@ -6587,7 +6657,7 @@
                     cursor = new Date(cursor.getFullYear() + Math.floor(nextMonth / 12), nextMonth % 12, 1);
                 }
                 return markers;
-            }, [scenarioViewStart, scenarioViewEnd]);
+            }, [scenarioViewStart, scenarioViewEnd, scenarioDeadline]);
             const SCENARIO_LANE_HEIGHT = 52;
             const SCENARIO_BAR_HEIGHT = 32;
             const SCENARIO_BAR_GAP = 10;
@@ -7060,6 +7130,18 @@
                 const ratio = Math.max(0, Math.min(1, (scenarioDeadline - scenarioViewStart) / totalMs));
                 return scenarioLayout.labelWidth + scenarioLayout.width * ratio;
             }, [scenarioViewStart, scenarioViewEnd, scenarioDeadline, scenarioLayout]);
+
+            const scenarioTodayLeft = React.useMemo(() => {
+                if (!scenarioViewStart || !scenarioViewEnd) return null;
+                if (!scenarioLayout.width) return null;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0); // Start of today
+                const totalMs = Math.max(1, scenarioViewEnd - scenarioViewStart);
+                const ratio = (today - scenarioViewStart) / totalMs;
+                // Only show if today is within the visible range
+                if (ratio < 0 || ratio > 1) return null;
+                return scenarioLayout.labelWidth + scenarioLayout.width * ratio;
+            }, [scenarioViewStart, scenarioViewEnd, scenarioLayout]);
 
             const scenarioVisibleLanes = React.useMemo(() => {
                 if (!scenarioViewportHeight) return scenarioLanes;
@@ -10268,17 +10350,52 @@
                                     {scenarioData && (
                                         <>
                                             <div className="scenario-summary">
+                                                {scenarioAssigneeConflicts.conflicts.size > 0 && (
+                                                    <div className="scenario-card scenario-card-warning">
+                                                        <h4>⚠️ Schedule Warnings</h4>
+                                                        <div className="scenario-value">
+                                                            {scenarioAssigneeConflicts.conflicts.size} conflicts
+                                                        </div>
+                                                        <div className="scenario-subtitle">
+                                                            {Array.from(new Set(
+                                                                Array.from(scenarioAssigneeConflicts.conflicts).map(key => {
+                                                                    const issue = scenarioIssueByKey.get(key);
+                                                                    return issue?.assignee;
+                                                                }).filter(Boolean)
+                                                            )).length} assignees with overlapping tasks
+                                                        </div>
+                                                        <div className="scenario-issues-list">
+                                                            {Array.from(scenarioAssigneeConflicts.conflicts).slice(0, 5).map(key => {
+                                                                const issue = scenarioIssueByKey.get(key);
+                                                                return (
+                                                                    <button
+                                                                        key={key}
+                                                                        type="button"
+                                                                        className="scenario-link"
+                                                                        onClick={() => scrollToScenarioIssue(key)}
+                                                                    >
+                                                                        <span>{issue?.summary || key}</span>
+                                                                        <span className="scenario-link-key">{key} · {issue?.assignee}</span>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
                                                 <div className="scenario-card">
-                                                    <h4>Deadline</h4>
+                                                    <h4>Timeline Status</h4>
                                                     <div className="scenario-value">
                                                         {scenarioDeadlineAtRisk ? 'At risk' : 'On track'}
                                                     </div>
                                                     <div className="scenario-subtitle">
-                                                        {scenarioLateItems.length} finishing after quarter end
+                                                        {scenarioLateItems.length} late · {scenarioCriticalPathItems.length} critical path
                                                     </div>
                                                     <div className="scenario-issues-list">
-                                                        {scenarioLateItems.slice(0, 4).map(key => {
+                                                        {[...scenarioLateItems.slice(0, 3), ...scenarioCriticalPathItems.slice(0, 3)]
+                                                            .filter((key, idx, arr) => arr.indexOf(key) === idx)
+                                                            .slice(0, 5).map(key => {
                                                             const issue = scenarioIssueByKey.get(key);
+                                                            const isLate = scenarioLateItems.includes(key);
                                                             return (
                                                                 <button
                                                                     type="button"
@@ -10287,29 +10404,7 @@
                                                                     onClick={() => scrollToScenarioIssue(key)}
                                                                 >
                                                                     <span>{issue?.summary || key}</span>
-                                                                    <span className="scenario-link-key">{key}</span>
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                                <div className="scenario-card">
-                                                    <h4>Critical Path</h4>
-                                                    <div className="scenario-value">
-                                                        {scenarioCriticalPathItems.length} items
-                                                    </div>
-                                                    <div className="scenario-issues-list">
-                                                        {scenarioCriticalPathItems.slice(0, 6).map(key => {
-                                                            const issue = scenarioIssueByKey.get(key);
-                                                            return (
-                                                                <button
-                                                                    type="button"
-                                                                    key={key}
-                                                                    className="scenario-link"
-                                                                    onClick={() => scrollToScenarioIssue(key)}
-                                                                >
-                                                                    <span>{issue?.summary || key}</span>
-                                                                    <span className="scenario-link-key">{key}</span>
+                                                                    <span className="scenario-link-key">{key}{isLate ? ' · Late' : ' · Critical'}</span>
                                                                 </button>
                                                             );
                                                         })}
@@ -10349,54 +10444,6 @@
                                                     </div>
                                                 </div>
                                             </div>
-
-                                            {scenarioAssigneeConflicts.conflicts.size > 0 && (
-                                                <div className="scenario-warnings-panel">
-                                                    <h4>⚠️ Schedule Warnings</h4>
-                                                    <div className="scenario-warnings-list">
-                                                        {Array.from(new Set(
-                                                            Array.from(scenarioAssigneeConflicts.conflicts).map(key => {
-                                                                const issue = scenarioIssueByKey.get(key);
-                                                                return issue?.assignee;
-                                                            }).filter(Boolean)
-                                                        )).map(assignee => {
-                                                            const assigneeTasks = Array.from(scenarioAssigneeConflicts.conflicts)
-                                                                .filter(key => {
-                                                                    const issue = scenarioIssueByKey.get(key);
-                                                                    return issue?.assignee === assignee;
-                                                                });
-                                                            return (
-                                                                <div key={assignee} className="scenario-warning-item">
-                                                                    <div className="scenario-warning-header">
-                                                                        <strong>{assignee}</strong> has overlapping tasks ({assigneeTasks.length} conflicts)
-                                                                    </div>
-                                                                    <div className="scenario-warning-tasks">
-                                                                        {assigneeTasks.slice(0, 5).map(key => {
-                                                                            const issue = scenarioIssueByKey.get(key);
-                                                                            return (
-                                                                                <button
-                                                                                    key={key}
-                                                                                    type="button"
-                                                                                    className="scenario-link"
-                                                                                    onClick={() => scrollToScenarioIssue(key)}
-                                                                                >
-                                                                                    <span>{issue?.summary || key}</span>
-                                                                                    <span className="scenario-link-key">{key}</span>
-                                                                                </button>
-                                                                            );
-                                                                        })}
-                                                                        {assigneeTasks.length > 5 && (
-                                                                            <div className="scenario-warning-more">
-                                                                                +{assigneeTasks.length - 5} more tasks
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            )}
 
                                             {scenarioEpicFocus && (
                                                 <div className="scenario-focus-indicator">
@@ -10633,6 +10680,12 @@
                                                     <div
                                                         className="scenario-deadline"
                                                         style={{ left: `${scenarioDeadlineLeft}px` }}
+                                                    />
+                                                )}
+                                                {scenarioTodayLeft !== null && (
+                                                    <div
+                                                        className="scenario-today"
+                                                        style={{ left: `${scenarioTodayLeft}px` }}
                                                     />
                                                 )}
                                                 <div

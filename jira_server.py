@@ -3161,6 +3161,27 @@ def get_version():
     return jsonify(payload)
 
 
+@app.route('/favicon.ico')
+def get_favicon():
+    favicon_path = os.path.join(os.path.dirname(__file__), 'favicon.ico')
+    if os.path.exists(favicon_path):
+        return send_file(favicon_path, mimetype='image/x-icon')
+    return '', 404
+
+
+@app.route('/', methods=['GET'])
+def serve_dashboard():
+    dashboard_path = os.path.join(os.path.dirname(__file__), 'jira-dashboard.html')
+    if os.path.exists(dashboard_path):
+        return send_file(dashboard_path)
+    return 'Dashboard not found', 404
+
+
+@app.route('/jira-dashboard.html', methods=['GET'])
+def serve_dashboard_file():
+    return serve_dashboard()
+
+
 @app.route('/api/groups-config', methods=['GET'])
 def get_groups_config():
     """Return the saved team groups configuration."""

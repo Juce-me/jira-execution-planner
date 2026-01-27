@@ -6966,6 +6966,7 @@
                         let start = null;
                         let end = null;
                         let storyPoints = 0;
+                        const assigneeSet = new Set();
                         issues.forEach((issue) => {
                             const startDate = parseScenarioDate(issue.start);
                             const endDate = parseScenarioDate(issue.end);
@@ -6975,6 +6976,9 @@
                             if (Number.isFinite(issue.sp)) {
                                 storyPoints += Number(issue.sp);
                             }
+                            if (issue.assignee) {
+                                assigneeSet.add(issue.assignee);
+                            }
                         });
                         if (!start || !end) return;
                         const startRatio = Math.max(0, (start - scenarioViewStart) / totalMs);
@@ -6982,11 +6986,13 @@
                         const xStart = startRatio * scenarioLayout.width;
                         const xEnd = Math.max(xStart + 6, endRatio * scenarioLayout.width);
                         const laneMeta = scenarioLaneMeta.meta.get(lane) || { offset: 0, height: SCENARIO_LANE_HEIGHT };
+                        const assignees = Array.from(assigneeSet);
                         bars.push({
                             lane,
                             epicKey,
                             epicSummary: scenarioIssueByKey.get(issues[0].key)?.epicSummary,
                             storyPoints,
+                            assignees,
                             xStart,
                             xEnd,
                             y: laneMeta.offset + 3,
@@ -7109,7 +7115,7 @@
                 }));
             };
 
-            const buildScenarioTooltipPayload = (summary, key, sp, isExcluded = false, hasConflict = false, assignee = null, conflictingKeys = []) => {
+            const buildScenarioTooltipPayload = (summary, key, sp, isExcluded = false, hasConflict = false, assignee = null, conflictingKeys = [], isOutOfSprint = false, isInProgress = false) => {
                 const cleanedSummary = normalizeScenarioSummary(summary) || key || '';
                 const hasSp = sp !== null && sp !== undefined && sp !== '';
                 const spValue = hasSp ? Number(sp) : null;
@@ -7122,12 +7128,17 @@
                     note = `⚠️ ${assignee} also assigned to: ${taskList}${more}`;
                 } else if (hasConflict && assignee) {
                     note = `⚠️ ${assignee} has overlapping tasks`;
+                } else if (isOutOfSprint) {
+                    note = '🟠 Finishes after quarter end';
+                } else if (isInProgress) {
+                    note = '🟡 In progress (50% estimated complete)';
                 }
                 return {
                     summary: cleanedSummary,
                     key: key || '',
                     sp: Number.isFinite(spValue) ? spValue : null,
-                    note: note
+                    note: note,
+                    assignee: assignee || null
                 };
             };
 
@@ -10184,22 +10195,29 @@
                                                 <div className="scenario-toggle-group">
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'team' ? 'active' : ''}`}
-                                                        onClick={() => setScenarioLaneMode('team')}
-                                                        disabled={scenarioEpicFocus}
+                                                        onClick={() => {
+                                                            if (scenarioEpicFocus) clearScenarioEpicFocus();
+                                                            setScenarioLaneMode('team');
+                                                        }}
                                                     >
                                                         Team
                                                     </button>
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'epic' ? 'active' : ''}`}
-                                                        onClick={() => setScenarioLaneMode('epic')}
-                                                        disabled={scenarioEpicFocus}
+                                                        onClick={() => {
+                                                            if (scenarioEpicFocus) clearScenarioEpicFocus();
+                                                            setScenarioLaneMode('epic');
+                                                        }}
                                                     >
                                                         Epic
                                                     </button>
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'assignee' ? 'active' : ''}`}
-                                                        onClick={() => setScenarioLaneMode('assignee')}
-                                                        disabled={!scenarioHasAssignees || scenarioEpicFocus}
+                                                        onClick={() => {
+                                                            if (scenarioEpicFocus) clearScenarioEpicFocus();
+                                                            setScenarioLaneMode('assignee');
+                                                        }}
+                                                        disabled={!scenarioHasAssignees}
                                                     >
                                                         Assignee
                                                     </button>
@@ -10452,11 +10470,21 @@
                                                                     const width = `${Math.max(2, ((bar.xEnd - bar.xStart) / scenarioLayout.width) * 100)}%`;
                                                                     const top = `${Math.max(2, bar.y - (scenarioLaneMeta.meta.get(lane)?.offset || 0))}px`;
                                                                     const height = `${Math.max(10, bar.height)}px`;
+                                                                    const epicAssignees = bar.assignees && bar.assignees.length > 0
+                                                                        ? (bar.assignees.length === 1
+                                                                            ? bar.assignees[0]
+                                                                            : `${bar.assignees.length} assignees: ${bar.assignees.slice(0, 3).join(', ')}${bar.assignees.length > 3 ? '...' : ''}`)
+                                                                        : null;
                                                                     const epicTooltip = buildScenarioTooltipPayload(
                                                                         bar.epicSummary || bar.epicKey,
                                                                         bar.epicKey,
                                                                         bar.storyPoints,
-                                                                        bar.isExcluded
+                                                                        bar.isExcluded,
+                                                                        false, // hasConflict
+                                                                        epicAssignees,
+                                                                        [], // conflictingKeys
+                                                                        false, // isOutOfSprint
+                                                                        false // isInProgress
                                                                     );
                                                                     return (
                                                                         <div
@@ -10492,7 +10520,10 @@
                                                                     const isExcluded = excludedEpicSet.has(issue.epicKey || '');
                                                                     const hasAssigneeConflict = scenarioAssigneeConflicts.conflicts.has(issue.key);
                                                                     const conflictingKeys = scenarioAssigneeConflicts.conflictDetails.get(issue.key) || [];
-                                                                    const issueTooltip = buildScenarioTooltipPayload(issue.summary || issue.key, issue.key, issue.sp, isExcluded, hasAssigneeConflict, issue.assignee, conflictingKeys);
+                                                                    const issueEndDate = issue.end ? parseScenarioDate(issue.end) : null;
+                                                                    const isOutOfSprint = issueEndDate && scenarioViewEnd && issueEndDate > scenarioViewEnd;
+                                                                    const isInProgress = issue.progressPct !== null && issue.progressPct !== undefined;
+                                                                    const issueTooltip = buildScenarioTooltipPayload(issue.summary || issue.key, issue.key, issue.sp, isExcluded, hasAssigneeConflict, issue.assignee, conflictingKeys, isOutOfSprint, isInProgress);
                                                                     const isFocused = scenarioHoverKey === issue.key || scenarioFlashKey === issue.key;
                                                                     const isUpstream = scenarioUpstreamSet.has(issue.key);
                                                                     const isDownstream = scenarioDownstreamSet.has(issue.key);
@@ -10500,9 +10531,6 @@
                                                                     const isUnscheduled = !issue.start || !issue.end;
                                                                     const isFocusContext = scenarioEpicFocus && scenarioFocusContextKeys.has(issue.key) && !scenarioFocusIssueKeys.has(issue.key);
                                                                     const isSearchMatch = scenarioSearchQuery && scenarioSearchMatchSet.has(issue.key);
-                                                                    const issueEndDate = issue.end ? parseScenarioDate(issue.end) : null;
-                                                                    const isOutOfSprint = issueEndDate && scenarioViewEnd && issueEndDate > scenarioViewEnd;
-                                                                    const isInProgress = issue.progressPct !== null && issue.progressPct !== undefined;
                                                                     return (
                                                                         <a
                                                                             key={issue.key}
@@ -10596,6 +10624,9 @@
                                                 >
                                                     <div>{scenarioTooltip.summary}</div>
                                                     {scenarioTooltip.key && <div className="scenario-tooltip-key">{scenarioTooltip.key}</div>}
+                                                    {scenarioTooltip.assignee && (
+                                                        <div className="scenario-tooltip-key">👤 {scenarioTooltip.assignee}</div>
+                                                    )}
                                                     {Number.isFinite(scenarioTooltip.sp) && (
                                                         <div className="scenario-tooltip-key">SP: {scenarioTooltip.sp.toFixed(1)}</div>
                                                     )}

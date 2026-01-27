@@ -10,6 +10,7 @@ import re
 import json
 import hashlib
 import time
+import subprocess
 from datetime import datetime, timedelta, date
 from dotenv import load_dotenv
 from openpyxl import Workbook
@@ -56,10 +57,15 @@ GROUPS_CONFIG_PATH = os.getenv('GROUPS_CONFIG_PATH', '').strip()
 TEAM_GROUPS_JSON = os.getenv('TEAM_GROUPS_JSON', '').strip()
 JQL_QUERY_TEMPLATE = os.getenv('JQL_QUERY_TEMPLATE', '').strip()
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
+UPDATE_CHECK_ENABLED = os.getenv('UPDATE_CHECK', 'true').lower() not in ('0', 'false', 'no')
+UPDATE_CHECK_REMOTE = os.getenv('UPDATE_CHECK_REMOTE', 'origin').strip() or 'origin'
+UPDATE_CHECK_BRANCH = os.getenv('UPDATE_CHECK_BRANCH', 'main').strip() or 'main'
+UPDATE_CHECK_TTL_SECONDS = int(os.getenv('UPDATE_CHECK_TTL_SECONDS', '300'))
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
 TASKS_CACHE_TTL_SECONDS = 60 * 20
+UPDATE_CHECK_CACHE = {'ts': 0, 'data': None}
 
 # Cache settings
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
@@ -648,6 +654,66 @@ def parse_groups_config_env():
     except Exception as e:
         print(f'⚠️ Failed to parse TEAM_GROUPS_JSON: {e}')
         return None
+
+
+def run_git_command(args):
+    try:
+        result = subprocess.run(
+            ['git'] + args,
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode != 0:
+            return None, (result.stderr or result.stdout or '').strip()
+        return result.stdout.strip(), None
+    except Exception as e:
+        return None, str(e)
+
+
+def build_update_check_payload():
+    local_hash, local_err = run_git_command(['rev-parse', 'HEAD'])
+    local_branch, _ = run_git_command(['rev-parse', '--abbrev-ref', 'HEAD'])
+    if local_err:
+        return {
+            'enabled': True,
+            'error': f'Failed to read local git state: {local_err}'
+        }
+
+    remote_output, remote_err = run_git_command(['ls-remote', UPDATE_CHECK_REMOTE, f'refs/heads/{UPDATE_CHECK_BRANCH}'])
+    if remote_err:
+        return {
+            'enabled': True,
+            'local': {
+                'hash': local_hash,
+                'short': local_hash[:7] if local_hash else '',
+                'branch': local_branch or ''
+            },
+            'error': f'Failed to check remote: {remote_err}'
+        }
+
+    remote_hash = ''
+    if remote_output:
+        remote_hash = remote_output.split()[0].strip()
+
+    update_available = bool(local_hash and remote_hash and local_hash != remote_hash)
+    return {
+        'enabled': True,
+        'local': {
+            'hash': local_hash,
+            'short': local_hash[:7] if local_hash else '',
+            'branch': local_branch or ''
+        },
+        'remote': {
+            'hash': remote_hash,
+            'short': remote_hash[:7] if remote_hash else '',
+            'branch': UPDATE_CHECK_BRANCH,
+            'remote': UPDATE_CHECK_REMOTE
+        },
+        'updateAvailable': update_available,
+        'checkedAt': datetime.utcnow().isoformat() + 'Z'
+    }
 
 
 def normalize_team_catalog(raw):
@@ -3074,6 +3140,24 @@ def get_config():
         'groupsConfigPath': resolve_groups_config_path(),
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE)
     })
+
+
+@app.route('/api/version', methods=['GET'])
+def get_version():
+    """Return local/remote version info for update checks."""
+    if not UPDATE_CHECK_ENABLED:
+        return jsonify({'enabled': False})
+
+    now = time.time()
+    cached = UPDATE_CHECK_CACHE.get('data')
+    cached_ts = UPDATE_CHECK_CACHE.get('ts', 0)
+    if cached and (now - cached_ts) < UPDATE_CHECK_TTL_SECONDS:
+        return jsonify(cached)
+
+    payload = build_update_check_payload()
+    UPDATE_CHECK_CACHE['data'] = payload
+    UPDATE_CHECK_CACHE['ts'] = now
+    return jsonify(payload)
 
 
 @app.route('/api/groups-config', methods=['GET'])

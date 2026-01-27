@@ -102,6 +102,25 @@
             opacity: 0.85;
         }
 
+        .update-badge {
+            margin-left: 0.75rem;
+            padding: 0.2rem 0.6rem;
+            border: 1px solid rgba(220, 38, 38, 0.35);
+            color: #b91c1c;
+            background: rgba(220, 38, 38, 0.08);
+            border-radius: 999px;
+            font-size: 0.6rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-family: 'IBM Plex Mono', monospace;
+            cursor: pointer;
+        }
+
+        .update-badge:hover {
+            background: rgba(220, 38, 38, 0.16);
+            border-color: rgba(220, 38, 38, 0.55);
+        }
+
         .search-input {
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.875rem;
@@ -414,6 +433,54 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+        }
+
+        .update-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(19, 16, 12, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 90;
+        }
+
+        .update-modal {
+            background: #fff;
+            width: min(520px, 90vw);
+            border: 1px solid var(--border);
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+            padding: 1rem 1.2rem;
+        }
+
+        .update-modal-title {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-secondary);
+            margin-bottom: 0.6rem;
+        }
+
+        .update-modal-body {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.8rem;
+        }
+
+        .update-modal-body pre {
+            background: var(--bg-primary);
+            padding: 0.6rem 0.7rem;
+            border: 1px solid var(--border);
+            font-size: 0.7rem;
+            overflow-x: auto;
+            margin-top: 0.5rem;
+        }
+
+        .update-modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.6rem;
         }
 
         .group-modal-header {
@@ -3925,6 +3992,9 @@
             const alertCelebrationTimeoutRef = useRef(null);
             const alertHighlightRef = useRef(null);
             const alertHighlightTimeoutRef = useRef(null);
+            const [updateInfo, setUpdateInfo] = useState(null);
+            const [showUpdateModal, setShowUpdateModal] = useState(false);
+            const [updateDismissedHash, setUpdateDismissedHash] = useState(savedPrefsRef.current.updateDismissedHash || '');
             const [showBackToTop, setShowBackToTop] = useState(false);
             const epicOrderRef = useRef({});
             const epicOrderCounterRef = useRef(0);
@@ -3941,6 +4011,26 @@
                 loadConfig();
                 loadGroupsConfig();
                 loadSprints();
+            }, []);
+
+            useEffect(() => {
+                let cancelled = false;
+                const fetchVersion = async () => {
+                    try {
+                        const response = await fetch(`${BACKEND_URL}/api/version`, { cache: 'no-cache' });
+                        if (!response.ok) return;
+                        const data = await response.json();
+                        if (!cancelled) {
+                            setUpdateInfo(data);
+                        }
+                    } catch (err) {
+                        // ignore version check failures
+                    }
+                };
+                fetchVersion();
+                return () => {
+                    cancelled = true;
+                };
             }, []);
 
             useEffect(() => {
@@ -4356,6 +4446,22 @@
                         group.id === groupId ? { ...group, teamIds } : group
                     )
                 }));
+            };
+
+            const updateNoticeVisible = React.useMemo(() => {
+                if (!updateInfo || updateInfo.enabled === false) return false;
+                if (!updateInfo.updateAvailable) return false;
+                const remoteHash = updateInfo?.remote?.hash;
+                if (!remoteHash) return false;
+                return remoteHash !== updateDismissedHash;
+            }, [updateInfo, updateDismissedHash]);
+
+            const dismissUpdateNotice = () => {
+                const remoteHash = updateInfo?.remote?.hash;
+                if (remoteHash) {
+                    setUpdateDismissedHash(remoteHash);
+                }
+                setShowUpdateModal(false);
             };
 
             const toggleTeamInGroup = (groupId, teamId) => {
@@ -5091,7 +5197,8 @@
                     showMissingAlert,
                     showBlockedAlert,
                     showEmptyEpicAlert,
-                    showDoneEpicAlert
+                    showDoneEpicAlert,
+                    updateDismissedHash
                 });
             }, [
                 selectedSprint,
@@ -5114,7 +5221,8 @@
                 showMissingAlert,
                 showBlockedAlert,
                 showEmptyEpicAlert,
-                showDoneEpicAlert
+                showDoneEpicAlert,
+                updateDismissedHash
             ]);
 
             const loadConfig = async () => {
@@ -8715,6 +8823,16 @@
                             <span>
                                 Jira Execution Planner
                                 <span className="subtitle-secondary"> · Product &amp; Tech Projects</span>
+                                {updateNoticeVisible && (
+                                    <button
+                                        type="button"
+                                        className="update-badge"
+                                        onClick={() => setShowUpdateModal(true)}
+                                        title="A new version is available"
+                                    >
+                                        New version available
+                                    </button>
+                                )}
                             </span>
                             <div className="header-actions">
                                 <button
@@ -11634,6 +11752,31 @@
                                             {groupSaving ? 'Saving...' : 'Save'}
                                         </button>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    {showUpdateModal && updateNoticeVisible && (
+                        <div
+                            className="update-modal-backdrop"
+                            role="dialog"
+                            aria-modal="true"
+                            onClick={() => setShowUpdateModal(false)}
+                        >
+                            <div className="update-modal" onClick={(event) => event.stopPropagation()}>
+                                <div className="update-modal-title">New Version Available</div>
+                                <div className="update-modal-body">
+                                    <div>Your local dashboard is behind the latest main branch.</div>
+                                    <pre>{`git checkout main\n\ngit pull\n\npython3 jira_server.py`}</pre>
+                                    <div>Then refresh this page.</div>
+                                </div>
+                                <div className="update-modal-actions">
+                                    <button className="secondary compact" onClick={() => setShowUpdateModal(false)} type="button">
+                                        Close
+                                    </button>
+                                    <button className="compact" onClick={dismissUpdateNotice} type="button">
+                                        Dismiss
+                                    </button>
                                 </div>
                             </div>
                         </div>

@@ -22,6 +22,7 @@ Postmortems serve to:
 | [MRT004](./MRT004-performance-degradation-page-load.md) | Performance Degradation on Page Load | 2026-01-27 | High | Resolved | Page load time increased due to missing guards and memo deps |
 | [MRT005](./MRT005-false-conflict-detection.md) | False Conflict Detection | 2026-01-27 | Medium | Resolved | Conflicts flagged from excluded tasks and O(n²) comparisons |
 | [MRT006](./MRT006-lane-stacking-assignee-interleaving.md) | Lane Stacking Assignee Interleaving | 2026-01-27 | High | Resolved | Tasks merged across assignees due to lane stacking bug |
+| [MRT007](./MRT007-bundled-frontend-regression.md) | Bundled Frontend Regression | 2026-01-28 | High | In Progress | Bundled frontend failed to load due to static route gaps and runtime TDZ errors |
 
 ## Postmortem Template
 
@@ -75,8 +76,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 6
-- **Metadata complete (Date/Severity/Status)**: 6 (MRT001-MRT006)
+- **Total postmortems**: 7
+- **Metadata complete (Date/Severity/Status)**: 7 (MRT001-MRT007)
 
 ## Common Themes
 
@@ -131,4 +132,4 @@ For questions about postmortems or to discuss issues, contact the development te
 ---
 
 *Last Updated: 2026-01-28*
-*Total Postmortems: 6*
+*Total Postmortems: 7*

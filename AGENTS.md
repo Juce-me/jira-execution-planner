@@ -6,6 +6,7 @@
 - `planning/` contains core scheduling logic (`models.py`, `scheduler.py`, `capacity.py`, `analysis.py`).
 - `tests/` holds Python unit tests.
 - `postmortem/` captures retrospectives, incidents, and misses; add learnings and follow-ups there.
+- Postmortems use `MRTXXX-short-title.md` names, numbered by creation order (oldest first) and indexed in `postmortem/README.md`.
 - Config and reference files: `ALERT_RULES.md`, `requirements.txt`, `install.sh`, `.env.example`.
 - Keep `AGENTS.md`, `README.md`, and other contributor docs aligned with structural or workflow changes so this stays a universal development guide.
 

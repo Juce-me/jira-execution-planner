@@ -1,4 +1,4 @@
-# Postmortem #003: Lane Stacking Assignee Interleaving Bug
+# Postmortem MRT006: Lane Stacking Assignee Interleaving Bug
 
 **Date**: 2026-01-27
 **Severity**: High
@@ -213,8 +213,8 @@ To prevent similar issues:
 
 ## Related Issues
 
-- #001: Performance degradation (same code area)
-- #002: False conflict detection (related visualization accuracy)
+- MRT004: Performance degradation (same code area)
+- MRT005: False conflict detection (related visualization accuracy)
 
 ## Technical Debt
 

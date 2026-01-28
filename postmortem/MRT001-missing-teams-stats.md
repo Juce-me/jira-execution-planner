@@ -1,4 +1,11 @@
-# Postmortem: Missing Teams in Stats View
+# Postmortem MRT001: Missing Teams in Stats View
+
+**Date**: 2026-01-22
+**Severity**: Medium
+**Status**: Resolved
+**Author**: Unknown
+
+---
 
 ## Summary
 - Team selector and stats tables showed fewer teams than the JQL filter contained.

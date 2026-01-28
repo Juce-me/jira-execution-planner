@@ -1,4 +1,11 @@
-# Postmortem: Scenario Planner Idle CPU Spike
+# Postmortem MRT002: Scenario Planner Idle CPU Spike
+
+**Date**: 2026-01-22
+**Severity**: High
+**Status**: Resolved
+**Author**: Unknown
+
+---
 
 ## Summary
 - Firefox CPU stayed ~90–100% at idle after page load.

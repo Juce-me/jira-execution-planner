@@ -30,6 +30,8 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - `.env.example` - Template for environment variables
 - `.gitignore` - Git ignore file (keeps secrets safe)
 - `requirements.txt` - Python dependencies
+- `AGENTS.md` - Contributor guide and workflow conventions
+- `postmortem/` - Postmortems and incident learnings (index in `postmortem/README.md`)
 
 ## 🔧 Setup
 
@@ -367,8 +369,12 @@ JQL_QUERY=project = PROJECT1 AND created >= -30d ORDER BY priority DESC
 
 ```
 jira-dashboard/
+├── AGENTS.md              # Contributor guidelines
 ├── jira_server.py          # Backend Flask server with caching
 ├── jira-dashboard.html     # Frontend interface with sprint selector
+├── planning/               # Scenario planner core logic
+├── tests/                  # Unit tests
+├── postmortem/             # Postmortems and incident learnings
 ├── requirements.txt        # Python dependencies
 ├── .env.example           # Environment variables template
 ├── .gitignore             # Git ignore file (includes .env and cache)
@@ -390,6 +396,12 @@ The application uses intelligent caching to minimize Jira API load:
 - **Stats**: Derived from loaded sprint tasks (no stats cache)
 - **Reduced API calls**: Jira queries are capped (200 for sprint discovery, 250 for task fetches)
 - **Timeout protection**: Jira requests use 20–30 second timeouts
+
+## 📚 Documentation & Postmortems
+
+- Keep `README.md`, `AGENTS.md`, and `postmortem/README.md` aligned with structural or workflow changes.
+- Postmortems live in `postmortem/` and follow `MRTXXX-short-title.md` naming in creation order (oldest first).
+- Capture misses and fixes in postmortems and update the index when adding one.
 
 ## 🤝 Contributing
 

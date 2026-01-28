@@ -1,4 +1,4 @@
-# Postmortem #002: False Conflict Detection in Scenario Planner
+# Postmortem MRT005: False Conflict Detection in Scenario Planner
 
 **Date**: 2026-01-27
 **Severity**: Medium
@@ -180,8 +180,8 @@ To prevent similar issues:
 
 ## Related Issues
 
-- #001: Performance degradation (same codebase area)
-- #003: Lane stacking assignee interleaving (related visualization)
+- MRT004: Performance degradation (same codebase area)
+- MRT006: Lane stacking assignee interleaving (related visualization)
 
 ## References
 

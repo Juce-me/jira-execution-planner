@@ -1,4 +1,11 @@
-# Postmortem: Scenario Planner Regressions
+# Postmortem MRT003: Scenario Planner Regressions
+
+**Date**: 2026-01-22
+**Severity**: High
+**Status**: Resolved
+**Author**: Unknown
+
+---
 
 ## Summary
 - Firefox timeouts, wrong dependency direction, and unreadable lane layouts in large views.

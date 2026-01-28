@@ -10,23 +10,25 @@ Postmortems serve to:
 - Prevent similar issues in the future
 - Build institutional knowledge
 - Improve development practices
+- Capture misses and near-misses while they are fresh
 
 ## Postmortem List
 
-### 2026-01-27 Session: Scenario Planner Improvements
-
-| # | Title | Severity | Status | Summary |
-|---|-------|----------|--------|---------|
-| [001](./001-performance-degradation-page-load.md) | Performance Degradation on Page Load | High | ✅ Resolved | Page load time increased to 3-5 seconds due to missing early return guards and incorrect memoization dependencies in 12 React useMemo hooks |
-| [002](./002-false-conflict-detection.md) | False Conflict Detection | Medium | ✅ Resolved | Conflict detection algorithm flagged correctly scheduled tasks as conflicts due to: excluded tasks being checked, O(n²) all-pairs comparison, and improper date comparison |
-| [003](./003-lane-stacking-assignee-interleaving.md) | Lane Stacking Assignee Interleaving | High | ✅ Resolved | Tasks from different assignees appeared joined on same visual row due to assignee-agnostic lane stacking algorithm |
+| ID | Title | Created | Severity | Status | Summary |
+|---|-------|---------|----------|--------|---------|
+| [MRT001](./MRT001-missing-teams-stats.md) | Missing Teams in Stats View | 2026-01-22 | Medium | Resolved | Teams with zero issues were omitted from selector and stats tables |
+| [MRT002](./MRT002-perf-idle-cpu.md) | Scenario Planner Idle CPU Spike | 2026-01-22 | High | Resolved | Idle render loop pegged CPU due to unstable memo defaults |
+| [MRT003](./MRT003-scenario-planner-regressions.md) | Scenario Planner Regressions | 2026-01-22 | High | Resolved | Scroll-linked updates and layout regressions caused timeouts and wrong deps |
+| [MRT004](./MRT004-performance-degradation-page-load.md) | Performance Degradation on Page Load | 2026-01-27 | High | Resolved | Page load time increased due to missing guards and memo deps |
+| [MRT005](./MRT005-false-conflict-detection.md) | False Conflict Detection | 2026-01-27 | Medium | Resolved | Conflicts flagged from excluded tasks and O(n²) comparisons |
+| [MRT006](./MRT006-lane-stacking-assignee-interleaving.md) | Lane Stacking Assignee Interleaving | 2026-01-27 | High | Resolved | Tasks merged across assignees due to lane stacking bug |
 
 ## Postmortem Template
 
 Each postmortem follows this structure:
 
 ```markdown
-# Postmortem #XXX: [Title]
+# Postmortem MRTXXX: [Title]
 
 **Date**: YYYY-MM-DD
 **Severity**: [Critical/High/Medium/Low]
@@ -73,22 +75,8 @@ Commits, files, documentation
 
 ## Statistics
 
-### By Severity
-- **High**: 2 postmortems (67%)
-- **Medium**: 1 postmortem (33%)
-- **Critical**: 0 postmortems
-- **Low**: 0 postmortems
-
-### By Status
-- **Resolved**: 3 postmortems (100%)
-- **In Progress**: 0 postmortems
-- **Monitoring**: 0 postmortems
-
-### By Category
-- **Performance**: 1 postmortem
-- **Frontend Logic**: 2 postmortems
-- **Backend**: 0 postmortems
-- **Infrastructure**: 0 postmortems
+- **Total postmortems**: 6
+- **Metadata complete (Date/Severity/Status)**: 6 (MRT001-MRT006)
 
 ## Common Themes
 
@@ -124,7 +112,7 @@ Across all postmortems, key actions needed:
 
 When creating a new postmortem:
 
-1. **Number it sequentially**: `00X-short-title.md`
+1. **Name it sequentially**: `MRTXXX-short-title.md` (oldest first, then increment)
 2. **Use the template** above
 3. **Be blameless**: Focus on systems, not people
 4. **Be specific**: Include code snippets, data, screenshots
@@ -134,7 +122,7 @@ When creating a new postmortem:
 ## Related Documentation
 
 - [SCENARIO_PLANNER_ANALYSIS.md](../SCENARIO_PLANNER_ANALYSIS.md): Original feature analysis
-- [SCENARIO_BUG_ANALYSIS.md](../SCENARIO_BUG_ANALYSIS.md): Detailed bug analysis for #003
+- [SCENARIO_BUG_ANALYSIS.md](../SCENARIO_BUG_ANALYSIS.md): Detailed bug analysis for MRT006
 
 ## Questions?
 
@@ -142,5 +130,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-01-27*
-*Total Postmortems: 3*
+*Last Updated: 2026-01-28*
+*Total Postmortems: 6*

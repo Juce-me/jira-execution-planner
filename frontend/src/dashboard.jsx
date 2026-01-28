@@ -5135,7 +5135,7 @@ import * as ReactDOM from 'react-dom';
                     if (!task?.key) return true;
                     if (dismissedAlertSet.has(task.key)) return true;
                     const status = normalizeStatus(task.fields.status?.name);
-                    return isExcludedStatus(status);
+                    return status === 'killed' || status === 'done';
                 };
 
                 // Start with server-provided missing info, but only keep items in the selected sprint.

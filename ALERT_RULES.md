@@ -13,7 +13,7 @@ This doc describes the dashboard alert panels and the rules that trigger them. I
 **Shows:** Stories that need a story point estimate.
 
 **Rule:**
-- Story status is **not** `Killed`, `Postponed`, or `Done`
+- Story status is **not** `Killed` or `Done` (Postponed is included)
 - Story points field is missing, empty, or `0`
 
 ## ⛔️ Blocked

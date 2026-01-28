@@ -27,6 +27,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 
 - `jira_server.py` - Python Flask backend server
 - `jira-dashboard.html` - Frontend dashboard page
+- `frontend/` - Frontend source (`src/`) and compiled bundle (`dist/`)
 - `.env.example` - Template for environment variables
 - `.gitignore` - Git ignore file (keeps secrets safe)
 - `requirements.txt` - Python dependencies
@@ -46,6 +47,18 @@ If you just want to see the dashboard working locally:
 6. Open `jira-dashboard.html` in your browser to view the UI. Tasks should load automatically using your JQL and sprint selection.
 
 More detailed setup guidance remains below if you need it.
+
+## 📦 Prebuilt download (no Node required)
+
+If you want the fastest setup with no frontend build step:
+1. Download the latest release asset (e.g. `jira-execution-planner-latest.zip`) from GitHub Releases.
+2. Unzip it anywhere.
+3. Configure `.env` from `.env.example`.
+4. Install backend deps: `python3 -m pip install --user -r requirements.txt`
+5. Start the backend: `python3 jira_server.py`
+6. Open `jira-dashboard.html` in your browser.
+
+The UI shows a “New Version Available” badge when a newer release is detected. Download the latest zip and replace your folder to update.
 
 ### Local mock data (dev)
 
@@ -157,6 +170,23 @@ python3 jira_server.py \
   --jira_token your-api-token-here \
   --jira_query 'project IN (PROJECT1, PROJECT2) AND issuetype = Story'
 ```
+
+## 🧱 Frontend build (contributors)
+
+The repo commits the compiled frontend output so normal users don’t need Node.
+If you edit the UI, rebuild and commit `frontend/dist`:
+
+```bash
+npm ci
+npm run build
+```
+
+Optional during development:
+```bash
+npm run watch
+```
+
+CI will fail if `frontend/dist` is out of sync. We precompile JSX to avoid in-browser Babel in production.
 
 You should see:
 ```
@@ -372,6 +402,9 @@ jira-dashboard/
 ├── AGENTS.md              # Contributor guidelines
 ├── jira_server.py          # Backend Flask server with caching
 ├── jira-dashboard.html     # Frontend interface with sprint selector
+├── frontend/               # Frontend source + compiled bundle
+│   ├── src/                # JSX source
+│   └── dist/               # Compiled JS output (committed)
 ├── planning/               # Scenario planner core logic
 ├── tests/                  # Unit tests
 ├── postmortem/             # Postmortems and incident learnings

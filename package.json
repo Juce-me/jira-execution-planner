@@ -1,0 +1,17 @@
+{
+  "name": "jira-execution-planner-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Frontend build for Jira Execution Planner",
+  "scripts": {
+    "build": "esbuild frontend/src/dashboard.jsx --bundle --minify --sourcemap --format=iife --outfile=frontend/dist/dashboard.js --define:process.env.NODE_ENV='\"production\"'",
+    "watch": "esbuild frontend/src/dashboard.jsx --bundle --sourcemap --format=iife --outfile=frontend/dist/dashboard.js --define:process.env.NODE_ENV='\"development\"' --watch"
+  },
+  "dependencies": {
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.20.2"
+  }
+}

@@ -2380,21 +2380,31 @@
         }
 
         .scenario-axis {
-            display: flex;
-            justify-content: space-between;
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.65rem;
-            color: var(--text-secondary);
-            margin-bottom: 0.5rem;
-            padding-left: var(--scenario-label-width);
-            min-height: var(--scenario-axis-height);
             position: sticky;
             top: 0;
             background: #fff;
             z-index: 4;
+            min-height: var(--scenario-axis-height);
             padding-top: 0.2rem;
+            padding-left: var(--scenario-label-width);
+            margin-bottom: 0.5rem;
             width: 100%;
             min-width: 0;
+        }
+
+        .scenario-axis-ticks {
+            position: relative;
+            height: 100%;
+            min-height: 1.5rem;
+        }
+
+        .scenario-axis-tick {
+            position: absolute;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            transform: translateX(-50%);
+            white-space: nowrap;
         }
 
         .scenario-lanes {
@@ -2547,6 +2557,11 @@
         .scenario-bar.late {
             border-color: #d4380d;
             background: rgba(212, 56, 13, 0.16);
+        }
+
+        .scenario-bar.done {
+            border-color: rgba(34, 197, 94, 0.5);
+            background: rgba(34, 197, 94, 0.12);
         }
 
         .scenario-bar.blocked {
@@ -2753,7 +2768,7 @@
             width: 2px;
             background: rgba(59, 130, 246, 0.7);
             pointer-events: none;
-            z-index: 3;
+            z-index: 10;
         }
 
         .scenario-today::before {
@@ -2838,6 +2853,8 @@
             display: flex;
             flex-direction: column;
             gap: 0.2rem;
+            max-height: 200px;
+            overflow-y: auto;
         }
 
         .scenario-link {
@@ -2856,6 +2873,14 @@
             text-transform: none;
             letter-spacing: normal;
             margin-right: 0;
+            min-width: 0;
+        }
+
+        .scenario-link > span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
         }
 
         .scenario-link:hover {
@@ -3990,6 +4015,8 @@
             const [loadedProductTasks, setLoadedProductTasks] = useState([]);
             const [loadedTechTasks, setLoadedTechTasks] = useState([]);
             const [tasksFetched, setTasksFetched] = useState(false);
+            const [productTasksLoading, setProductTasksLoading] = useState(false);
+            const [techTasksLoading, setTechTasksLoading] = useState(false);
             const [readyToCloseProductTasks, setReadyToCloseProductTasks] = useState([]);
             const [readyToCloseTechTasks, setReadyToCloseTechTasks] = useState([]);
             const [missingPlanningInfoTasks, setMissingPlanningInfoTasks] = useState([]);
@@ -4079,6 +4106,7 @@
             const [scenarioHoverKey, setScenarioHoverKey] = useState(null);
             const [scenarioFlashKey, setScenarioFlashKey] = useState(null);
             const [scenarioScrollTop, setScenarioScrollTop] = useState(0);
+            const [scenarioScrollLeft, setScenarioScrollLeft] = useState(0);
             const [scenarioViewportHeight, setScenarioViewportHeight] = useState(0);
             const [scenarioEpicFocus, setScenarioEpicFocus] = useState(null);
             const [scenarioRangeOverride, setScenarioRangeOverride] = useState(null);
@@ -4097,7 +4125,9 @@
                 summary: '',
                 key: '',
                 sp: null,
-                note: ''
+                note: '',
+                assignee: null,
+                team: null
             });
             const scenarioTooltipRef = useRef(null);
             const scenarioTooltipAnchorRef = useRef(null);
@@ -4856,6 +4886,7 @@
                     scenarioEpicFocus: null,
                     scenarioRangeOverride: null,
                     scenarioScrollTop: 0,
+                    scenarioScrollLeft: 0,
                     scenarioViewportHeight: 0,
                     scenarioHoverKey: null,
                     scenarioFlashKey: null,
@@ -4868,7 +4899,9 @@
                         summary: '',
                         key: '',
                         sp: null,
-                        note: ''
+                        note: '',
+                        assignee: null,
+                        team: null
                     },
                     excludedStatsEpics: savedPrefsRef.current.excludedStatsEpics ?? [],
                     hideExcludedStats: savedPrefsRef.current.hideExcludedStats ?? true,
@@ -4923,6 +4956,7 @@
                 scenarioEpicFocus,
                 scenarioRangeOverride,
                 scenarioScrollTop,
+                scenarioScrollLeft,
                 scenarioViewportHeight,
                 scenarioHoverKey,
                 scenarioFlashKey,
@@ -5002,6 +5036,7 @@
                 setScenarioEpicFocus(nextState.scenarioEpicFocus || null);
                 setScenarioRangeOverride(nextState.scenarioRangeOverride || null);
                 setScenarioScrollTop(nextState.scenarioScrollTop || 0);
+                setScenarioScrollLeft(nextState.scenarioScrollLeft || 0);
                 setScenarioViewportHeight(nextState.scenarioViewportHeight || 0);
                 setScenarioHoverKey(nextState.scenarioHoverKey || null);
                 setScenarioFlashKey(nextState.scenarioFlashKey || null);
@@ -5014,7 +5049,9 @@
                     summary: '',
                     key: '',
                     sp: null,
-                    note: ''
+                    note: '',
+                    assignee: null,
+                    team: null
                 });
                 setExcludedStatsEpics(nextState.excludedStatsEpics || []);
                 setHideExcludedStats(nextState.hideExcludedStats ?? true);
@@ -5074,6 +5111,7 @@
                 scenarioEpicFocus,
                 scenarioRangeOverride,
                 scenarioScrollTop,
+                scenarioScrollLeft,
                 scenarioViewportHeight,
                 scenarioHoverKey,
                 scenarioFlashKey,
@@ -5373,19 +5411,27 @@
                 if (selectedSprint === null) {
                     return;
                 }
-                // Check cache only if we have an active group
-                if (activeGroupId) {
+
+                // Wait for groups config to load before loading tasks
+                if (groupsLoading) {
+                    return;
+                }
+
+                // Only skip loading if we have actual cached data
+                const shouldSkipLoad = activeGroupId && (() => {
                     const cached = groupStateRef.current.get(activeGroupId);
-                    if (
-                        cached &&
+                    return cached &&
                         cached.sprintId === selectedSprint &&
                         cached.teamIdsSignature === activeGroupTeamIds.join('|') &&
                         cached.tasksFetched &&
-                        lastLoadedSprintRef.current === selectedSprint
-                    ) {
-                        return;
-                    }
+                        lastLoadedSprintRef.current === selectedSprint &&
+                        (cached.productTasks?.length > 0 || cached.techTasks?.length > 0);
+                })();
+
+                if (shouldSkipLoad) {
+                    return;
                 }
+
                 setEpicDetails({});
                 setProductEpicsInScope([]);
                 setTechEpicsInScope([]);
@@ -5393,7 +5439,7 @@
                 loadProductTasks();
                 loadTechTasks();
                 fetchMissingPlanningInfo(selectedSprint);
-            }, [selectedSprint, activeGroupId, activeGroupTeamIds.join('|')]);
+            }, [selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading]);
 
             const fetchMissingPlanningInfo = async (sprintId) => {
                 const controller = registerSprintFetch();
@@ -5721,9 +5767,26 @@
 
             const loadProductTasks = async () => {
                 const sprintId = selectedSprint;
-                if (activeGroupId && activeGroupTeamIds.length === 0) {
-                    setProductTasks([]);
-                    setLoadedProductTasks([]);
+                setProductTasksLoading(true);
+                try {
+                    if (activeGroupId && activeGroupTeamIds.length === 0) {
+                        setProductTasks([]);
+                        setLoadedProductTasks([]);
+                        setTasksFetched(true);
+                        const current = sprintLoadRef.current;
+                        sprintLoadRef.current = {
+                            sprintId,
+                            product: true,
+                            tech: current.sprintId === sprintId ? current.tech : false
+                        };
+                        if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
+                            lastLoadedSprintRef.current = sprintId;
+                        }
+                        return;
+                    }
+                    const data = await fetchTasks('product');
+                    setProductTasks(data);
+                    setLoadedProductTasks(data);
                     setTasksFetched(true);
                     const current = sprintLoadRef.current;
                     sprintLoadRef.current = {
@@ -5734,28 +5797,34 @@
                     if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
                         lastLoadedSprintRef.current = sprintId;
                     }
-                    return;
-                }
-                const data = await fetchTasks('product');
-                setProductTasks(data);
-                setLoadedProductTasks(data);
-                setTasksFetched(true);
-                const current = sprintLoadRef.current;
-                sprintLoadRef.current = {
-                    sprintId,
-                    product: true,
-                    tech: current.sprintId === sprintId ? current.tech : false
-                };
-                if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
-                    lastLoadedSprintRef.current = sprintId;
+                } finally {
+                    setProductTasksLoading(false);
                 }
             };
 
             const loadTechTasks = async () => {
                 const sprintId = selectedSprint;
-                if (activeGroupId && activeGroupTeamIds.length === 0) {
-                    setTechTasks([]);
-                    setLoadedTechTasks([]);
+                setTechTasksLoading(true);
+                try {
+                    if (activeGroupId && activeGroupTeamIds.length === 0) {
+                        setTechTasks([]);
+                        setLoadedTechTasks([]);
+                        setTechLoaded(true);
+                        setTasksFetched(true);
+                        const current = sprintLoadRef.current;
+                        sprintLoadRef.current = {
+                            sprintId,
+                            product: current.sprintId === sprintId ? current.product : false,
+                            tech: true
+                        };
+                        if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
+                            lastLoadedSprintRef.current = sprintId;
+                        }
+                        return;
+                    }
+                    const data = await fetchTasks('tech');
+                    setTechTasks(data);
+                    setLoadedTechTasks(data);
                     setTechLoaded(true);
                     setTasksFetched(true);
                     const current = sprintLoadRef.current;
@@ -5767,21 +5836,8 @@
                     if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
                         lastLoadedSprintRef.current = sprintId;
                     }
-                    return;
-                }
-                const data = await fetchTasks('tech');
-                setTechTasks(data);
-                setLoadedTechTasks(data);
-                setTechLoaded(true);
-                setTasksFetched(true);
-                const current = sprintLoadRef.current;
-                sprintLoadRef.current = {
-                    sprintId,
-                    product: current.sprintId === sprintId ? current.product : false,
-                    tech: true
-                };
-                if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
-                    lastLoadedSprintRef.current = sprintId;
+                } finally {
+                    setTechTasksLoading(false);
                 }
             };
 
@@ -6281,11 +6337,37 @@
             }, [statsTaskList, selectedSprintInfo?.name, showStats, perfEnabled]);
 
             const effectiveStatsData = localStatsData;
-            const scenarioIssues = scenarioData?.issues || EMPTY_ARRAY;
+            const scenarioRawIssues = scenarioData?.issues || EMPTY_ARRAY;
             const scenarioConfig = scenarioData?.config || EMPTY_OBJECT;
             const scenarioSummary = scenarioData?.summary || EMPTY_OBJECT;
             const scenarioBaseUrl = scenarioData?.jira_base_url || jiraUrl || '';
             const scenarioDependencies = scenarioData?.dependencies || EMPTY_ARRAY;
+            const scenarioCapacityByTeam = scenarioData?.capacity_by_team || EMPTY_OBJECT;
+
+            // Apply virtual assignment for DevLead Management tasks
+            const scenarioIssues = React.useMemo(() => {
+                if (!scenarioRawIssues || scenarioRawIssues.length === 0) return scenarioRawIssues;
+
+                return scenarioRawIssues.map(issue => {
+                    // Check if this is a DevLead Management task
+                    const epicSummary = issue.epicSummary || '';
+                    const isDevLeadTask = epicSummary.toLowerCase().includes('devlead management') ||
+                                         epicSummary.toLowerCase().includes('dev lead management');
+
+                    // Only apply virtual assignment if task is unassigned and is a DevLead task
+                    if (isDevLeadTask && !issue.assignee && issue.team) {
+                        const teamCapacity = scenarioCapacityByTeam[issue.team];
+                        const devLead = teamCapacity?.devLead;
+
+                        if (devLead) {
+                            // Return a new issue object with virtual assignment
+                            return { ...issue, assignee: devLead };
+                        }
+                    }
+
+                    return issue;
+                });
+            }, [scenarioRawIssues, scenarioCapacityByTeam]);
             const scenarioSearchQuery = React.useMemo(
                 () => (searchQuery || '').trim().toLowerCase(),
                 [searchQuery]
@@ -6324,7 +6406,6 @@
                 () => new Set(scenarioContextKeys),
                 [scenarioContextKeys]
             );
-            const scenarioCapacityByTeam = scenarioData?.capacity_by_team || EMPTY_OBJECT;
             const scenarioIssueByKey = React.useMemo(() => {
                 const map = new Map();
                 if (!scenarioIssues || scenarioIssues.length === 0) return map;
@@ -6407,6 +6488,9 @@
                     // Skip excluded tasks - they're just noise and shouldn't create conflicts
                     const isExcluded = excludedEpicSet.has(issue.epicKey || '');
                     if (isExcluded) return;
+
+                    // Skip done tasks - they're complete and can't create real conflicts
+                    if (issue.scheduledReason === 'already_done') return;
 
                     const startDate = parseScenarioDate(issue.start);
                     const endDate = parseScenarioDate(issue.end);
@@ -6888,8 +6972,10 @@
                         perfCountersRef.current.scrollReads += 1;
                     }
                     const nextTop = container.scrollTop || 0;
+                    const nextLeft = container.scrollLeft || 0;
                     const nextHeight = container.clientHeight || 0;
                     setScenarioScrollTop(prev => (prev === nextTop ? prev : nextTop));
+                    setScenarioScrollLeft(prev => (prev === nextLeft ? prev : nextLeft));
                     setScenarioViewportHeight(prev => (prev === nextHeight ? prev : nextHeight));
                     scheduleScenarioEdgeUpdate();
                 };
@@ -7141,8 +7227,9 @@
                 const ratio = (today - scenarioViewStart) / totalMs;
                 // Only show if today is within the visible range
                 if (ratio < 0 || ratio > 1) return null;
-                return scenarioLayout.labelWidth + scenarioLayout.width * ratio;
-            }, [scenarioViewStart, scenarioViewEnd, scenarioLayout]);
+                // Add scroll offset to keep the line fixed in viewport during horizontal scroll
+                return scenarioLayout.labelWidth + scenarioLayout.width * ratio + scenarioScrollLeft;
+            }, [scenarioViewStart, scenarioViewEnd, scenarioLayout, scenarioScrollLeft]);
 
             const scenarioVisibleLanes = React.useMemo(() => {
                 if (!scenarioViewportHeight) return scenarioLanes;
@@ -7216,7 +7303,7 @@
                 }));
             };
 
-            const buildScenarioTooltipPayload = (summary, key, sp, isExcluded = false, hasConflict = false, assignee = null, conflictingKeys = [], isOutOfSprint = false, isInProgress = false) => {
+            const buildScenarioTooltipPayload = (summary, key, sp, isExcluded = false, hasConflict = false, assignee = null, conflictingKeys = [], isOutOfSprint = false, isInProgress = false, team = null) => {
                 const cleanedSummary = normalizeScenarioSummary(summary) || key || '';
                 const hasSp = sp !== null && sp !== undefined && sp !== '';
                 const spValue = hasSp ? Number(sp) : null;
@@ -7239,7 +7326,8 @@
                     key: key || '',
                     sp: Number.isFinite(spValue) ? spValue : null,
                     note: note,
-                    assignee: assignee || null
+                    assignee: assignee || null,
+                    team: team || null
                 };
             };
 
@@ -7565,17 +7653,29 @@
                 }
                 const issue = scenarioIssueByKey.get(issueKey);
                 if (!issue || !scenarioTimelineRef.current) return;
+
+                // First, scroll the main window to bring timeline into view
+                const container = scenarioTimelineRef.current;
+                const containerTop = container.getBoundingClientRect().top + window.scrollY;
+                window.scrollTo({ top: containerTop - 100, behavior: 'smooth' });
+
                 const lane = scenarioLaneForIssue(issue);
                 if (scenarioLaneMode === 'epic') {
                     setScenarioCollapsedLanes(prev => ({ ...prev, [lane]: false }));
                 }
                 const position = scenarioPositions[issueKey];
                 if (!position) return;
-                const container = scenarioTimelineRef.current;
+
+                // Then scroll within the timeline to the specific task
                 const axis = container.querySelector('.scenario-axis');
                 const axisOffset = axis ? axis.offsetHeight : 0;
                 const targetTop = Math.max(0, position.y + axisOffset - container.clientHeight / 2);
-                container.scrollTo({ top: targetTop, behavior: 'smooth' });
+
+                // Delay the timeline scroll slightly to allow page scroll to start
+                window.setTimeout(() => {
+                    container.scrollTo({ top: targetTop, behavior: 'smooth' });
+                }, 100);
+
                 setScenarioFlashKey(issueKey);
                 window.setTimeout(() => {
                     setScenarioFlashKey(current => (current === issueKey ? null : current));
@@ -10366,7 +10466,7 @@
                                                             )).length} assignees with overlapping tasks
                                                         </div>
                                                         <div className="scenario-issues-list">
-                                                            {Array.from(scenarioAssigneeConflicts.conflicts).slice(0, 5).map(key => {
+                                                            {Array.from(scenarioAssigneeConflicts.conflicts).map(key => {
                                                                 const issue = scenarioIssueByKey.get(key);
                                                                 return (
                                                                     <button
@@ -10392,9 +10492,9 @@
                                                         {scenarioLateItems.length} late · {scenarioCriticalPathItems.length} critical path
                                                     </div>
                                                     <div className="scenario-issues-list">
-                                                        {[...scenarioLateItems.slice(0, 3), ...scenarioCriticalPathItems.slice(0, 3)]
+                                                        {[...scenarioLateItems, ...scenarioCriticalPathItems]
                                                             .filter((key, idx, arr) => arr.indexOf(key) === idx)
-                                                            .slice(0, 5).map(key => {
+                                                            .map(key => {
                                                             const issue = scenarioIssueByKey.get(key);
                                                             const isLate = scenarioLateItems.includes(key);
                                                             return (
@@ -10412,22 +10512,19 @@
                                                     </div>
                                                 </div>
                                                 <div className="scenario-card">
-                                                    <h4>Bottlenecks</h4>
-                                                    <div className="scenario-value">
-                                                        {scenarioBottleneckLanes.slice(0, 2).join(', ') || 'None'}
-                                                    </div>
-                                                    <div className="scenario-subtitle">
-                                                        {scenarioBottleneckLanes.length} lanes flagged
-                                                    </div>
-                                                </div>
-                                                <div className="scenario-card">
                                                     <h4>Unschedulable</h4>
                                                     <div className="scenario-value">{scenarioUnschedulableItems.length}</div>
                                                     <div className="scenario-subtitle">Missing SP or dependencies</div>
                                                     <div className="scenario-issues-list">
-                                                        {scenarioUnschedulableItems.slice(0, 4).map(key => {
+                                                        {scenarioUnschedulableItems.map(key => {
                                                             const issue = scenarioIssueByKey.get(key);
                                                             const reason = issue?.scheduledReason;
+                                                            let reasonLabel = '';
+                                                            if (reason === 'missing_story_points') {
+                                                                reasonLabel = 'Missing SP';
+                                                            } else if (reason === 'missing_dependency') {
+                                                                reasonLabel = 'Missing dependency';
+                                                            }
                                                             return (
                                                                 <button
                                                                     type="button"
@@ -10437,7 +10534,7 @@
                                                                 >
                                                                     <span>{issue?.summary || key}</span>
                                                                     <span className="scenario-link-key">
-                                                                        {key}{reason ? ` · ${reason}` : ''}
+                                                                        {key}{reasonLabel ? ` · ${reasonLabel}` : ''}
                                                                     </span>
                                                                 </button>
                                                             );
@@ -10459,9 +10556,20 @@
                                             )}
                                             <div className="scenario-timeline" ref={scenarioTimelineRef}>
                                                 <div className="scenario-axis">
-                                                    {scenarioTicks.map((tick) => (
-                                                        <span key={tick.label}>{tick.label}</span>
-                                                    ))}
+                                                    <div className="scenario-axis-ticks">
+                                                        {scenarioTicks.map((tick) => {
+                                                            const left = `${tick.ratio * 100}%`;
+                                                            return (
+                                                                <span
+                                                                    key={tick.label}
+                                                                    className="scenario-axis-tick"
+                                                                    style={{ left }}
+                                                                >
+                                                                    {tick.label}
+                                                                </span>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
                                                 <div
                                                     className="scenario-lanes"
@@ -10589,7 +10697,7 @@
                                                                     const issueEndDate = issue.end ? parseScenarioDate(issue.end) : null;
                                                                     const isOutOfSprint = issueEndDate && scenarioViewEnd && issueEndDate > scenarioViewEnd;
                                                                     const isInProgress = issue.progressPct !== null && issue.progressPct !== undefined;
-                                                                    const issueTooltip = buildScenarioTooltipPayload(issue.summary || issue.key, issue.key, issue.sp, isExcluded, hasAssigneeConflict, issue.assignee, conflictingKeys, isOutOfSprint, isInProgress);
+                                                                    const issueTooltip = buildScenarioTooltipPayload(issue.summary || issue.key, issue.key, issue.sp, isExcluded, hasAssigneeConflict, issue.assignee, conflictingKeys, isOutOfSprint, isInProgress, issue.team);
                                                                     const isFocused = scenarioHoverKey === issue.key || scenarioFlashKey === issue.key;
                                                                     const isUpstream = scenarioUpstreamSet.has(issue.key);
                                                                     const isDownstream = scenarioDownstreamSet.has(issue.key);
@@ -10597,18 +10705,28 @@
                                                                     const isUnscheduled = !issue.start || !issue.end;
                                                                     const isFocusContext = scenarioEpicFocus && scenarioFocusContextKeys.has(issue.key) && !scenarioFocusIssueKeys.has(issue.key);
                                                                     const isSearchMatch = scenarioSearchQuery && scenarioSearchMatchSet.has(issue.key);
+                                                                    const isDone = issue.scheduledReason === 'already_done';
                                                                     return (
                                                                         <a
                                                                             key={issue.key}
-                                                                            className={`scenario-bar ${issue.isCritical ? 'critical' : ''} ${issue.isLate ? 'late' : ''} ${((issue.blockedBy || []).length > 0 || scenarioBlockedSet.has(issue.key)) ? 'blocked' : ''} ${(issue.isContext || isFocusContext) ? 'context' : ''} ${isUnscheduled ? 'unscheduled' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''} ${isDimmed ? 'dimmed' : ''} ${scenarioFlashKey === issue.key ? 'flash' : ''} ${isExcluded ? 'excluded' : ''} ${isSearchMatch ? 'search-match' : ''} ${hasAssigneeConflict ? 'assignee-conflict' : ''} ${isOutOfSprint ? 'out-of-sprint' : ''} ${isInProgress ? 'in-progress' : ''}`}
+                                                                            className={`scenario-bar ${isDone ? 'done' : ''} ${issue.isCritical ? 'critical' : ''} ${issue.isLate ? 'late' : ''} ${((issue.blockedBy || []).length > 0 || scenarioBlockedSet.has(issue.key)) ? 'blocked' : ''} ${(issue.isContext || isFocusContext) ? 'context' : ''} ${isUnscheduled ? 'unscheduled' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''} ${isDimmed ? 'dimmed' : ''} ${scenarioFlashKey === issue.key ? 'flash' : ''} ${isExcluded ? 'excluded' : ''} ${isSearchMatch ? 'search-match' : ''} ${hasAssigneeConflict ? 'assignee-conflict' : ''} ${isOutOfSprint ? 'out-of-sprint' : ''} ${isInProgress ? 'in-progress' : ''}`}
                                                                             style={{ left, width, height: `${SCENARIO_BAR_HEIGHT}px`, top }}
                                                                             href={issueUrl || '#'}
                                                                             target="_blank"
                                                                             rel="noopener noreferrer"
                                                                             ref={registerScenarioIssueRef(issue.key)}
                                                                             onClick={(event) => {
-                                                                                if (!issueUrl) {
-                                                                                    event.preventDefault();
+                                                                                event.preventDefault();
+                                                                                // Scroll to task in the task list below
+                                                                                const taskElement = document.querySelector(`[data-task-key="${issue.key}"]`);
+                                                                                if (taskElement) {
+                                                                                    const elementTop = taskElement.getBoundingClientRect().top + window.scrollY;
+                                                                                    window.scrollTo({ top: elementTop - 100, behavior: 'smooth' });
+                                                                                    // Flash highlight the task
+                                                                                    taskElement.classList.add('is-focused');
+                                                                                    setTimeout(() => {
+                                                                                        taskElement.classList.remove('is-focused');
+                                                                                    }, 1400);
                                                                                 }
                                                                             }}
                                                                             onMouseEnter={(event) => {
@@ -10677,12 +10795,6 @@
                                                         })}
                                                     </svg>
                                                 )}
-                                                {scenarioLayout.width > 0 && (
-                                                    <div
-                                                        className="scenario-deadline"
-                                                        style={{ left: `${scenarioDeadlineLeft}px` }}
-                                                    />
-                                                )}
                                                 {scenarioTodayLeft !== null && (
                                                     <div
                                                         className="scenario-today"
@@ -10698,6 +10810,9 @@
                                                     {scenarioTooltip.key && <div className="scenario-tooltip-key">{scenarioTooltip.key}</div>}
                                                     {scenarioTooltip.assignee && (
                                                         <div className="scenario-tooltip-key">👤 {scenarioTooltip.assignee}</div>
+                                                    )}
+                                                    {scenarioTooltip.team && (
+                                                        <div className="scenario-tooltip-key">👥 {scenarioTooltip.team}</div>
                                                     )}
                                                     {Number.isFinite(scenarioTooltip.sp) && (
                                                         <div className="scenario-tooltip-key">SP: {scenarioTooltip.sp.toFixed(1)}</div>
@@ -10906,6 +11021,21 @@
                         <button className="back-to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
                             Back to top
                         </button>
+                    )}
+
+                    {(productTasksLoading || techTasksLoading) && (
+                        <div className="loading-status" style={{
+                            padding: '0.5rem 1rem',
+                            background: 'rgba(59, 130, 246, 0.08)',
+                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                            borderRadius: '0.5rem',
+                            marginBottom: '1rem',
+                            fontSize: '0.85rem',
+                            color: 'var(--text-secondary)'
+                        }}>
+                            {productTasksLoading && <div>⏳ Loading product tasks...</div>}
+                            {techTasksLoading && <div>⏳ Loading tech tasks...</div>}
+                        </div>
                     )}
 
                     {loading ? (
@@ -11668,7 +11798,7 @@
                                                         const status = lookup?.status || info.status || 'Unknown';
                                                         const summary = lookup?.summary || info.summary || 'Unknown summary';
                                                         const teamName = lookup?.teamName || info.teamName || 'Unknown team';
-                                                        const assignee = lookup?.assignee?.displayName || info.assignee || 'Unassigned';
+                                                        const assignee = lookup?.assignee || info.assignee || 'Unassigned';
                                                         const isDone = normalizeStatus(status) === 'done';
                                                         return { key, status, summary, teamName, assignee, isDone };
                                                     });

@@ -1,0 +1,48 @@
+QUICK START - New .env Based Setup
+===================================
+
+1. INSTALL DEPENDENCIES:
+   python3 -m pip install --user python-dotenv
+
+2. CREATE .env FILE:
+   cp .env.example .env
+
+3. OPEN .env AND FILL IN:
+   nano .env
+
+   Change:
+   - JIRA_EMAIL to your email
+   - JIRA_TOKEN to your API token
+   - JQL_QUERY if needed
+   - STATS_JQL_BASE if you want the completed sprint Statistics panel
+
+4. START SERVER:
+   python3 jira_server.py
+
+5. OPEN DASHBOARD:
+   Open jira-dashboard.html in browser
+
+DONE! 🎉
+
+
+FOR UPLOADING TO GITHUB:
+========================
+
+✅ .env is already in .gitignore - won't go to git
+✅ .env.example will be in repository as template
+✅ Safe to do git push
+
+Commands:
+git init
+git add .
+git commit -m "Initial commit"
+git remote add origin <your-repo-url>
+git push -u origin main
+
+
+WHERE TO GET API TOKEN:
+====================
+
+1. https://id.atlassian.com/manage-profile/security/api-tokens
+2. Create API token
+3. Copy and paste into .env file

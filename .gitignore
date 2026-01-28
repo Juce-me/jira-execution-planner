@@ -1,0 +1,61 @@
+# Environment variables (contains secrets!)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+dist/
+!frontend/dist/
+!frontend/dist/**
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Cache
+sprints_cache.json
+stats_cache.json
+teams.json
+team-groups.json
+
+# Local artifacts
+avaliablefields.txt
+tasks-with-team-name.output.txt
+jira-dashboard.html.har
+
+# Local test data
+*.test.local.json
+verify.*.json
+
+# Example data
+*example*.json
+*example*.csv
+*example*.tsv
+*example*.xlsx
+
+# Screenshots
+Screenshot *.png
+*.juce-me
+*.pub
+stats_cache.json
+jira-dashboard-backup.html
+dashboard-compiled.js
+node_modules/

@@ -1,0 +1,26 @@
+name: verify-frontend-build
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Build frontend
+        run: npm run build
+      - name: Fail if dist changed
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::Compiled frontend output changed. Run 'npm run build' and commit frontend/dist."
+            git --no-pager diff
+            exit 1
+          fi

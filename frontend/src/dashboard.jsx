@@ -3287,9 +3287,8 @@ import * as ReactDOM from 'react-dom';
                 const ratio = (today - scenarioViewStart) / totalMs;
                 // Only show if today is within the visible range
                 if (ratio < 0 || ratio > 1) return null;
-                // Add scroll offset to keep the line fixed in viewport during horizontal scroll
-                return scenarioLayout.labelWidth + scenarioLayout.width * ratio + scenarioScrollLeft;
-            }, [scenarioViewStart, scenarioViewEnd, scenarioLayout, scenarioScrollLeft]);
+                return scenarioLayout.labelWidth + scenarioLayout.width * ratio;
+            }, [scenarioViewStart, scenarioViewEnd, scenarioLayout]);
 
             const scenarioVisibleLanes = React.useMemo(() => {
                 if (!scenarioViewportHeight) return scenarioLanes;

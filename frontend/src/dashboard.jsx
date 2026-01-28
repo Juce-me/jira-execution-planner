@@ -200,6 +200,7 @@ import * as ReactDOM from 'react-dom';
             const scenarioScrollFrameRef = useRef(null);
             const scenarioResizeFrameRef = useRef(null);
             const scenarioPendingScrollRef = useRef(null);
+            let scheduleScenarioEdgeUpdate;
             const [scenarioTooltip, setScenarioTooltip] = useState({
                 visible: false,
                 x: 0,
@@ -3095,35 +3096,6 @@ import * as ReactDOM from 'react-dom';
                 };
             }, [showScenario, scenarioLanes.length, scenarioData, scenarioLaneMode, scenarioIssuesByLane, scenarioLaneMeta, scheduleScenarioEdgeUpdate, perfEnabled]);
 
-            useEffect(() => {
-                scheduleScenarioEdgeUpdate();
-            }, [
-                scenarioLaneMode,
-                scenarioCollapsedLanes,
-                scenarioRangeOverride,
-                scenarioEpicFocus,
-                scenarioLayout.width,
-                scenarioLayout.height,
-                scenarioLaneStacking,
-                scheduleScenarioEdgeUpdate
-            ]);
-
-            useEffect(() => {
-                if (!showScenario) return;
-                scheduleScenarioEdgeUpdate();
-            }, [showScenario, scenarioPositions, scenarioVisibleLanes, scheduleScenarioEdgeUpdate]);
-
-            useEffect(() => {
-                scheduleScenarioEdgeUpdate();
-            }, [
-                scenarioHoverKey,
-                scenarioBaselineEdges,
-                scenarioFocusEdges,
-                scenarioActiveEdges,
-                scenarioTimelineIssueKeys,
-                scheduleScenarioEdgeUpdate
-            ]);
-
             const scenarioPositions = React.useMemo(() => {
                 if (!scenarioViewStart || !scenarioViewEnd) return {};
                 if (!scenarioLayout.width) return {};
@@ -3705,7 +3677,7 @@ import * as ReactDOM from 'react-dom';
                 }
             };
 
-            const scheduleScenarioEdgeUpdate = React.useCallback(() => {
+            scheduleScenarioEdgeUpdate = React.useCallback(() => {
                 if (!showScenario) return;
                 if (document.hidden) return;
                 if (perfEnabled) {
@@ -3724,6 +3696,35 @@ import * as ReactDOM from 'react-dom';
                     setScenarioEdgeRender(prev => (areScenarioEdgeRendersEqual(prev, nextRender) ? prev : nextRender));
                 });
             }, [computeScenarioEdgePaths, showScenario, perfEnabled]);
+
+            useEffect(() => {
+                scheduleScenarioEdgeUpdate();
+            }, [
+                scenarioLaneMode,
+                scenarioCollapsedLanes,
+                scenarioRangeOverride,
+                scenarioEpicFocus,
+                scenarioLayout.width,
+                scenarioLayout.height,
+                scenarioLaneStacking,
+                scheduleScenarioEdgeUpdate
+            ]);
+
+            useEffect(() => {
+                if (!showScenario) return;
+                scheduleScenarioEdgeUpdate();
+            }, [showScenario, scenarioPositions, scenarioVisibleLanes, scheduleScenarioEdgeUpdate]);
+
+            useEffect(() => {
+                scheduleScenarioEdgeUpdate();
+            }, [
+                scenarioHoverKey,
+                scenarioBaselineEdges,
+                scenarioFocusEdges,
+                scenarioActiveEdges,
+                scenarioTimelineIssueKeys,
+                scheduleScenarioEdgeUpdate
+            ]);
 
             const scrollToScenarioIssue = (issueKey) => {
                 if (scenarioEpicFocus) {

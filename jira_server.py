@@ -61,6 +61,7 @@ UPDATE_CHECK_ENABLED = os.getenv('UPDATE_CHECK', 'true').lower() not in ('0', 'f
 UPDATE_CHECK_REMOTE = os.getenv('UPDATE_CHECK_REMOTE', 'origin').strip() or 'origin'
 UPDATE_CHECK_BRANCH = os.getenv('UPDATE_CHECK_BRANCH', 'main').strip() or 'main'
 UPDATE_CHECK_TTL_SECONDS = int(os.getenv('UPDATE_CHECK_TTL_SECONDS', '300'))
+UPDATE_CHECK_RELEASE_INFO = os.getenv('UPDATE_CHECK_RELEASE_INFO', 'release-info.json').strip() or 'release-info.json'
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
@@ -674,14 +675,40 @@ def run_git_command(args):
         return None, str(e)
 
 
+def load_release_info():
+    if not UPDATE_CHECK_RELEASE_INFO:
+        return None
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), UPDATE_CHECK_RELEASE_INFO)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, 'r') as handle:
+            data = json.load(handle)
+        if not isinstance(data, dict):
+            return None
+        return data
+    except Exception as e:
+        print(f'⚠️ Failed to read release info: {e}')
+        return None
+
+
 def build_update_check_payload():
     local_hash, local_err = run_git_command(['rev-parse', 'HEAD'])
     local_branch, _ = run_git_command(['rev-parse', '--abbrev-ref', 'HEAD'])
+    local_source = 'git'
     if local_err:
-        return {
-            'enabled': True,
-            'error': f'Failed to read local git state: {local_err}'
-        }
+        release_info = load_release_info() or {}
+        release_hash = str(release_info.get('hash') or '').strip()
+        if release_hash:
+            local_hash = release_hash
+            local_branch = str(release_info.get('tag') or release_info.get('branch') or 'release').strip()
+            local_source = 'release'
+            local_err = None
+        else:
+            return {
+                'enabled': True,
+                'error': f'Failed to read local git state: {local_err}'
+            }
 
     remote_output, remote_err = run_git_command(['ls-remote', UPDATE_CHECK_REMOTE, f'refs/heads/{UPDATE_CHECK_BRANCH}'])
     if remote_err:
@@ -705,7 +732,8 @@ def build_update_check_payload():
         'local': {
             'hash': local_hash,
             'short': local_hash[:7] if local_hash else '',
-            'branch': local_branch or ''
+            'branch': local_branch or '',
+            'source': local_source
         },
         'remote': {
             'hash': remote_hash,

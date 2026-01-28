@@ -31,6 +31,10 @@ jobs:
             exit 1
           fi
 
+      - name: Write release info
+        run: |
+          echo "{\"hash\":\"$(git rev-parse HEAD)\",\"tag\":\"latest\",\"builtAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"source\":\"release\"}" > release-info.json
+
       - name: Create release zip
         run: |
           zip -r jira-execution-planner-latest.zip . \

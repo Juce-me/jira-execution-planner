@@ -58,7 +58,7 @@ If you want the fastest setup with no frontend build step:
 5. Start the backend: `python3 jira_server.py`
 6. Open `jira-dashboard.html` in your browser.
 
-The UI shows a “New Version Available” badge when a newer release is detected. Download the latest zip and replace your folder to update.
+The UI shows a “New Version Available” badge when a newer release is detected. Release zips include `release-info.json` so update checks work without git. Download the latest zip and replace your folder to update.
 
 ### Local mock data (dev)
 

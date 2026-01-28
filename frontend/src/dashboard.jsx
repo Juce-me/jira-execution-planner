@@ -8353,8 +8353,10 @@ import * as ReactDOM from 'react-dom';
                             <div className="update-modal" onClick={(event) => event.stopPropagation()}>
                                 <div className="update-modal-title">New Version Available</div>
                                 <div className="update-modal-body">
-                                    <div>Your local dashboard is behind the latest main branch.</div>
+                                    <div>Your dashboard is behind the latest release.</div>
+                                    <div>If you installed from git:</div>
                                     <pre>{`git checkout main\n\ngit pull\n\npython3 jira_server.py`}</pre>
+                                    <div>Or download the latest release zip and replace this folder.</div>
                                     <div>Then refresh this page.</div>
                                 </div>
                                 <div className="update-modal-actions">

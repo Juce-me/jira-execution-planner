@@ -2363,6 +2363,7 @@
 
         .scenario-timeline {
             --scenario-label-width: 190px;
+            --scenario-label-gap: 0.6rem;
             --scenario-axis-height: 26px;
             border: 1px solid var(--border);
             border-radius: 0.6rem;
@@ -2383,7 +2384,7 @@
             z-index: 4;
             min-height: var(--scenario-axis-height);
             padding-top: 0.2rem;
-            padding-left: var(--scenario-label-width);
+            padding-left: calc(var(--scenario-label-width) + var(--scenario-label-gap));
             margin-bottom: 0.5rem;
             width: 100%;
             min-width: 0;
@@ -2418,7 +2419,7 @@
             display: grid;
             grid-template-columns: var(--scenario-label-width) 1fr;
             align-items: stretch;
-            gap: 0.6rem;
+            gap: var(--scenario-label-gap);
             min-width: 0;
             width: 100%;
         }

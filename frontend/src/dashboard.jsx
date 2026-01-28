@@ -3033,7 +3033,15 @@ import * as ReactDOM from 'react-dom';
                         perfCountersRef.current.layoutReads += 1;
                     }
                     const track = container.querySelector('.scenario-lane-track');
-                    const labelWidth = 190;
+                    const containerStyles = window.getComputedStyle(container);
+                    const labelWidthValue = parseFloat(containerStyles.getPropertyValue('--scenario-label-width')) || 190;
+                    const laneEl = container.querySelector('.scenario-lane');
+                    let gapValue = 0;
+                    if (laneEl) {
+                        const laneStyles = window.getComputedStyle(laneEl);
+                        gapValue = parseFloat(laneStyles.columnGap || laneStyles.gap || '0') || 0;
+                    }
+                    const labelWidth = labelWidthValue + gapValue;
                     const trackWidth = track ? track.clientWidth : Math.max(0, container.clientWidth - labelWidth);
                     let height = scenarioLaneMeta.totalHeight || scenarioLanes.length * SCENARIO_LANE_HEIGHT;
                     setScenarioLayout(prev => {

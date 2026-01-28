@@ -146,7 +146,7 @@ import * as ReactDOM from 'react-dom';
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
             const [showStats, setShowStats] = useState(savedPrefsRef.current.showStats ?? false);
             const [showScenario, setShowScenario] = useState(savedPrefsRef.current.showScenario ?? false);
-            const [showDependencies, setShowDependencies] = useState(savedPrefsRef.current.showDependencies ?? false);
+            const [showDependencies, setShowDependencies] = useState(true);
             const [searchQuery, setSearchQuery] = useState(savedPrefsRef.current.searchQuery ?? '');
             const [searchInput, setSearchInput] = useState(savedPrefsRef.current.searchQuery ?? '');
             const normalizeSelectedTeams = (value) => {
@@ -396,7 +396,7 @@ import * as ReactDOM from 'react-dom';
                     showPlanning,
                     showStats,
                     showScenario,
-                    showDependencies,
+                    showDependencies: true,
                     statusFilter,
                     loading,
                     sprintsLoading,
@@ -990,7 +990,7 @@ import * as ReactDOM from 'react-dom';
                     showPlanning: savedPrefsRef.current.showPlanning ?? false,
                     showStats: savedPrefsRef.current.showStats ?? false,
                     showScenario: false,
-                    showDependencies: savedPrefsRef.current.showDependencies ?? false,
+                    showDependencies: true,
                     epicDetails: {},
                     statsView: resolveStatsView(savedPrefsRef.current.statsView),
                     statsGraphMode: resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode),
@@ -1140,7 +1140,7 @@ import * as ReactDOM from 'react-dom';
                 setShowPlanning(nextState.showPlanning ?? false);
                 setShowStats(nextState.showStats ?? false);
                 setShowScenario(nextState.showScenario ?? false);
-                setShowDependencies(nextState.showDependencies ?? false);
+                setShowDependencies(true);
                 setEpicDetails(nextState.epicDetails || {});
                 setStatsView(resolveStatsView(nextState.statsView));
                 setStatsGraphMode(resolveStatsGraphMode(nextState.statsGraphMode));
@@ -7690,12 +7690,6 @@ import * as ReactDOM from 'react-dom';
                                     onClick={() => setShowProduct(!showProduct)}
                                 >
                                     {showProduct ? `Hide Product Tasks (${productTasksCount})` : `Show Product Tasks (${productTasksCount})`}
-                                </button>
-                                <button
-                                    className={`toggle ${showDependencies ? 'active' : ''}`}
-                                    onClick={() => setShowDependencies(!showDependencies)}
-                                >
-                                    {showDependencies ? 'Hide Dependencies' : 'Show Dependencies'}
                                 </button>
                                 {doneTasks.length > 0 && (
                                     <button

@@ -44,7 +44,7 @@ If you just want to see the dashboard working locally:
 3. Edit `.env` and set **JIRA_URL**, **JIRA_EMAIL**, **JIRA_TOKEN**, and **JQL_QUERY** (leave the sample JQL if it already fits your projects/teams).
 4. Start the backend: `python3 jira_server.py`
 5. Visit `http://localhost:5050/api/test` in your browser to confirm connectivity.
-6. Open `jira-dashboard.html` in your browser to view the UI. Tasks should load automatically using your JQL and sprint selection.
+6. Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`) to view the UI. Tasks should load automatically using your JQL and sprint selection.
 
 More detailed setup guidance remains below if you need it.
 
@@ -56,7 +56,7 @@ If you want the fastest setup with no frontend build step:
 3. Configure `.env` from `.env.example`.
 4. Install backend deps: `python3 -m pip install --user -r requirements.txt`
 5. Start the backend: `python3 jira_server.py`
-6. Open `jira-dashboard.html` in your browser.
+6. Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`).
 
 The UI shows a “New Version Available” badge when a newer release is detected. Release zips include `release-info.json` so update checks work without git. Download the latest zip and replace your folder to update.
 
@@ -211,7 +211,7 @@ You should see:
    • http://localhost:<PORT>/api/tasks-fields?limit=5 - Get issues with all fields for JQL_QUERY
    • http://localhost:<PORT>/health - Health check
 
-✅ Server ready! Open jira-dashboard.html in your browser
+✅ Server ready! Open jira-dashboard.html in your browser (or visit http://localhost:5050/)
 ```
 
 `<PORT>` will be `5050` by default, or whatever you set via `SERVER_PORT` in `.env` or the `--server_port` flag.
@@ -222,7 +222,7 @@ Jira API docs used:
 
 ### Step 5: Open the dashboard
 
-Open `jira-dashboard.html` in your browser. Tasks will load automatically!
+Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`). Tasks will load automatically!
 
 ## 🔧 How it works
 

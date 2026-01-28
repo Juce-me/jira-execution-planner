@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 import requests
 import argparse
@@ -84,6 +84,19 @@ def parse_args():
     parser.add_argument('--jira_url', help='Base Jira URL, e.g. https://your-domain.atlassian.net (overrides JIRA_URL env)')
     parser.add_argument('--jira_query', help='JQL query to use for fetching issues (overrides JQL_QUERY env)')
     return parser.parse_args()
+
+
+@app.route('/')
+def serve_dashboard():
+    """Serve the dashboard HTML when running via the Flask server."""
+    return send_file('jira-dashboard.html')
+
+
+@app.route('/frontend/dist/<path:filename>')
+def serve_frontend_dist(filename):
+    """Serve the bundled frontend assets."""
+    dist_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend', 'dist')
+    return send_from_directory(dist_dir, filename)
 
 
 def add_clause_to_jql(jql: str, clause: str) -> str:

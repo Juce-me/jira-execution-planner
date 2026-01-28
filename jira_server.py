@@ -441,7 +441,7 @@ def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
             'jql': jql,
             'startAt': 0,
             'maxResults': 200,
-            'fields': ['summary', 'watches']
+            'fields': ['summary', 'watches', 'reporter']
         }
         response = jira_search_request(headers, payload)
         if response.status_code != 200:
@@ -473,12 +473,14 @@ def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
         try:
             count = int(watch_count)
             sizes[short_name] = count
+            reporter_name = (fields.get('reporter') or {}).get('displayName')
             details[short_name] = {
                 'watchers': count,
-                'issue_key': issue.get('key')
+                'issue_key': issue.get('key'),
+                'reporter': reporter_name
             }
             if issue.get('key'):
-                print(f'🧭 Capacity size: {short_name} -> {issue.get("key")} watchers={count}')
+                print(f'🧭 Capacity size: {short_name} -> {issue.get("key")} watchers={count} reporter={reporter_name}')
         except (TypeError, ValueError):
             continue
 
@@ -1570,6 +1572,10 @@ def build_issue_snapshot(issue, team_field_id=None, epic_link_field_id=None):
             fields['parent'].get('fields', {}).get('issuetype', {}).get('name', '').lower() == 'epic':
         epic_key = fields['parent'].get('key')
 
+    assignee_name = None
+    if fields.get('assignee'):
+        assignee_name = fields['assignee'].get('displayName') or fields['assignee'].get('name')
+
     return {
         'key': issue.get('key'),
         'summary': fields.get('summary'),
@@ -1579,7 +1585,8 @@ def build_issue_snapshot(issue, team_field_id=None, epic_link_field_id=None):
         'storyPoints': fields.get('customfield_10004'),
         'teamName': team_name,
         'teamId': team_id,
-        'epicKey': epic_key
+        'epicKey': epic_key,
+        'assignee': assignee_name
     }
 
 
@@ -1778,6 +1785,7 @@ def lookup_issues():
             'summary',
             'status',
             'issuetype',
+            'assignee',
             'customfield_10004',
             'parent'
         ]
@@ -2069,7 +2077,8 @@ def scenario_planner():
                 capacity_by_team[team_name] = {
                     'size': size,
                     'capacityIssueKey': detail.get('issue_key') if detail else None,
-                    'watchersCount': detail.get('watchers') if detail else None
+                    'watchersCount': detail.get('watchers') if detail else None,
+                    'devLead': detail.get('reporter') if detail else None
                 }
 
         issue_objs = []
@@ -3517,6 +3526,14 @@ def export_excel():
             'error': 'Failed to export to Excel',
             'message': str(e)
         }), 500
+
+
+@app.route('/')
+def index():
+    """Serve the dashboard HTML."""
+    return send_file('jira-dashboard.html')
+
+
 
 
 if __name__ == '__main__':

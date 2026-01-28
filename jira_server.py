@@ -86,19 +86,6 @@ def parse_args():
     return parser.parse_args()
 
 
-@app.route('/')
-def serve_dashboard():
-    """Serve the dashboard HTML when running via the Flask server."""
-    return send_file('jira-dashboard.html')
-
-
-@app.route('/frontend/dist/<path:filename>')
-def serve_frontend_dist(filename):
-    """Serve the bundled frontend assets."""
-    dist_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend', 'dist')
-    return send_from_directory(dist_dir, filename)
-
-
 def add_clause_to_jql(jql: str, clause: str) -> str:
     """Append a clause to JQL before ORDER BY if present."""
     if not clause:
@@ -3230,6 +3217,13 @@ def serve_dashboard():
 @app.route('/jira-dashboard.html', methods=['GET'])
 def serve_dashboard_file():
     return serve_dashboard()
+
+
+@app.route('/frontend/dist/<path:filename>')
+def serve_frontend_dist(filename):
+    """Serve the bundled frontend assets."""
+    dist_dir = os.path.join(os.path.dirname(__file__), 'frontend', 'dist')
+    return send_from_directory(dist_dir, filename)
 
 
 @app.route('/api/groups-config', methods=['GET'])

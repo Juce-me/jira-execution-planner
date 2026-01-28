@@ -5254,6 +5254,12 @@ import * as ReactDOM from 'react-dom';
                 done: doneStoryEpics.length
             };
             const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.empty + alertCounts.done;
+            const alertContextKey = React.useMemo(() => {
+                const sprintKey = selectedSprint === null ? 'none' : String(selectedSprint);
+                const groupKey = activeGroupId ? String(activeGroupId) : 'all';
+                const teamsKey = (selectedTeams || []).join('|');
+                return `${sprintKey}|${groupKey}|${teamsKey}`;
+            }, [selectedSprint, activeGroupId, selectedTeams]);
 
             const triggerAlertCelebration = React.useCallback((options = {}) => {
                 if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -5300,6 +5306,15 @@ import * as ReactDOM from 'react-dom';
             }, []);
 
             useEffect(() => {
+                alertPrevCountsRef.current = alertCounts;
+                alertCountsInitializedRef.current = true;
+                if (alertCelebrationTimeoutRef.current) {
+                    window.clearTimeout(alertCelebrationTimeoutRef.current);
+                }
+                setAlertCelebrationPieces([]);
+            }, [alertContextKey]);
+
+            useEffect(() => {
                 if (!alertCountsInitializedRef.current) {
                     alertPrevCountsRef.current = alertCounts;
                     alertCountsInitializedRef.current = true;
@@ -5311,7 +5326,7 @@ import * as ReactDOM from 'react-dom';
                     triggerAlertCelebration({ types: resolvedTypes });
                 }
                 alertPrevCountsRef.current = alertCounts;
-            }, [alertCounts.missing, alertCounts.blocked, alertCounts.empty, alertCounts.done, triggerAlertCelebration]);
+            }, [alertCounts.missing, alertCounts.blocked, alertCounts.empty, alertCounts.done, triggerAlertCelebration, alertContextKey]);
 
             useEffect(() => {
                 return () => {

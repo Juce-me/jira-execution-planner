@@ -101,7 +101,7 @@
         }
 
         .update-badge {
-            margin-left: 0.75rem;
+            margin: 0;
             padding: 0.2rem 0.6rem;
             border: 1px solid rgba(220, 38, 38, 0.35);
             color: #b91c1c;
@@ -112,6 +112,7 @@
             text-transform: uppercase;
             font-family: 'IBM Plex Mono', monospace;
             cursor: pointer;
+            white-space: nowrap;
         }
 
         .update-badge:hover {
@@ -135,9 +136,18 @@
         .header-actions {
             margin-left: auto;
             display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.35rem;
+            flex-wrap: nowrap;
+        }
+
+        .header-actions-row {
+            display: flex;
             align-items: center;
             gap: 0.5rem;
-            flex-wrap: nowrap;
+            flex-wrap: wrap;
+            justify-content: flex-end;
         }
 
         .secondary.compact {
@@ -2397,6 +2407,7 @@
             margin-bottom: 0.5rem;
             width: 100%;
             min-width: 0;
+            overflow: visible;
         }
 
         .scenario-axis-ticks {
@@ -2771,7 +2782,7 @@
         .scenario-today {
             position: absolute;
             top: 0;
-            bottom: 0;
+            height: 100%;
             width: 2px;
             background: rgba(59, 130, 246, 0.7);
             pointer-events: none;

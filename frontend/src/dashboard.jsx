@@ -5356,6 +5356,8 @@ import * as ReactDOM from 'react-dom';
                             <span>
                                 Jira Execution Planner
                                 <span className="subtitle-secondary"> · Product &amp; Tech Projects</span>
+                            </span>
+                            <div className="header-actions">
                                 {updateNoticeVisible && (
                                     <button
                                         type="button"
@@ -5366,47 +5368,47 @@ import * as ReactDOM from 'react-dom';
                                         New version available
                                     </button>
                                 )}
-                            </span>
-                            <div className="header-actions">
-                                <button
-                                    className="secondary compact"
-                                    onClick={() => window.location.reload()}
-                                    disabled={sprintsLoading}
-                                    title="Refresh sprints list from Jira"
-                                >
-                                    {sprintsLoading ? 'Loading...' : 'Refresh Sprints'}
-                                </button>
-                                <button
-                                    className="secondary compact"
-                                    onClick={() => {
-                                        loadProductTasks();
-                                        loadTechTasks();
-                                        loadReadyToCloseProductTasks();
-                                        loadReadyToCloseTechTasks();
-                                    }}
-                                    disabled={loading || selectedSprint === null}
-                                    title="Refresh tasks from Jira"
-                                >
-                                    {loading ? 'Loading...' : 'Refresh Page'}
-                                </button>
-                                <div className="search-wrap">
-                                    <input
-                                        type="text"
-                                        className="search-input"
-                                        placeholder="Search tickets..."
-                                        value={searchInput}
-                                        onChange={(e) => setSearchInput(e.target.value)}
-                                    />
-                                    {searchInput && (
-                                        <button
-                                            className="search-clear"
-                                            onClick={() => setSearchInput('')}
-                                            title="Clear search"
-                                            aria-label="Clear search"
-                                        >
-                                            ×
-                                        </button>
-                                    )}
+                                <div className="header-actions-row">
+                                    <button
+                                        className="secondary compact"
+                                        onClick={() => window.location.reload()}
+                                        disabled={sprintsLoading}
+                                        title="Refresh sprints list from Jira"
+                                    >
+                                        {sprintsLoading ? 'Loading...' : 'Refresh Sprints'}
+                                    </button>
+                                    <button
+                                        className="secondary compact"
+                                        onClick={() => {
+                                            loadProductTasks();
+                                            loadTechTasks();
+                                            loadReadyToCloseProductTasks();
+                                            loadReadyToCloseTechTasks();
+                                        }}
+                                        disabled={loading || selectedSprint === null}
+                                        title="Refresh tasks from Jira"
+                                    >
+                                        {loading ? 'Loading...' : 'Refresh Page'}
+                                    </button>
+                                    <div className="search-wrap">
+                                        <input
+                                            type="text"
+                                            className="search-input"
+                                            placeholder="Search tickets..."
+                                            value={searchInput}
+                                            onChange={(e) => setSearchInput(e.target.value)}
+                                        />
+                                        {searchInput && (
+                                            <button
+                                                className="search-clear"
+                                                onClick={() => setSearchInput('')}
+                                                title="Clear search"
+                                                aria-label="Clear search"
+                                            >
+                                                ×
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -6691,6 +6693,15 @@ import * as ReactDOM from 'react-dom';
                                                             );
                                                         })}
                                                     </div>
+                                                    {scenarioTodayLeft !== null && (
+                                                        <div
+                                                            className="scenario-today"
+                                                            style={{
+                                                                left: `${scenarioTodayLeft}px`,
+                                                                height: `calc(${scenarioLaneMeta.totalHeight}px + var(--scenario-axis-height))`
+                                                            }}
+                                                        />
+                                                    )}
                                                 </div>
                                                 <div
                                                     className="scenario-lanes"
@@ -6915,12 +6926,6 @@ import * as ReactDOM from 'react-dom';
                                                             );
                                                         })}
                                                     </svg>
-                                                )}
-                                                {scenarioTodayLeft !== null && (
-                                                    <div
-                                                        className="scenario-today"
-                                                        style={{ left: `${scenarioTodayLeft}px` }}
-                                                    />
                                                 )}
                                                 <div
                                                     className={`scenario-tooltip ${scenarioTooltip.visible ? 'visible' : ''}`}

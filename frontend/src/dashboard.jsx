@@ -246,6 +246,49 @@ import * as ReactDOM from 'react-dom';
             const sprintFetchControllersRef = useRef(new Set());
             const lastLoadedSprintRef = useRef(null);
             const sprintLoadRef = useRef({ sprintId: null, product: false, tech: false });
+            const abortSprintFetches = React.useCallback(() => {
+                sprintFetchControllersRef.current.forEach(controller => {
+                    try {
+                        controller.abort();
+                    } catch (err) {
+                        // ignore abort errors
+                    }
+                });
+                sprintFetchControllersRef.current.clear();
+            }, []);
+            const selectedSprintInfo = React.useMemo(() => {
+                if (!selectedSprint) return null;
+                return (availableSprints || []).find(sprint => String(sprint.id) === String(selectedSprint)) || null;
+            }, [availableSprints, selectedSprint]);
+            const filteredSprints = React.useMemo(() => {
+                if (!sprintSearch.trim()) return availableSprints;
+                const query = sprintSearch.trim().toLowerCase();
+                return (availableSprints || []).filter(sprint => {
+                    const nameMatch = String(sprint.name || '').toLowerCase().includes(query);
+                    const state = (sprint.state || '').toLowerCase();
+                    const stateLabel = state === 'closed' ? 'c' : state === 'active' ? 'a' : state === 'future' ? 'f' : '';
+                    return nameMatch || stateLabel === query;
+                });
+            }, [availableSprints, sprintSearch]);
+            const firstFutureSprintId = React.useMemo(() => {
+                const future = (availableSprints || []).filter(sprint => (sprint.state || '').toLowerCase() === 'future');
+                if (!future.length) return null;
+                const ordered = [...future].sort((a, b) => {
+                    const aTime = Date.parse(a.startDate || '');
+                    const bTime = Date.parse(b.startDate || '');
+                    if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) {
+                        return aTime - bTime;
+                    }
+                    return String(a.name || '').localeCompare(String(b.name || ''));
+                });
+                return ordered[0]?.id ?? null;
+            }, [availableSprints]);
+            const selectedSprintState = (selectedSprintInfo?.state || '').toLowerCase();
+            const isCompletedSprintSelected = selectedSprintState === 'closed';
+            const isFutureSprintSelected = selectedSprintState === 'future';
+            const isFirstFutureSprintSelected = firstFutureSprintId
+                && selectedSprint !== null
+                && String(firstFutureSprintId) === String(selectedSprint);
 
             useEffect(() => {
                 // Load config and sprints on component mount
@@ -897,17 +940,6 @@ import * as ReactDOM from 'react-dom';
                 if (!controller) return;
                 sprintFetchControllersRef.current.delete(controller);
             };
-
-            const abortSprintFetches = React.useCallback(() => {
-                sprintFetchControllersRef.current.forEach(controller => {
-                    try {
-                        controller.abort();
-                    } catch (err) {
-                        // ignore abort errors
-                    }
-                });
-                sprintFetchControllersRef.current.clear();
-            }, []);
 
             const activeGroup = React.useMemo(() => {
                 return (groupsConfig.groups || []).find(group => group.id === activeGroupId) || null;
@@ -2302,40 +2334,6 @@ import * as ReactDOM from 'react-dom';
                 return map;
             }, [teamOptions]);
 
-            const selectedSprintInfo = React.useMemo(() => {
-                if (!selectedSprint) return null;
-                return (availableSprints || []).find(sprint => String(sprint.id) === String(selectedSprint)) || null;
-            }, [availableSprints, selectedSprint]);
-
-            const filteredSprints = React.useMemo(() => {
-                if (!sprintSearch.trim()) return availableSprints;
-                const query = sprintSearch.trim().toLowerCase();
-                return (availableSprints || []).filter(sprint => {
-                    const nameMatch = String(sprint.name || '').toLowerCase().includes(query);
-                    const state = (sprint.state || '').toLowerCase();
-                    const stateLabel = state === 'closed' ? 'c' : state === 'active' ? 'a' : state === 'future' ? 'f' : '';
-                    return nameMatch || stateLabel === query;
-                });
-            }, [availableSprints, sprintSearch]);
-            const firstFutureSprintId = React.useMemo(() => {
-                const future = (availableSprints || []).filter(sprint => (sprint.state || '').toLowerCase() === 'future');
-                if (!future.length) return null;
-                const ordered = [...future].sort((a, b) => {
-                    const aTime = Date.parse(a.startDate || '');
-                    const bTime = Date.parse(b.startDate || '');
-                    if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) {
-                        return aTime - bTime;
-                    }
-                    return String(a.name || '').localeCompare(String(b.name || ''));
-                });
-                return ordered[0]?.id ?? null;
-            }, [availableSprints]);
-            const selectedSprintState = (selectedSprintInfo?.state || '').toLowerCase();
-            const isCompletedSprintSelected = selectedSprintState === 'closed';
-            const isFutureSprintSelected = selectedSprintState === 'future';
-            const isFirstFutureSprintSelected = firstFutureSprintId
-                && selectedSprint !== null
-                && String(firstFutureSprintId) === String(selectedSprint);
             const selectedTeamSet = React.useMemo(() => new Set(selectedTeams.filter(id => id !== 'all')), [selectedTeams]);
             const isAllTeamsSelected = selectedTeams.includes('all') || selectedTeamSet.size === 0;
 

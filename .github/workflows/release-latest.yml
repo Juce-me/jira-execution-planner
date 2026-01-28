@@ -1,0 +1,51 @@
+name: release-latest
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install + build frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Ensure dist committed (defensive)
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::Build output differs from committed dist. Fix by committing dist on main."
+            git --no-pager diff
+            exit 1
+          fi
+
+      - name: Create release zip
+        run: |
+          zip -r jira-execution-planner-latest.zip . \
+            -x ".git/*" \
+            -x "**/.git/**" \
+            -x "**/node_modules/**" \
+            -x "**/__pycache__/**" \
+            -x ".env" \
+            -x "**/.env"
+
+      - name: Update 'latest' release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: latest
+          name: latest
+          allowUpdates: true
+          artifacts: jira-execution-planner-latest.zip
+          omitBody: true

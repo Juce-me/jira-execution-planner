@@ -1258,22 +1258,30 @@
 
         .alert-confetti {
             position: absolute;
-            top: -12px;
+            top: -18px;
+            left: var(--confetti-left, 50%);
+            width: var(--confetti-size, 8px);
+            height: var(--confetti-height, 12px);
+            background: var(--confetti-color, #f59e0b);
             border-radius: 2px;
             opacity: 0;
-            animation: confettiFall 2.2s ease-out forwards;
+            transform: translate3d(0, -12px, 0) rotate(0deg);
+            animation: confettiFall var(--confetti-fall, 2.4s) cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+            animation-delay: var(--confetti-delay, 0s);
+            filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.35));
+            will-change: transform, opacity;
         }
 
         @keyframes confettiFall {
             0% {
-                transform: translateY(-10px) rotate(0deg);
+                transform: translate3d(0, -18px, 0) rotate(0deg);
                 opacity: 0;
             }
-            10% {
+            8% {
                 opacity: 1;
             }
             100% {
-                transform: translateY(110vh) rotate(360deg);
+                transform: translate3d(var(--confetti-drift, 0px), 110vh, 0) rotate(var(--confetti-rot, 360deg));
                 opacity: 0;
             }
         }

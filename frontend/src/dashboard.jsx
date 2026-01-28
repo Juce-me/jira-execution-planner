@@ -232,6 +232,8 @@ import * as ReactDOM from 'react-dom';
             const alertDismissedRef = useRef(false);
             const alertPrevCountRef = useRef(0);
             const alertCelebrationTimeoutRef = useRef(null);
+            const alertPrevCountsRef = useRef(null);
+            const alertCountsInitializedRef = useRef(false);
             const alertHighlightRef = useRef(null);
             const alertHighlightTimeoutRef = useRef(null);
             const [updateInfo, setUpdateInfo] = useState(null);
@@ -5245,40 +5247,71 @@ import * as ReactDOM from 'react-dom';
             const blockedAlertTeams = groupAlertsByTeam(blockedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
             const emptyEpicTeams = groupAlertsByTeam(emptyEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const doneEpicTeams = groupAlertsByTeam(doneStoryEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const alertItemCount = consolidatedMissingStories.length + blockedTasks.length + emptyEpics.length + doneStoryEpics.length;
+            const alertCounts = {
+                missing: consolidatedMissingStories.length,
+                blocked: blockedTasks.length,
+                empty: emptyEpics.length,
+                done: doneStoryEpics.length
+            };
+            const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.empty + alertCounts.done;
 
-            const triggerAlertCelebration = React.useCallback(() => {
+            const triggerAlertCelebration = React.useCallback((options = {}) => {
                 if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
                     return;
                 }
-                const colors = ['#f97316', '#f59e0b', '#22c55e', '#0ea5e9', '#a855f7', '#14b8a6'];
-                const pieces = Array.from({ length: 26 }).map((_, index) => ({
-                    id: `${Date.now()}-${index}`,
-                    left: Math.random() * 100,
-                    size: 6 + Math.random() * 6,
-                    delay: Math.random() * 0.3,
-                    color: colors[index % colors.length]
-                }));
+                const palettes = {
+                    missing: ['#f97316', '#f59e0b', '#fbbf24', '#fb923c'],
+                    blocked: ['#ef4444', '#f43f5e', '#f97316', '#f59e0b'],
+                    empty: ['#f59e0b', '#fbbf24', '#fde047', '#facc15'],
+                    done: ['#22c55e', '#10b981', '#14b8a6', '#0ea5e9']
+                };
+                const types = options.types && options.types.length ? options.types : ['missing', 'blocked', 'empty', 'done'];
+                const palette = types.flatMap(type => palettes[type] || []).filter(Boolean);
+                const colors = palette.length ? palette : ['#f97316', '#f59e0b', '#22c55e', '#0ea5e9', '#a855f7', '#14b8a6'];
+                const count = options.count || (28 + Math.floor(Math.random() * 14));
+                const shapes = ['square', 'round', 'triangle'];
+                const now = Date.now();
+                const pieces = Array.from({ length: count }).map((_, index) => {
+                    const size = 6 + Math.random() * 8;
+                    const height = size * (0.6 + Math.random() * 0.9);
+                    const shape = shapes[Math.floor(Math.random() * shapes.length)];
+                    return {
+                        id: `${now}-${index}`,
+                        left: Math.random() * 100,
+                        size,
+                        height,
+                        delay: Math.random() * 0.35,
+                        duration: 2.2 + Math.random() * 1.2,
+                        drift: (Math.random() * 2 - 1) * 140,
+                        rotate: (Math.random() * 2 - 1) * 540,
+                        color: colors[index % colors.length],
+                        shape
+                    };
+                });
                 setAlertCelebrationPieces(pieces);
                 if (alertCelebrationTimeoutRef.current) {
                     window.clearTimeout(alertCelebrationTimeoutRef.current);
                 }
+                const maxDuration = pieces.reduce((max, piece) => Math.max(max, piece.duration + piece.delay), 0);
+                const timeoutMs = Math.max(2400, Math.ceil((maxDuration + 0.4) * 1000));
                 alertCelebrationTimeoutRef.current = window.setTimeout(() => {
                     setAlertCelebrationPieces([]);
-                }, 2300);
+                }, timeoutMs);
             }, []);
 
             useEffect(() => {
-                if (!alertDismissedRef.current) {
-                    alertPrevCountRef.current = alertItemCount;
+                if (!alertCountsInitializedRef.current) {
+                    alertPrevCountsRef.current = alertCounts;
+                    alertCountsInitializedRef.current = true;
                     return;
                 }
-                if (alertPrevCountRef.current > 0 && alertItemCount === 0) {
-                    triggerAlertCelebration();
-                    alertDismissedRef.current = false;
+                const prev = alertPrevCountsRef.current || {};
+                const resolvedTypes = Object.keys(alertCounts).filter(key => (prev[key] || 0) > 0 && alertCounts[key] === 0);
+                if (resolvedTypes.length > 0) {
+                    triggerAlertCelebration({ types: resolvedTypes });
                 }
-                alertPrevCountRef.current = alertItemCount;
-            }, [alertItemCount, triggerAlertCelebration]);
+                alertPrevCountsRef.current = alertCounts;
+            }, [alertCounts.missing, alertCounts.blocked, alertCounts.empty, alertCounts.done, triggerAlertCelebration]);
 
             useEffect(() => {
                 return () => {
@@ -7144,11 +7177,16 @@ import * as ReactDOM from 'react-dom';
                                                 key={piece.id}
                                                 className="alert-confetti"
                                                 style={{
-                                                    left: `${piece.left}%`,
-                                                    width: `${piece.size}px`,
-                                                    height: `${piece.size * 0.7}px`,
-                                                    background: piece.color,
-                                                    animationDelay: `${piece.delay}s`
+                                                    '--confetti-left': `${piece.left}%`,
+                                                    '--confetti-size': `${piece.size}px`,
+                                                    '--confetti-height': `${piece.height}px`,
+                                                    '--confetti-color': piece.color,
+                                                    '--confetti-rot': `${piece.rotate}deg`,
+                                                    '--confetti-drift': `${piece.drift}px`,
+                                                    '--confetti-fall': `${piece.duration}s`,
+                                                    '--confetti-delay': `${piece.delay}s`,
+                                                    borderRadius: piece.shape === 'round' ? '999px' : '2px',
+                                                    clipPath: piece.shape === 'triangle' ? 'polygon(50% 0%, 0% 100%, 100% 100%)' : 'none'
                                                 }}
                                             />
                                         ))}

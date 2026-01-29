@@ -27,6 +27,7 @@ class Dependency:
 class ScenarioConfig:
     start_date: date
     quarter_end_date: date
+    anchor_date: Optional[date] = None
     sp_to_weeks: float = 2.0
     team_sizes: Dict[str, int] = field(default_factory=dict)
     vacation_weeks: Dict[str, float] = field(default_factory=dict)

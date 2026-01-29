@@ -1892,10 +1892,12 @@ def scenario_planner():
         quarter_start, quarter_end = quarter_dates_from_label(sprint_label)
         start_date = parse_iso_date(config_payload.get('start_date')) or quarter_start or date.today()
         quarter_end_date = parse_iso_date(config_payload.get('quarter_end_date')) or quarter_end or (start_date + timedelta(days=90))
+        anchor_date = parse_iso_date(config_payload.get('anchor_date')) if config_payload.get('anchor_date') else None
 
         scenario_config = ScenarioConfig(
             start_date=start_date,
             quarter_end_date=quarter_end_date,
+            anchor_date=anchor_date,
             sp_to_weeks=2.0,
             team_sizes={},
             vacation_weeks={},

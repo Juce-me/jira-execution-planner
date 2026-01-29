@@ -5,7 +5,8 @@ This doc describes the dashboard alert panels and the rules that trigger them. I
 ## General
 
 - Alerts operate on the currently loaded sprint data (Product and Tech).
-- Alerts never include items with excluded statuses (`Killed`, `Postponed`, `Done`) unless explicitly stated otherwise.
+- Alerts never include items with excluded statuses (`Killed`, `Done`) unless explicitly stated otherwise.
+- Postponed items are shown in the Following Sprint panel.
 - Each panel can be collapsed; collapse state is remembered in the browser.
 
 ## 📄 Missing Story Points
@@ -13,7 +14,7 @@ This doc describes the dashboard alert panels and the rules that trigger them. I
 **Shows:** Stories that need a story point estimate.
 
 **Rule:**
-- Story status is **not** `Killed` or `Done` (Postponed is included)
+- Story status is **not** `Killed`, `Done`, or `Postponed`
 - Story points field is missing, empty, or `0`
 
 ## ⛔️ Blocked
@@ -51,3 +52,11 @@ This doc describes the dashboard alert panels and the rules that trigger them. I
 - Epic status is **not** `Killed`, `Done`, or `Incomplete`
 - Epic has at least one story in the loaded all-time data (no sprint filter)
 - Every story under that epic in the loaded all-time data is `Done`, `Killed`, or `Incomplete`
+
+## ⏭️ Following Sprint
+
+**Shows:** Postponed stories and Analysis-stage epics that should move into the next future sprint.
+
+**Rules:**
+- **Postponed stories:** Any story with status `Postponed`, regardless of story points (team filter applies).
+- **Analysis epics:** Epics with status `Analysis` are shown when the **first future sprint** is selected, with a note: “waiting for description to create stories” (epic sprint value is ignored).

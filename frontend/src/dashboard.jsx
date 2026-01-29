@@ -225,6 +225,7 @@ import * as ReactDOM from 'react-dom';
             const [hideExcludedStats, setHideExcludedStats] = useState(savedPrefsRef.current.hideExcludedStats ?? true);
             const [showMissingAlert, setShowMissingAlert] = useState(savedPrefsRef.current.showMissingAlert ?? true);
             const [showBlockedAlert, setShowBlockedAlert] = useState(savedPrefsRef.current.showBlockedAlert ?? true);
+            const [showPostponedAlert, setShowPostponedAlert] = useState(savedPrefsRef.current.showPostponedAlert ?? true);
             const [showEmptyEpicAlert, setShowEmptyEpicAlert] = useState(savedPrefsRef.current.showEmptyEpicAlert ?? true);
             const [showDoneEpicAlert, setShowDoneEpicAlert] = useState(savedPrefsRef.current.showDoneEpicAlert ?? true);
             const [dismissedAlertKeys, setDismissedAlertKeys] = useState([]);
@@ -234,6 +235,9 @@ import * as ReactDOM from 'react-dom';
             const alertCelebrationTimeoutRef = useRef(null);
             const alertPrevCountsRef = useRef(null);
             const alertCountsInitializedRef = useRef(false);
+            const alertSuppressRef = useRef(true);
+            const alertCountsRef = useRef(null);
+            const alertStabilizeFrameRef = useRef(null);
             const alertHighlightRef = useRef(null);
             const alertHighlightTimeoutRef = useRef(null);
             const [updateInfo, setUpdateInfo] = useState(null);
@@ -1024,6 +1028,7 @@ import * as ReactDOM from 'react-dom';
                     hideExcludedStats: savedPrefsRef.current.hideExcludedStats ?? true,
                     showMissingAlert: savedPrefsRef.current.showMissingAlert ?? true,
                     showBlockedAlert: savedPrefsRef.current.showBlockedAlert ?? true,
+                    showPostponedAlert: savedPrefsRef.current.showPostponedAlert ?? true,
                     showEmptyEpicAlert: savedPrefsRef.current.showEmptyEpicAlert ?? true,
                     showDoneEpicAlert: savedPrefsRef.current.showDoneEpicAlert ?? true,
                     dismissedAlertKeys: [],
@@ -1084,6 +1089,7 @@ import * as ReactDOM from 'react-dom';
                 hideExcludedStats,
                 showMissingAlert,
                 showBlockedAlert,
+                showPostponedAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
                 dismissedAlertKeys,
@@ -1174,6 +1180,7 @@ import * as ReactDOM from 'react-dom';
                 setHideExcludedStats(nextState.hideExcludedStats ?? true);
                 setShowMissingAlert(nextState.showMissingAlert ?? true);
                 setShowBlockedAlert(nextState.showBlockedAlert ?? true);
+                setShowPostponedAlert(nextState.showPostponedAlert ?? true);
                 setShowEmptyEpicAlert(nextState.showEmptyEpicAlert ?? true);
                 setShowDoneEpicAlert(nextState.showDoneEpicAlert ?? true);
                 setDismissedAlertKeys(nextState.dismissedAlertKeys || []);
@@ -1239,6 +1246,7 @@ import * as ReactDOM from 'react-dom';
                 hideExcludedStats,
                 showMissingAlert,
                 showBlockedAlert,
+                showPostponedAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
                 dismissedAlertKeys,
@@ -1480,6 +1488,7 @@ import * as ReactDOM from 'react-dom';
                     hideExcludedStats,
                     showMissingAlert,
                     showBlockedAlert,
+                    showPostponedAlert,
                     showEmptyEpicAlert,
                     showDoneEpicAlert,
                     updateDismissedHash
@@ -1504,6 +1513,7 @@ import * as ReactDOM from 'react-dom';
                 hideExcludedStats,
                 showMissingAlert,
                 showBlockedAlert,
+                showPostponedAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
                 updateDismissedHash
@@ -5137,7 +5147,7 @@ import * as ReactDOM from 'react-dom';
                     if (!task?.key) return true;
                     if (dismissedAlertSet.has(task.key)) return true;
                     const status = normalizeStatus(task.fields.status?.name);
-                    return status === 'killed' || status === 'done';
+                    return status === 'killed' || status === 'done' || status === 'postponed';
                 };
 
                 // Start with server-provided missing info, but only keep items in the selected sprint.
@@ -5247,19 +5257,47 @@ import * as ReactDOM from 'react-dom';
             const blockedAlertTeams = groupAlertsByTeam(blockedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
             const emptyEpicTeams = groupAlertsByTeam(emptyEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const doneEpicTeams = groupAlertsByTeam(doneStoryEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const postponedTasks = React.useMemo(() => {
+                return tasks.filter(task => {
+                    if (!task?.key) return false;
+                    if (dismissedAlertSet.has(task.key)) return false;
+                    const status = normalizeStatus(task.fields.status?.name);
+                    if (status !== 'postponed') return false;
+                    if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return false;
+                    return true;
+                });
+            }, [tasks, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet]);
+
+            const analysisFutureEpics = React.useMemo(() => {
+                if (!isFirstFutureSprintSelected) return [];
+                return readyToCloseEpicsInScope.filter(epic => {
+                    if (!epic?.key) return false;
+                    if (dismissedAlertSet.has(epic.key)) return false;
+                    const status = normalizeStatus(epic.status?.name);
+                    if (status !== 'analysis') return false;
+                    if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
+                    return true;
+                });
+            }, [readyToCloseEpicsInScope, dismissedAlertSet, isFirstFutureSprintSelected, isAllTeamsSelected, selectedTeamSet]);
+
+            const postponedAlertTeams = groupAlertsByTeam(postponedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
+            const analysisEpicTeams = groupAlertsByTeam(analysisFutureEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+
             const alertCounts = {
                 missing: consolidatedMissingStories.length,
                 blocked: blockedTasks.length,
+                followup: postponedTasks.length + analysisFutureEpics.length,
                 empty: emptyEpics.length,
                 done: doneStoryEpics.length
             };
-            const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.empty + alertCounts.done;
+            const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.followup + alertCounts.empty + alertCounts.done;
             const alertContextKey = React.useMemo(() => {
                 const sprintKey = selectedSprint === null ? 'none' : String(selectedSprint);
                 const groupKey = activeGroupId ? String(activeGroupId) : 'all';
                 const teamsKey = (selectedTeams || []).join('|');
                 return `${sprintKey}|${groupKey}|${teamsKey}`;
             }, [selectedSprint, activeGroupId, selectedTeams]);
+            const alertContextLoading = loading || productTasksLoading || techTasksLoading || groupsLoading || sprintsLoading || !tasksFetched;
 
             const triggerAlertCelebration = React.useCallback((options = {}) => {
                 if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -5268,10 +5306,11 @@ import * as ReactDOM from 'react-dom';
                 const palettes = {
                     missing: ['#f97316', '#f59e0b', '#fbbf24', '#fb923c'],
                     blocked: ['#ef4444', '#f43f5e', '#f97316', '#f59e0b'],
+                    followup: ['#6366f1', '#60a5fa', '#38bdf8', '#a855f7'],
                     empty: ['#f59e0b', '#fbbf24', '#fde047', '#facc15'],
                     done: ['#22c55e', '#10b981', '#14b8a6', '#0ea5e9']
                 };
-                const types = options.types && options.types.length ? options.types : ['missing', 'blocked', 'empty', 'done'];
+                const types = options.types && options.types.length ? options.types : ['missing', 'blocked', 'followup', 'empty', 'done'];
                 const palette = types.flatMap(type => palettes[type] || []).filter(Boolean);
                 const colors = palette.length ? palette : ['#f97316', '#f59e0b', '#22c55e', '#0ea5e9', '#a855f7', '#14b8a6'];
                 const count = options.count || (28 + Math.floor(Math.random() * 14));
@@ -5306,18 +5345,55 @@ import * as ReactDOM from 'react-dom';
             }, []);
 
             useEffect(() => {
-                alertPrevCountsRef.current = alertCounts;
-                alertCountsInitializedRef.current = true;
+                alertCountsRef.current = alertCounts;
+            }, [alertCounts.missing, alertCounts.blocked, alertCounts.followup, alertCounts.empty, alertCounts.done]);
+
+            const scheduleAlertBaseline = React.useCallback(() => {
+                if (alertStabilizeFrameRef.current) {
+                    window.cancelAnimationFrame(alertStabilizeFrameRef.current);
+                }
+                alertStabilizeFrameRef.current = window.requestAnimationFrame(() => {
+                    alertStabilizeFrameRef.current = null;
+                    if (alertContextLoading) {
+                        return;
+                    }
+                    alertPrevCountsRef.current = alertCountsRef.current;
+                    alertCountsInitializedRef.current = true;
+                    alertSuppressRef.current = false;
+                });
+            }, [alertContextLoading]);
+
+            useEffect(() => {
+                alertSuppressRef.current = true;
+                alertCountsInitializedRef.current = false;
+                alertPrevCountsRef.current = null;
                 if (alertCelebrationTimeoutRef.current) {
                     window.clearTimeout(alertCelebrationTimeoutRef.current);
                 }
                 setAlertCelebrationPieces([]);
-            }, [alertContextKey]);
+                scheduleAlertBaseline();
+            }, [alertContextKey, scheduleAlertBaseline]);
 
             useEffect(() => {
-                if (!alertCountsInitializedRef.current) {
-                    alertPrevCountsRef.current = alertCounts;
-                    alertCountsInitializedRef.current = true;
+                if (alertContextLoading) {
+                    alertSuppressRef.current = true;
+                    if (alertCelebrationTimeoutRef.current) {
+                        window.clearTimeout(alertCelebrationTimeoutRef.current);
+                    }
+                    if (alertStabilizeFrameRef.current) {
+                        window.cancelAnimationFrame(alertStabilizeFrameRef.current);
+                        alertStabilizeFrameRef.current = null;
+                    }
+                    setAlertCelebrationPieces([]);
+                    return;
+                }
+                if (alertSuppressRef.current) {
+                    scheduleAlertBaseline();
+                }
+            }, [alertContextLoading, scheduleAlertBaseline]);
+
+            useEffect(() => {
+                if (alertContextLoading || alertSuppressRef.current || !alertCountsInitializedRef.current) {
                     return;
                 }
                 const prev = alertPrevCountsRef.current || {};
@@ -5326,7 +5402,7 @@ import * as ReactDOM from 'react-dom';
                     triggerAlertCelebration({ types: resolvedTypes });
                 }
                 alertPrevCountsRef.current = alertCounts;
-            }, [alertCounts.missing, alertCounts.blocked, alertCounts.empty, alertCounts.done, triggerAlertCelebration, alertContextKey]);
+            }, [alertCounts.missing, alertCounts.blocked, alertCounts.followup, alertCounts.empty, alertCounts.done, triggerAlertCelebration, alertContextLoading]);
 
             useEffect(() => {
                 return () => {
@@ -5335,6 +5411,9 @@ import * as ReactDOM from 'react-dom';
                     }
                     if (alertHighlightTimeoutRef.current) {
                         window.clearTimeout(alertHighlightTimeoutRef.current);
+                    }
+                    if (alertStabilizeFrameRef.current) {
+                        window.cancelAnimationFrame(alertStabilizeFrameRef.current);
                     }
                 };
             }, []);
@@ -7213,7 +7292,7 @@ import * as ReactDOM from 'react-dom';
                                     </div>
                                 )}
 		                            {alertItemCount > 0 && (
-		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showEmptyEpicAlert && !showDoneEpicAlert) ? 'collapsed' : ''}`}>
+		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showEmptyEpicAlert && !showDoneEpicAlert) ? 'collapsed' : ''}`}>
 		                                    {consolidatedMissingStories.length > 0 && (
 		                                        <div className={`alert-card missing ${showMissingAlert ? '' : 'collapsed'}`}>
 	                                            <div className="alert-card-header">
@@ -7432,6 +7511,201 @@ import * as ReactDOM from 'react-dom';
                                             </div>
 	                                        </div>
 	                                    )}
+
+                                        {(postponedTasks.length > 0 || analysisFutureEpics.length > 0) && (
+                                            <div className={`alert-card following ${showPostponedAlert ? '' : 'collapsed'}`}>
+                                                <div className="alert-card-header">
+                                                    <button
+                                                        className="alert-toggle"
+                                                        onClick={() => setShowPostponedAlert(prev => !prev)}
+                                                        title={showPostponedAlert ? 'Collapse following sprint panel' : 'Expand following sprint panel'}
+                                                    >
+                                                        <span className="alert-toggle-icon" aria-hidden="true">
+                                                            <svg className={`alert-toggle-chevron ${showPostponedAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
+                                                                <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                            </svg>
+                                                        </span>
+                                                        <span className="alert-toggle-label">
+                                                            {showPostponedAlert ? 'Hide' : 'Show'}
+                                                        </span>
+                                                    </button>
+                                                    <div className="alert-title">⏭️ Following Sprint</div>
+                                                    <div className="alert-subtitle">Postponed stories should be moved to the next sprint. Analysis epics are waiting for description to create stories.</div>
+                                                    <div className="alert-chip">
+                                                        {postponedTasks.length + analysisFutureEpics.length} items
+                                                    </div>
+                                                </div>
+                                                <div className={`alert-card-body ${showPostponedAlert ? '' : 'collapsed'}`}>
+                                                    {postponedTasks.length > 0 && (
+                                                        <>
+                                                            <div className="alert-section-title">Postponed stories</div>
+                                                            {postponedAlertTeams.map(group => {
+                                                                const keys = group.items.map(item => item.key);
+                                                                const teamLink = buildKeyListLink(keys, { addSprint: true });
+                                                                return (
+                                                                    <div key={group.id} className="alert-team-group">
+                                                                        <div className="alert-team-header">
+                                                                            {teamLink ? (
+                                                                                <a
+                                                                                    className="alert-team-link"
+                                                                                    href={teamLink}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                >
+                                                                                    <span className="alert-pill team">{group.name}</span>
+                                                                                    <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
+                                                                                </a>
+                                                                            ) : (
+                                                                                <div className="alert-team-title">
+                                                                                    <span className="alert-pill team">{group.name}</span>
+                                                                                    <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="alert-stories">
+                                                                            {group.items.map(task => (
+                                                                                <div key={task.key} className="alert-story">
+                                                                                    <div
+                                                                                        className="alert-story-main"
+                                                                                        role="button"
+                                                                                        tabIndex={0}
+                                                                                        onClick={() => handleAlertStoryClick(task.key)}
+                                                                                        onKeyDown={(event) => {
+                                                                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                                                                event.preventDefault();
+                                                                                                handleAlertStoryClick(task.key);
+                                                                                            }
+                                                                                        }}
+                                                                                    >
+                                                                                        <a
+                                                                                            className="alert-story-link"
+                                                                                            href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
+                                                                                            target="_blank"
+                                                                                            rel="noopener noreferrer"
+                                                                                            onClick={(event) => {
+                                                                                                event.preventDefault();
+                                                                                                event.stopPropagation();
+                                                                                                handleAlertStoryClick(task.key);
+                                                                                            }}
+                                                                                        >
+                                                                                            {task.key} · {task.fields.summary}
+                                                                                        </a>
+                                                                                    </div>
+                                                                                    <span className="alert-pill status">Postponed</span>
+                                                                                    <a
+                                                                                        className="alert-action"
+                                                                                        href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
+                                                                                        target="_blank"
+                                                                                        rel="noopener noreferrer"
+                                                                                    >
+                                                                                        Move to next sprint →
+                                                                                    </a>
+                                                                                    <button
+                                                                                        className="task-remove alert-remove"
+                                                                                        onClick={(event) => {
+                                                                                            event.stopPropagation();
+                                                                                            dismissAlertItem(task.key);
+                                                                                        }}
+                                                                                        title="Dismiss from alerts"
+                                                                                        type="button"
+                                                                                    >
+                                                                                        ×
+                                                                                    </button>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </>
+                                                    )}
+                                                    {analysisFutureEpics.length > 0 && (
+                                                        <>
+                                                            <div className="alert-section-title">Analysis epics (next sprint)</div>
+                                                            {analysisEpicTeams.map(group => {
+                                                                const keys = group.items.map(item => item.key);
+                                                                const teamLink = buildKeyListLink(keys);
+                                                                return (
+                                                                    <div key={group.id} className="alert-team-group">
+                                                                        <div className="alert-team-header">
+                                                                            {teamLink ? (
+                                                                                <a
+                                                                                    className="alert-team-link"
+                                                                                    href={teamLink}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                >
+                                                                                    <span className="alert-pill team">{group.name}</span>
+                                                                                    <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                                </a>
+                                                                            ) : (
+                                                                                <div className="alert-team-title">
+                                                                                    <span className="alert-pill team">{group.name}</span>
+                                                                                    <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="alert-stories">
+                                                                            {group.items.map(epic => (
+                                                                                <div key={epic.key} className="alert-story">
+                                                                                    <div
+                                                                                        className="alert-story-main"
+                                                                                        role="button"
+                                                                                        tabIndex={0}
+                                                                                        onClick={() => handleAlertStoryClick(epic.key)}
+                                                                                        onKeyDown={(event) => {
+                                                                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                                                                event.preventDefault();
+                                                                                                handleAlertStoryClick(epic.key);
+                                                                                            }
+                                                                                        }}
+                                                                                    >
+                                                                                        <a
+                                                                                            className="alert-story-link"
+                                                                                            href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
+                                                                                            target="_blank"
+                                                                                            rel="noopener noreferrer"
+                                                                                            onClick={(event) => {
+                                                                                                event.preventDefault();
+                                                                                                event.stopPropagation();
+                                                                                                handleAlertStoryClick(epic.key);
+                                                                                            }}
+                                                                                        >
+                                                                                            {epic.key} · {epic.summary}
+                                                                                        </a>
+                                                                                        <div className="alert-story-note">Waiting for description to create stories.</div>
+                                                                                    </div>
+                                                                                    <span className="alert-pill status">Analysis</span>
+                                                                                    <a
+                                                                                        className="alert-action"
+                                                                                        href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
+                                                                                        target="_blank"
+                                                                                        rel="noopener noreferrer"
+                                                                                    >
+                                                                                        Open epic →
+                                                                                    </a>
+                                                                                    <button
+                                                                                        className="task-remove alert-remove"
+                                                                                        onClick={(event) => {
+                                                                                            event.stopPropagation();
+                                                                                            dismissAlertItem(epic.key);
+                                                                                        }}
+                                                                                        title="Dismiss from alerts"
+                                                                                        type="button"
+                                                                                    >
+                                                                                        ×
+                                                                                    </button>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
 
 	                                    {emptyEpics.length > 0 && (
 		                                        <div className={`alert-card empty-epic ${showEmptyEpicAlert ? '' : 'collapsed'}`}>

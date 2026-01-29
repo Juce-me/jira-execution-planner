@@ -231,12 +231,7 @@ import * as ReactDOM from 'react-dom';
             const [dismissedAlertKeys, setDismissedAlertKeys] = useState([]);
             const [alertCelebrationPieces, setAlertCelebrationPieces] = useState([]);
             const alertDismissedRef = useRef(false);
-            const alertPrevCountRef = useRef(0);
             const alertCelebrationTimeoutRef = useRef(null);
-            const alertPrevCountsRef = useRef(null);
-            const alertCountsInitializedRef = useRef(false);
-            const alertSuppressRef = useRef(true);
-            const alertCountsRef = useRef(null);
             const alertStabilizeFrameRef = useRef(null);
             const alertHighlightRef = useRef(null);
             const alertHighlightTimeoutRef = useRef(null);
@@ -1112,7 +1107,6 @@ import * as ReactDOM from 'react-dom';
                     scenarioEdgeFrameRef.current = null;
                 }
                 alertDismissedRef.current = false;
-                alertPrevCountRef.current = 0;
                 if (scenarioScrollFrameRef.current) {
                     window.cancelAnimationFrame(scenarioScrollFrameRef.current);
                     scenarioScrollFrameRef.current = null;
@@ -4274,6 +4268,15 @@ import * as ReactDOM from 'react-dom';
 
             const dismissAlertItem = (taskKey) => {
                 if (!taskKey) return;
+                const resolvedTypes = [];
+                if (missingAlertKeySet.has(taskKey) && missingAlertKeySet.size === 1) resolvedTypes.push('missing');
+                if (blockedAlertKeySet.has(taskKey) && blockedAlertKeySet.size === 1) resolvedTypes.push('blocked');
+                if (followupAlertKeySet.has(taskKey) && followupAlertKeySet.size === 1) resolvedTypes.push('followup');
+                if (emptyAlertKeySet.has(taskKey) && emptyAlertKeySet.size === 1) resolvedTypes.push('empty');
+                if (doneAlertKeySet.has(taskKey) && doneAlertKeySet.size === 1) resolvedTypes.push('done');
+                if (resolvedTypes.length) {
+                    triggerAlertCelebration({ types: resolvedTypes });
+                }
                 alertDismissedRef.current = true;
                 setDismissedAlertKeys(prev => (prev.includes(taskKey) ? prev : [...prev, taskKey]));
             };
@@ -5289,6 +5292,30 @@ import * as ReactDOM from 'react-dom';
             const postponedAlertTeams = groupAlertsByTeam(postponedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
             const analysisEpicTeams = groupAlertsByTeam(analysisFutureEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
 
+            const missingAlertKeySet = React.useMemo(
+                () => new Set(consolidatedMissingStories.map(item => item.task?.key).filter(Boolean)),
+                [consolidatedMissingStories]
+            );
+            const blockedAlertKeySet = React.useMemo(
+                () => new Set(blockedTasks.map(task => task.key).filter(Boolean)),
+                [blockedTasks]
+            );
+            const followupAlertKeySet = React.useMemo(
+                () => new Set([
+                    ...postponedTasks.map(task => task.key),
+                    ...analysisFutureEpics.map(epic => epic.key)
+                ].filter(Boolean)),
+                [postponedTasks, analysisFutureEpics]
+            );
+            const emptyAlertKeySet = React.useMemo(
+                () => new Set(emptyEpics.map(epic => epic.key).filter(Boolean)),
+                [emptyEpics]
+            );
+            const doneAlertKeySet = React.useMemo(
+                () => new Set(doneStoryEpics.map(epic => epic.key).filter(Boolean)),
+                [doneStoryEpics]
+            );
+
             const alertCounts = {
                 missing: consolidatedMissingStories.length,
                 blocked: blockedTasks.length,
@@ -5297,13 +5324,6 @@ import * as ReactDOM from 'react-dom';
                 done: doneStoryEpics.length
             };
             const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.followup + alertCounts.empty + alertCounts.done;
-            const alertContextKey = React.useMemo(() => {
-                const sprintKey = selectedSprint === null ? 'none' : String(selectedSprint);
-                const groupKey = activeGroupId ? String(activeGroupId) : 'all';
-                const teamsKey = (selectedTeams || []).join('|');
-                return `${sprintKey}|${groupKey}|${teamsKey}`;
-            }, [selectedSprint, activeGroupId, selectedTeams]);
-            const alertContextLoading = loading || productTasksLoading || techTasksLoading || groupsLoading || sprintsLoading || !tasksFetched;
 
             const triggerAlertCelebration = React.useCallback((options = {}) => {
                 if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -5351,64 +5371,11 @@ import * as ReactDOM from 'react-dom';
             }, []);
 
             useEffect(() => {
-                alertCountsRef.current = alertCounts;
-            }, [alertCounts.missing, alertCounts.blocked, alertCounts.followup, alertCounts.empty, alertCounts.done]);
-
-            const scheduleAlertBaseline = React.useCallback(() => {
-                if (alertStabilizeFrameRef.current) {
-                    window.cancelAnimationFrame(alertStabilizeFrameRef.current);
-                }
-                alertStabilizeFrameRef.current = window.requestAnimationFrame(() => {
-                    alertStabilizeFrameRef.current = null;
-                    if (alertContextLoading) {
-                        return;
-                    }
-                    alertPrevCountsRef.current = alertCountsRef.current;
-                    alertCountsInitializedRef.current = true;
-                    alertSuppressRef.current = false;
-                });
-            }, [alertContextLoading]);
-
-            useEffect(() => {
-                alertSuppressRef.current = true;
-                alertCountsInitializedRef.current = false;
-                alertPrevCountsRef.current = null;
                 if (alertCelebrationTimeoutRef.current) {
                     window.clearTimeout(alertCelebrationTimeoutRef.current);
                 }
                 setAlertCelebrationPieces([]);
-                scheduleAlertBaseline();
-            }, [alertContextKey, scheduleAlertBaseline]);
-
-            useEffect(() => {
-                if (alertContextLoading) {
-                    alertSuppressRef.current = true;
-                    if (alertCelebrationTimeoutRef.current) {
-                        window.clearTimeout(alertCelebrationTimeoutRef.current);
-                    }
-                    if (alertStabilizeFrameRef.current) {
-                        window.cancelAnimationFrame(alertStabilizeFrameRef.current);
-                        alertStabilizeFrameRef.current = null;
-                    }
-                    setAlertCelebrationPieces([]);
-                    return;
-                }
-                if (alertSuppressRef.current) {
-                    scheduleAlertBaseline();
-                }
-            }, [alertContextLoading, scheduleAlertBaseline]);
-
-            useEffect(() => {
-                if (alertContextLoading || alertSuppressRef.current || !alertCountsInitializedRef.current) {
-                    return;
-                }
-                const prev = alertPrevCountsRef.current || {};
-                const resolvedTypes = Object.keys(alertCounts).filter(key => (prev[key] || 0) > 0 && alertCounts[key] === 0);
-                if (resolvedTypes.length > 0) {
-                    triggerAlertCelebration({ types: resolvedTypes });
-                }
-                alertPrevCountsRef.current = alertCounts;
-            }, [alertCounts.missing, alertCounts.blocked, alertCounts.followup, alertCounts.empty, alertCounts.done, triggerAlertCelebration, alertContextLoading]);
+            }, [selectedSprint, activeGroupId, selectedTeams]);
 
             useEffect(() => {
                 return () => {

@@ -2006,7 +2006,7 @@ import * as ReactDOM from 'react-dom';
                         lane_mode: scenarioLaneMode
                     },
                     filters: {
-                        sprint: selectedSprintInfo?.name || selectedSprint || null,
+                        sprint: selectedSprint || null,
                         teams: scenarioTeamIds
                     }
                 };

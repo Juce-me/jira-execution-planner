@@ -1321,7 +1321,9 @@ def fetch_tasks(include_team_name=False):
             print('⚠️ Team field id not resolved; using customfield_30101 fallback.')
 
         max_results = 250
+        page_size = 100
         start_at = 0
+        next_page_token = None
         collected_issues = []
         names_map = {}
         total_issues = None
@@ -1332,12 +1334,17 @@ def fetch_tasks(include_team_name=False):
         print(f'JQL: {jql}')
 
         while len(collected_issues) < max_results:
+            remaining = max_results - len(collected_issues)
+            page_limit = min(page_size, remaining)
             payload = {
                 'jql': jql,
-                'startAt': start_at,
-                'maxResults': max_results,
+                'maxResults': page_limit,
                 'fields': fields_list
             }
+            if next_page_token:
+                payload['nextPageToken'] = next_page_token
+            else:
+                payload['startAt'] = start_at
 
             response = jira_search_request(headers, payload)
             print(f'📊 Response Status: {response.status_code}')
@@ -1372,15 +1379,14 @@ def fetch_tasks(include_team_name=False):
                 break
 
             collected_issues.extend(issues)
-            # Stop when Jira signals we're at the end or when the last page is smaller than the request size
-            if len(issues) < payload['maxResults']:
-                break
-            if len(collected_issues) >= max_results:
-                collected_issues = collected_issues[:max_results]
-                break
-
+            next_page_token = data.get('nextPageToken')
+            if next_page_token:
+                continue
             start_at += len(issues)
             if total_issues is not None and start_at >= total_issues:
+                break
+            # Stop when Jira signals we're at the end or when the last page is smaller than the request size
+            if len(issues) < page_limit:
                 break
 
         data = {
@@ -1521,13 +1527,20 @@ def fetch_issues_by_jql(jql, headers, fields_list, max_results=500):
     """Fetch issues by JQL with pagination."""
     results = []
     start_at = 0
+    next_page_token = None
+    page_size = 100
     while len(results) < max_results:
+        remaining = max_results - len(results)
+        page_limit = min(page_size, remaining)
         payload = {
             'jql': jql,
-            'startAt': start_at,
-            'maxResults': min(250, max_results - len(results)),
+            'maxResults': page_limit,
             'fields': fields_list
         }
+        if next_page_token:
+            payload['nextPageToken'] = next_page_token
+        else:
+            payload['startAt'] = start_at
         response = jira_search_request(headers, payload)
         if response.status_code != 200:
             print(f'❌ Scenario fetch error: {response.status_code} {response.text}')
@@ -1537,11 +1550,14 @@ def fetch_issues_by_jql(jql, headers, fields_list, max_results=500):
         if not issues:
             break
         results.extend(issues)
+        next_page_token = data.get('nextPageToken')
+        if next_page_token:
+            continue
         start_at += len(issues)
         total = data.get('total')
         if total is not None and start_at >= total:
             break
-        if len(issues) < payload['maxResults']:
+        if len(issues) < page_limit:
             break
     return results
 

@@ -23,13 +23,13 @@ from planning.scheduler import schedule_issues
 # Test constants
 TODAY = dt.date(2026, 1, 29)
 SPRINT_START = dt.date(2026, 1, 1)
-EPIC_KEYS = {"PRODUCT-33713", "PRODUCT-33715", "PRODUCT-33716", "PRODUCT-34063"}
+EPIC_KEYS = {"TEST-101", "TEST-102", "TEST-103", "TEST-104"}
 
 # Expected statuses for each issue (from fixture):
-# PRODUCT-33713: Accepted
-# PRODUCT-33715: Done
-# PRODUCT-33716: To Do
-# PRODUCT-34063: Blocked (or similar non-done status)
+# TEST-101: Accepted
+# TEST-102: Done
+# TEST-103: To Do
+# TEST-104: Blocked (or similar non-done status)
 
 
 def _load_fixture():
@@ -121,10 +121,10 @@ class TestProduct33712ActiveSprintAnchor(unittest.TestCase):
         Main test: Verify Active Sprint scheduling for PRODUCT-33712.
 
         Expected behavior:
-        - PRODUCT-33713 (Accepted): start >= TODAY
-        - PRODUCT-33715 (Done): start <= TODAY (anchored at sprint start)
-        - PRODUCT-33716 (To Do): start >= TODAY
-        - PRODUCT-34063 (Blocked): start >= TODAY
+        - TEST-101 (Accepted): start >= TODAY
+        - TEST-102 (Done): start <= TODAY (anchored at sprint start)
+        - TEST-103 (To Do): start >= TODAY
+        - TEST-104 (Blocked): start >= TODAY
         - All issues: start and end are not None
         - Dependencies: dependent.start >= prerequisite.end
         """
@@ -171,7 +171,7 @@ class TestProduct33712ActiveSprintAnchor(unittest.TestCase):
 
         # 2) Non-done issues (Accepted, To Do, Blocked) must anchor to TODAY or later
         # Active Sprint: anchor_date clamps TODO-like statuses (Accepted included) to TODAY
-        non_done_keys = ["PRODUCT-33713", "PRODUCT-33716", "PRODUCT-34063"]
+        non_done_keys = ["TEST-101", "TEST-103", "TEST-104"]
         for key in non_done_keys:
             issue = by_key[key]
             self.assertGreaterEqual(
@@ -183,8 +183,8 @@ class TestProduct33712ActiveSprintAnchor(unittest.TestCase):
                 f"{key} ends before start: {issue.start_date} -> {issue.end_date}"
             )
 
-        # 3) Done issue (PRODUCT-33715) can be anchored at sprint start (before TODAY)
-        done_issue = by_key["PRODUCT-33715"]
+        # 3) Done issue (TEST-102) can be anchored at sprint start (before TODAY)
+        done_issue = by_key["TEST-102"]
         self.assertLessEqual(
             done_issue.start_date, TODAY,
             f"Done issue {done_issue.key} should be anchored at sprint start, not after TODAY"
@@ -236,8 +236,8 @@ class TestProduct33712ActiveSprintAnchor(unittest.TestCase):
         scheduled_list, _ = schedule_issues(issues, dependencies, config)
         by_key = {item.key: item for item in scheduled_list}
 
-        # PRODUCT-33713 is the Accepted issue
-        accepted_issue = by_key.get("PRODUCT-33713")
+        # TEST-101 is the Accepted issue
+        accepted_issue = by_key.get("TEST-101")
         if accepted_issue:
             # Must not be treated as done
             self.assertNotEqual(

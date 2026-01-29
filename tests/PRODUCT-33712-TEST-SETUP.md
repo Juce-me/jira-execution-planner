@@ -68,25 +68,25 @@ The fixture should have this structure:
   "data": {
     "issues": [
       {
-        "key": "PRODUCT-33713",
+        "key": "TEST-101",
         "status": "Accepted",
         "sp": 3,
-        "team": "...",
-        "assignee": "...",
+        "team": "Team Alpha",
+        "assignee": "alice",
         ...
       },
       {
-        "key": "PRODUCT-33715",
+        "key": "TEST-102",
         "status": "Done",
         ...
       },
       {
-        "key": "PRODUCT-33716",
+        "key": "TEST-103",
         "status": "To Do",
         ...
       },
       {
-        "key": "PRODUCT-34063",
+        "key": "TEST-104",
         "status": "Blocked",
         ...
       },
@@ -94,8 +94,8 @@ The fixture should have this structure:
     ],
     "dependencies": [
       {
-        "from": "PRODUCT-33715",
-        "to": "PRODUCT-33713",
+        "from": "TEST-102",
+        "to": "TEST-101",
         ...
       },
       ...
@@ -104,11 +104,11 @@ The fixture should have this structure:
 }
 ```
 
-Required issues (all part of epic PRODUCT-33712):
-- `PRODUCT-33713` (Accepted)
-- `PRODUCT-33715` (Done)
-- `PRODUCT-33716` (To Do)
-- `PRODUCT-34063` (Blocked or similar)
+Required issues (all part of test epic):
+- `TEST-101` (Accepted)
+- `TEST-102` (Done)
+- `TEST-103` (To Do)
+- `TEST-104` (Blocked or similar)
 
 ---
 
@@ -125,7 +125,7 @@ python3 -m unittest discover -s tests -v
 
 # Expected output (BEFORE fix):
 # FAIL: test_product_33712_active_sprint_anchor_and_dates_not_null
-# AssertionError: PRODUCT-33713 starts before TODAY: 2026-01-20 < 2026-01-29
+# AssertionError: TEST-101 starts before TODAY: 2026-01-20 < 2026-01-29
 
 # Expected output (AFTER fix):
 # OK - All tests pass
@@ -161,7 +161,7 @@ npx playwright test tests/ui/scenario_product_33712_focus_positions.spec.js
 
 ```python
 # Active Sprint: anchor_date clamps TODO-like statuses to TODAY
-for key in ["PRODUCT-33713", "PRODUCT-33716", "PRODUCT-34063"]:
+for key in ["TEST-101", "TEST-103", "TEST-104"]:
     issue = by_key[key]
     self.assertGreaterEqual(
         issue.start_date, TODAY,
@@ -243,9 +243,9 @@ FileNotFoundError: Fixture not found: /path/to/tests/fixtures/scenario-example.j
 Please copy /mnt/data/scenario-example.json to tests/fixtures/scenario-example.json
 ```
 
-**Solution**: Copy the fixture file as described in Step 1.
+**Solution**: Copy the fixture file as described in Step 1, or use the sanitized fixture.
 
-### Test Fails: "Issue PRODUCT-XXXXX not in scheduled results"
+### Test Fails: "Issue TEST-XXX not in scheduled results"
 
 **Cause**: Fixture doesn't contain the expected issues.
 

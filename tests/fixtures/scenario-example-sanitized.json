@@ -5,68 +5,68 @@
     "end": "2026-03-31",
     "issues": [
       {
-        "key": "PRODUCT-33713",
-        "summary": "[P] Stop writing to sync collection",
+        "key": "TEST-101",
+        "summary": "Implement feature component A",
         "type": "Story",
         "status": "Accepted",
         "sp": 3,
         "priority": "High",
-        "team": "Platform",
-        "assignee": "engineer-1",
-        "epicKey": "PRODUCT-33712",
-        "epicSummary": "Clean up sync collection"
+        "team": "Team Alpha",
+        "assignee": "alice",
+        "epicKey": "TEST-100",
+        "epicSummary": "Epic: Infrastructure migration"
       },
       {
-        "key": "PRODUCT-33715",
-        "summary": "[D] Stop reading from sync collection",
+        "key": "TEST-102",
+        "summary": "Update database schema",
         "type": "Story",
         "status": "Done",
         "sp": 2,
         "priority": "High",
-        "team": "Data",
-        "assignee": "engineer-2",
-        "epicKey": "PRODUCT-33712",
-        "epicSummary": "Clean up sync collection"
+        "team": "Team Beta",
+        "assignee": "bob",
+        "epicKey": "TEST-100",
+        "epicSummary": "Epic: Infrastructure migration"
       },
       {
-        "key": "PRODUCT-33716",
-        "summary": "[SRE] Remove sync collection from API",
+        "key": "TEST-103",
+        "summary": "Deploy configuration changes",
         "type": "Story",
         "status": "To Do",
         "sp": 5,
         "priority": "High",
-        "team": "SRE",
-        "assignee": "engineer-3",
-        "epicKey": "PRODUCT-33712",
-        "epicSummary": "Clean up sync collection"
+        "team": "Team Gamma",
+        "assignee": "charlie",
+        "epicKey": "TEST-100",
+        "epicSummary": "Epic: Infrastructure migration"
       },
       {
-        "key": "PRODUCT-34063",
-        "summary": "[DS] Clean up sync collection analytics",
+        "key": "TEST-104",
+        "summary": "Validate metrics and monitoring",
         "type": "Story",
         "status": "Blocked",
         "sp": 3,
         "priority": "Medium",
-        "team": "Data Science",
-        "assignee": "engineer-4",
-        "epicKey": "PRODUCT-33712",
-        "epicSummary": "Clean up sync collection"
+        "team": "Team Delta",
+        "assignee": "diana",
+        "epicKey": "TEST-100",
+        "epicSummary": "Epic: Infrastructure migration"
       }
     ],
     "dependencies": [
       {
-        "from": "PRODUCT-33715",
-        "to": "PRODUCT-33713",
+        "from": "TEST-102",
+        "to": "TEST-101",
         "type": "dependency"
       },
       {
-        "from": "PRODUCT-33713",
-        "to": "PRODUCT-33716",
+        "from": "TEST-101",
+        "to": "TEST-103",
         "type": "dependency"
       },
       {
-        "from": "PRODUCT-33716",
-        "to": "PRODUCT-34063",
+        "from": "TEST-103",
+        "to": "TEST-104",
         "type": "dependency"
       }
     ]

@@ -23,7 +23,7 @@
 
 // Test constants
 const TODAY = '2026-01-29';
-const EPIC_KEYS = ['PRODUCT-33713', 'PRODUCT-33715', 'PRODUCT-33716', 'PRODUCT-34063'];
+const EPIC_KEYS = ['TEST-101', 'TEST-102', 'TEST-103', 'TEST-104'];
 
 /**
  * Load the scenario fixture
@@ -106,9 +106,9 @@ test.describe('PRODUCT-33712: Focus mode position stability', () => {
         // Verify we found at least some bars
         expect(Object.keys(unfocusedPositions).length).toBeGreaterThan(0);
 
-        // Toggle focus mode (focus on epic PRODUCT-33712 or one of its issues)
+        // Toggle focus mode (focus on epic TEST-100 or one of its issues)
         // TODO: Update selector based on actual UI
-        const focusToggle = await page.locator('[data-epic-key="PRODUCT-33712"]').first();
+        const focusToggle = await page.locator('[data-epic-key="TEST-100"]').first();
         await focusToggle.click();
 
         // Wait for focus animation/transition to complete

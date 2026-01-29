@@ -2001,9 +2001,14 @@ import * as ReactDOM from 'react-dom';
             };
 
             const buildScenarioPayload = () => {
+                const isActiveSprint = selectedSprintState === 'active';
+                const anchorDate = isActiveSprint
+                    ? new Date().toISOString().slice(0, 10)
+                    : null;
                 return {
                     config: {
-                        lane_mode: scenarioLaneMode
+                        lane_mode: scenarioLaneMode,
+                        anchor_date: anchorDate
                     },
                     filters: {
                         sprint: selectedSprint || null,
@@ -2863,7 +2868,9 @@ import * as ReactDOM from 'react-dom';
                 const laneHiddenCounts = new Map();
                 const fallbackStart = scenarioViewStart || new Date(0);
                 const DAY_MS = 24 * 60 * 60 * 1000;
-                const assignRows = (issueList, rowEnds, baseOffset, rowAssignees) => {
+                const assignRows = (issueList, rowEnds, baseOffset, rowAssignees, options = {}) => {
+                    const allowNewRows = options.allowNewRows !== false;
+                    const allowAssigneeMix = options.allowAssigneeMix === true;
                     issueList.forEach((issue) => {
                         if (!issue?.key) return;
                         const assignee = issue.assignee || null;
@@ -2880,11 +2887,12 @@ import * as ReactDOM from 'react-dom';
                         let rowIndex = rowEnds.findIndex((rowEnd, idx) => {
                             const timeAvailable = isUnscheduled ? start > rowEnd : start >= rowEnd;
                             const rowAssignee = rowAssignees[idx];
-                            const assigneeMatch = !rowAssignee || rowAssignee === assignee;
+                            const assigneeMatch = allowAssigneeMix || !rowAssignee || rowAssignee === assignee;
                             return timeAvailable && assigneeMatch;
                         });
 
                         if (rowIndex === -1) {
+                            if (!allowNewRows) return;
                             // No suitable row found, create new one
                             rowIndex = rowEnds.length;
                             rowEnds.push(normalizedEnd);
@@ -2921,10 +2929,8 @@ import * as ReactDOM from 'react-dom';
                         }
                     });
                     assignRows(regularIssues, rowEnds, 0, rowAssignees);
-                    const excludedRowEnds = [];
-                    const excludedRowAssignees = [];
-                    assignRows(excludedIssues, excludedRowEnds, rowEnds.length, excludedRowAssignees);
-                    const totalRows = Math.max(1, rowEnds.length + excludedRowEnds.length, capacityRows || 0);
+                    assignRows(excludedIssues, rowEnds, 0, rowAssignees, { allowAssigneeMix: true, allowNewRows: false });
+                    const totalRows = Math.max(1, rowEnds.length, capacityRows || 0);
                     const isCollapsed = scenarioEpicFocus ? false : Boolean(scenarioCollapsedLanes[lane]);
                     const collapsedRows = scenarioLaneMode === 'epic'
                         ? 1
@@ -6635,7 +6641,6 @@ import * as ReactDOM from 'react-dom';
                                                             if (scenarioEpicFocus) clearScenarioEpicFocus();
                                                             setScenarioLaneMode('assignee');
                                                         }}
-                                                        disabled={!scenarioHasAssignees}
                                                     >
                                                         Assignee
                                                     </button>

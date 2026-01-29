@@ -1,0 +1,9 @@
+# Keep test fixtures local only
+# These files may contain sensitive Jira data and API information
+*.json
+*.csv
+*.xml
+
+# Exception: allow example/template files if needed
+!*-template.json
+!*-example-sanitized.json

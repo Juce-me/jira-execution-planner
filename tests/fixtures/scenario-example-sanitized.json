@@ -1,0 +1,74 @@
+{
+  "data": {
+    "sprint": "Active Sprint Q1 2026",
+    "start": "2026-01-01",
+    "end": "2026-03-31",
+    "issues": [
+      {
+        "key": "PRODUCT-33713",
+        "summary": "[P] Stop writing to sync collection",
+        "type": "Story",
+        "status": "Accepted",
+        "sp": 3,
+        "priority": "High",
+        "team": "Platform",
+        "assignee": "engineer-1",
+        "epicKey": "PRODUCT-33712",
+        "epicSummary": "Clean up sync collection"
+      },
+      {
+        "key": "PRODUCT-33715",
+        "summary": "[D] Stop reading from sync collection",
+        "type": "Story",
+        "status": "Done",
+        "sp": 2,
+        "priority": "High",
+        "team": "Data",
+        "assignee": "engineer-2",
+        "epicKey": "PRODUCT-33712",
+        "epicSummary": "Clean up sync collection"
+      },
+      {
+        "key": "PRODUCT-33716",
+        "summary": "[SRE] Remove sync collection from API",
+        "type": "Story",
+        "status": "To Do",
+        "sp": 5,
+        "priority": "High",
+        "team": "SRE",
+        "assignee": "engineer-3",
+        "epicKey": "PRODUCT-33712",
+        "epicSummary": "Clean up sync collection"
+      },
+      {
+        "key": "PRODUCT-34063",
+        "summary": "[DS] Clean up sync collection analytics",
+        "type": "Story",
+        "status": "Blocked",
+        "sp": 3,
+        "priority": "Medium",
+        "team": "Data Science",
+        "assignee": "engineer-4",
+        "epicKey": "PRODUCT-33712",
+        "epicSummary": "Clean up sync collection"
+      }
+    ],
+    "dependencies": [
+      {
+        "from": "PRODUCT-33715",
+        "to": "PRODUCT-33713",
+        "type": "dependency"
+      },
+      {
+        "from": "PRODUCT-33713",
+        "to": "PRODUCT-33716",
+        "type": "dependency"
+      },
+      {
+        "from": "PRODUCT-33716",
+        "to": "PRODUCT-34063",
+        "type": "dependency"
+      }
+    ]
+  }
+}

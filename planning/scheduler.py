@@ -232,7 +232,10 @@ def schedule_issues(
             lane = issue.assignee or issue.team or "Unassigned"
         lane_capacity = capacities[lane]
         status = normalize_status(issue.status)
+        # Active Sprint anchor_date clamps TODO-like statuses (Accepted, To Do, Blocked, etc.) to TODAY
+        # Done/Killed stay at sprint start; In-Progress centered around TODAY
         min_start_week = anchor_week if status not in DONE_STATUSES and status not in IN_PROGRESS_STATUSES else 0.0
+        # Calculate minimum start based on dependencies (dependents must start after prerequisites end)
         dep_end = 0.0
         for dep in dependency_keys.get(key, []):
             dep_issue = scheduled.get(dep)
@@ -264,11 +267,13 @@ def schedule_issues(
             if issue_assignee in lane_capacity.assignee_available_at:
                 # Assignee is busy, wait for them to finish
                 assignee_ready = lane_capacity.assignee_available_at[issue_assignee]
+                # Final start: max(dependencies, assignee availability, anchor date)
                 start_week = max(dep_end, assignee_ready, min_start_week)
             else:
                 # Assignee is free, find an available slot
                 slot_index = min(range(len(lane_capacity.available_at)), key=lambda i: lane_capacity.available_at[i])
                 slot_ready = lane_capacity.available_at[slot_index]
+                # Final start: max(dependencies, slot availability, anchor date)
                 start_week = max(dep_end, slot_ready, min_start_week)
                 # Assign this slot to the assignee
                 lane_capacity.assignee_slots[issue_assignee] = slot_index
@@ -282,6 +287,7 @@ def schedule_issues(
             # Unassigned task: use any available slot
             slot_index = min(range(len(lane_capacity.available_at)), key=lambda i: lane_capacity.available_at[i])
             slot_ready = lane_capacity.available_at[slot_index]
+            # Final start: max(dependencies, slot availability, anchor date)
             start_week = max(dep_end, slot_ready, min_start_week)
             end_week = start_week + duration_weeks
             lane_capacity.available_at[slot_index] = end_week

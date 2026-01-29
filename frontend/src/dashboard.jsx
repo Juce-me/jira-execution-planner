@@ -1991,6 +1991,10 @@ import * as ReactDOM from 'react-dom';
 
             const parseScenarioDate = (value) => {
                 if (!value) return null;
+                // Parse ISO date string (YYYY-MM-DD) as local date at midnight
+                // Adding T00:00:00 without timezone creates local date, avoiding timezone day-shift bugs
+                // Backend sends dates as date.isoformat() → "2026-01-29"
+                // This must parse as local 2026-01-29, not UTC (which could shift to 2026-01-28 in some timezones)
                 return new Date(`${value}T00:00:00`);
             };
 
@@ -3565,7 +3569,19 @@ import * as ReactDOM from 'react-dom';
                     if (!fromVisible && !toVisible) return;
                     const fromRect = visibleRects.get(edge.from) || getFallbackRect(edge.from);
                     const toRect = visibleRects.get(edge.to) || getFallbackRect(edge.to);
-                    if (!fromRect || !toRect) return;
+                    // Active Sprint anchor + dependency visualization: Edges must never render when endpoints are missing
+                    // This prevents edges from "shooting to the end" or landing on wrong bar positions
+                    if (!fromRect || !toRect) {
+                        if (process.env.NODE_ENV === 'development') {
+                            console.debug(`[Scenario] Skipped edge ${edge.from} → ${edge.to}: missing rect`, {
+                                fromRect: !!fromRect,
+                                toRect: !!toRect,
+                                fromInPositions: !!scenarioPositions[edge.from],
+                                toInPositions: !!scenarioPositions[edge.to]
+                            });
+                        }
+                        return;
+                    }
                     const fromInFocus = scenarioEpicFocus && scenarioFocusIssueKeys.has(edge.from);
                     const toInFocus = scenarioEpicFocus && scenarioFocusIssueKeys.has(edge.to);
                     if (scenarioEpicFocus && !fromInFocus && !toInFocus) {

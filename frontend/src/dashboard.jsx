@@ -3606,7 +3606,23 @@ import * as ReactDOM from 'react-dom';
                     if (scenarioEpicFocus && !fromInFocus && !toInFocus) {
                         return;
                     }
+
+                    // Timeline dependency waterflow: Only show edges that flow forward in time
+                    // On a timeline, backward arrows (right-to-left) make no sense
+                    // Skip edges where prerequisite is scheduled AFTER dependent (backward in time)
                     const startX = fromRect.x + fromRect.width;
+                    const endX = toRect.x;
+                    if (endX <= startX) {
+                        // Dependent is to the LEFT of or same position as prerequisite (backward/parallel)
+                        // This happens with circular dependencies in Jira data
+                        // Skip to avoid visual clutter and maintain left-to-right waterflow
+                        if (process.env.NODE_ENV === 'development') {
+                            console.debug(`[Scenario] Skipped backward edge ${edge.from} → ${edge.to}: endX=${endX.toFixed(0)} <= startX=${startX.toFixed(0)}`);
+                        }
+                        return;
+                    }
+
+                    // Render forward-flowing edge
                     const endX = toRect.x;
                     const startY = fromRect.y + fromRect.height / 2;
                     const endY = toRect.y + toRect.height / 2;

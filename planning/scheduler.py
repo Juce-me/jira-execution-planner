@@ -213,30 +213,38 @@ def schedule_issues(
 
     # Handle tasks in circular dependencies (not in topo order)
     # Topo_sort skips tasks in cycles, but they still need scheduling
+    # Schedule them iteratively: tasks with all deps satisfied go first
     remaining_keys = set(issue_map.keys()) - set(order) - set(scheduled.keys()) - set(unschedulable.keys())
     if remaining_keys:
-        # For cyclic tasks: filter out dependencies to other cyclic tasks (break the cycle)
-        # Only keep dependencies to non-cyclic tasks (those in order or already scheduled)
-        non_cyclic = set(order) | set(scheduled.keys())
-        cycle_free_deps = {}
-        for key in remaining_keys:
-            if key in dependency_keys:
-                # Keep only deps outside the cycle
-                valid_deps = [d for d in dependency_keys[key] if d in non_cyclic]
-                cycle_free_deps[key] = valid_deps
+        already_ordered = set(order) | set(scheduled.keys())
+        remaining_order = []
 
-        # Re-run topo sort on remaining tasks with cycle-free dependencies
-        remaining_map = {k: issue_map[k] for k in remaining_keys}
-        remaining_order = topo_sort(remaining_map, cycle_free_deps)
+        while remaining_keys:
+            # Find tasks whose dependencies are all satisfied (already in order or scheduled)
+            ready = []
+            for key in remaining_keys:
+                deps = dependency_keys.get(key, [])
+                # Filter to valid deps (exist in issue_map)
+                valid_deps = [d for d in deps if d in issue_map]
+                # Check if all valid deps are already ordered/scheduled
+                unsatisfied = [d for d in valid_deps if d not in already_ordered]
+                if not unsatisfied:
+                    ready.append(key)
 
-        # If still cyclic (shouldn't happen), schedule by priority
-        still_missing = remaining_keys - set(remaining_order)
-        if still_missing:
-            fallback_order = sorted(
-                still_missing,
-                key=lambda k: (priority_rank(issue_map[k].priority), -(issue_map[k].story_points or 0.0))
-            )
-            remaining_order = list(remaining_order) + fallback_order
+            # If we found ready tasks, schedule them by priority
+            if ready:
+                ready.sort(key=lambda k: (priority_rank(issue_map[k].priority), -(issue_map[k].story_points or 0.0)))
+                for key in ready:
+                    remaining_order.append(key)
+                    already_ordered.add(key)
+                    remaining_keys.remove(key)
+            else:
+                # Deadlock: all remaining tasks have unsatisfied deps within the cycle
+                # Break by picking highest priority task
+                key = min(remaining_keys, key=lambda k: (priority_rank(issue_map[k].priority), -(issue_map[k].story_points or 0.0)))
+                remaining_order.append(key)
+                already_ordered.add(key)
+                remaining_keys.remove(key)
 
         order = list(order) + remaining_order
 

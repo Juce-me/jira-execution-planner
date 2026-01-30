@@ -3125,6 +3125,25 @@ import * as ReactDOM from 'react-dom';
                 if (!scenarioLayout.width) return {};
                 const totalMs = Math.max(1, scenarioViewEnd - scenarioViewStart);
                 const positions = {};
+
+                // Debug: Log Accepted tasks positioning to diagnose left-of-TODAY bug
+                if (process.env.NODE_ENV === 'development') {
+                    const acceptedTasks = scenarioTimelineIssues.filter(i => i.status === 'Accepted');
+                    if (acceptedTasks.length > 0) {
+                        console.debug('[Scenario] Accepted tasks:', acceptedTasks.map(i => ({
+                            key: i.key,
+                            start: i.start,
+                            end: i.end,
+                            scheduledReason: i.scheduledReason
+                        })));
+                        console.debug('[Scenario] View range:', {
+                            start: scenarioViewStart,
+                            end: scenarioViewEnd,
+                            today: new Date()
+                        });
+                    }
+                }
+
                 scenarioTimelineIssues.forEach((issue) => {
                     const lane = scenarioLaneForIssue(issue);
                     const laneMeta = scenarioLaneMeta.meta.get(lane);

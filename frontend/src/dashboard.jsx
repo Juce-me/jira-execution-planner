@@ -3607,11 +3607,12 @@ import * as ReactDOM from 'react-dom';
                         return;
                     }
 
+                    const startX = fromRect.x + fromRect.width;
+                    const endX = toRect.x;
+
                     // Timeline dependency waterflow: Only show edges that flow forward in time
                     // On a timeline, backward arrows (right-to-left) make no sense
                     // Skip edges where prerequisite is scheduled AFTER dependent (backward in time)
-                    const startX = fromRect.x + fromRect.width;
-                    const endX = toRect.x;
                     if (endX <= startX) {
                         // Dependent is to the LEFT of or same position as prerequisite (backward/parallel)
                         // This happens with circular dependencies in Jira data
@@ -3621,9 +3622,6 @@ import * as ReactDOM from 'react-dom';
                         }
                         return;
                     }
-
-                    // Render forward-flowing edge
-                    const endX = toRect.x;
                     const startY = fromRect.y + fromRect.height / 2;
                     const endY = toRect.y + toRect.height / 2;
                     const dx = endX - startX;

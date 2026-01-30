@@ -213,13 +213,31 @@ def schedule_issues(
 
     # Handle tasks in circular dependencies (not in topo order)
     # Topo_sort skips tasks in cycles, but they still need scheduling
-    # Schedule remaining tasks in priority order, ignoring cyclic edges
     remaining_keys = set(issue_map.keys()) - set(order) - set(scheduled.keys()) - set(unschedulable.keys())
     if remaining_keys:
-        remaining_order = sorted(
-            remaining_keys,
-            key=lambda k: (priority_rank(issue_map[k].priority), -(issue_map[k].story_points or 0.0))
-        )
+        # For cyclic tasks: filter out dependencies to other cyclic tasks (break the cycle)
+        # Only keep dependencies to non-cyclic tasks (those in order or already scheduled)
+        non_cyclic = set(order) | set(scheduled.keys())
+        cycle_free_deps = {}
+        for key in remaining_keys:
+            if key in dependency_keys:
+                # Keep only deps outside the cycle
+                valid_deps = [d for d in dependency_keys[key] if d in non_cyclic]
+                cycle_free_deps[key] = valid_deps
+
+        # Re-run topo sort on remaining tasks with cycle-free dependencies
+        remaining_map = {k: issue_map[k] for k in remaining_keys}
+        remaining_order = topo_sort(remaining_map, cycle_free_deps)
+
+        # If still cyclic (shouldn't happen), schedule by priority
+        still_missing = remaining_keys - set(remaining_order)
+        if still_missing:
+            fallback_order = sorted(
+                still_missing,
+                key=lambda k: (priority_rank(issue_map[k].priority), -(issue_map[k].story_points or 0.0))
+            )
+            remaining_order = list(remaining_order) + fallback_order
+
         order = list(order) + remaining_order
 
     for key in order:

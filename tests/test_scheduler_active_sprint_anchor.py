@@ -1,5 +1,5 @@
 """
-Test case for PRODUCT-33712: Active Sprint anchor + dependency visualization.
+Test case for Active Sprint anchor + dependency visualization.
 
 This test verifies that the scheduler correctly handles Active Sprint scenarios:
 - Non-done tasks (Accepted, To Do, Blocked) must anchor to TODAY or later
@@ -7,8 +7,7 @@ This test verifies that the scheduler correctly handles Active Sprint scenarios:
 - Dependencies are respected (dependents start after prerequisites end)
 - All scheduled issues have valid start/end dates (no None values)
 
-IMPORTANT: This test uses real Jira data from scenario-example.json.
-Keep this file LOCAL ONLY - never commit to public repo.
+Uses synthetic test data (falls back to real data if available locally).
 """
 
 import json
@@ -33,7 +32,7 @@ EPIC_KEYS = {"TEST-101", "TEST-102", "TEST-103", "TEST-104"}
 
 
 def _load_fixture():
-    """Load scenario-example.json fixture and extract PRODUCT-33712 epic issues."""
+    """Load scenario fixture and extract test epic issues."""
     # Try real fixture first, fall back to sanitized version
     fixture_paths = [
         Path(__file__).parent / "fixtures" / "scenario-example.json",
@@ -105,9 +104,9 @@ def _convert_to_dependency_dict(dependencies_list):
     return dep_dict
 
 
-class TestProduct33712ActiveSprintAnchor(unittest.TestCase):
+class TestActiveSprintAnchor(unittest.TestCase):
     """
-    Test PRODUCT-33712 epic scheduling in Active Sprint mode.
+    Test Active Sprint anchor behavior for non-done tasks.
 
     Verifies that:
     1. All 4 issues get valid start/end dates (not None)
@@ -116,9 +115,9 @@ class TestProduct33712ActiveSprintAnchor(unittest.TestCase):
     4. Dependencies are respected (dependent starts after prerequisite ends)
     """
 
-    def test_product_33712_active_sprint_anchor_and_dates_not_null(self):
+    def test_active_sprint_anchor_and_dates_not_null(self):
         """
-        Main test: Verify Active Sprint scheduling for PRODUCT-33712.
+        Main test: Verify Active Sprint scheduling behavior.
 
         Expected behavior:
         - TEST-101 (Accepted): start >= TODAY

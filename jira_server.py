@@ -1570,6 +1570,8 @@ def build_scenario_jql(filters):
     else:
         jql = JQL_QUERY
         if teams:
+            # Strip any Team[Team] filters from the base JQL before applying group teams.
+            jql = remove_team_filter_from_jql(jql)
             quoted = ', '.join(f'"{t}"' for t in teams)
             jql = add_clause_to_jql(jql, f'"Team[Team]" in ({quoted})')
 

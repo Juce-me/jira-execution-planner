@@ -212,41 +212,61 @@ def schedule_issues(
     order = topo_sort(issue_map, dependency_keys)
 
     # Handle tasks in circular dependencies (not in topo order)
-    # Topo_sort skips tasks in cycles, but they still need scheduling
-    # Schedule them iteratively: tasks with all deps satisfied go first
+    # Use iterative scheduling: process tasks whose deps are ready first
     remaining_keys = set(issue_map.keys()) - set(order) - set(scheduled.keys()) - set(unschedulable.keys())
     if remaining_keys:
-        already_ordered = set(order) | set(scheduled.keys())
+        already_in_order = set(order) | set(scheduled.keys())
         remaining_order = []
+        remaining_set = set(remaining_keys)
 
-        while remaining_keys:
-            # Find tasks whose dependencies are all satisfied (already in order or scheduled)
-            ready = []
-            for key in remaining_keys:
+        # Iteratively add tasks whose all dependencies are either:
+        # 1) Already in order/scheduled (non-cyclic deps), OR
+        # 2) Already added to remaining_order (within-cycle deps processed earlier)
+        max_iterations = len(remaining_keys) + 1
+        for _ in range(max_iterations):
+            if not remaining_set:
+                break
+
+            added_this_round = []
+            for key in list(remaining_set):
                 deps = dependency_keys.get(key, [])
-                # Filter to valid deps (exist in issue_map)
                 valid_deps = [d for d in deps if d in issue_map]
-                # Check if all valid deps are already ordered/scheduled
-                unsatisfied = [d for d in valid_deps if d not in already_ordered]
-                if not unsatisfied:
-                    ready.append(key)
+                # Check if all valid deps are ready (in already_in_order or in remaining_order)
+                unready = [d for d in valid_deps if d not in already_in_order and d not in remaining_order]
+                if not unready:
+                    added_this_round.append(key)
 
-            # If we found ready tasks, schedule them by priority
-            if ready:
-                ready.sort(key=lambda k: (priority_rank(issue_map[k].priority), -(issue_map[k].story_points or 0.0)))
-                for key in ready:
-                    remaining_order.append(key)
-                    already_ordered.add(key)
-                    remaining_keys.remove(key)
+            if added_this_round:
+                # Sort by priority within this round
+                added_this_round.sort(key=lambda k: (priority_rank(issue_map[k].priority), -(issue_map[k].story_points or 0.0)))
+                remaining_order.extend(added_this_round)
+                for key in added_this_round:
+                    remaining_set.remove(key)
             else:
-                # Deadlock: all remaining tasks have unsatisfied deps within the cycle
-                # Break by picking highest priority task
-                key = min(remaining_keys, key=lambda k: (priority_rank(issue_map[k].priority), -(issue_map[k].story_points or 0.0)))
-                remaining_order.append(key)
-                already_ordered.add(key)
-                remaining_keys.remove(key)
+                # Deadlock: pick task with fewest remaining dependencies
+                # For tasks with same dep count, schedule "Blocked" status last
+                if remaining_set:
+                    def sort_key(k):
+                        deps_in_remaining = len([d for d in dependency_keys.get(k, []) if d in remaining_set])
+                        status = normalize_status(issue_map[k].status)
+                        # Blocked status should go last (higher value)
+                        status_order = 1 if status == 'blocked' else 0
+                        return (
+                            deps_in_remaining,  # Fewest deps first
+                            status_order,  # Non-blocked before blocked
+                            priority_rank(issue_map[k].priority),
+                            -(issue_map[k].story_points or 0.0)
+                        )
+                    key = min(remaining_set, key=sort_key)
+                    remaining_order.append(key)
+                    remaining_set.remove(key)
 
         order = list(order) + remaining_order
+
+    # Track all scheduled items (including those scheduled in this loop iteration)
+    # This is needed for cyclic dependencies where task B depends on task A
+    # but both are processed in the same cycle-breaking iteration
+    all_scheduled = dict(scheduled)
 
     for key in order:
         issue = issue_map[key]
@@ -276,7 +296,8 @@ def schedule_issues(
         # Calculate minimum start based on dependencies (dependents must start after prerequisites end)
         dep_end = 0.0
         for dep in dependency_keys.get(key, []):
-            dep_issue = scheduled.get(dep)
+            # Check in all_scheduled (includes tasks scheduled in this iteration)
+            dep_issue = all_scheduled.get(dep)
             if dep_issue and dep_issue.duration_weeks is not None:
                 dep_end = max(dep_end, dep_issue.duration_weeks + (dep_issue.start_date - config.start_date).days / 7.0)
 
@@ -332,7 +353,7 @@ def schedule_issues(
 
         start_date = config.start_date + timedelta(weeks=start_week)
         end_date = config.start_date + timedelta(weeks=end_week)
-        scheduled[key] = ScheduledIssue(
+        scheduled_issue = ScheduledIssue(
             key=issue.key,
             summary=issue.summary,
             lane=lane,
@@ -343,6 +364,8 @@ def schedule_issues(
             duration_weeks=duration_weeks,
             assignee=issue.assignee,
         )
+        scheduled[key] = scheduled_issue
+        all_scheduled[key] = scheduled_issue  # Also track in iteration map
 
     all_results = {**scheduled, **unschedulable}
     return list(all_results.values()), scheduled

@@ -210,6 +210,18 @@ def schedule_issues(
                 lane_capacity.assignee_available_at[issue.assignee] = end_week
 
     order = topo_sort(issue_map, dependency_keys)
+
+    # Handle tasks in circular dependencies (not in topo order)
+    # Topo_sort skips tasks in cycles, but they still need scheduling
+    # Schedule remaining tasks in priority order, ignoring cyclic edges
+    remaining_keys = set(issue_map.keys()) - set(order) - set(scheduled.keys()) - set(unschedulable.keys())
+    if remaining_keys:
+        remaining_order = sorted(
+            remaining_keys,
+            key=lambda k: (priority_rank(issue_map[k].priority), -(issue_map[k].story_points or 0.0))
+        )
+        order = list(order) + remaining_order
+
     for key in order:
         issue = issue_map[key]
         if key in scheduled or key in unschedulable:

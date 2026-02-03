@@ -8,10 +8,10 @@
     "watch": "esbuild frontend/src/dashboard.jsx --bundle --sourcemap --format=iife --outfile=frontend/dist/dashboard.js --define:process.env.NODE_ENV='\"development\"' --watch"
   },
   "dependencies": {
-    "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "esbuild": "0.20.2"
+    "esbuild": "^0.27.2"
   }
 }

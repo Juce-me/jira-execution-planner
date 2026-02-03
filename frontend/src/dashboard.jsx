@@ -136,10 +136,23 @@ import * as ReactDOM from 'react-dom';
             const [groupDraft, setGroupDraft] = useState(null);
             const [groupDraftError, setGroupDraftError] = useState('');
             const [groupImportText, setGroupImportText] = useState('');
+            const [showGroupImport, setShowGroupImport] = useState(false);
+            const [showGroupAdvanced, setShowGroupAdvanced] = useState(false);
             const [groupSaving, setGroupSaving] = useState(false);
             const [availableTeams, setAvailableTeams] = useState([]);
             const [loadingTeams, setLoadingTeams] = useState(false);
             const [teamSearchQuery, setTeamSearchQuery] = useState({});
+            const [teamSearchOpen, setTeamSearchOpen] = useState({});
+            const [teamSearchIndex, setTeamSearchIndex] = useState({});
+            const [teamSearchFeedback, setTeamSearchFeedback] = useState({});
+            const teamSearchInputRefs = useRef({});
+            const teamSearchFeedbackTimersRef = useRef({});
+            const teamChipLastRef = useRef({});
+            const [groupSearchQuery, setGroupSearchQuery] = useState('');
+            const [activeGroupDraftId, setActiveGroupDraftId] = useState(null);
+            const [showGroupListMobile, setShowGroupListMobile] = useState(false);
+            const [showGroupDiscardConfirm, setShowGroupDiscardConfirm] = useState(false);
+            const groupDraftBaselineRef = useRef('');
             const [groupQueryTemplateEnabled, setGroupQueryTemplateEnabled] = useState(false);
             const [jiraUrl, setJiraUrl] = useState('');
             const [selectedTasks, setSelectedTasks] = useState({});
@@ -329,8 +342,25 @@ import * as ReactDOM from 'react-dom';
                 if (!showGroupManage) return;
                 const normalized = normalizeGroupsConfig(groupsConfig);
                 setGroupDraft(normalized);
+                groupDraftBaselineRef.current = JSON.stringify({
+                    version: normalized.version || 1,
+                    groups: normalized.groups || [],
+                    defaultGroupId: normalized.defaultGroupId || '',
+                    teamCatalog: normalized.teamCatalog || {},
+                    teamCatalogMeta: normalized.teamCatalogMeta || {}
+                });
                 setGroupDraftError('');
                 setGroupImportText('');
+                setShowGroupImport(false);
+                setShowGroupAdvanced(false);
+                setGroupSearchQuery('');
+                setTeamSearchQuery({});
+                setTeamSearchOpen({});
+                setTeamSearchIndex({});
+                setTeamSearchFeedback({});
+                setShowGroupDiscardConfirm(false);
+                setShowGroupListMobile(false);
+                setActiveGroupDraftId(resolveInitialGroupId(normalized));
                 const catalogTeams = buildTeamCatalogList(normalized.teamCatalog);
                 if (catalogTeams.length) {
                     setAvailableTeams(catalogTeams);
@@ -350,6 +380,18 @@ import * as ReactDOM from 'react-dom';
                     resolveMissingTeamNames(Array.from(missingIds));
                 }
             }, [showGroupManage, groupsConfig]);
+
+            useEffect(() => {
+                if (!showGroupManage) return;
+                const groups = groupDraft?.groups || [];
+                if (!groups.length) {
+                    setActiveGroupDraftId(null);
+                    return;
+                }
+                if (!activeGroupDraftId || !groups.some(group => group.id === activeGroupDraftId)) {
+                    setActiveGroupDraftId(groups[0].id);
+                }
+            }, [showGroupManage, groupDraft, activeGroupDraftId]);
 
             useEffect(() => {
                 if (!perfEnabled) return;
@@ -701,18 +743,117 @@ import * as ReactDOM from 'react-dom';
                 setShowGroupManage(false);
                 setGroupDraftError('');
                 setGroupImportText('');
+                setShowGroupImport(false);
+                setShowGroupAdvanced(false);
+                setShowGroupDiscardConfirm(false);
+                setShowGroupListMobile(false);
             };
 
+            const groupDraftSignature = React.useMemo(() => {
+                if (!groupDraft) return '';
+                return JSON.stringify({
+                    version: groupDraft.version || 1,
+                    groups: groupDraft.groups || [],
+                    defaultGroupId: groupDraft.defaultGroupId || '',
+                    teamCatalog: groupDraft.teamCatalog || {},
+                    teamCatalogMeta: groupDraft.teamCatalogMeta || {}
+                });
+            }, [groupDraft]);
+
+            const isGroupDraftDirty = React.useMemo(() => {
+                if (!groupDraft) return false;
+                return groupDraftSignature !== groupDraftBaselineRef.current;
+            }, [groupDraftSignature, groupDraft]);
+
+            const requestCloseGroupManage = () => {
+                if (groupSaving) return;
+                if (isGroupDraftDirty) {
+                    setShowGroupDiscardConfirm(true);
+                    return;
+                }
+                closeGroupManage();
+            };
+
+            const discardGroupDraftChanges = () => {
+                setShowGroupDiscardConfirm(false);
+                closeGroupManage();
+            };
+
+            const closeAllTeamSearchDropdowns = () => {
+                setTeamSearchOpen(prev => {
+                    const next = { ...prev };
+                    Object.keys(next).forEach(key => {
+                        next[key] = false;
+                    });
+                    return next;
+                });
+            };
+
+            const setTeamFeedback = (groupId, message, tone = 'neutral') => {
+                if (!groupId) return;
+                setTeamSearchFeedback(prev => ({
+                    ...prev,
+                    [groupId]: { message, tone }
+                }));
+                if (teamSearchFeedbackTimersRef.current[groupId]) {
+                    clearTimeout(teamSearchFeedbackTimersRef.current[groupId]);
+                }
+                teamSearchFeedbackTimersRef.current[groupId] = window.setTimeout(() => {
+                    setTeamSearchFeedback(prev => {
+                        const next = { ...prev };
+                        delete next[groupId];
+                        return next;
+                    });
+                    delete teamSearchFeedbackTimersRef.current[groupId];
+                }, 2200);
+            };
+
+            useEffect(() => {
+                if (!showGroupManage) return;
+                const handleKey = (event) => {
+                    const key = event.key;
+                    if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 's') {
+                        event.preventDefault();
+                        if (!groupSaving) {
+                            saveGroupsConfig();
+                        }
+                        return;
+                    }
+                    if (key === 'Escape') {
+                        const hasOpenDropdown = Object.values(teamSearchOpen || {}).some(Boolean);
+                        if (hasOpenDropdown) {
+                            event.preventDefault();
+                            closeAllTeamSearchDropdowns();
+                            return;
+                        }
+                        if (showGroupDiscardConfirm) {
+                            event.preventDefault();
+                            setShowGroupDiscardConfirm(false);
+                            return;
+                        }
+                        event.preventDefault();
+                        requestCloseGroupManage();
+                    }
+                };
+                window.addEventListener('keydown', handleKey);
+                return () => window.removeEventListener('keydown', handleKey);
+            }, [showGroupManage, groupSaving, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage]);
+
             const addGroupDraftRow = () => {
+                let nextId = '';
                 handleGroupDraftChange(prev => {
                     const existingIds = new Set((prev.groups || []).map(group => group.id));
-                    const nextId = buildGroupId('New Group', existingIds);
+                    nextId = buildGroupId('New Group', existingIds);
                     const nextGroup = { id: nextId, name: 'New Group', teamIds: [] };
                     return {
                         ...prev,
                         groups: [...(prev.groups || []), nextGroup]
                     };
                 });
+                if (nextId) {
+                    setActiveGroupDraftId(nextId);
+                    setShowGroupListMobile(false);
+                }
             };
 
             const updateGroupDraftName = (groupId, name) => {
@@ -722,6 +863,30 @@ import * as ReactDOM from 'react-dom';
                         group.id === groupId ? { ...group, name } : group
                     )
                 }));
+            };
+
+            const duplicateGroupDraft = (groupId) => {
+                let nextId = '';
+                handleGroupDraftChange(prev => {
+                    const source = (prev.groups || []).find(group => group.id === groupId);
+                    if (!source) return prev;
+                    const existingIds = new Set((prev.groups || []).map(group => group.id));
+                    const nextName = `${source.name || 'Group'} Copy`;
+                    nextId = buildGroupId(nextName, existingIds);
+                    const nextGroup = {
+                        ...source,
+                        id: nextId,
+                        name: nextName
+                    };
+                    return {
+                        ...prev,
+                        groups: [...(prev.groups || []), nextGroup]
+                    };
+                });
+                if (nextId) {
+                    setActiveGroupDraftId(nextId);
+                    setShowGroupListMobile(false);
+                }
             };
 
             const updateGroupDraftTeams = (groupId, rawTeams) => {
@@ -765,19 +930,44 @@ import * as ReactDOM from 'react-dom';
                 }));
             };
 
+            const focusTeamSearchInput = (groupId) => {
+                const node = teamSearchInputRefs.current[groupId];
+                if (node && typeof node.focus === 'function') {
+                    node.focus();
+                }
+            };
+
             const addTeamToGroup = (groupId, teamId) => {
+                let added = false;
+                let alreadyAdded = false;
+                let limitReached = false;
                 handleGroupDraftChange(prev => ({
                     ...prev,
                     groups: (prev.groups || []).map(group => {
                         if (group.id !== groupId) return group;
                         const currentTeams = group.teamIds || [];
-                        if (currentTeams.includes(teamId)) return group;
-                        if (currentTeams.length >= 12) return group;
+                        if (currentTeams.includes(teamId)) {
+                            alreadyAdded = true;
+                            return group;
+                        }
+                        if (currentTeams.length >= 12) {
+                            limitReached = true;
+                            return group;
+                        }
+                        added = true;
                         return { ...group, teamIds: [...currentTeams, teamId] };
                     })
                 }));
-                // Clear search after adding
-                setTeamSearchQuery(prev => ({ ...prev, [groupId]: '' }));
+                if (alreadyAdded) {
+                    setTeamFeedback(groupId, 'Already added');
+                }
+                if (limitReached) {
+                    setTeamFeedback(groupId, 'Limit reached (12 max)', 'warn');
+                }
+                if (added) {
+                    setTeamSearchOpen(prev => ({ ...prev, [groupId]: true }));
+                    focusTeamSearchInput(groupId);
+                }
             };
 
             const removeTeamFromGroup = (groupId, teamId) => {
@@ -790,16 +980,116 @@ import * as ReactDOM from 'react-dom';
                 }));
             };
 
+            const handleTeamSearchChange = (groupId, value) => {
+                setTeamSearchQuery(prev => ({ ...prev, [groupId]: value }));
+                setTeamSearchOpen(prev => ({ ...prev, [groupId]: true }));
+                setTeamSearchIndex(prev => ({ ...prev, [groupId]: 0 }));
+                if (teamSearchFeedback[groupId]) {
+                    setTeamSearchFeedback(prev => {
+                        const next = { ...prev };
+                        delete next[groupId];
+                        return next;
+                    });
+                }
+            };
+
+            const handleTeamSearchFocus = (groupId) => {
+                setTeamSearchOpen(prev => ({ ...prev, [groupId]: true }));
+            };
+
+            const handleTeamSearchBlur = (groupId) => {
+                window.setTimeout(() => {
+                    setTeamSearchOpen(prev => ({ ...prev, [groupId]: false }));
+                }, 120);
+            };
+
+            const focusLastTeamChip = (groupId) => {
+                const node = teamChipLastRef.current[groupId];
+                if (node && typeof node.focus === 'function') {
+                    node.focus();
+                }
+            };
+
+            const getGroupTeamSearchResults = (group, queryText) => {
+                if (!group) return [];
+                const teamsInOtherGroups = new Set();
+                (groupDraft?.groups || []).forEach(g => {
+                    if (g.id !== group.id) {
+                        (g.teamIds || []).forEach(teamId => teamsInOtherGroups.add(teamId));
+                    }
+                });
+                const currentTeams = new Set(group.teamIds || []);
+                const query = String(queryText || '').toLowerCase();
+                return availableTeams.filter(team => {
+                    if (currentTeams.has(team.id)) return false;
+                    if (teamsInOtherGroups.has(team.id)) return false;
+                    const nameLower = String(team.name || '').toLowerCase();
+                    if (!nameLower.includes('r&d')) return false;
+                    return nameLower.includes(query);
+                });
+            };
+
+            const handleTeamSearchKeyDown = (groupId, event, results) => {
+                if (!groupId) return;
+                const value = teamSearchQuery[groupId] || '';
+                if (event.key === 'ArrowDown') {
+                    if (!results.length) return;
+                    event.preventDefault();
+                    setTeamSearchIndex(prev => ({
+                        ...prev,
+                        [groupId]: Math.min((prev[groupId] || 0) + 1, results.length - 1)
+                    }));
+                    return;
+                }
+                if (event.key === 'ArrowUp') {
+                    if (!results.length) return;
+                    event.preventDefault();
+                    setTeamSearchIndex(prev => ({
+                        ...prev,
+                        [groupId]: Math.max((prev[groupId] || 0) - 1, 0)
+                    }));
+                    return;
+                }
+                if (event.key === 'Enter') {
+                    if (!results.length) return;
+                    event.preventDefault();
+                    const index = teamSearchIndex[groupId] || 0;
+                    const team = results[index] || results[0];
+                    if (team?.id) {
+                        addTeamToGroup(groupId, team.id);
+                    }
+                    return;
+                }
+                if (event.key === 'Escape') {
+                    if (teamSearchOpen[groupId]) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setTeamSearchOpen(prev => ({ ...prev, [groupId]: false }));
+                    }
+                    return;
+                }
+                if (event.key === 'Backspace' && !value) {
+                    focusLastTeamChip(groupId);
+                }
+            };
+
             const removeGroupDraft = (groupId) => {
+                let nextActiveId = activeGroupDraftId;
                 handleGroupDraftChange(prev => {
                     const nextGroups = (prev.groups || []).filter(group => group.id !== groupId);
                     const nextDefault = prev.defaultGroupId === groupId ? '' : prev.defaultGroupId;
+                    if (activeGroupDraftId === groupId) {
+                        nextActiveId = nextGroups[0]?.id || null;
+                    }
                     return {
                         ...prev,
                         groups: nextGroups,
                         defaultGroupId: nextDefault
                     };
                 });
+                if (activeGroupDraftId === groupId) {
+                    setActiveGroupDraftId(nextActiveId);
+                }
             };
 
             const toggleDefaultGroupDraft = (groupId) => {
@@ -866,12 +1156,13 @@ import * as ReactDOM from 'react-dom';
             };
 
             const exportGroupsConfig = async () => {
+                const source = groupDraft || groupsConfig;
                 const payload = {
-                    version: groupsConfig.version || 1,
-                    groups: groupsConfig.groups || [],
-                    defaultGroupId: groupsConfig.defaultGroupId || '',
-                    teamCatalog: groupsConfig.teamCatalog || {},
-                    teamCatalogMeta: groupsConfig.teamCatalogMeta || {}
+                    version: source.version || 1,
+                    groups: source.groups || [],
+                    defaultGroupId: source.defaultGroupId || '',
+                    teamCatalog: source.teamCatalog || {},
+                    teamCatalogMeta: source.teamCatalogMeta || {}
                 };
                 const json = JSON.stringify(payload, null, 2);
                 if (navigator.clipboard && window.isSecureContext) {
@@ -901,10 +1192,81 @@ import * as ReactDOM from 'react-dom';
                     setGroupDraft(normalized);
                     setGroupDraftError('');
                     setGroupImportText('');
+                    setShowGroupImport(false);
                 } catch (err) {
                     setGroupDraftError(err.message || 'Invalid JSON.');
                 }
             };
+
+            const teamNameLookup = React.useMemo(() => {
+                const map = {};
+                (availableTeams || []).forEach(team => {
+                    if (team?.id) {
+                        map[team.id] = team.name || team.id;
+                    }
+                });
+                const catalog = groupDraft?.teamCatalog || {};
+                Object.keys(catalog).forEach(teamId => {
+                    if (!map[teamId]) {
+                        map[teamId] = catalog[teamId];
+                    }
+                });
+                return map;
+            }, [availableTeams, groupDraft]);
+
+            const resolveTeamName = (teamId) => {
+                return teamNameLookup[teamId] || teamId;
+            };
+
+            const activeGroupDraft = React.useMemo(() => {
+                if (!groupDraft || !activeGroupDraftId) return null;
+                return (groupDraft.groups || []).find(group => group.id === activeGroupDraftId) || null;
+            }, [groupDraft, activeGroupDraftId]);
+
+            const filteredGroupDrafts = React.useMemo(() => {
+                const groups = groupDraft?.groups || [];
+                const query = groupSearchQuery.trim().toLowerCase();
+                if (!query) return groups;
+                return groups.filter(group => {
+                    const nameMatch = String(group.name || '').toLowerCase().includes(query);
+                    if (nameMatch) return true;
+                    return (group.teamIds || []).some(teamId => {
+                        const teamName = String(teamNameLookup[teamId] || teamId || '').toLowerCase();
+                        return teamName.includes(query);
+                    });
+                });
+            }, [groupDraft, groupSearchQuery, teamNameLookup]);
+
+            const teamCacheMeta = React.useMemo(() => {
+                return groupDraft?.teamCatalogMeta || groupsConfig.teamCatalogMeta || {};
+            }, [groupDraft, groupsConfig]);
+
+            const teamCacheLabel = React.useMemo(() => {
+                const stamp = teamCacheMeta?.updatedAt ? new Date(teamCacheMeta.updatedAt) : null;
+                const formatted = stamp && !Number.isNaN(stamp.getTime()) ? stamp.toLocaleString() : '';
+                if (!formatted) {
+                    return `Teams: Not cached • ${availableTeams.length} available`;
+                }
+                return `Teams: Cached • ${availableTeams.length} available • Updated ${formatted}`;
+            }, [teamCacheMeta, availableTeams]);
+
+            const activeTeamQuery = activeGroupDraft ? (teamSearchQuery[activeGroupDraft.id] || '') : '';
+            const activeTeamResults = React.useMemo(() => {
+                if (!activeGroupDraft) return [];
+                return getGroupTeamSearchResults(activeGroupDraft, activeTeamQuery);
+            }, [activeGroupDraft, activeTeamQuery, availableTeams, groupDraft]);
+            const activeTeamResultsLimited = activeTeamResults.slice(0, 10);
+            const activeTeamIndex = activeGroupDraft ? (teamSearchIndex[activeGroupDraft.id] || 0) : 0;
+
+            useEffect(() => {
+                if (!activeGroupDraft) return;
+                const maxIndex = activeTeamResultsLimited.length - 1;
+                setTeamSearchIndex(prev => {
+                    const current = prev[activeGroupDraft.id] || 0;
+                    if (current <= maxIndex) return prev;
+                    return { ...prev, [activeGroupDraft.id]: 0 };
+                });
+            }, [activeTeamResultsLimited.length, activeGroupDraft]);
 
             const matchesScenarioSearch = (issue, query) => {
                 if (!query) return true;
@@ -8485,214 +8847,329 @@ import * as ReactDOM from 'react-dom';
                             className="group-modal-backdrop"
                             role="dialog"
                             aria-modal="true"
-                            onClick={closeGroupManage}
+                            onClick={requestCloseGroupManage}
                         >
                             <div className="group-modal" onClick={(event) => event.stopPropagation()}>
                                 <div className="group-modal-header">
-                                    <div>
-                                        <div className="group-modal-title">Manage Team Groups</div>
-                                        <div className="group-modal-meta">
-                                            Create groups to organize teams and filter your dashboard by specific team sets.
-                                        </div>
-                                        <div className="group-modal-meta" style={{marginTop: '0.25rem'}}>
-                                            {groupConfigSource ? `Source: ${groupConfigSource}` : 'Source: local'}
+                                    <div className="group-modal-title-wrap">
+                                        <div>
+                                            <div className="group-modal-title">Manage Team Groups</div>
+                                            <div className="group-modal-meta">
+                                                Create groups to organize teams and filter your dashboard by specific team sets.
+                                            </div>
                                         </div>
                                     </div>
-                                    <button className="secondary compact" onClick={closeGroupManage}>
-                                        Close
-                                    </button>
+                                    {isGroupDraftDirty && (
+                                        <div className="group-modal-dirty">Unsaved changes</div>
+                                    )}
                                 </div>
-                                <div className="group-modal-body">
-                                    {groupsError && (
-                                        <div className="group-modal-warning">{groupsError}</div>
-                                    )}
-                                    {(groupWarnings || []).length > 0 && (
-                                        <div className="group-modal-warning">
-                                            {(groupWarnings || []).join(' ')}
-                                        </div>
-                                    )}
-                                    {groupDraftError && (
-                                        <div className="group-modal-warning">{groupDraftError}</div>
-                                    )}
-                                    <div className="group-modal-meta" style={{ marginBottom: '0.6rem', color: '#b42318' }}>
-                                        Team list is scoped to the currently selected sprint.
-                                    </div>
-                                    <div className="group-modal-actions" style={{ marginBottom: '0.8rem' }}>
-                                        <button
-                                            className="secondary compact"
-                                            onClick={fetchAllTeamsFromJira}
-                                            type="button"
-                                            disabled={loadingTeams}
-                                        >
-                                            {loadingTeams ? 'Loading...' : 'Load All Teams from Jira'}
-                                        </button>
-                                        <span className="group-modal-meta">
-                                            {(() => {
-                                                const meta = groupDraft?.teamCatalogMeta || groupsConfig.teamCatalogMeta || {};
-                                                const stamp = meta.updatedAt ? new Date(meta.updatedAt).toLocaleString() : '';
-                                                const sprintLabel = meta.sprintName || (selectedSprintInfo?.name || '');
-                                                if (!stamp) return 'No cached team names yet.';
-                                                return `Cached from ${sprintLabel || 'selected sprint'} at ${stamp}.`;
-                                            })()}
-                                        </span>
-                                    </div>
-                                    <div className="group-modal-meta" style={{ marginBottom: '0.8rem' }}>
-                                        Currently showing {availableTeams.length} team{availableTeams.length !== 1 ? 's' : ''}
-                                    </div>
-                                    {loadingTeams && (
-                                        <div className="group-modal-meta">Loading teams...</div>
-                                    )}
-                                    {(groupDraft?.groups || []).length === 0 && (
-                                        <div className="group-modal-meta">No groups yet. Click "Add Group" below to create one.</div>
-                                    )}
-                                    {(groupDraft?.groups || []).map(group => (
-                                        <div className="group-modal-row" key={group.id}>
-                                            <div className="group-row-header">
-                                                <input
-                                                    type="text"
-                                                    value={group.name}
-                                                    onChange={(event) => updateGroupDraftName(group.id, event.target.value)}
-                                                    placeholder="Group name"
-                                                    className="group-name-input"
-                                                />
-                                                <button
-                                                    className={`group-star-button ${groupDraft?.defaultGroupId === group.id ? 'active' : ''}`}
-                                                    onClick={() => toggleDefaultGroupDraft(group.id)}
-                                                    title="Set as default group"
-                                                    type="button"
-                                                >
-                                                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                                                        <path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.6 9.6l5.8-.8L12 3.5z"/>
-                                                    </svg>
-                                                </button>
-                                                <button
-                                                    className="secondary compact"
-                                                    onClick={() => removeGroupDraft(group.id)}
-                                                    type="button"
-                                                >
-                                                    Delete
+                                <div className="group-modal-body group-modal-split">
+                                    <div className={`group-pane group-pane-left ${showGroupListMobile ? 'is-mobile-active' : ''}`}>
+                                        <div className="group-pane-header">
+                                            <div className="group-pane-header-row">
+                                                <div className="group-pane-title">Groups</div>
+                                                <button className="secondary compact group-add-button" onClick={addGroupDraftRow} type="button">
+                                                    + Add group
                                                 </button>
                                             </div>
-                                            <div className="team-selector">
-                                                <div className="team-selector-label">Selected teams ({(group.teamIds || []).length}/12 max)</div>
-                                                {(group.teamIds || []).length === 0 ? (
-                                                    <div className="team-selector-empty">
-                                                        No teams selected. Search and add teams below.
+                                            <div className="group-pane-search">
+                                                <input
+                                                    type="text"
+                                                    className="group-filter-input"
+                                                    placeholder="Search groups or teams..."
+                                                    value={groupSearchQuery}
+                                                    onChange={(event) => setGroupSearchQuery(event.target.value)}
+                                                />
+                                            </div>
+                                            <div className="group-pane-count">
+                                                {filteredGroupDrafts.length} group{filteredGroupDrafts.length !== 1 ? 's' : ''}
+                                            </div>
+                                            <button
+                                                className="group-pane-mobile-close"
+                                                onClick={() => setShowGroupListMobile(false)}
+                                                type="button"
+                                            >
+                                                Back
+                                            </button>
+                                        </div>
+                                        <div className="group-pane-list">
+                                            {filteredGroupDrafts.length === 0 ? (
+                                                <div className="group-pane-empty">No groups match this search.</div>
+                                            ) : filteredGroupDrafts.map(group => {
+                                                const teamCount = (group.teamIds || []).length;
+                                                const isActive = activeGroupDraft?.id === group.id;
+                                                const isDefault = groupDraft?.defaultGroupId === group.id;
+                                                return (
+                                                    <button
+                                                        key={group.id}
+                                                        className={`group-list-item ${isActive ? 'active' : ''}`}
+                                                        onClick={() => {
+                                                            setActiveGroupDraftId(group.id);
+                                                            setShowGroupListMobile(false);
+                                                        }}
+                                                        type="button"
+                                                    >
+                                                        <div className="group-list-line">
+                                                            <span className="group-list-name">{group.name || 'Untitled group'}</span>
+                                                            <span className="group-list-dot">·</span>
+                                                            <span className="group-list-meta">{teamCount} team{teamCount !== 1 ? 's' : ''}</span>
+                                                        </div>
+                                                        <div className="group-list-star" aria-hidden="true">
+                                                            {isDefault ? '★' : '☆'}
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    <div className="group-pane group-pane-right">
+                                        <div className="group-pane-mobile-header">
+                                            <button
+                                                className="secondary compact"
+                                                onClick={() => setShowGroupListMobile(true)}
+                                                type="button"
+                                            >
+                                                Groups
+                                            </button>
+                                            <div className="group-pane-mobile-title">
+                                                {activeGroupDraft ? (activeGroupDraft.name || 'Untitled group') : 'No group selected'}
+                                            </div>
+                                        </div>
+                                        {groupsError && (
+                                            <div className="group-modal-warning">{groupsError}</div>
+                                        )}
+                                        {(groupWarnings || []).length > 0 && (
+                                            <div className="group-modal-warning">
+                                                {(groupWarnings || []).join(' ')}
+                                            </div>
+                                        )}
+                                        {groupDraftError && (
+                                            <div className="group-modal-warning">{groupDraftError}</div>
+                                        )}
+                                        <div className="group-pane-tools">
+                                            <button
+                                                className="secondary compact"
+                                                onClick={fetchAllTeamsFromJira}
+                                                type="button"
+                                                disabled={loadingTeams}
+                                            >
+                                                {loadingTeams ? 'Refreshing...' : 'Refresh teams'}
+                                            </button>
+                                            <span className="group-modal-meta">{teamCacheLabel}</span>
+                                            <span className="group-modal-helper" title="Team list is scoped to the currently selected sprint.">
+                                                Scoped to sprint
+                                            </span>
+                                        </div>
+                                        {loadingTeams && (
+                                            <div className="group-modal-meta">Loading teams...</div>
+                                        )}
+                                        {(groupDraft?.groups || []).length === 0 && (
+                                            <div className="group-pane-empty">No groups yet. Click "Add group" to create one.</div>
+                                        )}
+                                        {activeGroupDraft ? (
+                                            <div className="group-editor">
+                                                <div className="group-editor-header">
+                                                    <input
+                                                        type="text"
+                                                        value={activeGroupDraft.name}
+                                                        onChange={(event) => updateGroupDraftName(activeGroupDraft.id, event.target.value)}
+                                                        placeholder="Group name"
+                                                        className="group-name-input"
+                                                    />
+                                                    <button
+                                                        className={`group-star-button ${groupDraft?.defaultGroupId === activeGroupDraft.id ? 'active' : ''}`}
+                                                        onClick={() => toggleDefaultGroupDraft(activeGroupDraft.id)}
+                                                        title="Set as default group"
+                                                        type="button"
+                                                    >
+                                                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                                            <path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.6 9.6l5.8-.8L12 3.5z"/>
+                                                        </svg>
+                                                    </button>
+                                                    <button
+                                                        className="secondary compact"
+                                                        onClick={() => duplicateGroupDraft(activeGroupDraft.id)}
+                                                        type="button"
+                                                    >
+                                                        Duplicate
+                                                    </button>
+                                                </div>
+                                                <div className="team-selector">
+                                                    <div className="team-selector-header">
+                                                        <div className="team-selector-label">
+                                                            Teams {(activeGroupDraft.teamIds || []).length}/12
+                                                        </div>
+                                                        {(activeGroupDraft.teamIds || []).length >= 12 && (
+                                                            <div className="team-selector-limit">Limit reached (12 max)</div>
+                                                        )}
                                                     </div>
-                                                ) : (
-                                                    <div className="selected-teams-list">
-                                                        {(group.teamIds || []).map(teamId => {
-                                                            const team = availableTeams.find(t => t.id === teamId);
-                                                            const teamName = team ? team.name : teamId;
-                                                            return (
-                                                                <div key={teamId} className="selected-team-chip">
-                                                                    <span className="team-name">{teamName}</span>
-                                                                    <button
-                                                                        className="remove-btn"
-                                                                        onClick={() => removeTeamFromGroup(group.id, teamId)}
-                                                                        type="button"
-                                                                        title="Remove team"
-                                                                    >
-                                                                        ×
-                                                                    </button>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                )}
-                                                {availableTeams.length === 0 && !loadingTeams ? (
-                                                    <div className="team-selector-empty">
-                                                        No teams available. Load tasks first or click "Load All Teams from Jira" above.
-                                                    </div>
-                                                ) : (group.teamIds || []).length < 12 && (
-                                                    <div className="team-search-wrapper">
-                                                        <input
-                                                            type="text"
-                                                            className="team-search-input"
-                                                            placeholder="Search teams to add..."
-                                                            value={teamSearchQuery[group.id] || ''}
-                                                            onChange={(e) => setTeamSearchQuery(prev => ({ ...prev, [group.id]: e.target.value }))}
-                                                        />
-                                                        {teamSearchQuery[group.id] && teamSearchQuery[group.id].trim() && (
-                                                            <div className="team-search-results">
-                                                                {(() => {
-                                                                    // Get teams assigned to OTHER groups (not this one)
-                                                                    const teamsInOtherGroups = new Set();
-                                                                    (groupDraft?.groups || []).forEach(g => {
-                                                                        if (g.id !== group.id) {
-                                                                            (g.teamIds || []).forEach(tid => teamsInOtherGroups.add(tid));
-                                                                        }
-                                                                    });
-
-                                                                    const currentTeams = new Set(group.teamIds || []);
-                                                                    const query = (teamSearchQuery[group.id] || '').toLowerCase();
-
-                                                                    const filteredTeams = availableTeams.filter(team => {
-                                                                        if (currentTeams.has(team.id)) return false;
-                                                                        if (teamsInOtherGroups.has(team.id)) return false;
-                                                                        // Keep only R&D teams (including archived ones)
-                                                                        const nameLower = String(team.name || '').toLowerCase();
-                                                                        if (!nameLower.includes('r&d')) return false;
-                                                                        return nameLower.includes(query);
-                                                                    });
-
-                                                                    if (filteredTeams.length === 0) {
-                                                                        return (
-                                                                            <div className="team-search-result-item" style={{color: 'var(--text-secondary)'}}>
-                                                                                No teams found
-                                                                            </div>
-                                                                        );
-                                                                    }
-
-                                                                    return filteredTeams.slice(0, 10).map(team => (
+                                                    {(activeGroupDraft.teamIds || []).length === 0 ? (
+                                                        <div className="team-selector-empty">
+                                                            No teams selected. Search and add teams below.
+                                                        </div>
+                                                    ) : (
+                                                        <div className="selected-teams-list is-capped">
+                                                            {(activeGroupDraft.teamIds || []).map((teamId, index) => {
+                                                                const teamName = resolveTeamName(teamId);
+                                                                const isLast = index === (activeGroupDraft.teamIds || []).length - 1;
+                                                                return (
+                                                                    <div key={teamId} className="selected-team-chip">
+                                                                        <span className="team-name">{teamName}</span>
+                                                                        <button
+                                                                            className="remove-btn"
+                                                                            onClick={() => removeTeamFromGroup(activeGroupDraft.id, teamId)}
+                                                                            type="button"
+                                                                            title="Remove team"
+                                                                            ref={isLast ? (node) => { teamChipLastRef.current[activeGroupDraft.id] = node; } : null}
+                                                                        >
+                                                                            ×
+                                                                        </button>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                    {availableTeams.length === 0 && !loadingTeams ? (
+                                                        <div className="team-selector-empty">
+                                                            No teams available. Load tasks first or refresh teams above.
+                                                        </div>
+                                                    ) : (activeGroupDraft.teamIds || []).length < 12 && (
+                                                        <div className="team-search-wrapper">
+                                                            <input
+                                                                type="text"
+                                                                className="team-search-input"
+                                                                placeholder="Search teams to add..."
+                                                                value={activeTeamQuery}
+                                                                onChange={(event) => handleTeamSearchChange(activeGroupDraft.id, event.target.value)}
+                                                                onFocus={() => handleTeamSearchFocus(activeGroupDraft.id)}
+                                                                onBlur={() => handleTeamSearchBlur(activeGroupDraft.id)}
+                                                                onKeyDown={(event) => handleTeamSearchKeyDown(activeGroupDraft.id, event, activeTeamResultsLimited)}
+                                                                ref={(node) => { teamSearchInputRefs.current[activeGroupDraft.id] = node; }}
+                                                            />
+                                                            {teamSearchOpen[activeGroupDraft.id] && activeTeamQuery.trim() && (
+                                                                <div
+                                                                    className={`team-search-results ${(activeGroupDraft.teamIds || []).length >= 12 ? 'disabled' : ''}`}
+                                                                    onMouseDown={(event) => event.preventDefault()}
+                                                                >
+                                                                    {activeTeamResultsLimited.length === 0 ? (
+                                                                        <div className="team-search-result-item is-empty">
+                                                                            No teams found
+                                                                        </div>
+                                                                    ) : activeTeamResultsLimited.map((team, index) => (
                                                                         <div
                                                                             key={team.id}
-                                                                            className="team-search-result-item"
-                                                                            onClick={() => addTeamToGroup(group.id, team.id)}
+                                                                            className={`team-search-result-item ${index === activeTeamIndex ? 'active' : ''}`}
+                                                                            onClick={() => addTeamToGroup(activeGroupDraft.id, team.id)}
                                                                         >
                                                                             {team.name}
                                                                         </div>
-                                                                    ));
-                                                                })()}
-                                                            </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                            {teamSearchFeedback[activeGroupDraft.id] && (
+                                                                <div className={`team-search-feedback ${teamSearchFeedback[activeGroupDraft.id].tone || ''}`}>
+                                                                    {teamSearchFeedback[activeGroupDraft.id].message}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="group-editor-actions">
+                                                    <button className="secondary compact" onClick={addGroupDraftRow} type="button">
+                                                        Add group
+                                                    </button>
+                                                </div>
+                                                <details className="group-advanced" open={showGroupAdvanced}>
+                                                    <summary onClick={(event) => {
+                                                        event.preventDefault();
+                                                        setShowGroupAdvanced(prev => {
+                                                            const next = !prev;
+                                                            if (!next) {
+                                                                setShowGroupImport(false);
+                                                            }
+                                                            return next;
+                                                        });
+                                                    }}>
+                                                        Advanced
+                                                    </summary>
+                                                    <div className="group-advanced-body">
+                                                        <div className="group-advanced-row">
+                                                            <button className="secondary compact" onClick={exportGroupsConfig} type="button">
+                                                                Export JSON
+                                                            </button>
+                                                        </div>
+                                                        <div className="group-advanced-row">
+                                                            <button
+                                                                className="secondary compact"
+                                                                onClick={() => {
+                                                                    setShowGroupAdvanced(true);
+                                                                    setShowGroupImport(true);
+                                                                }}
+                                                                type="button"
+                                                            >
+                                                                Import JSON
+                                                            </button>
+                                                            <span className="group-modal-meta">Import overwrites current draft.</span>
+                                                        </div>
+                                                        {showGroupImport && (
+                                                            <>
+                                                                <textarea
+                                                                    value={groupImportText}
+                                                                    onChange={(event) => setGroupImportText(event.target.value)}
+                                                                    placeholder='{"version":1,"groups":[...]}'
+                                                                />
+                                                                <div className="group-advanced-row">
+                                                                    <button className="secondary compact" onClick={importGroupsConfig} type="button">
+                                                                        Apply Import
+                                                                    </button>
+                                                                </div>
+                                                            </>
                                                         )}
                                                     </div>
-                                                )}
+                                                </details>
+                                                <div className="group-danger-zone">
+                                                    <div className="group-danger-title">Danger zone</div>
+                                                    <button
+                                                        className="secondary compact danger"
+                                                        onClick={() => removeGroupDraft(activeGroupDraft.id)}
+                                                        type="button"
+                                                    >
+                                                        Delete group
+                                                    </button>
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
-                                    <div style={{borderTop: '1px solid var(--border)', paddingTop: '1rem', marginTop: '1rem'}}>
-                                        <div className="group-modal-meta">Import JSON (overwrites current draft).</div>
-                                        <textarea
-                                            value={groupImportText}
-                                            onChange={(event) => setGroupImportText(event.target.value)}
-                                            placeholder='{"version":1,"groups":[...]}'
-                                        />
-                                        <div className="group-modal-actions">
-                                            <button className="secondary compact" onClick={importGroupsConfig} type="button">
-                                                Import JSON
-                                            </button>
-                                        </div>
+                                        ) : (
+                                            <div className="group-pane-empty">Select a group to edit, or add a new one.</div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="group-modal-footer">
                                     <div className="group-modal-button-row">
-                                        <button className="secondary compact" onClick={addGroupDraftRow} type="button">
-                                            Add Group
-                                        </button>
-                                        <button className="secondary compact" onClick={exportGroupsConfig} type="button">
-                                            Export JSON
+                                        <button className="secondary compact lift-hover" onClick={requestCloseGroupManage} type="button">
+                                            Cancel
                                         </button>
                                     </div>
                                     <div className="group-modal-button-row">
-                                        <button className="secondary compact" onClick={closeGroupManage} type="button">
-                                            Cancel
-                                        </button>
                                         <button className="compact" onClick={saveGroupsConfig} disabled={groupSaving} type="button">
                                             {groupSaving ? 'Saving...' : 'Save'}
                                         </button>
                                     </div>
                                 </div>
+                                {showGroupDiscardConfirm && (
+                                    <div className="group-confirm-backdrop" role="dialog" aria-modal="true" onClick={() => setShowGroupDiscardConfirm(false)}>
+                                        <div className="group-confirm" onClick={(event) => event.stopPropagation()}>
+                                            <div className="group-confirm-title">Discard changes?</div>
+                                    <div className="group-confirm-actions">
+                                                <button className="secondary compact danger lift-hover" onClick={discardGroupDraftChanges} type="button">
+                                                    Discard
+                                                </button>
+                                                <button className="compact" onClick={() => setShowGroupDiscardConfirm(false)} type="button">
+                                                    Keep editing
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}

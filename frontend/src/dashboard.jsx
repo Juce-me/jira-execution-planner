@@ -201,6 +201,9 @@ import * as ReactDOM from 'react-dom';
             const [scenarioHoverKey, setScenarioHoverKey] = useState(null);
             const [scenarioFlashKey, setScenarioFlashKey] = useState(null);
             const [scenarioScrollTop, setScenarioScrollTop] = useState(0);
+            const [showRefreshMenu, setShowRefreshMenu] = useState(false);
+            const refreshMenuRef = useRef(null);
+            const searchInputRef = useRef(null);
             const [scenarioScrollLeft, setScenarioScrollLeft] = useState(0);
             const [scenarioViewportHeight, setScenarioViewportHeight] = useState(0);
             const [scenarioEpicFocus, setScenarioEpicFocus] = useState(null);
@@ -1801,6 +1804,34 @@ import * as ReactDOM from 'react-dom';
                 }, 200);
                 return () => window.clearTimeout(handle);
             }, [searchInput]);
+
+            useEffect(() => {
+                const handleKey = (event) => {
+                    if (event.key !== '/') return;
+                    const target = event.target;
+                    if (target) {
+                        const tag = target.tagName?.toLowerCase();
+                        if (tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable) {
+                            return;
+                        }
+                    }
+                    event.preventDefault();
+                    searchInputRef.current?.focus();
+                };
+                window.addEventListener('keydown', handleKey);
+                return () => window.removeEventListener('keydown', handleKey);
+            }, []);
+
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (!refreshMenuRef.current) return;
+                    if (!refreshMenuRef.current.contains(event.target)) {
+                        setShowRefreshMenu(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, []);
 
             useEffect(() => {
                 if (searchInput !== searchQuery) {
@@ -5848,15 +5879,7 @@ import * as ReactDOM from 'react-dom';
                                 )}
                                 <div className="header-actions-row">
                                     <button
-                                        className="secondary compact"
-                                        onClick={() => window.location.reload()}
-                                        disabled={sprintsLoading}
-                                        title="Refresh sprints list from Jira"
-                                    >
-                                        {sprintsLoading ? 'Loading...' : 'Refresh Sprints'}
-                                    </button>
-                                    <button
-                                        className="secondary compact"
+                                        className="secondary compact refresh-button"
                                         onClick={() => {
                                             loadProductTasks();
                                             loadTechTasks();
@@ -5866,8 +5889,36 @@ import * as ReactDOM from 'react-dom';
                                         disabled={loading || selectedSprint === null}
                                         title="Refresh tasks from Jira"
                                     >
-                                        {loading ? 'Loading...' : 'Refresh Page'}
+                                        {loading ? 'Loading...' : 'Refresh'}
                                     </button>
+                                    <div className="refresh-menu" ref={refreshMenuRef}>
+                                        <button
+                                            className="secondary compact refresh-toggle"
+                                            onClick={() => setShowRefreshMenu(prev => !prev)}
+                                            disabled={sprintsLoading}
+                                            title="Refresh sprints list from Jira"
+                                            aria-label="Refresh sprints list"
+                                            type="button"
+                                        >
+                                            <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                                                <path d="M6 9L1 4h10z"/>
+                                            </svg>
+                                        </button>
+                                        {showRefreshMenu && (
+                                            <div className="refresh-menu-panel">
+                                                <button
+                                                    className="refresh-menu-item"
+                                                    type="button"
+                                                    onClick={() => {
+                                                        loadSprints(true);
+                                                        setShowRefreshMenu(false);
+                                                    }}
+                                                >
+                                                    {sprintsLoading ? 'Loading sprints...' : 'Refresh sprints'}
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                     <div className="search-wrap">
                                         <input
                                             type="text"
@@ -5875,6 +5926,7 @@ import * as ReactDOM from 'react-dom';
                                             placeholder="Search tickets..."
                                             value={searchInput}
                                             onChange={(e) => setSearchInput(e.target.value)}
+                                            ref={searchInputRef}
                                         />
                                         {searchInput && (
                                             <button
@@ -5891,12 +5943,12 @@ import * as ReactDOM from 'react-dom';
                             </div>
                         </div>
                         <div className="view-selector">
-                            <div className="view-filters">
-                                <label>Sprint:</label>
+                                <div className="view-filters">
                                 <div className="sprint-dropdown" ref={sprintDropdownRef}>
                                     <div
                                         className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
                                         role="button"
+                                        aria-label="Select sprint"
                                         tabIndex={sprintsLoading || availableSprints.length === 0 ? -1 : 0}
                                         onClick={() => {
                                             if (sprintsLoading || availableSprints.length === 0) return;
@@ -5956,12 +6008,12 @@ import * as ReactDOM from 'react-dom';
                                     )}
                                 </div>
                                 {((groupsConfig.groups || []).length > 1) && (
-                                    <>
-                                        <label>Group:</label>
+                                    <div className="group-control">
                                         <div className="group-dropdown" ref={groupDropdownRef}>
                                             <div
                                                 className={`group-dropdown-toggle ${showGroupDropdown ? 'open' : ''}`}
                                                 role="button"
+                                                aria-label="Select group"
                                                 tabIndex={groupsLoading ? -1 : 0}
                                                 onClick={() => {
                                                     if (groupsLoading) return;
@@ -6012,21 +6064,13 @@ import * as ReactDOM from 'react-dom';
                                                 </div>
                                             )}
                                         </div>
-                                    </>
+                                    </div>
                                 )}
-                                <button
-                                    className="secondary compact group-manage-button"
-                                    onClick={openGroupManage}
-                                    disabled={groupsLoading}
-                                    title="Manage team groups"
-                                >
-                                    Manage
-                                </button>
-                                <label>Team:</label>
                                 <div className="team-dropdown" ref={teamDropdownRef}>
                                     <div
                                         className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''}`}
                                         role="button"
+                                        aria-label="Filter teams"
                                         tabIndex={tasks.length === 0 && loading ? -1 : 0}
                                         onClick={() => {
                                             if (tasks.length === 0 && loading) return;
@@ -6061,41 +6105,48 @@ import * as ReactDOM from 'react-dom';
                                         </div>
                                     )}
                                 </div>
-                                <div className="view-actions">
+                                <div className="mode-switch">
                                     <button
-                                        className={`planning-button ${showPlanning ? 'active' : ''}`}
+                                        className={`mode-switch-button ${showPlanning ? 'active' : ''}`}
                                         onClick={() => setShowPlanning(!showPlanning)}
                                         disabled={isCompletedSprintSelected}
                                         title="Toggle sprint planning panel"
                                     >
                                         Planning
-                                        <svg viewBox="0 0 12 12" fill="currentColor">
-                                            <path d="M6 9L1 4h10z"/>
-                                        </svg>
                                     </button>
                                     <button
-                                        className={`planning-button ${showStats ? 'active' : ''}`}
+                                        className={`mode-switch-button ${showStats ? 'active' : ''}`}
                                         onClick={() => setShowStats(!showStats)}
                                         title="Toggle sprint statistics"
                                         disabled={isFutureSprintSelected}
                                     >
                                         Statistics
-                                        <svg viewBox="0 0 12 12" fill="currentColor">
-                                            <path d="M6 9L1 4h10z"/>
-                                        </svg>
                                     </button>
                                     <button
-                                        className={`planning-button ${showScenario ? 'active' : ''}`}
+                                        className={`mode-switch-button ${showScenario ? 'active' : ''}`}
                                         onClick={() => setShowScenario(!showScenario)}
                                         title="Toggle scenario planner"
                                         disabled={!selectedSprint || isCompletedSprintSelected}
                                     >
                                         Scenario
-                                        <svg viewBox="0 0 12 12" fill="currentColor">
-                                            <path d="M6 9L1 4h10z"/>
-                                        </svg>
                                     </button>
                                 </div>
+                                <button
+                                    className="group-gear-button"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        openGroupManage();
+                                    }}
+                                    disabled={groupsLoading}
+                                    title="Manage team groups"
+                                    aria-label="Manage team groups"
+                                    type="button"
+                                >
+                                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
+                                        <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                </button>
                             </div>
                         </div>
                     </header>

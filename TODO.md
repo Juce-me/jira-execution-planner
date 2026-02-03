@@ -1,8 +1,6 @@
 # TODO
 
 - Create a configuration of the env in the UI.
-- Scenario planner follow-ups (optional): scenario comparison/export.
-- Scenario planner: add a small legend for blocked/excluded/quarter markers.
 - Pack to Docker.
 - CI/CD + multi-user deployment ideation:
   - Shared instance for many users (secrets, API key strategy, config storage/sharing).

@@ -1,4 +1,5 @@
 # TODO
+- pack statistics bar to 6 in one row, right now it's 8. make it two row or one row (need to think how to fit 12 teams)
 - Create a configuration of the env in the UI.
 - Pack to Docker.
 

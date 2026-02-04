@@ -5714,6 +5714,14 @@ import * as ReactDOM from 'react-dom';
                     const status = normalizeStatus(epic.status?.name);
                     if (status !== 'analysis') return false;
                     if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
+                    const epicSprintId = epic.sprintId || epic.sprint?.id || epic.fields?.sprint?.id || '';
+                    const epicSprintName = epic.sprintName || epic.sprint?.name || epic.fields?.sprint?.name || '';
+                    const matchesSprint = epicSprintId
+                        ? String(epicSprintId) === String(selectedSprint || '')
+                        : epicSprintName
+                            ? epicSprintName === selectedSprintInfo?.name
+                            : true;
+                    if (!matchesSprint) return false;
                     const epicStories = readyToCloseTasks.filter(task => {
                         if (!task.fields?.epicKey) return false;
                         if (task.fields.epicKey !== epic.key) return false;
@@ -5723,7 +5731,16 @@ import * as ReactDOM from 'react-dom';
                     if (epicStories.length === 0) return false;
                     return epicStories.every(task => readyToCloseStoryStatuses.has(normalizeStatus(task.fields.status?.name)));
                 });
-            }, [readyToCloseEpicsInScope, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, readyToCloseTasks, readyToCloseStoryStatuses]);
+            }, [
+                readyToCloseEpicsInScope,
+                dismissedAlertSet,
+                isAllTeamsSelected,
+                selectedTeamSet,
+                readyToCloseTasks,
+                readyToCloseStoryStatuses,
+                selectedSprint,
+                selectedSprintInfo?.name
+            ]);
 
             const postponedAlertTeams = groupAlertsByTeam(postponedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
             const analysisEpicTeams = groupAlertsByTeam(analysisWaitingEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
@@ -7941,8 +7958,8 @@ import * as ReactDOM from 'react-dom';
                                                             {showPostponedAlert ? 'Hide' : 'Show'}
                                                         </span>
                                                     </button>
-                                                    <div className="alert-title">⏭️ Following Sprint</div>
-                                                    <div className="alert-subtitle">Postponed stories should be moved to the next sprint. Analysis epics are waiting for stories in the following quarter.</div>
+                                                    <div className="alert-title">⏳ Waiting for Stories</div>
+                                                    <div className="alert-subtitle">Postponed stories belong in the next sprint. Analysis epics are waiting for stories next quarter.</div>
                                                     <div className="alert-chip">
                                                         {postponedTasks.length + analysisWaitingEpics.length} items
                                                     </div>
@@ -8033,7 +8050,7 @@ import * as ReactDOM from 'react-dom';
                                                     )}
                                                     {analysisWaitingEpics.length > 0 && (
                                                         <>
-                                                            <div className="alert-section-title">Analysis epics (following quarter)</div>
+                                                            <div className="alert-section-title">Analysis epics (next quarter)</div>
                                                             {analysisEpicTeams.map(group => {
                                                                 const keys = group.items.map(item => item.key);
                                                                 const teamLink = buildKeyListLink(keys);

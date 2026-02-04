@@ -29,6 +29,7 @@
             --alert-blocked: #d4380d;
             --border: #e0ddd7;
             --shadow: rgba(0, 0, 0, 0.04);
+            --control-height: 38px;
         }
 
         body {
@@ -106,7 +107,7 @@
             border: 1px solid rgba(220, 38, 38, 0.35);
             color: #b91c1c;
             background: rgba(220, 38, 38, 0.08);
-            border-radius: 999px;
+            border-radius: 10px;
             font-size: 0.6rem;
             letter-spacing: 0.08em;
             text-transform: uppercase;
@@ -123,7 +124,7 @@
         .search-input {
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.8rem;
-            padding: 0.4rem 0.65rem;
+            padding: 0.55rem 0.7rem 0.45rem;
             border: 1px solid var(--border);
             background: var(--bg-secondary);
             color: var(--text-primary);
@@ -131,7 +132,10 @@
             letter-spacing: normal;
             width: 200px;
             transition: all 0.2s ease;
+            border-radius: 10px;
+            height: var(--control-height);
         }
+
 
         .header-actions {
             margin-left: auto;
@@ -144,7 +148,7 @@
 
         .header-actions-row {
             display: flex;
-            align-items: center;
+            align-items: flex-end;
             gap: 0.4rem;
             flex-wrap: wrap;
             justify-content: flex-end;
@@ -152,6 +156,11 @@
 
         .header-actions-row button {
             margin-right: 0;
+        }
+
+        .header-actions-row .secondary.compact {
+            height: var(--control-height);
+            padding: 0.4rem 0.9rem;
         }
 
         .secondary.compact {
@@ -175,6 +184,7 @@
             position: relative;
             display: flex;
             align-items: center;
+            width: 100%;
         }
 
         .search-clear {
@@ -187,6 +197,7 @@
             color: var(--text-secondary);
             cursor: pointer;
             padding: 0.1rem 0.3rem;
+            border-radius: 10px;
         }
 
         .search-clear:hover {
@@ -196,16 +207,51 @@
         .view-selector {
             display: flex;
             align-items: center;
-            margin-top: 0.15rem;
+            margin-top: 0.05rem;
             position: relative;
         }
 
         .view-filters {
             display: flex;
-            align-items: center;
+            align-items: flex-end;
             gap: 0.5rem;
             flex-wrap: wrap;
             width: 100%;
+        }
+
+        .control-field {
+            position: relative;
+            display: inline-flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            padding-top: 0.4rem;
+        }
+
+        .control-field .sprint-dropdown-toggle,
+        .control-field .group-dropdown-toggle,
+        .control-field .team-dropdown-toggle,
+        .control-field .search-input {
+            position: relative;
+        }
+
+        .control-label {
+            position: absolute;
+            top: 0.55rem;
+            left: 0.75rem;
+            font-size: 0.5rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            background: var(--bg-primary);
+            padding: 0 0.3rem;
+            font-family: 'IBM Plex Mono', monospace;
+            line-height: 1;
+            z-index: 2;
+            transform: translateY(-50%);
+        }
+
+        .control-search {
+            min-width: 220px;
         }
 
         .mode-switch {
@@ -213,10 +259,12 @@
             align-items: center;
             gap: 0;
             border: 1px solid var(--border);
-            border-radius: 6px;
+            border-radius: 10px;
             overflow: hidden;
             margin-left: 0.4rem;
             background: #fff;
+            height: var(--control-height);
+            margin-bottom: 0.05rem;
         }
 
         .mode-switch-button {
@@ -229,6 +277,9 @@
             border: none;
             margin: 0;
             color: var(--text-secondary);
+            height: 100%;
+            display: inline-flex;
+            align-items: center;
         }
 
         .mode-switch-button:hover {
@@ -255,7 +306,7 @@
 
         .sprint-dropdown-toggle {
             width: 125px;
-            padding: 0.3rem 0.45rem;
+            padding: 0.5rem 0.7rem 0.4rem;
             border: 1px solid var(--border);
             background: var(--bg-secondary);
             font-family: 'IBM Plex Mono', monospace;
@@ -271,7 +322,8 @@
             letter-spacing: normal;
             margin-right: 0;
             box-shadow: none;
-            border-radius: 6px;
+            border-radius: 10px;
+            height: var(--control-height);
         }
 
         .sprint-dropdown-toggle svg {
@@ -352,7 +404,7 @@
 
         .group-dropdown-toggle {
             width: 135px;
-            padding: 0.3rem 0.45rem;
+            padding: 0.5rem 0.7rem 0.4rem;
             border: 1px solid var(--border);
             background: var(--bg-secondary);
             font-family: 'IBM Plex Mono', monospace;
@@ -368,7 +420,8 @@
             letter-spacing: normal;
             margin-right: 0;
             box-shadow: none;
-            border-radius: 6px;
+            border-radius: 10px;
+            height: var(--control-height);
         }
 
         .group-dropdown-toggle span {
@@ -449,8 +502,8 @@
         }
 
         .group-gear-button {
-            width: 30px;
-            height: 30px;
+            width: var(--control-height);
+            height: var(--control-height);
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -460,7 +513,8 @@
             cursor: pointer;
             padding: 0;
             margin: 0;
-            border-radius: 6px;
+            border-radius: 10px;
+            margin-bottom: 0.05rem;
         }
 
         .group-gear-button svg {
@@ -674,7 +728,7 @@
             gap: 0.6rem;
             text-align: left;
             cursor: pointer;
-            border-radius: 6px;
+            border-radius: 10px;
         }
 
         .group-list-item.active {
@@ -1183,7 +1237,7 @@
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.7rem;
             color: var(--text-primary);
-            padding: 0.3rem 0.45rem;
+            padding: 0.5rem 0.7rem 0.4rem;
             width: 135px;
             display: inline-flex;
             align-items: center;
@@ -1193,7 +1247,8 @@
             transition: all 0.2s;
             text-transform: none;
             letter-spacing: normal;
-            border-radius: 6px;
+            border-radius: 10px;
+            height: var(--control-height);
         }
 
         .team-dropdown-toggle span {
@@ -1348,7 +1403,7 @@
             cursor: pointer;
             transition: all 0.3s;
             margin-right: 1rem;
-            border-radius: 6px;
+            border-radius: 10px;
         }
 
         button:hover {

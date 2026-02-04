@@ -5878,37 +5878,42 @@ import * as ReactDOM from 'react-dom';
                                     >
                                         {loading ? 'Loading...' : 'Refresh'}
                                     </button>
-                                    <div className="search-wrap">
-                                        <input
-                                            type="text"
-                                            className="search-input"
-                                            placeholder="Search tickets..."
-                                            value={searchInput}
-                                            onChange={(e) => setSearchInput(e.target.value)}
-                                            ref={searchInputRef}
-                                        />
-                                        {searchInput && (
-                                            <button
-                                                className="search-clear"
-                                                onClick={() => setSearchInput('')}
-                                                title="Clear search"
-                                                aria-label="Clear search"
-                                            >
-                                                ×
-                                            </button>
-                                        )}
+                                    <div className="control-field control-search" data-label="Search">
+                                        <span className="control-label">Search</span>
+                                        <div className="search-wrap">
+                                            <input
+                                                type="text"
+                                                className="search-input"
+                                                placeholder="Search tickets..."
+                                                value={searchInput}
+                                                onChange={(e) => setSearchInput(e.target.value)}
+                                                ref={searchInputRef}
+                                            />
+                                            {searchInput && (
+                                                <button
+                                                    className="search-clear"
+                                                    onClick={() => setSearchInput('')}
+                                                    title="Clear search"
+                                                    aria-label="Clear search"
+                                                >
+                                                    ×
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                         <div className="view-selector">
-                                <div className="view-filters">
-                                <div className="sprint-dropdown" ref={sprintDropdownRef}>
-                                    <div
-                                        className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
-                                        role="button"
-                                        aria-label="Select sprint"
-                                        tabIndex={sprintsLoading || availableSprints.length === 0 ? -1 : 0}
+                            <div className="view-filters">
+                                <div className="control-field" data-label="Sprint">
+                                    <span className="control-label">Sprint</span>
+                                    <div className="sprint-dropdown" ref={sprintDropdownRef}>
+                                        <div
+                                            className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
+                                            role="button"
+                                            aria-label="Select sprint"
+                                            tabIndex={sprintsLoading || availableSprints.length === 0 ? -1 : 0}
                                         onClick={() => {
                                             if (sprintsLoading || availableSprints.length === 0) return;
                                             setShowSprintDropdown(!showSprintDropdown);
@@ -5964,11 +5969,14 @@ import * as ReactDOM from 'react-dom';
                                                 )}
                                             </div>
                                         </div>
-                                    )}
+                                            )}
+                                    </div>
                                 </div>
                                 {((groupsConfig.groups || []).length > 1) && (
                                     <div className="group-control">
-                                        <div className="group-dropdown" ref={groupDropdownRef}>
+                                        <div className="control-field" data-label="Group">
+                                            <span className="control-label">Group</span>
+                                            <div className="group-dropdown" ref={groupDropdownRef}>
                                             <div
                                                 className={`group-dropdown-toggle ${showGroupDropdown ? 'open' : ''}`}
                                                 role="button"
@@ -6022,10 +6030,13 @@ import * as ReactDOM from 'react-dom';
                                                     )}
                                                 </div>
                                             )}
+                                            </div>
                                         </div>
                                     </div>
                                 )}
-                                <div className="team-dropdown" ref={teamDropdownRef}>
+                                <div className="control-field" data-label="Teams">
+                                    <span className="control-label">Teams</span>
+                                    <div className="team-dropdown" ref={teamDropdownRef}>
                                     <div
                                         className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''}`}
                                         role="button"
@@ -6063,6 +6074,7 @@ import * as ReactDOM from 'react-dom';
                                             ))}
                                         </div>
                                     )}
+                                    </div>
                                 </div>
                                 <div className="mode-switch">
                                     <button

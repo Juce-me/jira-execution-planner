@@ -201,8 +201,6 @@ import * as ReactDOM from 'react-dom';
             const [scenarioHoverKey, setScenarioHoverKey] = useState(null);
             const [scenarioFlashKey, setScenarioFlashKey] = useState(null);
             const [scenarioScrollTop, setScenarioScrollTop] = useState(0);
-            const [showRefreshMenu, setShowRefreshMenu] = useState(false);
-            const refreshMenuRef = useRef(null);
             const searchInputRef = useRef(null);
             const [scenarioScrollLeft, setScenarioScrollLeft] = useState(0);
             const [scenarioViewportHeight, setScenarioViewportHeight] = useState(0);
@@ -1820,17 +1818,6 @@ import * as ReactDOM from 'react-dom';
                 };
                 window.addEventListener('keydown', handleKey);
                 return () => window.removeEventListener('keydown', handleKey);
-            }, []);
-
-            useEffect(() => {
-                const handleClickOutside = (event) => {
-                    if (!refreshMenuRef.current) return;
-                    if (!refreshMenuRef.current.contains(event.target)) {
-                        setShowRefreshMenu(false);
-                    }
-                };
-                document.addEventListener('mousedown', handleClickOutside);
-                return () => document.removeEventListener('mousedown', handleClickOutside);
             }, []);
 
             useEffect(() => {
@@ -5891,34 +5878,6 @@ import * as ReactDOM from 'react-dom';
                                     >
                                         {loading ? 'Loading...' : 'Refresh'}
                                     </button>
-                                    <div className="refresh-menu" ref={refreshMenuRef}>
-                                        <button
-                                            className="secondary compact refresh-toggle"
-                                            onClick={() => setShowRefreshMenu(prev => !prev)}
-                                            disabled={sprintsLoading}
-                                            title="Refresh sprints list from Jira"
-                                            aria-label="Refresh sprints list"
-                                            type="button"
-                                        >
-                                            <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                                <path d="M6 9L1 4h10z"/>
-                                            </svg>
-                                        </button>
-                                        {showRefreshMenu && (
-                                            <div className="refresh-menu-panel">
-                                                <button
-                                                    className="refresh-menu-item"
-                                                    type="button"
-                                                    onClick={() => {
-                                                        loadSprints(true);
-                                                        setShowRefreshMenu(false);
-                                                    }}
-                                                >
-                                                    {sprintsLoading ? 'Loading sprints...' : 'Refresh sprints'}
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
                                     <div className="search-wrap">
                                         <input
                                             type="text"

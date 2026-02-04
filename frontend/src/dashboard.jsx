@@ -5950,6 +5950,7 @@ import * as ReactDOM from 'react-dom';
 
             useEffect(() => {
                 if (!showPlanning) {
+                    setPlanningOffset(0);
                     return;
                 }
                 const updateOffset = () => {
@@ -5960,6 +5961,7 @@ import * as ReactDOM from 'react-dom';
                 window.addEventListener('resize', updateOffset);
                 return () => window.removeEventListener('resize', updateOffset);
             }, [showPlanning, selectedCount, selectedSP, teamCapacityEntries.length]);
+
 
             const openSelectedInJira = () => {
                 if (!jiraUrl) return;
@@ -5991,7 +5993,7 @@ import * as ReactDOM from 'react-dom';
                                         New version available
                                     </button>
                                 )}
-                                <div className="header-actions-row sticky-search-bar">
+                                <div className="header-actions-row">
                                     <div className="control-field control-search" data-label="Search">
                                         <span className="control-label">Search</span>
                                         <div className="search-wrap">

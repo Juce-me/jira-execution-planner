@@ -30,6 +30,11 @@
             --border: #e0ddd7;
             --shadow: rgba(0, 0, 0, 0.04);
             --control-height: 38px;
+            --sticky-search-z: 1000;
+            --sticky-planning-z: 60;
+            --sticky-epic-z: 50;
+            --sticky-scenario-z: 60;
+            --sticky-gap: 0px;
         }
 
         body {
@@ -155,12 +160,15 @@
             justify-content: flex-end;
         }
 
+        .sticky-search-shell {
+            display: none;
+        }
+
         .sticky-search-bar {
-            position: sticky;
-            top: 0;
-            z-index: 300;
-            padding: 0.35rem 0;
-            background: var(--bg-primary);
+            position: static;
+            padding: 0;
+            background: transparent;
+            box-shadow: none;
         }
 
         .header-actions-row button {
@@ -2395,9 +2403,9 @@
             padding: 0.5rem 0;
             margin-bottom: 0.75rem;
             position: sticky;
-            top: calc(var(--planning-offset, 0px) + 0.5rem);
+            top: calc(var(--planning-offset, 0px));
             background: var(--bg-secondary);
-            z-index: 3;
+            z-index: var(--sticky-epic-z);
             box-shadow: 0 1px 0 var(--border);
         }
 
@@ -2790,8 +2798,8 @@
             opacity: 1;
             overflow: visible;
             position: sticky;
-            top: 0.5rem;
-            z-index: 4;
+            top: 0;
+            z-index: var(--sticky-planning-z);
             box-shadow: 0 8px 24px rgba(26, 26, 26, 0.08);
         }
 
@@ -3017,9 +3025,9 @@
 
         .scenario-axis {
             position: sticky;
-            top: 0;
+            top: 0.5rem;
             background: #fff;
-            z-index: 4;
+            z-index: var(--sticky-scenario-z);
             min-height: var(--scenario-axis-height);
             padding-top: 0.2rem;
             padding-left: calc(var(--scenario-label-width) + var(--scenario-label-gap));
@@ -3645,7 +3653,7 @@
             transform: translate(6px, 6px);
             transition: opacity 0.05s ease, transform 0.05s ease;
             pointer-events: none;
-            z-index: 60;
+            z-index: var(--sticky-scenario-z);
             white-space: normal;
         }
 

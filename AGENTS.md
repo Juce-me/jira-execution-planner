@@ -40,6 +40,15 @@ Open `jira-dashboard.html` in a browser to view the UI.
 python3 -m unittest discover -s tests
 ```
 
+## Sticky UI Layering
+- Sticky order (top → bottom):
+  - Planning panel (`.planning-panel.open`, when visible)
+  - Epic header (`.epic-header`)
+  - Scenario axis (`.scenario-axis`, when visible)
+- Epic header must sit directly below the planning panel when planning is open.
+- When planning is closed, epic header sticks to the top.
+- If you change any sticky element, validate the order and spacing in Catch Up, Planning, and Scenario modes.
+
 ## Commit & Pull Request Guidelines
 - Commit messages are short, imperative, and descriptive (examples: “Improve…”, “Fix…”, “Add…”).
 - Keep subject lines concise; add context in the body if needed.

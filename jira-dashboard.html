@@ -130,10 +130,11 @@
             color: var(--text-primary);
             text-transform: none;
             letter-spacing: normal;
-            width: 200px;
+            width: 100%;
             transition: all 0.2s ease;
             border-radius: 10px;
             height: var(--control-height);
+            box-sizing: border-box;
         }
 
 
@@ -172,7 +173,6 @@
             outline: none;
             border-color: var(--accent);
             box-shadow: 0 0 0 3px rgba(212, 56, 13, 0.1);
-            width: 360px;
         }
 
         .search-input::placeholder {
@@ -185,6 +185,16 @@
             display: flex;
             align-items: center;
             width: 100%;
+        }
+
+        .control-search {
+            min-width: 220px;
+            width: 220px;
+            transition: width 0.2s ease;
+        }
+
+        .control-search:focus-within {
+            width: 360px;
         }
 
         .search-clear {
@@ -250,9 +260,6 @@
             transform: translateY(-50%);
         }
 
-        .control-search {
-            min-width: 220px;
-        }
 
         .mode-switch {
             display: inline-flex;

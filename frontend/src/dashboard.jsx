@@ -5379,6 +5379,109 @@ import * as ReactDOM from 'react-dom';
                 return num.toFixed(1);
             };
 
+            const formatPriorityShort = (value) => {
+                const name = String(value || '').toLowerCase();
+                if (!name) return 'NONE';
+                if (name.includes('blocker')) return 'BLKR';
+                if (name.includes('critical')) return 'CRIT';
+                if (name.includes('highest')) return 'HIGH';
+                if (name.includes('high')) return 'HIGH';
+                if (name.includes('major')) return 'MAJR';
+                if (name.includes('medium')) return 'MED';
+                if (name.includes('minor')) return 'MIN';
+                if (name.includes('lowest')) return 'LOW';
+                if (name.includes('low')) return 'LOW';
+                return name.slice(0, 4).toUpperCase();
+            };
+
+            const renderPriorityIcon = (priority, idSeed) => {
+                const name = String(priority || '').toLowerCase();
+                const label = priority || 'None';
+                const iconClass = name.replace(/\s+/g, '-') || 'none';
+                const safeId = String(idSeed || 'priority').replace(/[^a-z0-9_-]/gi, '') || 'priority';
+                const gradientId = `priority-grad-${safeId}`;
+                if (!name) {
+                    return (
+                        <span className="task-priority-icon none" data-priority="None" aria-label="None">
+                            <svg viewBox="0 0 16 16">
+                                <circle cx="8" cy="8" r="5" fill="none" stroke="#7a8699" strokeWidth="2"/>
+                            </svg>
+                        </span>
+                    );
+                }
+                if (name.includes('blocker')) {
+                    return (
+                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                            <svg viewBox="0 0 16 16">
+                                <path d="M8 15c-3.9 0-7-3.1-7-7s3.1-7 7-7 7 3.1 7 7-3.1 7-7 7zM4 7c-.6 0-1 .4-1 1s.4 1 1 1h8c.6 0 1-.4 1-1s-.4-1-1-1H4z" fill="#ff5630"/>
+                            </svg>
+                        </span>
+                    );
+                }
+                if (name.includes('critical')) {
+                    return (
+                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                            <svg viewBox="0 0 16 16">
+                                <defs>
+                                    <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1="-46.25" y1="65.1105" x2="-46.25" y2="64.1105" gradientTransform="matrix(12 0 0 -13.1121 563 854.7415)">
+                                        <stop offset="0" stopColor="#ff5630"/>
+                                        <stop offset="1" stopColor="#ff8f73"/>
+                                    </linearGradient>
+                                </defs>
+                                <path d="M2.5 4l5-2.9c.3-.2.7-.2 1 0l5 2.9c.3.2.5.5.5.9v8.2c0 .6-.4 1-1 1-.2 0-.4 0-.5-.1L8 11.4 3.5 14c-.5.3-1.1.1-1.4-.4-.1-.1-.1-.3-.1-.5V4.9c0-.4.2-.7.5-.9z" fill={`url(#${gradientId})`}/>
+                            </svg>
+                        </span>
+                    );
+                }
+                if (name.includes('highest') || name.includes('high') || name.includes('major')) {
+                    return (
+                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                            <svg viewBox="0 0 16 16">
+                                <path d="M7.984436 3.200867l-4.5 2.7c-.5.3-1.1.1-1.3-.4s-.2-1.1.3-1.3l5-3c.3-.2.7-.2 1 0l5 3c.5.3.6.9.3 1.4-.3.5-.9.6-1.4.3l-4.4-2.7z" fill="#ff5630"/>
+                                <path d="M3.484436 10.200867c-.5.3-1.1.1-1.3-.3s-.2-1.1.3-1.4l5-3c.3-.2.7-.2 1 0l5 3c.5.3.6.9.3 1.4-.3.5-.9.6-1.4.3l-4.4-2.7-4.5 2.7z" fill="#ff7452"/>
+                                <path d="M3.484436 14.500867c-.5.3-1.1.2-1.3-.3s-.2-1.1.3-1.4l5-3c.3-.2.7-.2 1 0l5 3c.5.3.6.9.3 1.4-.3.5-.9.6-1.4.3l-4.4-2.7-4.5 2.7z" fill="#ff8f73"/>
+                            </svg>
+                        </span>
+                    );
+                }
+                if (name.includes('medium')) {
+                    return (
+                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                            <svg viewBox="0 0 16 16">
+                                <circle cx="8" cy="8" r="5" fill="none" stroke="#7a8699" strokeWidth="2"/>
+                            </svg>
+                        </span>
+                    );
+                }
+                if (name.includes('minor') || name.includes('lowest')) {
+                    return (
+                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                            <svg viewBox="0 0 16 16">
+                                <path d="M8.045319 12.806152l4.5-2.7c.5-.3 1.1-.1 1.3.4s.2 1.1-.3 1.3l-5 3c-.3.2-.7.2-1 0l-5-3c-.5-.3-.6-.9-.3-1.4.3-.5.9-.6 1.4-.3l4.4 2.7z" fill="#0065ff"/>
+                                <path d="M12.545319 5.806152c.5-.3 1.1-.1 1.3.3s.2 1.1-.3 1.4l-5 3c-.3.2-.7.2-1 0l-5-3c-.5-.3-.6-.9-.3-1.4.3-.5.9-.6 1.4-.3l4.4 2.7 4.5-2.7z" fill="#2684ff"/>
+                                <path d="M12.545319 1.506152c.5-.3 1.1-.2 1.3.3s.2 1.1-.3 1.4l-5 3c-.3.2-.7.2-1 0l-5-3c-.5-.3-.6-.9-.3-1.4.3-.5.9-.6 1.4-.3l4.4 2.7 4.5-2.7z" fill="#4c9aff"/>
+                            </svg>
+                        </span>
+                    );
+                }
+                if (name.includes('low')) {
+                    return (
+                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                            <svg viewBox="0 0 16 16">
+                                <path d="M12.5 6.1c.5-.3 1.1-.1 1.4.4.3.5.1 1.1-.3 1.3l-5 3c-.3.2-.7.2-1 0l-5-3c-.6-.2-.7-.9-.4-1.3.2-.5.9-.7 1.3-.4L8 8.8l4.5-2.7z" fill="#0065ff"/>
+                            </svg>
+                        </span>
+                    );
+                }
+                return (
+                    <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                        <svg viewBox="0 0 16 16">
+                            <circle cx="8" cy="8" r="5" fill="none" stroke="#7a8699" strokeWidth="2"/>
+                        </svg>
+                    </span>
+                );
+            };
+
             const getMetricClass = (value, type, acceptedValue) => {
                 const num = Number(value || 0);
                 if (num === 0) {
@@ -5888,20 +5991,7 @@ import * as ReactDOM from 'react-dom';
                                         New version available
                                     </button>
                                 )}
-                                <div className="header-actions-row">
-                                    <button
-                                        className="secondary compact refresh-button"
-                                        onClick={() => {
-                                            loadProductTasks();
-                                            loadTechTasks();
-                                            loadReadyToCloseProductTasks();
-                                            loadReadyToCloseTechTasks();
-                                        }}
-                                        disabled={loading || selectedSprint === null}
-                                        title="Refresh tasks from Jira"
-                                    >
-                                        {loading ? 'Loading...' : 'Refresh'}
-                                    </button>
+                                <div className="header-actions-row sticky-search-bar">
                                     <div className="control-field control-search" data-label="Search">
                                         <span className="control-label">Search</span>
                                         <div className="search-wrap">
@@ -5925,10 +6015,29 @@ import * as ReactDOM from 'react-dom';
                                             )}
                                         </div>
                                     </div>
+                                    <button
+                                        className="secondary compact refresh-icon"
+                                        onClick={() => {
+                                            loadProductTasks();
+                                            loadTechTasks();
+                                            loadReadyToCloseProductTasks();
+                                            loadReadyToCloseTechTasks();
+                                        }}
+                                        disabled={loading || selectedSprint === null}
+                                        title="Refresh tasks from Jira"
+                                        aria-label="Refresh tasks from Jira"
+                                        type="button"
+                                    >
+                                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                            <path d="M19 7.5a7.5 7.5 0 1 0 2 5.1" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"/>
+                                            <path d="M19 3v4h-4" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                                        </svg>
+                                    </button>
                                 </div>
                             </div>
                         </div>
                         <div className="view-selector">
+                            <div className="controls-label">Controls</div>
                             <div className="view-filters">
                                 <div className="control-field" data-label="Sprint">
                                     <span className="control-label">Sprint</span>
@@ -6101,6 +6210,18 @@ import * as ReactDOM from 'react-dom';
                                     </div>
                                 </div>
                                 <div className="mode-switch">
+                                    <button
+                                        className={`mode-switch-button ${(!showPlanning && !showStats && !showScenario) ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setShowPlanning(false);
+                                            setShowStats(false);
+                                            setShowScenario(false);
+                                        }}
+                                        title="Return to default state"
+                                        type="button"
+                                    >
+                                        Catch Up
+                                    </button>
                                     <button
                                         className={`mode-switch-button ${showPlanning ? 'active' : ''}`}
                                         onClick={() => setShowPlanning(!showPlanning)}
@@ -7766,12 +7887,12 @@ import * as ReactDOM from 'react-dom';
                                                                             rel="noopener noreferrer"
                                                                         >
                                                                             <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'} blocked</span>
                                                                         </a>
                                                                     ) : (
                                                                         <div className="alert-team-title">
                                                                             <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'} blocked</span>
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -7878,20 +7999,19 @@ import * as ReactDOM from 'react-dom';
                                                                             rel="noopener noreferrer"
                                                                         >
                                                                             <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'} blocked</span>
                                                                         </a>
                                                                     ) : (
                                                                         <div className="alert-team-title">
                                                                             <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'} blocked</span>
                                                                         </div>
                                                                     )}
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(task => {
-                                                                        const statusLabel = getBlockedAlertStatusLabel(task);
                                                                         return (
-                                                                            <div key={task.key} className="alert-story">
+                                                                            <div key={task.key} className="alert-story alert-story-jump">
                                                                                 <div
                                                                                     className="alert-story-main"
                                                                                     role="button"
@@ -7918,7 +8038,6 @@ import * as ReactDOM from 'react-dom';
                                                                                         {task.key} · {task.fields.summary}
                                                                                     </a>
                                                                                 </div>
-                                                                                <span className="alert-pill status">{statusLabel}</span>
                                                                                 <button
                                                                                     className="task-remove alert-remove"
                                                                                     onClick={(event) => {
@@ -7981,15 +8100,15 @@ import * as ReactDOM from 'react-dom';
                                                                                     target="_blank"
                                                                                     rel="noopener noreferrer"
                                                                                 >
-                                                                                    <span className="alert-pill team">{group.name}</span>
-                                                                                    <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
-                                                                                </a>
-                                                                            ) : (
-                                                                                <div className="alert-team-title">
-                                                                                    <span className="alert-pill team">{group.name}</span>
-                                                                                    <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
-                                                                                </div>
-                                                                            )}
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
+                                                                        </a>
+                                                                    ) : (
+                                                                        <div className="alert-team-title">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
+                                                                        </div>
+                                                                    )}
                                                                         </div>
                                                                         <div className="alert-stories">
                                                                             {group.items.map(task => (
@@ -8366,108 +8485,115 @@ import * as ReactDOM from 'react-dom';
 
 	                                </div>
 	                            )}
-                            <div className="stats">
-                                <div
-                                    className={`stat-card total ${statusFilter === null ? 'active' : ''} ${baseFilteredTasks.length === 0 ? 'disabled' : ''}`}
-                                    onClick={() => {
-                                        if (baseFilteredTasks.length === 0) return;
-                                        setStatusFilter(null);
-                                    }}
-                                >
-                                    <div className="stat-value">{baseFilteredTasks.length}</div>
-                                    <div className="stat-label">Total Tasks</div>
-                                    <div className="stats-note">{totalStoryPoints.toFixed(1)} SP</div>
+                            <div className="filters-strip">
+                                <div className="filters-group">
+                                    <div className="filters-label">Show only</div>
+                                    <div className="stats">
+                                        <div
+                                            className={`stat-card total ${statusFilter === null ? 'active' : ''} ${baseFilteredTasks.length === 0 ? 'disabled' : ''}`}
+                                            onClick={() => {
+                                                if (baseFilteredTasks.length === 0) return;
+                                                setStatusFilter(null);
+                                            }}
+                                        >
+                                            <div className="stat-value">{baseFilteredTasks.length}</div>
+                                            <div className="stat-label">Total Tasks</div>
+                                            <div className="stats-note">{totalStoryPoints.toFixed(1)} SP</div>
+                                        </div>
+                                        <div
+                                            className={`stat-card done ${statusFilter === 'done' ? 'active' : ''} ${doneTasksCount === 0 ? 'disabled' : ''}`}
+                                            onClick={() => {
+                                                if (doneTasksCount === 0) return;
+                                                setStatusFilter(statusFilter === 'done' ? null : 'done');
+                                            }}
+                                        >
+                                            <div className="stat-value">{doneTasksCount}</div>
+                                            <div className="stat-label">Done Tasks</div>
+                                            <div className="stats-note">{doneStoryPoints.toFixed(1)} SP</div>
+                                        </div>
+                                        <div
+                                            className={`stat-card high-priority ${statusFilter === 'high-priority' ? 'active' : ''} ${highPriorityCount === 0 ? 'disabled' : ''}`}
+                                            onClick={() => {
+                                                if (highPriorityCount === 0) return;
+                                                setStatusFilter(statusFilter === 'high-priority' ? null : 'high-priority');
+                                            }}
+                                        >
+                                            <div className="stat-value">{highPriorityCount}</div>
+                                            <div className="stat-label">High Priority</div>
+                                            <div className="stats-note">{highPriorityStoryPoints.toFixed(1)} SP</div>
+                                        </div>
+                                        <div
+                                            className={`stat-card minor ${statusFilter === 'minor-priority' ? 'active' : ''} ${minorPriorityCount === 0 ? 'disabled' : ''}`}
+                                            onClick={() => {
+                                                if (minorPriorityCount === 0) return;
+                                                setStatusFilter(statusFilter === 'minor-priority' ? null : 'minor-priority');
+                                            }}
+                                        >
+                                            <div className="stat-value">{minorPriorityCount}</div>
+                                            <div className="stat-label">Minor + Lower</div>
+                                            <div className="stats-note">{minorPriorityStoryPoints.toFixed(1)} SP</div>
+                                        </div>
+                                        <div
+                                            className={`stat-card in-progress ${statusFilter === 'in-progress' ? 'active' : ''} ${inProgressTasksCount === 0 ? 'disabled' : ''}`}
+                                            onClick={() => {
+                                                if (inProgressTasksCount === 0) return;
+                                                setStatusFilter(statusFilter === 'in-progress' ? null : 'in-progress');
+                                            }}
+                                        >
+                                            <div className="stat-value">{inProgressTasksCount}</div>
+                                            <div className="stat-label">In Progress</div>
+                                            <div className="stats-note">{inProgressStoryPoints.toFixed(1)} SP</div>
+                                        </div>
+                                        <div
+                                            className={`stat-card todo-accepted ${statusFilter === 'todo-accepted' ? 'active' : ''} ${todoAcceptedTasksCount === 0 ? 'disabled' : ''}`}
+                                            onClick={() => {
+                                                if (todoAcceptedTasksCount === 0) return;
+                                                setStatusFilter(statusFilter === 'todo-accepted' ? null : 'todo-accepted');
+                                            }}
+                                        >
+                                            <div className="stat-value">{todoAcceptedTasksCount}</div>
+                                            <div className="stat-label">To Do / Pending / Accepted</div>
+                                            <div className="stats-note">{todoAcceptedStoryPoints.toFixed(1)} SP</div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div
-                                    className={`stat-card done ${statusFilter === 'done' ? 'active' : ''} ${doneTasksCount === 0 ? 'disabled' : ''}`}
-                                    onClick={() => {
-                                        if (doneTasksCount === 0) return;
-                                        setStatusFilter(statusFilter === 'done' ? null : 'done');
-                                    }}
-                                >
-                                    <div className="stat-value">{doneTasksCount}</div>
-                                    <div className="stat-label">Done Tasks</div>
-                                    <div className="stats-note">{doneStoryPoints.toFixed(1)} SP</div>
+                                <div className="filters-group">
+                                    <div className="filters-label">Hide</div>
+                                    <div className="toggle-container">
+                                        <button
+                                            className={`toggle ${showTech ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setShowTech(!showTech);
+                                            }}
+                                        >
+                                            {showTech
+                                                ? `Hide Tech Tasks (${techTasksCount})`
+                                                : `Show Tech Tasks (${techTasksCount})`}
+                                        </button>
+                                        <button
+                                            className={`toggle ${showProduct ? 'active' : ''}`}
+                                            onClick={() => setShowProduct(!showProduct)}
+                                        >
+                                            {showProduct ? `Hide Product Tasks (${productTasksCount})` : `Show Product Tasks (${productTasksCount})`}
+                                        </button>
+                                        {doneTasks.length > 0 && (
+                                            <button
+                                                className={`toggle ${showDone ? 'active' : ''}`}
+                                                onClick={() => setShowDone(!showDone)}
+                                            >
+                                                {showDone ? `Hide Done Tasks (${doneTasks.length})` : `Show Done Tasks (${doneTasks.length})`}
+                                            </button>
+                                        )}
+                                        {killedTasks.length > 0 && (
+                                            <button
+                                                className={`toggle ${showKilled ? 'active' : ''}`}
+                                                onClick={() => setShowKilled(!showKilled)}
+                                            >
+                                                {showKilled ? `Hide Killed Tasks (${killedTasks.length})` : `Show Killed Tasks (${killedTasks.length})`}
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
-                                <div
-                                    className={`stat-card high-priority ${statusFilter === 'high-priority' ? 'active' : ''} ${highPriorityCount === 0 ? 'disabled' : ''}`}
-                                    onClick={() => {
-                                        if (highPriorityCount === 0) return;
-                                        setStatusFilter(statusFilter === 'high-priority' ? null : 'high-priority');
-                                    }}
-                                >
-                                    <div className="stat-value">{highPriorityCount}</div>
-                                    <div className="stat-label">High Priority</div>
-                                    <div className="stats-note">{highPriorityStoryPoints.toFixed(1)} SP</div>
-                                </div>
-                                <div
-                                    className={`stat-card minor ${statusFilter === 'minor-priority' ? 'active' : ''} ${minorPriorityCount === 0 ? 'disabled' : ''}`}
-                                    onClick={() => {
-                                        if (minorPriorityCount === 0) return;
-                                        setStatusFilter(statusFilter === 'minor-priority' ? null : 'minor-priority');
-                                    }}
-                                >
-                                    <div className="stat-value">{minorPriorityCount}</div>
-                                    <div className="stat-label">Minor + Lower</div>
-                                    <div className="stats-note">{minorPriorityStoryPoints.toFixed(1)} SP</div>
-                                </div>
-                                <div
-                                    className={`stat-card in-progress ${statusFilter === 'in-progress' ? 'active' : ''} ${inProgressTasksCount === 0 ? 'disabled' : ''}`}
-                                    onClick={() => {
-                                        if (inProgressTasksCount === 0) return;
-                                        setStatusFilter(statusFilter === 'in-progress' ? null : 'in-progress');
-                                    }}
-                                >
-                                    <div className="stat-value">{inProgressTasksCount}</div>
-                                    <div className="stat-label">In Progress</div>
-                                    <div className="stats-note">{inProgressStoryPoints.toFixed(1)} SP</div>
-                                </div>
-                                <div
-                                    className={`stat-card todo-accepted ${statusFilter === 'todo-accepted' ? 'active' : ''} ${todoAcceptedTasksCount === 0 ? 'disabled' : ''}`}
-                                    onClick={() => {
-                                        if (todoAcceptedTasksCount === 0) return;
-                                        setStatusFilter(statusFilter === 'todo-accepted' ? null : 'todo-accepted');
-                                    }}
-                                >
-                                    <div className="stat-value">{todoAcceptedTasksCount}</div>
-                                    <div className="stat-label">To Do / Pending / Accepted</div>
-                                    <div className="stats-note">{todoAcceptedStoryPoints.toFixed(1)} SP</div>
-                                </div>
-                            </div>
-
-                            <div className="toggle-container">
-                                <button
-                                    className={`toggle ${showTech ? 'active' : ''}`}
-                                    onClick={() => {
-                                        setShowTech(!showTech);
-                                    }}
-                                >
-                                    {showTech
-                                        ? `Hide Tech Tasks (${techTasksCount})`
-                                        : `Show Tech Tasks (${techTasksCount})`}
-                                </button>
-                                <button
-                                    className={`toggle ${showProduct ? 'active' : ''}`}
-                                    onClick={() => setShowProduct(!showProduct)}
-                                >
-                                    {showProduct ? `Hide Product Tasks (${productTasksCount})` : `Show Product Tasks (${productTasksCount})`}
-                                </button>
-                                {doneTasks.length > 0 && (
-                                    <button
-                                        className={`toggle ${showDone ? 'active' : ''}`}
-                                        onClick={() => setShowDone(!showDone)}
-                                    >
-                                        {showDone ? `Hide Done Tasks (${doneTasks.length})` : `Show Done Tasks (${doneTasks.length})`}
-                                    </button>
-                                )}
-                                {killedTasks.length > 0 && (
-                                    <button
-                                        className={`toggle ${showKilled ? 'active' : ''}`}
-                                        onClick={() => setShowKilled(!showKilled)}
-                                    >
-                                        {showKilled ? `Hide Killed Tasks (${killedTasks.length})` : `Show Killed Tasks (${killedTasks.length})`}
-                                    </button>
-                                )}
                             </div>
 
                             {visibleTasks.length === 0 ? (
@@ -8673,17 +8799,18 @@ import * as ReactDOM from 'react-dom';
                                                                 >
                                                                     ×
                                                                 </button>
-                                                                <div className="task-headline">
-                                                                    <span className="story-icon" aria-hidden="true" title="STORY">
+                                                            <div className="task-headline">
+                                                                <span className="story-icon" aria-hidden="true" title="STORY">
                                                                         <svg viewBox="0 0 24 24" fill="none">
-                                                                            <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
-                                                                        </svg>
-                                                                    </span>
-                                                                    <h3 className="task-title">
-                                                                        <a href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'} target="_blank" rel="noopener noreferrer">
-                                                                            {task.fields.summary}
-                                                                        </a>
-                                                                    </h3>
+                                                                    <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
+                                                                </svg>
+                                                                </span>
+                                                                {renderPriorityIcon(task.fields.priority?.name, task.key)}
+                                                                <h3 className="task-title">
+                                                                    <a href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'} target="_blank" rel="noopener noreferrer">
+                                                                        {task.fields.summary}
+                                                                    </a>
+                                                                </h3>
                                                                     <span className="task-inline-meta">
                                                                         <a
                                                                             className="task-key-link"
@@ -8710,9 +8837,6 @@ import * as ReactDOM from 'react-dom';
                                                                     )}
                                                                 </div>
                                                                 <div className="task-header-right">
-                                                                    <span className={`task-priority ${task.fields.priority?.name.toLowerCase()}`}>
-                                                                        {task.fields.priority?.name || 'None'}
-                                                                    </span>
                                                                     {showDependencies && hasDependencyLinks && (
                                                                         <div className="dependency-pill-stack">
                                                                             {dependsOnIds.length > 0 && (

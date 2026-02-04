@@ -5650,6 +5650,7 @@ import * as ReactDOM from 'react-dom';
 	                .filter(epic => {
 	                    const status = normalizeStatus(epic.status?.name);
 	                    if (status === 'killed' || status === 'done' || status === 'incomplete') return false;
+                        if (status === 'analysis') return false;
 	                    if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
 	                    return true;
 	                })
@@ -5706,20 +5707,26 @@ import * as ReactDOM from 'react-dom';
                 });
             }, [tasks, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet]);
 
-            const analysisFutureEpics = React.useMemo(() => {
-                if (!isFirstFutureSprintSelected) return [];
+            const analysisWaitingEpics = React.useMemo(() => {
                 return readyToCloseEpicsInScope.filter(epic => {
                     if (!epic?.key) return false;
                     if (dismissedAlertSet.has(epic.key)) return false;
                     const status = normalizeStatus(epic.status?.name);
                     if (status !== 'analysis') return false;
                     if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
-                    return true;
+                    const epicStories = readyToCloseTasks.filter(task => {
+                        if (!task.fields?.epicKey) return false;
+                        if (task.fields.epicKey !== epic.key) return false;
+                        if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return false;
+                        return true;
+                    });
+                    if (epicStories.length === 0) return false;
+                    return epicStories.every(task => readyToCloseStoryStatuses.has(normalizeStatus(task.fields.status?.name)));
                 });
-            }, [readyToCloseEpicsInScope, dismissedAlertSet, isFirstFutureSprintSelected, isAllTeamsSelected, selectedTeamSet]);
+            }, [readyToCloseEpicsInScope, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, readyToCloseTasks, readyToCloseStoryStatuses]);
 
             const postponedAlertTeams = groupAlertsByTeam(postponedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
-            const analysisEpicTeams = groupAlertsByTeam(analysisFutureEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const analysisEpicTeams = groupAlertsByTeam(analysisWaitingEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
 
             const missingAlertKeySet = React.useMemo(
                 () => new Set(consolidatedMissingStories.map(item => item.task?.key).filter(Boolean)),
@@ -5732,9 +5739,9 @@ import * as ReactDOM from 'react-dom';
             const followupAlertKeySet = React.useMemo(
                 () => new Set([
                     ...postponedTasks.map(task => task.key),
-                    ...analysisFutureEpics.map(epic => epic.key)
+                    ...analysisWaitingEpics.map(epic => epic.key)
                 ].filter(Boolean)),
-                [postponedTasks, analysisFutureEpics]
+                [postponedTasks, analysisWaitingEpics]
             );
             const emptyAlertKeySet = React.useMemo(
                 () => new Set(emptyEpics.map(epic => epic.key).filter(Boolean)),
@@ -5748,7 +5755,7 @@ import * as ReactDOM from 'react-dom';
             const alertCounts = {
                 missing: consolidatedMissingStories.length,
                 blocked: blockedTasks.length,
-                followup: postponedTasks.length + analysisFutureEpics.length,
+                followup: postponedTasks.length + analysisWaitingEpics.length,
                 empty: emptyEpics.length,
                 done: doneStoryEpics.length
             };
@@ -7917,7 +7924,7 @@ import * as ReactDOM from 'react-dom';
 	                                        </div>
 	                                    )}
 
-                                        {(postponedTasks.length > 0 || analysisFutureEpics.length > 0) && (
+                                        {(postponedTasks.length > 0 || analysisWaitingEpics.length > 0) && (
                                             <div className={`alert-card following ${showPostponedAlert ? '' : 'collapsed'}`}>
                                                 <div className="alert-card-header">
                                                     <button
@@ -7935,9 +7942,9 @@ import * as ReactDOM from 'react-dom';
                                                         </span>
                                                     </button>
                                                     <div className="alert-title">⏭️ Following Sprint</div>
-                                                    <div className="alert-subtitle">Postponed stories should be moved to the next sprint. Analysis epics are waiting for description to create stories.</div>
+                                                    <div className="alert-subtitle">Postponed stories should be moved to the next sprint. Analysis epics are waiting for stories in the following quarter.</div>
                                                     <div className="alert-chip">
-                                                        {postponedTasks.length + analysisFutureEpics.length} items
+                                                        {postponedTasks.length + analysisWaitingEpics.length} items
                                                     </div>
                                                 </div>
                                                 <div className={`alert-card-body ${showPostponedAlert ? '' : 'collapsed'}`}>
@@ -8024,9 +8031,9 @@ import * as ReactDOM from 'react-dom';
                                                             })}
                                                         </>
                                                     )}
-                                                    {analysisFutureEpics.length > 0 && (
+                                                    {analysisWaitingEpics.length > 0 && (
                                                         <>
-                                                            <div className="alert-section-title">Analysis epics (next sprint)</div>
+                                                            <div className="alert-section-title">Analysis epics (following quarter)</div>
                                                             {analysisEpicTeams.map(group => {
                                                                 const keys = group.items.map(item => item.key);
                                                                 const teamLink = buildKeyListLink(keys);

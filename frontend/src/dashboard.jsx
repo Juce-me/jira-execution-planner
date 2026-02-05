@@ -129,7 +129,7 @@ import * as ReactDOM from 'react-dom';
             const [groupsError, setGroupsError] = useState('');
             const [groupWarnings, setGroupWarnings] = useState([]);
             const [groupConfigSource, setGroupConfigSource] = useState('');
-            const [activeGroupId, setActiveGroupId] = useState(null);
+            const [activeGroupId, setActiveGroupId] = useState(savedPrefsRef.current.activeGroupId ?? null);
             const [showGroupDropdown, setShowGroupDropdown] = useState(false);
             const groupDropdownRef = useRef(null);
             const [showGroupManage, setShowGroupManage] = useState(false);
@@ -591,6 +591,10 @@ import * as ReactDOM from 'react-dom';
                     setGroupWarnings(payload.warnings || []);
                     setGroupConfigSource(payload.source || '');
                     setActiveGroupId(prev => {
+                        const preferred = savedPrefsRef.current.activeGroupId;
+                        if (preferred && normalized.groups.some(group => group.id === preferred)) {
+                            return preferred;
+                        }
                         if (prev && normalized.groups.some(group => group.id === prev)) {
                             return prev;
                         }
@@ -1844,6 +1848,7 @@ import * as ReactDOM from 'react-dom';
                 saveUiPrefs({
                     selectedSprint,
                     selectedTeams,
+                    activeGroupId,
                     showPlanning,
                     showStats,
                     showScenario,
@@ -1869,6 +1874,7 @@ import * as ReactDOM from 'react-dom';
             }, [
                 selectedSprint,
                 selectedTeams,
+                activeGroupId,
                 showPlanning,
                 showStats,
                 showScenario,

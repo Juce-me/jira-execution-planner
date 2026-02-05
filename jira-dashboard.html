@@ -128,21 +128,6 @@
             white-space: nowrap;
         }
 
-        .update-toast {
-            margin-top: 0.35rem;
-            padding: 0.35rem 0.6rem;
-            border: 1px solid rgba(220, 38, 38, 0.25);
-            color: #b91c1c;
-            background: #fff3f0;
-            border-radius: 12px;
-            font-size: 0.6rem;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            font-family: 'IBM Plex Mono', monospace;
-            cursor: pointer;
-            align-self: flex-start;
-        }
-
         .update-badge:hover {
             background: rgba(220, 38, 38, 0.1);
             border-color: rgba(220, 38, 38, 0.4);
@@ -331,7 +316,9 @@
             margin-left: 0.4rem;
             background: transparent;
             height: var(--control-height);
-            margin-bottom: 0.05rem;
+            margin-top: 0.4rem;
+            margin-bottom: 0;
+            align-self: flex-start;
         }
 
         .mode-switch-button {
@@ -472,7 +459,8 @@
         }
 
         .group-dropdown-toggle {
-            width: 135px;
+            width: auto;
+            min-width: 200px;
             padding: 0.5rem 0.7rem 0.4rem;
             border: 1px solid var(--border);
             background: var(--bg-secondary);
@@ -583,7 +571,9 @@
             padding: 0;
             margin: 0;
             border-radius: 10px;
-            margin-bottom: 0.05rem;
+            margin-top: 0.4rem;
+            margin-bottom: 0;
+            align-self: flex-start;
         }
 
         .group-gear-button svg {
@@ -1307,7 +1297,8 @@
             font-size: 0.7rem;
             color: var(--text-primary);
             padding: 0.5rem 0.7rem 0.4rem;
-            width: 135px;
+            width: auto;
+            min-width: 200px;
             display: inline-flex;
             align-items: center;
             justify-content: space-between;
@@ -1363,7 +1354,9 @@
             position: absolute;
             top: calc(100% + 0.35rem);
             right: 0;
-            width: 160px;
+            width: max-content;
+            min-width: 240px;
+            max-width: 320px;
             max-height: 220px;
             overflow-y: auto;
             background: #fff;

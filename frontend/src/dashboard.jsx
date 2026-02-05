@@ -907,8 +907,6 @@ import * as ReactDOM from 'react-dom';
                 if (!remoteHash) return false;
                 return remoteHash !== updateDismissedHash;
             }, [updateInfo, updateDismissedHash]);
-            const [showUpdateToast, setShowUpdateToast] = useState(false);
-
             const dismissUpdateNotice = () => {
                 const remoteHash = updateInfo?.remote?.hash;
                 if (remoteHash) {
@@ -916,25 +914,6 @@ import * as ReactDOM from 'react-dom';
                 }
                 setShowUpdateModal(false);
             };
-
-            useEffect(() => {
-                if (!updateNoticeVisible) return;
-                const remoteHash = updateInfo?.remote?.hash || 'unknown';
-                const storageKey = `jira_update_toast_seen_${remoteHash}`;
-                try {
-                    if (!localStorage.getItem(storageKey)) {
-                        setShowUpdateToast(true);
-                        localStorage.setItem(storageKey, '1');
-                        const timer = window.setTimeout(() => setShowUpdateToast(false), 4500);
-                        return () => window.clearTimeout(timer);
-                    }
-                } catch (err) {
-                    setShowUpdateToast(true);
-                    const timer = window.setTimeout(() => setShowUpdateToast(false), 4500);
-                    return () => window.clearTimeout(timer);
-                }
-                return undefined;
-            }, [updateNoticeVisible, updateInfo?.remote?.hash]);
 
             const toggleTeamInGroup = (groupId, teamId) => {
                 handleGroupDraftChange(prev => ({
@@ -6058,16 +6037,6 @@ import * as ReactDOM from 'react-dom';
                                 </div>
                             </div>
                         </div>
-                        {showUpdateToast && updateNoticeVisible && (
-                            <button
-                                type="button"
-                                className="update-toast"
-                                onClick={() => setShowUpdateModal(true)}
-                                title="View update details"
-                            >
-                                New version available
-                            </button>
-                        )}
                         <div className="view-selector">
                             <div className="controls-label">Controls</div>
                             <div className="view-filters">

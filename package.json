@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "description": "Frontend build for Jira Execution Planner",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "build": "esbuild frontend/src/dashboard.jsx --bundle --minify --sourcemap --format=iife --outfile=frontend/dist/dashboard.js --define:process.env.NODE_ENV='\"production\"'",
     "watch": "esbuild frontend/src/dashboard.jsx --bundle --sourcemap --format=iife --outfile=frontend/dist/dashboard.js --define:process.env.NODE_ENV='\"development\"' --watch"

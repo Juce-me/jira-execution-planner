@@ -2740,6 +2740,7 @@ import * as ReactDOM from 'react-dom';
 
             useEffect(() => {
                 if (!activeGroupId) return;
+                if (groupsLoading) return;
                 if (!activeGroupTeamIds.length) {
                     if (!selectedTeams.includes('all')) {
                         setSelectedTeams(['all']);
@@ -2756,7 +2757,7 @@ import * as ReactDOM from 'react-dom';
                     }
                     return filtered;
                 });
-            }, [activeGroupId, activeGroupTeamIds.join('|')]);
+            }, [activeGroupId, activeGroupTeamIds.join('|'), groupsLoading]);
 
             const selectedTeamsLabel = React.useMemo(() => {
                 if (isAllTeamsSelected) return 'All Teams';

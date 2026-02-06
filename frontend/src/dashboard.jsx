@@ -7788,8 +7788,8 @@ import { createRoot } from 'react-dom/client';
                                         {sortedTeams.map((info) => {
                                             const capMeta = capacityEnabled && info.teamCapacity > 0 ? getTeamCapacityMeta(info.storyPoints, info.teamCapacity) : null;
                                             const teamColor = resolveTeamColor(info.id);
-                                            const barW = 200;
-                                            const barH = 28;
+                                            const barW = 120;
+                                            const barH = 24;
                                             const valW = teamBarMax > 0 ? (info.storyPoints / teamBarMax) * barW : 0;
                                             const markerX = capacityEnabled && info.teamCapacity > 0 ? (info.teamCapacity / teamBarMax) * barW : null;
                                             const deltaSp = capacityEnabled && info.teamCapacity > 0 ? info.storyPoints - info.teamCapacity : null;
@@ -7798,20 +7798,20 @@ import { createRoot } from 'react-dom/client';
                                                 ? `Selected: ${info.storyPoints.toFixed(1)} SP | Cap: ${info.teamCapacity.toFixed(1)} SP | Delta: ${deltaSp >= 0 ? '+' : ''}${deltaSp.toFixed(1)} SP (${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}%)`
                                                 : `Selected: ${info.storyPoints.toFixed(1)} SP`;
                                             const spLabel = `${info.storyPoints.toFixed(1)} SP`;
-                                            const svgH = markerX !== null ? 40 : 28;
+                                            const svgH = markerX !== null ? 38 : barH;
                                             return (
                                                 <div key={info.id} className="team-stat-card team-card" data-tooltip={tooltipText}>
                                                     <div className="team-stat-label">{info.name}</div>
-                                                    <svg className="microbar" viewBox={`0 0 ${barW} ${svgH}`} style={{ height: svgH }}>
+                                                    <svg className="microbar" viewBox={`0 0 ${barW} ${svgH}`}>
                                                         <rect x="0" y="0" width={barW} height={barH} rx="4" fill="#e0ddd7" />
                                                         <rect x="0" y="0" width={valW} height={barH} rx="4" fill={teamColor} />
-                                                        <text x="5" y={barH / 2} dominantBaseline="central" className="microbar-label">{spLabel}</text>
+                                                        <text x="4" y={barH / 2} dominantBaseline="central" className="microbar-label">{spLabel}</text>
                                                         {capMeta && capMeta.text && (
-                                                            <text x={barW - 4} y={barH / 2} dominantBaseline="central" textAnchor="end" className={`microbar-delta ${capMeta.status}`}>{capMeta.text}</text>
+                                                            <text x={barW - 3} y={barH / 2} dominantBaseline="central" textAnchor="end" className={`microbar-delta ${capMeta.status}`}>{capMeta.text}</text>
                                                         )}
                                                         {markerX !== null && (
                                                             <>
-                                                                <line x1={markerX} y1="0" x2={markerX} y2={barH + 2} stroke="var(--text-primary)" strokeWidth="2" strokeDasharray="3 2" />
+                                                                <line x1={markerX} y1="0" x2={markerX} y2={barH + 2} stroke="var(--text-primary)" strokeWidth="1.5" strokeDasharray="3 2" />
                                                                 <text x={markerX} y={barH + 11} textAnchor="middle" className="microbar-cap-label">{info.teamCapacity.toFixed(1)}</text>
                                                             </>
                                                         )}

@@ -7788,8 +7788,8 @@ import { createRoot } from 'react-dom/client';
                                         {sortedTeams.map((info) => {
                                             const capMeta = capacityEnabled && info.teamCapacity > 0 ? getTeamCapacityMeta(info.storyPoints, info.teamCapacity) : null;
                                             const teamColor = resolveTeamColor(info.id);
-                                            const barW = 160;
-                                            const barH = 20;
+                                            const barW = 200;
+                                            const barH = 28;
                                             const valW = teamBarMax > 0 ? (info.storyPoints / teamBarMax) * barW : 0;
                                             const markerX = capacityEnabled && info.teamCapacity > 0 ? (info.teamCapacity / teamBarMax) * barW : null;
                                             const deltaSp = capacityEnabled && info.teamCapacity > 0 ? info.storyPoints - info.teamCapacity : null;
@@ -7804,14 +7804,14 @@ import { createRoot } from 'react-dom/client';
                                                 <div key={info.id} className="team-stat-card team-card" data-tooltip={tooltipText}>
                                                     <div className="team-stat-label">{info.name}</div>
                                                     <svg className="microbar" viewBox={`0 0 ${barW} ${barH}`}>
-                                                        <rect x="0" y="0" width={barW} height={barH} rx="3" fill="#e0ddd7" />
-                                                        <rect x="0" y="0" width={valW} height={barH} rx="3" fill={teamColor} />
+                                                        <rect x="0" y="0" width={barW} height={barH} rx="4" fill="#e0ddd7" />
+                                                        <rect x="0" y="0" width={valW} height={barH} rx="4" fill={teamColor} />
                                                         {markerX !== null && (
-                                                            <line x1={markerX} y1="0" x2={markerX} y2={barH} stroke="var(--text-primary)" strokeWidth="1.5" strokeDasharray="3 1.5" />
+                                                            <line x1={markerX} y1="0" x2={markerX} y2={barH} stroke="var(--text-primary)" strokeWidth="2" strokeDasharray="3 2" />
                                                         )}
-                                                        <text x="4" y={barH / 2 + 0.5} dominantBaseline="central" className="microbar-label">{spLabel}</text>
+                                                        <text x="5" y={barH / 2} dominantBaseline="central" className="microbar-label">{spLabel}</text>
                                                         {capMeta && capMeta.text && (
-                                                            <text x={barW - 3} y={barH / 2 + 0.5} dominantBaseline="central" textAnchor="end" className={`microbar-delta ${capMeta.status}`}>{capMeta.text}</text>
+                                                            <text x={barW - 4} y={barH / 2} dominantBaseline="central" textAnchor="end" className={`microbar-delta ${capMeta.status}`}>{capMeta.text}</text>
                                                         )}
                                                     </svg>
                                                 </div>

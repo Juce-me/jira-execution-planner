@@ -7765,10 +7765,6 @@ import { createRoot } from 'react-dom/client';
 
                         {/* --- Team MicroBar tiles --- */}
                         {selectedTeamEntries.length > 1 && (() => {
-                            const teamBarMax = selectedTeamEntries.reduce((mx, info) => {
-                                const cap = capacityEnabled && info.teamCapacity > 0 ? info.teamCapacity : 0;
-                                return Math.max(mx, Math.max(info.storyPoints, cap));
-                            }, 0) || 1;
                             const sortedTeams = [...selectedTeamEntries].sort((a, b) => {
                                 if (capacityEnabled) {
                                     const da = a.storyPoints - (a.teamCapacity || 0);
@@ -7793,33 +7789,34 @@ import { createRoot } from 'react-dom/client';
                                             const capMeta = capacityEnabled && info.teamCapacity > 0 ? getTeamCapacityMeta(info.storyPoints, info.teamCapacity) : null;
                                             const teamColor = resolveTeamColor(info.id);
                                             const barW = 120;
-                                            const barH = 24;
-                                            const valW = teamBarMax > 0 ? (info.storyPoints / teamBarMax) * barW : 0;
-                                            const markerX = capacityEnabled && info.teamCapacity > 0 ? (info.teamCapacity / teamBarMax) * barW : null;
-                                            const deltaSp = capacityEnabled && info.teamCapacity > 0 ? info.storyPoints - info.teamCapacity : null;
-                                            const deltaPct = capacityEnabled && info.teamCapacity > 0 ? ((info.storyPoints / info.teamCapacity) - 1) * 100 : null;
-                                            const tooltipText = capMeta
-                                                ? `Selected: ${info.storyPoints.toFixed(1)} SP | Cap: ${info.teamCapacity.toFixed(1)} SP | Delta: ${deltaSp >= 0 ? '+' : ''}${deltaSp.toFixed(1)} SP (${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}%)`
-                                                : `Selected: ${info.storyPoints.toFixed(1)} SP`;
+                                            const barH = 22;
+                                            const hasCap = capacityEnabled && info.teamCapacity > 0;
+                                            const scale = hasCap ? info.teamCapacity * 1.3 : info.storyPoints * 1.3;
+                                            const valW = scale > 0 ? Math.min(barW, (info.storyPoints / scale) * barW) : 0;
+                                            const markerX = hasCap ? (info.teamCapacity / scale) * barW : null;
+                                            const deltaSp = hasCap ? info.storyPoints - info.teamCapacity : null;
+                                            const deltaPct = hasCap ? ((info.storyPoints / info.teamCapacity) - 1) * 100 : null;
+                                            const tooltipText = hasCap
+                                                ? `${deltaSp >= 0 ? '+' : ''}${deltaSp.toFixed(1)} SP (${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}%)`
+                                                : `${info.storyPoints.toFixed(1)} SP selected`;
                                             const spLabel = `${info.storyPoints.toFixed(1)} SP`;
-                                            const svgH = markerX !== null ? 38 : barH;
+                                            const deltaLabel = hasCap
+                                                ? `${deltaSp >= 0 ? '+' : ''}${deltaSp.toFixed(1)} SP · ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}%`
+                                                : null;
                                             return (
                                                 <div key={info.id} className="team-stat-card team-card" data-tooltip={tooltipText}>
                                                     <div className="team-stat-label">{info.name}</div>
-                                                    <svg className="microbar" viewBox={`0 0 ${barW} ${svgH}`}>
+                                                    <svg className="microbar" viewBox={`0 0 ${barW} ${barH}`}>
                                                         <rect x="0" y="0" width={barW} height={barH} rx="4" fill="#e0ddd7" />
                                                         <rect x="0" y="0" width={valW} height={barH} rx="4" fill={teamColor} />
                                                         <text x="4" y={barH / 2} dominantBaseline="central" className="microbar-label">{spLabel}</text>
-                                                        {capMeta && capMeta.text && (
-                                                            <text x={barW - 3} y={barH / 2} dominantBaseline="central" textAnchor="end" className={`microbar-delta ${capMeta.status}`}>{capMeta.text}</text>
-                                                        )}
                                                         {markerX !== null && (
-                                                            <>
-                                                                <line x1={markerX} y1="0" x2={markerX} y2={barH + 2} stroke="var(--text-primary)" strokeWidth="1.5" strokeDasharray="3 2" />
-                                                                <text x={markerX} y={barH + 11} textAnchor="middle" className="microbar-cap-label">{info.teamCapacity.toFixed(1)}</text>
-                                                            </>
+                                                            <line x1={markerX} y1="0" x2={markerX} y2={barH} stroke="var(--text-primary)" strokeWidth="1.5" strokeDasharray="3 2" />
                                                         )}
                                                     </svg>
+                                                    {deltaLabel && (
+                                                        <div className={`microbar-meta ${capMeta && capMeta.status ? capMeta.status : ''}`}>{deltaLabel}</div>
+                                                    )}
                                                 </div>
                                             );
                                         })}

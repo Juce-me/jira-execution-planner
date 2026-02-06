@@ -4304,14 +4304,14 @@
 
         .team-stats-grid {
             display: grid;
-            grid-template-columns: repeat(6, minmax(140px, 1fr));
+            grid-template-columns: repeat(6, 1fr);
             gap: 0.75rem;
             margin-top: 0.5rem;
         }
 
-        @media (max-width: 1100px) {
+        @media (max-width: 768px) {
             .team-stats-grid {
-                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
             }
         }
 

@@ -7777,6 +7777,10 @@ import { createRoot } from 'react-dom/client';
                                 }
                                 return b.storyPoints - a.storyPoints;
                             });
+                            const teamCount = sortedTeams.length;
+                            const maxPerRow = 6;
+                            const rows = Math.ceil(teamCount / maxPerRow);
+                            const cols = Math.ceil(teamCount / rows);
                             return (
                                 <>
                                     <div className="planning-stats compact" style={{ marginTop: '0.4rem' }}>
@@ -7784,7 +7788,7 @@ import { createRoot } from 'react-dom/client';
                                             <span className="planning-stat-label">Selected SP by Team:</span>
                                         </div>
                                     </div>
-                                    <div className="team-stats-grid">
+                                    <div className="team-stats-grid" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
                                         {sortedTeams.map((info) => {
                                             const capMeta = capacityEnabled && info.teamCapacity > 0 ? getTeamCapacityMeta(info.storyPoints, info.teamCapacity) : null;
                                             const teamColor = resolveTeamColor(info.id);

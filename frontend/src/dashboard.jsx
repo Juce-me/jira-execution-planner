@@ -7801,7 +7801,7 @@ import { createRoot } from 'react-dom/client';
                                                 : `${info.storyPoints.toFixed(1)} SP selected`;
                                             const spLabel = `${info.storyPoints.toFixed(1)} SP`;
                                             const deltaLabel = hasCap
-                                                ? `${deltaSp >= 0 ? '+' : ''}${deltaSp.toFixed(1)} SP · ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}%`
+                                                ? `Cap ${info.teamCapacity.toFixed(1)} · ${deltaSp >= 0 ? '+' : ''}${deltaSp.toFixed(1)} SP · ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}%`
                                                 : null;
                                             return (
                                                 <div key={info.id} className="team-stat-card team-card" data-tooltip={tooltipText}>

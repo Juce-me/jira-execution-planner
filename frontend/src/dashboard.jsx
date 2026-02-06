@@ -7672,192 +7672,207 @@ import { createRoot } from 'react-dom/client';
                         </div>
                     )}
 
-	                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning && !isCompletedSprintSelected ? 'open' : ''}`}>
-	                        <div className="planning-stats">
-	                            <div className="planning-stat">
-	                                <span className="planning-stat-label">Selected Tasks:</span>
-	                                <span className="planning-stat-value">{selectedCount}</span>
-	                            </div>
-	                            <div className="planning-stat">
-                                    <span
-                                        className="planning-stat-label"
-                                        data-tooltip="Total selected story points."
-                                    >
-                                        Selected Effort:
+                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning && !isCompletedSprintSelected ? 'open' : ''}`}>
+                        {/* --- KPI Strip --- */}
+                        <div className="planning-stats">
+                            <div className="planning-stat">
+                                <span className="planning-stat-label" data-tooltip="Number of selected tasks and total story points.">Selected:</span>
+                                <span className="planning-stat-value">{selectedCount} · {selectedSP.toFixed(1)} SP</span>
+                            </div>
+                            {capacityEnabled && totalCapacityAdjusted > 0 && (
+                                <div className="planning-stat">
+                                    <span className="planning-stat-label" data-tooltip="Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.).">Planning:</span>
+                                    <span className="planning-stat-value clickable-number" onClick={() => scrollToFirstExcludedEpic('any')}>
+                                        {estimatedCapacityAdjusted.toFixed(1)} SP
                                     </span>
-	                                <span className="planning-stat-value">{selectedSP.toFixed(1)}</span>
-	                            </div>
-                                {capacityEnabled && totalCapacityAdjusted > 0 && (
+                                </div>
+                            )}
+                            {capacityEnabled && totalCapacityAdjusted > 0 && (
+                                <div className="planning-stat">
+                                    <span className="planning-stat-label" data-tooltip="Estimated team capacity for the quarter (if one team selected, that team's capacity).">Team Cap:</span>
+                                    <span className="planning-stat-value">{totalCapacityAdjusted.toFixed(1)} SP</span>
+                                </div>
+                            )}
+                            {capacityEnabled && excludedCapacityAdjusted > 0 && (
+                                <div className="planning-stat">
+                                    <span className="planning-stat-label" data-tooltip="Capacity reserved for excluded mandatory epics.">Excluded:</span>
+                                    <span className="planning-stat-value clickable-number" onClick={() => scrollToFirstExcludedEpic('any')}>
+                                        {excludedCapacityAdjusted.toFixed(1)} SP
+                                    </span>
+                                </div>
+                            )}
+                            {capacityEnabled && totalCapacityAdjusted > 0 && (() => {
+                                const variancePct = totalCapacityAdjusted > 0 ? ((selectedSP / totalCapacityAdjusted) - 1) * 100 : 0;
+                                return (
                                     <div className="planning-stat">
-                                        <span
-                                            className="planning-stat-label"
-                                            data-tooltip="Estimated team capacity for the quarter (if one team selected, that team's capacity)."
-                                        >
-                                            Team Capacity:
-                                        </span>
-                                        <span className="planning-stat-value">
-                                            {totalCapacityAdjusted.toFixed(1)} SP
-                                        </span>
-                                    </div>
-                                )}
-                                {capacityEnabled && totalCapacityAdjusted > 0 && (
-                                    <div className="planning-stat">
-                                        <span
-                                            className="planning-stat-label"
-                                            data-tooltip="Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.)."
-                                        >
-                                            Planning Capacity:
-                                        </span>
-                                        <span className="planning-stat-value clickable-number" onClick={() => scrollToFirstExcludedEpic('any')}>
-                                            {estimatedCapacityAdjusted.toFixed(1)} SP
-                                        </span>
-                                    </div>
-                                )}
-                                {capacityEnabled && excludedCapacityAdjusted > 0 && (
-                                    <div className="planning-stat">
-                                        <span className="planning-stat-label">Excluded Capacity:</span>
-                                        <span className="planning-stat-value clickable-number" onClick={() => scrollToFirstExcludedEpic('any')}>
-                                            {excludedCapacityAdjusted.toFixed(1)} SP
-                                        </span>
-                                    </div>
-                                )}
-                                {capacityEnabled && totalCapacityAdjusted > 0 && (
-                                    <div className="planning-stat">
-                                        <span
-                                            className="planning-stat-label"
-                                            data-tooltip="Plan variance = (selected effort / team capacity - 1). Positive means over planned."
-                                        >
-                                            Plan Variance:
-                                        </span>
+                                        <span className="planning-stat-label" data-tooltip="Plan variance = (selected effort / team capacity - 1). Positive means over planned.">Variance:</span>
                                         <span className={`planning-stat-value ${capacitySummary.status}`}>
                                             {capacitySummary.label || '0%'}
                                         </span>
-                                    </div>
-                                )}
-	                            <div className="planning-actions">
-	                                <button
-	                                    className={`planning-action-button ${isAcceptedIncluded ? 'active' : ''}`}
-	                                    onClick={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
-	                                    disabled={visibleTasks.length === 0}
-	                                    title="Include all Accepted and In Progress stories for the current view"
-	                                >
-	                                    Include Accepted
-	                                </button>
-	                                <button
-	                                    className={`planning-action-button ${isTodoIncluded ? 'active' : ''}`}
-	                                    onClick={() => toggleIncludeByStatus(['To Do', 'Pending'])}
-	                                    disabled={visibleTasks.length === 0}
-	                                    title="Include all To Do / Pending stories for the current view"
-	                                >
-	                                    Include To Do
-	                                </button>
-	                                <button
-	                                    className="uncheck-button"
-	                                    onClick={clearSelectedTasks}
-	                                    disabled={selectedCount === 0}
-	                                    title="Clear all selected tasks"
-	                                >
-	                                    Uncheck Selected
-	                                </button>
-	                                <button
-	                                    className="planning-action-button planning-icon-button"
-	                                    onClick={openSelectedInJira}
-	                                    disabled={selectedCount === 0 || !jiraUrl}
-	                                    title="Open selected stories in Jira (tip: bulk move them to Accepted)"
-	                                    aria-label="Open selected stories in Jira"
-	                                >
-	                                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-	                                        <path d="M10 2h4v4h-1.5V4.56L8.53 8.53l-1.06-1.06L11.44 3.5H10V2z" />
-	                                        <path d="M13 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4v1.5H3.5v8h8V9H13z" />
-	                                    </svg>
-	                                </button>
-	                            </div>
-	                        </div>
-                        {selectedTeamEntries.length > 1 && (
-                            <>
-                                <div className="planning-stats compact" style={{ marginTop: '0.4rem' }}>
-                                    <div className="planning-stat">
-                                        <span className="planning-stat-label">Selected SP by Team:</span>
-                                    </div>
-                                </div>
-                                <div className="team-stats-grid">
-                                    {selectedTeamEntries.map((info) => (
-                                        <div key={info.id} className="team-stat-card team-card">
-                                            <div className="team-stat-label">{info.name}</div>
-                                            <div className="team-stat-line">
-                                                <div className="team-stat-value">{info.storyPoints.toFixed(1)} SP</div>
-                                                <div className="team-stat-meta">Selected effort</div>
-                                            </div>
-                                            {capacityEnabled && info.teamCapacity > 0 && (
-                                                <>
-                                                    {(() => {
-                                                        const capacityMeta = getTeamCapacityMeta(info.storyPoints, info.teamCapacity);
-                                                        return (
-                                                            <div className="team-stat-line" title={capacityMeta.title}>
-                                                                <div className="team-stat-value muted">{info.teamCapacity.toFixed(1)} SP</div>
-                                                                <div className={`team-stat-meta ${capacityMeta.status ? `planning-stat-value ${capacityMeta.status}` : ''}`}>
-                                                                    {capacityMeta.text}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })()}
-                                                </>
+                                        <svg className="variance-gauge" viewBox="0 0 160 10" data-tooltip={`Plan variance: ${variancePct.toFixed(0)}% (Selected Effort vs Team Capacity)`}>
+                                            <rect x="0" y="3" width="160" height="4" rx="2" fill="#e0ddd7" />
+                                            <line x1="80" y1="1" x2="80" y2="9" stroke="#999" strokeWidth="0.5" />
+                                            {variancePct < 0 && (
+                                                <rect x={Math.max(0, 80 + variancePct * 0.8)} y="3" width={Math.min(80, Math.abs(variancePct) * 0.8)} height="4" rx="2" fill={capacitySummary.status === 'under' ? '#d4380d' : '#389e0d'} />
                                             )}
+                                            {variancePct > 0 && (
+                                                <rect x="80" y="3" width={Math.min(80, variancePct * 0.8)} height="4" rx="2" fill={capacitySummary.status === 'over' ? '#d4380d' : '#389e0d'} />
+                                            )}
+                                            <line x1={Math.max(2, Math.min(158, 80 + variancePct * 0.8))} y1="0" x2={Math.max(2, Math.min(158, 80 + variancePct * 0.8))} y2="10" stroke="var(--text-primary)" strokeWidth="1.5" />
+                                        </svg>
+                                    </div>
+                                );
+                            })()}
+                            <div className="planning-actions">
+                                <button
+                                    className={`planning-action-button ${isAcceptedIncluded ? 'active' : ''}`}
+                                    onClick={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
+                                    disabled={visibleTasks.length === 0}
+                                    title="Include all Accepted and In Progress stories for the current view"
+                                >
+                                    Include Accepted
+                                </button>
+                                <button
+                                    className={`planning-action-button ${isTodoIncluded ? 'active' : ''}`}
+                                    onClick={() => toggleIncludeByStatus(['To Do', 'Pending'])}
+                                    disabled={visibleTasks.length === 0}
+                                    title="Include all To Do / Pending stories for the current view"
+                                >
+                                    Include To Do
+                                </button>
+                                <button
+                                    className="uncheck-button"
+                                    onClick={clearSelectedTasks}
+                                    disabled={selectedCount === 0}
+                                    title="Clear all selected tasks"
+                                >
+                                    Uncheck Selected
+                                </button>
+                                <button
+                                    className="planning-action-button planning-icon-button"
+                                    onClick={openSelectedInJira}
+                                    disabled={selectedCount === 0 || !jiraUrl}
+                                    title="Open selected stories in Jira (tip: bulk move them to Accepted)"
+                                    aria-label="Open selected stories in Jira"
+                                >
+                                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                        <path d="M10 2h4v4h-1.5V4.56L8.53 8.53l-1.06-1.06L11.44 3.5H10V2z" />
+                                        <path d="M13 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4v1.5H3.5v8h8V9H13z" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* --- Team MicroBar tiles --- */}
+                        {selectedTeamEntries.length > 1 && (() => {
+                            const teamBarMax = selectedTeamEntries.reduce((mx, info) => {
+                                const cap = capacityEnabled && info.teamCapacity > 0 ? info.teamCapacity : 0;
+                                return Math.max(mx, Math.max(info.storyPoints, cap));
+                            }, 0) || 1;
+                            const sortedTeams = [...selectedTeamEntries].sort((a, b) => {
+                                if (capacityEnabled) {
+                                    const da = a.storyPoints - (a.teamCapacity || 0);
+                                    const db = b.storyPoints - (b.teamCapacity || 0);
+                                    if (db !== da) return db - da;
+                                }
+                                return b.storyPoints - a.storyPoints;
+                            });
+                            return (
+                                <>
+                                    <div className="planning-stats compact" style={{ marginTop: '0.4rem' }}>
+                                        <div className="planning-stat">
+                                            <span className="planning-stat-label">Selected SP by Team:</span>
                                         </div>
-                                    ))}
-                                    {selectedTeamEntries.length === 0 && (
+                                    </div>
+                                    <div className="team-stats-grid">
+                                        {sortedTeams.map((info) => {
+                                            const capMeta = capacityEnabled && info.teamCapacity > 0 ? getTeamCapacityMeta(info.storyPoints, info.teamCapacity) : null;
+                                            const barW = 120;
+                                            const barH = 8;
+                                            const valW = teamBarMax > 0 ? (info.storyPoints / teamBarMax) * barW : 0;
+                                            const markerX = capacityEnabled && info.teamCapacity > 0 ? (info.teamCapacity / teamBarMax) * barW : null;
+                                            const deltaSp = capacityEnabled && info.teamCapacity > 0 ? info.storyPoints - info.teamCapacity : null;
+                                            const deltaPct = capacityEnabled && info.teamCapacity > 0 ? ((info.storyPoints / info.teamCapacity) - 1) * 100 : null;
+                                            const tooltipText = capMeta
+                                                ? `Selected: ${info.storyPoints.toFixed(1)} SP | Cap: ${info.teamCapacity.toFixed(1)} SP | Delta: ${deltaSp >= 0 ? '+' : ''}${deltaSp.toFixed(1)} SP (${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}%)`
+                                                : `Selected: ${info.storyPoints.toFixed(1)} SP`;
+                                            return (
+                                                <div key={info.id} className="team-stat-card team-card" data-tooltip={tooltipText}>
+                                                    <div className="team-stat-label">{info.name}</div>
+                                                    <svg className="microbar" viewBox={`0 0 ${barW} ${barH}`} preserveAspectRatio="none">
+                                                        <rect x="0" y="0" width={barW} height={barH} rx="2" fill="#e0ddd7" />
+                                                        <rect x="0" y="0" width={valW} height={barH} rx="2" fill={capMeta && capMeta.status === 'over' ? '#d4380d' : '#389e0d'} />
+                                                        {markerX !== null && (
+                                                            <line x1={markerX} y1="0" x2={markerX} y2={barH} stroke="var(--text-primary)" strokeWidth="1.5" strokeDasharray="2 1" />
+                                                        )}
+                                                    </svg>
+                                                    <div className="team-micro-meta">
+                                                        <span>{info.storyPoints.toFixed(1)} SP</span>
+                                                        {capMeta && (
+                                                            <span className={capMeta.status ? `planning-stat-value ${capMeta.status}` : ''}>
+                                                                / {info.teamCapacity.toFixed(1)} SP · {capMeta.text}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            );
+                        })()}
+
+                        {/* --- Project SplitBar --- */}
+                        <div className="planning-stats compact" style={{ marginTop: '0.35rem' }}>
+                            <div className="planning-stat">
+                                <span className="planning-stat-label" data-tooltip="Planning capacity split: 70% Product / 30% Tech (tech-heavy teams may aim for 10% / 90%). Selected effort excludes excluded epics.">Selected SP by Project:</span>
+                            </div>
+                        </div>
+                        <div className="projects-stats-grid">
+                            {(() => {
+                                const projectTotal = selectedProjectEntries.reduce((sum, e) => sum + e.storyPoints, 0);
+                                const productEntry = selectedProjectEntries.find(e => e.id === 'PRODUCT');
+                                const techEntry = selectedProjectEntries.find(e => e.id === 'TECH');
+                                const productSP = productEntry ? productEntry.storyPoints : 0;
+                                const techSP = techEntry ? techEntry.storyPoints : 0;
+                                const productPct = projectTotal > 0 ? (productSP / projectTotal) * 100 : 0;
+                                const techPct = projectTotal > 0 ? (techSP / projectTotal) * 100 : 0;
+                                const excludedTotal = (excludedProjectStats['PRODUCT'] || 0) + (excludedProjectStats['TECH'] || 0);
+                                if (projectTotal === 0 && excludedTotal === 0) {
+                                    return (
                                         <div className="planning-stat">
                                             <span className="planning-stat-value">No tasks selected</span>
                                         </div>
-                                    )}
-                                </div>
-                            </>
-                        )}
-	                        <div className="planning-stats compact" style={{ marginTop: '0.35rem' }}>
-                                <div className="planning-stat">
-                                    <span className="planning-stat-label">Selected SP by Project:</span>
-                                </div>
-                                {capacityEnabled && (
-                                    <div className="planning-stat-note">
-                                        Planning capacity split: 70% Product / 30% Tech (tech-heavy teams may aim for 10% / 90%). Selected effort excludes excluded epics.
+                                    );
+                                }
+                                return (
+                                    <div className="splitbar-container">
+                                        <svg className="splitbar" viewBox="0 0 200 10" preserveAspectRatio="none">
+                                            <rect x="0" y="1" width="200" height="8" rx="3" fill="#e0ddd7" />
+                                            {productPct > 0 && (
+                                                <rect x="0" y="1" width={productPct * 2} height="8" rx="3" fill="#389e0d" />
+                                            )}
+                                            {techPct > 0 && (
+                                                <rect x={productPct * 2} y="1" width={techPct * 2} height="8" rx="0" fill="#1890ff" />
+                                            )}
+                                            <line x1="140" y1="0" x2="140" y2="10" stroke="var(--text-primary)" strokeWidth="1" strokeDasharray="2 1" />
+                                        </svg>
+                                        <div className="splitbar-labels">
+                                            <span>Product {productPct.toFixed(0)}%</span>
+                                            <span>Tech {techPct.toFixed(0)}%</span>
+                                        </div>
+                                        <div className="splitbar-meta">
+                                            <span>{productSP.toFixed(1)} SP</span>
+                                            <span>{techSP.toFixed(1)} SP</span>
+                                            {excludedTotal > 0 && (
+                                                <span className="clickable-number" onClick={() => scrollToFirstExcludedEpic('any')} style={{ marginLeft: 'auto' }}>
+                                                    Excluded: {excludedTotal.toFixed(1)} SP
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
-                                )}
-	                        </div>
-                        <div className="team-stats-grid">
-                            {selectedProjectEntries.map((info) => (
-                                <div key={info.id} className="team-stat-card project-card">
-	                                            <div className="team-stat-label">{info.name}</div>
-	                                            <div className="team-stat-line">
-	                                                <div className="team-stat-value">
-	                                                    {(() => {
-	                                                        const total = selectedProjectEntries.reduce((sum, entry) => sum + entry.storyPoints, 0);
-	                                                        const pct = total > 0 ? (info.storyPoints / total) * 100 : 0;
-	                                                        return `${pct.toFixed(0)}%`;
-	                                                    })()}
-	                                                </div>
-	                                            </div>
-	                                            <div className="team-stat-line">
-	                                                <div className="team-stat-value muted">{info.storyPoints.toFixed(1)} SP</div>
-	                                                <div className="team-stat-meta">Selected effort</div>
-	                                            </div>
-                                                {excludedProjectStats[info.id] > 0 && (
-                                                    <div className="team-stat-line">
-                                                        <div
-                                                            className="team-stat-value muted clickable-number"
-                                                            onClick={() => scrollToFirstExcludedEpic(info.id === 'TECH' ? 'tech' : 'product')}
-                                                        >
-                                                            {excludedProjectStats[info.id].toFixed(1)} SP
-                                                        </div>
-                                                        <div className="team-stat-meta">Excluded effort</div>
-                                                    </div>
-                                                )}
-	                                </div>
-	                            ))}
-                            {selectedProjectEntries.length === 0 && (
-                                <div className="planning-stat">
-                                    <span className="planning-stat-value">No tasks selected</span>
-                                </div>
-                            )}
+                                );
+                            })()}
                         </div>
                     </div>
                     {showBackToTop && (

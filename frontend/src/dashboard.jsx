@@ -5799,7 +5799,7 @@ import { createRoot } from 'react-dom/client';
                     return true;
                 })
                 .filter(epic => {
-                    const epicStories = readyToCloseTasks.filter(task => {
+                    const epicStories = tasks.filter(task => {
                         if (!task.fields?.epicKey) return false;
                         if (task.fields.epicKey !== epic.key) return false;
                         if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return false;
@@ -5877,12 +5877,7 @@ import { createRoot } from 'react-dom/client';
                         if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return false;
                         return true;
                     });
-                    if (epicStories.length === 0) {
-                        if (status !== 'postponed') return false;
-                        if (!isFutureSprintSelected) return false;
-                        if (!matchesSelectedSprint(epic)) return false;
-                        return true;
-                    }
+                    if (epicStories.length === 0) return false;
                     if (!epicMatchesSelectedSprint(epic, epicStories)) return false;
                     return epicStories.every(task => readyToCloseStoryStatuses.has(normalizeStatus(task.fields.status?.name)));
                 });
@@ -5891,16 +5886,35 @@ import { createRoot } from 'react-dom/client';
                 dismissedAlertSet,
                 isAllTeamsSelected,
                 selectedTeamSet,
-                readyToCloseTasks,
+                tasks,
                 readyToCloseStoryStatuses,
                 readyToCloseEpicStatuses,
-                isFutureSprintSelected,
                 selectedSprint,
                 selectedSprintInfo?.name
             ]);
 
             const postponedAlertTeams = groupAlertsByTeam(postponedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
-            const analysisEpicTeams = groupAlertsByTeam(analysisWaitingEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const postponedEmptyEpics = React.useMemo(() => {
+                return emptyEpics.filter(epic => {
+                    const status = normalizeStatus(epic.status?.name);
+                    if (status !== 'postponed') return false;
+                    if (!isFutureSprintSelected) return false;
+                    return matchesSelectedSprint(epic);
+                });
+            }, [emptyEpics, isFutureSprintSelected, selectedSprint, selectedSprintInfo?.name]);
+
+            const waitingForStoriesEpics = React.useMemo(() => {
+                const seen = new Set();
+                const merged = [...analysisWaitingEpics, ...postponedEmptyEpics].filter(epic => {
+                    if (!epic?.key) return false;
+                    if (seen.has(epic.key)) return false;
+                    seen.add(epic.key);
+                    return true;
+                });
+                return merged;
+            }, [analysisWaitingEpics, postponedEmptyEpics]);
+
+            const analysisEpicTeams = groupAlertsByTeam(waitingForStoriesEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
 
             const missingAlertKeySet = React.useMemo(
                 () => new Set(consolidatedMissingStories.map(item => item.task?.key).filter(Boolean)),
@@ -5915,8 +5929,8 @@ import { createRoot } from 'react-dom/client';
                 [postponedTasks]
             );
             const waitingAlertKeySet = React.useMemo(
-                () => new Set(analysisWaitingEpics.map(epic => epic.key).filter(Boolean)),
-                [analysisWaitingEpics]
+                () => new Set(waitingForStoriesEpics.map(epic => epic.key).filter(Boolean)),
+                [waitingForStoriesEpics]
             );
             const emptyAlertKeySet = React.useMemo(
                 () => new Set(emptyEpics.map(epic => epic.key).filter(Boolean)),
@@ -5931,7 +5945,7 @@ import { createRoot } from 'react-dom/client';
                 missing: consolidatedMissingStories.length,
                 blocked: blockedTasks.length,
                 followup: postponedTasks.length,
-                waiting: analysisWaitingEpics.length,
+                waiting: waitingForStoriesEpics.length,
                 empty: emptyEpics.length,
                 done: doneStoryEpics.length
             };
@@ -8225,7 +8239,7 @@ import { createRoot } from 'react-dom/client';
                                             </div>
                                         )}
 
-                                        {analysisWaitingEpics.length > 0 && (
+                                        {waitingForStoriesEpics.length > 0 && (
                                             <div className={`alert-card following ${showWaitingAlert ? '' : 'collapsed'}`}>
                                                 <div className="alert-card-header">
                                                     <button
@@ -8245,7 +8259,7 @@ import { createRoot } from 'react-dom/client';
                                                     <div className="alert-title">⏳ Waiting for Stories</div>
                                                     <div className="alert-subtitle">Analysis epics are waiting for stories next quarter.</div>
                                                     <div className="alert-chip">
-                                                        {analysisWaitingEpics.length} {analysisWaitingEpics.length === 1 ? 'item' : 'items'}
+                                                        {waitingForStoriesEpics.length} {waitingForStoriesEpics.length === 1 ? 'item' : 'items'}
                                                     </div>
                                                 </div>
                                                 <div className={`alert-card-body ${showWaitingAlert ? '' : 'collapsed'}`}>

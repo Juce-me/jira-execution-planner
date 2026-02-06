@@ -7787,8 +7787,9 @@ import { createRoot } from 'react-dom/client';
                                     <div className="team-stats-grid">
                                         {sortedTeams.map((info) => {
                                             const capMeta = capacityEnabled && info.teamCapacity > 0 ? getTeamCapacityMeta(info.storyPoints, info.teamCapacity) : null;
-                                            const barW = 120;
-                                            const barH = 8;
+                                            const teamColor = resolveTeamColor(info.id);
+                                            const barW = 160;
+                                            const barH = 20;
                                             const valW = teamBarMax > 0 ? (info.storyPoints / teamBarMax) * barW : 0;
                                             const markerX = capacityEnabled && info.teamCapacity > 0 ? (info.teamCapacity / teamBarMax) * barW : null;
                                             const deltaSp = capacityEnabled && info.teamCapacity > 0 ? info.storyPoints - info.teamCapacity : null;
@@ -7796,24 +7797,23 @@ import { createRoot } from 'react-dom/client';
                                             const tooltipText = capMeta
                                                 ? `Selected: ${info.storyPoints.toFixed(1)} SP | Cap: ${info.teamCapacity.toFixed(1)} SP | Delta: ${deltaSp >= 0 ? '+' : ''}${deltaSp.toFixed(1)} SP (${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}%)`
                                                 : `Selected: ${info.storyPoints.toFixed(1)} SP`;
+                                            const spLabel = capMeta
+                                                ? `${info.storyPoints.toFixed(1)} / ${info.teamCapacity.toFixed(1)} SP`
+                                                : `${info.storyPoints.toFixed(1)} SP`;
                                             return (
                                                 <div key={info.id} className="team-stat-card team-card" data-tooltip={tooltipText}>
                                                     <div className="team-stat-label">{info.name}</div>
-                                                    <svg className="microbar" viewBox={`0 0 ${barW} ${barH}`} preserveAspectRatio="none">
-                                                        <rect x="0" y="0" width={barW} height={barH} rx="2" fill="#e0ddd7" />
-                                                        <rect x="0" y="0" width={valW} height={barH} rx="2" fill={capMeta && capMeta.status === 'over' ? '#d4380d' : '#389e0d'} />
+                                                    <svg className="microbar" viewBox={`0 0 ${barW} ${barH}`}>
+                                                        <rect x="0" y="0" width={barW} height={barH} rx="3" fill="#e0ddd7" />
+                                                        <rect x="0" y="0" width={valW} height={barH} rx="3" fill={teamColor} />
                                                         {markerX !== null && (
-                                                            <line x1={markerX} y1="0" x2={markerX} y2={barH} stroke="var(--text-primary)" strokeWidth="1.5" strokeDasharray="2 1" />
+                                                            <line x1={markerX} y1="0" x2={markerX} y2={barH} stroke="var(--text-primary)" strokeWidth="1.5" strokeDasharray="3 1.5" />
+                                                        )}
+                                                        <text x="4" y={barH / 2 + 0.5} dominantBaseline="central" className="microbar-label">{spLabel}</text>
+                                                        {capMeta && capMeta.text && (
+                                                            <text x={barW - 3} y={barH / 2 + 0.5} dominantBaseline="central" textAnchor="end" className={`microbar-delta ${capMeta.status}`}>{capMeta.text}</text>
                                                         )}
                                                     </svg>
-                                                    <div className="team-micro-meta">
-                                                        <span>{info.storyPoints.toFixed(1)} SP</span>
-                                                        {capMeta && (
-                                                            <span className={capMeta.status ? `planning-stat-value ${capMeta.status}` : ''}>
-                                                                / {info.teamCapacity.toFixed(1)} SP · {capMeta.text}
-                                                            </span>
-                                                        )}
-                                                    </div>
                                                 </div>
                                             );
                                         })}

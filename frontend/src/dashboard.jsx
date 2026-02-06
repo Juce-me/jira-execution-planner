@@ -7797,21 +7797,23 @@ import { createRoot } from 'react-dom/client';
                                             const tooltipText = capMeta
                                                 ? `Selected: ${info.storyPoints.toFixed(1)} SP | Cap: ${info.teamCapacity.toFixed(1)} SP | Delta: ${deltaSp >= 0 ? '+' : ''}${deltaSp.toFixed(1)} SP (${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}%)`
                                                 : `Selected: ${info.storyPoints.toFixed(1)} SP`;
-                                            const spLabel = capMeta
-                                                ? `${info.storyPoints.toFixed(1)} / ${info.teamCapacity.toFixed(1)} SP`
-                                                : `${info.storyPoints.toFixed(1)} SP`;
+                                            const spLabel = `${info.storyPoints.toFixed(1)} SP`;
+                                            const svgH = markerX !== null ? 40 : 28;
                                             return (
                                                 <div key={info.id} className="team-stat-card team-card" data-tooltip={tooltipText}>
                                                     <div className="team-stat-label">{info.name}</div>
-                                                    <svg className="microbar" viewBox={`0 0 ${barW} ${barH}`}>
+                                                    <svg className="microbar" viewBox={`0 0 ${barW} ${svgH}`} style={{ height: svgH }}>
                                                         <rect x="0" y="0" width={barW} height={barH} rx="4" fill="#e0ddd7" />
                                                         <rect x="0" y="0" width={valW} height={barH} rx="4" fill={teamColor} />
-                                                        {markerX !== null && (
-                                                            <line x1={markerX} y1="0" x2={markerX} y2={barH} stroke="var(--text-primary)" strokeWidth="2" strokeDasharray="3 2" />
-                                                        )}
                                                         <text x="5" y={barH / 2} dominantBaseline="central" className="microbar-label">{spLabel}</text>
                                                         {capMeta && capMeta.text && (
                                                             <text x={barW - 4} y={barH / 2} dominantBaseline="central" textAnchor="end" className={`microbar-delta ${capMeta.status}`}>{capMeta.text}</text>
+                                                        )}
+                                                        {markerX !== null && (
+                                                            <>
+                                                                <line x1={markerX} y1="0" x2={markerX} y2={barH + 2} stroke="var(--text-primary)" strokeWidth="2" strokeDasharray="3 2" />
+                                                                <text x={markerX} y={barH + 11} textAnchor="middle" className="microbar-cap-label">{info.teamCapacity.toFixed(1)}</text>
+                                                            </>
                                                         )}
                                                     </svg>
                                                 </div>

@@ -24,6 +24,7 @@ Postmortems serve to:
 | [MRT006](./MRT006-lane-stacking-assignee-interleaving.md) | Lane Stacking Assignee Interleaving | 2026-01-27 | High | Resolved | Tasks merged across assignees due to lane stacking bug |
 | [MRT007](./MRT007-bundled-frontend-regression.md) | Bundled Frontend Regression | 2026-01-28 | High | In Progress | Bundled frontend failed to load due to static route gaps and runtime TDZ errors |
 | [MRT008](./MRT008-scenario-task-set-mismatch.md) | Scenario Planner Missing Valid Stories | 2026-01-29 | High | Resolved | Scenario planner omitted valid stories due to sprint filter mismatch and pagination gaps |
+| [MRT009](./MRT009-sticky-layering-regressions.md) | Sticky Layering Regressions | 2026-02-06 | High | Resolved | Sticky UI layers overlapped or stacked incorrectly after layout changes |
 
 ## Postmortem Template
 
@@ -77,8 +78,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 8
-- **Metadata complete (Date/Severity/Status)**: 8 (MRT001-MRT008)
+- **Total postmortems**: 9
+- **Metadata complete (Date/Severity/Status)**: 9 (MRT001-MRT009)
 
 ## Common Themes
 
@@ -132,5 +133,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-01-29*
-*Total Postmortems: 8*
+*Last Updated: 2026-02-06*
+*Total Postmortems: 9*

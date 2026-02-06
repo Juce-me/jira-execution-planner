@@ -1,5 +1,5 @@
 import * as React from 'react';
-import * as ReactDOM from 'react-dom';
+import { createRoot } from 'react-dom/client';
 
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
@@ -9382,5 +9382,9 @@ import * as ReactDOM from 'react-dom';
             );
         }
 
-        ReactDOM.render(<App />, document.getElementById('root'));
+        const rootElement = document.getElementById('root');
+        if (rootElement) {
+            const root = createRoot(rootElement);
+            root.render(<App />);
+        }
     

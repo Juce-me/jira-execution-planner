@@ -163,6 +163,20 @@ import { createRoot } from 'react-dom/client';
             const [selectedProjectsDraft, setSelectedProjectsDraft] = useState([]);
             const selectedProjectsBaselineRef = useRef('[]');
             const projectSearchInputRef = useRef(null);
+            const [capacityProjectDraft, setCapacityProjectDraft] = useState('');
+            const [capacityFieldIdDraft, setCapacityFieldIdDraft] = useState('');
+            const [capacityFieldNameDraft, setCapacityFieldNameDraft] = useState('');
+            const capacityBaselineRef = useRef('');
+            const [capacityProjectSearchQuery, setCapacityProjectSearchQuery] = useState('');
+            const [capacityProjectSearchOpen, setCapacityProjectSearchOpen] = useState(false);
+            const [capacityProjectSearchIndex, setCapacityProjectSearchIndex] = useState(0);
+            const capacityProjectSearchInputRef = useRef(null);
+            const [jiraFields, setJiraFields] = useState([]);
+            const [loadingFields, setLoadingFields] = useState(false);
+            const [capacityFieldSearchQuery, setCapacityFieldSearchQuery] = useState('');
+            const [capacityFieldSearchOpen, setCapacityFieldSearchOpen] = useState(false);
+            const [capacityFieldSearchIndex, setCapacityFieldSearchIndex] = useState(0);
+            const capacityFieldSearchInputRef = useRef(null);
             const [jiraUrl, setJiraUrl] = useState('');
             const [selectedTasks, setSelectedTasks] = useState({});
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
@@ -387,7 +401,9 @@ import { createRoot } from 'react-dom/client';
                 setProjectSearchQuery('');
                 setActiveGroupDraftId(resolveInitialGroupId(normalized));
                 loadSelectedProjects();
+                loadCapacityConfig();
                 if (!jiraProjects.length) fetchJiraProjects();
+                if (!jiraFields.length) fetchJiraFields();
                 const catalogTeams = buildTeamCatalogList(normalized.teamCatalog);
                 if (catalogTeams.length) {
                     setAvailableTeams(catalogTeams);
@@ -782,6 +798,10 @@ import { createRoot } from 'react-dom/client';
                 setProjectSearchQuery('');
                 setProjectSearchOpen(false);
                 setProjectSearchIndex(0);
+                setCapacityProjectSearchQuery('');
+                setCapacityProjectSearchOpen(false);
+                setCapacityFieldSearchQuery('');
+                setCapacityFieldSearchOpen(false);
             };
 
             const groupDraftSignature = React.useMemo(() => {
@@ -801,9 +821,10 @@ import { createRoot } from 'react-dom/client';
 
             const isGroupDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
+                if (isCapacityDraftDirty) return true;
                 if (!groupDraft) return false;
                 return groupDraftSignature !== groupDraftBaselineRef.current;
-            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty]);
+            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isCapacityDraftDirty]);
 
             const requestCloseGroupManage = () => {
                 if (groupSaving) return;
@@ -1148,6 +1169,11 @@ import { createRoot } from 'react-dom/client';
                         await saveProjectSelection();
                     }
 
+                    // Save capacity config if changed
+                    if (isCapacityDraftDirty) {
+                        await saveCapacityConfig();
+                    }
+
                     // Capture the current active group's team IDs before saving
                     const currentActiveGroup = activeGroupId ? (groupsConfig.groups || []).find(g => g.id === activeGroupId) : null;
                     const currentTeamSignature = currentActiveGroup ? (currentActiveGroup.teamIds || []).join('|') : null;
@@ -1314,6 +1340,125 @@ import { createRoot } from 'react-dom/client';
                     throw err;
                 } finally {
                     setGroupSaving(false);
+                }
+            };
+
+            const loadCapacityConfig = async () => {
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/capacity/config`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' },
+                        cache: 'no-cache'
+                    });
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    setCapacityProjectDraft(data.project || '');
+                    setCapacityFieldIdDraft(data.fieldId || '');
+                    setCapacityFieldNameDraft(data.fieldName || '');
+                    capacityBaselineRef.current = JSON.stringify({ project: data.project || '', fieldId: data.fieldId || '', fieldName: data.fieldName || '' });
+                } catch (err) {
+                    console.error('Failed to load capacity config:', err);
+                }
+            };
+
+            const saveCapacityConfig = async () => {
+                const response = await fetch(`${BACKEND_URL}/api/capacity/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft })
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.error || `Save failed (${response.status})`);
+                }
+                capacityBaselineRef.current = JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
+            };
+
+            const isCapacityDraftDirty = React.useMemo(() => {
+                return JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }) !== capacityBaselineRef.current;
+            }, [capacityProjectDraft, capacityFieldIdDraft, capacityFieldNameDraft]);
+
+            const fetchJiraFields = async () => {
+                setLoadingFields(true);
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/fields`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' },
+                        cache: 'no-cache'
+                    });
+                    if (!response.ok) throw new Error(`Fields fetch error ${response.status}`);
+                    const data = await response.json();
+                    setJiraFields(data.fields || []);
+                } catch (err) {
+                    console.error('Failed to fetch Jira fields:', err);
+                } finally {
+                    setLoadingFields(false);
+                }
+            };
+
+            const capacityProjectSearchResults = React.useMemo(() => {
+                const query = capacityProjectSearchQuery.toLowerCase().trim();
+                if (!query) return [];
+                return jiraProjects.filter(p => {
+                    return p.key.toLowerCase().includes(query) || p.name.toLowerCase().includes(query);
+                }).slice(0, 10);
+            }, [capacityProjectSearchQuery, jiraProjects]);
+
+            React.useEffect(() => {
+                if (capacityProjectSearchIndex >= capacityProjectSearchResults.length) setCapacityProjectSearchIndex(0);
+            }, [capacityProjectSearchResults.length]);
+
+            const handleCapacityProjectSearchKeyDown = (event) => {
+                if (event.key === 'ArrowDown') {
+                    if (!capacityProjectSearchResults.length) return;
+                    event.preventDefault();
+                    setCapacityProjectSearchIndex(prev => Math.min(prev + 1, capacityProjectSearchResults.length - 1));
+                } else if (event.key === 'ArrowUp') {
+                    if (!capacityProjectSearchResults.length) return;
+                    event.preventDefault();
+                    setCapacityProjectSearchIndex(prev => Math.max(prev - 1, 0));
+                } else if (event.key === 'Enter') {
+                    if (!capacityProjectSearchResults.length) return;
+                    event.preventDefault();
+                    const p = capacityProjectSearchResults[capacityProjectSearchIndex] || capacityProjectSearchResults[0];
+                    if (p) { setCapacityProjectDraft(p.name); setCapacityProjectSearchQuery(''); setCapacityProjectSearchOpen(false); }
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setCapacityProjectSearchOpen(false);
+                }
+            };
+
+            const capacityFieldSearchResults = React.useMemo(() => {
+                const query = capacityFieldSearchQuery.toLowerCase().trim();
+                if (!query) return [];
+                return jiraFields.filter(f => {
+                    return f.id.toLowerCase().includes(query) || f.name.toLowerCase().includes(query);
+                }).slice(0, 10);
+            }, [capacityFieldSearchQuery, jiraFields]);
+
+            React.useEffect(() => {
+                if (capacityFieldSearchIndex >= capacityFieldSearchResults.length) setCapacityFieldSearchIndex(0);
+            }, [capacityFieldSearchResults.length]);
+
+            const handleCapacityFieldSearchKeyDown = (event) => {
+                if (event.key === 'ArrowDown') {
+                    if (!capacityFieldSearchResults.length) return;
+                    event.preventDefault();
+                    setCapacityFieldSearchIndex(prev => Math.min(prev + 1, capacityFieldSearchResults.length - 1));
+                } else if (event.key === 'ArrowUp') {
+                    if (!capacityFieldSearchResults.length) return;
+                    event.preventDefault();
+                    setCapacityFieldSearchIndex(prev => Math.max(prev - 1, 0));
+                } else if (event.key === 'Enter') {
+                    if (!capacityFieldSearchResults.length) return;
+                    event.preventDefault();
+                    const f = capacityFieldSearchResults[capacityFieldSearchIndex] || capacityFieldSearchResults[0];
+                    if (f) { setCapacityFieldIdDraft(f.id); setCapacityFieldNameDraft(f.name); setCapacityFieldSearchQuery(''); setCapacityFieldSearchOpen(false); }
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setCapacityFieldSearchOpen(false);
                 }
             };
 
@@ -9409,6 +9554,93 @@ import { createRoot } from 'react-dom/client';
                                                         ))}
                                                     </div>
                                                 )}
+                                            </div>
+                                        </div>
+                                        <div className="group-projects-divider" />
+                                        <div className="group-projects-section">
+                                            <div className="group-projects-section-title">Capacity Project</div>
+                                            <div className="group-projects-desc">
+                                                Select one Jira project that stores team capacity entries, and the field used for estimated capacity.
+                                            </div>
+                                            {capacityProjectDraft ? (
+                                                <div className="selected-teams-list">
+                                                    <div className="selected-team-chip">
+                                                        <span className="team-name"><strong>{capacityProjectDraft}</strong></span>
+                                                        <button className="remove-btn" onClick={() => setCapacityProjectDraft('')} type="button" title="Remove">&times;</button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="team-selector-empty">No capacity project selected.</div>
+                                            )}
+                                            <div className="team-search-wrapper">
+                                                <input
+                                                    type="text"
+                                                    className="team-search-input"
+                                                    placeholder="Search projects..."
+                                                    value={capacityProjectSearchQuery}
+                                                    onChange={(e) => { setCapacityProjectSearchQuery(e.target.value); setCapacityProjectSearchOpen(true); setCapacityProjectSearchIndex(0); }}
+                                                    onFocus={() => setCapacityProjectSearchOpen(true)}
+                                                    onBlur={() => { window.setTimeout(() => setCapacityProjectSearchOpen(false), 120); }}
+                                                    onKeyDown={handleCapacityProjectSearchKeyDown}
+                                                    ref={capacityProjectSearchInputRef}
+                                                />
+                                                {capacityProjectSearchOpen && capacityProjectSearchQuery.trim() && (
+                                                    <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                        {capacityProjectSearchResults.length === 0 ? (
+                                                            <div className="team-search-result-item is-empty">No projects found</div>
+                                                        ) : capacityProjectSearchResults.map((p, index) => (
+                                                            <div
+                                                                key={p.key}
+                                                                className={`team-search-result-item ${index === capacityProjectSearchIndex ? 'active' : ''}`}
+                                                                onClick={() => { setCapacityProjectDraft(p.name); setCapacityProjectSearchQuery(''); setCapacityProjectSearchOpen(false); }}
+                                                            >
+                                                                <strong>{p.key}</strong> &mdash; {p.name}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="group-projects-subsection">
+                                                <div className="group-projects-desc" style={{fontWeight: 600}}>Capacity Field</div>
+                                                {capacityFieldNameDraft ? (
+                                                    <div className="selected-teams-list">
+                                                        <div className="selected-team-chip">
+                                                            <span className="team-name"><strong>{capacityFieldNameDraft}</strong> {capacityFieldIdDraft ? `(${capacityFieldIdDraft})` : ''}</span>
+                                                            <button className="remove-btn" onClick={() => { setCapacityFieldIdDraft(''); setCapacityFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="team-selector-empty">No capacity field selected.</div>
+                                                )}
+                                                <div className="team-search-wrapper">
+                                                    <input
+                                                        type="text"
+                                                        className="team-search-input"
+                                                        placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'}
+                                                        value={capacityFieldSearchQuery}
+                                                        onChange={(e) => { setCapacityFieldSearchQuery(e.target.value); setCapacityFieldSearchOpen(true); setCapacityFieldSearchIndex(0); }}
+                                                        onFocus={() => setCapacityFieldSearchOpen(true)}
+                                                        onBlur={() => { window.setTimeout(() => setCapacityFieldSearchOpen(false), 120); }}
+                                                        onKeyDown={handleCapacityFieldSearchKeyDown}
+                                                        ref={capacityFieldSearchInputRef}
+                                                        disabled={loadingFields && !jiraFields.length}
+                                                    />
+                                                    {capacityFieldSearchOpen && capacityFieldSearchQuery.trim() && (
+                                                        <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                            {capacityFieldSearchResults.length === 0 ? (
+                                                                <div className="team-search-result-item is-empty">No fields found</div>
+                                                            ) : capacityFieldSearchResults.map((f, index) => (
+                                                                <div
+                                                                    key={f.id}
+                                                                    className={`team-search-result-item ${index === capacityFieldSearchIndex ? 'active' : ''}`}
+                                                                    onClick={() => { setCapacityFieldIdDraft(f.id); setCapacityFieldNameDraft(f.name); setCapacityFieldSearchQuery(''); setCapacityFieldSearchOpen(false); }}
+                                                                >
+                                                                    <strong>{f.name}</strong> <span style={{opacity:0.5}}>({f.id})</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

@@ -206,11 +206,13 @@ def resolve_capacity_field_id(headers):
     global CAPACITY_FIELD_CACHE
     if CAPACITY_FIELD_CACHE:
         return CAPACITY_FIELD_CACHE
-    if CAPACITY_FIELD_ID:
-        CAPACITY_FIELD_CACHE = CAPACITY_FIELD_ID
+    cap = get_capacity_config()
+    if cap['fieldId']:
+        CAPACITY_FIELD_CACHE = cap['fieldId']
         return CAPACITY_FIELD_CACHE
 
-    if not CAPACITY_FIELD_NAME:
+    field_name = cap['fieldName']
+    if not field_name:
         return None
 
     try:
@@ -219,7 +221,7 @@ def resolve_capacity_field_id(headers):
             return None
 
         fields = response.json() or []
-        target = CAPACITY_FIELD_NAME.strip().lower()
+        target = field_name.strip().lower()
         for field in fields:
             name = str(field.get('name', '')).strip().lower()
             if name == target:
@@ -352,6 +354,7 @@ def fetch_teams_from_jira_api(headers):
 
 
 def build_capacity_jql(sprint_name, team_names=None):
+    capacity_project = get_effective_capacity_project()
     sprint_label = str(sprint_name or '').replace('"', '\\"')
     if team_names:
         clauses = []
@@ -362,13 +365,13 @@ def build_capacity_jql(sprint_name, team_names=None):
             phrase = f'\\"Team info {sprint_label} - {cleaned}\\"'
             clauses.append(f'summary ~ "{phrase}"')
         if clauses:
-            return f'project = "{CAPACITY_PROJECT}" AND ({ " OR ".join(clauses) })'
+            return f'project = "{capacity_project}" AND ({ " OR ".join(clauses) })'
     phrase = f'\\"Team info {sprint_label} -\\"'
-    return f'project = "{CAPACITY_PROJECT}" AND summary ~ "{phrase}"'
+    return f'project = "{capacity_project}" AND summary ~ "{phrase}"'
 
 
 def fetch_capacity_for_sprint(sprint_name, headers, debug=False, team_names=None):
-    if not CAPACITY_PROJECT:
+    if not get_effective_capacity_project():
         return {
             'enabled': False,
             'capacities': {}
@@ -467,7 +470,7 @@ def fetch_watchers_count(issue_key, headers):
 
 def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
     """Fetch team sizes from Jira capacity issues (watchers count)."""
-    if not CAPACITY_PROJECT or not sprint_name:
+    if not get_effective_capacity_project() or not sprint_name:
         return {}, {}
 
     issues = []
@@ -750,6 +753,28 @@ def get_selected_projects():
     if not config:
         return []
     return config.get('projects', {}).get('selected', [])
+
+
+def get_capacity_config():
+    """Return capacity config from dashboard config, falling back to env vars."""
+    config = load_dashboard_config()
+    if config and 'capacity' in config:
+        cap = config['capacity']
+        return {
+            'project': cap.get('project', '') or CAPACITY_PROJECT,
+            'fieldId': cap.get('fieldId', '') or CAPACITY_FIELD_ID,
+            'fieldName': cap.get('fieldName', '') or CAPACITY_FIELD_NAME,
+        }
+    return {
+        'project': CAPACITY_PROJECT,
+        'fieldId': CAPACITY_FIELD_ID,
+        'fieldName': CAPACITY_FIELD_NAME,
+    }
+
+
+def get_effective_capacity_project():
+    """Return the effective capacity project name."""
+    return get_capacity_config()['project']
 
 
 def parse_groups_config_env():
@@ -3322,7 +3347,7 @@ def get_config():
     """Get public configuration"""
     return jsonify({
         'jiraUrl': JIRA_URL,
-        'capacityProject': CAPACITY_PROJECT,
+        'capacityProject': get_effective_capacity_project(),
         'groupsConfigPath': resolve_groups_config_path(),
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE)
     })
@@ -3505,6 +3530,66 @@ def save_selected_projects():
     return jsonify({'selected': selected})
 
 
+@app.route('/api/capacity/config', methods=['GET'])
+def get_capacity_config_endpoint():
+    """Return current capacity configuration."""
+    cap = get_capacity_config()
+    return jsonify(cap)
+
+
+@app.route('/api/capacity/config', methods=['POST'])
+def save_capacity_config_endpoint():
+    """Save capacity project and field configuration."""
+    payload = request.get_json(silent=True) or {}
+    project = str(payload.get('project', '')).strip()
+    field_id = str(payload.get('fieldId', '')).strip()
+    field_name = str(payload.get('fieldName', '')).strip()
+
+    try:
+        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+        dashboard_config['capacity'] = {
+            'project': project,
+            'fieldId': field_id,
+            'fieldName': field_name,
+        }
+        save_dashboard_config(dashboard_config)
+        # Reset the field cache since config changed
+        global CAPACITY_FIELD_CACHE
+        CAPACITY_FIELD_CACHE = None
+    except Exception as e:
+        return jsonify({'error': 'Failed to save capacity config', 'message': str(e)}), 500
+
+    return jsonify({'project': project, 'fieldId': field_id, 'fieldName': field_name})
+
+
+@app.route('/api/fields', methods=['GET'])
+def get_jira_fields():
+    """Fetch available Jira fields for field selection."""
+    try:
+        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+        auth_bytes = auth_string.encode('ascii')
+        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+        headers = {
+            'Authorization': f'Basic {auth_base64}',
+            'Accept': 'application/json',
+        }
+        response = HTTP_SESSION.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=15)
+        if response.status_code != 200:
+            return jsonify({'error': 'Failed to fetch fields', 'details': response.text}), response.status_code
+        fields = response.json() or []
+        result = []
+        for field in fields:
+            result.append({
+                'id': field.get('id', ''),
+                'name': field.get('name', ''),
+                'custom': field.get('custom', False),
+            })
+        result.sort(key=lambda f: f['name'].lower())
+        return jsonify({'fields': result})
+    except Exception as e:
+        return jsonify({'error': 'Failed to fetch fields', 'details': str(e)}), 500
+
+
 @app.route('/api/capacity', methods=['GET'])
 def get_capacity():
     """Get estimated team capacity for a sprint."""
@@ -3515,7 +3600,7 @@ def get_capacity():
     if not sprint_name:
         return jsonify({'error': 'Sprint name is required'}), 400
 
-    if not CAPACITY_PROJECT:
+    if not get_effective_capacity_project():
         return jsonify({
             'enabled': False,
             'capacities': {}

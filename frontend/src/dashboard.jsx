@@ -7709,8 +7709,8 @@ import { createRoot } from 'react-dom/client';
                                         {isUnder && (
                                             <div className="capacity-bar-variance-zone under-zone" style={{ left: `${selectedPct}%`, width: `${teamCapPct - selectedPct}%` }} />
                                         )}
-                                        {/* Selected fill */}
-                                        <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}`} style={{ width: `${selectedPct}%` }} data-tooltip={`Total story points from ${selectedCount} selected tasks.`}>
+                                        {/* Selected fill — clip at teamCap when over so variance zone is visible */}
+                                        <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}`} style={{ width: `${isOver ? teamCapPct : selectedPct}%` }} data-tooltip={`Total story points from ${selectedCount} selected tasks.`}>
                                             <span className="capacity-bar-fill-label">{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>
                                         </div>
                                         {/* Planning marker */}

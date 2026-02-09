@@ -5603,11 +5603,23 @@ import { createRoot } from 'react-dom/client';
                     : teamCapacityEntries;
             }, [teamCapacityEntries, isAllTeamsSelected, selectedTeamSet]);
 
+            const teamSpTotals = React.useMemo(() => {
+                const totals = {};
+                for (const task of capacityTasks) {
+                    const sp = parseFloat(task.fields?.customfield_10004 || 0);
+                    if (!sp) continue;
+                    const tid = getTeamInfo(task).id;
+                    totals[tid] = (totals[tid] || 0) + sp;
+                }
+                return totals;
+            }, [capacityTasks]);
+
             const displayedTeamOptions = React.useMemo(() => {
-                return !isAllTeamsSelected
+                const base = !isAllTeamsSelected
                     ? teamOptions.filter(team => team.id !== 'all' && selectedTeamSet.has(team.id))
                     : teamOptions.filter(team => team.id !== 'all');
-            }, [teamOptions, isAllTeamsSelected, selectedTeamSet]);
+                return base.filter(team => (teamSpTotals[team.id] || 0) > 0);
+            }, [teamOptions, isAllTeamsSelected, selectedTeamSet, teamSpTotals]);
 
             const capacityTeamNames = React.useMemo(() => {
                 if (!showPlanning || !capacityEnabled) return [];

@@ -176,6 +176,7 @@ import { createRoot } from 'react-dom/client';
             );
             const [epicDetails, setEpicDetails] = useState({});
             const [planningOffset, setPlanningOffset] = useState(0);
+            const [isPlanningStuck, setIsPlanningStuck] = useState(false);
             const planningPanelRef = useRef(null);
             const resolveStatsView = (value) => (value === 'teams' || value === 'priority') ? value : 'teams';
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
@@ -6044,6 +6045,19 @@ import { createRoot } from 'react-dom/client';
                 };
             }, [showPlanning, selectedCount, selectedSP, teamCapacityEntries.length, capacityEnabled, totalCapacityAdjusted, selectedTeamEntries.length]);
 
+            // Detect when planning panel is sticky (stuck to viewport top)
+            useEffect(() => {
+                if (!showPlanning) { setIsPlanningStuck(false); return; }
+                const node = planningPanelRef.current;
+                if (!node) return;
+                const check = () => {
+                    const rect = node.getBoundingClientRect();
+                    setIsPlanningStuck(rect.top <= 0);
+                };
+                check();
+                window.addEventListener('scroll', check, { passive: true });
+                return () => window.removeEventListener('scroll', check);
+            }, [showPlanning]);
 
             const openSelectedInJira = () => {
                 if (!jiraUrl) return;
@@ -7683,7 +7697,7 @@ import { createRoot } from 'react-dom/client';
                         </div>
                     )}
 
-                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning && !isCompletedSprintSelected ? 'open' : ''}`}>
+                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning && !isCompletedSprintSelected ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`}>
                         {/* --- Capacity Bar Graph --- */}
                         {capacityEnabled && totalCapacityAdjusted > 0 ? (() => {
                             const scale = Math.max(totalCapacityAdjusted, selectedSP) * 1.15;

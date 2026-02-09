@@ -4376,6 +4376,25 @@
             transform: none;
         }
 
+        /* When planning panel is stuck, flip tooltips below so they aren't clipped by browser edge */
+        .planning-panel.stuck .capacity-bar-marker[data-tooltip]:hover::after,
+        .planning-panel.stuck .capacity-bar-fill[data-tooltip]:hover::after {
+            bottom: auto;
+            top: calc(100% + 6px);
+        }
+
+        .planning-panel.stuck .capacity-bar-fill[data-tooltip]:hover::after {
+            left: auto;
+            right: 0;
+            transform: none;
+        }
+
+        .planning-panel.stuck .capacity-bar-variance[data-tooltip]:hover::after,
+        .planning-panel.stuck .capacity-bar-excluded-note[data-tooltip]:hover::after {
+            bottom: auto;
+            top: calc(100% + 6px);
+        }
+
         .capacity-bar-marker-line {
             position: absolute;
             top: 0;
@@ -4727,6 +4746,16 @@
             letter-spacing: normal;
             pointer-events: none;
             box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .planning-panel.stuck .project-bar-fill[data-tooltip]:hover::after {
+            bottom: auto;
+            top: calc(100% + 6px);
+        }
+
+        .planning-panel.stuck .team-stat-card[data-tooltip]:hover::after {
+            bottom: auto;
+            top: calc(100% + 4px);
         }
 
         .team-stat-card {

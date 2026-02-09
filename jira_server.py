@@ -1411,6 +1411,7 @@ def fetch_tasks(include_team_name=False):
         group_id = request.args.get('groupId', '').strip() or 'default'
         team_ids_param = request.args.get('teamIds', '').strip()
         project_filter = request.args.get('project', '').strip().lower()
+        force_refresh = request.args.get('refresh', '').lower() in ('1', 'true')
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
         cache_key = build_tasks_cache_key(
@@ -1422,7 +1423,7 @@ def fetch_tasks(include_team_name=False):
             use_template
         )
         cached_entry = TASKS_CACHE.get(cache_key)
-        if cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
+        if not force_refresh and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
             cached_response = jsonify(cached_entry.get('data') or {})
             cached_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             cached_response.headers['Pragma'] = 'no-cache'

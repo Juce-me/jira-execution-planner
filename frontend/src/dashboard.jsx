@@ -194,6 +194,7 @@ import { createRoot } from 'react-dom/client';
             const [issueTypeSearchOpen, setIssueTypeSearchOpen] = useState(false);
             const [issueTypeSearchIndex, setIssueTypeSearchIndex] = useState(0);
             const issueTypeSearchInputRef = useRef(null);
+            const pageLoadRefreshRef = useRef(true);
             const [jiraUrl, setJiraUrl] = useState('');
             const [selectedTasks, setSelectedTasks] = useState({});
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
@@ -2650,6 +2651,11 @@ import { createRoot } from 'react-dom/client';
                         project: project || 'all',
                         groupId: activeGroupId || ''
                     });
+                    // On page load, bypass server cache to get fresh Jira data
+                    if (pageLoadRefreshRef.current) {
+                        params.set('refresh', 'true');
+                        pageLoadRefreshRef.current = false;
+                    }
                     // If group has teams configured, always filter by them (overrides ENV filter)
                     if (groupTeamIds.length > 0) {
                         params.set('teamIds', groupTeamIds.join(','));

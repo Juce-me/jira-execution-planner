@@ -9562,82 +9562,78 @@ import { createRoot } from 'react-dom/client';
                                             <div className="group-projects-desc">
                                                 Select one Jira project that stores team capacity entries, and the field used for estimated capacity.
                                             </div>
-                                            {capacityProjectDraft ? (
-                                                <div className="selected-teams-list">
+                                            <div className="capacity-inline-row">
+                                                <div className="team-search-wrapper capacity-inline-search">
+                                                    <input
+                                                        type="text"
+                                                        className="team-search-input"
+                                                        placeholder="Search projects..."
+                                                        value={capacityProjectSearchQuery}
+                                                        onChange={(e) => { setCapacityProjectSearchQuery(e.target.value); setCapacityProjectSearchOpen(true); setCapacityProjectSearchIndex(0); }}
+                                                        onFocus={() => setCapacityProjectSearchOpen(true)}
+                                                        onBlur={() => { window.setTimeout(() => setCapacityProjectSearchOpen(false), 120); }}
+                                                        onKeyDown={handleCapacityProjectSearchKeyDown}
+                                                        ref={capacityProjectSearchInputRef}
+                                                    />
+                                                    {capacityProjectSearchOpen && capacityProjectSearchQuery.trim() && (
+                                                        <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                            {capacityProjectSearchResults.length === 0 ? (
+                                                                <div className="team-search-result-item is-empty">No projects found</div>
+                                                            ) : capacityProjectSearchResults.map((p, index) => (
+                                                                <div
+                                                                    key={p.key}
+                                                                    className={`team-search-result-item ${index === capacityProjectSearchIndex ? 'active' : ''}`}
+                                                                    onClick={() => { setCapacityProjectDraft(p.name); setCapacityProjectSearchQuery(''); setCapacityProjectSearchOpen(false); }}
+                                                                >
+                                                                    <strong>{p.key}</strong> &mdash; {p.name}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {capacityProjectDraft && (
                                                     <div className="selected-team-chip">
                                                         <span className="team-name"><strong>{capacityProjectDraft}</strong></span>
                                                         <button className="remove-btn" onClick={() => setCapacityProjectDraft('')} type="button" title="Remove">&times;</button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="team-selector-empty">No capacity project selected.</div>
-                                            )}
-                                            <div className="team-search-wrapper">
-                                                <input
-                                                    type="text"
-                                                    className="team-search-input"
-                                                    placeholder="Search projects..."
-                                                    value={capacityProjectSearchQuery}
-                                                    onChange={(e) => { setCapacityProjectSearchQuery(e.target.value); setCapacityProjectSearchOpen(true); setCapacityProjectSearchIndex(0); }}
-                                                    onFocus={() => setCapacityProjectSearchOpen(true)}
-                                                    onBlur={() => { window.setTimeout(() => setCapacityProjectSearchOpen(false), 120); }}
-                                                    onKeyDown={handleCapacityProjectSearchKeyDown}
-                                                    ref={capacityProjectSearchInputRef}
-                                                />
-                                                {capacityProjectSearchOpen && capacityProjectSearchQuery.trim() && (
-                                                    <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                        {capacityProjectSearchResults.length === 0 ? (
-                                                            <div className="team-search-result-item is-empty">No projects found</div>
-                                                        ) : capacityProjectSearchResults.map((p, index) => (
-                                                            <div
-                                                                key={p.key}
-                                                                className={`team-search-result-item ${index === capacityProjectSearchIndex ? 'active' : ''}`}
-                                                                onClick={() => { setCapacityProjectDraft(p.name); setCapacityProjectSearchQuery(''); setCapacityProjectSearchOpen(false); }}
-                                                            >
-                                                                <strong>{p.key}</strong> &mdash; {p.name}
-                                                            </div>
-                                                        ))}
                                                     </div>
                                                 )}
                                             </div>
                                             <div className="group-projects-subsection">
                                                 <div className="group-projects-desc" style={{fontWeight: 600}}>Capacity Field</div>
-                                                {capacityFieldNameDraft ? (
-                                                    <div className="selected-teams-list">
-                                                        <div className="selected-team-chip">
-                                                            <span className="team-name"><strong>{capacityFieldNameDraft}</strong> {capacityFieldIdDraft ? `(${capacityFieldIdDraft})` : ''}</span>
-                                                            <button className="remove-btn" onClick={() => { setCapacityFieldIdDraft(''); setCapacityFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
-                                                        </div>
+                                                <div className="capacity-inline-row">
+                                                    <div className="team-search-wrapper capacity-inline-search">
+                                                        <input
+                                                            type="text"
+                                                            className="team-search-input"
+                                                            placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'}
+                                                            value={capacityFieldSearchQuery}
+                                                            onChange={(e) => { setCapacityFieldSearchQuery(e.target.value); setCapacityFieldSearchOpen(true); setCapacityFieldSearchIndex(0); }}
+                                                            onFocus={() => setCapacityFieldSearchOpen(true)}
+                                                            onBlur={() => { window.setTimeout(() => setCapacityFieldSearchOpen(false), 120); }}
+                                                            onKeyDown={handleCapacityFieldSearchKeyDown}
+                                                            ref={capacityFieldSearchInputRef}
+                                                            disabled={loadingFields && !jiraFields.length}
+                                                        />
+                                                        {capacityFieldSearchOpen && capacityFieldSearchQuery.trim() && (
+                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                                {capacityFieldSearchResults.length === 0 ? (
+                                                                    <div className="team-search-result-item is-empty">No fields found</div>
+                                                                ) : capacityFieldSearchResults.map((f, index) => (
+                                                                    <div
+                                                                        key={f.id}
+                                                                        className={`team-search-result-item ${index === capacityFieldSearchIndex ? 'active' : ''}`}
+                                                                        onClick={() => { setCapacityFieldIdDraft(f.id); setCapacityFieldNameDraft(f.name); setCapacityFieldSearchQuery(''); setCapacityFieldSearchOpen(false); }}
+                                                                    >
+                                                                        <strong>{f.name}</strong> <span style={{opacity:0.5}}>({f.id})</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                ) : (
-                                                    <div className="team-selector-empty">No capacity field selected.</div>
-                                                )}
-                                                <div className="team-search-wrapper">
-                                                    <input
-                                                        type="text"
-                                                        className="team-search-input"
-                                                        placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'}
-                                                        value={capacityFieldSearchQuery}
-                                                        onChange={(e) => { setCapacityFieldSearchQuery(e.target.value); setCapacityFieldSearchOpen(true); setCapacityFieldSearchIndex(0); }}
-                                                        onFocus={() => setCapacityFieldSearchOpen(true)}
-                                                        onBlur={() => { window.setTimeout(() => setCapacityFieldSearchOpen(false), 120); }}
-                                                        onKeyDown={handleCapacityFieldSearchKeyDown}
-                                                        ref={capacityFieldSearchInputRef}
-                                                        disabled={loadingFields && !jiraFields.length}
-                                                    />
-                                                    {capacityFieldSearchOpen && capacityFieldSearchQuery.trim() && (
-                                                        <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                            {capacityFieldSearchResults.length === 0 ? (
-                                                                <div className="team-search-result-item is-empty">No fields found</div>
-                                                            ) : capacityFieldSearchResults.map((f, index) => (
-                                                                <div
-                                                                    key={f.id}
-                                                                    className={`team-search-result-item ${index === capacityFieldSearchIndex ? 'active' : ''}`}
-                                                                    onClick={() => { setCapacityFieldIdDraft(f.id); setCapacityFieldNameDraft(f.name); setCapacityFieldSearchQuery(''); setCapacityFieldSearchOpen(false); }}
-                                                                >
-                                                                    <strong>{f.name}</strong> <span style={{opacity:0.5}}>({f.id})</span>
-                                                                </div>
-                                                            ))}
+                                                    {capacityFieldNameDraft && (
+                                                        <div className="selected-team-chip" title={capacityFieldIdDraft || ''}>
+                                                            <span className="team-name"><strong>{capacityFieldNameDraft}</strong></span>
+                                                            <button className="remove-btn" onClick={() => { setCapacityFieldIdDraft(''); setCapacityFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
                                                         </div>
                                                     )}
                                                 </div>

@@ -1283,10 +1283,10 @@ import { createRoot } from 'react-dom/client';
                 }
             };
 
-            const addProjectSelection = (key) => {
+            const addProjectSelection = (key, type = 'product') => {
                 setSelectedProjectsDraft(prev => {
-                    if (prev.includes(key)) return prev;
-                    return [...prev, key];
+                    if (prev.some(p => p.key === key)) return prev;
+                    return [...prev, { key, type }];
                 });
                 setProjectSearchQuery('');
                 setProjectSearchOpen(true);
@@ -1294,14 +1294,18 @@ import { createRoot } from 'react-dom/client';
             };
 
             const removeProjectSelection = (key) => {
-                setSelectedProjectsDraft(prev => prev.filter(k => k !== key));
+                setSelectedProjectsDraft(prev => prev.filter(p => p.key !== key));
             };
+
+            const selectedProjectKeys = React.useMemo(() => {
+                return new Set(selectedProjectsDraft.map(p => p.key));
+            }, [selectedProjectsDraft]);
 
             const projectSearchResults = React.useMemo(() => {
                 const query = projectSearchQuery.toLowerCase().trim();
                 if (!query) return [];
                 return jiraProjects.filter(p => {
-                    if (selectedProjectsDraft.includes(p.key)) return false;
+                    if (selectedProjectKeys.has(p.key)) return false;
                     return p.key.toLowerCase().includes(query) || p.name.toLowerCase().includes(query);
                 }).slice(0, 10);
             }, [projectSearchQuery, jiraProjects, selectedProjectsDraft]);
@@ -9621,20 +9625,8 @@ import { createRoot } from 'react-dom/client';
                                         <div className="group-projects-section">
                                             <div className="group-projects-section-title">Dashboard Projects</div>
                                             <div className="group-projects-desc">
-                                                Select which Jira projects to include in dashboard queries. When no projects are selected, the default JQL query is used.
+                                                Select which Jira projects to include in dashboard queries and assign each to Product or Tech for the planning split.
                                             </div>
-                                            {selectedProjectsDraft.length === 0 ? (
-                                                <div className="team-selector-empty">No projects selected. Search and add projects below.</div>
-                                            ) : (
-                                                <div className="selected-teams-list is-capped">
-                                                    {selectedProjectsDraft.map(key => (
-                                                        <div key={key} className="selected-team-chip">
-                                                            <span className="team-name"><strong>{key}</strong> {resolveProjectName(key) !== key ? `\u2014 ${resolveProjectName(key)}` : ''}</span>
-                                                            <button className="remove-btn" onClick={() => removeProjectSelection(key)} type="button" title="Remove project">&times;</button>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
                                             <div className="team-search-wrapper">
                                                 <input
                                                     type="text"
@@ -9656,9 +9648,42 @@ import { createRoot } from 'react-dom/client';
                                                             <div
                                                                 key={p.key}
                                                                 className={`team-search-result-item ${index === projectSearchIndex ? 'active' : ''}`}
-                                                                onClick={() => addProjectSelection(p.key)}
                                                             >
-                                                                <strong>{p.key}</strong> &mdash; {p.name}
+                                                                <span className="project-result-label"><strong>{p.key}</strong> &mdash; {p.name}</span>
+                                                                <span className="project-result-actions">
+                                                                    <button type="button" className="project-type-btn product" onClick={() => addProjectSelection(p.key, 'product')}>Product</button>
+                                                                    <button type="button" className="project-type-btn tech" onClick={() => addProjectSelection(p.key, 'tech')}>Tech</button>
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="group-projects-subsection">
+                                                <div className="group-projects-desc" style={{fontWeight: 600}}>Product</div>
+                                                {selectedProjectsDraft.filter(p => p.type === 'product').length === 0 ? (
+                                                    <div className="team-selector-empty">No product projects.</div>
+                                                ) : (
+                                                    <div className="selected-teams-list">
+                                                        {selectedProjectsDraft.filter(p => p.type === 'product').map(p => (
+                                                            <div key={p.key} className="selected-team-chip product-chip">
+                                                                <span className="team-name"><strong>{p.key}</strong>{resolveProjectName(p.key) !== p.key ? ` \u2014 ${resolveProjectName(p.key)}` : ''}</span>
+                                                                <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project">&times;</button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="group-projects-subsection">
+                                                <div className="group-projects-desc" style={{fontWeight: 600}}>Tech</div>
+                                                {selectedProjectsDraft.filter(p => p.type === 'tech').length === 0 ? (
+                                                    <div className="team-selector-empty">No tech projects.</div>
+                                                ) : (
+                                                    <div className="selected-teams-list">
+                                                        {selectedProjectsDraft.filter(p => p.type === 'tech').map(p => (
+                                                            <div key={p.key} className="selected-team-chip tech-chip">
+                                                                <span className="team-name"><strong>{p.key}</strong>{resolveProjectName(p.key) !== p.key ? ` \u2014 ${resolveProjectName(p.key)}` : ''}</span>
+                                                                <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project">&times;</button>
                                                             </div>
                                                         ))}
                                                     </div>

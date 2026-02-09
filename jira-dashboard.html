@@ -790,6 +790,59 @@
             margin: 0;
         }
 
+        .project-result-label {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .project-result-actions {
+            display: flex;
+            gap: 0.3rem;
+            flex-shrink: 0;
+        }
+
+        .project-type-btn {
+            font-size: 0.6rem;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            font-family: 'IBM Plex Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            background: none;
+            color: var(--text-secondary);
+            line-height: 1.3;
+        }
+
+        .project-type-btn:hover {
+            transform: none;
+            box-shadow: none;
+        }
+
+        .project-type-btn.product:hover {
+            background: rgba(22, 119, 255, 0.12);
+            border-color: rgba(22, 119, 255, 0.4);
+            color: #1677ff;
+        }
+
+        .project-type-btn.tech:hover {
+            background: rgba(250, 84, 28, 0.10);
+            border-color: rgba(250, 84, 28, 0.4);
+            color: #fa541c;
+        }
+
+        .selected-team-chip.product-chip {
+            border-left: 3px solid rgba(22, 119, 255, 0.5);
+        }
+
+        .selected-team-chip.tech-chip {
+            border-left: 3px solid rgba(250, 84, 28, 0.5);
+        }
+
         .group-modal-body {
             padding: 0;
             overflow: hidden;

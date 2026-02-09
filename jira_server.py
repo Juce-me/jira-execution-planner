@@ -752,7 +752,30 @@ def get_selected_projects():
     config = load_dashboard_config()
     if not config:
         return []
-    return config.get('projects', {}).get('selected', [])
+    selected = config.get('projects', {}).get('selected', [])
+    # Normalise: support both old string format and new {key, type} format
+    keys = []
+    for item in selected:
+        if isinstance(item, str):
+            keys.append(item)
+        elif isinstance(item, dict) and item.get('key'):
+            keys.append(item['key'])
+    return keys
+
+
+def get_selected_projects_typed():
+    """Return the list of selected projects with their product/tech type."""
+    config = load_dashboard_config()
+    if not config:
+        return []
+    selected = config.get('projects', {}).get('selected', [])
+    result = []
+    for item in selected:
+        if isinstance(item, str):
+            result.append({'key': item, 'type': 'product'})
+        elif isinstance(item, dict) and item.get('key'):
+            result.append({'key': item['key'], 'type': item.get('type', 'product')})
+    return result
 
 
 def get_capacity_config():
@@ -1011,15 +1034,23 @@ def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, include_te
     return f"tasks:{digest}"
 
 
-def classify_project(project_name):
-    """Classify projects into product/tech buckets based on config."""
-    if not project_name:
+def classify_project(project_name, project_key=None):
+    """Classify projects into product/tech buckets based on dashboard config, falling back to env vars."""
+    if not project_name and not project_key:
         return 'other'
-    normalized = str(project_name).strip().lower()
-    if any(normalized == p.lower() for p in STATS_PRODUCT_PROJECTS):
-        return 'product'
-    if any(normalized == p.lower() for p in STATS_TECH_PROJECTS):
-        return 'tech'
+    # First check dashboard config for typed classification
+    typed = get_selected_projects_typed()
+    if typed and project_key:
+        for item in typed:
+            if item['key'].upper() == project_key.upper():
+                return item['type']
+    # Fallback to env-var-based classification by project name
+    if project_name:
+        normalized = str(project_name).strip().lower()
+        if any(normalized == p.lower() for p in STATS_PRODUCT_PROJECTS):
+            return 'product'
+        if any(normalized == p.lower() for p in STATS_TECH_PROJECTS):
+            return 'tech'
     return 'other'
 
 
@@ -1617,7 +1648,7 @@ def fetch_tasks(include_team_name=False):
             pk = issue.get('fields', {}).get('projectKey', '')
             pn = issue.get('fields', {}).get('projectName', '')
             if pk and pk not in project_map:
-                project_map[pk] = classify_project(pn)
+                project_map[pk] = classify_project(pn, pk)
 
         data['issues'] = slim_issues
         data['epics'] = epic_details
@@ -2507,7 +2538,7 @@ def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):
         project_name = (fields.get('project') or {}).get('name')
         project_key = (fields.get('project') or {}).get('key')
         project_label = project_name or project_key or 'Unknown Project'
-        project_bucket = classify_project(project_label)
+        project_bucket = classify_project(project_label, project_key)
 
         raw_team = None
         if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
@@ -3515,24 +3546,29 @@ def get_jira_projects():
 
 @app.route('/api/projects/selected', methods=['GET'])
 def get_selected_projects_endpoint():
-    """Return the list of selected project keys from dashboard config."""
-    selected = get_selected_projects()
+    """Return the list of selected projects with type from dashboard config."""
+    selected = get_selected_projects_typed()
     return jsonify({'selected': selected})
 
 
 @app.route('/api/projects/selected', methods=['POST'])
 def save_selected_projects():
-    """Save selected project keys to dashboard config."""
+    """Save selected projects with type to dashboard config."""
     payload = request.get_json(silent=True) or {}
     selected = payload.get('selected', [])
     if not isinstance(selected, list):
         return jsonify({'error': 'selected must be an array'}), 400
-    # Sanitize: only keep non-empty strings
-    selected = [str(s).strip() for s in selected if str(s).strip()]
+    # Sanitize: accept both {key, type} objects and plain strings
+    sanitized = []
+    for item in selected:
+        if isinstance(item, dict) and item.get('key'):
+            sanitized.append({'key': str(item['key']).strip(), 'type': item.get('type', 'product')})
+        elif isinstance(item, str) and item.strip():
+            sanitized.append({'key': item.strip(), 'type': 'product'})
 
     try:
         dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        dashboard_config.setdefault('projects', {})['selected'] = selected
+        dashboard_config.setdefault('projects', {})['selected'] = sanitized
         save_dashboard_config(dashboard_config)
     except Exception as e:
         return jsonify({'error': 'Failed to save project selection', 'message': str(e)}), 500
@@ -3540,7 +3576,7 @@ def save_selected_projects():
     # Invalidate tasks cache since project scope changed
     TASKS_CACHE.clear()
 
-    return jsonify({'selected': selected})
+    return jsonify({'selected': sanitized})
 
 
 @app.route('/api/capacity/config', methods=['GET'])

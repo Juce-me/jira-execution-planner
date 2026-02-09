@@ -3564,7 +3564,8 @@ def save_capacity_config_endpoint():
 
 @app.route('/api/fields', methods=['GET'])
 def get_jira_fields():
-    """Fetch available Jira fields for field selection."""
+    """Fetch available Jira fields, optionally scoped to a project."""
+    project_key = request.args.get('project', '').strip()
     try:
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
         auth_bytes = auth_string.encode('ascii')
@@ -3573,6 +3574,39 @@ def get_jira_fields():
             'Authorization': f'Basic {auth_base64}',
             'Accept': 'application/json',
         }
+
+        if project_key:
+            # Fetch fields scoped to a specific project via createmeta
+            seen = {}
+            url = f'{JIRA_URL}/rest/api/3/issue/createmeta/{project_key}/issuetypes'
+            resp = HTTP_SESSION.get(url, headers=headers, timeout=15)
+            if resp.status_code == 200:
+                issue_types = (resp.json() or {}).get('issueTypes', resp.json() if isinstance(resp.json(), list) else [])
+                if isinstance(issue_types, list):
+                    for it in issue_types[:5]:  # sample a few issue types
+                        it_id = it.get('id', '')
+                        if not it_id:
+                            continue
+                        fields_url = f'{JIRA_URL}/rest/api/3/issue/createmeta/{project_key}/issuetypes/{it_id}'
+                        fields_resp = HTTP_SESSION.get(fields_url, headers=headers, timeout=15)
+                        if fields_resp.status_code == 200:
+                            field_values = (fields_resp.json() or {}).get('fields', fields_resp.json() if isinstance(fields_resp.json(), list) else [])
+                            if isinstance(field_values, list):
+                                for fv in field_values:
+                                    fid = fv.get('fieldId', fv.get('key', ''))
+                                    fname = fv.get('name', '')
+                                    if fid and fid not in seen:
+                                        seen[fid] = {'id': fid, 'name': fname, 'custom': fid.startswith('customfield_')}
+                            elif isinstance(field_values, dict):
+                                for fid, fv in field_values.items():
+                                    fname = fv.get('name', '') if isinstance(fv, dict) else ''
+                                    if fid and fid not in seen:
+                                        seen[fid] = {'id': fid, 'name': fname, 'custom': fid.startswith('customfield_')}
+            if seen:
+                result = sorted(seen.values(), key=lambda f: f['name'].lower())
+                return jsonify({'fields': result, 'scoped': True})
+            # Fallback to global fields if createmeta didn't work
+
         response = HTTP_SESSION.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=15)
         if response.status_code != 200:
             return jsonify({'error': 'Failed to fetch fields', 'details': response.text}), response.status_code
@@ -3585,7 +3619,7 @@ def get_jira_fields():
                 'custom': field.get('custom', False),
             })
         result.sort(key=lambda f: f['name'].lower())
-        return jsonify({'fields': result})
+        return jsonify({'fields': result, 'scoped': False})
     except Exception as e:
         return jsonify({'error': 'Failed to fetch fields', 'details': str(e)}), 500
 

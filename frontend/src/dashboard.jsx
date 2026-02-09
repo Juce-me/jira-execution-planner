@@ -403,7 +403,6 @@ import { createRoot } from 'react-dom/client';
                 loadSelectedProjects();
                 loadCapacityConfig();
                 if (!jiraProjects.length) fetchJiraProjects();
-                if (!jiraFields.length) fetchJiraFields();
                 const catalogTeams = buildTeamCatalogList(normalized.teamCatalog);
                 if (catalogTeams.length) {
                     setAvailableTeams(catalogTeams);
@@ -1174,7 +1173,8 @@ import { createRoot } from 'react-dom/client';
                     }
 
                     // Save capacity config if changed
-                    if (isCapacityDraftDirty) {
+                    const capacityChanged = isCapacityDraftDirty;
+                    if (capacityChanged) {
                         await saveCapacityConfig();
                     }
 
@@ -1212,8 +1212,8 @@ import { createRoot } from 'react-dom/client';
                         }
                     }
 
-                    // If projects changed, invalidate all group caches to refetch with new scope
-                    if (projectsChanged) {
+                    // If projects or capacity changed, invalidate all group caches to refetch with new scope
+                    if (projectsChanged || capacityChanged) {
                         groupStateRef.current.clear();
                     }
 
@@ -1226,6 +1226,16 @@ import { createRoot } from 'react-dom/client';
                         }
                         return resolveInitialGroupId(normalized);
                     });
+
+                    // Re-fetch config to update capacityEnabled and other derived state
+                    try {
+                        const cfgResp = await fetch(`${BACKEND_URL}/api/config`);
+                        if (cfgResp.ok) {
+                            const cfg = await cfgResp.json();
+                            setCapacityEnabled(Boolean(cfg.capacityProject));
+                        }
+                    } catch (_) { /* best-effort */ }
+
                     closeGroupManage();
                 } catch (err) {
                     setGroupDraftError(err.message || 'Failed to save groups.');
@@ -1378,10 +1388,11 @@ import { createRoot } from 'react-dom/client';
                 capacityBaselineRef.current = JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
             };
 
-            const fetchJiraFields = async () => {
+            const fetchJiraFields = async (projectKey) => {
                 setLoadingFields(true);
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/fields`, {
+                    const params = projectKey ? `?project=${encodeURIComponent(projectKey)}` : '';
+                    const response = await fetch(`${BACKEND_URL}/api/fields${params}`, {
                         method: 'GET',
                         headers: { 'Content-Type': 'application/json' },
                         cache: 'no-cache'
@@ -1394,6 +1405,18 @@ import { createRoot } from 'react-dom/client';
                 } finally {
                     setLoadingFields(false);
                 }
+            };
+
+            // Fetch fields when modal opens or capacity project changes
+            React.useEffect(() => {
+                if (!showGroupManage) return;
+                fetchJiraFields(capacityProjectDraft || undefined);
+            }, [capacityProjectDraft, showGroupManage]);
+
+            const resolveCapacityProjectName = (key) => {
+                if (!key) return '';
+                const p = jiraProjects.find(p => p.key === key);
+                return p ? p.name : '';
             };
 
             const capacityProjectSearchResults = React.useMemo(() => {
@@ -1421,7 +1444,7 @@ import { createRoot } from 'react-dom/client';
                     if (!capacityProjectSearchResults.length) return;
                     event.preventDefault();
                     const p = capacityProjectSearchResults[capacityProjectSearchIndex] || capacityProjectSearchResults[0];
-                    if (p) { setCapacityProjectDraft(p.name); setCapacityProjectSearchQuery(''); setCapacityProjectSearchOpen(false); }
+                    if (p) { setCapacityProjectDraft(p.key); setCapacityProjectSearchQuery(''); setCapacityProjectSearchOpen(false); }
                 } else if (event.key === 'Escape') {
                     event.preventDefault();
                     event.stopPropagation();
@@ -9583,7 +9606,7 @@ import { createRoot } from 'react-dom/client';
                                                                 <div
                                                                     key={p.key}
                                                                     className={`team-search-result-item ${index === capacityProjectSearchIndex ? 'active' : ''}`}
-                                                                    onClick={() => { setCapacityProjectDraft(p.name); setCapacityProjectSearchQuery(''); setCapacityProjectSearchOpen(false); }}
+                                                                    onClick={() => { setCapacityProjectDraft(p.key); setCapacityProjectSearchQuery(''); setCapacityProjectSearchOpen(false); }}
                                                                 >
                                                                     <strong>{p.key}</strong> &mdash; {p.name}
                                                                 </div>
@@ -9593,7 +9616,7 @@ import { createRoot } from 'react-dom/client';
                                                 </div>
                                                 {capacityProjectDraft && (
                                                     <div className="selected-team-chip">
-                                                        <span className="team-name"><strong>{capacityProjectDraft}</strong></span>
+                                                        <span className="team-name"><strong>{capacityProjectDraft}</strong>{resolveCapacityProjectName(capacityProjectDraft) ? ` \u2014 ${resolveCapacityProjectName(capacityProjectDraft)}` : ''}</span>
                                                         <button className="remove-btn" onClick={() => setCapacityProjectDraft('')} type="button" title="Remove">&times;</button>
                                                     </div>
                                                 )}

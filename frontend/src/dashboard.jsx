@@ -7698,6 +7698,45 @@ import { createRoot } from 'react-dom/client';
                     )}
 
                     <div ref={planningPanelRef} className={`planning-panel ${showPlanning && !isCompletedSprintSelected ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`}>
+                        {/* --- Planning Actions (top of panel) --- */}
+                        <div className="planning-actions">
+                            <button
+                                className={`planning-action-button ${isAcceptedIncluded ? 'active' : ''}`}
+                                onClick={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
+                                disabled={visibleTasks.length === 0}
+                                title="Include all Accepted and In Progress stories for the current view"
+                            >
+                                Include Accepted
+                            </button>
+                            <button
+                                className={`planning-action-button ${isTodoIncluded ? 'active' : ''}`}
+                                onClick={() => toggleIncludeByStatus(['To Do', 'Pending'])}
+                                disabled={visibleTasks.length === 0}
+                                title="Include all To Do / Pending stories for the current view"
+                            >
+                                Include To Do
+                            </button>
+                            <button
+                                className="uncheck-button"
+                                onClick={clearSelectedTasks}
+                                disabled={selectedCount === 0}
+                                title="Clear all selected tasks"
+                            >
+                                Uncheck Selected
+                            </button>
+                            <button
+                                className="planning-action-button planning-icon-button"
+                                onClick={openSelectedInJira}
+                                disabled={selectedCount === 0 || !jiraUrl}
+                                title="Open selected stories in Jira (tip: bulk move them to Accepted)"
+                                aria-label="Open selected stories in Jira"
+                            >
+                                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                    <path d="M10 2h4v4h-1.5V4.56L8.53 8.53l-1.06-1.06L11.44 3.5H10V2z" />
+                                    <path d="M13 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4v1.5H3.5v8h8V9H13z" />
+                                </svg>
+                            </button>
+                        </div>
                         {/* --- Capacity Bar Graph --- */}
                         {capacityEnabled && totalCapacityAdjusted > 0 ? (() => {
                             const scale = Math.max(totalCapacityAdjusted, selectedSP) * 1.15;
@@ -7769,44 +7808,6 @@ import { createRoot } from 'react-dom/client';
                                 </div>
                             </div>
                         )}
-                        <div className="planning-actions">
-                            <button
-                                className={`planning-action-button ${isAcceptedIncluded ? 'active' : ''}`}
-                                onClick={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
-                                disabled={visibleTasks.length === 0}
-                                title="Include all Accepted and In Progress stories for the current view"
-                            >
-                                Include Accepted
-                            </button>
-                            <button
-                                className={`planning-action-button ${isTodoIncluded ? 'active' : ''}`}
-                                onClick={() => toggleIncludeByStatus(['To Do', 'Pending'])}
-                                disabled={visibleTasks.length === 0}
-                                title="Include all To Do / Pending stories for the current view"
-                            >
-                                Include To Do
-                            </button>
-                            <button
-                                className="uncheck-button"
-                                onClick={clearSelectedTasks}
-                                disabled={selectedCount === 0}
-                                title="Clear all selected tasks"
-                            >
-                                Uncheck Selected
-                            </button>
-                            <button
-                                className="planning-action-button planning-icon-button"
-                                onClick={openSelectedInJira}
-                                disabled={selectedCount === 0 || !jiraUrl}
-                                title="Open selected stories in Jira (tip: bulk move them to Accepted)"
-                                aria-label="Open selected stories in Jira"
-                            >
-                                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                                    <path d="M10 2h4v4h-1.5V4.56L8.53 8.53l-1.06-1.06L11.44 3.5H10V2z" />
-                                    <path d="M13 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4v1.5H3.5v8h8V9H13z" />
-                                </svg>
-                            </button>
-                        </div>
 
                         {/* --- Team MicroBar tiles --- */}
                         {selectedTeamEntries.length > 1 && (() => {

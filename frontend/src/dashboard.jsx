@@ -1030,7 +1030,6 @@ import { createRoot } from 'react-dom/client';
                     if (currentTeams.has(team.id)) return false;
                     if (teamsInOtherGroups.has(team.id)) return false;
                     const nameLower = String(team.name || '').toLowerCase();
-                    if (!nameLower.includes('r&d')) return false;
                     return nameLower.includes(query);
                 });
             };

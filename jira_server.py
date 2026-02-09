@@ -309,6 +309,47 @@ def jira_search_request(headers, payload):
     return HTTP_SESSION.get(url, params=params, headers=headers, timeout=30)
 
 
+def fetch_teams_from_jira_api(headers):
+    """Fetch teams directly from Jira Teams REST API (team registry, not issues).
+
+    This catches teams that may not have any issues in PRODUCT/TECH projects.
+    Uses /rest/teams/1.0/teams/find which is the same API the Jira team picker uses.
+    """
+    teams = {}
+    try:
+        url = f'{JIRA_URL}/rest/teams/1.0/teams/find'
+        start_at = 0
+        max_results = 200
+        while True:
+            response = HTTP_SESSION.get(
+                url,
+                params={'query': '', 'maxResults': max_results, 'startAt': start_at},
+                headers=headers,
+                timeout=30
+            )
+            if response.status_code != 200:
+                print(f'[teams-api] Teams API returned {response.status_code}, falling back to issue scan only')
+                break
+            data = response.json()
+            team_list = data if isinstance(data, list) else data.get('teams', [])
+            if not team_list:
+                break
+            for t in team_list:
+                tid = t.get('id') or t.get('teamId')
+                tname = t.get('title') or t.get('name') or t.get('displayName')
+                if tid and tname:
+                    teams[str(tid)] = {'id': str(tid), 'name': tname}
+            # If we got fewer than max, we've fetched everything
+            if len(team_list) < max_results:
+                break
+            start_at += max_results
+        if teams:
+            print(f'[teams-api] Fetched {len(teams)} teams from Jira Teams API')
+    except Exception as e:
+        print(f'[teams-api] Teams API unavailable ({e}), using issue scan only')
+    return teams
+
+
 def build_capacity_jql(sprint_name, team_names=None):
     sprint_label = str(sprint_name or '').replace('"', '\\"')
     if team_names:
@@ -2722,11 +2763,11 @@ def get_teams():
         else:
             jql = JQL_QUERY
 
-        # If fetching all teams, remove team filter from JQL
+        # If fetching all teams, remove team filter AND sprint filter from JQL
+        # so we discover teams across all sprints, not just the current one
         if fetch_all:
             jql = remove_team_filter_from_jql(jql)
-
-        if sprint:
+        elif sprint:
             jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
 
         team_field_id = resolve_team_field_id(headers)
@@ -2798,6 +2839,14 @@ def get_teams():
                         'id': team_id,
                         'name': team_name
                     }
+
+        # When fetching all teams, also query Jira Teams API directly
+        # to catch teams that have no issues in PRODUCT/TECH projects
+        if fetch_all:
+            api_teams = fetch_teams_from_jira_api(headers)
+            for tid, tval in api_teams.items():
+                if tid not in teams_map:
+                    teams_map[tid] = tval
 
         # Sort teams by name
         teams_list = sorted(teams_map.values(), key=lambda t: t['name'].lower())

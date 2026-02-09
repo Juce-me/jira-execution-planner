@@ -1027,9 +1027,8 @@ def apply_team_ids_to_template(team_ids):
     return JQL_QUERY_TEMPLATE.replace('{TEAM_IDS}', quoted)
 
 
-def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, include_team_name, use_template, selected_projects=None):
-    projects_str = ','.join(sorted(selected_projects)) if selected_projects else ''
-    raw = f"{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{include_team_name}::{use_template}::{projects_str}"
+def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, include_team_name, use_template):
+    raw = f"{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{include_team_name}::{use_template}"
     digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
     return f"tasks:{digest}"
 
@@ -1403,15 +1402,13 @@ def fetch_tasks(include_team_name=False):
         project_filter = request.args.get('project', '').strip().lower()
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
-        selected_projects = get_selected_projects()
         cache_key = build_tasks_cache_key(
             sprint,
             group_id,
             project_filter,
             team_ids if use_template else [],
             include_team_name,
-            use_template,
-            selected_projects
+            use_template
         )
         cached_entry = TASKS_CACHE.get(cache_key)
         if cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
@@ -1450,21 +1447,27 @@ def fetch_tasks(include_team_name=False):
         else:
             jql = JQL_QUERY
 
-        # Apply selected projects scope from dashboard config
-        if selected_projects:
-            jql = remove_project_filter_from_jql(jql)
-            quoted = ', '.join(f'"{p}"' for p in selected_projects)
-            jql = add_clause_to_jql(jql, f'project in ({quoted})')
-
         if sprint:
             jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
 
         if team and team.lower() != 'all' and not use_template and not team_ids:
             jql = add_clause_to_jql(jql, f'"Team[Team]" = {team}')
 
-        if project_filter in ('product', 'tech') and not selected_projects:
-            project_name = JIRA_PRODUCT_PROJECT if project_filter == 'product' else JIRA_TECH_PROJECT
-            jql = add_clause_to_jql(jql, f'project = "{project_name}"')
+        # Apply project filter — use config-typed projects when available, else env vars
+        if project_filter in ('product', 'tech'):
+            typed = get_selected_projects_typed()
+            if typed:
+                matching_keys = [item['key'] for item in typed if item['type'] == project_filter]
+                if matching_keys:
+                    jql = remove_project_filter_from_jql(jql)
+                    if len(matching_keys) == 1:
+                        jql = add_clause_to_jql(jql, f'project = "{matching_keys[0]}"')
+                    else:
+                        quoted = ', '.join(f'"{k}"' for k in matching_keys)
+                        jql = add_clause_to_jql(jql, f'project in ({quoted})')
+            else:
+                project_name = JIRA_PRODUCT_PROJECT if project_filter == 'product' else JIRA_TECH_PROJECT
+                jql = add_clause_to_jql(jql, f'project = "{project_name}"')
 
         team_field_id = resolve_team_field_id(headers)
         epic_link_field_id = resolve_epic_link_field_id(headers)
@@ -1642,19 +1645,10 @@ def fetch_tasks(include_team_name=False):
                 }
             })
 
-        # Build project classification map from discovered projects
-        project_map = {}
-        for issue in slim_issues:
-            pk = issue.get('fields', {}).get('projectKey', '')
-            pn = issue.get('fields', {}).get('projectName', '')
-            if pk and pk not in project_map:
-                project_map[pk] = classify_project(pn, pk)
-
         data['issues'] = slim_issues
         data['epics'] = epic_details
         data['epicsInScope'] = epics_in_scope
         data['teamFieldId'] = team_field_id
-        data['projectClassification'] = project_map
 
         print(f'✅ Success! Found {len(data.get("issues", []))} issues')
         TASKS_CACHE[cache_key] = {
@@ -3506,10 +3500,17 @@ def save_groups_config():
     return jsonify(normalized)
 
 
+PROJECTS_CACHE = {'data': None, 'timestamp': 0}
+PROJECTS_CACHE_TTL = 60 * 60  # 1 hour
+
 @app.route('/api/projects', methods=['GET'])
 def get_jira_projects():
-    """Fetch available Jira projects via project search API."""
+    """Fetch available Jira projects via project search API with caching."""
     try:
+        # Return cached data if fresh
+        if PROJECTS_CACHE['data'] and (time.time() - PROJECTS_CACHE['timestamp']) < PROJECTS_CACHE_TTL:
+            return jsonify({'projects': PROJECTS_CACHE['data']})
+
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
         auth_bytes = auth_string.encode('ascii')
         auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
@@ -3519,11 +3520,14 @@ def get_jira_projects():
             'Content-Type': 'application/json'
         }
 
+        query = request.args.get('query', '').strip()
         all_projects = []
         start_at = 0
-        max_results = 50
+        max_results = 200
         while True:
             url = f'{JIRA_URL}/rest/api/3/project/search?startAt={start_at}&maxResults={max_results}&orderBy=key'
+            if query:
+                url += f'&query={query}'
             response = HTTP_SESSION.get(url, headers=headers, timeout=15)
             if response.status_code != 200:
                 return jsonify({'error': 'Failed to fetch projects', 'details': response.text}), response.status_code
@@ -3538,6 +3542,11 @@ def get_jira_projects():
             if data.get('isLast', True):
                 break
             start_at += max_results
+
+        # Cache results (only for unfiltered full list)
+        if not query:
+            PROJECTS_CACHE['data'] = all_projects
+            PROJECTS_CACHE['timestamp'] = time.time()
 
         return jsonify({'projects': all_projects})
     except Exception as e:

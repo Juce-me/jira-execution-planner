@@ -161,7 +161,9 @@ import { createRoot } from 'react-dom/client';
             const [projectSearchOpen, setProjectSearchOpen] = useState(false);
             const [projectSearchIndex, setProjectSearchIndex] = useState(0);
             const [selectedProjectsDraft, setSelectedProjectsDraft] = useState([]);
+            const [savedSelectedProjects, setSavedSelectedProjects] = useState([]);
             const selectedProjectsBaselineRef = useRef('[]');
+            const lastProjectClassificationRef = useRef({});
             const projectSearchInputRef = useRef(null);
             const [capacityProjectDraft, setCapacityProjectDraft] = useState('');
             const [capacityFieldIdDraft, setCapacityFieldIdDraft] = useState('');
@@ -335,6 +337,7 @@ import { createRoot } from 'react-dom/client';
                 // Load config and sprints on component mount
                 loadConfig();
                 loadGroupsConfig();
+                loadSelectedProjects();
                 loadSprints();
             }, []);
 
@@ -1273,6 +1276,7 @@ import { createRoot } from 'react-dom/client';
                     const data = await response.json();
                     const selected = data.selected || [];
                     setSelectedProjectsDraft(selected);
+                    setSavedSelectedProjects(selected);
                     selectedProjectsBaselineRef.current = JSON.stringify(selected);
                 } catch (err) {
                     console.error('Failed to load selected projects:', err);
@@ -1349,6 +1353,7 @@ import { createRoot } from 'react-dom/client';
                         throw new Error(errorPayload.error || `Save failed (${response.status})`);
                     }
                     selectedProjectsBaselineRef.current = JSON.stringify(selectedProjectsDraft);
+                    setSavedSelectedProjects([...selectedProjectsDraft]);
                 } catch (err) {
                     setGroupDraftError(err.message || 'Failed to save project selection.');
                     throw err;
@@ -2549,6 +2554,11 @@ import { createRoot } from 'react-dom/client';
                     const data = await response.json();
                     console.log('Success! Received data:', data);
 
+                    // Store project classification map from backend
+                    if (data.projectClassification) {
+                        lastProjectClassificationRef.current = data.projectClassification;
+                    }
+
                     // Sort by priority
                     const sortedTasks = (data.issues || []).sort((a, b) => {
                         const priorityA = priorityOrder[a.fields.priority?.name] || 999;
@@ -2574,7 +2584,20 @@ import { createRoot } from 'react-dom/client';
 
 	                    if (options.updateEpics !== false) {
 	                        setEpicDetails(prev => ({ ...prev, ...filteredEpics }));
-	                        if (project === 'product') {
+	                        if (project === 'all') {
+	                            // Unified fetch: split epics by project classification
+	                            const classMap = lastProjectClassificationRef.current;
+	                            const prodEpics = filteredEpicsInScope.filter(e => {
+	                                const pk = e?.projectKey || '';
+	                                return (classMap[pk] || 'product') !== 'tech';
+	                            });
+	                            const techEpics = filteredEpicsInScope.filter(e => {
+	                                const pk = e?.projectKey || '';
+	                                return classMap[pk] === 'tech';
+	                            });
+	                            setProductEpicsInScope(prodEpics);
+	                            setTechEpicsInScope(techEpics);
+	                        } else if (project === 'product') {
 	                            setProductEpicsInScope(filteredEpicsInScope);
 	                        } else if (project === 'tech') {
 	                            setTechEpicsInScope(filteredEpicsInScope);
@@ -2604,11 +2627,58 @@ import { createRoot } from 'react-dom/client';
 
             const loadProductTasks = async () => {
                 const sprintId = selectedSprint;
+                const useUnifiedFetch = savedSelectedProjects.length > 0;
                 setProductTasksLoading(true);
+                if (useUnifiedFetch) setTechTasksLoading(true);
                 try {
                     if (activeGroupId && activeGroupTeamIds.length === 0) {
                         setProductTasks([]);
                         setLoadedProductTasks([]);
+                        setTasksFetched(true);
+                        if (useUnifiedFetch) {
+                            setTechTasks([]);
+                            setLoadedTechTasks([]);
+                            setTechLoaded(true);
+                        }
+                        const current = sprintLoadRef.current;
+                        sprintLoadRef.current = {
+                            sprintId,
+                            product: true,
+                            tech: useUnifiedFetch ? true : (current.sprintId === sprintId ? current.tech : false)
+                        };
+                        if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
+                            lastLoadedSprintRef.current = sprintId;
+                        }
+                        return;
+                    }
+                    if (useUnifiedFetch) {
+                        // Single fetch for all selected projects, then split by classification
+                        const allTasks = await fetchTasks('all');
+                        const classMap = lastProjectClassificationRef.current;
+                        const productItems = [];
+                        const techItems = [];
+                        for (const task of allTasks) {
+                            const pk = task.fields?.projectKey || '';
+                            const bucket = classMap[pk] || 'other';
+                            if (bucket === 'tech') {
+                                techItems.push(task);
+                            } else {
+                                // 'product' and 'other' go into product bucket
+                                productItems.push(task);
+                            }
+                        }
+                        setProductTasks(productItems);
+                        setLoadedProductTasks(productItems);
+                        setTechTasks(techItems);
+                        setLoadedTechTasks(techItems);
+                        setTechLoaded(true);
+                        setTasksFetched(true);
+                        sprintLoadRef.current = { sprintId, product: true, tech: true };
+                        lastLoadedSprintRef.current = sprintId;
+                    } else {
+                        const data = await fetchTasks('product');
+                        setProductTasks(data);
+                        setLoadedProductTasks(data);
                         setTasksFetched(true);
                         const current = sprintLoadRef.current;
                         sprintLoadRef.current = {
@@ -2619,27 +2689,18 @@ import { createRoot } from 'react-dom/client';
                         if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
                             lastLoadedSprintRef.current = sprintId;
                         }
-                        return;
-                    }
-                    const data = await fetchTasks('product');
-                    setProductTasks(data);
-                    setLoadedProductTasks(data);
-                    setTasksFetched(true);
-                    const current = sprintLoadRef.current;
-                    sprintLoadRef.current = {
-                        sprintId,
-                        product: true,
-                        tech: current.sprintId === sprintId ? current.tech : false
-                    };
-                    if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
-                        lastLoadedSprintRef.current = sprintId;
                     }
                 } finally {
                     setProductTasksLoading(false);
+                    if (useUnifiedFetch) setTechTasksLoading(false);
                 }
             };
 
             const loadTechTasks = async () => {
+                // When using unified fetch (selected projects configured),
+                // loadProductTasks handles both product and tech
+                if (savedSelectedProjects.length > 0) return;
+
                 const sprintId = selectedSprint;
                 setTechTasksLoading(true);
                 try {
@@ -2771,19 +2832,44 @@ import { createRoot } from 'react-dom/client';
                 if (activeGroupId && activeGroupTeamIds.length === 0) {
                     setReadyToCloseProductTasks([]);
                     setReadyToCloseProductEpicsInScope([]);
+                    if (savedSelectedProjects.length > 0) {
+                        setReadyToCloseTechTasks([]);
+                        setReadyToCloseTechEpicsInScope([]);
+                    }
                     return;
                 }
-                const data = await fetchTasks('product', {
-                    sprintOverride: '',
-                    updateEpics: false,
-                    epicsInScopeSetter: setReadyToCloseProductEpicsInScope,
-                    useLoading: false,
-                    setErrorOnFailure: false
-                });
-                setReadyToCloseProductTasks(data);
+                if (savedSelectedProjects.length > 0) {
+                    // Unified fetch — split by classification
+                    const allData = await fetchTasks('all', {
+                        sprintOverride: '',
+                        updateEpics: false,
+                        useLoading: false,
+                        setErrorOnFailure: false
+                    });
+                    const classMap = lastProjectClassificationRef.current;
+                    const prodItems = [];
+                    const techItems = [];
+                    for (const task of allData) {
+                        const pk = task.fields?.projectKey || '';
+                        if (classMap[pk] === 'tech') techItems.push(task);
+                        else prodItems.push(task);
+                    }
+                    setReadyToCloseProductTasks(prodItems);
+                    setReadyToCloseTechTasks(techItems);
+                } else {
+                    const data = await fetchTasks('product', {
+                        sprintOverride: '',
+                        updateEpics: false,
+                        epicsInScopeSetter: setReadyToCloseProductEpicsInScope,
+                        useLoading: false,
+                        setErrorOnFailure: false
+                    });
+                    setReadyToCloseProductTasks(data);
+                }
             };
 
             const loadReadyToCloseTechTasks = async () => {
+                if (savedSelectedProjects.length > 0) return;
                 if (activeGroupId && activeGroupTeamIds.length === 0) {
                     setReadyToCloseTechTasks([]);
                     setReadyToCloseTechEpicsInScope([]);

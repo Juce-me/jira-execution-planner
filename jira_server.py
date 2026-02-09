@@ -1447,7 +1447,8 @@ def fetch_tasks(include_team_name=False):
             'assignee',
             'updated',
             'customfield_10004',  # Story Points
-            'parent'
+            'parent',
+            'project'
         ]
         if epic_link_field_id and epic_link_field_id not in fields_list:
             fields_list.append(epic_link_field_id)
@@ -1588,6 +1589,7 @@ def fetch_tasks(include_team_name=False):
             priority = fields.get('priority') or {}
             issuetype = fields.get('issuetype') or {}
             assignee = fields.get('assignee') or {}
+            project_field = fields.get('project') or {}
             slim_issues.append({
                 'id': issue.get('id'),
                 'key': issue.get('key'),
@@ -1603,14 +1605,25 @@ def fetch_tasks(include_team_name=False):
                     'teamName': fields.get('teamName'),
                     'teamId': fields.get('teamId'),
                     'epicKey': fields.get('epicKey'),
-                    'parentSummary': fields.get('parentSummary')
+                    'parentSummary': fields.get('parentSummary'),
+                    'projectKey': project_field.get('key', ''),
+                    'projectName': project_field.get('name', '')
                 }
             })
+
+        # Build project classification map from discovered projects
+        project_map = {}
+        for issue in slim_issues:
+            pk = issue.get('fields', {}).get('projectKey', '')
+            pn = issue.get('fields', {}).get('projectName', '')
+            if pk and pk not in project_map:
+                project_map[pk] = classify_project(pn)
 
         data['issues'] = slim_issues
         data['epics'] = epic_details
         data['epicsInScope'] = epics_in_scope
         data['teamFieldId'] = team_field_id
+        data['projectClassification'] = project_map
 
         print(f'✅ Success! Found {len(data.get("issues", []))} issues')
         TASKS_CACHE[cache_key] = {

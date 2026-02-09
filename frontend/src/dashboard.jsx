@@ -7675,52 +7675,42 @@ import { createRoot } from 'react-dom/client';
                     <div ref={planningPanelRef} className={`planning-panel ${showPlanning && !isCompletedSprintSelected ? 'open' : ''}`}>
                         {/* --- Capacity Bar Graph --- */}
                         {capacityEnabled && totalCapacityAdjusted > 0 ? (() => {
-                            const scale = totalCapacityAdjusted * 1.3;
-                            const barW = 400;
-                            const barH = 28;
-                            const svgH = 52;
-                            const toX = (v) => Math.min(barW, (v / scale) * barW);
-                            const selectedX = toX(selectedSP);
-                            const planningX = toX(estimatedCapacityAdjusted);
-                            const teamCapX = toX(totalCapacityAdjusted);
-                            const excludedW = teamCapX - planningX;
-                            const variancePct = ((selectedSP / totalCapacityAdjusted) - 1) * 100;
-                            const barColor = capacitySummary.status === 'over' ? '#d4380d' : capacitySummary.status === 'under' ? '#cf8700' : '#389e0d';
+                            const scale = Math.max(totalCapacityAdjusted, selectedSP) * 1.15;
+                            const toPct = (v) => Math.min(100, (v / scale) * 100);
+                            const selectedPct = toPct(selectedSP);
+                            const planningPct = toPct(estimatedCapacityAdjusted);
+                            const teamCapPct = toPct(totalCapacityAdjusted);
+                            const isOver = capacitySummary.status === 'over';
+                            const isUnder = capacitySummary.status === 'under';
                             return (
                                 <div className="capacity-bar-graph">
-                                    <svg viewBox={`0 0 ${barW} ${svgH}`} preserveAspectRatio="xMinYMin meet" className="capacity-bar-svg">
-                                        {/* Track */}
-                                        <rect x="0" y="0" width={barW} height={barH} rx="4" fill="#e0ddd7" />
-                                        {/* Excluded zone (hatched region between planning and team cap) */}
+                                    <div className="capacity-bar-track">
+                                        {/* Excluded zone */}
                                         {excludedCapacityAdjusted > 0 && (
-                                            <rect x={planningX} y="0" width={excludedW} height={barH} fill="#ccc" rx="0" />
+                                            <div className="capacity-bar-excluded-zone" style={{ left: `${planningPct}%`, width: `${teamCapPct - planningPct}%` }} />
                                         )}
                                         {/* Selected fill */}
-                                        <rect x="0" y="0" width={selectedX} height={barH} rx="4" fill={barColor} />
-                                        {/* Planning capacity marker */}
-                                        <line x1={planningX} y1="0" x2={planningX} y2={barH + 3} stroke="#666" strokeWidth="1.5" strokeDasharray="3 2" />
-                                        <text x={planningX} y={barH + 12} textAnchor="middle" className="capacity-bar-tick">Planning {estimatedCapacityAdjusted.toFixed(1)}</text>
-                                        {/* Team capacity marker */}
-                                        <line x1={teamCapX} y1="0" x2={teamCapX} y2={barH + 3} stroke="var(--text-primary)" strokeWidth="2" />
-                                        <text x={teamCapX} y={barH + 12} textAnchor="middle" className="capacity-bar-tick">Team Cap {totalCapacityAdjusted.toFixed(1)}</text>
-                                        {/* Selected label inside bar */}
-                                        <text x={Math.min(selectedX - 3, barW - 3)} y={barH / 2} dominantBaseline="central" textAnchor="end" className="capacity-bar-label">
-                                            {selectedCount} tasks · {selectedSP.toFixed(1)} SP
-                                        </text>
-                                        {/* Excluded label */}
-                                        {excludedCapacityAdjusted > 0 && excludedW > 30 && (
-                                            <text x={planningX + excludedW / 2} y={barH / 2} dominantBaseline="central" textAnchor="middle" className="capacity-bar-excluded-label">
-                                                Excl {excludedCapacityAdjusted.toFixed(1)}
-                                            </text>
-                                        )}
-                                    </svg>
-                                    <div className="capacity-bar-summary">
+                                        <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}`} style={{ width: `${selectedPct}%` }}>
+                                            <span className="capacity-bar-fill-label">{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>
+                                        </div>
+                                        {/* Planning marker */}
+                                        <div className="capacity-bar-marker planning" style={{ left: `${planningPct}%` }}>
+                                            <div className="capacity-bar-marker-line dashed" />
+                                            <div className="capacity-bar-marker-label">Planning<br/>{estimatedCapacityAdjusted.toFixed(1)}</div>
+                                        </div>
+                                        {/* Team cap marker */}
+                                        <div className="capacity-bar-marker teamcap" style={{ left: `${teamCapPct}%` }}>
+                                            <div className="capacity-bar-marker-line" />
+                                            <div className="capacity-bar-marker-label">Team Cap<br/>{totalCapacityAdjusted.toFixed(1)}</div>
+                                        </div>
+                                    </div>
+                                    <div className="capacity-bar-footer">
                                         <span className={`capacity-bar-variance ${capacitySummary.status}`}>
-                                            Variance: {capacitySummary.label || '0%'}
+                                            {capacitySummary.label || '0%'} variance
                                         </span>
-                                        {excludedCapacityAdjusted > 0 && excludedW <= 30 && (
+                                        {excludedCapacityAdjusted > 0 && (
                                             <span className="capacity-bar-excluded-note clickable-number" onClick={() => scrollToFirstExcludedEpic('any')}>
-                                                Excluded: {excludedCapacityAdjusted.toFixed(1)} SP
+                                                {excludedCapacityAdjusted.toFixed(1)} SP excluded
                                             </span>
                                         )}
                                     </div>

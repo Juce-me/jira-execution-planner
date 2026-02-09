@@ -7733,17 +7733,6 @@ import { createRoot } from 'react-dom/client';
                                         >
                                             {capacitySummary.label || '0%'} variance
                                         </span>
-                                        {excludedCapacityAdjusted > 0 && (
-                                            <span
-                                                className="capacity-bar-excluded-note clickable-number"
-                                                data-tooltip={`Capacity reserved for excluded mandatory epics (${excludedCapacityAdjusted.toFixed(1)} SP). Click to scroll to first excluded epic.`}
-                                                onClick={() => scrollToFirstExcludedEpic('any')}
-                                                onMouseEnter={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.add('highlight-excluded')}
-                                                onMouseLeave={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.remove('highlight-excluded')}
-                                            >
-                                                {excludedCapacityAdjusted.toFixed(1)} SP excluded
-                                            </span>
-                                        )}
                                     </div>
                                 </div>
                             );

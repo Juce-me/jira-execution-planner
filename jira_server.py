@@ -1431,7 +1431,7 @@ def fetch_tasks(include_team_name=False):
         if team and team.lower() != 'all' and not use_template and not team_ids:
             jql = add_clause_to_jql(jql, f'"Team[Team]" = {team}')
 
-        if project_filter in ('product', 'tech'):
+        if project_filter in ('product', 'tech') and not selected_projects:
             project_name = JIRA_PRODUCT_PROJECT if project_filter == 'product' else JIRA_TECH_PROJECT
             jql = add_clause_to_jql(jql, f'project = "{project_name}"')
 

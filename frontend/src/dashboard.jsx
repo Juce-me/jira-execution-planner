@@ -819,6 +819,10 @@ import { createRoot } from 'react-dom/client';
                 return JSON.stringify(selectedProjectsDraft) !== selectedProjectsBaselineRef.current;
             }, [selectedProjectsDraft]);
 
+            const isCapacityDraftDirty = React.useMemo(() => {
+                return JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }) !== capacityBaselineRef.current;
+            }, [capacityProjectDraft, capacityFieldIdDraft, capacityFieldNameDraft]);
+
             const isGroupDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
                 if (isCapacityDraftDirty) return true;
@@ -1373,10 +1377,6 @@ import { createRoot } from 'react-dom/client';
                 }
                 capacityBaselineRef.current = JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
             };
-
-            const isCapacityDraftDirty = React.useMemo(() => {
-                return JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }) !== capacityBaselineRef.current;
-            }, [capacityProjectDraft, capacityFieldIdDraft, capacityFieldNameDraft]);
 
             const fetchJiraFields = async () => {
                 setLoadingFields(true);

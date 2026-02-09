@@ -1454,10 +1454,10 @@ import { createRoot } from 'react-dom/client';
 
             const capacityFieldSearchResults = React.useMemo(() => {
                 const query = capacityFieldSearchQuery.toLowerCase().trim();
-                if (!query) return [];
+                if (!query) return jiraFields.slice(0, 20);
                 return jiraFields.filter(f => {
                     return f.id.toLowerCase().includes(query) || f.name.toLowerCase().includes(query);
-                }).slice(0, 10);
+                }).slice(0, 20);
             }, [capacityFieldSearchQuery, jiraFields]);
 
             React.useEffect(() => {
@@ -9637,11 +9637,9 @@ import { createRoot } from 'react-dom/client';
                                                             ref={capacityFieldSearchInputRef}
                                                             disabled={loadingFields && !jiraFields.length}
                                                         />
-                                                        {capacityFieldSearchOpen && capacityFieldSearchQuery.trim() && (
+                                                        {capacityFieldSearchOpen && capacityFieldSearchResults.length > 0 && (
                                                             <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                {capacityFieldSearchResults.length === 0 ? (
-                                                                    <div className="team-search-result-item is-empty">No fields found</div>
-                                                                ) : capacityFieldSearchResults.map((f, index) => (
+                                                                {capacityFieldSearchResults.map((f, index) => (
                                                                     <div
                                                                         key={f.id}
                                                                         className={`team-search-result-item ${index === capacityFieldSearchIndex ? 'active' : ''}`}

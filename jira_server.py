@@ -761,9 +761,9 @@ def get_capacity_config():
     if config and 'capacity' in config:
         cap = config['capacity']
         return {
-            'project': cap.get('project', '') or CAPACITY_PROJECT,
-            'fieldId': cap.get('fieldId', '') or CAPACITY_FIELD_ID,
-            'fieldName': cap.get('fieldName', '') or CAPACITY_FIELD_NAME,
+            'project': cap.get('project', ''),
+            'fieldId': cap.get('fieldId', ''),
+            'fieldName': cap.get('fieldName', ''),
         }
     return {
         'project': CAPACITY_PROJECT,

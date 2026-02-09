@@ -4398,6 +4398,73 @@
             color: var(--text-secondary);
         }
 
+        .capacity-bar-variance,
+        .capacity-bar-excluded-note {
+            cursor: default;
+            border-bottom: 1px dashed transparent;
+            transition: border-color 0.15s;
+        }
+
+        .capacity-bar-variance:hover,
+        .capacity-bar-excluded-note:hover {
+            border-bottom-color: currentColor;
+        }
+
+        /* Variance overshoot zone (beyond team cap) */
+        .capacity-bar-variance-zone {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .highlight-variance .capacity-bar-variance-zone {
+            opacity: 1;
+            background: rgba(212, 56, 13, 0.25);
+            outline: 2px solid rgba(212, 56, 13, 0.5);
+            outline-offset: -1px;
+            border-radius: 0 6px 6px 0;
+        }
+
+        /* When under: highlight the unfilled gap between selected and team cap */
+        .highlight-variance .capacity-bar-fill {
+            box-shadow: none;
+        }
+
+        .highlight-variance .capacity-bar-track::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            height: 100%;
+            background: rgba(212, 56, 13, 0.12);
+            border: 2px dashed rgba(212, 56, 13, 0.4);
+            border-radius: 6px;
+            pointer-events: none;
+            left: 0;
+            opacity: 0;
+        }
+
+        /* Excluded zone highlight */
+        .capacity-bar-excluded-zone {
+            transition: box-shadow 0.2s, outline 0.2s;
+        }
+
+        .highlight-excluded .capacity-bar-excluded-zone {
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);
+            outline: 2px solid rgba(0, 0, 0, 0.35);
+            outline-offset: -1px;
+            background: repeating-linear-gradient(
+                -45deg,
+                rgba(0, 0, 0, 0.08),
+                rgba(0, 0, 0, 0.08) 3px,
+                rgba(0, 0, 0, 0.16) 3px,
+                rgba(0, 0, 0, 0.16) 5px
+            );
+        }
+
         .planning-stats {
             display: flex;
             gap: 0.85rem;

@@ -7693,12 +7693,17 @@ import { createRoot } from 'react-dom/client';
                             const teamCapPct = toPct(totalCapacityAdjusted);
                             const isOver = capacitySummary.status === 'over';
                             const isUnder = capacitySummary.status === 'under';
+                            const varianceOverPct = isOver ? selectedPct - teamCapPct : 0;
                             return (
                                 <div className="capacity-bar-graph">
                                     <div className="capacity-bar-track">
                                         {/* Excluded zone */}
                                         {excludedCapacityAdjusted > 0 && (
                                             <div className="capacity-bar-excluded-zone" style={{ left: `${planningPct}%`, width: `${teamCapPct - planningPct}%` }} />
+                                        )}
+                                        {/* Variance overshoot zone */}
+                                        {varianceOverPct > 0 && (
+                                            <div className="capacity-bar-variance-zone" style={{ left: `${teamCapPct}%`, width: `${varianceOverPct}%` }} />
                                         )}
                                         {/* Selected fill */}
                                         <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}`} style={{ width: `${selectedPct}%` }}>
@@ -7716,11 +7721,20 @@ import { createRoot } from 'react-dom/client';
                                         </div>
                                     </div>
                                     <div className="capacity-bar-footer">
-                                        <span className={`capacity-bar-variance ${capacitySummary.status}`}>
+                                        <span
+                                            className={`capacity-bar-variance ${capacitySummary.status}`}
+                                            onMouseEnter={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.add('highlight-variance')}
+                                            onMouseLeave={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.remove('highlight-variance')}
+                                        >
                                             {capacitySummary.label || '0%'} variance
                                         </span>
                                         {excludedCapacityAdjusted > 0 && (
-                                            <span className="capacity-bar-excluded-note clickable-number" onClick={() => scrollToFirstExcludedEpic('any')}>
+                                            <span
+                                                className="capacity-bar-excluded-note clickable-number"
+                                                onClick={() => scrollToFirstExcludedEpic('any')}
+                                                onMouseEnter={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.add('highlight-excluded')}
+                                                onMouseLeave={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.remove('highlight-excluded')}
+                                            >
                                                 {excludedCapacityAdjusted.toFixed(1)} SP excluded
                                             </span>
                                         )}

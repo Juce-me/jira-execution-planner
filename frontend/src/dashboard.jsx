@@ -350,6 +350,17 @@ import { createRoot } from 'react-dom/client';
                 };
             }, [abortSprintFetches]);
 
+            // Auto-open settings modal on first launch (no config file exists)
+            const hasAutoOpenedRef = useRef(false);
+            useEffect(() => {
+                if (hasAutoOpenedRef.current) return;
+                if (groupsLoading) return;
+                if (groupConfigSource === 'auto') {
+                    hasAutoOpenedRef.current = true;
+                    setShowGroupManage(true);
+                }
+            }, [groupsLoading, groupConfigSource]);
+
             useEffect(() => {
                 if (!showGroupManage) return;
                 const normalized = normalizeGroupsConfig(groupsConfig);

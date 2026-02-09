@@ -36,6 +36,7 @@ sprints_cache.json
 stats_cache.json
 teams.json
 team-groups.json
+dashboard-config.json
 
 # Local artifacts
 avaliablefields.txt

@@ -154,6 +154,15 @@ import { createRoot } from 'react-dom/client';
             const [showGroupDiscardConfirm, setShowGroupDiscardConfirm] = useState(false);
             const groupDraftBaselineRef = useRef('');
             const [groupQueryTemplateEnabled, setGroupQueryTemplateEnabled] = useState(false);
+            const [groupManageTab, setGroupManageTab] = useState('projects');
+            const [jiraProjects, setJiraProjects] = useState([]);
+            const [loadingProjects, setLoadingProjects] = useState(false);
+            const [projectSearchQuery, setProjectSearchQuery] = useState('');
+            const [projectSearchOpen, setProjectSearchOpen] = useState(false);
+            const [projectSearchIndex, setProjectSearchIndex] = useState(0);
+            const [selectedProjectsDraft, setSelectedProjectsDraft] = useState([]);
+            const selectedProjectsBaselineRef = useRef('[]');
+            const projectSearchInputRef = useRef(null);
             const [jiraUrl, setJiraUrl] = useState('');
             const [selectedTasks, setSelectedTasks] = useState({});
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
@@ -363,7 +372,11 @@ import { createRoot } from 'react-dom/client';
                 setTeamSearchFeedback({});
                 setShowGroupDiscardConfirm(false);
                 setShowGroupListMobile(false);
+                setGroupManageTab('projects');
+                setProjectSearchQuery('');
                 setActiveGroupDraftId(resolveInitialGroupId(normalized));
+                loadSelectedProjects();
+                if (!jiraProjects.length) fetchJiraProjects();
                 const catalogTeams = buildTeamCatalogList(normalized.teamCatalog);
                 if (catalogTeams.length) {
                     setAvailableTeams(catalogTeams);
@@ -754,6 +767,10 @@ import { createRoot } from 'react-dom/client';
                 setShowGroupAdvanced(false);
                 setShowGroupDiscardConfirm(false);
                 setShowGroupListMobile(false);
+                setGroupManageTab('projects');
+                setProjectSearchQuery('');
+                setProjectSearchOpen(false);
+                setProjectSearchIndex(0);
             };
 
             const groupDraftSignature = React.useMemo(() => {
@@ -767,10 +784,15 @@ import { createRoot } from 'react-dom/client';
                 });
             }, [groupDraft]);
 
+            const isProjectsDraftDirty = React.useMemo(() => {
+                return JSON.stringify(selectedProjectsDraft) !== selectedProjectsBaselineRef.current;
+            }, [selectedProjectsDraft]);
+
             const isGroupDraftDirty = React.useMemo(() => {
+                if (isProjectsDraftDirty) return true;
                 if (!groupDraft) return false;
                 return groupDraftSignature !== groupDraftBaselineRef.current;
-            }, [groupDraftSignature, groupDraft]);
+            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty]);
 
             const requestCloseGroupManage = () => {
                 if (groupSaving) return;
@@ -1109,6 +1131,12 @@ import { createRoot } from 'react-dom/client';
                 setGroupSaving(true);
                 setGroupDraftError('');
                 try {
+                    // Save project selection if changed
+                    const projectsChanged = isProjectsDraftDirty;
+                    if (projectsChanged) {
+                        await saveProjectSelection();
+                    }
+
                     // Capture the current active group's team IDs before saving
                     const currentActiveGroup = activeGroupId ? (groupsConfig.groups || []).find(g => g.id === activeGroupId) : null;
                     const currentTeamSignature = currentActiveGroup ? (currentActiveGroup.teamIds || []).join('|') : null;
@@ -1143,6 +1171,11 @@ import { createRoot } from 'react-dom/client';
                         }
                     }
 
+                    // If projects changed, invalidate all group caches to refetch with new scope
+                    if (projectsChanged) {
+                        groupStateRef.current.clear();
+                    }
+
                     setGroupsConfig(normalized);
                     setGroupWarnings(payload.warnings || []);
                     setGroupConfigSource(payload.source || '');
@@ -1155,6 +1188,119 @@ import { createRoot } from 'react-dom/client';
                     closeGroupManage();
                 } catch (err) {
                     setGroupDraftError(err.message || 'Failed to save groups.');
+                } finally {
+                    setGroupSaving(false);
+                }
+            };
+
+            const fetchJiraProjects = async () => {
+                setLoadingProjects(true);
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/projects`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' },
+                        cache: 'no-cache'
+                    });
+                    if (!response.ok) throw new Error(`Projects fetch error ${response.status}`);
+                    const data = await response.json();
+                    setJiraProjects(data.projects || []);
+                } catch (err) {
+                    console.error('Failed to fetch Jira projects:', err);
+                } finally {
+                    setLoadingProjects(false);
+                }
+            };
+
+            const loadSelectedProjects = async () => {
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/projects/selected`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' },
+                        cache: 'no-cache'
+                    });
+                    if (!response.ok) throw new Error(`Selected projects fetch error ${response.status}`);
+                    const data = await response.json();
+                    const selected = data.selected || [];
+                    setSelectedProjectsDraft(selected);
+                    selectedProjectsBaselineRef.current = JSON.stringify(selected);
+                } catch (err) {
+                    console.error('Failed to load selected projects:', err);
+                }
+            };
+
+            const addProjectSelection = (key) => {
+                setSelectedProjectsDraft(prev => {
+                    if (prev.includes(key)) return prev;
+                    return [...prev, key];
+                });
+                setProjectSearchQuery('');
+                setProjectSearchOpen(true);
+                if (projectSearchInputRef.current) projectSearchInputRef.current.focus();
+            };
+
+            const removeProjectSelection = (key) => {
+                setSelectedProjectsDraft(prev => prev.filter(k => k !== key));
+            };
+
+            const projectSearchResults = React.useMemo(() => {
+                const query = projectSearchQuery.toLowerCase().trim();
+                if (!query) return [];
+                return jiraProjects.filter(p => {
+                    if (selectedProjectsDraft.includes(p.key)) return false;
+                    return p.key.toLowerCase().includes(query) || p.name.toLowerCase().includes(query);
+                }).slice(0, 10);
+            }, [projectSearchQuery, jiraProjects, selectedProjectsDraft]);
+
+            React.useEffect(() => {
+                const maxIndex = projectSearchResults.length - 1;
+                if (projectSearchIndex > maxIndex) setProjectSearchIndex(0);
+            }, [projectSearchResults.length]);
+
+            const handleProjectSearchKeyDown = (event) => {
+                if (event.key === 'ArrowDown') {
+                    if (!projectSearchResults.length) return;
+                    event.preventDefault();
+                    setProjectSearchIndex(prev => Math.min(prev + 1, projectSearchResults.length - 1));
+                } else if (event.key === 'ArrowUp') {
+                    if (!projectSearchResults.length) return;
+                    event.preventDefault();
+                    setProjectSearchIndex(prev => Math.max(prev - 1, 0));
+                } else if (event.key === 'Enter') {
+                    if (!projectSearchResults.length) return;
+                    event.preventDefault();
+                    const p = projectSearchResults[projectSearchIndex] || projectSearchResults[0];
+                    if (p) addProjectSelection(p.key);
+                } else if (event.key === 'Escape') {
+                    if (projectSearchOpen) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setProjectSearchOpen(false);
+                    }
+                }
+            };
+
+            const resolveProjectName = (key) => {
+                const proj = jiraProjects.find(p => p.key === key);
+                return proj ? proj.name : key;
+            };
+
+            const saveProjectSelection = async () => {
+                setGroupSaving(true);
+                setGroupDraftError('');
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/projects/selected`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ selected: selectedProjectsDraft })
+                    });
+                    if (!response.ok) {
+                        const errorPayload = await response.json().catch(() => ({}));
+                        throw new Error(errorPayload.error || `Save failed (${response.status})`);
+                    }
+                    selectedProjectsBaselineRef.current = JSON.stringify(selectedProjectsDraft);
+                } catch (err) {
+                    setGroupDraftError(err.message || 'Failed to save project selection.');
+                    throw err;
                 } finally {
                     setGroupSaving(false);
                 }
@@ -9186,16 +9332,77 @@ import { createRoot } from 'react-dom/client';
                                 <div className="group-modal-header">
                                     <div className="group-modal-title-wrap">
                                         <div>
-                                            <div className="group-modal-title">Manage Team Groups</div>
-                                            <div className="group-modal-meta">
-                                                Create groups to organize teams and filter your dashboard by specific team sets.
-                                            </div>
+                                            <div className="group-modal-title">Dashboard Settings</div>
                                         </div>
                                     </div>
                                     {isGroupDraftDirty && (
                                         <div className="group-modal-dirty">Unsaved changes</div>
                                     )}
                                 </div>
+                                <div className="group-modal-tabs">
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'projects' ? 'active' : ''}`}
+                                        onClick={() => setGroupManageTab('projects')}
+                                        type="button"
+                                    >Projects</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'teams' ? 'active' : ''}`}
+                                        onClick={() => setGroupManageTab('teams')}
+                                        type="button"
+                                    >Teams</button>
+                                </div>
+                                {groupManageTab === 'projects' && (
+                                    <div className="group-modal-body group-projects-body">
+                                        <div className="group-projects-section">
+                                            <div className="group-projects-section-title">Dashboard Projects</div>
+                                            <div className="group-projects-desc">
+                                                Select which Jira projects to include in dashboard queries. When no projects are selected, the default JQL query is used.
+                                            </div>
+                                            {selectedProjectsDraft.length === 0 ? (
+                                                <div className="team-selector-empty">No projects selected. Search and add projects below.</div>
+                                            ) : (
+                                                <div className="selected-teams-list is-capped">
+                                                    {selectedProjectsDraft.map(key => (
+                                                        <div key={key} className="selected-team-chip">
+                                                            <span className="team-name"><strong>{key}</strong> {resolveProjectName(key) !== key ? `\u2014 ${resolveProjectName(key)}` : ''}</span>
+                                                            <button className="remove-btn" onClick={() => removeProjectSelection(key)} type="button" title="Remove project">&times;</button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <div className="team-search-wrapper">
+                                                <input
+                                                    type="text"
+                                                    className="team-search-input"
+                                                    placeholder={loadingProjects ? 'Loading projects...' : 'Search projects to add...'}
+                                                    value={projectSearchQuery}
+                                                    onChange={(e) => { setProjectSearchQuery(e.target.value); setProjectSearchOpen(true); setProjectSearchIndex(0); }}
+                                                    onFocus={() => setProjectSearchOpen(true)}
+                                                    onBlur={() => { window.setTimeout(() => setProjectSearchOpen(false), 120); }}
+                                                    onKeyDown={handleProjectSearchKeyDown}
+                                                    ref={projectSearchInputRef}
+                                                    disabled={loadingProjects && !jiraProjects.length}
+                                                />
+                                                {projectSearchOpen && projectSearchQuery.trim() && (
+                                                    <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                        {projectSearchResults.length === 0 ? (
+                                                            <div className="team-search-result-item is-empty">No projects found</div>
+                                                        ) : projectSearchResults.map((p, index) => (
+                                                            <div
+                                                                key={p.key}
+                                                                className={`team-search-result-item ${index === projectSearchIndex ? 'active' : ''}`}
+                                                                onClick={() => addProjectSelection(p.key)}
+                                                            >
+                                                                <strong>{p.key}</strong> &mdash; {p.name}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                {groupManageTab === 'teams' && (
                                 <div className="group-modal-body group-modal-split">
                                     <div className={`group-pane group-pane-left ${showGroupListMobile ? 'is-mobile-active' : ''}`}>
                                         <div className="group-pane-header">
@@ -9476,6 +9683,7 @@ import { createRoot } from 'react-dom/client';
                                         )}
                                     </div>
                                 </div>
+                                )}
                                 <div className="group-modal-footer">
                                     <div className="group-modal-button-row">
                                         <button className="secondary compact lift-hover" onClick={requestCloseGroupManage} type="button">

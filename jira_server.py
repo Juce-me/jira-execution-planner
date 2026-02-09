@@ -54,6 +54,7 @@ CAPACITY_PROJECT = os.getenv('CAPACITY_PROJECT', '').strip()
 CAPACITY_FIELD_ID = os.getenv('CAPACITY_FIELD_ID', '').strip()
 CAPACITY_FIELD_NAME = os.getenv('CAPACITY_FIELD_NAME', 'Team capacity[Number]').strip()
 GROUPS_CONFIG_PATH = os.getenv('GROUPS_CONFIG_PATH', '').strip()
+DASHBOARD_CONFIG_PATH = os.getenv('DASHBOARD_CONFIG_PATH', '').strip()
 TEAM_GROUPS_JSON = os.getenv('TEAM_GROUPS_JSON', '').strip()
 JQL_QUERY_TEMPLATE = os.getenv('JQL_QUERY_TEMPLATE', '').strip()
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
@@ -655,6 +656,22 @@ def remove_team_filter_from_jql(jql):
     return jql.strip()
 
 
+def remove_project_filter_from_jql(jql):
+    """Remove project IN (...) and project = "..." filters from JQL query."""
+    if not jql:
+        return jql
+    # Remove project IN (...) pattern
+    jql = re.sub(r'\s+AND\s+project\s+IN\s*\([^)]+\)', '', jql, flags=re.IGNORECASE)
+    jql = re.sub(r'project\s+IN\s*\([^)]+\)\s+AND\s+', '', jql, flags=re.IGNORECASE)
+    # Remove project = "..." pattern
+    jql = re.sub(r'\s+AND\s+project\s*=\s*"[^"]+"', '', jql, flags=re.IGNORECASE)
+    jql = re.sub(r'project\s*=\s*"[^"]+"\s+AND\s+', '', jql, flags=re.IGNORECASE)
+    # Remove standalone project filter (only filter before ORDER BY)
+    jql = re.sub(r'project\s+IN\s*\([^)]+\)\s*(?=ORDER BY|$)', '', jql, flags=re.IGNORECASE)
+    jql = re.sub(r'project\s*=\s*"[^"]+"\s*(?=ORDER BY|$)', '', jql, flags=re.IGNORECASE)
+    return jql.strip()
+
+
 def get_stats_team_ids():
     """Resolve stats team IDs from env or JQL configuration."""
     if STATS_TEAM_IDS:
@@ -688,6 +705,51 @@ def load_groups_config_file(path):
     except Exception as e:
         print(f'⚠️ Failed to read groups config: {e}')
         return None
+
+
+def resolve_dashboard_config_path():
+    return DASHBOARD_CONFIG_PATH or './dashboard-config.json'
+
+
+def load_dashboard_config():
+    """Load the unified dashboard config, migrating from legacy team-groups.json if needed."""
+    path = resolve_dashboard_config_path()
+    if os.path.exists(path):
+        try:
+            with open(path, 'r') as handle:
+                return json.load(handle)
+        except Exception as e:
+            print(f'⚠️ Failed to read dashboard config: {e}')
+            return None
+    # Migrate from legacy team-groups.json
+    legacy = load_groups_config_file(resolve_groups_config_path())
+    if legacy:
+        config = {
+            'version': 1,
+            'projects': {'selected': []},
+            'teamGroups': legacy
+        }
+        save_dashboard_config(config)
+        return config
+    return None
+
+
+def save_dashboard_config(config):
+    """Write the unified dashboard config to disk."""
+    path = resolve_dashboard_config_path()
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(path, 'w') as handle:
+        json.dump(config, handle, indent=2)
+
+
+def get_selected_projects():
+    """Return the list of selected project keys from dashboard config."""
+    config = load_dashboard_config()
+    if not config:
+        return []
+    return config.get('projects', {}).get('selected', [])
 
 
 def parse_groups_config_env():
@@ -917,8 +979,9 @@ def apply_team_ids_to_template(team_ids):
     return JQL_QUERY_TEMPLATE.replace('{TEAM_IDS}', quoted)
 
 
-def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, include_team_name, use_template):
-    raw = f"{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{include_team_name}::{use_template}"
+def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, include_team_name, use_template, selected_projects=None):
+    projects_str = ','.join(sorted(selected_projects)) if selected_projects else ''
+    raw = f"{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{include_team_name}::{use_template}::{projects_str}"
     digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
     return f"tasks:{digest}"
 
@@ -1284,13 +1347,15 @@ def fetch_tasks(include_team_name=False):
         project_filter = request.args.get('project', '').strip().lower()
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
+        selected_projects = get_selected_projects()
         cache_key = build_tasks_cache_key(
             sprint,
             group_id,
             project_filter,
             team_ids if use_template else [],
             include_team_name,
-            use_template
+            use_template,
+            selected_projects
         )
         cached_entry = TASKS_CACHE.get(cache_key)
         if cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
@@ -1328,6 +1393,13 @@ def fetch_tasks(include_team_name=False):
                 jql = add_clause_to_jql(jql, f'"Team[Team]" in ({quoted_teams})')
         else:
             jql = JQL_QUERY
+
+        # Apply selected projects scope from dashboard config
+        if selected_projects:
+            jql = remove_project_filter_from_jql(jql)
+            quoted = ', '.join(f'"{p}"' for p in selected_projects)
+            jql = add_clause_to_jql(jql, f'project in ({quoted})')
+
         if sprint:
             jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
 
@@ -2763,6 +2835,13 @@ def get_teams():
         else:
             jql = JQL_QUERY
 
+        # Apply selected projects scope from dashboard config
+        selected_projects = get_selected_projects()
+        if selected_projects:
+            jql = remove_project_filter_from_jql(jql)
+            quoted = ', '.join(f'"{p}"' for p in selected_projects)
+            jql = add_clause_to_jql(jql, f'project in ({quoted})')
+
         # If fetching all teams, remove team filter AND sprint filter from JQL
         # so we discover teams across all sprints, not just the current one
         if fetch_all:
@@ -3300,14 +3379,22 @@ def get_groups_config():
     """Return the saved team groups configuration."""
     warnings = []
     config_source = 'auto'
-    config_path = resolve_groups_config_path()
-    config = load_groups_config_file(config_path)
-    if config:
+
+    # Try unified dashboard config first
+    dashboard_config = load_dashboard_config()
+    if dashboard_config and 'teamGroups' in dashboard_config:
+        config = dashboard_config['teamGroups']
         config_source = 'file'
     else:
-        config = parse_groups_config_env()
+        # Fall back to legacy file / env
+        config_path = resolve_groups_config_path()
+        config = load_groups_config_file(config_path)
         if config:
-            config_source = 'env'
+            config_source = 'file'
+        else:
+            config = parse_groups_config_env()
+            if config:
+                config_source = 'env'
 
     if not config:
         config, auto_warnings = build_default_groups_config()
@@ -3336,13 +3423,11 @@ def save_groups_config():
     if errors:
         return jsonify({'errors': errors}), 400
 
-    path = resolve_groups_config_path()
+    # Save into unified dashboard config, preserving other sections
     try:
-        directory = os.path.dirname(path)
-        if directory:
-            os.makedirs(directory, exist_ok=True)
-        with open(path, 'w') as handle:
-            json.dump(normalized, handle, indent=2)
+        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}}
+        dashboard_config['teamGroups'] = normalized
+        save_dashboard_config(dashboard_config)
     except Exception as e:
         return jsonify({'error': 'Failed to save groups config', 'message': str(e)}), 500
 
@@ -3350,6 +3435,74 @@ def save_groups_config():
         normalized['warnings'] = warnings
     normalized['source'] = 'file'
     return jsonify(normalized)
+
+
+@app.route('/api/projects', methods=['GET'])
+def get_jira_projects():
+    """Fetch available Jira projects via project search API."""
+    try:
+        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+        auth_bytes = auth_string.encode('ascii')
+        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+        headers = {
+            'Authorization': f'Basic {auth_base64}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+
+        all_projects = []
+        start_at = 0
+        max_results = 50
+        while True:
+            url = f'{JIRA_URL}/rest/api/3/project/search?startAt={start_at}&maxResults={max_results}&orderBy=key'
+            response = HTTP_SESSION.get(url, headers=headers, timeout=15)
+            if response.status_code != 200:
+                return jsonify({'error': 'Failed to fetch projects', 'details': response.text}), response.status_code
+            data = response.json()
+            values = data.get('values', [])
+            for proj in values:
+                all_projects.append({
+                    'key': proj.get('key', ''),
+                    'name': proj.get('name', ''),
+                    'id': proj.get('id', '')
+                })
+            if data.get('isLast', True):
+                break
+            start_at += max_results
+
+        return jsonify({'projects': all_projects})
+    except Exception as e:
+        return jsonify({'error': 'Failed to fetch projects', 'details': str(e)}), 500
+
+
+@app.route('/api/projects/selected', methods=['GET'])
+def get_selected_projects_endpoint():
+    """Return the list of selected project keys from dashboard config."""
+    selected = get_selected_projects()
+    return jsonify({'selected': selected})
+
+
+@app.route('/api/projects/selected', methods=['POST'])
+def save_selected_projects():
+    """Save selected project keys to dashboard config."""
+    payload = request.get_json(silent=True) or {}
+    selected = payload.get('selected', [])
+    if not isinstance(selected, list):
+        return jsonify({'error': 'selected must be an array'}), 400
+    # Sanitize: only keep non-empty strings
+    selected = [str(s).strip() for s in selected if str(s).strip()]
+
+    try:
+        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+        dashboard_config.setdefault('projects', {})['selected'] = selected
+        save_dashboard_config(dashboard_config)
+    except Exception as e:
+        return jsonify({'error': 'Failed to save project selection', 'message': str(e)}), 500
+
+    # Invalidate tasks cache since project scope changed
+    TASKS_CACHE.clear()
+
+    return jsonify({'selected': selected})
 
 
 @app.route('/api/capacity', methods=['GET'])

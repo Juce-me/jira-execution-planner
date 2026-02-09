@@ -7701,9 +7701,13 @@ import { createRoot } from 'react-dom/client';
                                         {excludedCapacityAdjusted > 0 && (
                                             <div className="capacity-bar-excluded-zone" style={{ left: `${planningPct}%`, width: `${teamCapPct - planningPct}%` }} />
                                         )}
-                                        {/* Variance overshoot zone */}
+                                        {/* Variance overshoot zone (always visible when over) */}
                                         {varianceOverPct > 0 && (
-                                            <div className="capacity-bar-variance-zone" style={{ left: `${teamCapPct}%`, width: `${varianceOverPct}%` }} />
+                                            <div className="capacity-bar-variance-zone visible" style={{ left: `${teamCapPct}%`, width: `${varianceOverPct}%` }} />
+                                        )}
+                                        {/* Under-capacity gap zone (visible when under) */}
+                                        {isUnder && (
+                                            <div className="capacity-bar-variance-zone under-zone" style={{ left: `${selectedPct}%`, width: `${teamCapPct - selectedPct}%` }} />
                                         )}
                                         {/* Selected fill */}
                                         <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}`} style={{ width: `${selectedPct}%` }} data-tooltip={`Total story points from ${selectedCount} selected tasks.`}>
@@ -7723,6 +7727,7 @@ import { createRoot } from 'react-dom/client';
                                     <div className="capacity-bar-footer">
                                         <span
                                             className={`capacity-bar-variance ${capacitySummary.status}`}
+                                            data-tooltip={`Selected effort (${selectedSP.toFixed(1)} SP) vs Team capacity (${totalCapacityAdjusted.toFixed(1)} SP). ${capacitySummary.title || ''}`}
                                             onMouseEnter={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.add('highlight-variance')}
                                             onMouseLeave={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.remove('highlight-variance')}
                                         >
@@ -7731,6 +7736,7 @@ import { createRoot } from 'react-dom/client';
                                         {excludedCapacityAdjusted > 0 && (
                                             <span
                                                 className="capacity-bar-excluded-note clickable-number"
+                                                data-tooltip={`Capacity reserved for excluded mandatory epics (${excludedCapacityAdjusted.toFixed(1)} SP). Click to scroll to first excluded epic.`}
                                                 onClick={() => scrollToFirstExcludedEpic('any')}
                                                 onMouseEnter={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.add('highlight-excluded')}
                                                 onMouseLeave={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.remove('highlight-excluded')}

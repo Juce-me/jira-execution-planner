@@ -795,6 +795,17 @@ def get_capacity_config():
     }
 
 
+def get_configured_issue_types():
+    """Return configured issue types from dashboard config. Default: ['Story']."""
+    config = load_dashboard_config()
+    if not config:
+        return ['Story']
+    types = config.get('issueTypes', None)
+    if types is None:
+        return ['Story']
+    return [str(t).strip() for t in types if str(t).strip()]
+
+
 def get_effective_capacity_project():
     """Return the effective capacity project name."""
     return get_capacity_config()['project']
@@ -1468,6 +1479,15 @@ def fetch_tasks(include_team_name=False):
             else:
                 project_name = JIRA_PRODUCT_PROJECT if project_filter == 'product' else JIRA_TECH_PROJECT
                 jql = add_clause_to_jql(jql, f'project = "{project_name}"')
+
+        # Apply issue type filter from config
+        issue_types = get_configured_issue_types()
+        if issue_types:
+            if len(issue_types) == 1:
+                jql = add_clause_to_jql(jql, f'type = "{issue_types[0]}"')
+            else:
+                quoted_types = ', '.join(f'"{t}"' for t in issue_types)
+                jql = add_clause_to_jql(jql, f'type in ({quoted_types})')
 
         team_field_id = resolve_team_field_id(headers)
         epic_link_field_id = resolve_epic_link_field_id(headers)
@@ -3618,6 +3638,81 @@ def save_capacity_config_endpoint():
         return jsonify({'error': 'Failed to save capacity config', 'message': str(e)}), 500
 
     return jsonify({'project': project, 'fieldId': field_id, 'fieldName': field_name})
+
+
+# --- Issue Types ---
+ISSUE_TYPES_CACHE = {'data': None, 'timestamp': 0}
+ISSUE_TYPES_CACHE_TTL = 60 * 60  # 1 hour
+
+
+@app.route('/api/issue-types', methods=['GET'])
+def get_jira_issue_types():
+    """Fetch available Jira issue types with caching."""
+    try:
+        if ISSUE_TYPES_CACHE['data'] and (time.time() - ISSUE_TYPES_CACHE['timestamp']) < ISSUE_TYPES_CACHE_TTL:
+            return jsonify({'issueTypes': ISSUE_TYPES_CACHE['data']})
+
+        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+        auth_bytes = auth_string.encode('ascii')
+        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+        headers = {
+            'Authorization': f'Basic {auth_base64}',
+            'Accept': 'application/json',
+        }
+
+        url = f'{JIRA_URL}/rest/api/3/issuetype'
+        response = HTTP_SESSION.get(url, headers=headers, timeout=15)
+        if response.status_code != 200:
+            return jsonify({'error': 'Failed to fetch issue types', 'details': response.text}), response.status_code
+        data = response.json()
+        result = []
+        seen = set()
+        for it in data:
+            name = it.get('name', '')
+            if name and name not in seen:
+                seen.add(name)
+                result.append({
+                    'name': name,
+                    'subtask': it.get('subtask', False),
+                    'iconUrl': it.get('iconUrl', ''),
+                })
+        result.sort(key=lambda x: x['name'])
+
+        ISSUE_TYPES_CACHE['data'] = result
+        ISSUE_TYPES_CACHE['timestamp'] = time.time()
+
+        return jsonify({'issueTypes': result})
+    except Exception as e:
+        return jsonify({'error': 'Failed to fetch issue types', 'details': str(e)}), 500
+
+
+@app.route('/api/issue-types/config', methods=['GET'])
+def get_issue_types_config_endpoint():
+    """Return configured issue types from dashboard config."""
+    types = get_configured_issue_types()
+    return jsonify({'issueTypes': types})
+
+
+@app.route('/api/issue-types/config', methods=['POST'])
+def save_issue_types_config_endpoint():
+    """Save issue types configuration."""
+    payload = request.get_json(silent=True) or {}
+    raw = payload.get('issueTypes', [])
+    if not isinstance(raw, list):
+        return jsonify({'error': 'issueTypes must be an array'}), 400
+    sanitized = [str(t).strip() for t in raw if str(t).strip()]
+
+    try:
+        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+        dashboard_config['issueTypes'] = sanitized
+        save_dashboard_config(dashboard_config)
+    except Exception as e:
+        return jsonify({'error': 'Failed to save issue types config', 'message': str(e)}), 500
+
+    # Invalidate tasks cache since query scope changed
+    TASKS_CACHE.clear()
+
+    return jsonify({'issueTypes': sanitized})
 
 
 @app.route('/api/fields', methods=['GET'])

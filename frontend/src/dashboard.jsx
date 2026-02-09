@@ -187,6 +187,13 @@ import { createRoot } from 'react-dom/client';
             const [capacityFieldSearchOpen, setCapacityFieldSearchOpen] = useState(false);
             const [capacityFieldSearchIndex, setCapacityFieldSearchIndex] = useState(0);
             const capacityFieldSearchInputRef = useRef(null);
+            const [issueTypesDraft, setIssueTypesDraft] = useState(['Story']);
+            const issueTypesBaselineRef = useRef(JSON.stringify(['Story']));
+            const [availableIssueTypes, setAvailableIssueTypes] = useState([]);
+            const [issueTypeSearchQuery, setIssueTypeSearchQuery] = useState('');
+            const [issueTypeSearchOpen, setIssueTypeSearchOpen] = useState(false);
+            const [issueTypeSearchIndex, setIssueTypeSearchIndex] = useState(0);
+            const issueTypeSearchInputRef = useRef(null);
             const [jiraUrl, setJiraUrl] = useState('');
             const [selectedTasks, setSelectedTasks] = useState({});
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
@@ -413,6 +420,8 @@ import { createRoot } from 'react-dom/client';
                 setActiveGroupDraftId(resolveInitialGroupId(normalized));
                 loadSelectedProjects();
                 loadCapacityConfig();
+                loadIssueTypesConfig();
+                fetchAvailableIssueTypes();
                 if (!jiraProjects.length) fetchJiraProjects();
                 const catalogTeams = buildTeamCatalogList(normalized.teamCatalog);
                 if (catalogTeams.length) {
@@ -833,12 +842,17 @@ import { createRoot } from 'react-dom/client';
                 return JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }) !== capacityBaselineRef.current;
             }, [capacityProjectDraft, capacityFieldIdDraft, capacityFieldNameDraft]);
 
+            const isIssueTypesDraftDirty = React.useMemo(() => {
+                return JSON.stringify(issueTypesDraft) !== issueTypesBaselineRef.current;
+            }, [issueTypesDraft]);
+
             const isGroupDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
                 if (isCapacityDraftDirty) return true;
+                if (isIssueTypesDraftDirty) return true;
                 if (!groupDraft) return false;
                 return groupDraftSignature !== groupDraftBaselineRef.current;
-            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isCapacityDraftDirty]);
+            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isCapacityDraftDirty, isIssueTypesDraftDirty]);
 
             const requestCloseGroupManage = () => {
                 if (groupSaving) return;
@@ -1189,6 +1203,12 @@ import { createRoot } from 'react-dom/client';
                         await saveCapacityConfig();
                     }
 
+                    // Save issue types config if changed
+                    const issueTypesChanged = isIssueTypesDraftDirty;
+                    if (issueTypesChanged) {
+                        await saveIssueTypesConfig();
+                    }
+
                     // Capture the current active group's team IDs before saving
                     const currentActiveGroup = activeGroupId ? (groupsConfig.groups || []).find(g => g.id === activeGroupId) : null;
                     const currentTeamSignature = currentActiveGroup ? (currentActiveGroup.teamIds || []).join('|') : null;
@@ -1224,7 +1244,7 @@ import { createRoot } from 'react-dom/client';
                     }
 
                     // If projects or capacity changed, invalidate all group caches to refetch with new scope
-                    if (projectsChanged || capacityChanged) {
+                    if (projectsChanged || capacityChanged || issueTypesChanged) {
                         groupStateRef.current.clear();
                     }
 
@@ -1403,6 +1423,97 @@ import { createRoot } from 'react-dom/client';
                     throw new Error(err.error || `Save failed (${response.status})`);
                 }
                 capacityBaselineRef.current = JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
+            };
+
+            const loadIssueTypesConfig = async () => {
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/issue-types/config`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' },
+                        cache: 'no-cache'
+                    });
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    const types = data.issueTypes || ['Story'];
+                    setIssueTypesDraft(types);
+                    issueTypesBaselineRef.current = JSON.stringify(types);
+                } catch (err) {
+                    console.error('Failed to load issue types config:', err);
+                }
+            };
+
+            const saveIssueTypesConfig = async () => {
+                const response = await fetch(`${BACKEND_URL}/api/issue-types/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ issueTypes: issueTypesDraft })
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.error || `Save failed (${response.status})`);
+                }
+                issueTypesBaselineRef.current = JSON.stringify(issueTypesDraft);
+            };
+
+            const fetchAvailableIssueTypes = async () => {
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/issue-types`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' },
+                        cache: 'no-cache'
+                    });
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    setAvailableIssueTypes(data.issueTypes || []);
+                } catch (err) {
+                    console.error('Failed to fetch available issue types:', err);
+                }
+            };
+
+            const addIssueType = (name) => {
+                setIssueTypesDraft([name]);
+                setIssueTypeSearchQuery('');
+                setIssueTypeSearchOpen(false);
+            };
+
+            const removeIssueType = (name) => {
+                setIssueTypesDraft(prev => prev.filter(t => t !== name));
+            };
+
+            const issueTypeSearchResults = React.useMemo(() => {
+                const query = issueTypeSearchQuery.toLowerCase().trim();
+                if (!query) return [];
+                return availableIssueTypes.filter(it => {
+                    if (issueTypesDraft.includes(it.name)) return false;
+                    return it.name.toLowerCase().includes(query);
+                }).slice(0, 10);
+            }, [issueTypeSearchQuery, availableIssueTypes, issueTypesDraft]);
+
+            React.useEffect(() => {
+                if (issueTypeSearchIndex >= issueTypeSearchResults.length) setIssueTypeSearchIndex(0);
+            }, [issueTypeSearchResults.length]);
+
+            const handleIssueTypeSearchKeyDown = (event) => {
+                if (event.key === 'ArrowDown') {
+                    if (!issueTypeSearchResults.length) return;
+                    event.preventDefault();
+                    setIssueTypeSearchIndex(prev => Math.min(prev + 1, issueTypeSearchResults.length - 1));
+                } else if (event.key === 'ArrowUp') {
+                    if (!issueTypeSearchResults.length) return;
+                    event.preventDefault();
+                    setIssueTypeSearchIndex(prev => Math.max(prev - 1, 0));
+                } else if (event.key === 'Enter') {
+                    if (!issueTypeSearchResults.length) return;
+                    event.preventDefault();
+                    const it = issueTypeSearchResults[issueTypeSearchIndex] || issueTypeSearchResults[0];
+                    if (it) addIssueType(it.name);
+                } else if (event.key === 'Escape') {
+                    if (issueTypeSearchOpen) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setIssueTypeSearchOpen(false);
+                    }
+                }
             };
 
             const fetchJiraFields = async (projectKey) => {
@@ -9632,6 +9743,48 @@ import { createRoot } from 'react-dom/client';
                                                     </div>
                                                 )}
                                             </div>
+                                        </div>
+                                        <div className="group-projects-subsection">
+                                            <div className="group-projects-desc" style={{fontWeight: 600}}>Issue Type</div>
+                                            <div className="capacity-inline-row">
+                                                <div className="team-search-wrapper capacity-inline-search">
+                                                    <input
+                                                        type="text"
+                                                        className="team-search-input"
+                                                        placeholder="Search issue types..."
+                                                        value={issueTypeSearchQuery}
+                                                        onChange={(e) => { setIssueTypeSearchQuery(e.target.value); setIssueTypeSearchOpen(true); setIssueTypeSearchIndex(0); }}
+                                                        onFocus={() => setIssueTypeSearchOpen(true)}
+                                                        onBlur={() => { window.setTimeout(() => setIssueTypeSearchOpen(false), 120); }}
+                                                        onKeyDown={handleIssueTypeSearchKeyDown}
+                                                        ref={issueTypeSearchInputRef}
+                                                    />
+                                                    {issueTypeSearchOpen && issueTypeSearchQuery.trim() && (
+                                                        <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                            {issueTypeSearchResults.length === 0 ? (
+                                                                <div className="team-search-result-item is-empty">No issue types found</div>
+                                                            ) : issueTypeSearchResults.map((it, index) => (
+                                                                <div
+                                                                    key={it.name}
+                                                                    className={`team-search-result-item ${index === issueTypeSearchIndex ? 'active' : ''}`}
+                                                                    onClick={() => addIssueType(it.name)}
+                                                                >
+                                                                    {it.name}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {issueTypesDraft.length > 0 && (
+                                                    <div className="selected-team-chip issue-type-chip">
+                                                        <span className="team-name">{issueTypesDraft[0]}</span>
+                                                        <button className="remove-btn" onClick={() => removeIssueType(issueTypesDraft[0])} type="button" title="Remove">&times;</button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {issueTypesDraft.length === 0 && (
+                                                <div className="team-selector-empty">No filter — all issue types will be included.</div>
+                                            )}
                                         </div>
                                         <div className="group-projects-divider" />
                                         <div className="group-projects-section">

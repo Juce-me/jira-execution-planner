@@ -6024,14 +6024,25 @@ import { createRoot } from 'react-dom/client';
                     setPlanningOffset(0);
                     return;
                 }
+                const node = planningPanelRef.current;
+                if (!node) return;
                 const updateOffset = () => {
-                    const height = planningPanelRef.current?.getBoundingClientRect().height || 0;
+                    const height = node.getBoundingClientRect().height || 0;
                     setPlanningOffset(height);
                 };
                 updateOffset();
+                // ResizeObserver catches content changes and CSS transitions
+                let ro;
+                if (typeof ResizeObserver !== 'undefined') {
+                    ro = new ResizeObserver(updateOffset);
+                    ro.observe(node);
+                }
                 window.addEventListener('resize', updateOffset);
-                return () => window.removeEventListener('resize', updateOffset);
-            }, [showPlanning, selectedCount, selectedSP, teamCapacityEntries.length]);
+                return () => {
+                    window.removeEventListener('resize', updateOffset);
+                    if (ro) ro.disconnect();
+                };
+            }, [showPlanning, selectedCount, selectedSP, teamCapacityEntries.length, capacityEnabled, totalCapacityAdjusted, selectedTeamEntries.length]);
 
 
             const openSelectedInJira = () => {

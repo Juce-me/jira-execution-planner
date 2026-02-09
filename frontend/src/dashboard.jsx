@@ -7856,58 +7856,76 @@ import { createRoot } from 'react-dom/client';
                             );
                         })()}
 
-                        {/* --- Project SplitBar --- */}
+                        {/* --- Project Split Bar --- */}
                         <div className="planning-stats compact" style={{ marginTop: '0.35rem' }}>
                             <div className="planning-stat">
                                 <span className="planning-stat-label" data-tooltip="Planning capacity split: 70% Product / 30% Tech (tech-heavy teams may aim for 10% / 90%). Selected effort excludes excluded epics.">Selected SP by Project:</span>
                             </div>
                         </div>
-                        <div className="projects-stats-grid">
-                            {(() => {
-                                const projectTotal = selectedProjectEntries.reduce((sum, e) => sum + e.storyPoints, 0);
-                                const productEntry = selectedProjectEntries.find(e => e.id === 'PRODUCT');
-                                const techEntry = selectedProjectEntries.find(e => e.id === 'TECH');
-                                const productSP = productEntry ? productEntry.storyPoints : 0;
-                                const techSP = techEntry ? techEntry.storyPoints : 0;
-                                const productPct = projectTotal > 0 ? (productSP / projectTotal) * 100 : 0;
-                                const techPct = projectTotal > 0 ? (techSP / projectTotal) * 100 : 0;
-                                const excludedTotal = (excludedProjectStats['PRODUCT'] || 0) + (excludedProjectStats['TECH'] || 0);
-                                if (projectTotal === 0 && excludedTotal === 0) {
-                                    return (
-                                        <div className="planning-stat">
-                                            <span className="planning-stat-value">No tasks selected</span>
-                                        </div>
-                                    );
-                                }
+                        {(() => {
+                            const projectTotal = selectedProjectEntries.reduce((sum, e) => sum + e.storyPoints, 0);
+                            const productEntry = selectedProjectEntries.find(e => e.id === 'PRODUCT');
+                            const techEntry = selectedProjectEntries.find(e => e.id === 'TECH');
+                            const productSP = productEntry ? productEntry.storyPoints : 0;
+                            const techSP = techEntry ? techEntry.storyPoints : 0;
+                            const productPct = projectTotal > 0 ? (productSP / projectTotal) * 100 : 0;
+                            const techPct = projectTotal > 0 ? (techSP / projectTotal) * 100 : 0;
+                            const excludedProduct = excludedProjectStats['PRODUCT'] || 0;
+                            const excludedTech = excludedProjectStats['TECH'] || 0;
+                            const excludedTotal = excludedProduct + excludedTech;
+                            const targetPct = 70;
+                            if (projectTotal === 0 && excludedTotal === 0) {
                                 return (
-                                    <div className="splitbar-container">
-                                        <svg className="splitbar" viewBox="0 0 200 10" preserveAspectRatio="none">
-                                            <rect x="0" y="1" width="200" height="8" rx="3" fill="#e0ddd7" />
-                                            {productPct > 0 && (
-                                                <rect x="0" y="1" width={productPct * 2} height="8" rx="3" fill="#389e0d" />
-                                            )}
-                                            {techPct > 0 && (
-                                                <rect x={productPct * 2} y="1" width={techPct * 2} height="8" rx="0" fill="#1890ff" />
-                                            )}
-                                            <line x1="140" y1="0" x2="140" y2="10" stroke="var(--text-primary)" strokeWidth="1" strokeDasharray="2 1" />
-                                        </svg>
-                                        <div className="splitbar-labels">
-                                            <span>Product {productPct.toFixed(0)}%</span>
-                                            <span>Tech {techPct.toFixed(0)}%</span>
-                                        </div>
-                                        <div className="splitbar-meta">
-                                            <span>{productSP.toFixed(1)} SP</span>
-                                            <span>{techSP.toFixed(1)} SP</span>
-                                            {excludedTotal > 0 && (
-                                                <span className="clickable-number" onClick={() => scrollToFirstExcludedEpic('any')} style={{ marginLeft: 'auto' }}>
-                                                    Excluded: {excludedTotal.toFixed(1)} SP
-                                                </span>
-                                            )}
-                                        </div>
+                                    <div className="planning-stat" style={{ marginTop: '0.3rem' }}>
+                                        <span className="planning-stat-value">No tasks selected</span>
                                     </div>
                                 );
-                            })()}
-                        </div>
+                            }
+                            return (
+                                <div className="project-bar-graph">
+                                    <div className="capacity-bar-track">
+                                        {/* Product fill */}
+                                        <div
+                                            className="project-bar-fill product"
+                                            style={{ width: `${productPct}%` }}
+                                            data-tooltip={`Product: ${productSP.toFixed(1)} SP (${productPct.toFixed(0)}% of selected).${excludedProduct > 0 ? ` Excluded: ${excludedProduct.toFixed(1)} SP.` : ''}`}
+                                        >
+                                            {productPct > 15 && (
+                                                <span className="capacity-bar-fill-label">Product {productPct.toFixed(0)}% · {productSP.toFixed(1)} SP</span>
+                                            )}
+                                        </div>
+                                        {/* Tech fill */}
+                                        <div
+                                            className="project-bar-fill tech"
+                                            style={{ left: `${productPct}%`, width: `${techPct}%` }}
+                                            data-tooltip={`Tech: ${techSP.toFixed(1)} SP (${techPct.toFixed(0)}% of selected).${excludedTech > 0 ? ` Excluded: ${excludedTech.toFixed(1)} SP.` : ''}`}
+                                        >
+                                            {techPct > 15 && (
+                                                <span className="capacity-bar-fill-label">Tech {techPct.toFixed(0)}% · {techSP.toFixed(1)} SP</span>
+                                            )}
+                                        </div>
+                                        {/* 70% target marker */}
+                                        <div className="capacity-bar-marker" style={{ left: `${targetPct}%` }}>
+                                            <div className="capacity-bar-marker-line dashed" />
+                                            <div className="capacity-bar-marker-label">Target<br/>{targetPct}% / {100 - targetPct}%</div>
+                                        </div>
+                                    </div>
+                                    <div className="capacity-bar-footer">
+                                        {productPct <= 15 && <span style={{ color: '#3d1ef8' }}>Product {productPct.toFixed(0)}% · {productSP.toFixed(1)} SP</span>}
+                                        {techPct <= 15 && <span style={{ color: '#FE5000' }}>Tech {techPct.toFixed(0)}% · {techSP.toFixed(1)} SP</span>}
+                                        {excludedTotal > 0 && (
+                                            <span
+                                                className="capacity-bar-excluded-note clickable-number"
+                                                data-tooltip={`Product excluded: ${excludedProduct.toFixed(1)} SP. Tech excluded: ${excludedTech.toFixed(1)} SP. Click to scroll to first excluded epic.`}
+                                                onClick={() => scrollToFirstExcludedEpic('any')}
+                                            >
+                                                {excludedTotal.toFixed(1)} SP excluded
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
                     {showBackToTop && (
                         <button className="back-to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>

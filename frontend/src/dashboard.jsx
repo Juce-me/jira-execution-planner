@@ -7706,16 +7706,16 @@ import { createRoot } from 'react-dom/client';
                                             <div className="capacity-bar-variance-zone" style={{ left: `${teamCapPct}%`, width: `${varianceOverPct}%` }} />
                                         )}
                                         {/* Selected fill */}
-                                        <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}`} style={{ width: `${selectedPct}%` }}>
+                                        <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}`} style={{ width: `${selectedPct}%` }} data-tooltip={`Total story points from ${selectedCount} selected tasks.`}>
                                             <span className="capacity-bar-fill-label">{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>
                                         </div>
                                         {/* Planning marker */}
-                                        <div className="capacity-bar-marker planning" style={{ left: `${planningPct}%` }}>
+                                        <div className="capacity-bar-marker planning" style={{ left: `${planningPct}%` }} data-tooltip="Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.).">
                                             <div className="capacity-bar-marker-line dashed" />
                                             <div className="capacity-bar-marker-label">Planning<br/>{estimatedCapacityAdjusted.toFixed(1)}</div>
                                         </div>
                                         {/* Team cap marker */}
-                                        <div className="capacity-bar-marker teamcap" style={{ left: `${teamCapPct}%` }}>
+                                        <div className="capacity-bar-marker teamcap" style={{ left: `${teamCapPct}%` }} data-tooltip="Estimated total team capacity for the quarter.">
                                             <div className="capacity-bar-marker-line" />
                                             <div className="capacity-bar-marker-label">Team Cap<br/>{totalCapacityAdjusted.toFixed(1)}</div>
                                         </div>

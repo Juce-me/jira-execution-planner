@@ -7673,94 +7673,104 @@ import { createRoot } from 'react-dom/client';
                     )}
 
                     <div ref={planningPanelRef} className={`planning-panel ${showPlanning && !isCompletedSprintSelected ? 'open' : ''}`}>
-                        {/* --- KPI Strip --- */}
-                        <div className="planning-stats">
-                            <div className="planning-stat">
-                                <span className="planning-stat-label" data-tooltip="Number of selected tasks and total story points.">Selected:</span>
-                                <span className="planning-stat-value">{selectedCount} · {selectedSP.toFixed(1)} SP</span>
-                            </div>
-                            {capacityEnabled && totalCapacityAdjusted > 0 && (
-                                <div className="planning-stat">
-                                    <span className="planning-stat-label" data-tooltip="Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.).">Planning:</span>
-                                    <span className="planning-stat-value clickable-number" onClick={() => scrollToFirstExcludedEpic('any')}>
-                                        {estimatedCapacityAdjusted.toFixed(1)} SP
-                                    </span>
-                                </div>
-                            )}
-                            {capacityEnabled && totalCapacityAdjusted > 0 && (
-                                <div className="planning-stat">
-                                    <span className="planning-stat-label" data-tooltip="Estimated team capacity for the quarter (if one team selected, that team's capacity).">Team Cap:</span>
-                                    <span className="planning-stat-value">{totalCapacityAdjusted.toFixed(1)} SP</span>
-                                </div>
-                            )}
-                            {capacityEnabled && excludedCapacityAdjusted > 0 && (
-                                <div className="planning-stat">
-                                    <span className="planning-stat-label" data-tooltip="Capacity reserved for excluded mandatory epics.">Excluded:</span>
-                                    <span className="planning-stat-value clickable-number" onClick={() => scrollToFirstExcludedEpic('any')}>
-                                        {excludedCapacityAdjusted.toFixed(1)} SP
-                                    </span>
-                                </div>
-                            )}
-                            {capacityEnabled && totalCapacityAdjusted > 0 && (() => {
-                                const variancePct = totalCapacityAdjusted > 0 ? ((selectedSP / totalCapacityAdjusted) - 1) * 100 : 0;
-                                return (
-                                    <div className="planning-stat">
-                                        <span className="planning-stat-label" data-tooltip="Plan variance = (selected effort / team capacity - 1). Positive means over planned.">Variance:</span>
-                                        <span className={`planning-stat-value ${capacitySummary.status}`}>
-                                            {capacitySummary.label || '0%'}
-                                        </span>
-                                        <svg className="variance-gauge" viewBox="0 0 160 10" data-tooltip={`Plan variance: ${variancePct.toFixed(0)}% (Selected Effort vs Team Capacity)`}>
-                                            <rect x="0" y="3" width="160" height="4" rx="2" fill="#e0ddd7" />
-                                            <line x1="80" y1="1" x2="80" y2="9" stroke="#999" strokeWidth="0.5" />
-                                            {variancePct < 0 && (
-                                                <rect x={Math.max(0, 80 + variancePct * 0.8)} y="3" width={Math.min(80, Math.abs(variancePct) * 0.8)} height="4" rx="2" fill={capacitySummary.status === 'under' ? '#d4380d' : '#389e0d'} />
-                                            )}
-                                            {variancePct > 0 && (
-                                                <rect x="80" y="3" width={Math.min(80, variancePct * 0.8)} height="4" rx="2" fill={capacitySummary.status === 'over' ? '#d4380d' : '#389e0d'} />
-                                            )}
-                                            <line x1={Math.max(2, Math.min(158, 80 + variancePct * 0.8))} y1="0" x2={Math.max(2, Math.min(158, 80 + variancePct * 0.8))} y2="10" stroke="var(--text-primary)" strokeWidth="1.5" />
-                                        </svg>
-                                    </div>
-                                );
-                            })()}
-                            <div className="planning-actions">
-                                <button
-                                    className={`planning-action-button ${isAcceptedIncluded ? 'active' : ''}`}
-                                    onClick={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
-                                    disabled={visibleTasks.length === 0}
-                                    title="Include all Accepted and In Progress stories for the current view"
-                                >
-                                    Include Accepted
-                                </button>
-                                <button
-                                    className={`planning-action-button ${isTodoIncluded ? 'active' : ''}`}
-                                    onClick={() => toggleIncludeByStatus(['To Do', 'Pending'])}
-                                    disabled={visibleTasks.length === 0}
-                                    title="Include all To Do / Pending stories for the current view"
-                                >
-                                    Include To Do
-                                </button>
-                                <button
-                                    className="uncheck-button"
-                                    onClick={clearSelectedTasks}
-                                    disabled={selectedCount === 0}
-                                    title="Clear all selected tasks"
-                                >
-                                    Uncheck Selected
-                                </button>
-                                <button
-                                    className="planning-action-button planning-icon-button"
-                                    onClick={openSelectedInJira}
-                                    disabled={selectedCount === 0 || !jiraUrl}
-                                    title="Open selected stories in Jira (tip: bulk move them to Accepted)"
-                                    aria-label="Open selected stories in Jira"
-                                >
-                                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                                        <path d="M10 2h4v4h-1.5V4.56L8.53 8.53l-1.06-1.06L11.44 3.5H10V2z" />
-                                        <path d="M13 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4v1.5H3.5v8h8V9H13z" />
+                        {/* --- Capacity Bar Graph --- */}
+                        {capacityEnabled && totalCapacityAdjusted > 0 ? (() => {
+                            const scale = totalCapacityAdjusted * 1.3;
+                            const barW = 400;
+                            const barH = 28;
+                            const svgH = 52;
+                            const toX = (v) => Math.min(barW, (v / scale) * barW);
+                            const selectedX = toX(selectedSP);
+                            const planningX = toX(estimatedCapacityAdjusted);
+                            const teamCapX = toX(totalCapacityAdjusted);
+                            const excludedW = teamCapX - planningX;
+                            const variancePct = ((selectedSP / totalCapacityAdjusted) - 1) * 100;
+                            const barColor = capacitySummary.status === 'over' ? '#d4380d' : capacitySummary.status === 'under' ? '#cf8700' : '#389e0d';
+                            return (
+                                <div className="capacity-bar-graph">
+                                    <svg viewBox={`0 0 ${barW} ${svgH}`} preserveAspectRatio="xMinYMin meet" className="capacity-bar-svg">
+                                        {/* Track */}
+                                        <rect x="0" y="0" width={barW} height={barH} rx="4" fill="#e0ddd7" />
+                                        {/* Excluded zone (hatched region between planning and team cap) */}
+                                        {excludedCapacityAdjusted > 0 && (
+                                            <rect x={planningX} y="0" width={excludedW} height={barH} fill="#ccc" rx="0" />
+                                        )}
+                                        {/* Selected fill */}
+                                        <rect x="0" y="0" width={selectedX} height={barH} rx="4" fill={barColor} />
+                                        {/* Planning capacity marker */}
+                                        <line x1={planningX} y1="0" x2={planningX} y2={barH + 3} stroke="#666" strokeWidth="1.5" strokeDasharray="3 2" />
+                                        <text x={planningX} y={barH + 12} textAnchor="middle" className="capacity-bar-tick">Planning {estimatedCapacityAdjusted.toFixed(1)}</text>
+                                        {/* Team capacity marker */}
+                                        <line x1={teamCapX} y1="0" x2={teamCapX} y2={barH + 3} stroke="var(--text-primary)" strokeWidth="2" />
+                                        <text x={teamCapX} y={barH + 12} textAnchor="middle" className="capacity-bar-tick">Team Cap {totalCapacityAdjusted.toFixed(1)}</text>
+                                        {/* Selected label inside bar */}
+                                        <text x={Math.min(selectedX - 3, barW - 3)} y={barH / 2} dominantBaseline="central" textAnchor="end" className="capacity-bar-label">
+                                            {selectedCount} tasks · {selectedSP.toFixed(1)} SP
+                                        </text>
+                                        {/* Excluded label */}
+                                        {excludedCapacityAdjusted > 0 && excludedW > 30 && (
+                                            <text x={planningX + excludedW / 2} y={barH / 2} dominantBaseline="central" textAnchor="middle" className="capacity-bar-excluded-label">
+                                                Excl {excludedCapacityAdjusted.toFixed(1)}
+                                            </text>
+                                        )}
                                     </svg>
-                                </button>
+                                    <div className="capacity-bar-summary">
+                                        <span className={`capacity-bar-variance ${capacitySummary.status}`}>
+                                            Variance: {capacitySummary.label || '0%'}
+                                        </span>
+                                        {excludedCapacityAdjusted > 0 && excludedW <= 30 && (
+                                            <span className="capacity-bar-excluded-note clickable-number" onClick={() => scrollToFirstExcludedEpic('any')}>
+                                                Excluded: {excludedCapacityAdjusted.toFixed(1)} SP
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })() : (
+                            <div className="planning-stats">
+                                <div className="planning-stat">
+                                    <span className="planning-stat-label">Selected:</span>
+                                    <span className="planning-stat-value">{selectedCount} · {selectedSP.toFixed(1)} SP</span>
+                                </div>
                             </div>
+                        )}
+                        <div className="planning-actions">
+                            <button
+                                className={`planning-action-button ${isAcceptedIncluded ? 'active' : ''}`}
+                                onClick={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
+                                disabled={visibleTasks.length === 0}
+                                title="Include all Accepted and In Progress stories for the current view"
+                            >
+                                Include Accepted
+                            </button>
+                            <button
+                                className={`planning-action-button ${isTodoIncluded ? 'active' : ''}`}
+                                onClick={() => toggleIncludeByStatus(['To Do', 'Pending'])}
+                                disabled={visibleTasks.length === 0}
+                                title="Include all To Do / Pending stories for the current view"
+                            >
+                                Include To Do
+                            </button>
+                            <button
+                                className="uncheck-button"
+                                onClick={clearSelectedTasks}
+                                disabled={selectedCount === 0}
+                                title="Clear all selected tasks"
+                            >
+                                Uncheck Selected
+                            </button>
+                            <button
+                                className="planning-action-button planning-icon-button"
+                                onClick={openSelectedInJira}
+                                disabled={selectedCount === 0 || !jiraUrl}
+                                title="Open selected stories in Jira (tip: bulk move them to Accepted)"
+                                aria-label="Open selected stories in Jira"
+                            >
+                                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                    <path d="M10 2h4v4h-1.5V4.56L8.53 8.53l-1.06-1.06L11.44 3.5H10V2z" />
+                                    <path d="M13 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4v1.5H3.5v8h8V9H13z" />
+                                </svg>
+                            </button>
                         </div>
 
                         {/* --- Team MicroBar tiles --- */}

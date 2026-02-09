@@ -4272,6 +4272,65 @@
             color: var(--accent);
         }
 
+        /* Capacity bar graph (full-width KPI) */
+        .capacity-bar-graph {
+            margin-bottom: 0.5rem;
+        }
+
+        .capacity-bar-svg {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .capacity-bar-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 11px;
+            fill: #fff;
+            font-weight: 500;
+            pointer-events: none;
+        }
+
+        .capacity-bar-excluded-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 8px;
+            fill: var(--text-primary);
+            font-weight: 500;
+            pointer-events: none;
+        }
+
+        .capacity-bar-tick {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 8px;
+            fill: var(--text-secondary);
+        }
+
+        .capacity-bar-summary {
+            display: flex;
+            align-items: baseline;
+            gap: 1rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.65rem;
+            margin-top: 0.2rem;
+        }
+
+        .capacity-bar-variance {
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .capacity-bar-variance.over {
+            color: #d4380d;
+        }
+
+        .capacity-bar-variance.under {
+            color: #d4380d;
+        }
+
+        .capacity-bar-excluded-note {
+            color: var(--text-secondary);
+        }
+
         .planning-stats {
             display: flex;
             gap: 0.85rem;
@@ -4605,6 +4664,7 @@
             gap: 0.75rem;
             flex-wrap: nowrap;
             white-space: nowrap;
+            margin-top: 0.35rem;
         }
 
         .planning-stat {

@@ -12,6 +12,7 @@ import hashlib
 import time
 import subprocess
 from datetime import datetime, timedelta, date
+from urllib.parse import parse_qs, urlparse
 from dotenv import load_dotenv
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -3528,8 +3529,13 @@ PROJECTS_CACHE_TTL = 60 * 60  # 1 hour
 def get_jira_projects():
     """Fetch available Jira projects via project search API with caching."""
     try:
-        # Return cached data if fresh
-        if PROJECTS_CACHE['data'] and (time.time() - PROJECTS_CACHE['timestamp']) < PROJECTS_CACHE_TTL:
+        query = request.args.get('query', '').strip()
+        limit_raw = request.args.get('limit', '').strip()
+        refresh = request.args.get('refresh', '').strip().lower() in ('1', 'true', 'yes')
+
+        # Return cached data only for full-list requests (no query/limit), unless refresh requested.
+        if (not refresh and not query and not limit_raw and
+                PROJECTS_CACHE['data'] and (time.time() - PROJECTS_CACHE['timestamp']) < PROJECTS_CACHE_TTL):
             return jsonify({'projects': PROJECTS_CACHE['data']})
 
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
@@ -3541,15 +3547,31 @@ def get_jira_projects():
             'Content-Type': 'application/json'
         }
 
-        query = request.args.get('query', '').strip()
+        limit = None
+        if limit_raw:
+            try:
+                limit = max(1, min(int(limit_raw), 500))
+            except ValueError:
+                return jsonify({'error': 'limit must be an integer'}), 400
+
         all_projects = []
         start_at = 0
         max_results = 200
         while True:
-            url = f'{JIRA_URL}/rest/api/3/project/search?startAt={start_at}&maxResults={max_results}&orderBy=key'
+            params = {
+                'startAt': start_at,
+                'maxResults': max_results,
+                'orderBy': 'key'
+            }
             if query:
-                url += f'&query={query}'
-            response = HTTP_SESSION.get(url, headers=headers, timeout=15)
+                params['query'] = query
+
+            response = HTTP_SESSION.get(
+                f'{JIRA_URL}/rest/api/3/project/search',
+                params=params,
+                headers=headers,
+                timeout=15
+            )
             if response.status_code != 200:
                 return jsonify({'error': 'Failed to fetch projects', 'details': response.text}), response.status_code
             data = response.json()
@@ -3560,9 +3582,41 @@ def get_jira_projects():
                     'name': proj.get('name', ''),
                     'id': proj.get('id', '')
                 })
+                if limit and len(all_projects) >= limit:
+                    break
+
+            if limit and len(all_projects) >= limit:
+                all_projects = all_projects[:limit]
+                break
+
             if data.get('isLast', True):
                 break
-            start_at += max_results
+
+            next_start = None
+            next_page = data.get('nextPage')
+            if next_page:
+                parsed = parse_qs(urlparse(next_page).query)
+                start_at_values = parsed.get('startAt') or parsed.get('startat')
+                if start_at_values:
+                    try:
+                        next_start = int(start_at_values[0])
+                    except (TypeError, ValueError):
+                        next_start = None
+
+            if next_start is None:
+                response_page_size = data.get('maxResults')
+                try:
+                    response_page_size = int(response_page_size)
+                except (TypeError, ValueError):
+                    response_page_size = 0
+                step = response_page_size if response_page_size > 0 else len(values)
+                if step <= 0:
+                    break
+                next_start = start_at + step
+
+            if next_start <= start_at:
+                next_start = start_at + max(1, len(values))
+            start_at = next_start
 
         # Cache results (only for unfiltered full list)
         if not query:

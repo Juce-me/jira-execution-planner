@@ -3529,8 +3529,13 @@ PROJECTS_CACHE_TTL = 60 * 60  # 1 hour
 def get_jira_projects():
     """Fetch available Jira projects via project search API with caching."""
     try:
-        # Return cached data if fresh
-        if PROJECTS_CACHE['data'] and (time.time() - PROJECTS_CACHE['timestamp']) < PROJECTS_CACHE_TTL:
+        query = request.args.get('query', '').strip()
+        limit_raw = request.args.get('limit', '').strip()
+        refresh = request.args.get('refresh', '').strip().lower() in ('1', 'true', 'yes')
+
+        # Return cached data only for full-list requests (no query/limit), unless refresh requested.
+        if (not refresh and not query and not limit_raw and
+                PROJECTS_CACHE['data'] and (time.time() - PROJECTS_CACHE['timestamp']) < PROJECTS_CACHE_TTL):
             return jsonify({'projects': PROJECTS_CACHE['data']})
 
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
@@ -3542,8 +3547,6 @@ def get_jira_projects():
             'Content-Type': 'application/json'
         }
 
-        query = request.args.get('query', '').strip()
-        limit_raw = request.args.get('limit', '').strip()
         limit = None
         if limit_raw:
             try:

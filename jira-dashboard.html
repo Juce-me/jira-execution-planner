@@ -1909,7 +1909,7 @@
             padding-top: 0.35rem;
             max-height: 5000px;
             opacity: 1;
-            overflow: visible;
+            overflow: hidden;
             transition: max-height 0.35s ease, opacity 0.25s ease;
         }
 
@@ -1917,6 +1917,8 @@
             max-height: 0;
             opacity: 0;
             padding-top: 0;
+            overflow: hidden;
+            pointer-events: none;
         }
 
         .alert-epic {
@@ -2002,6 +2004,7 @@
             border: 1px dashed var(--border);
             background: #fff;
             position: relative;
+            min-width: 0;
         }
 
         .alert-story:hover {
@@ -2034,12 +2037,17 @@
             flex: 1;
             min-width: 0;
             cursor: pointer;
+            overflow: hidden;
         }
 
         .alert-story-link {
             color: var(--text-primary);
             text-decoration: none;
             font-weight: 600;
+            display: block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .alert-story-note {

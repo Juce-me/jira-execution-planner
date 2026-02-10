@@ -158,6 +158,8 @@ import { createRoot } from 'react-dom/client';
             const [jiraProjects, setJiraProjects] = useState([]);
             const [loadingProjects, setLoadingProjects] = useState(false);
             const [projectSearchQuery, setProjectSearchQuery] = useState('');
+            const [projectSearchRemoteResults, setProjectSearchRemoteResults] = useState([]);
+            const [projectSearchRemoteLoading, setProjectSearchRemoteLoading] = useState(false);
             const [projectSearchOpen, setProjectSearchOpen] = useState(false);
             const [projectSearchIndex, setProjectSearchIndex] = useState(0);
             const [selectedProjectsDraft, setSelectedProjectsDraft] = useState([]);
@@ -1294,6 +1296,48 @@ import { createRoot } from 'react-dom/client';
                 }
             };
 
+            useEffect(() => {
+                const query = projectSearchQuery.trim();
+                if (!showGroupManage || groupManageTab !== 'projects' || !query) {
+                    setProjectSearchRemoteResults([]);
+                    setProjectSearchRemoteLoading(false);
+                    return undefined;
+                }
+
+                const controller = new AbortController();
+                const timeoutId = window.setTimeout(async () => {
+                    setProjectSearchRemoteLoading(true);
+                    try {
+                        const params = new URLSearchParams();
+                        params.set('query', query);
+                        params.set('limit', '25');
+                        const response = await fetch(`${BACKEND_URL}/api/projects?${params.toString()}`, {
+                            method: 'GET',
+                            headers: { 'Content-Type': 'application/json' },
+                            cache: 'no-cache',
+                            signal: controller.signal
+                        });
+                        if (!response.ok) throw new Error(`Projects search error ${response.status}`);
+                        const data = await response.json();
+                        setProjectSearchRemoteResults(data.projects || []);
+                    } catch (err) {
+                        if (err.name !== 'AbortError') {
+                            console.error('Failed to search Jira projects:', err);
+                            setProjectSearchRemoteResults([]);
+                        }
+                    } finally {
+                        if (!controller.signal.aborted) {
+                            setProjectSearchRemoteLoading(false);
+                        }
+                    }
+                }, 220);
+
+                return () => {
+                    window.clearTimeout(timeoutId);
+                    controller.abort();
+                };
+            }, [showGroupManage, groupManageTab, projectSearchQuery]);
+
             const loadSelectedProjects = async () => {
                 try {
                     const response = await fetch(`${BACKEND_URL}/api/projects/selected`, {
@@ -1333,11 +1377,12 @@ import { createRoot } from 'react-dom/client';
             const projectSearchResults = React.useMemo(() => {
                 const query = projectSearchQuery.toLowerCase().trim();
                 if (!query) return [];
-                return jiraProjects.filter(p => {
+                const sourceProjects = projectSearchRemoteResults.length > 0 ? projectSearchRemoteResults : jiraProjects;
+                return sourceProjects.filter(p => {
                     if (selectedProjectKeys.has(p.key)) return false;
                     return p.key.toLowerCase().includes(query) || p.name.toLowerCase().includes(query);
                 }).slice(0, 10);
-            }, [projectSearchQuery, jiraProjects, selectedProjectsDraft]);
+            }, [projectSearchQuery, jiraProjects, projectSearchRemoteResults, selectedProjectsDraft]);
 
             React.useEffect(() => {
                 const maxIndex = projectSearchResults.length - 1;
@@ -9703,7 +9748,9 @@ import { createRoot } from 'react-dom/client';
                                                     />
                                                     {projectSearchOpen && projectSearchQuery.trim() && (
                                                         <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                            {projectSearchResults.length === 0 ? (
+                                                            {projectSearchRemoteLoading ? (
+                                                                <div className="team-search-result-item is-empty">Searching Jira projects...</div>
+                                                            ) : projectSearchResults.length === 0 ? (
                                                                 <div className="team-search-result-item is-empty">No projects found</div>
                                                             ) : projectSearchResults.map((p, index) => (
                                                                 <div

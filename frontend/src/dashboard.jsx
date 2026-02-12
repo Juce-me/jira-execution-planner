@@ -9721,8 +9721,10 @@ import { createRoot } from 'react-dom/client';
                                     >Projects</button>
                                     <button
                                         className={`group-modal-tab ${groupManageTab === 'teams' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('teams')}
+                                        onClick={() => savedSelectedProjects.length > 0 && setGroupManageTab('teams')}
                                         type="button"
+                                        disabled={savedSelectedProjects.length === 0}
+                                        title={savedSelectedProjects.length === 0 ? 'Configure projects first' : ''}
                                     >Teams</button>
                                 </div>
                                 {groupManageTab === 'projects' && (

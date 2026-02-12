@@ -33,7 +33,7 @@ HTTP_SESSION = Session()
 JIRA_URL = os.getenv('JIRA_URL')
 JIRA_EMAIL = os.getenv('JIRA_EMAIL')
 JIRA_TOKEN = os.getenv('JIRA_TOKEN')
-JQL_QUERY = os.getenv('JQL_QUERY', 'project IN (PRODUCT, TECH) ORDER BY created DESC')
+JQL_QUERY = os.getenv('JQL_QUERY', '').strip()
 JIRA_BOARD_ID = os.getenv('JIRA_BOARD_ID')  # Optional: board ID for faster sprint fetching
 JIRA_TEAM_FIELD_ID = os.getenv('JIRA_TEAM_FIELD_ID', 'customfield_30101')  # Optional: custom field id for Team[Team]
 JIRA_TEAM_FALLBACK_FIELD_ID = 'customfield_30101'
@@ -95,7 +95,13 @@ def add_clause_to_jql(jql: str, clause: str) -> str:
 
     if 'ORDER BY' in jql:
         parts = jql.split('ORDER BY')
-        return f"{parts[0].strip()} AND {clause} ORDER BY {parts[1].strip()}"
+        base = parts[0].strip()
+        order = parts[1].strip()
+        if base:
+            return f"{base} AND {clause} ORDER BY {order}"
+        return f"{clause} ORDER BY {order}"
+    if not jql.strip():
+        return clause
     return f"{jql} AND {clause}"
 
 
@@ -680,7 +686,7 @@ def get_stats_team_ids():
     """Resolve stats team IDs from env or JQL configuration."""
     if STATS_TEAM_IDS:
         return STATS_TEAM_IDS
-    base_jql = STATS_JQL_BASE or JQL_QUERY
+    base_jql = STATS_JQL_BASE or build_base_jql()
     return extract_team_ids_from_jql(base_jql)
 
 
@@ -762,6 +768,17 @@ def get_selected_projects():
         elif isinstance(item, dict) and item.get('key'):
             keys.append(item['key'])
     return keys
+
+
+def build_base_jql():
+    """Return base JQL: env JQL_QUERY if set, else derive from dashboard-config projects."""
+    if JQL_QUERY:
+        return JQL_QUERY
+    projects = get_selected_projects()
+    if not projects:
+        return ''
+    quoted = ', '.join(f'"{p}"' for p in projects)
+    return f'project in ({quoted}) ORDER BY created DESC'
 
 
 def get_selected_projects_typed():
@@ -1010,7 +1027,7 @@ def validate_groups_config(payload, allow_empty=False):
 
 def build_default_groups_config():
     warnings = []
-    team_ids = normalize_team_ids(extract_team_ids_from_jql(JQL_QUERY))
+    team_ids = normalize_team_ids(extract_team_ids_from_jql(build_base_jql()))
     if len(team_ids) > GROUPS_MAX_TEAMS:
         warnings.append(f'Found more than {GROUPS_MAX_TEAMS} teams in JQL_QUERY; truncated to first {GROUPS_MAX_TEAMS}.')
         team_ids = team_ids[:GROUPS_MAX_TEAMS]
@@ -1447,18 +1464,18 @@ def fetch_tasks(include_team_name=False):
         if use_template:
             jql = apply_team_ids_to_template(team_ids)
             if not jql:
-                jql = JQL_QUERY
+                jql = build_base_jql()
         elif team_ids:
             # If team_ids provided (from group), filter by those teams
             # Remove existing team filter from base JQL and add our own
-            jql = remove_team_filter_from_jql(JQL_QUERY)
+            jql = remove_team_filter_from_jql(build_base_jql())
             if len(team_ids) == 1:
                 jql = add_clause_to_jql(jql, f'"Team[Team]" = "{team_ids[0]}"')
             else:
                 quoted_teams = ', '.join(f'"{tid}"' for tid in team_ids)
                 jql = add_clause_to_jql(jql, f'"Team[Team]" in ({quoted_teams})')
         else:
-            jql = JQL_QUERY
+            jql = build_base_jql()
 
         if sprint:
             jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
@@ -1766,7 +1783,7 @@ def build_scenario_jql(filters):
     if teams and JQL_QUERY_TEMPLATE:
         jql = apply_team_ids_to_template(teams)
     else:
-        jql = JQL_QUERY
+        jql = build_base_jql()
         if teams:
             # Strip any Team[Team] filters from the base JQL before applying group teams.
             jql = remove_team_filter_from_jql(jql)
@@ -2912,25 +2929,22 @@ def get_teams():
             'Content-Type': 'application/json'
         }
 
-        # Build JQL query
+        # Build JQL query from env or dashboard config
         if use_template:
             jql = apply_team_ids_to_template(team_ids)
             if not jql:
-                jql = JQL_QUERY
+                jql = build_base_jql()
         else:
-            jql = JQL_QUERY
+            jql = build_base_jql()
 
-        # Apply selected projects scope from dashboard config
-        selected_projects = get_selected_projects()
-        if selected_projects:
-            jql = remove_project_filter_from_jql(jql)
-            quoted = ', '.join(f'"{p}"' for p in selected_projects)
-            jql = add_clause_to_jql(jql, f'project in ({quoted})')
+        if not jql:
+            return jsonify({'error': 'No projects configured', 'teams': []}), 400
 
-        # If fetching all teams, remove team filter AND sprint filter from JQL
-        # so we discover teams across all sprints, not just the current one
+        # If fetching all teams, remove team filter but keep sprint scope
         if fetch_all:
             jql = remove_team_filter_from_jql(jql)
+            if sprint:
+                jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
         elif sprint:
             jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
 
@@ -2944,6 +2958,8 @@ def get_teams():
             fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
 
         max_results = 100
+        max_pages = 30  # Cap at ~3000 issues for team discovery
+        page_count = 0
         next_page_token = None
         all_issues = []
 
@@ -2967,6 +2983,9 @@ def get_teams():
                 break
 
             all_issues.extend(issues)
+            page_count += 1
+            if page_count >= max_pages:
+                break
 
             # Check if we've fetched everything (using new pagination API)
             is_last = data.get('isLast', True)
@@ -3044,7 +3063,7 @@ def resolve_team_names():
         if not team_field_id:
             team_field_id = JIRA_TEAM_FALLBACK_FIELD_ID
 
-        base_jql = remove_team_filter_from_jql(JQL_QUERY)
+        base_jql = remove_team_filter_from_jql(build_base_jql())
         quoted = ', '.join(f'"{team_id}"' for team_id in team_ids)
         jql = add_clause_to_jql(base_jql, f'"Team[Team]" in ({quoted})')
 
@@ -3123,7 +3142,7 @@ def get_all_teams_list():
         }
 
         # Build JQL query - remove team filter to get ALL teams
-        jql = remove_team_filter_from_jql(JQL_QUERY)
+        jql = remove_team_filter_from_jql(build_base_jql())
         if sprint:
             jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
 
@@ -3225,7 +3244,7 @@ def get_completed_sprint_stats():
     if not sprint_name:
         return jsonify({'error': 'Missing sprint name'}), 400
 
-    base_jql = STATS_JQL_BASE or JQL_QUERY
+    base_jql = STATS_JQL_BASE or build_base_jql()
     team_ids = []
     if team_ids_raw:
         team_ids = [t.strip() for t in team_ids_raw.split(',') if t.strip()]
@@ -3409,7 +3428,8 @@ def get_config():
         'jiraUrl': JIRA_URL,
         'capacityProject': get_effective_capacity_project(),
         'groupsConfigPath': resolve_groups_config_path(),
-        'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE)
+        'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),
+        'projectsConfigured': bool(get_selected_projects())
     })
 
 
@@ -3947,7 +3967,7 @@ def debug_fields():
 
         # Get one issue with ALL fields
         payload = {
-            'jql': JQL_QUERY,
+            'jql': build_base_jql() or 'ORDER BY created DESC',
             'maxResults': 1,
             'fields': ['*all']
         }
@@ -3982,7 +4002,7 @@ def debug_fields():
         else:
             return jsonify({
                 'error': 'No issues found',
-                'jql': JQL_QUERY
+                'jql': build_base_jql()
             }), 404
 
     except Exception as e:
@@ -4012,7 +4032,7 @@ def get_tasks_fields():
             limit_value = 5
 
         payload = {
-            'jql': JQL_QUERY,
+            'jql': build_base_jql() or 'ORDER BY created DESC',
             'maxResults': limit_value,
             'fields': ['*all']
         }

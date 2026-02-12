@@ -1004,10 +1004,20 @@ def validate_groups_config(payload, allow_empty=False):
             errors.append(f'Group "{name}" must include at least one team.')
         if len(team_ids) > GROUPS_MAX_TEAMS:
             errors.append(f'Group "{name}" exceeds {GROUPS_MAX_TEAMS} teams.')
+        raw_components = group.get('missingInfoComponents')
+        if isinstance(raw_components, list):
+            missing_info_components = [str(c).strip() for c in raw_components if str(c).strip()]
+        elif isinstance(raw_components, str) and raw_components.strip():
+            missing_info_components = [raw_components.strip()]
+        else:
+            # Backwards compat: accept old singular field
+            old_single = str(group.get('missingInfoComponent') or '').strip()
+            missing_info_components = [old_single] if old_single else []
         normalized_groups.append({
             'id': group_id,
             'name': name,
-            'teamIds': team_ids
+            'teamIds': team_ids,
+            'missingInfoComponents': missing_info_components
         })
 
     default_group_id = str(payload.get('defaultGroupId') or '').strip()
@@ -1039,7 +1049,8 @@ def build_default_groups_config():
         'groups': [{
             'id': 'default',
             'name': 'Default',
-            'teamIds': team_ids
+            'teamIds': team_ids,
+            'missingInfoComponents': [MISSING_INFO_COMPONENT] if MISSING_INFO_COMPONENT else []
         }],
         'defaultGroupId': 'default',
         'teamCatalog': {},
@@ -2682,13 +2693,18 @@ def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):
     return stats_payload, None
 
 
-def build_missing_info_scope_clause(team_ids, component_name):
+def build_missing_info_scope_clause(team_ids, component_names):
     clauses = []
-    component_name = (component_name or '').strip()
+    if isinstance(component_names, str):
+        component_names = [component_names] if component_names.strip() else []
+    component_names = [c.strip() for c in (component_names or []) if c and str(c).strip()]
     team_ids = [t.strip() for t in (team_ids or []) if t and str(t).strip()]
 
-    if component_name:
-        clauses.append(f'component = "{component_name}"')
+    if len(component_names) == 1:
+        clauses.append(f'component = "{component_names[0]}"')
+    elif len(component_names) > 1:
+        quoted = ', '.join(f'"{c}"' for c in component_names)
+        clauses.append(f'component in ({quoted})')
     if team_ids:
         if len(team_ids) == 1:
             clauses.append(f'"Team[Team]" = "{team_ids[0]}"')
@@ -2710,6 +2726,7 @@ def get_missing_info():
         sprint = request.args.get('sprint', '').strip()
         team_ids_param = request.args.get('teamIds', '').strip()
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
+        components_param = [c.strip() for c in request.args.get('components', '').split(',') if c.strip()]
         if not sprint:
             return jsonify({'error': 'Missing required query param: sprint'}), 400
 
@@ -2728,7 +2745,8 @@ def get_missing_info():
         team_field_id = resolve_team_field_id(headers)
         epic_link_field_id = resolve_epic_link_field_id(headers)
 
-        scope_clause = build_missing_info_scope_clause(team_ids or MISSING_INFO_TEAM_IDS, MISSING_INFO_COMPONENT)
+        effective_components = components_param or ([MISSING_INFO_COMPONENT] if MISSING_INFO_COMPONENT else [])
+        scope_clause = build_missing_info_scope_clause(team_ids or MISSING_INFO_TEAM_IDS, effective_components)
 
         # 1) Fetch epics that are in the sprint (future sprint planning), scoped by component/team.
         epic_jql = f'Sprint = {sprint} AND issuetype = Epic'
@@ -2737,7 +2755,7 @@ def get_missing_info():
         epic_jql = add_clause_to_jql(epic_jql, 'status not in ("Killed","Done","Incomplete")')
         epic_jql = add_clause_to_jql(epic_jql, f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")')
 
-        epic_fields = ['summary', 'status', 'assignee', 'parent']
+        epic_fields = ['summary', 'status', 'assignee', 'parent', 'components']
         if team_field_id:
             epic_fields.append(team_field_id)
         if JIRA_TEAM_FALLBACK_FIELD_ID not in epic_fields:
@@ -2757,6 +2775,31 @@ def get_missing_info():
         epic_keys = [e.get('key') for e in epic_issues if e.get('key')]
         if not epic_keys:
             return jsonify({'issues': [], 'epics': [], 'count': 0})
+
+        # Build epics summary for the response
+        epics_summary = []
+        for epic in epic_issues:
+            ef = epic.get('fields', {}) or {}
+            epic_status = (ef.get('status') or {}).get('name') or ''
+            epic_components = [c.get('name', '') for c in (ef.get('components') or []) if c.get('name')]
+            raw_team = None
+            if ef.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
+                raw_team = ef.get(JIRA_TEAM_FALLBACK_FIELD_ID)
+            elif team_field_id and ef.get(team_field_id) is not None:
+                raw_team = ef.get(team_field_id)
+            epic_team_name = extract_team_name(raw_team) if raw_team else ''
+            epic_team_id = None
+            if raw_team:
+                tv = build_team_value(raw_team)
+                epic_team_id = tv.get('id') if isinstance(tv, dict) else None
+            epics_summary.append({
+                'key': epic.get('key'),
+                'summary': ef.get('summary', ''),
+                'status': epic_status,
+                'components': epic_components,
+                'teamName': epic_team_name,
+                'teamId': epic_team_id
+            })
 
         # 2) Fetch stories under those epics, regardless of story sprint (to catch missing Sprint field).
         story_fields = [
@@ -2884,7 +2927,7 @@ def get_missing_info():
                 if len(issues) < 250:
                     break
 
-        response = jsonify({'issues': missing, 'count': len(missing), 'epicCount': len(epic_keys)})
+        response = jsonify({'issues': missing, 'epics': epics_summary, 'count': len(missing), 'epicCount': len(epic_keys)})
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
@@ -3545,6 +3588,9 @@ def save_groups_config():
 PROJECTS_CACHE = {'data': None, 'timestamp': 0}
 PROJECTS_CACHE_TTL = 60 * 60  # 1 hour
 
+COMPONENTS_CACHE = {'data': None, 'timestamp': 0}
+COMPONENTS_CACHE_TTL = 60 * 60  # 1 hour
+
 @app.route('/api/projects', methods=['GET'])
 def get_jira_projects():
     """Fetch available Jira projects via project search API with caching."""
@@ -3646,6 +3692,81 @@ def get_jira_projects():
         return jsonify({'projects': all_projects})
     except Exception as e:
         return jsonify({'error': 'Failed to fetch projects', 'details': str(e)}), 500
+
+
+@app.route('/api/components', methods=['GET'])
+def get_jira_components():
+    """Fetch Jira components across selected projects with caching."""
+    try:
+        query = request.args.get('query', '').strip().lower()
+        limit_raw = request.args.get('limit', '').strip()
+
+        limit = 25
+        if limit_raw:
+            try:
+                limit = max(1, min(int(limit_raw), 200))
+            except ValueError:
+                return jsonify({'error': 'limit must be an integer'}), 400
+
+        # Return cached data when no query is specified and cache is fresh
+        if (not query and COMPONENTS_CACHE['data'] and
+                (time.time() - COMPONENTS_CACHE['timestamp']) < COMPONENTS_CACHE_TTL):
+            return jsonify({'components': COMPONENTS_CACHE['data'][:limit]})
+
+        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+        auth_bytes = auth_string.encode('ascii')
+        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+        headers = {
+            'Authorization': f'Basic {auth_base64}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+
+        projects = get_selected_projects()
+        if not projects:
+            return jsonify({'components': []})
+
+        seen_names = set()
+        all_components = []
+        for project_key in projects:
+            try:
+                resp = HTTP_SESSION.get(
+                    f'{JIRA_URL}/rest/api/3/project/{project_key}/components',
+                    headers=headers,
+                    timeout=10
+                )
+                if resp.status_code != 200:
+                    continue
+                for comp in (resp.json() or []):
+                    name = (comp.get('name') or '').strip()
+                    if not name:
+                        continue
+                    name_lower = name.lower()
+                    if name_lower in seen_names:
+                        continue
+                    seen_names.add(name_lower)
+                    all_components.append({
+                        'id': comp.get('id', ''),
+                        'name': name,
+                        'projectKey': project_key
+                    })
+            except Exception:
+                continue
+
+        all_components.sort(key=lambda c: c['name'].lower())
+
+        # Cache the full unfiltered list
+        if not query:
+            COMPONENTS_CACHE['data'] = all_components
+            COMPONENTS_CACHE['timestamp'] = time.time()
+
+        # Apply query filter
+        if query:
+            all_components = [c for c in all_components if query in c['name'].lower()]
+
+        return jsonify({'components': all_components[:limit]})
+    except Exception as e:
+        return jsonify({'error': 'Failed to fetch components', 'details': str(e)}), 500
 
 
 @app.route('/api/projects/selected', methods=['GET'])

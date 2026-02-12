@@ -164,6 +164,12 @@ import { createRoot } from 'react-dom/client';
             const [projectSearchIndex, setProjectSearchIndex] = useState(0);
             const [selectedProjectsDraft, setSelectedProjectsDraft] = useState([]);
             const [savedSelectedProjects, setSavedSelectedProjects] = useState([]);
+            const [componentSearchQuery, setComponentSearchQuery] = useState('');
+            const [componentSearchResults, setComponentSearchResults] = useState([]);
+            const [componentSearchOpen, setComponentSearchOpen] = useState(false);
+            const [componentSearchIndex, setComponentSearchIndex] = useState(0);
+            const [componentSearchLoading, setComponentSearchLoading] = useState(false);
+            const [missingInfoEpics, setMissingInfoEpics] = useState([]);
             const techProjectKeys = React.useMemo(() => {
                 const keys = new Set();
                 for (const p of savedSelectedProjects) {
@@ -287,6 +293,7 @@ import { createRoot } from 'react-dom/client';
             const [showWaitingAlert, setShowWaitingAlert] = useState(savedPrefsRef.current.showWaitingAlert ?? true);
             const [showEmptyEpicAlert, setShowEmptyEpicAlert] = useState(savedPrefsRef.current.showEmptyEpicAlert ?? true);
             const [showDoneEpicAlert, setShowDoneEpicAlert] = useState(savedPrefsRef.current.showDoneEpicAlert ?? true);
+            const [showRndWaitingAlert, setShowRndWaitingAlert] = useState(savedPrefsRef.current.showRndWaitingAlert ?? true);
             const [dismissedAlertKeys, setDismissedAlertKeys] = useState([]);
             const [alertCelebrationPieces, setAlertCelebrationPieces] = useState([]);
             const alertDismissedRef = useRef(false);
@@ -578,7 +585,10 @@ import { createRoot } from 'react-dom/client';
                         name: String(group?.name || '').trim(),
                         teamIds: Array.isArray(group?.teamIds)
                             ? group.teamIds.map(id => String(id || '').trim()).filter(Boolean)
-                            : []
+                            : [],
+                        missingInfoComponents: Array.isArray(group?.missingInfoComponents)
+                            ? group.missingInfoComponents.map(c => String(c || '').trim()).filter(Boolean)
+                            : (group?.missingInfoComponent ? [String(group.missingInfoComponent).trim()] : [])
                     }))
                     .filter(group => group.id && group.name);
                 const rawCatalog = config?.teamCatalog || {};
@@ -1338,6 +1348,111 @@ import { createRoot } from 'react-dom/client';
                 };
             }, [showGroupManage, groupManageTab, projectSearchQuery]);
 
+            // Component search debounced fetch
+            useEffect(() => {
+                const query = componentSearchQuery.trim();
+                if (!showGroupManage || groupManageTab !== 'teams' || !query) {
+                    setComponentSearchResults([]);
+                    setComponentSearchLoading(false);
+                    return undefined;
+                }
+
+                const controller = new AbortController();
+                const timeoutId = window.setTimeout(async () => {
+                    setComponentSearchLoading(true);
+                    try {
+                        const params = new URLSearchParams();
+                        params.set('query', query);
+                        params.set('limit', '15');
+                        const response = await fetch(`${BACKEND_URL}/api/components?${params.toString()}`, {
+                            method: 'GET',
+                            headers: { 'Content-Type': 'application/json' },
+                            cache: 'no-cache',
+                            signal: controller.signal
+                        });
+                        if (!response.ok) throw new Error(`Components search error ${response.status}`);
+                        const data = await response.json();
+                        setComponentSearchResults(data.components || []);
+                    } catch (err) {
+                        if (err.name !== 'AbortError') {
+                            console.error('Failed to search components:', err);
+                            setComponentSearchResults([]);
+                        }
+                    } finally {
+                        if (!controller.signal.aborted) {
+                            setComponentSearchLoading(false);
+                        }
+                    }
+                }, 220);
+
+                return () => {
+                    window.clearTimeout(timeoutId);
+                    controller.abort();
+                };
+            }, [showGroupManage, groupManageTab, componentSearchQuery]);
+
+            const filteredComponentSearchResults = React.useMemo(() => {
+                const group = activeGroupDraftId
+                    ? (groupDraft?.groups || []).find(g => g.id === activeGroupDraftId)
+                    : null;
+                const selected = new Set((group?.missingInfoComponents || []).map(c => c.toLowerCase()));
+                return componentSearchResults.filter(c => !selected.has(c.name.toLowerCase()));
+            }, [componentSearchResults, groupDraft, activeGroupDraftId]);
+
+            React.useEffect(() => {
+                const maxIndex = filteredComponentSearchResults.length - 1;
+                if (componentSearchIndex > maxIndex) setComponentSearchIndex(0);
+            }, [filteredComponentSearchResults.length]);
+
+            const handleComponentSearchKeyDown = (event) => {
+                if (event.key === 'ArrowDown') {
+                    if (!filteredComponentSearchResults.length) return;
+                    event.preventDefault();
+                    setComponentSearchIndex(prev => Math.min(prev + 1, filteredComponentSearchResults.length - 1));
+                } else if (event.key === 'ArrowUp') {
+                    if (!filteredComponentSearchResults.length) return;
+                    event.preventDefault();
+                    setComponentSearchIndex(prev => Math.max(prev - 1, 0));
+                } else if (event.key === 'Enter') {
+                    if (!filteredComponentSearchResults.length) return;
+                    event.preventDefault();
+                    const comp = filteredComponentSearchResults[componentSearchIndex] || filteredComponentSearchResults[0];
+                    if (comp && activeGroupDraft) addGroupMissingInfoComponent(activeGroupDraft.id, comp.name);
+                } else if (event.key === 'Escape') {
+                    if (componentSearchOpen) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setComponentSearchOpen(false);
+                    }
+                }
+            };
+
+            const addGroupMissingInfoComponent = (groupId, componentName) => {
+                setGroupDraft(prev => {
+                    if (!prev) return prev;
+                    const groups = (prev.groups || []).map(g => {
+                        if (g.id !== groupId) return g;
+                        const existing = g.missingInfoComponents || [];
+                        if (existing.some(c => c.toLowerCase() === componentName.toLowerCase())) return g;
+                        return { ...g, missingInfoComponents: [...existing, componentName] };
+                    });
+                    return { ...prev, groups };
+                });
+                setComponentSearchQuery('');
+                setComponentSearchOpen(false);
+            };
+
+            const removeGroupMissingInfoComponent = (groupId, componentName) => {
+                setGroupDraft(prev => {
+                    if (!prev) return prev;
+                    const groups = (prev.groups || []).map(g => {
+                        if (g.id !== groupId) return g;
+                        return { ...g, missingInfoComponents: (g.missingInfoComponents || []).filter(c => c !== componentName) };
+                    });
+                    return { ...prev, groups };
+                });
+            };
+
             const loadSelectedProjects = async () => {
                 try {
                     const response = await fetch(`${BACKEND_URL}/api/projects/selected`, {
@@ -1840,6 +1955,7 @@ import { createRoot } from 'react-dom/client';
                     readyToCloseProductTasks: [],
                     readyToCloseTechTasks: [],
                     missingPlanningInfoTasks: [],
+                    missingInfoEpics: [],
                     productEpicsInScope: [],
                     techEpicsInScope: [],
                     readyToCloseProductEpicsInScope: [],
@@ -1893,6 +2009,7 @@ import { createRoot } from 'react-dom/client';
                     showWaitingAlert: savedPrefsRef.current.showWaitingAlert ?? true,
                     showEmptyEpicAlert: savedPrefsRef.current.showEmptyEpicAlert ?? true,
                     showDoneEpicAlert: savedPrefsRef.current.showDoneEpicAlert ?? true,
+                    showRndWaitingAlert: savedPrefsRef.current.showRndWaitingAlert ?? true,
                     dismissedAlertKeys: [],
                     dependencyData: {},
                     dependencyFocus: null,
@@ -1912,6 +2029,7 @@ import { createRoot } from 'react-dom/client';
                 readyToCloseProductTasks,
                 readyToCloseTechTasks,
                 missingPlanningInfoTasks,
+                missingInfoEpics,
                 productEpicsInScope,
                 techEpicsInScope,
                 readyToCloseProductEpicsInScope,
@@ -1955,6 +2073,7 @@ import { createRoot } from 'react-dom/client';
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
+                showRndWaitingAlert,
                 dismissedAlertKeys,
                 dependencyData,
                 dependencyFocus,
@@ -1993,6 +2112,7 @@ import { createRoot } from 'react-dom/client';
                 setReadyToCloseProductTasks(nextState.readyToCloseProductTasks || []);
                 setReadyToCloseTechTasks(nextState.readyToCloseTechTasks || []);
                 setMissingPlanningInfoTasks(nextState.missingPlanningInfoTasks || []);
+                setMissingInfoEpics(nextState.missingInfoEpics || []);
                 setProductEpicsInScope(nextState.productEpicsInScope || []);
                 setTechEpicsInScope(nextState.techEpicsInScope || []);
                 setReadyToCloseProductEpicsInScope(nextState.readyToCloseProductEpicsInScope || []);
@@ -2046,6 +2166,7 @@ import { createRoot } from 'react-dom/client';
                 setShowWaitingAlert(nextState.showWaitingAlert ?? true);
                 setShowEmptyEpicAlert(nextState.showEmptyEpicAlert ?? true);
                 setShowDoneEpicAlert(nextState.showDoneEpicAlert ?? true);
+                setShowRndWaitingAlert(nextState.showRndWaitingAlert ?? true);
                 setDismissedAlertKeys(nextState.dismissedAlertKeys || []);
                 setAlertCelebrationPieces([]);
                 setDependencyData(nextState.dependencyData || {});
@@ -2060,7 +2181,7 @@ import { createRoot } from 'react-dom/client';
             };
 
             const groupStateSnapshot = React.useMemo(() => buildGroupStateSnapshot(), [
-                selectedSprint,
+                selectedSprint, missingInfoEpics,
                 activeGroupTeamIds.join('|'),
                 productTasks,
                 techTasks,
@@ -2113,6 +2234,7 @@ import { createRoot } from 'react-dom/client';
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
+                showRndWaitingAlert,
                 dismissedAlertKeys,
                 dependencyData,
                 dependencyFocus,
@@ -2374,6 +2496,7 @@ import { createRoot } from 'react-dom/client';
                     showWaitingAlert,
                     showEmptyEpicAlert,
                     showDoneEpicAlert,
+                    showRndWaitingAlert,
                     updateDismissedHash
                 });
             }, [
@@ -2400,6 +2523,7 @@ import { createRoot } from 'react-dom/client';
                 showPostponedAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
+                showRndWaitingAlert,
                 updateDismissedHash
             ]);
 
@@ -2447,10 +2571,11 @@ import { createRoot } from 'react-dom/client';
                 setProductEpicsInScope([]);
                 setTechEpicsInScope([]);
                 setMissingPlanningInfoTasks([]);
+                setMissingInfoEpics([]);
                 loadProductTasks();
                 loadTechTasks();
                 fetchMissingPlanningInfo(selectedSprint);
-            }, [selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading]);
+            }, [selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, (activeGroup?.missingInfoComponents || []).join(',')]);
 
             const fetchMissingPlanningInfo = async (sprintId) => {
                 const controller = registerSprintFetch();
@@ -2464,6 +2589,10 @@ import { createRoot } from 'react-dom/client';
                     if (activeGroupTeamIds.length) {
                         params.set('teamIds', activeGroupTeamIds.join(','));
                     }
+                    const groupComponents = activeGroup?.missingInfoComponents || [];
+                    if (groupComponents.length) {
+                        params.set('components', groupComponents.join(','));
+                    }
                     const response = await fetch(`${BACKEND_URL}/api/missing-info?${params.toString()}`, {
                         method: 'GET',
                         headers: { 'Content-Type': 'application/json' },
@@ -2473,6 +2602,7 @@ import { createRoot } from 'react-dom/client';
 	                    if (!response.ok) return;
 	                    const data = await response.json();
 	                    setMissingPlanningInfoTasks(data.issues || []);
+	                    setMissingInfoEpics(data.epics || []);
 	                } catch (e) {
                         if (e.name === 'AbortError') return;
 	                    // ignore (alerts are best-effort)
@@ -6436,6 +6566,24 @@ import { createRoot } from 'react-dom/client';
 
             const analysisEpicTeams = groupAlertsByTeam(waitingForStoriesEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
 
+            const rndWaitingEpics = React.useMemo(() => {
+                if (!isFutureSprintSelected) return [];
+                const componentNames = activeGroup?.missingInfoComponents || [];
+                if (!componentNames.length) return [];
+                const lowerSet = new Set(componentNames.map(c => c.toLowerCase()));
+                return (missingInfoEpics || []).filter(epic => {
+                    const epicComponents = epic.components || [];
+                    return epicComponents.some(c => lowerSet.has(c.toLowerCase()));
+                });
+            }, [missingInfoEpics, isFutureSprintSelected, (activeGroup?.missingInfoComponents || []).join(',')]);
+
+            const rndWaitingEpicTeams = groupAlertsByTeam(rndWaitingEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+
+            const rndWaitingKeySet = React.useMemo(
+                () => new Set(rndWaitingEpics.map(epic => epic.key).filter(Boolean)),
+                [rndWaitingEpics]
+            );
+
             const missingAlertKeySet = React.useMemo(
                 () => new Set(consolidatedMissingStories.map(item => item.task?.key).filter(Boolean)),
                 [consolidatedMissingStories]
@@ -6467,9 +6615,10 @@ import { createRoot } from 'react-dom/client';
                 followup: postponedTasks.length,
                 waiting: waitingForStoriesEpics.length,
                 empty: emptyEpics.length,
-                done: doneStoryEpics.length
+                done: doneStoryEpics.length,
+                rndWaiting: rndWaitingEpics.length
             };
-            const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.followup + alertCounts.waiting + alertCounts.empty + alertCounts.done;
+            const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.followup + alertCounts.waiting + alertCounts.empty + alertCounts.done + alertCounts.rndWaiting;
 
             const triggerAlertCelebration = React.useCallback((options = {}) => {
                 if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -8507,7 +8656,7 @@ import { createRoot } from 'react-dom/client';
                                     </div>
                                 )}
 		                            {alertItemCount > 0 && (
-		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert) ? 'collapsed' : ''}`}>
+		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert && !showRndWaitingAlert) ? 'collapsed' : ''}`}>
 		                                    {consolidatedMissingStories.length > 0 && (
 		                                        <div className={`alert-card missing ${showMissingAlert ? '' : 'collapsed'}`}>
 	                                            <div className="alert-card-header">
@@ -8552,12 +8701,12 @@ import { createRoot } from 'react-dom/client';
                                                                             rel="noopener noreferrer"
                                                                         >
                                                                             <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'} blocked</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'} not ready</span>
                                                                         </a>
                                                                     ) : (
                                                                         <div className="alert-team-title">
                                                                             <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'} blocked</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'} not ready</span>
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -8909,6 +9058,112 @@ import { createRoot } from 'react-dom/client';
                                                                                 <div className="alert-story-note">Waiting for description to create stories.</div>
                                                                             </div>
                                                                             <span className="alert-pill status">{epic.status?.name || 'Waiting'}</span>
+                                                                            <a
+                                                                                className="alert-action"
+                                                                                href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                            >
+                                                                                Open epic →
+                                                                            </a>
+                                                                            <button
+                                                                                className="task-remove alert-remove"
+                                                                                onClick={(event) => {
+                                                                                    event.stopPropagation();
+                                                                                    dismissAlertItem(epic.key);
+                                                                                }}
+                                                                                title="Dismiss from alerts"
+                                                                                type="button"
+                                                                            >
+                                                                                ×
+                                                                            </button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {rndWaitingEpics.length > 0 && (
+                                            <div className={`alert-card rnd-waiting ${showRndWaitingAlert ? '' : 'collapsed'}`}>
+                                                <div className="alert-card-header">
+                                                    <button
+                                                        className="alert-toggle"
+                                                        onClick={() => setShowRndWaitingAlert(prev => !prev)}
+                                                        title={showRndWaitingAlert ? 'Collapse R&D waiting panel' : 'Expand R&D waiting panel'}
+                                                    >
+                                                        <span className="alert-toggle-icon" aria-hidden="true">
+                                                            <svg className={`alert-toggle-chevron ${showRndWaitingAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
+                                                                <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                            </svg>
+                                                        </span>
+                                                        <span className="alert-toggle-label">
+                                                            {showRndWaitingAlert ? 'Hide' : 'Show'}
+                                                        </span>
+                                                    </button>
+                                                    <div className="alert-title">Waiting for R&D Stories</div>
+                                                    <div className="alert-subtitle">Epic is waiting for stories from R&D.</div>
+                                                    <div className="alert-chip">
+                                                        {rndWaitingEpics.length} {rndWaitingEpics.length === 1 ? 'epic' : 'epics'}
+                                                    </div>
+                                                </div>
+                                                <div className={`alert-card-body ${showRndWaitingAlert ? '' : 'collapsed'}`}>
+                                                    {rndWaitingEpicTeams.map(group => {
+                                                        const keys = group.items.map(item => item.key);
+                                                        const teamLink = buildKeyListLink(keys);
+                                                        return (
+                                                            <div key={group.id} className="alert-team-group">
+                                                                <div className="alert-team-header">
+                                                                    {teamLink ? (
+                                                                        <a
+                                                                            className="alert-team-link"
+                                                                            href={teamLink}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                        >
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                        </a>
+                                                                    ) : (
+                                                                        <div className="alert-team-title">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <div className="alert-stories">
+                                                                    {group.items.map(epic => (
+                                                                        <div key={epic.key} className="alert-story">
+                                                                            <div
+                                                                                className="alert-story-main"
+                                                                                role="button"
+                                                                                tabIndex={0}
+                                                                                onClick={() => handleAlertStoryClick(epic.key)}
+                                                                                onKeyDown={(event) => {
+                                                                                    if (event.key === 'Enter' || event.key === ' ') {
+                                                                                        event.preventDefault();
+                                                                                        handleAlertStoryClick(epic.key);
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                <a
+                                                                                    className="alert-story-link"
+                                                                                    href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                    onClick={(event) => {
+                                                                                        event.preventDefault();
+                                                                                        event.stopPropagation();
+                                                                                        handleAlertStoryClick(epic.key);
+                                                                                    }}
+                                                                                >
+                                                                                    {epic.key} · {epic.summary}
+                                                                                </a>
+                                                                            </div>
+                                                                            <span className="alert-pill status">{epic.status || 'Open'}</span>
                                                                             <a
                                                                                 className="alert-action"
                                                                                 href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
@@ -10142,10 +10397,58 @@ import { createRoot } from 'react-dom/client';
                                                         </div>
                                                     )}
                                                 </div>
-                                                <div className="group-editor-actions">
-                                                    <button className="secondary compact" onClick={addGroupDraftRow} type="button">
-                                                        Add group
-                                                    </button>
+                                                <div className="component-selector">
+                                                    <label className="component-selector-label">Components for missing info</label>
+                                                    {(activeGroupDraft?.missingInfoComponents || []).length > 0 && (
+                                                        <div className="selected-components-list">
+                                                            {activeGroupDraft.missingInfoComponents.map(comp => (
+                                                                <div key={comp} className="component-chip">
+                                                                    <span className="component-name">{comp}</span>
+                                                                    <button
+                                                                        className="remove-btn"
+                                                                        onClick={() => removeGroupMissingInfoComponent(activeGroupDraft.id, comp)}
+                                                                        title={`Remove ${comp}`}
+                                                                        type="button"
+                                                                    >×</button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    <div className="component-search-wrapper">
+                                                        <input
+                                                            type="text"
+                                                            className="component-search-input"
+                                                            placeholder="Search components..."
+                                                            value={componentSearchQuery}
+                                                            onChange={(e) => {
+                                                                setComponentSearchQuery(e.target.value);
+                                                                setComponentSearchOpen(true);
+                                                            }}
+                                                            onFocus={() => setComponentSearchOpen(true)}
+                                                            onBlur={() => window.setTimeout(() => setComponentSearchOpen(false), 200)}
+                                                            onKeyDown={handleComponentSearchKeyDown}
+                                                        />
+                                                        {componentSearchOpen && componentSearchQuery.trim() && (
+                                                            <div className="component-search-results">
+                                                                {componentSearchLoading ? (
+                                                                    <div className="component-search-result-item is-empty">Searching...</div>
+                                                                ) : filteredComponentSearchResults.length === 0 ? (
+                                                                    <div className="component-search-result-item is-empty">No components found</div>
+                                                                ) : filteredComponentSearchResults.map((comp, index) => (
+                                                                    <div
+                                                                        key={comp.id || comp.name}
+                                                                        className={`component-search-result-item ${index === componentSearchIndex ? 'active' : ''}`}
+                                                                        onMouseDown={(e) => {
+                                                                            e.preventDefault();
+                                                                            addGroupMissingInfoComponent(activeGroupDraft.id, comp.name);
+                                                                        }}
+                                                                    >
+                                                                        {comp.name}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <details className="group-advanced" open={showGroupAdvanced}>
                                                     <summary onClick={(event) => {

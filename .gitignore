@@ -17,6 +17,9 @@ dist/
 !frontend/dist/**
 *.egg-info/
 
+# Claude Code (local settings/skills)
+.claude/
+
 # IDE
 .vscode/
 .idea/

@@ -293,7 +293,6 @@ import { createRoot } from 'react-dom/client';
             const [showWaitingAlert, setShowWaitingAlert] = useState(savedPrefsRef.current.showWaitingAlert ?? true);
             const [showEmptyEpicAlert, setShowEmptyEpicAlert] = useState(savedPrefsRef.current.showEmptyEpicAlert ?? true);
             const [showDoneEpicAlert, setShowDoneEpicAlert] = useState(savedPrefsRef.current.showDoneEpicAlert ?? true);
-            const [showRndWaitingAlert, setShowRndWaitingAlert] = useState(savedPrefsRef.current.showRndWaitingAlert ?? true);
             const [dismissedAlertKeys, setDismissedAlertKeys] = useState([]);
             const [alertCelebrationPieces, setAlertCelebrationPieces] = useState([]);
             const alertDismissedRef = useRef(false);
@@ -2009,7 +2008,6 @@ import { createRoot } from 'react-dom/client';
                     showWaitingAlert: savedPrefsRef.current.showWaitingAlert ?? true,
                     showEmptyEpicAlert: savedPrefsRef.current.showEmptyEpicAlert ?? true,
                     showDoneEpicAlert: savedPrefsRef.current.showDoneEpicAlert ?? true,
-                    showRndWaitingAlert: savedPrefsRef.current.showRndWaitingAlert ?? true,
                     dismissedAlertKeys: [],
                     dependencyData: {},
                     dependencyFocus: null,
@@ -2073,7 +2071,6 @@ import { createRoot } from 'react-dom/client';
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
-                showRndWaitingAlert,
                 dismissedAlertKeys,
                 dependencyData,
                 dependencyFocus,
@@ -2166,7 +2163,6 @@ import { createRoot } from 'react-dom/client';
                 setShowWaitingAlert(nextState.showWaitingAlert ?? true);
                 setShowEmptyEpicAlert(nextState.showEmptyEpicAlert ?? true);
                 setShowDoneEpicAlert(nextState.showDoneEpicAlert ?? true);
-                setShowRndWaitingAlert(nextState.showRndWaitingAlert ?? true);
                 setDismissedAlertKeys(nextState.dismissedAlertKeys || []);
                 setAlertCelebrationPieces([]);
                 setDependencyData(nextState.dependencyData || {});
@@ -2234,7 +2230,6 @@ import { createRoot } from 'react-dom/client';
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
-                showRndWaitingAlert,
                 dismissedAlertKeys,
                 dependencyData,
                 dependencyFocus,
@@ -2496,7 +2491,6 @@ import { createRoot } from 'react-dom/client';
                     showWaitingAlert,
                     showEmptyEpicAlert,
                     showDoneEpicAlert,
-                    showRndWaitingAlert,
                     updateDismissedHash
                 });
             }, [
@@ -2523,7 +2517,6 @@ import { createRoot } from 'react-dom/client';
                 showPostponedAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
-                showRndWaitingAlert,
                 updateDismissedHash
             ]);
 
@@ -6566,24 +6559,6 @@ import { createRoot } from 'react-dom/client';
 
             const analysisEpicTeams = groupAlertsByTeam(waitingForStoriesEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
 
-            const rndWaitingEpics = React.useMemo(() => {
-                if (!isFutureSprintSelected) return [];
-                const componentNames = activeGroup?.missingInfoComponents || [];
-                if (!componentNames.length) return [];
-                const lowerSet = new Set(componentNames.map(c => c.toLowerCase()));
-                return (missingInfoEpics || []).filter(epic => {
-                    const epicComponents = epic.components || [];
-                    return epicComponents.some(c => lowerSet.has(c.toLowerCase()));
-                });
-            }, [missingInfoEpics, isFutureSprintSelected, (activeGroup?.missingInfoComponents || []).join(',')]);
-
-            const rndWaitingEpicTeams = groupAlertsByTeam(rndWaitingEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-
-            const rndWaitingKeySet = React.useMemo(
-                () => new Set(rndWaitingEpics.map(epic => epic.key).filter(Boolean)),
-                [rndWaitingEpics]
-            );
-
             const missingAlertKeySet = React.useMemo(
                 () => new Set(consolidatedMissingStories.map(item => item.task?.key).filter(Boolean)),
                 [consolidatedMissingStories]
@@ -6615,10 +6590,9 @@ import { createRoot } from 'react-dom/client';
                 followup: postponedTasks.length,
                 waiting: waitingForStoriesEpics.length,
                 empty: emptyEpics.length,
-                done: doneStoryEpics.length,
-                rndWaiting: rndWaitingEpics.length
+                done: doneStoryEpics.length
             };
-            const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.followup + alertCounts.waiting + alertCounts.empty + alertCounts.done + alertCounts.rndWaiting;
+            const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.followup + alertCounts.waiting + alertCounts.empty + alertCounts.done;
 
             const triggerAlertCelebration = React.useCallback((options = {}) => {
                 if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -8656,7 +8630,7 @@ import { createRoot } from 'react-dom/client';
                                     </div>
                                 )}
 		                            {alertItemCount > 0 && (
-		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert && !showRndWaitingAlert) ? 'collapsed' : ''}`}>
+		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert) ? 'collapsed' : ''}`}>
 		                                    {consolidatedMissingStories.length > 0 && (
 		                                        <div className={`alert-card missing ${showMissingAlert ? '' : 'collapsed'}`}>
 	                                            <div className="alert-card-header">
@@ -9087,113 +9061,7 @@ import { createRoot } from 'react-dom/client';
                                             </div>
                                         )}
 
-                                        {rndWaitingEpics.length > 0 && (
-                                            <div className={`alert-card rnd-waiting ${showRndWaitingAlert ? '' : 'collapsed'}`}>
-                                                <div className="alert-card-header">
-                                                    <button
-                                                        className="alert-toggle"
-                                                        onClick={() => setShowRndWaitingAlert(prev => !prev)}
-                                                        title={showRndWaitingAlert ? 'Collapse R&D waiting panel' : 'Expand R&D waiting panel'}
-                                                    >
-                                                        <span className="alert-toggle-icon" aria-hidden="true">
-                                                            <svg className={`alert-toggle-chevron ${showRndWaitingAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-                                                                <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                            </svg>
-                                                        </span>
-                                                        <span className="alert-toggle-label">
-                                                            {showRndWaitingAlert ? 'Hide' : 'Show'}
-                                                        </span>
-                                                    </button>
-                                                    <div className="alert-title">Waiting for R&D Stories</div>
-                                                    <div className="alert-subtitle">Epic is waiting for stories from R&D.</div>
-                                                    <div className="alert-chip">
-                                                        {rndWaitingEpics.length} {rndWaitingEpics.length === 1 ? 'epic' : 'epics'}
-                                                    </div>
-                                                </div>
-                                                <div className={`alert-card-body ${showRndWaitingAlert ? '' : 'collapsed'}`}>
-                                                    {rndWaitingEpicTeams.map(group => {
-                                                        const keys = group.items.map(item => item.key);
-                                                        const teamLink = buildKeyListLink(keys);
-                                                        return (
-                                                            <div key={group.id} className="alert-team-group">
-                                                                <div className="alert-team-header">
-                                                                    {teamLink ? (
-                                                                        <a
-                                                                            className="alert-team-link"
-                                                                            href={teamLink}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                        >
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </a>
-                                                                    ) : (
-                                                                        <div className="alert-team-title">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <div className="alert-stories">
-                                                                    {group.items.map(epic => (
-                                                                        <div key={epic.key} className="alert-story">
-                                                                            <div
-                                                                                className="alert-story-main"
-                                                                                role="button"
-                                                                                tabIndex={0}
-                                                                                onClick={() => handleAlertStoryClick(epic.key)}
-                                                                                onKeyDown={(event) => {
-                                                                                    if (event.key === 'Enter' || event.key === ' ') {
-                                                                                        event.preventDefault();
-                                                                                        handleAlertStoryClick(epic.key);
-                                                                                    }
-                                                                                }}
-                                                                            >
-                                                                                <a
-                                                                                    className="alert-story-link"
-                                                                                    href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
-                                                                                    target="_blank"
-                                                                                    rel="noopener noreferrer"
-                                                                                    onClick={(event) => {
-                                                                                        event.preventDefault();
-                                                                                        event.stopPropagation();
-                                                                                        handleAlertStoryClick(epic.key);
-                                                                                    }}
-                                                                                >
-                                                                                    {epic.key} · {epic.summary}
-                                                                                </a>
-                                                                            </div>
-                                                                            <span className="alert-pill status">{epic.status || 'Open'}</span>
-                                                                            <a
-                                                                                className="alert-action"
-                                                                                href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                            >
-                                                                                Open epic →
-                                                                            </a>
-                                                                            <button
-                                                                                className="task-remove alert-remove"
-                                                                                onClick={(event) => {
-                                                                                    event.stopPropagation();
-                                                                                    dismissAlertItem(epic.key);
-                                                                                }}
-                                                                                title="Dismiss from alerts"
-                                                                                type="button"
-                                                                            >
-                                                                                ×
-                                                                            </button>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
-
-	                                    {emptyEpics.length > 0 && (
+		                                    {emptyEpics.length > 0 && (
 		                                        <div className={`alert-card empty-epic ${showEmptyEpicAlert ? '' : 'collapsed'}`}>
 	                                            <div className="alert-card-header">
 	                                                <button

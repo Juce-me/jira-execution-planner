@@ -1872,12 +1872,14 @@
             color: var(--text-secondary);
         }
 
-	        .alert-panels {
-	            display: grid;
-	            grid-template-columns: 1fr;
-	            gap: 0.5rem;
-	            margin: 0.35rem 0 0.75rem;
-	        }
+        .alert-panels {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.5rem;
+            margin: 0.35rem 0 0.75rem;
+            width: 100%;
+            min-width: 0;
+        }
 
         .alert-panels.collapsed {
             gap: 0.5rem;
@@ -1892,6 +1894,9 @@
             box-shadow: 0 10px 30px var(--shadow);
             overflow-anchor: none;
             border-radius: 10px;
+            width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
         }
 
         .alert-card.missing {
@@ -1916,10 +1921,6 @@
 
         .alert-card.done-epic {
             border-left-color: rgba(82, 196, 26, 0.55);
-        }
-
-        .alert-card.rnd-waiting {
-            border-left-color: rgba(14, 165, 233, 0.55);
         }
 
 	        .alert-card-header {
@@ -2075,6 +2076,8 @@
             margin-bottom: 0.6rem;
             background: #faf9f7;
             border-radius: 10px;
+            min-width: 0;
+            overflow: hidden;
         }
 
         .alert-team-header {

@@ -7401,13 +7401,8 @@ import { createRoot } from 'react-dom/client';
                     )}
 
                     <div className={`stats-panel ${showStats ? 'open' : ''}`}>
-                        <div className="stats-controls">
-                            <div className="stats-control-group">
-                                <label>Selected Sprint</label>
-                                <div className="stats-note">
-                                    {selectedSprintInfo?.name || 'Sprint'}
-                                </div>
-                            </div>
+                        <div className="stats-note">
+                            Selected sprint: {selectedSprintInfo?.name || 'Sprint'}
                         </div>
 
                         {showStats && !effectiveStatsData && (

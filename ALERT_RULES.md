@@ -60,3 +60,4 @@ This doc describes the dashboard alert panels and the rules that trigger them. I
 **Rules:**
 - **Postponed stories:** Any story with status `Postponed`, regardless of story points (team filter applies).
 - **Analysis epics:** Epics with status `Analysis` are shown when the **first future sprint** is selected, with a note: “waiting for description to create stories” (epic sprint value is ignored).
+- **No separate R&D waiting panel:** The dedicated `Waiting for R&D Stories` alert was removed to avoid overlap with other epic alerts (notably `🧺 Empty Epic`).

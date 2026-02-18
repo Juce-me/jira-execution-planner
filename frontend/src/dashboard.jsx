@@ -6723,6 +6723,7 @@ import { createRoot } from 'react-dom/client';
                     <header>
                         <div className="subtitle">
                             <span className="subtitle-main">
+                                <img src="epm-burst.svg" alt="" className="subtitle-logo" aria-hidden="true" />
                                 Jira Execution Planner
                                 <span className="subtitle-secondary"> · Product &amp; Tech Projects</span>
                                 {updateNoticeVisible && (

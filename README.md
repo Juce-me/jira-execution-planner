@@ -130,9 +130,6 @@ JQL_QUERY_TEMPLATE=project IN (PROJECT1, PROJECT2) AND "Team[Team]" in ({TEAM_ID
 # Optional: Board ID for faster sprint fetching (leave empty if unknown)
 JIRA_BOARD_ID=
 
-# Optional: Team custom field id (e.g. customfield_12345) if Team values are missing
-JIRA_TEAM_FIELD_ID=
-
 # Optional: priority weights for stats (done/incomplete)
 STATS_PRIORITY_WEIGHTS=Blocker:0.40,Critical:0.30,Major:0.20,Minor:0.06,Low:0.03,Trivial:0.01
 
@@ -347,7 +344,7 @@ Scenario API response (used by the UI):
 - Try simplifying the query in `.env`
 
 **"Team name missing" in tasks output:**
-- Set `JIRA_TEAM_FIELD_ID` in `.env` (use the Team[Team] custom field id, e.g. `customfield_12345`)
+- Open the config modal and set the **Team Field** to your Jira Team[Team] custom field
 
 **"No sprints available" in dropdown:**
 - Option 1: Set `JIRA_BOARD_ID` in `.env` file (faster method)

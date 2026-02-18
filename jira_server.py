@@ -36,9 +36,6 @@ JIRA_EMAIL = os.getenv('JIRA_EMAIL')
 JIRA_TOKEN = os.getenv('JIRA_TOKEN')
 JQL_QUERY = os.getenv('JQL_QUERY', '').strip()
 JIRA_BOARD_ID = os.getenv('JIRA_BOARD_ID')  # Optional: board ID for faster sprint fetching
-JIRA_TEAM_FIELD_ID = os.getenv('JIRA_TEAM_FIELD_ID', 'customfield_30101')  # Optional: custom field id for Team[Team]
-JIRA_TEAM_FALLBACK_FIELD_ID = 'customfield_30101'
-JIRA_EPIC_LINK_FIELD_ID = os.getenv('JIRA_EPIC_LINK_FIELD_ID', '').strip()  # Optional: custom field id for Epic Link
 JIRA_PRODUCT_PROJECT = os.getenv('JIRA_PRODUCT_PROJECT', 'PRODUCT ROADMAPS')
 JIRA_TECH_PROJECT = os.getenv('JIRA_TECH_PROJECT', 'TECHNICAL ROADMAP')
 SERVER_PORT = int(os.getenv('SERVER_PORT', '5050'))
@@ -150,7 +147,7 @@ def quarter_dates_from_label(label):
 
 
 TEAM_FIELD_CACHE = None
-EPIC_LINK_FIELD_CACHE = None
+PARENT_NAME_FIELD_CACHE = None
 CAPACITY_FIELD_CACHE = None
 
 
@@ -160,8 +157,10 @@ def resolve_team_field_id(headers):
     with _cache_lock:
         if TEAM_FIELD_CACHE:
             return TEAM_FIELD_CACHE
-        if JIRA_TEAM_FIELD_ID:
-            TEAM_FIELD_CACHE = JIRA_TEAM_FIELD_ID
+        # Check dashboard config first
+        configured = get_team_field_id()
+        if configured:
+            TEAM_FIELD_CACHE = configured
             return TEAM_FIELD_CACHE
 
         try:
@@ -183,19 +182,21 @@ def resolve_team_field_id(headers):
 
 def resolve_epic_link_field_id(headers, names_map=None):
     """Resolve the Jira custom field ID for Epic Link."""
-    global EPIC_LINK_FIELD_CACHE
+    global PARENT_NAME_FIELD_CACHE
     with _cache_lock:
-        if EPIC_LINK_FIELD_CACHE:
-            return EPIC_LINK_FIELD_CACHE
-        if JIRA_EPIC_LINK_FIELD_ID:
-            EPIC_LINK_FIELD_CACHE = JIRA_EPIC_LINK_FIELD_ID
-            return EPIC_LINK_FIELD_CACHE
+        if PARENT_NAME_FIELD_CACHE:
+            return PARENT_NAME_FIELD_CACHE
+        # Check dashboard config first
+        configured = get_parent_name_field_id()
+        if configured:
+            PARENT_NAME_FIELD_CACHE = configured
+            return PARENT_NAME_FIELD_CACHE
 
         if names_map:
             for field_id, field_name in (names_map or {}).items():
                 if str(field_name).strip().lower() == 'epic link':
-                    EPIC_LINK_FIELD_CACHE = field_id
-                    return EPIC_LINK_FIELD_CACHE
+                    PARENT_NAME_FIELD_CACHE = field_id
+                    return PARENT_NAME_FIELD_CACHE
 
         try:
             response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
@@ -206,8 +207,8 @@ def resolve_epic_link_field_id(headers, names_map=None):
             for field in fields:
                 name = str(field.get('name', '')).strip().lower()
                 if name == 'epic link':
-                    EPIC_LINK_FIELD_CACHE = field.get('id')
-                    return EPIC_LINK_FIELD_CACHE
+                    PARENT_NAME_FIELD_CACHE = field.get('id')
+                    return PARENT_NAME_FIELD_CACHE
         except Exception:
             return None
 
@@ -820,6 +821,62 @@ def get_capacity_config():
     }
 
 
+# --- Custom field config getters ---
+SPRINT_FIELD_DEFAULT = 'customfield_10101'
+STORY_POINTS_FIELD_DEFAULT = 'customfield_10004'
+PARENT_NAME_FIELD_DEFAULT = 'customfield_10011'
+TEAM_FIELD_DEFAULT = 'customfield_30101'
+
+
+def get_sprint_field_config():
+    config = load_dashboard_config()
+    if config and 'sprintField' in config:
+        sf = config['sprintField']
+        return {'fieldId': sf.get('fieldId', ''), 'fieldName': sf.get('fieldName', '')}
+    return {'fieldId': SPRINT_FIELD_DEFAULT, 'fieldName': ''}
+
+
+def get_sprint_field_id():
+    return get_sprint_field_config()['fieldId'] or SPRINT_FIELD_DEFAULT
+
+
+def get_story_points_field_config():
+    config = load_dashboard_config()
+    if config and 'storyPointsField' in config:
+        sp = config['storyPointsField']
+        return {'fieldId': sp.get('fieldId', ''), 'fieldName': sp.get('fieldName', '')}
+    return {'fieldId': STORY_POINTS_FIELD_DEFAULT, 'fieldName': ''}
+
+
+def get_story_points_field_id():
+    return get_story_points_field_config()['fieldId'] or STORY_POINTS_FIELD_DEFAULT
+
+
+def get_parent_name_field_config():
+    config = load_dashboard_config()
+    if config and 'parentNameField' in config:
+        el = config['parentNameField']
+        return {'fieldId': el.get('fieldId', ''), 'fieldName': el.get('fieldName', '')}
+    return {'fieldId': '', 'fieldName': ''}
+
+
+def get_parent_name_field_id():
+    cfg = get_parent_name_field_config()
+    return cfg['fieldId'] or ''
+
+
+def get_team_field_config():
+    config = load_dashboard_config()
+    if config and 'teamField' in config:
+        tf = config['teamField']
+        return {'fieldId': tf.get('fieldId', ''), 'fieldName': tf.get('fieldName', '')}
+    return {'fieldId': TEAM_FIELD_DEFAULT, 'fieldName': ''}
+
+
+def get_team_field_id():
+    return get_team_field_config()['fieldId'] or TEAM_FIELD_DEFAULT
+
+
 def get_configured_issue_types():
     """Return configured issue types from dashboard config. Default: ['Story']."""
     config = load_dashboard_config()
@@ -1175,7 +1232,7 @@ def fetch_sprints_from_jira():
                     'jql': jql_query,
                     'startAt': start_at,
                     'maxResults': 200,  # Reduced from 1000 for better performance
-                    'fields': ['customfield_10101']  # Only get sprint field
+                    'fields': [get_sprint_field_id()]  # Only get sprint field
                 }
 
                 response = jira_search_request(headers, payload)
@@ -1186,7 +1243,7 @@ def fetch_sprints_from_jira():
                 issues = data.get('issues', [])
 
                 for issue in issues:
-                    sprint_field = issue.get('fields', {}).get('customfield_10101', [])
+                    sprint_field = issue.get('fields', {}).get(get_sprint_field_id(), [])
                     if sprint_field and isinstance(sprint_field, list):
                         for sprint in sprint_field:
                             if sprint and isinstance(sprint, dict):
@@ -1233,7 +1290,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
     if not epic_keys:
         return epic_details
 
-    epic_field = epic_name_field or 'customfield_10011'
+    epic_field = epic_name_field or PARENT_NAME_FIELD_DEFAULT
     keys_list = list(epic_keys)
     batch_size = 40  # keep JQL length reasonable for GET
 
@@ -1310,13 +1367,11 @@ def derive_epic_jql(base_jql: str, team_ids=None) -> str:
 def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field):
     """Fetch epics matching the current sprint/team filters so UI can flag epics with 0 stories."""
     epic_jql = derive_epic_jql(jql, EPIC_EMPTY_TEAM_IDS)
-    epic_field = epic_name_field or 'customfield_10011'
+    epic_field = epic_name_field or PARENT_NAME_FIELD_DEFAULT
 
     fields_list = ['summary', 'status', 'assignee', epic_field]
     if team_field_id and team_field_id not in fields_list:
         fields_list.append(team_field_id)
-    if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
-        fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
 
     payload = {
         'jql': epic_jql,
@@ -1336,9 +1391,7 @@ def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field):
         fields = issue.get('fields', {}) or {}
 
         raw_team = None
-        if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
-            raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
-        elif team_field_id and fields.get(team_field_id) is not None:
+        if team_field_id and fields.get(team_field_id) is not None:
             raw_team = fields.get(team_field_id)
 
         team_value = build_team_value(raw_team) if raw_team is not None else None
@@ -1538,7 +1591,7 @@ def fetch_tasks(include_team_name=False):
             'issuetype',
             'assignee',
             'updated',
-            'customfield_10004',  # Story Points
+            get_story_points_field_id(),  # Story Points
             'parent',
             'project'
         ]
@@ -1546,10 +1599,6 @@ def fetch_tasks(include_team_name=False):
             fields_list.append(epic_link_field_id)
         if team_field_id:
             fields_list.append(team_field_id)
-        if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
-            fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
-        if not team_field_id:
-            print('⚠️ Team field id not resolved; using customfield_30101 fallback.')
 
         max_results = 250
         page_size = 100
@@ -1642,9 +1691,7 @@ def fetch_tasks(include_team_name=False):
             fields = issue.get('fields', {})
 
             raw_team = None
-            if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
-                raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
-            elif team_field_id and fields.get(team_field_id) is not None:
+            if team_field_id and fields.get(team_field_id) is not None:
                 raw_team = fields.get(team_field_id)
 
             if raw_team is not None:
@@ -1692,7 +1739,7 @@ def fetch_tasks(include_team_name=False):
                     'issuetype': {'name': issuetype.get('name')} if issuetype else None,
                     'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
                     'updated': fields.get('updated'),
-                    'customfield_10004': fields.get('customfield_10004'),
+                    'customfield_10004': fields.get(get_story_points_field_id()),
                     'team': fields.get('team'),
                     'teamName': fields.get('teamName'),
                     'teamId': fields.get('teamId'),
@@ -1742,7 +1789,7 @@ def fetch_issues_by_keys(keys, headers, fields_list):
     batch_size = 100
     for i in range(0, len(keys), batch_size):
         batch = keys[i:i + batch_size]
-        jql = f'key in ({",".join(batch)})'
+        jql = f'key in ({",".join(f"\"{k}\"" for k in batch)})'
         payload = {
             'jql': jql,
             'startAt': 0,
@@ -1826,6 +1873,15 @@ def build_scenario_jql(filters):
         quoted = ', '.join(f'"{e}"' for e in epics)
         jql = add_clause_to_jql(jql, f'("Epic Link" in ({quoted}) OR parent in ({quoted}))')
 
+    # Apply issue type filter from config (exclude epics etc.)
+    issue_types = get_configured_issue_types()
+    if issue_types:
+        if len(issue_types) == 1:
+            jql = add_clause_to_jql(jql, f'type = "{issue_types[0]}"')
+        else:
+            quoted_types = ', '.join(f'"{t}"' for t in issue_types)
+            jql = add_clause_to_jql(jql, f'type in ({quoted_types})')
+
     return jql
 
 
@@ -1833,9 +1889,7 @@ def build_issue_snapshot(issue, team_field_id=None, epic_link_field_id=None):
     """Build a compact issue snapshot for dependency rendering."""
     fields = issue.get('fields', {}) or {}
     raw_team = None
-    if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
-        raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
-    elif team_field_id and fields.get(team_field_id) is not None:
+    if team_field_id and fields.get(team_field_id) is not None:
         raw_team = fields.get(team_field_id)
 
     team_name = None
@@ -1863,7 +1917,7 @@ def build_issue_snapshot(issue, team_field_id=None, epic_link_field_id=None):
         'issuetype': fields.get('issuetype', {}).get('name') if fields.get('issuetype') else None,
         'status': fields.get('status', {}).get('name') if fields.get('status') else None,
         'priority': fields.get('priority', {}).get('name') if fields.get('priority') else None,
-        'storyPoints': fields.get('customfield_10004'),
+        'storyPoints': fields.get(get_story_points_field_id()),
         'teamName': team_name,
         'teamId': team_id,
         'epicKey': epic_key,
@@ -1914,7 +1968,7 @@ def collect_dependencies(keys, headers):
         'status',
         'priority',
         'issuetype',
-        'customfield_10004',
+        get_story_points_field_id(),
         'parent',
         'issuelinks'
     ]
@@ -1922,8 +1976,6 @@ def collect_dependencies(keys, headers):
         fields_list.append(epic_link_field_id)
     if team_field_id and team_field_id not in fields_list:
         fields_list.append(team_field_id)
-    if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
-        fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
 
     issues = fetch_issues_by_keys(keys, headers, fields_list)
     issue_map = {}
@@ -1988,7 +2040,7 @@ def collect_dependencies(keys, headers):
                     'summary': linked_issue.get('fields', {}).get('summary'),
                     'issuetype': linked_issue.get('fields', {}).get('issuetype', {}).get('name'),
                     'status': linked_issue.get('fields', {}).get('status', {}).get('name'),
-                    'storyPoints': linked_issue.get('fields', {}).get('customfield_10004'),
+                    'storyPoints': linked_issue.get('fields', {}).get(get_story_points_field_id()),
                     'teamName': None,
                     'teamId': None,
                     'epicKey': None
@@ -2067,15 +2119,13 @@ def lookup_issues():
             'status',
             'issuetype',
             'assignee',
-            'customfield_10004',
+            get_story_points_field_id(),
             'parent'
         ]
         if epic_link_field_id and epic_link_field_id not in fields_list:
             fields_list.append(epic_link_field_id)
         if team_field_id and team_field_id not in fields_list:
             fields_list.append(team_field_id)
-        if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
-            fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
 
         issues = []
         if keys:
@@ -2163,15 +2213,13 @@ def scenario_planner():
             'issuetype',
             'assignee',
             'updated',
-            'customfield_10004',
+            get_story_points_field_id(),
             'parent'
         ]
         if epic_link_field_id and epic_link_field_id not in fields_list:
             fields_list.append(epic_link_field_id)
         if team_field_id and team_field_id not in fields_list:
             fields_list.append(team_field_id)
-        if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
-            fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
 
         search_query = (filters.get('search') or '').strip().lower()
         team_filter_ids = {t for t in (filters.get('teams') or []) if t}
@@ -2186,9 +2234,7 @@ def scenario_planner():
         for issue in issues_raw:
             fields = issue.get('fields', {}) or {}
             raw_team = None
-            if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
-                raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
-            elif team_field_id and fields.get(team_field_id) is not None:
+            if team_field_id and fields.get(team_field_id) is not None:
                 raw_team = fields.get(team_field_id)
             team_name = extract_team_name(raw_team) if raw_team is not None else None
             team_id = None
@@ -2206,7 +2252,7 @@ def scenario_planner():
 
             assignee = fields.get('assignee') or {}
             issue_type = (fields.get('issuetype') or {}).get('name') or ''
-            story_points = fields.get('customfield_10004')
+            story_points = fields.get(get_story_points_field_id())
             priority = (fields.get('priority') or {}).get('name')
             status = (fields.get('status') or {}).get('name')
             issue_obj = Issue(
@@ -2523,12 +2569,10 @@ def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):
         'status',
         'project',
         'priority',
-        'customfield_10004'  # Story Points
+        get_story_points_field_id()  # Story Points
     ]
     if team_field_id and team_field_id not in fields_list:
         fields_list.append(team_field_id)
-    if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
-        fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
 
     page_size = 250
     start_at = 0
@@ -2589,16 +2633,14 @@ def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):
         is_killed = status_value == 'killed'
         priority_name = (fields.get('priority') or {}).get('name', '') or 'Unspecified'
 
-        points = parse_points(fields.get('customfield_10004'))
+        points = parse_points(fields.get(get_story_points_field_id()))
         project_name = (fields.get('project') or {}).get('name')
         project_key = (fields.get('project') or {}).get('key')
         project_label = project_name or project_key or 'Unknown Project'
         project_bucket = classify_project(project_label, project_key)
 
         raw_team = None
-        if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
-            raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
-        elif team_field_id and fields.get(team_field_id) is not None:
+        if team_field_id and fields.get(team_field_id) is not None:
             raw_team = fields.get(team_field_id)
         team_ids = extract_team_ids(raw_team)
         if stats_team_ids:
@@ -2769,8 +2811,6 @@ def get_missing_info():
         epic_fields = ['summary', 'status', 'assignee', 'parent', 'components']
         if team_field_id:
             epic_fields.append(team_field_id)
-        if JIRA_TEAM_FALLBACK_FIELD_ID not in epic_fields:
-            epic_fields.append(JIRA_TEAM_FALLBACK_FIELD_ID)
 
         epics_resp = jira_search_request(headers, {
             'jql': epic_jql,
@@ -2794,9 +2834,7 @@ def get_missing_info():
             epic_status = (ef.get('status') or {}).get('name') or ''
             epic_components = [c.get('name', '') for c in (ef.get('components') or []) if c.get('name')]
             raw_team = None
-            if ef.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
-                raw_team = ef.get(JIRA_TEAM_FALLBACK_FIELD_ID)
-            elif team_field_id and ef.get(team_field_id) is not None:
+            if team_field_id and ef.get(team_field_id) is not None:
                 raw_team = ef.get(team_field_id)
             epic_team_name = extract_team_name(raw_team) if raw_team else ''
             epic_team_id = None
@@ -2820,16 +2858,14 @@ def get_missing_info():
             'issuetype',
             'assignee',
             'updated',
-            'customfield_10004',  # Story Points
-            'customfield_10101',  # Sprint
+            get_story_points_field_id(),  # Story Points
+            get_sprint_field_id(),  # Sprint
             'parent'
         ]
         if epic_link_field_id and epic_link_field_id not in story_fields:
             story_fields.append(epic_link_field_id)
         if team_field_id and team_field_id not in story_fields:
             story_fields.append(team_field_id)
-        if JIRA_TEAM_FALLBACK_FIELD_ID not in story_fields:
-            story_fields.append(JIRA_TEAM_FALLBACK_FIELD_ID)
 
         missing = []
         batch_size = 40
@@ -2866,9 +2902,7 @@ def get_missing_info():
 
                     # team enrichment
                     raw_team = None
-                    if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
-                        raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
-                    elif team_field_id and fields.get(team_field_id) is not None:
+                    if team_field_id and fields.get(team_field_id) is not None:
                         raw_team = fields.get(team_field_id)
                     if raw_team is not None:
                         team_name = extract_team_name(raw_team)
@@ -2886,14 +2920,14 @@ def get_missing_info():
                     if epic_key:
                         fields['epicKey'] = epic_key
 
-                    sp = fields.get('customfield_10004')
+                    sp = fields.get(get_story_points_field_id())
                     try:
                         sp_num = float(sp) if sp not in (None, '', []) else 0.0
                     except Exception:
                         sp_num = 0.0
                     has_sp = sp_num > 0
 
-                    sprint_value = fields.get('customfield_10101')
+                    sprint_value = fields.get(get_sprint_field_id())
                     has_sprint = bool(sprint_value)
                     has_team = bool(fields.get('teamName'))
 
@@ -2921,8 +2955,8 @@ def get_missing_info():
                             'issuetype': {'name': issuetype.get('name')} if issuetype else None,
                             'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
                             'updated': fields.get('updated'),
-                            'customfield_10004': fields.get('customfield_10004'),
-                            'customfield_10101': fields.get('customfield_10101'),
+                            'customfield_10004': fields.get(get_story_points_field_id()),
+                            'customfield_10101': fields.get(get_sprint_field_id()),
                             'team': fields.get('team'),
                             'teamName': fields.get('teamName'),
                             'teamId': fields.get('teamId'),
@@ -3008,8 +3042,6 @@ def get_teams():
         fields_list = ['summary', 'status']
         if team_field_id:
             fields_list.append(team_field_id)
-        if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
-            fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
 
         max_results = 100
         max_pages = 30  # Cap at ~3000 issues for team discovery
@@ -3061,9 +3093,7 @@ def get_teams():
             fields = issue.get('fields', {})
             raw_team = None
 
-            if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
-                raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
-            elif team_field_id and fields.get(team_field_id) is not None:
+            if team_field_id and fields.get(team_field_id) is not None:
                 raw_team = fields.get(team_field_id)
 
             if raw_team is not None:
@@ -3115,7 +3145,7 @@ def resolve_team_names():
 
         team_field_id = resolve_team_field_id(headers)
         if not team_field_id:
-            team_field_id = JIRA_TEAM_FALLBACK_FIELD_ID
+            team_field_id = TEAM_FIELD_DEFAULT
 
         base_jql = remove_team_filter_from_jql(build_base_jql())
         quoted = ', '.join(f'"{team_id}"' for team_id in team_ids)
@@ -3124,8 +3154,6 @@ def resolve_team_names():
         fields_list = ['summary']
         if team_field_id and team_field_id not in fields_list:
             fields_list.append(team_field_id)
-        if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
-            fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
 
         max_results = 250
         start_at = 0
@@ -3149,9 +3177,7 @@ def resolve_team_names():
             for issue in issues:
                 fields = issue.get('fields', {}) or {}
                 raw_team = None
-                if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
-                    raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
-                elif team_field_id and fields.get(team_field_id) is not None:
+                if team_field_id and fields.get(team_field_id) is not None:
                     raw_team = fields.get(team_field_id)
                 if raw_team is None:
                     continue
@@ -3206,8 +3232,6 @@ def get_all_teams_list():
         fields_list = ['summary', 'status']
         if team_field_id:
             fields_list.append(team_field_id)
-        if JIRA_TEAM_FALLBACK_FIELD_ID not in fields_list:
-            fields_list.append(JIRA_TEAM_FALLBACK_FIELD_ID)
 
         # Paginate through ALL issues using new API
         max_results = 100
@@ -3254,9 +3278,7 @@ def get_all_teams_list():
             fields = issue.get('fields', {})
             raw_team = None
 
-            if fields.get(JIRA_TEAM_FALLBACK_FIELD_ID) is not None:
-                raw_team = fields.get(JIRA_TEAM_FALLBACK_FIELD_ID)
-            elif team_field_id and fields.get(team_field_id) is not None:
+            if team_field_id and fields.get(team_field_id) is not None:
                 raw_team = fields.get(team_field_id)
 
             if raw_team is not None:
@@ -3861,6 +3883,70 @@ def save_capacity_config_endpoint():
         return jsonify({'error': 'Failed to save capacity config', 'message': str(e)}), 500
 
     return jsonify({'project': project, 'fieldId': field_id, 'fieldName': field_name})
+
+
+# --- Custom Field Config Endpoints ---
+
+def _save_field_config(config_key, cache_name=None):
+    """Generic helper to save a field config (fieldId + fieldName) into dashboard-config.json."""
+    payload = request.get_json(silent=True) or {}
+    field_id = str(payload.get('fieldId', '')).strip()
+    field_name = str(payload.get('fieldName', '')).strip()
+    try:
+        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+        dashboard_config[config_key] = {'fieldId': field_id, 'fieldName': field_name}
+        save_dashboard_config(dashboard_config)
+        # Invalidate tasks cache so next fetch uses the new field
+        global TASKS_CACHE
+        TASKS_CACHE = {}
+        # Invalidate the specific resolve cache if applicable
+        if cache_name:
+            g = globals()
+            with _cache_lock:
+                g[cache_name] = None
+    except Exception as e:
+        return jsonify({'error': f'Failed to save {config_key} config', 'message': str(e)}), 500
+    return jsonify({'fieldId': field_id, 'fieldName': field_name})
+
+
+@app.route('/api/sprint-field/config', methods=['GET'])
+def get_sprint_field_config_endpoint():
+    return jsonify(get_sprint_field_config())
+
+
+@app.route('/api/sprint-field/config', methods=['POST'])
+def save_sprint_field_config_endpoint():
+    return _save_field_config('sprintField')
+
+
+@app.route('/api/story-points-field/config', methods=['GET'])
+def get_story_points_field_config_endpoint():
+    return jsonify(get_story_points_field_config())
+
+
+@app.route('/api/story-points-field/config', methods=['POST'])
+def save_story_points_field_config_endpoint():
+    return _save_field_config('storyPointsField')
+
+
+@app.route('/api/parent-name-field/config', methods=['GET'])
+def get_parent_name_field_config_endpoint():
+    return jsonify(get_parent_name_field_config())
+
+
+@app.route('/api/parent-name-field/config', methods=['POST'])
+def save_parent_name_field_config_endpoint():
+    return _save_field_config('parentNameField', 'PARENT_NAME_FIELD_CACHE')
+
+
+@app.route('/api/team-field/config', methods=['GET'])
+def get_team_field_config_endpoint():
+    return jsonify(get_team_field_config())
+
+
+@app.route('/api/team-field/config', methods=['POST'])
+def save_team_field_config_endpoint():
+    return _save_field_config('teamField', 'TEAM_FIELD_CACHE')
 
 
 # --- Issue Types ---

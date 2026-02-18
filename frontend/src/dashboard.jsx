@@ -195,6 +195,38 @@ import { createRoot } from 'react-dom/client';
             const [capacityFieldSearchOpen, setCapacityFieldSearchOpen] = useState(false);
             const [capacityFieldSearchIndex, setCapacityFieldSearchIndex] = useState(0);
             const capacityFieldSearchInputRef = useRef(null);
+            // Sprint field picker state
+            const [sprintFieldIdDraft, setSprintFieldIdDraft] = useState('');
+            const [sprintFieldNameDraft, setSprintFieldNameDraft] = useState('');
+            const sprintFieldBaselineRef = useRef('');
+            const [sprintFieldSearchQuery, setSprintFieldSearchQuery] = useState('');
+            const [sprintFieldSearchOpen, setSprintFieldSearchOpen] = useState(false);
+            const [sprintFieldSearchIndex, setSprintFieldSearchIndex] = useState(0);
+            const sprintFieldSearchInputRef = useRef(null);
+            // Parent Name field picker state
+            const [parentNameFieldIdDraft, setParentNameFieldIdDraft] = useState('');
+            const [parentNameFieldNameDraft, setParentNameFieldNameDraft] = useState('');
+            const parentNameFieldBaselineRef = useRef('');
+            const [parentNameFieldSearchQuery, setParentNameFieldSearchQuery] = useState('');
+            const [parentNameFieldSearchOpen, setParentNameFieldSearchOpen] = useState(false);
+            const [parentNameFieldSearchIndex, setParentNameFieldSearchIndex] = useState(0);
+            const parentNameFieldSearchInputRef = useRef(null);
+            // Story Points field picker state
+            const [storyPointsFieldIdDraft, setStoryPointsFieldIdDraft] = useState('');
+            const [storyPointsFieldNameDraft, setStoryPointsFieldNameDraft] = useState('');
+            const storyPointsFieldBaselineRef = useRef('');
+            const [storyPointsFieldSearchQuery, setStoryPointsFieldSearchQuery] = useState('');
+            const [storyPointsFieldSearchOpen, setStoryPointsFieldSearchOpen] = useState(false);
+            const [storyPointsFieldSearchIndex, setStoryPointsFieldSearchIndex] = useState(0);
+            const storyPointsFieldSearchInputRef = useRef(null);
+            // Team field picker state
+            const [teamFieldIdDraft, setTeamFieldIdDraft] = useState('');
+            const [teamFieldNameDraft, setTeamFieldNameDraft] = useState('');
+            const teamFieldBaselineRef = useRef('');
+            const [teamFieldSearchQuery, setTeamFieldSearchQuery] = useState('');
+            const [teamFieldSearchOpen, setTeamFieldSearchOpen] = useState(false);
+            const [teamFieldSearchIndex, setTeamFieldSearchIndex] = useState(0);
+            const teamFieldSearchInputRef = useRef(null);
             const [issueTypesDraft, setIssueTypesDraft] = useState(['Story']);
             const issueTypesBaselineRef = useRef(JSON.stringify(['Story']));
             const [availableIssueTypes, setAvailableIssueTypes] = useState([]);
@@ -429,6 +461,10 @@ import { createRoot } from 'react-dom/client';
                 setActiveGroupDraftId(resolveInitialGroupId(normalized));
                 loadSelectedProjects();
                 loadCapacityConfig();
+                loadSprintFieldConfig();
+                loadParentNameFieldConfig();
+                loadStoryPointsFieldConfig();
+                loadTeamFieldConfig();
                 loadIssueTypesConfig();
                 fetchAvailableIssueTypes();
                 if (!jiraProjects.length) fetchJiraProjects();
@@ -858,13 +894,33 @@ import { createRoot } from 'react-dom/client';
                 return JSON.stringify(issueTypesDraft) !== issueTypesBaselineRef.current;
             }, [issueTypesDraft]);
 
+            const isSprintFieldDirty = React.useMemo(() => {
+                return JSON.stringify({ fieldId: sprintFieldIdDraft, fieldName: sprintFieldNameDraft }) !== sprintFieldBaselineRef.current;
+            }, [sprintFieldIdDraft, sprintFieldNameDraft]);
+
+            const isParentNameFieldDirty = React.useMemo(() => {
+                return JSON.stringify({ fieldId: parentNameFieldIdDraft, fieldName: parentNameFieldNameDraft }) !== parentNameFieldBaselineRef.current;
+            }, [parentNameFieldIdDraft, parentNameFieldNameDraft]);
+
+            const isStoryPointsFieldDirty = React.useMemo(() => {
+                return JSON.stringify({ fieldId: storyPointsFieldIdDraft, fieldName: storyPointsFieldNameDraft }) !== storyPointsFieldBaselineRef.current;
+            }, [storyPointsFieldIdDraft, storyPointsFieldNameDraft]);
+
+            const isTeamFieldDirty = React.useMemo(() => {
+                return JSON.stringify({ fieldId: teamFieldIdDraft, fieldName: teamFieldNameDraft }) !== teamFieldBaselineRef.current;
+            }, [teamFieldIdDraft, teamFieldNameDraft]);
+
             const isGroupDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
                 if (isCapacityDraftDirty) return true;
                 if (isIssueTypesDraftDirty) return true;
+                if (isSprintFieldDirty) return true;
+                if (isParentNameFieldDirty) return true;
+                if (isStoryPointsFieldDirty) return true;
+                if (isTeamFieldDirty) return true;
                 if (!groupDraft) return false;
                 return groupDraftSignature !== groupDraftBaselineRef.current;
-            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isCapacityDraftDirty, isIssueTypesDraftDirty]);
+            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty]);
 
             const requestCloseGroupManage = () => {
                 if (groupSaving) return;
@@ -1215,6 +1271,13 @@ import { createRoot } from 'react-dom/client';
                         await saveCapacityConfig();
                     }
 
+                    // Save custom field configs if changed
+                    if (isSprintFieldDirty) await saveSprintFieldConfig();
+                    if (isParentNameFieldDirty) await saveParentNameFieldConfig();
+                    if (isStoryPointsFieldDirty) await saveStoryPointsFieldConfig();
+                    if (isTeamFieldDirty) await saveTeamFieldConfig();
+                    const fieldConfigsChanged = isSprintFieldDirty || isParentNameFieldDirty || isStoryPointsFieldDirty || isTeamFieldDirty;
+
                     // Save issue types config if changed
                     const issueTypesChanged = isIssueTypesDraftDirty;
                     if (issueTypesChanged) {
@@ -1256,7 +1319,7 @@ import { createRoot } from 'react-dom/client';
                     }
 
                     // If projects or capacity changed, invalidate all group caches to refetch with new scope
-                    if (projectsChanged || capacityChanged || issueTypesChanged) {
+                    if (projectsChanged || capacityChanged || issueTypesChanged || fieldConfigsChanged) {
                         groupStateRef.current.clear();
                     }
 
@@ -1585,6 +1648,41 @@ import { createRoot } from 'react-dom/client';
                 capacityBaselineRef.current = JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
             };
 
+            // Generic load/save helpers for custom field pickers
+            const loadFieldConfig = async (endpoint, setId, setName, baselineRef) => {
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/${endpoint}/config`, { method: 'GET', headers: { 'Content-Type': 'application/json' }, cache: 'no-cache' });
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    setId(data.fieldId || '');
+                    setName(data.fieldName || '');
+                    baselineRef.current = JSON.stringify({ fieldId: data.fieldId || '', fieldName: data.fieldName || '' });
+                } catch (err) {
+                    console.error(`Failed to load ${endpoint} config:`, err);
+                }
+            };
+            const saveFieldConfig = async (endpoint, fieldId, fieldName, baselineRef) => {
+                const response = await fetch(`${BACKEND_URL}/api/${endpoint}/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fieldId, fieldName })
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.error || `Save failed (${response.status})`);
+                }
+                baselineRef.current = JSON.stringify({ fieldId, fieldName });
+            };
+
+            const loadSprintFieldConfig = () => loadFieldConfig('sprint-field', setSprintFieldIdDraft, setSprintFieldNameDraft, sprintFieldBaselineRef);
+            const saveSprintFieldConfig = () => saveFieldConfig('sprint-field', sprintFieldIdDraft, sprintFieldNameDraft, sprintFieldBaselineRef);
+            const loadParentNameFieldConfig = () => loadFieldConfig('parent-name-field', setParentNameFieldIdDraft, setParentNameFieldNameDraft, parentNameFieldBaselineRef);
+            const saveParentNameFieldConfig = () => saveFieldConfig('parent-name-field', parentNameFieldIdDraft, parentNameFieldNameDraft, parentNameFieldBaselineRef);
+            const loadStoryPointsFieldConfig = () => loadFieldConfig('story-points-field', setStoryPointsFieldIdDraft, setStoryPointsFieldNameDraft, storyPointsFieldBaselineRef);
+            const saveStoryPointsFieldConfig = () => saveFieldConfig('story-points-field', storyPointsFieldIdDraft, storyPointsFieldNameDraft, storyPointsFieldBaselineRef);
+            const loadTeamFieldConfig = () => loadFieldConfig('team-field', setTeamFieldIdDraft, setTeamFieldNameDraft, teamFieldBaselineRef);
+            const saveTeamFieldConfig = () => saveFieldConfig('team-field', teamFieldIdDraft, teamFieldNameDraft, teamFieldBaselineRef);
+
             const loadIssueTypesConfig = async () => {
                 try {
                     const response = await fetch(`${BACKEND_URL}/api/issue-types/config`, {
@@ -1772,6 +1870,49 @@ import { createRoot } from 'react-dom/client';
                     setCapacityFieldSearchOpen(false);
                 }
             };
+
+            // --- Field picker search helpers (reuse jiraFields) ---
+            const makeFieldSearchResults = (query, fields) => {
+                const q = query.toLowerCase().trim();
+                if (!q) return fields.slice(0, 20);
+                return fields.filter(f => f.id.toLowerCase().includes(q) || f.name.toLowerCase().includes(q)).slice(0, 20);
+            };
+            const makeFieldKeyDown = (results, indexState, setIndex, setId, setName, setQuery, setOpen) => (event) => {
+                if (event.key === 'ArrowDown') {
+                    if (!results.length) return;
+                    event.preventDefault();
+                    setIndex(prev => Math.min(prev + 1, results.length - 1));
+                } else if (event.key === 'ArrowUp') {
+                    if (!results.length) return;
+                    event.preventDefault();
+                    setIndex(prev => Math.max(prev - 1, 0));
+                } else if (event.key === 'Enter') {
+                    if (!results.length) return;
+                    event.preventDefault();
+                    const f = results[indexState] || results[0];
+                    if (f) { setId(f.id); setName(f.name); setQuery(''); setOpen(false); }
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setOpen(false);
+                }
+            };
+
+            const sprintFieldSearchResults = React.useMemo(() => makeFieldSearchResults(sprintFieldSearchQuery, jiraFields), [sprintFieldSearchQuery, jiraFields]);
+            React.useEffect(() => { if (sprintFieldSearchIndex >= sprintFieldSearchResults.length) setSprintFieldSearchIndex(0); }, [sprintFieldSearchResults.length]);
+            const handleSprintFieldSearchKeyDown = makeFieldKeyDown(sprintFieldSearchResults, sprintFieldSearchIndex, setSprintFieldSearchIndex, setSprintFieldIdDraft, setSprintFieldNameDraft, setSprintFieldSearchQuery, setSprintFieldSearchOpen);
+
+            const parentNameFieldSearchResults = React.useMemo(() => makeFieldSearchResults(parentNameFieldSearchQuery, jiraFields), [parentNameFieldSearchQuery, jiraFields]);
+            React.useEffect(() => { if (parentNameFieldSearchIndex >= parentNameFieldSearchResults.length) setParentNameFieldSearchIndex(0); }, [parentNameFieldSearchResults.length]);
+            const handleParentNameFieldSearchKeyDown = makeFieldKeyDown(parentNameFieldSearchResults, parentNameFieldSearchIndex, setParentNameFieldSearchIndex, setParentNameFieldIdDraft, setParentNameFieldNameDraft, setParentNameFieldSearchQuery, setParentNameFieldSearchOpen);
+
+            const storyPointsFieldSearchResults = React.useMemo(() => makeFieldSearchResults(storyPointsFieldSearchQuery, jiraFields), [storyPointsFieldSearchQuery, jiraFields]);
+            React.useEffect(() => { if (storyPointsFieldSearchIndex >= storyPointsFieldSearchResults.length) setStoryPointsFieldSearchIndex(0); }, [storyPointsFieldSearchResults.length]);
+            const handleStoryPointsFieldSearchKeyDown = makeFieldKeyDown(storyPointsFieldSearchResults, storyPointsFieldSearchIndex, setStoryPointsFieldSearchIndex, setStoryPointsFieldIdDraft, setStoryPointsFieldNameDraft, setStoryPointsFieldSearchQuery, setStoryPointsFieldSearchOpen);
+
+            const teamFieldSearchResults = React.useMemo(() => makeFieldSearchResults(teamFieldSearchQuery, jiraFields), [teamFieldSearchQuery, jiraFields]);
+            React.useEffect(() => { if (teamFieldSearchIndex >= teamFieldSearchResults.length) setTeamFieldSearchIndex(0); }, [teamFieldSearchResults.length]);
+            const handleTeamFieldSearchKeyDown = makeFieldKeyDown(teamFieldSearchResults, teamFieldSearchIndex, setTeamFieldSearchIndex, setTeamFieldIdDraft, setTeamFieldNameDraft, setTeamFieldSearchQuery, setTeamFieldSearchOpen);
 
             const exportGroupsConfig = async () => {
                 const source = groupDraft || groupsConfig;
@@ -9858,6 +9999,29 @@ import { createRoot } from 'react-dom/client';
                                 {groupManageTab === 'projects' && (
                                     <div className="group-modal-body group-modal-split group-projects-layout">
                                         <div className="group-pane group-projects-pane-left">
+                                            <div className="group-projects-subsection" style={{padding: '12px 16px 0'}}>
+                                                <div className="team-selector-label">Sprint Field</div>
+                                                <div className="capacity-inline-row">
+                                                    <div className="team-search-wrapper capacity-inline-search">
+                                                        <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={sprintFieldSearchQuery} onChange={(e) => { setSprintFieldSearchQuery(e.target.value); setSprintFieldSearchOpen(true); setSprintFieldSearchIndex(0); }} onFocus={() => setSprintFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setSprintFieldSearchOpen(false), 120); }} onKeyDown={handleSprintFieldSearchKeyDown} ref={sprintFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
+                                                        {sprintFieldSearchOpen && sprintFieldSearchResults.length > 0 && (
+                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                                {sprintFieldSearchResults.map((f, index) => (
+                                                                    <div key={f.id} className={`team-search-result-item ${index === sprintFieldSearchIndex ? 'active' : ''}`} onClick={() => { setSprintFieldIdDraft(f.id); setSprintFieldNameDraft(f.name); setSprintFieldSearchQuery(''); setSprintFieldSearchOpen(false); }}>
+                                                                        <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {sprintFieldNameDraft && (
+                                                        <div className="selected-team-chip" title={sprintFieldIdDraft || ''}>
+                                                            <span className="team-name"><strong>{sprintFieldNameDraft}</strong></span>
+                                                            <button className="remove-btn" onClick={() => { setSprintFieldIdDraft(''); setSprintFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
                                             <div className="group-pane-header group-projects-pane-header">
                                                 <div className="group-pane-title">Dashboard Projects</div>
                                                 <div className="group-projects-desc">
@@ -9973,6 +10137,75 @@ import { createRoot } from 'react-dom/client';
                                                 {issueTypesDraft.length === 0 && (
                                                     <div className="team-selector-empty">No filter — all issue types will be included.</div>
                                                 )}
+                                            </div>
+                                            <div className="group-projects-subsection">
+                                                <div className="team-selector-label">Parent Name Field</div>
+                                                <div className="capacity-inline-row">
+                                                    <div className="team-search-wrapper capacity-inline-search">
+                                                        <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={parentNameFieldSearchQuery} onChange={(e) => { setParentNameFieldSearchQuery(e.target.value); setParentNameFieldSearchOpen(true); setParentNameFieldSearchIndex(0); }} onFocus={() => setParentNameFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setParentNameFieldSearchOpen(false), 120); }} onKeyDown={handleParentNameFieldSearchKeyDown} ref={parentNameFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
+                                                        {parentNameFieldSearchOpen && parentNameFieldSearchResults.length > 0 && (
+                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                                {parentNameFieldSearchResults.map((f, index) => (
+                                                                    <div key={f.id} className={`team-search-result-item ${index === parentNameFieldSearchIndex ? 'active' : ''}`} onClick={() => { setParentNameFieldIdDraft(f.id); setParentNameFieldNameDraft(f.name); setParentNameFieldSearchQuery(''); setParentNameFieldSearchOpen(false); }}>
+                                                                        <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {parentNameFieldNameDraft && (
+                                                        <div className="selected-team-chip" title={parentNameFieldIdDraft || ''}>
+                                                            <span className="team-name"><strong>{parentNameFieldNameDraft}</strong></span>
+                                                            <button className="remove-btn" onClick={() => { setParentNameFieldIdDraft(''); setParentNameFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="group-projects-subsection">
+                                                <div className="team-selector-label">Story Points Field</div>
+                                                <div className="capacity-inline-row">
+                                                    <div className="team-search-wrapper capacity-inline-search">
+                                                        <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={storyPointsFieldSearchQuery} onChange={(e) => { setStoryPointsFieldSearchQuery(e.target.value); setStoryPointsFieldSearchOpen(true); setStoryPointsFieldSearchIndex(0); }} onFocus={() => setStoryPointsFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setStoryPointsFieldSearchOpen(false), 120); }} onKeyDown={handleStoryPointsFieldSearchKeyDown} ref={storyPointsFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
+                                                        {storyPointsFieldSearchOpen && storyPointsFieldSearchResults.length > 0 && (
+                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                                {storyPointsFieldSearchResults.map((f, index) => (
+                                                                    <div key={f.id} className={`team-search-result-item ${index === storyPointsFieldSearchIndex ? 'active' : ''}`} onClick={() => { setStoryPointsFieldIdDraft(f.id); setStoryPointsFieldNameDraft(f.name); setStoryPointsFieldSearchQuery(''); setStoryPointsFieldSearchOpen(false); }}>
+                                                                        <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {storyPointsFieldNameDraft && (
+                                                        <div className="selected-team-chip" title={storyPointsFieldIdDraft || ''}>
+                                                            <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong></span>
+                                                            <button className="remove-btn" onClick={() => { setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="group-projects-subsection">
+                                                <div className="team-selector-label">Team Field</div>
+                                                <div className="capacity-inline-row">
+                                                    <div className="team-search-wrapper capacity-inline-search">
+                                                        <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={teamFieldSearchQuery} onChange={(e) => { setTeamFieldSearchQuery(e.target.value); setTeamFieldSearchOpen(true); setTeamFieldSearchIndex(0); }} onFocus={() => setTeamFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setTeamFieldSearchOpen(false), 120); }} onKeyDown={handleTeamFieldSearchKeyDown} ref={teamFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
+                                                        {teamFieldSearchOpen && teamFieldSearchResults.length > 0 && (
+                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                                {teamFieldSearchResults.map((f, index) => (
+                                                                    <div key={f.id} className={`team-search-result-item ${index === teamFieldSearchIndex ? 'active' : ''}`} onClick={() => { setTeamFieldIdDraft(f.id); setTeamFieldNameDraft(f.name); setTeamFieldSearchQuery(''); setTeamFieldSearchOpen(false); }}>
+                                                                        <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {teamFieldNameDraft && (
+                                                        <div className="selected-team-chip" title={teamFieldIdDraft || ''}>
+                                                            <span className="team-name"><strong>{teamFieldNameDraft}</strong></span>
+                                                            <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                             <div className="group-projects-divider" />
                                             <div className="group-projects-section">

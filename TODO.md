@@ -1,6 +1,5 @@
 # TODO
 - pack statistics bar to 6 in one row, right now it's 8. make it two row or one row (need to think how to fit 12 teams)
-- Create a configuration of the env in the UI.
 
 Whistles
 - dark mode/company colors?
@@ -33,8 +32,8 @@ RICE = (Reach x Impact x Confidence) / Effort
 | 6 | Bulk actions UI | Feature | 6 | 2 | 80% | 2 | **4.8** |
 | 7 | Virtual scrolling (large lists) | Frontend | 6 | 1 | 80% | 1 | **4.8** |
 | 8 | Rate limiting | Backend | 3 | 1 | 80% | 0.5 | **4.8** |
-| 9 | In-app configuration UI | Feature | 8 | 2 | 80% | 3 | **4.3** |
-| 10 | Remove hardcoded Jira field IDs | Backend | 5 | 2 | 80% | 2 | **4.0** |
+| ~~9~~ | ~~In-app configuration UI~~ | ~~Feature~~ | ~~8~~ | ~~2~~ | ~~80%~~ | ~~3~~ | ~~**4.3**~~ |
+| ~~10~~ | ~~Remove hardcoded Jira field IDs~~ | ~~Backend~~ | ~~5~~ | ~~2~~ | ~~80%~~ | ~~2~~ | ~~**4.0**~~ |
 | 11 | Dark mode | Feature | 8 | 0.5 | 100% | 1 | **4.0** |
 | 12 | Centralize auth header construction | Backend | 2 | 0.5 | 100% | 0.25 | **4.0** |
 | 13 | Code splitting (lazy load panels) | Frontend | 8 | 0.5 | 80% | 1 | **3.2** |
@@ -53,5 +52,5 @@ RICE = (Reach x Impact x Confidence) / Effort
 | 26 | TypeScript migration | Frontend | 3 | 2 | 50% | 8 | **0.4** |
 
 Quick wins (RICE > 4, effort <= 1 week): #3, 4, 8, 11, 12
-High-value features (RICE > 4, effort > 1 week): #5, 6, 9
+High-value features (RICE > 4, effort > 1 week): #5, 6
 Note: #23-24 score low but are prerequisites for most future frontend work.

@@ -3515,6 +3515,14 @@ def get_favicon():
     return '', 404
 
 
+@app.route('/epm-burst.svg')
+def get_epm_burst_icon():
+    icon_path = os.path.join(os.path.dirname(__file__), 'epm-burst.svg')
+    if os.path.exists(icon_path):
+        return send_file(icon_path, mimetype='image/svg+xml')
+    return '', 404
+
+
 @app.route('/', methods=['GET'])
 def serve_dashboard():
     dashboard_path = os.path.join(os.path.dirname(__file__), 'jira-dashboard.html')

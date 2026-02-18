@@ -5121,6 +5121,12 @@ import { createRoot } from 'react-dom/client';
                     priorityPoints: team.priorityPoints || {}
                 };
             });
+            const statsBarColumns = (() => {
+                const teamCount = statsTeamRows.length;
+                if (teamCount <= 0) return 1;
+                if (teamCount > 8) return 6;
+                return teamCount;
+            })();
 
             const statsTotals = statsTeamRows.reduce((acc, row) => {
                 acc.straight.done += row.straight.done;
@@ -6717,6 +6723,7 @@ import { createRoot } from 'react-dom/client';
                     <header>
                         <div className="subtitle">
                             <span className="subtitle-main">
+                                <img src="epm-burst.svg" alt="" className="subtitle-logo" aria-hidden="true" />
                                 Jira Execution Planner
                                 <span className="subtitle-secondary"> · Product &amp; Tech Projects</span>
                                 {updateNoticeVisible && (
@@ -7480,7 +7487,7 @@ import { createRoot } from 'react-dom/client';
                                 </div>
 
                                 <div className={`stats-view ${statsView === 'teams' ? 'open' : ''}`}>
-                                    <div className="stats-bars">
+                                    <div className="stats-bars" style={{ '--stats-bar-columns': statsBarColumns }}>
                                         {statsTeamRows.map(team => {
                                             const graphRate = statsGraphMode === 'weighted' ? team.weightedRate : team.straightRate;
                                             return (

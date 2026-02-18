@@ -7401,13 +7401,8 @@ import { createRoot } from 'react-dom/client';
                     )}
 
                     <div className={`stats-panel ${showStats ? 'open' : ''}`}>
-                        <div className="stats-controls">
-                            <div className="stats-control-group">
-                                <label>Selected Sprint</label>
-                                <div className="stats-note">
-                                    {selectedSprintInfo?.name || 'Sprint'}
-                                </div>
-                            </div>
+                        <div className="stats-note">
+                            Selected sprint: {selectedSprintInfo?.name || 'Sprint'}
                         </div>
 
                         {showStats && !effectiveStatsData && (
@@ -8386,6 +8381,7 @@ import { createRoot } from 'react-dom/client';
                             const selectedPct = toPct(selectedSP);
                             const planningPct = toPct(estimatedCapacityAdjusted);
                             const teamCapPct = toPct(totalCapacityAdjusted);
+                            const showPlanningMarker = Math.abs(estimatedCapacityAdjusted - totalCapacityAdjusted) > 0.05;
                             const isOver = capacitySummary.status === 'over';
                             const isUnder = capacitySummary.status === 'under';
                             const varianceOverPct = isOver ? selectedPct - teamCapPct : 0;
@@ -8409,10 +8405,12 @@ import { createRoot } from 'react-dom/client';
                                             <span className="capacity-bar-fill-label">{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>
                                         </div>
                                         {/* Planning marker */}
-                                        <div className="capacity-bar-marker planning" style={{ left: `${planningPct}%` }} data-tooltip="Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.).">
-                                            <div className="capacity-bar-marker-line dashed" />
-                                            <div className="capacity-bar-marker-label">Planning<br/>{estimatedCapacityAdjusted.toFixed(1)}</div>
-                                        </div>
+                                        {showPlanningMarker && (
+                                            <div className="capacity-bar-marker planning" style={{ left: `${planningPct}%` }} data-tooltip="Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.).">
+                                                <div className="capacity-bar-marker-line dashed" />
+                                                <div className="capacity-bar-marker-label">Planning<br/>{estimatedCapacityAdjusted.toFixed(1)}</div>
+                                            </div>
+                                        )}
                                         {/* Team cap marker */}
                                         <div className="capacity-bar-marker teamcap" style={{ left: `${teamCapPct}%` }} data-tooltip="Estimated total team capacity for the quarter.">
                                             <div className="capacity-bar-marker-line" />

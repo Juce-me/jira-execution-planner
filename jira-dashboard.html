@@ -2249,9 +2249,10 @@
             border-left: 3px solid rgba(224, 221, 215, 0.7);
             padding: 1.25rem 1.5rem;
             margin-bottom: 0.9rem;
-            transition: transform 0.3s, box-shadow 0.3s, opacity 0.14s ease, background-color 0.14s ease, outline 0.14s ease, outline-offset 0.14s ease;
+            transition: box-shadow 0.2s ease, border-left-color 0.2s ease, opacity 0.14s ease, background-color 0.14s ease, outline 0.14s ease, outline-offset 0.14s ease;
             position: relative;
             border-radius: 10px;
+            animation: task-appear 0.18s ease-out both;
         }
 
         .task-item::after {
@@ -2265,8 +2266,19 @@
         }
 
         .task-item:hover {
-            transform: translateX(4px);
-            box-shadow: -6px 0 18px var(--shadow);
+            border-left-color: var(--accent);
+            box-shadow: inset 3px 0 0 var(--accent), -6px 0 18px var(--shadow);
+        }
+
+        @keyframes task-appear {
+            from {
+                opacity: 0;
+                transform: translateY(4px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .task-item.task-highlight::after {

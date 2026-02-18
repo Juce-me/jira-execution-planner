@@ -9,6 +9,7 @@ import os
 import re
 import json
 import hashlib
+import threading
 import time
 import subprocess
 from datetime import datetime, timedelta, date
@@ -69,6 +70,9 @@ SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
 TASKS_CACHE_TTL_SECONDS = 60 * 20
 UPDATE_CHECK_CACHE = {'ts': 0, 'data': None}
+
+# Single lock for all global caches — kept simple since these are not hot paths.
+_cache_lock = threading.RLock()
 
 # Cache settings
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
@@ -153,91 +157,94 @@ CAPACITY_FIELD_CACHE = None
 def resolve_team_field_id(headers):
     """Resolve the Jira custom field ID for Team[Team]."""
     global TEAM_FIELD_CACHE
-    if TEAM_FIELD_CACHE:
-        return TEAM_FIELD_CACHE
-    if JIRA_TEAM_FIELD_ID:
-        TEAM_FIELD_CACHE = JIRA_TEAM_FIELD_ID
-        return TEAM_FIELD_CACHE
+    with _cache_lock:
+        if TEAM_FIELD_CACHE:
+            return TEAM_FIELD_CACHE
+        if JIRA_TEAM_FIELD_ID:
+            TEAM_FIELD_CACHE = JIRA_TEAM_FIELD_ID
+            return TEAM_FIELD_CACHE
 
-    try:
-        response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
-        if response.status_code != 200:
+        try:
+            response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
+            if response.status_code != 200:
+                return None
+
+            fields = response.json() or []
+            for field in fields:
+                name = str(field.get('name', '')).strip().lower()
+                if name == 'team[team]':
+                    TEAM_FIELD_CACHE = field.get('id')
+                    return TEAM_FIELD_CACHE
+        except Exception:
             return None
 
-        fields = response.json() or []
-        for field in fields:
-            name = str(field.get('name', '')).strip().lower()
-            if name == 'team[team]':
-                TEAM_FIELD_CACHE = field.get('id')
-                return TEAM_FIELD_CACHE
-    except Exception:
         return None
-
-    return None
 
 
 def resolve_epic_link_field_id(headers, names_map=None):
     """Resolve the Jira custom field ID for Epic Link."""
     global EPIC_LINK_FIELD_CACHE
-    if EPIC_LINK_FIELD_CACHE:
-        return EPIC_LINK_FIELD_CACHE
-    if JIRA_EPIC_LINK_FIELD_ID:
-        EPIC_LINK_FIELD_CACHE = JIRA_EPIC_LINK_FIELD_ID
-        return EPIC_LINK_FIELD_CACHE
+    with _cache_lock:
+        if EPIC_LINK_FIELD_CACHE:
+            return EPIC_LINK_FIELD_CACHE
+        if JIRA_EPIC_LINK_FIELD_ID:
+            EPIC_LINK_FIELD_CACHE = JIRA_EPIC_LINK_FIELD_ID
+            return EPIC_LINK_FIELD_CACHE
 
-    if names_map:
-        for field_id, field_name in (names_map or {}).items():
-            if str(field_name).strip().lower() == 'epic link':
-                EPIC_LINK_FIELD_CACHE = field_id
-                return EPIC_LINK_FIELD_CACHE
+        if names_map:
+            for field_id, field_name in (names_map or {}).items():
+                if str(field_name).strip().lower() == 'epic link':
+                    EPIC_LINK_FIELD_CACHE = field_id
+                    return EPIC_LINK_FIELD_CACHE
 
-    try:
-        response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
-        if response.status_code != 200:
+        try:
+            response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
+            if response.status_code != 200:
+                return None
+
+            fields = response.json() or []
+            for field in fields:
+                name = str(field.get('name', '')).strip().lower()
+                if name == 'epic link':
+                    EPIC_LINK_FIELD_CACHE = field.get('id')
+                    return EPIC_LINK_FIELD_CACHE
+        except Exception:
             return None
 
-        fields = response.json() or []
-        for field in fields:
-            name = str(field.get('name', '')).strip().lower()
-            if name == 'epic link':
-                EPIC_LINK_FIELD_CACHE = field.get('id')
-                return EPIC_LINK_FIELD_CACHE
-    except Exception:
         return None
-
-    return None
 
 
 def resolve_capacity_field_id(headers):
     """Resolve the Jira custom field ID for Team capacity."""
     global CAPACITY_FIELD_CACHE
-    if CAPACITY_FIELD_CACHE:
-        return CAPACITY_FIELD_CACHE
-    cap = get_capacity_config()
-    if cap['fieldId']:
-        CAPACITY_FIELD_CACHE = cap['fieldId']
-        return CAPACITY_FIELD_CACHE
+    with _cache_lock:
+        if CAPACITY_FIELD_CACHE:
+            return CAPACITY_FIELD_CACHE
+        cap = get_capacity_config()
+        if cap['fieldId']:
+            CAPACITY_FIELD_CACHE = cap['fieldId']
+            return CAPACITY_FIELD_CACHE
 
-    field_name = cap['fieldName']
-    if not field_name:
-        return None
-
-    try:
-        response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
-        if response.status_code != 200:
+        field_name = cap['fieldName']
+        if not field_name:
             return None
 
-        fields = response.json() or []
-        target = field_name.strip().lower()
-        for field in fields:
-            name = str(field.get('name', '')).strip().lower()
-            if name == target:
-                CAPACITY_FIELD_CACHE = field.get('id')
-                return CAPACITY_FIELD_CACHE
-    except Exception:
-        return None
+        try:
+            response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
+            if response.status_code != 200:
+                return None
 
-    return None
+            fields = response.json() or []
+            target = field_name.strip().lower()
+            for field in fields:
+                name = str(field.get('name', '')).strip().lower()
+                if name == target:
+                    CAPACITY_FIELD_CACHE = field.get('id')
+                    return CAPACITY_FIELD_CACHE
+        except Exception:
+            return None
+
+        return None
 
 
 def extract_team_name(value):
@@ -1451,7 +1458,8 @@ def fetch_tasks(include_team_name=False):
             include_team_name,
             use_template
         )
-        cached_entry = TASKS_CACHE.get(cache_key)
+        with _cache_lock:
+            cached_entry = TASKS_CACHE.get(cache_key)
         if not force_refresh and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
             cached_response = jsonify(cached_entry.get('data') or {})
             cached_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -1701,10 +1709,11 @@ def fetch_tasks(include_team_name=False):
         data['teamFieldId'] = team_field_id
 
         print(f'✅ Success! Found {len(data.get("issues", []))} issues')
-        TASKS_CACHE[cache_key] = {
-            'timestamp': time.time(),
-            'data': data
-        }
+        with _cache_lock:
+            TASKS_CACHE[cache_key] = {
+                'timestamp': time.time(),
+                'data': data
+            }
 
         success_response = jsonify(data)
         success_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -2107,9 +2116,10 @@ def lookup_issues():
 def scenario_planner():
     """Scenario planner endpoint."""
     if request.method == 'GET':
-        if not SCENARIO_CACHE.get('data'):
-            return jsonify({'error': 'No scenario cached'}), 404
-        return jsonify(SCENARIO_CACHE)
+        with _cache_lock:
+            if not SCENARIO_CACHE.get('data'):
+                return jsonify({'error': 'No scenario cached'}), 404
+            return jsonify(SCENARIO_CACHE)
 
     try:
         payload = request.get_json(silent=True) or {}
@@ -2481,8 +2491,9 @@ def scenario_planner():
             },
         }
 
-        SCENARIO_CACHE['generatedAt'] = result['generatedAt']
-        SCENARIO_CACHE['data'] = result
+        with _cache_lock:
+            SCENARIO_CACHE['generatedAt'] = result['generatedAt']
+            SCENARIO_CACHE['data'] = result
 
         return jsonify(result)
     except Exception as e:
@@ -3483,14 +3494,16 @@ def get_version():
         return jsonify({'enabled': False})
 
     now = time.time()
-    cached = UPDATE_CHECK_CACHE.get('data')
-    cached_ts = UPDATE_CHECK_CACHE.get('ts', 0)
+    with _cache_lock:
+        cached = UPDATE_CHECK_CACHE.get('data')
+        cached_ts = UPDATE_CHECK_CACHE.get('ts', 0)
     if cached and (now - cached_ts) < UPDATE_CHECK_TTL_SECONDS:
         return jsonify(cached)
 
     payload = build_update_check_payload()
-    UPDATE_CHECK_CACHE['data'] = payload
-    UPDATE_CHECK_CACHE['ts'] = now
+    with _cache_lock:
+        UPDATE_CHECK_CACHE['data'] = payload
+        UPDATE_CHECK_CACHE['ts'] = now
     return jsonify(payload)
 
 
@@ -3600,9 +3613,10 @@ def get_jira_projects():
         refresh = request.args.get('refresh', '').strip().lower() in ('1', 'true', 'yes')
 
         # Return cached data only for full-list requests (no query/limit), unless refresh requested.
-        if (not refresh and not query and not limit_raw and
-                PROJECTS_CACHE['data'] and (time.time() - PROJECTS_CACHE['timestamp']) < PROJECTS_CACHE_TTL):
-            return jsonify({'projects': PROJECTS_CACHE['data']})
+        with _cache_lock:
+            if (not refresh and not query and not limit_raw and
+                    PROJECTS_CACHE['data'] and (time.time() - PROJECTS_CACHE['timestamp']) < PROJECTS_CACHE_TTL):
+                return jsonify({'projects': PROJECTS_CACHE['data']})
 
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
         auth_bytes = auth_string.encode('ascii')
@@ -3686,8 +3700,9 @@ def get_jira_projects():
 
         # Cache results (only for unfiltered full list)
         if not query:
-            PROJECTS_CACHE['data'] = all_projects
-            PROJECTS_CACHE['timestamp'] = time.time()
+            with _cache_lock:
+                PROJECTS_CACHE['data'] = all_projects
+                PROJECTS_CACHE['timestamp'] = time.time()
 
         return jsonify({'projects': all_projects})
     except Exception as e:
@@ -3709,9 +3724,10 @@ def get_jira_components():
                 return jsonify({'error': 'limit must be an integer'}), 400
 
         # Return cached data when no query is specified and cache is fresh
-        if (not query and COMPONENTS_CACHE['data'] and
-                (time.time() - COMPONENTS_CACHE['timestamp']) < COMPONENTS_CACHE_TTL):
-            return jsonify({'components': COMPONENTS_CACHE['data'][:limit]})
+        with _cache_lock:
+            if (not query and COMPONENTS_CACHE['data'] and
+                    (time.time() - COMPONENTS_CACHE['timestamp']) < COMPONENTS_CACHE_TTL):
+                return jsonify({'components': COMPONENTS_CACHE['data'][:limit]})
 
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
         auth_bytes = auth_string.encode('ascii')
@@ -3757,8 +3773,9 @@ def get_jira_components():
 
         # Cache the full unfiltered list
         if not query:
-            COMPONENTS_CACHE['data'] = all_components
-            COMPONENTS_CACHE['timestamp'] = time.time()
+            with _cache_lock:
+                COMPONENTS_CACHE['data'] = all_components
+                COMPONENTS_CACHE['timestamp'] = time.time()
 
         # Apply query filter
         if query:
@@ -3799,7 +3816,8 @@ def save_selected_projects():
         return jsonify({'error': 'Failed to save project selection', 'message': str(e)}), 500
 
     # Invalidate tasks cache since project scope changed
-    TASKS_CACHE.clear()
+    with _cache_lock:
+        TASKS_CACHE.clear()
 
     return jsonify({'selected': sanitized})
 
@@ -3829,7 +3847,8 @@ def save_capacity_config_endpoint():
         save_dashboard_config(dashboard_config)
         # Reset the field cache since config changed
         global CAPACITY_FIELD_CACHE
-        CAPACITY_FIELD_CACHE = None
+        with _cache_lock:
+            CAPACITY_FIELD_CACHE = None
     except Exception as e:
         return jsonify({'error': 'Failed to save capacity config', 'message': str(e)}), 500
 
@@ -3845,8 +3864,9 @@ ISSUE_TYPES_CACHE_TTL = 60 * 60  # 1 hour
 def get_jira_issue_types():
     """Fetch available Jira issue types with caching."""
     try:
-        if ISSUE_TYPES_CACHE['data'] and (time.time() - ISSUE_TYPES_CACHE['timestamp']) < ISSUE_TYPES_CACHE_TTL:
-            return jsonify({'issueTypes': ISSUE_TYPES_CACHE['data']})
+        with _cache_lock:
+            if ISSUE_TYPES_CACHE['data'] and (time.time() - ISSUE_TYPES_CACHE['timestamp']) < ISSUE_TYPES_CACHE_TTL:
+                return jsonify({'issueTypes': ISSUE_TYPES_CACHE['data']})
 
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
         auth_bytes = auth_string.encode('ascii')
@@ -3874,8 +3894,9 @@ def get_jira_issue_types():
                 })
         result.sort(key=lambda x: x['name'])
 
-        ISSUE_TYPES_CACHE['data'] = result
-        ISSUE_TYPES_CACHE['timestamp'] = time.time()
+        with _cache_lock:
+            ISSUE_TYPES_CACHE['data'] = result
+            ISSUE_TYPES_CACHE['timestamp'] = time.time()
 
         return jsonify({'issueTypes': result})
     except Exception as e:
@@ -3906,7 +3927,8 @@ def save_issue_types_config_endpoint():
         return jsonify({'error': 'Failed to save issue types config', 'message': str(e)}), 500
 
     # Invalidate tasks cache since query scope changed
-    TASKS_CACHE.clear()
+    with _cache_lock:
+        TASKS_CACHE.clear()
 
     return jsonify({'issueTypes': sanitized})
 

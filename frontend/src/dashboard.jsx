@@ -10002,6 +10002,12 @@ import { createRoot } from 'react-dom/client';
                                             <div className="group-projects-subsection" style={{padding: '12px 16px 0'}}>
                                                 <div className="team-selector-label">Sprint Field</div>
                                                 <div className="capacity-inline-row">
+                                                    {sprintFieldNameDraft ? (
+                                                        <div className="selected-team-chip" title={sprintFieldIdDraft || ''}>
+                                                            <span className="team-name"><strong>{sprintFieldNameDraft}</strong>{sprintFieldIdDraft && <span className="field-id-hint">({sprintFieldIdDraft})</span>}</span>
+                                                            <button className="remove-btn" onClick={() => { setSprintFieldIdDraft(''); setSprintFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                        </div>
+                                                    ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
                                                         <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={sprintFieldSearchQuery} onChange={(e) => { setSprintFieldSearchQuery(e.target.value); setSprintFieldSearchOpen(true); setSprintFieldSearchIndex(0); }} onFocus={() => setSprintFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setSprintFieldSearchOpen(false), 120); }} onKeyDown={handleSprintFieldSearchKeyDown} ref={sprintFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
                                                         {sprintFieldSearchOpen && sprintFieldSearchResults.length > 0 && (
@@ -10014,11 +10020,6 @@ import { createRoot } from 'react-dom/client';
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {sprintFieldNameDraft && (
-                                                        <div className="selected-team-chip" title={sprintFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{sprintFieldNameDraft}</strong></span>
-                                                            <button className="remove-btn" onClick={() => { setSprintFieldIdDraft(''); setSprintFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
-                                                        </div>
                                                     )}
                                                 </div>
                                             </div>
@@ -10099,6 +10100,12 @@ import { createRoot } from 'react-dom/client';
                                             <div className="group-projects-section">
                                                 <div className="group-pane-title">Issue Type</div>
                                                 <div className="capacity-inline-row">
+                                                    {issueTypesDraft.length > 0 ? (
+                                                        <div className="selected-team-chip issue-type-chip">
+                                                            <span className="team-name">{issueTypesDraft[0]}</span>
+                                                            <button className="remove-btn" onClick={() => removeIssueType(issueTypesDraft[0])} type="button" title="Remove">&times;</button>
+                                                        </div>
+                                                    ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
                                                         <input
                                                             type="text"
@@ -10127,11 +10134,6 @@ import { createRoot } from 'react-dom/client';
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {issueTypesDraft.length > 0 && (
-                                                        <div className="selected-team-chip issue-type-chip">
-                                                            <span className="team-name">{issueTypesDraft[0]}</span>
-                                                            <button className="remove-btn" onClick={() => removeIssueType(issueTypesDraft[0])} type="button" title="Remove">&times;</button>
-                                                        </div>
                                                     )}
                                                 </div>
                                                 {issueTypesDraft.length === 0 && (
@@ -10141,6 +10143,12 @@ import { createRoot } from 'react-dom/client';
                                             <div className="group-projects-subsection">
                                                 <div className="team-selector-label">Parent Name Field</div>
                                                 <div className="capacity-inline-row">
+                                                    {parentNameFieldNameDraft ? (
+                                                        <div className="selected-team-chip" title={parentNameFieldIdDraft || ''}>
+                                                            <span className="team-name"><strong>{parentNameFieldNameDraft}</strong>{parentNameFieldIdDraft && <span className="field-id-hint">({parentNameFieldIdDraft})</span>}</span>
+                                                            <button className="remove-btn" onClick={() => { setParentNameFieldIdDraft(''); setParentNameFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                        </div>
+                                                    ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
                                                         <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={parentNameFieldSearchQuery} onChange={(e) => { setParentNameFieldSearchQuery(e.target.value); setParentNameFieldSearchOpen(true); setParentNameFieldSearchIndex(0); }} onFocus={() => setParentNameFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setParentNameFieldSearchOpen(false), 120); }} onKeyDown={handleParentNameFieldSearchKeyDown} ref={parentNameFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
                                                         {parentNameFieldSearchOpen && parentNameFieldSearchResults.length > 0 && (
@@ -10153,17 +10161,18 @@ import { createRoot } from 'react-dom/client';
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {parentNameFieldNameDraft && (
-                                                        <div className="selected-team-chip" title={parentNameFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{parentNameFieldNameDraft}</strong></span>
-                                                            <button className="remove-btn" onClick={() => { setParentNameFieldIdDraft(''); setParentNameFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
-                                                        </div>
                                                     )}
                                                 </div>
                                             </div>
                                             <div className="group-projects-subsection">
                                                 <div className="team-selector-label">Story Points Field</div>
                                                 <div className="capacity-inline-row">
+                                                    {storyPointsFieldNameDraft ? (
+                                                        <div className="selected-team-chip" title={storyPointsFieldIdDraft || ''}>
+                                                            <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong>{storyPointsFieldIdDraft && <span className="field-id-hint">({storyPointsFieldIdDraft})</span>}</span>
+                                                            <button className="remove-btn" onClick={() => { setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                        </div>
+                                                    ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
                                                         <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={storyPointsFieldSearchQuery} onChange={(e) => { setStoryPointsFieldSearchQuery(e.target.value); setStoryPointsFieldSearchOpen(true); setStoryPointsFieldSearchIndex(0); }} onFocus={() => setStoryPointsFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setStoryPointsFieldSearchOpen(false), 120); }} onKeyDown={handleStoryPointsFieldSearchKeyDown} ref={storyPointsFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
                                                         {storyPointsFieldSearchOpen && storyPointsFieldSearchResults.length > 0 && (
@@ -10176,17 +10185,18 @@ import { createRoot } from 'react-dom/client';
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {storyPointsFieldNameDraft && (
-                                                        <div className="selected-team-chip" title={storyPointsFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong></span>
-                                                            <button className="remove-btn" onClick={() => { setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
-                                                        </div>
                                                     )}
                                                 </div>
                                             </div>
                                             <div className="group-projects-subsection">
                                                 <div className="team-selector-label">Team Field</div>
                                                 <div className="capacity-inline-row">
+                                                    {teamFieldNameDraft ? (
+                                                        <div className="selected-team-chip" title={teamFieldIdDraft || ''}>
+                                                            <span className="team-name"><strong>{teamFieldNameDraft}</strong>{teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
+                                                            <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                        </div>
+                                                    ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
                                                         <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={teamFieldSearchQuery} onChange={(e) => { setTeamFieldSearchQuery(e.target.value); setTeamFieldSearchOpen(true); setTeamFieldSearchIndex(0); }} onFocus={() => setTeamFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setTeamFieldSearchOpen(false), 120); }} onKeyDown={handleTeamFieldSearchKeyDown} ref={teamFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
                                                         {teamFieldSearchOpen && teamFieldSearchResults.length > 0 && (
@@ -10199,11 +10209,6 @@ import { createRoot } from 'react-dom/client';
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {teamFieldNameDraft && (
-                                                        <div className="selected-team-chip" title={teamFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{teamFieldNameDraft}</strong></span>
-                                                            <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
-                                                        </div>
                                                     )}
                                                 </div>
                                             </div>
@@ -10214,6 +10219,12 @@ import { createRoot } from 'react-dom/client';
                                                     Select one Jira project that stores team capacity entries, and the field used for estimated capacity.
                                                 </div>
                                                 <div className="capacity-inline-row">
+                                                    {capacityProjectDraft ? (
+                                                        <div className="selected-team-chip">
+                                                            <span className="team-name"><strong>{capacityProjectDraft}</strong>{resolveCapacityProjectName(capacityProjectDraft) ? ` \u2014 ${resolveCapacityProjectName(capacityProjectDraft)}` : ''}</span>
+                                                            <button className="remove-btn" onClick={() => setCapacityProjectDraft('')} type="button" title="Remove">&times;</button>
+                                                        </div>
+                                                    ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
                                                         <input
                                                             type="text"
@@ -10242,16 +10253,17 @@ import { createRoot } from 'react-dom/client';
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {capacityProjectDraft && (
-                                                        <div className="selected-team-chip">
-                                                            <span className="team-name"><strong>{capacityProjectDraft}</strong>{resolveCapacityProjectName(capacityProjectDraft) ? ` \u2014 ${resolveCapacityProjectName(capacityProjectDraft)}` : ''}</span>
-                                                            <button className="remove-btn" onClick={() => setCapacityProjectDraft('')} type="button" title="Remove">&times;</button>
-                                                        </div>
                                                     )}
                                                 </div>
                                                 <div className="group-projects-subsection">
                                                     <div className="team-selector-label">Capacity Field</div>
                                                     <div className="capacity-inline-row">
+                                                        {capacityFieldNameDraft ? (
+                                                            <div className="selected-team-chip" title={capacityFieldIdDraft || ''}>
+                                                                <span className="team-name"><strong>{capacityFieldNameDraft}</strong>{capacityFieldIdDraft && <span className="field-id-hint">({capacityFieldIdDraft})</span>}</span>
+                                                                <button className="remove-btn" onClick={() => { setCapacityFieldIdDraft(''); setCapacityFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                            </div>
+                                                        ) : (
                                                         <div className="team-search-wrapper capacity-inline-search">
                                                             <input
                                                                 type="text"
@@ -10279,11 +10291,6 @@ import { createRoot } from 'react-dom/client';
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        {capacityFieldNameDraft && (
-                                                            <div className="selected-team-chip" title={capacityFieldIdDraft || ''}>
-                                                                <span className="team-name"><strong>{capacityFieldNameDraft}</strong></span>
-                                                                <button className="remove-btn" onClick={() => { setCapacityFieldIdDraft(''); setCapacityFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
-                                                            </div>
                                                         )}
                                                     </div>
                                                 </div>

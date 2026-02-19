@@ -1789,7 +1789,8 @@ def fetch_issues_by_keys(keys, headers, fields_list):
     batch_size = 100
     for i in range(0, len(keys), batch_size):
         batch = keys[i:i + batch_size]
-        jql = f'key in ({",".join(f"\"{k}\"" for k in batch)})'
+        quoted_keys = ','.join(f'"{k}"' for k in batch)
+        jql = f'key in ({quoted_keys})'
         payload = {
             'jql': jql,
             'startAt': 0,

@@ -9976,6 +9976,7 @@ import { createRoot } from 'react-dom/client';
                                     <div className="group-modal-title-wrap">
                                         <div>
                                             <div className="group-modal-title">Dashboard Settings</div>
+                                            <div className="group-modal-subtitle">Configure data sources and field mapping so planning metrics are calculated correctly.</div>
                                         </div>
                                     </div>
                                     {isGroupDraftDirty && (
@@ -10001,6 +10002,7 @@ import { createRoot } from 'react-dom/client';
                                         <div className="group-pane group-projects-pane-left">
                                             <div className="group-projects-subsection" style={{padding: '12px 16px 0'}}>
                                                 <div className="team-selector-label">Sprint Field</div>
+                                                <div className="group-field-helper">Used to determine which sprint each ticket belongs to.</div>
                                                 <div className="capacity-inline-row">
                                                     {sprintFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={sprintFieldIdDraft || ''}>
@@ -10066,6 +10068,7 @@ import { createRoot } from 'react-dom/client';
                                             <div className="group-pane-list group-projects-pane-list">
                                                 <div className="group-projects-subsection">
                                                     <div className="team-selector-label">Product</div>
+                                                    <div className="group-field-helper">Projects counted as Product work in planning and stats.</div>
                                                     {selectedProjectsDraft.filter(p => p.type === 'product').length === 0 ? (
                                                         <div className="team-selector-empty">No product projects.</div>
                                                     ) : (
@@ -10081,6 +10084,7 @@ import { createRoot } from 'react-dom/client';
                                                 </div>
                                                 <div className="group-projects-subsection">
                                                     <div className="team-selector-label">Tech</div>
+                                                    <div className="group-field-helper">Projects counted as Tech work in planning and stats.</div>
                                                     {selectedProjectsDraft.filter(p => p.type === 'tech').length === 0 ? (
                                                         <div className="team-selector-empty">No tech projects.</div>
                                                     ) : (
@@ -10099,6 +10103,7 @@ import { createRoot } from 'react-dom/client';
                                         <div className="group-pane group-projects-pane-right">
                                             <div className="group-projects-section">
                                                 <div className="group-pane-title">Issue Type</div>
+                                                <div className="group-field-helper">Only these issue types are loaded into the dashboard.</div>
                                                 <div className="capacity-inline-row">
                                                     {issueTypesDraft.length > 0 ? (
                                                         <div className="selected-team-chip issue-type-chip">
@@ -10142,6 +10147,7 @@ import { createRoot } from 'react-dom/client';
                                             </div>
                                             <div className="group-projects-subsection">
                                                 <div className="team-selector-label">Parent Name Field</div>
+                                                <div className="group-field-helper">Field used to map stories back to their parent epic name.</div>
                                                 <div className="capacity-inline-row">
                                                     {parentNameFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={parentNameFieldIdDraft || ''}>
@@ -10166,6 +10172,7 @@ import { createRoot } from 'react-dom/client';
                                             </div>
                                             <div className="group-projects-subsection">
                                                 <div className="team-selector-label">Story Points Field</div>
+                                                <div className="group-field-helper">Field used for effort, velocity, and capacity comparisons.</div>
                                                 <div className="capacity-inline-row">
                                                     {storyPointsFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={storyPointsFieldIdDraft || ''}>
@@ -10190,6 +10197,7 @@ import { createRoot } from 'react-dom/client';
                                             </div>
                                             <div className="group-projects-subsection">
                                                 <div className="team-selector-label">Team Field</div>
+                                                <div className="group-field-helper">Field used to assign each ticket to a team.</div>
                                                 <div className="capacity-inline-row">
                                                     {teamFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={teamFieldIdDraft || ''}>
@@ -10257,6 +10265,7 @@ import { createRoot } from 'react-dom/client';
                                                 </div>
                                                 <div className="group-projects-subsection">
                                                     <div className="team-selector-label">Capacity Field</div>
+                                                    <div className="group-field-helper">Numeric field that stores each team capacity entry.</div>
                                                     <div className="capacity-inline-row">
                                                         {capacityFieldNameDraft ? (
                                                             <div className="selected-team-chip" title={capacityFieldIdDraft || ''}>

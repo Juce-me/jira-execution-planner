@@ -139,6 +139,8 @@ import { createRoot } from 'react-dom/client';
             const [showGroupImport, setShowGroupImport] = useState(false);
             const [showGroupAdvanced, setShowGroupAdvanced] = useState(false);
             const [groupSaving, setGroupSaving] = useState(false);
+            const [groupTesting, setGroupTesting] = useState(false);
+            const [groupTestMessage, setGroupTestMessage] = useState('');
             const [availableTeams, setAvailableTeams] = useState([]);
             const [loadingTeams, setLoadingTeams] = useState(false);
             const [teamSearchQuery, setTeamSearchQuery] = useState({});
@@ -866,6 +868,8 @@ import { createRoot } from 'react-dom/client';
                 setProjectSearchQuery('');
                 setProjectSearchOpen(false);
                 setProjectSearchIndex(0);
+                setGroupTesting(false);
+                setGroupTestMessage('');
                 setCapacityProjectSearchQuery('');
                 setCapacityProjectSearchOpen(false);
                 setCapacityFieldSearchQuery('');
@@ -922,6 +926,49 @@ import { createRoot } from 'react-dom/client';
                 if (!groupDraft) return false;
                 return groupDraftSignature !== groupDraftBaselineRef.current;
             }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty]);
+            const unsavedSectionsCount = React.useMemo(() => {
+                return [
+                    isProjectsDraftDirty,
+                    isCapacityDraftDirty,
+                    isIssueTypesDraftDirty,
+                    isSprintFieldDirty,
+                    isParentNameFieldDirty,
+                    isStoryPointsFieldDirty,
+                    isTeamFieldDirty,
+                    Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current)
+                ].filter(Boolean).length;
+            }, [isProjectsDraftDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, groupDraft, groupDraftSignature]);
+            const groupConfigValidationErrors = React.useMemo(() => {
+                const errors = [];
+                if (!selectedProjectsDraft.length) {
+                    errors.push('Add at least one dashboard project before saving.');
+                }
+                if (!sprintFieldIdDraft) {
+                    errors.push('Sprint field is required.');
+                }
+                if (!parentNameFieldIdDraft) {
+                    errors.push('Parent name field is required.');
+                }
+                if (!storyPointsFieldIdDraft) {
+                    errors.push('Story points field is required.');
+                }
+                if (!teamFieldIdDraft) {
+                    errors.push('Team field is required.');
+                }
+                if (capacityProjectDraft && !capacityFieldIdDraft) {
+                    errors.push('Capacity field is required when a capacity project is selected.');
+                }
+                if (!capacityProjectDraft && capacityFieldIdDraft) {
+                    errors.push('Capacity project is required when a capacity field is selected.');
+                }
+                return errors;
+            }, [selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft]);
+            const saveBlockedReason = React.useMemo(() => {
+                if (groupSaving) return 'Save in progress';
+                if (groupConfigValidationErrors.length > 0) return groupConfigValidationErrors[0];
+                if (!isGroupDraftDirty) return 'No changes to save';
+                return '';
+            }, [groupSaving, groupConfigValidationErrors, isGroupDraftDirty]);
 
             const requestCloseGroupManage = () => {
                 if (groupSaving) return;
@@ -1255,8 +1302,29 @@ import { createRoot } from 'react-dom/client';
                 }));
             };
 
+            const testGroupsConfigConnection = async () => {
+                setGroupTesting(true);
+                setGroupTestMessage('');
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/test`);
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                        throw new Error(payload.error || `Test failed (${response.status})`);
+                    }
+                    setGroupTestMessage(payload.message || 'Connection to Jira API looks good.');
+                } catch (error) {
+                    setGroupTestMessage(error?.message || 'Connection test failed.');
+                } finally {
+                    setGroupTesting(false);
+                }
+            };
+
             const saveGroupsConfig = async () => {
                 if (!groupDraft) return;
+                if (groupConfigValidationErrors.length > 0) {
+                    setGroupDraftError(groupConfigValidationErrors[0]);
+                    return;
+                }
                 setGroupSaving(true);
                 setGroupDraftError('');
                 try {
@@ -9981,7 +10049,7 @@ import { createRoot } from 'react-dom/client';
                                         </div>
                                     </div>
                                     {isGroupDraftDirty && (
-                                        <div className="group-modal-dirty">Unsaved changes</div>
+                                        <div className="group-modal-dirty">Unsaved changes{unsavedSectionsCount > 0 ? ` · ${unsavedSectionsCount}` : ''}</div>
                                     )}
                                 </div>
                                 <div className="group-modal-tabs">
@@ -10646,14 +10714,34 @@ import { createRoot } from 'react-dom/client';
                                     </div>
                                 </div>
                                 )}
+                                {groupConfigValidationErrors.length > 0 && (
+                                    <div className="group-modal-validation" role="alert" aria-live="polite">
+                                        {groupConfigValidationErrors.map((message) => (
+                                            <div key={message}>• {message}</div>
+                                        ))}
+                                    </div>
+                                )}
                                 <div className="group-modal-footer">
+                                    <div className="group-modal-button-row">
+                                        <button
+                                            className="secondary compact"
+                                            onClick={testGroupsConfigConnection}
+                                            disabled={groupTesting}
+                                            type="button"
+                                        >
+                                            {groupTesting ? 'Testing...' : 'Test configuration'}
+                                        </button>
+                                        {groupTestMessage && (
+                                            <span className="group-modal-meta">{groupTestMessage}</span>
+                                        )}
+                                    </div>
                                     <div className="group-modal-button-row">
                                         <button className="secondary compact lift-hover" onClick={requestCloseGroupManage} type="button">
                                             Cancel
                                         </button>
                                     </div>
                                     <div className="group-modal-button-row">
-                                        <button className="compact" onClick={saveGroupsConfig} disabled={groupSaving} type="button">
+                                        <button className="compact" onClick={saveGroupsConfig} disabled={Boolean(saveBlockedReason)} title={saveBlockedReason || ''} type="button">
                                             {groupSaving ? 'Saving...' : 'Save'}
                                         </button>
                                     </div>

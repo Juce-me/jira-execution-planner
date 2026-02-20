@@ -10076,7 +10076,7 @@ import { createRoot } from 'react-dom/client';
                                                     {sprintFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={sprintFieldIdDraft || ''}>
                                                             <span className="team-name"><strong>{sprintFieldNameDraft}</strong>{showTechnicalFieldIds && sprintFieldIdDraft && <span className="field-id-hint">({sprintFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setSprintFieldIdDraft(''); setSprintFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                            <button className="remove-btn" onClick={() => { setSprintFieldIdDraft(''); setSprintFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove sprint field">&times;</button>
                                                         </div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
@@ -10145,7 +10145,7 @@ import { createRoot } from 'react-dom/client';
                                                             {selectedProjectsDraft.filter(p => p.type === 'product').map(p => (
                                                                 <div key={p.key} className="selected-team-chip product-chip">
                                                                     <span className="team-name"><strong>{p.key}</strong>{resolveProjectName(p.key) !== p.key ? ` \u2014 ${resolveProjectName(p.key)}` : ''}</span>
-                                                                    <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project">&times;</button>
+                                                                    <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project" aria-label={`Remove product project ${p.key}`}>&times;</button>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -10161,7 +10161,7 @@ import { createRoot } from 'react-dom/client';
                                                             {selectedProjectsDraft.filter(p => p.type === 'tech').map(p => (
                                                                 <div key={p.key} className="selected-team-chip tech-chip">
                                                                     <span className="team-name"><strong>{p.key}</strong>{resolveProjectName(p.key) !== p.key ? ` \u2014 ${resolveProjectName(p.key)}` : ''}</span>
-                                                                    <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project">&times;</button>
+                                                                    <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project" aria-label={`Remove tech project ${p.key}`}>&times;</button>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -10186,7 +10186,7 @@ import { createRoot } from 'react-dom/client';
                                                     {issueTypesDraft.length > 0 ? (
                                                         <div className="selected-team-chip issue-type-chip">
                                                             <span className="team-name">{issueTypesDraft[0]}</span>
-                                                            <button className="remove-btn" onClick={() => removeIssueType(issueTypesDraft[0])} type="button" title="Remove">&times;</button>
+                                                            <button className="remove-btn" onClick={() => removeIssueType(issueTypesDraft[0])} type="button" title="Remove" aria-label={`Remove issue type ${issueTypesDraft[0]}`}>&times;</button>
                                                         </div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
@@ -10230,7 +10230,7 @@ import { createRoot } from 'react-dom/client';
                                                     {parentNameFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={parentNameFieldIdDraft || ''}>
                                                             <span className="team-name"><strong>{parentNameFieldNameDraft}</strong>{showTechnicalFieldIds && parentNameFieldIdDraft && <span className="field-id-hint">({parentNameFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setParentNameFieldIdDraft(''); setParentNameFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                            <button className="remove-btn" onClick={() => { setParentNameFieldIdDraft(''); setParentNameFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove parent name field">&times;</button>
                                                         </div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
@@ -10255,7 +10255,7 @@ import { createRoot } from 'react-dom/client';
                                                     {storyPointsFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={storyPointsFieldIdDraft || ''}>
                                                             <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong>{showTechnicalFieldIds && storyPointsFieldIdDraft && <span className="field-id-hint">({storyPointsFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                            <button className="remove-btn" onClick={() => { setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove story points field">&times;</button>
                                                         </div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
@@ -10280,7 +10280,7 @@ import { createRoot } from 'react-dom/client';
                                                     {teamFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={teamFieldIdDraft || ''}>
                                                             <span className="team-name"><strong>{teamFieldNameDraft}</strong>{showTechnicalFieldIds && teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                            <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove team field">&times;</button>
                                                         </div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
@@ -10307,7 +10307,7 @@ import { createRoot } from 'react-dom/client';
                                                     {capacityProjectDraft ? (
                                                         <div className="selected-team-chip">
                                                             <span className="team-name"><strong>{capacityProjectDraft}</strong>{resolveCapacityProjectName(capacityProjectDraft) ? ` \u2014 ${resolveCapacityProjectName(capacityProjectDraft)}` : ''}</span>
-                                                            <button className="remove-btn" onClick={() => setCapacityProjectDraft('')} type="button" title="Remove">&times;</button>
+                                                            <button className="remove-btn" onClick={() => setCapacityProjectDraft('')} type="button" title="Remove" aria-label="Remove capacity project">&times;</button>
                                                         </div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
@@ -10347,7 +10347,7 @@ import { createRoot } from 'react-dom/client';
                                                         {capacityFieldNameDraft ? (
                                                             <div className="selected-team-chip" title={capacityFieldIdDraft || ''}>
                                                                 <span className="team-name"><strong>{capacityFieldNameDraft}</strong>{showTechnicalFieldIds && capacityFieldIdDraft && <span className="field-id-hint">({capacityFieldIdDraft})</span>}</span>
-                                                                <button className="remove-btn" onClick={() => { setCapacityFieldIdDraft(''); setCapacityFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                                <button className="remove-btn" onClick={() => { setCapacityFieldIdDraft(''); setCapacityFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove capacity field">&times;</button>
                                                             </div>
                                                         ) : (
                                                         <div className="team-search-wrapper capacity-inline-search">
@@ -10502,6 +10502,7 @@ import { createRoot } from 'react-dom/client';
                                                         className={`group-star-button ${groupDraft?.defaultGroupId === activeGroupDraft.id ? 'active' : ''}`}
                                                         onClick={() => toggleDefaultGroupDraft(activeGroupDraft.id)}
                                                         title="Set as default group"
+                                                        aria-label={groupDraft?.defaultGroupId === activeGroupDraft.id ? 'Unset default group' : 'Set as default group'}
                                                         type="button"
                                                     >
                                                         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -10732,7 +10733,7 @@ import { createRoot } from 'react-dom/client';
                                             {groupTesting ? 'Testing...' : 'Test configuration'}
                                         </button>
                                         {groupTestMessage && (
-                                            <span className="group-modal-meta">{groupTestMessage}</span>
+                                            <span className="group-modal-meta" aria-live="polite">{groupTestMessage}</span>
                                         )}
                                     </div>
                                     <div className="group-modal-button-row">

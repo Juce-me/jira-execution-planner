@@ -156,7 +156,7 @@ import { createRoot } from 'react-dom/client';
             const [showGroupDiscardConfirm, setShowGroupDiscardConfirm] = useState(false);
             const groupDraftBaselineRef = useRef('');
             const [groupQueryTemplateEnabled, setGroupQueryTemplateEnabled] = useState(false);
-            const [groupManageTab, setGroupManageTab] = useState('projects');
+            const [groupManageTab, setGroupManageTab] = useState('scope');
             const [showTechnicalFieldIds, setShowTechnicalFieldIds] = useState(false);
             const [jiraProjects, setJiraProjects] = useState([]);
             const [loadingProjects, setLoadingProjects] = useState(false);
@@ -459,7 +459,7 @@ import { createRoot } from 'react-dom/client';
                 setTeamSearchFeedback({});
                 setShowGroupDiscardConfirm(false);
                 setShowGroupListMobile(false);
-                setGroupManageTab('projects');
+                setGroupManageTab('scope');
                 setProjectSearchQuery('');
                 setActiveGroupDraftId(resolveInitialGroupId(normalized));
                 loadSelectedProjects();
@@ -864,7 +864,7 @@ import { createRoot } from 'react-dom/client';
                 setShowGroupAdvanced(false);
                 setShowGroupDiscardConfirm(false);
                 setShowGroupListMobile(false);
-                setGroupManageTab('projects');
+                setGroupManageTab('scope');
                 setProjectSearchQuery('');
                 setProjectSearchOpen(false);
                 setProjectSearchIndex(0);
@@ -1439,7 +1439,7 @@ import { createRoot } from 'react-dom/client';
 
             useEffect(() => {
                 const query = projectSearchQuery.trim();
-                if (!showGroupManage || groupManageTab !== 'projects' || !query) {
+                if (!showGroupManage || groupManageTab !== 'scope' || !query) {
                     setProjectSearchRemoteResults([]);
                     setProjectSearchRemoteLoading(false);
                     return undefined;
@@ -10054,10 +10054,20 @@ import { createRoot } from 'react-dom/client';
                                 </div>
                                 <div className="group-modal-tabs">
                                     <button
-                                        className={`group-modal-tab ${groupManageTab === 'projects' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('projects')}
+                                        className={`group-modal-tab ${groupManageTab === 'scope' ? 'active' : ''}`}
+                                        onClick={() => setGroupManageTab('scope')}
                                         type="button"
-                                    >Data sources</button>
+                                    >Scope</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'mapping' ? 'active' : ''}`}
+                                        onClick={() => setGroupManageTab('mapping')}
+                                        type="button"
+                                    >Field mapping</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'capacity' ? 'active' : ''}`}
+                                        onClick={() => setGroupManageTab('capacity')}
+                                        type="button"
+                                    >Capacity</button>
                                     <button
                                         className={`group-modal-tab ${groupManageTab === 'teams' ? 'active' : ''}`}
                                         onClick={() => savedSelectedProjects.length > 0 && setGroupManageTab('teams')}
@@ -10066,8 +10076,9 @@ import { createRoot } from 'react-dom/client';
                                         title={savedSelectedProjects.length === 0 ? 'Configure data sources first' : ''}
                                     >Team groups</button>
                                 </div>
-                                {groupManageTab === 'projects' && (
+                                {(groupManageTab === 'scope' || groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
                                     <div className="group-modal-body group-modal-split group-projects-layout">
+                                        {groupManageTab === 'scope' && (
                                         <div className="group-pane group-projects-pane-left">
                                             <div className="group-projects-subsection" style={{padding: '12px 16px 0'}}>
                                                 <div className="team-selector-label">Sprint Field</div>
@@ -10169,7 +10180,9 @@ import { createRoot } from 'react-dom/client';
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="group-pane group-projects-pane-right">
+                                        )}
+                                        {(groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
+                                        <div className="group-pane group-projects-pane-right group-single-pane">
                                             <div className="group-pane-tools group-pane-tools-right">
                                                 <button
                                                     className={`secondary compact ${showTechnicalFieldIds ? 'active' : ''}`}
@@ -10179,6 +10192,8 @@ import { createRoot } from 'react-dom/client';
                                                     {showTechnicalFieldIds ? 'Hide Jira technical IDs' : 'Show Jira technical IDs'}
                                                 </button>
                                             </div>
+                                            {groupManageTab === 'mapping' && (
+                                            <>
                                             <div className="group-projects-section group-config-card">
                                                 <div className="group-pane-title">Issue Type</div>
                                                 <div className="group-field-helper">Only these issue types are loaded into the dashboard.</div>
@@ -10298,6 +10313,9 @@ import { createRoot } from 'react-dom/client';
                                                     )}
                                                 </div>
                                             </div>
+                                            </>
+                                            )}
+                                            {groupManageTab === 'capacity' && (
                                             <div className="group-projects-section group-config-card">
                                                 <div className="group-pane-title">Capacity Project</div>
                                                 <div className="group-projects-desc">
@@ -10381,7 +10399,9 @@ import { createRoot } from 'react-dom/client';
                                                     </div>
                                                 </div>
                                             </div>
+                                            )}
                                         </div>
+                                        )}
                                     </div>
                                 )}
                                 {groupManageTab === 'teams' && (

@@ -155,6 +155,7 @@ import { createRoot } from 'react-dom/client';
             const groupDraftBaselineRef = useRef('');
             const [groupQueryTemplateEnabled, setGroupQueryTemplateEnabled] = useState(false);
             const [groupManageTab, setGroupManageTab] = useState('projects');
+            const [showTechnicalFieldIds, setShowTechnicalFieldIds] = useState(false);
             const [jiraProjects, setJiraProjects] = useState([]);
             const [loadingProjects, setLoadingProjects] = useState(false);
             const [projectSearchQuery, setProjectSearchQuery] = useState('');
@@ -9988,14 +9989,14 @@ import { createRoot } from 'react-dom/client';
                                         className={`group-modal-tab ${groupManageTab === 'projects' ? 'active' : ''}`}
                                         onClick={() => setGroupManageTab('projects')}
                                         type="button"
-                                    >Projects</button>
+                                    >Data sources</button>
                                     <button
                                         className={`group-modal-tab ${groupManageTab === 'teams' ? 'active' : ''}`}
                                         onClick={() => savedSelectedProjects.length > 0 && setGroupManageTab('teams')}
                                         type="button"
                                         disabled={savedSelectedProjects.length === 0}
-                                        title={savedSelectedProjects.length === 0 ? 'Configure projects first' : ''}
-                                    >Teams</button>
+                                        title={savedSelectedProjects.length === 0 ? 'Configure data sources first' : ''}
+                                    >Team groups</button>
                                 </div>
                                 {groupManageTab === 'projects' && (
                                     <div className="group-modal-body group-modal-split group-projects-layout">
@@ -10006,7 +10007,7 @@ import { createRoot } from 'react-dom/client';
                                                 <div className="capacity-inline-row">
                                                     {sprintFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={sprintFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{sprintFieldNameDraft}</strong>{sprintFieldIdDraft && <span className="field-id-hint">({sprintFieldIdDraft})</span>}</span>
+                                                            <span className="team-name"><strong>{sprintFieldNameDraft}</strong>{showTechnicalFieldIds && sprintFieldIdDraft && <span className="field-id-hint">({sprintFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setSprintFieldIdDraft(''); setSprintFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
                                                         </div>
                                                     ) : (
@@ -10101,7 +10102,16 @@ import { createRoot } from 'react-dom/client';
                                             </div>
                                         </div>
                                         <div className="group-pane group-projects-pane-right">
-                                            <div className="group-projects-section">
+                                            <div className="group-pane-tools group-pane-tools-right">
+                                                <button
+                                                    className={`secondary compact ${showTechnicalFieldIds ? 'active' : ''}`}
+                                                    onClick={() => setShowTechnicalFieldIds((prev) => !prev)}
+                                                    type="button"
+                                                >
+                                                    {showTechnicalFieldIds ? 'Hide Jira technical IDs' : 'Show Jira technical IDs'}
+                                                </button>
+                                            </div>
+                                            <div className="group-projects-section group-config-card">
                                                 <div className="group-pane-title">Issue Type</div>
                                                 <div className="group-field-helper">Only these issue types are loaded into the dashboard.</div>
                                                 <div className="capacity-inline-row">
@@ -10151,7 +10161,7 @@ import { createRoot } from 'react-dom/client';
                                                 <div className="capacity-inline-row">
                                                     {parentNameFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={parentNameFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{parentNameFieldNameDraft}</strong>{parentNameFieldIdDraft && <span className="field-id-hint">({parentNameFieldIdDraft})</span>}</span>
+                                                            <span className="team-name"><strong>{parentNameFieldNameDraft}</strong>{showTechnicalFieldIds && parentNameFieldIdDraft && <span className="field-id-hint">({parentNameFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setParentNameFieldIdDraft(''); setParentNameFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
                                                         </div>
                                                     ) : (
@@ -10176,7 +10186,7 @@ import { createRoot } from 'react-dom/client';
                                                 <div className="capacity-inline-row">
                                                     {storyPointsFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={storyPointsFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong>{storyPointsFieldIdDraft && <span className="field-id-hint">({storyPointsFieldIdDraft})</span>}</span>
+                                                            <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong>{showTechnicalFieldIds && storyPointsFieldIdDraft && <span className="field-id-hint">({storyPointsFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
                                                         </div>
                                                     ) : (
@@ -10201,7 +10211,7 @@ import { createRoot } from 'react-dom/client';
                                                 <div className="capacity-inline-row">
                                                     {teamFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={teamFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{teamFieldNameDraft}</strong>{teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
+                                                            <span className="team-name"><strong>{teamFieldNameDraft}</strong>{showTechnicalFieldIds && teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
                                                         </div>
                                                     ) : (
@@ -10220,8 +10230,7 @@ import { createRoot } from 'react-dom/client';
                                                     )}
                                                 </div>
                                             </div>
-                                            <div className="group-projects-divider" />
-                                            <div className="group-projects-section">
+                                            <div className="group-projects-section group-config-card">
                                                 <div className="group-pane-title">Capacity Project</div>
                                                 <div className="group-projects-desc">
                                                     Select one Jira project that stores team capacity entries, and the field used for estimated capacity.
@@ -10269,7 +10278,7 @@ import { createRoot } from 'react-dom/client';
                                                     <div className="capacity-inline-row">
                                                         {capacityFieldNameDraft ? (
                                                             <div className="selected-team-chip" title={capacityFieldIdDraft || ''}>
-                                                                <span className="team-name"><strong>{capacityFieldNameDraft}</strong>{capacityFieldIdDraft && <span className="field-id-hint">({capacityFieldIdDraft})</span>}</span>
+                                                                <span className="team-name"><strong>{capacityFieldNameDraft}</strong>{showTechnicalFieldIds && capacityFieldIdDraft && <span className="field-id-hint">({capacityFieldIdDraft})</span>}</span>
                                                                 <button className="remove-btn" onClick={() => { setCapacityFieldIdDraft(''); setCapacityFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
                                                             </div>
                                                         ) : (

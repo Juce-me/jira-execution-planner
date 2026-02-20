@@ -139,6 +139,8 @@ import { createRoot } from 'react-dom/client';
             const [showGroupImport, setShowGroupImport] = useState(false);
             const [showGroupAdvanced, setShowGroupAdvanced] = useState(false);
             const [groupSaving, setGroupSaving] = useState(false);
+            const [groupTesting, setGroupTesting] = useState(false);
+            const [groupTestMessage, setGroupTestMessage] = useState('');
             const [availableTeams, setAvailableTeams] = useState([]);
             const [loadingTeams, setLoadingTeams] = useState(false);
             const [teamSearchQuery, setTeamSearchQuery] = useState({});
@@ -154,7 +156,8 @@ import { createRoot } from 'react-dom/client';
             const [showGroupDiscardConfirm, setShowGroupDiscardConfirm] = useState(false);
             const groupDraftBaselineRef = useRef('');
             const [groupQueryTemplateEnabled, setGroupQueryTemplateEnabled] = useState(false);
-            const [groupManageTab, setGroupManageTab] = useState('projects');
+            const [groupManageTab, setGroupManageTab] = useState('scope');
+            const [showTechnicalFieldIds, setShowTechnicalFieldIds] = useState(false);
             const [jiraProjects, setJiraProjects] = useState([]);
             const [loadingProjects, setLoadingProjects] = useState(false);
             const [projectSearchQuery, setProjectSearchQuery] = useState('');
@@ -456,7 +459,7 @@ import { createRoot } from 'react-dom/client';
                 setTeamSearchFeedback({});
                 setShowGroupDiscardConfirm(false);
                 setShowGroupListMobile(false);
-                setGroupManageTab('projects');
+                setGroupManageTab('scope');
                 setProjectSearchQuery('');
                 setActiveGroupDraftId(resolveInitialGroupId(normalized));
                 loadSelectedProjects();
@@ -861,10 +864,12 @@ import { createRoot } from 'react-dom/client';
                 setShowGroupAdvanced(false);
                 setShowGroupDiscardConfirm(false);
                 setShowGroupListMobile(false);
-                setGroupManageTab('projects');
+                setGroupManageTab('scope');
                 setProjectSearchQuery('');
                 setProjectSearchOpen(false);
                 setProjectSearchIndex(0);
+                setGroupTesting(false);
+                setGroupTestMessage('');
                 setCapacityProjectSearchQuery('');
                 setCapacityProjectSearchOpen(false);
                 setCapacityFieldSearchQuery('');
@@ -921,6 +926,49 @@ import { createRoot } from 'react-dom/client';
                 if (!groupDraft) return false;
                 return groupDraftSignature !== groupDraftBaselineRef.current;
             }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty]);
+            const unsavedSectionsCount = React.useMemo(() => {
+                return [
+                    isProjectsDraftDirty,
+                    isCapacityDraftDirty,
+                    isIssueTypesDraftDirty,
+                    isSprintFieldDirty,
+                    isParentNameFieldDirty,
+                    isStoryPointsFieldDirty,
+                    isTeamFieldDirty,
+                    Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current)
+                ].filter(Boolean).length;
+            }, [isProjectsDraftDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, groupDraft, groupDraftSignature]);
+            const groupConfigValidationErrors = React.useMemo(() => {
+                const errors = [];
+                if (!selectedProjectsDraft.length) {
+                    errors.push('Add at least one dashboard project before saving.');
+                }
+                if (!sprintFieldIdDraft) {
+                    errors.push('Sprint field is required.');
+                }
+                if (!parentNameFieldIdDraft) {
+                    errors.push('Parent name field is required.');
+                }
+                if (!storyPointsFieldIdDraft) {
+                    errors.push('Story points field is required.');
+                }
+                if (!teamFieldIdDraft) {
+                    errors.push('Team field is required.');
+                }
+                if (capacityProjectDraft && !capacityFieldIdDraft) {
+                    errors.push('Capacity field is required when a capacity project is selected.');
+                }
+                if (!capacityProjectDraft && capacityFieldIdDraft) {
+                    errors.push('Capacity project is required when a capacity field is selected.');
+                }
+                return errors;
+            }, [selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft]);
+            const saveBlockedReason = React.useMemo(() => {
+                if (groupSaving) return 'Save in progress';
+                if (groupConfigValidationErrors.length > 0) return groupConfigValidationErrors[0];
+                if (!isGroupDraftDirty) return 'No changes to save';
+                return '';
+            }, [groupSaving, groupConfigValidationErrors, isGroupDraftDirty]);
 
             const requestCloseGroupManage = () => {
                 if (groupSaving) return;
@@ -1254,8 +1302,29 @@ import { createRoot } from 'react-dom/client';
                 }));
             };
 
+            const testGroupsConfigConnection = async () => {
+                setGroupTesting(true);
+                setGroupTestMessage('');
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/test`);
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                        throw new Error(payload.error || `Test failed (${response.status})`);
+                    }
+                    setGroupTestMessage(payload.message || 'Connection to Jira API looks good.');
+                } catch (error) {
+                    setGroupTestMessage(error?.message || 'Connection test failed.');
+                } finally {
+                    setGroupTesting(false);
+                }
+            };
+
             const saveGroupsConfig = async () => {
                 if (!groupDraft) return;
+                if (groupConfigValidationErrors.length > 0) {
+                    setGroupDraftError(groupConfigValidationErrors[0]);
+                    return;
+                }
                 setGroupSaving(true);
                 setGroupDraftError('');
                 try {
@@ -1370,7 +1439,7 @@ import { createRoot } from 'react-dom/client';
 
             useEffect(() => {
                 const query = projectSearchQuery.trim();
-                if (!showGroupManage || groupManageTab !== 'projects' || !query) {
+                if (!showGroupManage || groupManageTab !== 'scope' || !query) {
                     setProjectSearchRemoteResults([]);
                     setProjectSearchRemoteLoading(false);
                     return undefined;
@@ -9976,36 +10045,50 @@ import { createRoot } from 'react-dom/client';
                                     <div className="group-modal-title-wrap">
                                         <div>
                                             <div className="group-modal-title">Dashboard Settings</div>
+                                            <div className="group-modal-subtitle">Configure data sources and field mapping so planning metrics are calculated correctly.</div>
                                         </div>
                                     </div>
                                     {isGroupDraftDirty && (
-                                        <div className="group-modal-dirty">Unsaved changes</div>
+                                        <div className="group-modal-dirty">Unsaved changes{unsavedSectionsCount > 0 ? ` · ${unsavedSectionsCount}` : ''}</div>
                                     )}
                                 </div>
                                 <div className="group-modal-tabs">
                                     <button
-                                        className={`group-modal-tab ${groupManageTab === 'projects' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('projects')}
+                                        className={`group-modal-tab ${groupManageTab === 'scope' ? 'active' : ''}`}
+                                        onClick={() => setGroupManageTab('scope')}
                                         type="button"
-                                    >Projects</button>
+                                    >Scope projects</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'mapping' ? 'active' : ''}`}
+                                        onClick={() => setGroupManageTab('mapping')}
+                                        type="button"
+                                    >Field mapping</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'capacity' ? 'active' : ''}`}
+                                        onClick={() => setGroupManageTab('capacity')}
+                                        type="button"
+                                    >Capacity</button>
                                     <button
                                         className={`group-modal-tab ${groupManageTab === 'teams' ? 'active' : ''}`}
                                         onClick={() => savedSelectedProjects.length > 0 && setGroupManageTab('teams')}
                                         type="button"
                                         disabled={savedSelectedProjects.length === 0}
-                                        title={savedSelectedProjects.length === 0 ? 'Configure projects first' : ''}
-                                    >Teams</button>
+                                        title={savedSelectedProjects.length === 0 ? 'Configure data sources first' : ''}
+                                    >Team groups</button>
                                 </div>
-                                {groupManageTab === 'projects' && (
+                                {(groupManageTab === 'scope' || groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
                                     <div className="group-modal-body group-modal-split group-projects-layout">
+                                        {groupManageTab === 'scope' && (
+                                        <>
                                         <div className="group-pane group-projects-pane-left">
                                             <div className="group-projects-subsection" style={{padding: '12px 16px 0'}}>
                                                 <div className="team-selector-label">Sprint Field</div>
+                                                <div className="group-field-helper">Used to determine which sprint each ticket belongs to.</div>
                                                 <div className="capacity-inline-row">
                                                     {sprintFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={sprintFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{sprintFieldNameDraft}</strong>{sprintFieldIdDraft && <span className="field-id-hint">({sprintFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setSprintFieldIdDraft(''); setSprintFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                            <span className="team-name"><strong>{sprintFieldNameDraft}</strong>{showTechnicalFieldIds && sprintFieldIdDraft && <span className="field-id-hint">({sprintFieldIdDraft})</span>}</span>
+                                                            <button className="remove-btn" onClick={() => { setSprintFieldIdDraft(''); setSprintFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove sprint field">&times;</button>
                                                         </div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
@@ -10023,6 +10106,8 @@ import { createRoot } from 'react-dom/client';
                                                     )}
                                                 </div>
                                             </div>
+                                        </div>
+                                        <div className="group-pane group-projects-pane-right">
                                             <div className="group-pane-header group-projects-pane-header">
                                                 <div className="group-pane-title">Dashboard Projects</div>
                                                 <div className="group-projects-desc">
@@ -10066,6 +10151,7 @@ import { createRoot } from 'react-dom/client';
                                             <div className="group-pane-list group-projects-pane-list">
                                                 <div className="group-projects-subsection">
                                                     <div className="team-selector-label">Product</div>
+                                                    <div className="group-field-helper">Projects counted as Product work in planning and stats.</div>
                                                     {selectedProjectsDraft.filter(p => p.type === 'product').length === 0 ? (
                                                         <div className="team-selector-empty">No product projects.</div>
                                                     ) : (
@@ -10073,7 +10159,7 @@ import { createRoot } from 'react-dom/client';
                                                             {selectedProjectsDraft.filter(p => p.type === 'product').map(p => (
                                                                 <div key={p.key} className="selected-team-chip product-chip">
                                                                     <span className="team-name"><strong>{p.key}</strong>{resolveProjectName(p.key) !== p.key ? ` \u2014 ${resolveProjectName(p.key)}` : ''}</span>
-                                                                    <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project">&times;</button>
+                                                                    <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project" aria-label={`Remove product project ${p.key}`}>&times;</button>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -10081,6 +10167,7 @@ import { createRoot } from 'react-dom/client';
                                                 </div>
                                                 <div className="group-projects-subsection">
                                                     <div className="team-selector-label">Tech</div>
+                                                    <div className="group-field-helper">Projects counted as Tech work in planning and stats.</div>
                                                     {selectedProjectsDraft.filter(p => p.type === 'tech').length === 0 ? (
                                                         <div className="team-selector-empty">No tech projects.</div>
                                                     ) : (
@@ -10088,7 +10175,7 @@ import { createRoot } from 'react-dom/client';
                                                             {selectedProjectsDraft.filter(p => p.type === 'tech').map(p => (
                                                                 <div key={p.key} className="selected-team-chip tech-chip">
                                                                     <span className="team-name"><strong>{p.key}</strong>{resolveProjectName(p.key) !== p.key ? ` \u2014 ${resolveProjectName(p.key)}` : ''}</span>
-                                                                    <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project">&times;</button>
+                                                                    <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project" aria-label={`Remove tech project ${p.key}`}>&times;</button>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -10096,14 +10183,29 @@ import { createRoot } from 'react-dom/client';
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="group-pane group-projects-pane-right">
-                                            <div className="group-projects-section">
+                                        </>
+                                        )}
+                                        {(groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
+                                        <div className="group-pane group-projects-pane-right group-single-pane">
+                                            <div className="group-pane-tools group-pane-tools-right">
+                                                <button
+                                                    className={`secondary compact ${showTechnicalFieldIds ? 'active' : ''}`}
+                                                    onClick={() => setShowTechnicalFieldIds((prev) => !prev)}
+                                                    type="button"
+                                                >
+                                                    {showTechnicalFieldIds ? 'Hide Jira technical IDs' : 'Show Jira technical IDs'}
+                                                </button>
+                                            </div>
+                                            {groupManageTab === 'mapping' && (
+                                            <>
+                                            <div className="group-projects-section group-config-card">
                                                 <div className="group-pane-title">Issue Type</div>
+                                                <div className="group-field-helper">Only these issue types are loaded into the dashboard.</div>
                                                 <div className="capacity-inline-row">
                                                     {issueTypesDraft.length > 0 ? (
                                                         <div className="selected-team-chip issue-type-chip">
                                                             <span className="team-name">{issueTypesDraft[0]}</span>
-                                                            <button className="remove-btn" onClick={() => removeIssueType(issueTypesDraft[0])} type="button" title="Remove">&times;</button>
+                                                            <button className="remove-btn" onClick={() => removeIssueType(issueTypesDraft[0])} type="button" title="Remove" aria-label={`Remove issue type ${issueTypesDraft[0]}`}>&times;</button>
                                                         </div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
@@ -10142,11 +10244,12 @@ import { createRoot } from 'react-dom/client';
                                             </div>
                                             <div className="group-projects-subsection">
                                                 <div className="team-selector-label">Parent Name Field</div>
+                                                <div className="group-field-helper">Field used to map stories back to their parent epic name.</div>
                                                 <div className="capacity-inline-row">
                                                     {parentNameFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={parentNameFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{parentNameFieldNameDraft}</strong>{parentNameFieldIdDraft && <span className="field-id-hint">({parentNameFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setParentNameFieldIdDraft(''); setParentNameFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                            <span className="team-name"><strong>{parentNameFieldNameDraft}</strong>{showTechnicalFieldIds && parentNameFieldIdDraft && <span className="field-id-hint">({parentNameFieldIdDraft})</span>}</span>
+                                                            <button className="remove-btn" onClick={() => { setParentNameFieldIdDraft(''); setParentNameFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove parent name field">&times;</button>
                                                         </div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
@@ -10166,11 +10269,12 @@ import { createRoot } from 'react-dom/client';
                                             </div>
                                             <div className="group-projects-subsection">
                                                 <div className="team-selector-label">Story Points Field</div>
+                                                <div className="group-field-helper">Field used for effort, velocity, and capacity comparisons.</div>
                                                 <div className="capacity-inline-row">
                                                     {storyPointsFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={storyPointsFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong>{storyPointsFieldIdDraft && <span className="field-id-hint">({storyPointsFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                            <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong>{showTechnicalFieldIds && storyPointsFieldIdDraft && <span className="field-id-hint">({storyPointsFieldIdDraft})</span>}</span>
+                                                            <button className="remove-btn" onClick={() => { setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove story points field">&times;</button>
                                                         </div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
@@ -10190,11 +10294,12 @@ import { createRoot } from 'react-dom/client';
                                             </div>
                                             <div className="group-projects-subsection">
                                                 <div className="team-selector-label">Team Field</div>
+                                                <div className="group-field-helper">Field used to assign each ticket to a team.</div>
                                                 <div className="capacity-inline-row">
                                                     {teamFieldNameDraft ? (
                                                         <div className="selected-team-chip" title={teamFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{teamFieldNameDraft}</strong>{teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                            <span className="team-name"><strong>{teamFieldNameDraft}</strong>{showTechnicalFieldIds && teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
+                                                            <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove team field">&times;</button>
                                                         </div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
@@ -10212,8 +10317,10 @@ import { createRoot } from 'react-dom/client';
                                                     )}
                                                 </div>
                                             </div>
-                                            <div className="group-projects-divider" />
-                                            <div className="group-projects-section">
+                                            </>
+                                            )}
+                                            {groupManageTab === 'capacity' && (
+                                            <div className="group-projects-section group-config-card">
                                                 <div className="group-pane-title">Capacity Project</div>
                                                 <div className="group-projects-desc">
                                                     Select one Jira project that stores team capacity entries, and the field used for estimated capacity.
@@ -10222,7 +10329,7 @@ import { createRoot } from 'react-dom/client';
                                                     {capacityProjectDraft ? (
                                                         <div className="selected-team-chip">
                                                             <span className="team-name"><strong>{capacityProjectDraft}</strong>{resolveCapacityProjectName(capacityProjectDraft) ? ` \u2014 ${resolveCapacityProjectName(capacityProjectDraft)}` : ''}</span>
-                                                            <button className="remove-btn" onClick={() => setCapacityProjectDraft('')} type="button" title="Remove">&times;</button>
+                                                            <button className="remove-btn" onClick={() => setCapacityProjectDraft('')} type="button" title="Remove" aria-label="Remove capacity project">&times;</button>
                                                         </div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
@@ -10257,11 +10364,12 @@ import { createRoot } from 'react-dom/client';
                                                 </div>
                                                 <div className="group-projects-subsection">
                                                     <div className="team-selector-label">Capacity Field</div>
+                                                    <div className="group-field-helper">Numeric field that stores each team capacity entry.</div>
                                                     <div className="capacity-inline-row">
                                                         {capacityFieldNameDraft ? (
                                                             <div className="selected-team-chip" title={capacityFieldIdDraft || ''}>
-                                                                <span className="team-name"><strong>{capacityFieldNameDraft}</strong>{capacityFieldIdDraft && <span className="field-id-hint">({capacityFieldIdDraft})</span>}</span>
-                                                                <button className="remove-btn" onClick={() => { setCapacityFieldIdDraft(''); setCapacityFieldNameDraft(''); }} type="button" title="Remove">&times;</button>
+                                                                <span className="team-name"><strong>{capacityFieldNameDraft}</strong>{showTechnicalFieldIds && capacityFieldIdDraft && <span className="field-id-hint">({capacityFieldIdDraft})</span>}</span>
+                                                                <button className="remove-btn" onClick={() => { setCapacityFieldIdDraft(''); setCapacityFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove capacity field">&times;</button>
                                                             </div>
                                                         ) : (
                                                         <div className="team-search-wrapper capacity-inline-search">
@@ -10295,7 +10403,9 @@ import { createRoot } from 'react-dom/client';
                                                     </div>
                                                 </div>
                                             </div>
+                                            )}
                                         </div>
+                                        )}
                                     </div>
                                 )}
                                 {groupManageTab === 'teams' && (
@@ -10416,6 +10526,7 @@ import { createRoot } from 'react-dom/client';
                                                         className={`group-star-button ${groupDraft?.defaultGroupId === activeGroupDraft.id ? 'active' : ''}`}
                                                         onClick={() => toggleDefaultGroupDraft(activeGroupDraft.id)}
                                                         title="Set as default group"
+                                                        aria-label={groupDraft?.defaultGroupId === activeGroupDraft.id ? 'Unset default group' : 'Set as default group'}
                                                         type="button"
                                                     >
                                                         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -10628,14 +10739,34 @@ import { createRoot } from 'react-dom/client';
                                     </div>
                                 </div>
                                 )}
+                                {groupConfigValidationErrors.length > 0 && (
+                                    <div className="group-modal-validation" role="alert" aria-live="polite">
+                                        {groupConfigValidationErrors.map((message) => (
+                                            <div key={message}>• {message}</div>
+                                        ))}
+                                    </div>
+                                )}
                                 <div className="group-modal-footer">
+                                    <div className="group-modal-button-row">
+                                        <button
+                                            className="secondary compact"
+                                            onClick={testGroupsConfigConnection}
+                                            disabled={groupTesting}
+                                            type="button"
+                                        >
+                                            {groupTesting ? 'Testing...' : 'Test configuration'}
+                                        </button>
+                                        {groupTestMessage && (
+                                            <span className="group-modal-meta" aria-live="polite">{groupTestMessage}</span>
+                                        )}
+                                    </div>
                                     <div className="group-modal-button-row">
                                         <button className="secondary compact lift-hover" onClick={requestCloseGroupManage} type="button">
                                             Cancel
                                         </button>
                                     </div>
                                     <div className="group-modal-button-row">
-                                        <button className="compact" onClick={saveGroupsConfig} disabled={groupSaving} type="button">
+                                        <button className="compact" onClick={saveGroupsConfig} disabled={Boolean(saveBlockedReason)} title={saveBlockedReason || ''} type="button">
                                             {groupSaving ? 'Saving...' : 'Save'}
                                         </button>
                                     </div>

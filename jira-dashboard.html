@@ -708,6 +708,13 @@
             color: var(--text-secondary);
         }
 
+        .group-modal-subtitle {
+            margin-top: 0.22rem;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
         .group-modal-tabs {
             display: flex;
             border-bottom: 1px solid var(--border);
@@ -745,6 +752,15 @@
             border-bottom-color: var(--accent);
         }
 
+        .group-modal-tab:focus-visible,
+        .group-list-item:focus-visible,
+        .group-star-button:focus-visible,
+        .selected-team-chip .remove-btn:focus-visible,
+        .component-chip .remove-btn:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
         .group-projects-section {
             display: flex;
             flex-direction: column;
@@ -778,6 +794,10 @@
             gap: 0.6rem;
         }
 
+        .group-single-pane {
+            width: 100%;
+        }
+
         .group-projects-pane-header {
             gap: 0.55rem;
         }
@@ -796,6 +816,13 @@
             flex-direction: column;
             gap: 0.45rem;
             margin-top: 0;
+        }
+
+        .group-field-helper {
+            font-size: 0.66rem;
+            color: var(--text-muted);
+            line-height: 1.35;
+            margin-top: -0.1rem;
         }
 
         .capacity-inline-row {
@@ -1028,6 +1055,16 @@
             margin-bottom: 0.3rem;
         }
 
+        .group-pane-tools-right {
+            margin-bottom: 0.1rem;
+        }
+
+        .group-pane-tools-right .secondary.compact.active {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(212, 56, 13, 0.08);
+        }
+
         .group-modal-helper {
             font-size: 0.6rem;
             color: var(--text-secondary);
@@ -1041,6 +1078,13 @@
             display: flex;
             flex-direction: column;
             gap: 0.6rem;
+        }
+
+        .group-config-card {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.65rem 0.75rem;
+            background: #fff;
         }
 
         .group-editor-header {
@@ -1427,6 +1471,18 @@
             background: #fff6df;
             color: #8a5a00;
             font-size: 0.7rem;
+        }
+
+        .group-modal-validation {
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            background: #fffaf2;
+            color: #8a5a00;
+            padding: 0.5rem 0.9rem;
+            font-size: 0.68rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
         }
 
         .group-modal-footer {

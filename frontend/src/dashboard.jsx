@@ -10057,7 +10057,7 @@ import { createRoot } from 'react-dom/client';
                                         className={`group-modal-tab ${groupManageTab === 'scope' ? 'active' : ''}`}
                                         onClick={() => setGroupManageTab('scope')}
                                         type="button"
-                                    >Scope</button>
+                                    >Scope projects</button>
                                     <button
                                         className={`group-modal-tab ${groupManageTab === 'mapping' ? 'active' : ''}`}
                                         onClick={() => setGroupManageTab('mapping')}
@@ -10079,6 +10079,7 @@ import { createRoot } from 'react-dom/client';
                                 {(groupManageTab === 'scope' || groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
                                     <div className="group-modal-body group-modal-split group-projects-layout">
                                         {groupManageTab === 'scope' && (
+                                        <>
                                         <div className="group-pane group-projects-pane-left">
                                             <div className="group-projects-subsection" style={{padding: '12px 16px 0'}}>
                                                 <div className="team-selector-label">Sprint Field</div>
@@ -10105,6 +10106,8 @@ import { createRoot } from 'react-dom/client';
                                                     )}
                                                 </div>
                                             </div>
+                                        </div>
+                                        <div className="group-pane group-projects-pane-right">
                                             <div className="group-pane-header group-projects-pane-header">
                                                 <div className="group-pane-title">Dashboard Projects</div>
                                                 <div className="group-projects-desc">
@@ -10180,6 +10183,7 @@ import { createRoot } from 'react-dom/client';
                                                 </div>
                                             </div>
                                         </div>
+                                        </>
                                         )}
                                         {(groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
                                         <div className="group-pane group-projects-pane-right group-single-pane">

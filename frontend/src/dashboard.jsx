@@ -5200,7 +5200,6 @@ import { createRoot } from 'react-dom/client';
                 });
                 return keys;
             }, [visibleTasks]);
-
             const statsTeams = effectiveStatsData?.teams || [];
             const allowedStatsTeamIds = React.useMemo(() => {
                 if (!isAllTeamsSelected) {
@@ -6473,6 +6472,14 @@ import { createRoot } from 'react-dom/client';
                     if (!str) return;
                     tokens.push(str);
                 };
+                pushToken(task?.sprintId);
+                pushToken(task?.sprintName);
+                pushToken(task?.fields?.sprintId);
+                pushToken(task?.fields?.sprintName);
+                if (task?.fields?.sprint && typeof task.fields.sprint === 'object') {
+                    pushToken(task.fields.sprint.id);
+                    pushToken(task.fields.sprint.name);
+                }
                 const sprintField = task?.fields?.customfield_10101;
                 if (!sprintField) return tokens;
                 if (Array.isArray(sprintField)) {
@@ -6619,6 +6626,13 @@ import { createRoot } from 'react-dom/client';
                 })
                 .filter(epic => typeof epic.totalStories === 'number' && epic.totalStories === 0)
                 .filter(epic => !dismissedAlertSet.has(epic.key));
+            const futureRoutedEpics = React.useMemo(() => {
+                return emptyEpics.filter(epic => {
+                    const selectedStories = Number(epic.selectedStories || 0);
+                    const futureOpenStories = Number(epic.futureOpenStories || 0);
+                    return selectedStories === 0 && futureOpenStories > 0;
+                });
+            }, [emptyEpics]);
 
             const readyToCloseStoryStatuses = new Set(['done', 'killed', 'incomplete']);
             const readyToCloseEpicStatuses = new Set(['in progress', 'accepted']);
@@ -6709,7 +6723,6 @@ import { createRoot } from 'react-dom/client';
 
             const missingAlertTeams = groupAlertsByTeam(consolidatedMissingStories, (item) => getTeamInfo(item.task));
             const blockedAlertTeams = groupAlertsByTeam(blockedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
-            const emptyEpicTeams = groupAlertsByTeam(emptyEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const doneEpicTeams = groupAlertsByTeam(doneStoryEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const postponedTasks = React.useMemo(() => {
                 return tasks.filter(task => {
@@ -6753,6 +6766,7 @@ import { createRoot } from 'react-dom/client';
             ]);
 
             const postponedAlertTeams = groupAlertsByTeam(postponedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
+            const postponedEpicTeams = groupAlertsByTeam(futureRoutedEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const postponedEmptyEpics = React.useMemo(() => {
                 return emptyEpics.filter(epic => {
                     const status = normalizeStatus(epic.status?.name);
@@ -6761,6 +6775,42 @@ import { createRoot } from 'react-dom/client';
                     return matchesSelectedSprint(epic);
                 });
             }, [emptyEpics, isFutureSprintSelected, selectedSprint, selectedSprintInfo?.name]);
+            const epicsWithActionableStoriesInSelectedSprint = React.useMemo(() => {
+                const storiesByEpic = new Map();
+                selectionTasks.forEach(task => {
+                    const epicKey = task.fields?.epicKey;
+                    if (!epicKey) return;
+                    const status = normalizeStatus(task.fields.status?.name);
+                    if (!status) return;
+                    if (status.includes('blocked')) return;
+                    if (status === 'killed' || status === 'done' || status === 'incomplete') return;
+                    const list = storiesByEpic.get(epicKey) || [];
+                    list.push(task);
+                    storiesByEpic.set(epicKey, list);
+                });
+                const epicKeys = new Set();
+                emptyEpics.forEach(epic => {
+                    if (!epic?.key) return;
+                    const epicStories = storiesByEpic.get(epic.key) || [];
+                    if (!epicStories.length) return;
+                    if (matchesSelectedSprint(epic) || epicHasStoryInSelectedSprint(epicStories)) {
+                        epicKeys.add(epic.key);
+                    }
+                });
+                return epicKeys;
+            }, [selectionTasks, emptyEpics, selectedSprint, selectedSprintInfo?.name]);
+
+            const emptyEpicsForAlert = React.useMemo(() => {
+                const futureRoutedEpicKeys = new Set(futureRoutedEpics.map(epic => epic.key).filter(Boolean));
+                return emptyEpics.filter(epic => {
+                    if (!epic?.key) return false;
+                    if (Number(epic.selectedActionableStories || 0) > 0) return false;
+                    if (epicsWithActionableStoriesInSelectedSprint.has(epic.key)) return false;
+                    if (futureRoutedEpicKeys.has(epic.key)) return false;
+                    return true;
+                });
+            }, [emptyEpics, epicsWithActionableStoriesInSelectedSprint, futureRoutedEpics]);
+            const emptyEpicTeams = groupAlertsByTeam(emptyEpicsForAlert, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
 
             const waitingForStoriesEpics = React.useMemo(() => {
                 const seen = new Set();
@@ -6784,16 +6834,16 @@ import { createRoot } from 'react-dom/client';
                 [blockedTasks]
             );
             const postponedAlertKeySet = React.useMemo(
-                () => new Set(postponedTasks.map(task => task.key).filter(Boolean)),
-                [postponedTasks]
+                () => new Set([...postponedTasks.map(task => task.key), ...futureRoutedEpics.map(epic => epic.key)].filter(Boolean)),
+                [postponedTasks, futureRoutedEpics]
             );
             const waitingAlertKeySet = React.useMemo(
                 () => new Set(waitingForStoriesEpics.map(epic => epic.key).filter(Boolean)),
                 [waitingForStoriesEpics]
             );
             const emptyAlertKeySet = React.useMemo(
-                () => new Set(emptyEpics.map(epic => epic.key).filter(Boolean)),
-                [emptyEpics]
+                () => new Set(emptyEpicsForAlert.map(epic => epic.key).filter(Boolean)),
+                [emptyEpicsForAlert]
             );
             const doneAlertKeySet = React.useMemo(
                 () => new Set(doneStoryEpics.map(epic => epic.key).filter(Boolean)),
@@ -6803,9 +6853,9 @@ import { createRoot } from 'react-dom/client';
             const alertCounts = {
                 missing: consolidatedMissingStories.length,
                 blocked: blockedTasks.length,
-                followup: postponedTasks.length,
+                followup: postponedTasks.length + futureRoutedEpics.length,
                 waiting: waitingForStoriesEpics.length,
-                empty: emptyEpics.length,
+                empty: emptyEpicsForAlert.length,
                 done: doneStoryEpics.length
             };
             const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.followup + alertCounts.waiting + alertCounts.empty + alertCounts.done;
@@ -9063,7 +9113,7 @@ import { createRoot } from 'react-dom/client';
 	                                        </div>
 	                                    )}
 
-                                        {postponedTasks.length > 0 && (
+                                        {(postponedTasks.length > 0 || futureRoutedEpics.length > 0) && (
                                             <div className={`alert-card following ${showPostponedAlert ? '' : 'collapsed'}`}>
                                                 <div className="alert-card-header">
                                                     <button
@@ -9080,10 +9130,10 @@ import { createRoot } from 'react-dom/client';
                                                             {showPostponedAlert ? 'Hide' : 'Show'}
                                                         </span>
                                                     </button>
-                                                    <div className="alert-title">⏭️ Postponed Stories</div>
-                                                    <div className="alert-subtitle">Postponed stories belong in the next sprint.</div>
+                                                    <div className="alert-title">⏭️ Postponed Work</div>
+                                                    <div className="alert-subtitle">Items that should be handled in a future sprint.</div>
                                                     <div className="alert-chip">
-                                                        {postponedTasks.length} {postponedTasks.length === 1 ? 'item' : 'items'}
+                                                        {postponedTasks.length + futureRoutedEpics.length} {(postponedTasks.length + futureRoutedEpics.length) === 1 ? 'item' : 'items'}
                                                     </div>
                                                 </div>
                                                 <div className={`alert-card-body ${showPostponedAlert ? '' : 'collapsed'}`}>
@@ -9163,8 +9213,73 @@ import { createRoot } from 'react-dom/client';
                                                                     ))}
                                                                 </div>
                                                             </div>
-                                                        );
-                                                    })}
+                                                            );
+                                                        })}
+                                                    {futureRoutedEpics.length > 0 && (
+                                                        <>
+                                                            <div className="alert-section-title">Epics with only future-sprint stories</div>
+                                                            {postponedEpicTeams.map(group => (
+                                                                <div key={`future-epic-${group.id}`} className="alert-team-group">
+                                                                    <div className="alert-team-header">
+                                                                        {jiraUrl ? (
+                                                                            <a
+                                                                                className="alert-team-link"
+                                                                                href={buildTeamStatusLink({
+                                                                                    teamId: group.id !== 'unknown' ? group.id : undefined,
+                                                                                    issueType: 'Epic',
+                                                                                    statuses: ['Accepted', 'To Do', 'Pending']
+                                                                                })}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                            >
+                                                                                <span className="alert-pill team">{group.name}</span>
+                                                                                <span>{group.items.length} epics</span>
+                                                                            </a>
+                                                                        ) : (
+                                                                            <div className="alert-team-title">
+                                                                                <span className="alert-pill team">{group.name}</span>
+                                                                                <span>{group.items.length} epics</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="alert-stories">
+                                                                        {group.items.map(epic => (
+                                                                            <div key={epic.key} className="alert-story">
+                                                                                <div className="alert-story-main" onClick={() => handleAlertStoryClick(epic.key)}>
+                                                                                    {jiraUrl ? (
+                                                                                        <a
+                                                                                            className="alert-story-link"
+                                                                                            href={`${jiraUrl}/browse/${epic.key}`}
+                                                                                            target="_blank"
+                                                                                            rel="noopener noreferrer"
+                                                                                            onClick={(event) => event.stopPropagation()}
+                                                                                        >
+                                                                                            {epic.key}: {epic.summary}
+                                                                                        </a>
+                                                                                    ) : (
+                                                                                        <div className="alert-story-link">{epic.key}: {epic.summary}</div>
+                                                                                    )}
+                                                                                    <div className="alert-story-note">Move epic sprint to a future sprint (not in current scope).</div>
+                                                                                </div>
+                                                                                <span className="alert-pill status">Move to future sprint</span>
+                                                                                <button
+                                                                                    className="task-remove alert-remove"
+                                                                                    onClick={(event) => {
+                                                                                        event.preventDefault();
+                                                                                        event.stopPropagation();
+                                                                                        dismissAlertItem(epic.key);
+                                                                                    }}
+                                                                                    title="Dismiss from alerts"
+                                                                                >
+                                                                                    ×
+                                                                                </button>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </>
+                                                    )}
                                                 </div>
                                             </div>
                                         )}
@@ -9276,7 +9391,7 @@ import { createRoot } from 'react-dom/client';
                                             </div>
                                         )}
 
-		                                    {emptyEpics.length > 0 && (
+		                                    {emptyEpicsForAlert.length > 0 && (
 		                                        <div className={`alert-card empty-epic ${showEmptyEpicAlert ? '' : 'collapsed'}`}>
 	                                            <div className="alert-card-header">
 	                                                <button
@@ -9302,9 +9417,9 @@ import { createRoot } from 'react-dom/client';
 	                                                    rel="noopener noreferrer"
 	                                                    title="Open these epics in Jira"
 	                                                >
-	                                                    {emptyEpics.length} {emptyEpics.length === 1 ? 'epic' : 'epics'}
-	                                                </a>
-	                                            </div>
+                                                        {emptyEpicsForAlert.length} {emptyEpicsForAlert.length === 1 ? 'epic' : 'epics'}
+                                                    </a>
+                                                </div>
                                             <div className={`alert-card-body ${showEmptyEpicAlert ? '' : 'collapsed'}`}>
                                                     {emptyEpicTeams.map(group => {
                                                         const keys = group.items.map(item => item.key);

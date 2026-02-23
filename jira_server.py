@@ -66,6 +66,7 @@ UPDATE_CHECK_RELEASE_INFO = os.getenv('UPDATE_CHECK_RELEASE_INFO', 'release-info
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
 TASKS_CACHE_TTL_SECONDS = 60 * 20
+TASKS_CACHE_SCHEMA_VERSION = 'v2-empty-epic-actionable'
 UPDATE_CHECK_CACHE = {'ts': 0, 'data': None}
 
 # Single lock for all global caches — kept simple since these are not hot paths.
@@ -1132,7 +1133,7 @@ def apply_team_ids_to_template(team_ids):
 
 
 def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, include_team_name, use_template):
-    raw = f"{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{include_team_name}::{use_template}"
+    raw = f"{TASKS_CACHE_SCHEMA_VERSION}::{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{include_team_name}::{use_template}"
     digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
     return f"tasks:{digest}"
 
@@ -1465,7 +1466,7 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
 
         # 1) Try Epic Link counting (company-managed)
         if epic_link_field:
-            epic_link_jql = f'"Epic Link" in ({",".join(batch)}) AND issuetype = Story'
+            epic_link_jql = f'"Epic Link" in ({",".join(batch)}) AND issuetype != Epic'
             link_counts = count_by_query(
                 batch,
                 epic_link_jql,
@@ -1478,7 +1479,7 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
         # 2) Fall back to parent counting for epics that still have 0
         remaining = [k for k in batch if counts.get(k, 0) == 0]
         if remaining:
-            parent_jql = f'parent in ({",".join(remaining)}) AND issuetype = Story'
+            parent_jql = f'parent in ({",".join(remaining)}) AND issuetype != Epic'
             parent_counts = count_by_query(
                 remaining,
                 parent_jql,
@@ -1489,6 +1490,92 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
                 counts[k] += v
 
     return counts
+
+
+def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, selected_sprint):
+    """Return selected/future not-completed story counts for each epic key."""
+    epic_keys = [k for k in (epic_keys or []) if k]
+    if not epic_keys:
+        return {}
+
+    distribution = {
+        key: {
+            'selectedStories': 0,
+            'selectedActionableStories': 0,
+            'futureOpenStories': 0
+        } for key in epic_keys
+    }
+    batch_size = 40
+
+    def count_for_batch(batch_keys, where_clause, bucket_name):
+        if not where_clause:
+            return
+        quoted_keys = ', '.join(f'"{k}"' for k in batch_keys)
+
+        def run_query(jql, fields, resolve_epic_key):
+            start_at = 0
+            max_results = 250
+            while True:
+                payload = {
+                    'jql': jql,
+                    'startAt': start_at,
+                    'maxResults': max_results,
+                    'fields': fields
+                }
+                resp = jira_search_request(headers, payload)
+                if resp.status_code != 200:
+                    return
+                data = resp.json() or {}
+                issues = data.get('issues', []) or []
+                if not issues:
+                    break
+                for issue in issues:
+                    fields_obj = issue.get('fields', {}) or {}
+                    epic_key = resolve_epic_key(fields_obj)
+                    if epic_key in distribution:
+                        distribution[epic_key][bucket_name] += 1
+                start_at += len(issues)
+                total = data.get('total')
+                if total is not None and start_at >= total:
+                    break
+                if len(issues) < max_results:
+                    break
+
+        if epic_link_field:
+            jql_epic_link = f'{where_clause} AND "Epic Link" in ({quoted_keys})'
+            run_query(
+                jql_epic_link,
+                [epic_link_field],
+                lambda f: f.get(epic_link_field)
+            )
+
+        jql_parent = f'{where_clause} AND parent in ({quoted_keys})'
+        run_query(
+            jql_parent,
+            ['parent'],
+            lambda f: (f.get('parent') or {}).get('key')
+        )
+
+    selected_clause = ''
+    if selected_sprint:
+        selected_clause = f'Sprint = {selected_sprint} AND issuetype != Epic'
+    selected_actionable_clause = ''
+    if selected_sprint:
+        selected_actionable_clause = (
+            f'Sprint = {selected_sprint} AND issuetype != Epic '
+            'AND status not in ("Blocked","Done","Killed","Incomplete")'
+        )
+    future_clause = 'Sprint in futureSprints() AND issuetype != Epic AND status not in ("Done","Killed","Incomplete")'
+
+    for start in range(0, len(epic_keys), batch_size):
+        batch = epic_keys[start:start + batch_size]
+        if selected_clause:
+            count_for_batch(batch, selected_clause, 'selectedStories')
+        if selected_actionable_clause:
+            count_for_batch(batch, selected_actionable_clause, 'selectedActionableStories')
+        count_for_batch(batch, future_clause, 'futureOpenStories')
+
+    return distribution
 
 
 def fetch_tasks(include_team_name=False):
@@ -1718,9 +1805,18 @@ def fetch_tasks(include_team_name=False):
         epic_details = fetch_epic_details_bulk(epic_keys, headers, epic_name_field)
         epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field)
         epic_story_counts = fetch_story_counts_for_epics([e.get('key') for e in epics_in_scope], headers, epic_link_field) if epic_link_field else None
+        epic_story_distribution = fetch_story_distribution_for_epics([e.get('key') for e in epics_in_scope], headers, epic_link_field, sprint)
         for epic in epics_in_scope:
             key = epic.get('key')
             epic['totalStories'] = epic_story_counts.get(key) if (epic_story_counts and key) else None
+            if key and epic_story_distribution.get(key):
+                epic['selectedStories'] = epic_story_distribution[key].get('selectedStories', 0)
+                epic['selectedActionableStories'] = epic_story_distribution[key].get('selectedActionableStories', 0)
+                epic['futureOpenStories'] = epic_story_distribution[key].get('futureOpenStories', 0)
+            else:
+                epic['selectedStories'] = 0
+                epic['selectedActionableStories'] = 0
+                epic['futureOpenStories'] = 0
         slim_issues = []
         for issue in collected_issues:
             fields = issue.get('fields', {})

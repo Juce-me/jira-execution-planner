@@ -6804,6 +6804,7 @@ import { createRoot } from 'react-dom/client';
                 const futureRoutedEpicKeys = new Set(futureRoutedEpics.map(epic => epic.key).filter(Boolean));
                 return emptyEpics.filter(epic => {
                     if (!epic?.key) return false;
+                    if (Number(epic.selectedActionableStories || 0) > 0) return false;
                     if (epicsWithActionableStoriesInSelectedSprint.has(epic.key)) return false;
                     if (futureRoutedEpicKeys.has(epic.key)) return false;
                     return true;

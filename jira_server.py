@@ -66,6 +66,7 @@ UPDATE_CHECK_RELEASE_INFO = os.getenv('UPDATE_CHECK_RELEASE_INFO', 'release-info
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
 TASKS_CACHE_TTL_SECONDS = 60 * 20
+TASKS_CACHE_SCHEMA_VERSION = 'v2-empty-epic-actionable'
 UPDATE_CHECK_CACHE = {'ts': 0, 'data': None}
 
 # Single lock for all global caches — kept simple since these are not hot paths.
@@ -1132,7 +1133,7 @@ def apply_team_ids_to_template(team_ids):
 
 
 def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, include_team_name, use_template):
-    raw = f"{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{include_team_name}::{use_template}"
+    raw = f"{TASKS_CACHE_SCHEMA_VERSION}::{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{include_team_name}::{use_template}"
     digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
     return f"tasks:{digest}"
 
@@ -1500,6 +1501,7 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
     distribution = {
         key: {
             'selectedStories': 0,
+            'selectedActionableStories': 0,
             'futureOpenStories': 0
         } for key in epic_keys
     }
@@ -1557,12 +1559,20 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
     selected_clause = ''
     if selected_sprint:
         selected_clause = f'Sprint = {selected_sprint} AND issuetype != Epic'
+    selected_actionable_clause = ''
+    if selected_sprint:
+        selected_actionable_clause = (
+            f'Sprint = {selected_sprint} AND issuetype != Epic '
+            'AND status not in ("Blocked","Done","Killed","Incomplete")'
+        )
     future_clause = 'Sprint in futureSprints() AND issuetype != Epic AND status not in ("Done","Killed","Incomplete")'
 
     for start in range(0, len(epic_keys), batch_size):
         batch = epic_keys[start:start + batch_size]
         if selected_clause:
             count_for_batch(batch, selected_clause, 'selectedStories')
+        if selected_actionable_clause:
+            count_for_batch(batch, selected_actionable_clause, 'selectedActionableStories')
         count_for_batch(batch, future_clause, 'futureOpenStories')
 
     return distribution
@@ -1801,9 +1811,11 @@ def fetch_tasks(include_team_name=False):
             epic['totalStories'] = epic_story_counts.get(key) if (epic_story_counts and key) else None
             if key and epic_story_distribution.get(key):
                 epic['selectedStories'] = epic_story_distribution[key].get('selectedStories', 0)
+                epic['selectedActionableStories'] = epic_story_distribution[key].get('selectedActionableStories', 0)
                 epic['futureOpenStories'] = epic_story_distribution[key].get('futureOpenStories', 0)
             else:
                 epic['selectedStories'] = 0
+                epic['selectedActionableStories'] = 0
                 epic['futureOpenStories'] = 0
         slim_issues = []
         for issue in collected_issues:

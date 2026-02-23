@@ -19,6 +19,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 import io
 from requests import Session
+from concurrent.futures import ThreadPoolExecutor
 from planning import Issue, ScenarioConfig, compute_slack, schedule_issues
 
 # Load environment variables from .env file
@@ -1132,8 +1133,9 @@ def apply_team_ids_to_template(team_ids):
     return JQL_QUERY_TEMPLATE.replace('{TEAM_IDS}', quoted)
 
 
-def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, include_team_name, use_template):
-    raw = f"{TASKS_CACHE_SCHEMA_VERSION}::{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{include_team_name}::{use_template}"
+def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, include_team_name, use_template, purpose='dashboard', epic_keys=None):
+    epic_signature = ','.join(sorted({str(k).strip() for k in (epic_keys or []) if str(k).strip()}))
+    raw = f"{TASKS_CACHE_SCHEMA_VERSION}::{purpose}::{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{include_team_name}::{use_template}::{epic_signature}"
     digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
     return f"tasks:{digest}"
 
@@ -1422,7 +1424,7 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
     if not epic_keys:
         return {}
 
-    def count_by_query(batch_keys, jql, parse_epic_key, fields):
+    def count_by_query(batch_keys, jql, fields):
         start_at = 0
         max_results = 250
         local_counts = {k: 0 for k in batch_keys}
@@ -1445,7 +1447,9 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
 
             for issue in issues:
                 fields_obj = issue.get('fields', {}) or {}
-                epic_key = parse_epic_key(fields_obj)
+                epic_key = fields_obj.get(epic_link_field) if epic_link_field else None
+                if not epic_key:
+                    epic_key = (fields_obj.get('parent') or {}).get('key')
                 if epic_key in local_counts:
                     local_counts[epic_key] += 1
 
@@ -1463,31 +1467,17 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
 
     for start in range(0, len(epic_keys), batch_size):
         batch = epic_keys[start:start + batch_size]
-
-        # 1) Try Epic Link counting (company-managed)
+        quoted_keys = ', '.join(f'"{k}"' for k in batch)
         if epic_link_field:
-            epic_link_jql = f'"Epic Link" in ({",".join(batch)}) AND issuetype != Epic'
-            link_counts = count_by_query(
-                batch,
-                epic_link_jql,
-                lambda f: f.get(epic_link_field),
-                [epic_link_field]
-            )
-            for k, v in link_counts.items():
-                counts[k] += v
+            combined_jql = f'(("Epic Link" in ({quoted_keys})) OR (parent in ({quoted_keys}))) AND issuetype != Epic'
+            fields = [epic_link_field, 'parent']
+        else:
+            combined_jql = f'parent in ({quoted_keys}) AND issuetype != Epic'
+            fields = ['parent']
 
-        # 2) Fall back to parent counting for epics that still have 0
-        remaining = [k for k in batch if counts.get(k, 0) == 0]
-        if remaining:
-            parent_jql = f'parent in ({",".join(remaining)}) AND issuetype != Epic'
-            parent_counts = count_by_query(
-                remaining,
-                parent_jql,
-                lambda f: (f.get('parent') or {}).get('key'),
-                ['parent']
-            )
-            for k, v in parent_counts.items():
-                counts[k] += v
+        batch_counts = count_by_query(batch, combined_jql, fields)
+        for k, v in batch_counts.items():
+            counts[k] += v
 
     return counts
 
@@ -1507,12 +1497,16 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
     }
     batch_size = 40
 
+    def is_actionable_selected_status(raw_status):
+        name = str(raw_status or '').strip().lower()
+        return name not in ('blocked', 'done', 'killed', 'incomplete')
+
     def count_for_batch(batch_keys, where_clause, bucket_name):
         if not where_clause:
             return
         quoted_keys = ', '.join(f'"{k}"' for k in batch_keys)
 
-        def run_query(jql, fields, resolve_epic_key):
+        def run_query(jql, fields):
             start_at = 0
             max_results = 250
             while True:
@@ -1531,7 +1525,9 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
                     break
                 for issue in issues:
                     fields_obj = issue.get('fields', {}) or {}
-                    epic_key = resolve_epic_key(fields_obj)
+                    epic_key = fields_obj.get(epic_link_field) if epic_link_field else None
+                    if not epic_key:
+                        epic_key = (fields_obj.get('parent') or {}).get('key')
                     if epic_key in distribution:
                         distribution[epic_key][bucket_name] += 1
                 start_at += len(issues)
@@ -1542,37 +1538,73 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
                     break
 
         if epic_link_field:
-            jql_epic_link = f'{where_clause} AND "Epic Link" in ({quoted_keys})'
-            run_query(
-                jql_epic_link,
-                [epic_link_field],
-                lambda f: f.get(epic_link_field)
+            combined_jql = (
+                f'{where_clause} AND (("Epic Link" in ({quoted_keys})) OR (parent in ({quoted_keys})))'
             )
+            run_query(combined_jql, [epic_link_field, 'parent'])
+        else:
+            jql_parent = f'{where_clause} AND parent in ({quoted_keys})'
+            run_query(jql_parent, ['parent'])
 
-        jql_parent = f'{where_clause} AND parent in ({quoted_keys})'
-        run_query(
-            jql_parent,
-            ['parent'],
-            lambda f: (f.get('parent') or {}).get('key')
-        )
+    def count_selected_for_batch(batch_keys):
+        if not selected_sprint:
+            return
+        quoted_keys = ', '.join(f'"{k}"' for k in batch_keys)
+        where_clause = f'Sprint = {selected_sprint} AND issuetype != Epic'
+
+        def run_query(jql, fields):
+            start_at = 0
+            max_results = 250
+            while True:
+                payload = {
+                    'jql': jql,
+                    'startAt': start_at,
+                    'maxResults': max_results,
+                    'fields': fields
+                }
+                resp = jira_search_request(headers, payload)
+                if resp.status_code != 200:
+                    return
+                data = resp.json() or {}
+                issues = data.get('issues', []) or []
+                if not issues:
+                    break
+                for issue in issues:
+                    fields_obj = issue.get('fields', {}) or {}
+                    epic_key = fields_obj.get(epic_link_field) if epic_link_field else None
+                    if not epic_key:
+                        epic_key = (fields_obj.get('parent') or {}).get('key')
+                    if epic_key not in distribution:
+                        continue
+                    distribution[epic_key]['selectedStories'] += 1
+                    status_name = ((fields_obj.get('status') or {}).get('name') if isinstance(fields_obj.get('status'), dict) else None)
+                    if is_actionable_selected_status(status_name):
+                        distribution[epic_key]['selectedActionableStories'] += 1
+                start_at += len(issues)
+                total = data.get('total')
+                if total is not None and start_at >= total:
+                    break
+                if len(issues) < max_results:
+                    break
+
+        if epic_link_field:
+            combined_jql = (
+                f'{where_clause} AND (("Epic Link" in ({quoted_keys})) OR (parent in ({quoted_keys})))'
+            )
+            run_query(combined_jql, [epic_link_field, 'parent', 'status'])
+        else:
+            jql_parent = f'{where_clause} AND parent in ({quoted_keys})'
+            run_query(jql_parent, ['parent', 'status'])
 
     selected_clause = ''
     if selected_sprint:
         selected_clause = f'Sprint = {selected_sprint} AND issuetype != Epic'
-    selected_actionable_clause = ''
-    if selected_sprint:
-        selected_actionable_clause = (
-            f'Sprint = {selected_sprint} AND issuetype != Epic '
-            'AND status not in ("Blocked","Done","Killed","Incomplete")'
-        )
     future_clause = 'Sprint in futureSprints() AND issuetype != Epic AND status not in ("Done","Killed","Incomplete")'
 
     for start in range(0, len(epic_keys), batch_size):
         batch = epic_keys[start:start + batch_size]
         if selected_clause:
-            count_for_batch(batch, selected_clause, 'selectedStories')
-        if selected_actionable_clause:
-            count_for_batch(batch, selected_actionable_clause, 'selectedActionableStories')
+            count_selected_for_batch(batch)
         count_for_batch(batch, future_clause, 'futureOpenStories')
 
     return distribution
@@ -1581,23 +1613,37 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
 def fetch_tasks(include_team_name=False):
     """Fetch tasks from Jira API."""
     try:
+        request_started = time.perf_counter()
+        timings_ms = {}
+        include_debug_timings = request.args.get('debugTimings', '').strip().lower() in ('1', 'true', 'yes')
+        def record_timing(name, started_at):
+            timings_ms[name] = round((time.perf_counter() - started_at) * 1000, 1)
+
         # Get sprint parameter from query string
+        parse_started = time.perf_counter()
         sprint = request.args.get('sprint', '')
         team = request.args.get('team', '').strip()
         group_id = request.args.get('groupId', '').strip() or 'default'
         team_ids_param = request.args.get('teamIds', '').strip()
+        epic_keys_param = request.args.get('epicKeys', '').strip()
         project_filter = request.args.get('project', '').strip().lower()
+        request_purpose = request.args.get('purpose', 'dashboard').strip().lower() or 'dashboard'
         force_refresh = request.args.get('refresh', '').lower() in ('1', 'true')
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
+        epic_keys_filter = sorted({t.strip() for t in epic_keys_param.split(',') if t.strip()})
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
+        lightweight_ready_to_close = request_purpose == 'ready-to-close'
         cache_key = build_tasks_cache_key(
             sprint,
             group_id,
             project_filter,
             team_ids if use_template else [],
             include_team_name,
-            use_template
+            use_template,
+            request_purpose,
+            epic_keys_filter
         )
+        record_timing('parse_params', parse_started)
         with _cache_lock:
             cached_entry = TASKS_CACHE.get(cache_key)
         if not force_refresh and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
@@ -1605,9 +1651,11 @@ def fetch_tasks(include_team_name=False):
             cached_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             cached_response.headers['Pragma'] = 'no-cache'
             cached_response.headers['Expires'] = '0'
+            cached_response.headers['Server-Timing'] = 'cache;dur=1'
             return cached_response
 
         # Prepare authorization
+        auth_started = time.perf_counter()
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
         auth_bytes = auth_string.encode('ascii')
         auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
@@ -1618,8 +1666,10 @@ def fetch_tasks(include_team_name=False):
             'Accept': 'application/json',
             'Content-Type': 'application/json'
         }
+        record_timing('auth_headers', auth_started)
 
         # Build JQL query with sprint filter if provided
+        jql_started = time.perf_counter()
         if use_template:
             jql = apply_team_ids_to_template(team_ids)
             if not jql:
@@ -1667,21 +1717,33 @@ def fetch_tasks(include_team_name=False):
                 quoted_types = ', '.join(f'"{t}"' for t in issue_types)
                 jql = add_clause_to_jql(jql, f'type in ({quoted_types})')
 
+        tasks_jql = jql
+        if epic_keys_filter:
+            quoted_epics = ', '.join(f'"{key}"' for key in epic_keys_filter)
+            tasks_jql = add_clause_to_jql(tasks_jql, f'("Epic Link" in ({quoted_epics}) OR parent in ({quoted_epics}))')
+        record_timing('build_jql', jql_started)
+
         team_field_id = resolve_team_field_id(headers)
         epic_link_field_id = resolve_epic_link_field_id(headers)
 
         # Prepare request parameters for search endpoint
-        fields_list = [
-            'summary',
-            'status',
-            'priority',
-            'issuetype',
-            'assignee',
-            'updated',
-            get_story_points_field_id(),  # Story Points
-            'parent',
-            'project'
-        ]
+        if lightweight_ready_to_close:
+            fields_list = [
+                'status',
+                'parent'
+            ]
+        else:
+            fields_list = [
+                'summary',
+                'status',
+                'priority',
+                'issuetype',
+                'assignee',
+                'updated',
+                get_story_points_field_id(),  # Story Points
+                'parent',
+                'project'
+            ]
         if epic_link_field_id and epic_link_field_id not in fields_list:
             fields_list.append(epic_link_field_id)
         if team_field_id:
@@ -1698,13 +1760,14 @@ def fetch_tasks(include_team_name=False):
         print(f'\n🔍 Making request to Jira API...')
         print(f'URL: {JIRA_URL}/rest/api/3/search/jql')
         print(f'Sprint: {sprint if sprint else "All"}')
-        print(f'JQL: {jql}')
+        print(f'JQL: {tasks_jql}')
 
+        jira_fetch_started = time.perf_counter()
         while len(collected_issues) < max_results:
             remaining = max_results - len(collected_issues)
             page_limit = min(page_size, remaining)
             payload = {
-                'jql': jql,
+                'jql': tasks_jql,
                 'maxResults': page_limit,
                 'fields': fields_list
             }
@@ -1729,7 +1792,7 @@ def fetch_tasks(include_team_name=False):
                 error_response = jsonify({
                     'error': f'Jira API error: {response.status_code}',
                     'details': error_text,
-                    'jql_used': jql
+                    'jql_used': tasks_jql
                 })
                 error_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
                 error_response.headers['Pragma'] = 'no-cache'
@@ -1755,6 +1818,7 @@ def fetch_tasks(include_team_name=False):
             # Stop when Jira signals we're at the end or when the last page is smaller than the request size
             if len(issues) < page_limit:
                 break
+        record_timing('jira_search', jira_fetch_started)
 
         data = {
             'issues': collected_issues,
@@ -1773,7 +1837,7 @@ def fetch_tasks(include_team_name=False):
         epic_name_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic name'), None)
 
         epic_keys = set()
-
+        normalize_started = time.perf_counter()
         for issue in collected_issues:
             fields = issue.get('fields', {})
 
@@ -1801,22 +1865,49 @@ def fetch_tasks(include_team_name=False):
             if epic_key:
                 fields['epicKey'] = epic_key
                 epic_keys.add(epic_key)
+        record_timing('normalize_tasks', normalize_started)
 
-        epic_details = fetch_epic_details_bulk(epic_keys, headers, epic_name_field)
-        epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field)
-        epic_story_counts = fetch_story_counts_for_epics([e.get('key') for e in epics_in_scope], headers, epic_link_field) if epic_link_field else None
-        epic_story_distribution = fetch_story_distribution_for_epics([e.get('key') for e in epics_in_scope], headers, epic_link_field, sprint)
-        for epic in epics_in_scope:
-            key = epic.get('key')
-            epic['totalStories'] = epic_story_counts.get(key) if (epic_story_counts and key) else None
-            if key and epic_story_distribution.get(key):
-                epic['selectedStories'] = epic_story_distribution[key].get('selectedStories', 0)
-                epic['selectedActionableStories'] = epic_story_distribution[key].get('selectedActionableStories', 0)
-                epic['futureOpenStories'] = epic_story_distribution[key].get('futureOpenStories', 0)
-            else:
-                epic['selectedStories'] = 0
-                epic['selectedActionableStories'] = 0
-                epic['futureOpenStories'] = 0
+        enrich_epics_started = time.perf_counter()
+        if lightweight_ready_to_close:
+            epic_details = {}
+            epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field)
+        else:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                future_epic_details = pool.submit(fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
+                future_epics_in_scope = pool.submit(fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field)
+                epic_details = future_epic_details.result()
+                epics_in_scope = future_epics_in_scope.result()
+        record_timing('epic_enrichment', enrich_epics_started)
+
+        if epic_keys_filter:
+            epic_filter_set = set(epic_keys_filter)
+            epics_in_scope = [epic for epic in epics_in_scope if epic.get('key') in epic_filter_set]
+        if not lightweight_ready_to_close:
+            enrich_counts_started = time.perf_counter()
+            epic_scope_keys = [e.get('key') for e in epics_in_scope]
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                future_epic_story_counts = (
+                    pool.submit(fetch_story_counts_for_epics, epic_scope_keys, headers, epic_link_field)
+                    if epic_link_field else None
+                )
+                future_epic_story_distribution = pool.submit(
+                    fetch_story_distribution_for_epics, epic_scope_keys, headers, epic_link_field, sprint
+                )
+                epic_story_counts = future_epic_story_counts.result() if future_epic_story_counts else None
+                epic_story_distribution = future_epic_story_distribution.result()
+            record_timing('epic_counts_distribution', enrich_counts_started)
+            for epic in epics_in_scope:
+                key = epic.get('key')
+                epic['totalStories'] = epic_story_counts.get(key) if (epic_story_counts and key) else None
+                if key and epic_story_distribution.get(key):
+                    epic['selectedStories'] = epic_story_distribution[key].get('selectedStories', 0)
+                    epic['selectedActionableStories'] = epic_story_distribution[key].get('selectedActionableStories', 0)
+                    epic['futureOpenStories'] = epic_story_distribution[key].get('futureOpenStories', 0)
+                else:
+                    epic['selectedStories'] = 0
+                    epic['selectedActionableStories'] = 0
+                    epic['futureOpenStories'] = 0
+        slim_build_started = time.perf_counter()
         slim_issues = []
         for issue in collected_issues:
             fields = issue.get('fields', {})
@@ -1825,43 +1916,77 @@ def fetch_tasks(include_team_name=False):
             issuetype = fields.get('issuetype') or {}
             assignee = fields.get('assignee') or {}
             project_field = fields.get('project') or {}
-            slim_issues.append({
-                'id': issue.get('id'),
-                'key': issue.get('key'),
-                'fields': {
-                    'summary': fields.get('summary'),
-                    'status': {'name': status.get('name')} if status else None,
-                    'priority': {'name': priority.get('name')} if priority else None,
-                    'issuetype': {'name': issuetype.get('name')} if issuetype else None,
-                    'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
-                    'updated': fields.get('updated'),
-                    'customfield_10004': fields.get(get_story_points_field_id()),
-                    'team': fields.get('team'),
-                    'teamName': fields.get('teamName'),
-                    'teamId': fields.get('teamId'),
-                    'epicKey': fields.get('epicKey'),
-                    'parentSummary': fields.get('parentSummary'),
-                    'projectKey': project_field.get('key', ''),
-                    'projectName': project_field.get('name', '')
-                }
-            })
+            if lightweight_ready_to_close:
+                slim_issues.append({
+                    'key': issue.get('key'),
+                    'fields': {
+                        'status': {'name': status.get('name')} if status else None,
+                        'team': fields.get('team'),
+                        'teamName': fields.get('teamName'),
+                        'teamId': fields.get('teamId'),
+                        'epicKey': fields.get('epicKey')
+                    }
+                })
+            else:
+                slim_issues.append({
+                    'id': issue.get('id'),
+                    'key': issue.get('key'),
+                    'fields': {
+                        'summary': fields.get('summary'),
+                        'status': {'name': status.get('name')} if status else None,
+                        'priority': {'name': priority.get('name')} if priority else None,
+                        'issuetype': {'name': issuetype.get('name')} if issuetype else None,
+                        'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
+                        'updated': fields.get('updated'),
+                        'customfield_10004': fields.get(get_story_points_field_id()),
+                        'team': fields.get('team'),
+                        'teamName': fields.get('teamName'),
+                        'teamId': fields.get('teamId'),
+                        'epicKey': fields.get('epicKey'),
+                        'parentSummary': fields.get('parentSummary'),
+                        'projectKey': project_field.get('key', ''),
+                        'projectName': project_field.get('name', '')
+                    }
+                })
+        record_timing('build_response', slim_build_started)
 
         data['issues'] = slim_issues
         data['epics'] = epic_details
         data['epicsInScope'] = epics_in_scope
         data['teamFieldId'] = team_field_id
+        if include_debug_timings:
+            timings_ms['issueCount'] = len(slim_issues)
+            timings_ms['epicKeyCount'] = len(epic_keys)
+            timings_ms['epicsInScopeCount'] = len(epics_in_scope)
+            data['debugTimingsMs'] = timings_ms
 
         print(f'✅ Success! Found {len(data.get("issues", []))} issues')
+        timings_ms['total'] = round((time.perf_counter() - request_started) * 1000, 1)
+        print(
+            f'⏱️ tasks-with-team-name timing purpose={request_purpose} sprint={sprint or "all"} '
+            f'project={project_filter or "all"} issues={len(slim_issues)} epics={len(epics_in_scope)} '
+            f'timings_ms={timings_ms}'
+        )
+        cache_store_started = time.perf_counter()
         with _cache_lock:
             TASKS_CACHE[cache_key] = {
                 'timestamp': time.time(),
                 'data': data
             }
+        record_timing('cache_store', cache_store_started)
 
         success_response = jsonify(data)
         success_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         success_response.headers['Pragma'] = 'no-cache'
         success_response.headers['Expires'] = '0'
+        server_timing_parts = []
+        for key in ('jira_search', 'normalize_tasks', 'epic_enrichment', 'epic_counts_distribution', 'build_response'):
+            value = timings_ms.get(key)
+            if value is not None:
+                token = key.replace('_', '-')
+                server_timing_parts.append(f'{token};dur={value}')
+        if server_timing_parts:
+            success_response.headers['Server-Timing'] = ', '.join(server_timing_parts)
         return success_response
         
     except Exception as e:

@@ -25,6 +25,7 @@ Postmortems serve to:
 | [MRT007](./MRT007-bundled-frontend-regression.md) | Bundled Frontend Regression | 2026-01-28 | High | In Progress | Bundled frontend failed to load due to static route gaps and runtime TDZ errors |
 | [MRT008](./MRT008-scenario-task-set-mismatch.md) | Scenario Planner Missing Valid Stories | 2026-01-29 | High | Resolved | Scenario planner omitted valid stories due to sprint filter mismatch and pagination gaps |
 | [MRT009](./MRT009-sticky-layering-regressions.md) | Sticky Layering Regressions | 2026-02-06 | High | Resolved | Sticky UI layers overlapped or stacked incorrectly after layout changes |
+| [MRT010](./MRT010-startup-api-load-fanout-and-overscoped-payloads.md) | Startup API Load Fan-Out and Overscoped Payloads | 2026-02-23 | High | Resolved | Slow cold loads caused by heavy endpoint reuse, overscoped preload requests, and redundant backend query passes |
 
 ## Postmortem Template
 
@@ -78,8 +79,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 9
-- **Metadata complete (Date/Severity/Status)**: 9 (MRT001-MRT009)
+- **Total postmortems**: 10
+- **Metadata complete (Date/Severity/Status)**: 10 (MRT001-MRT010)
 
 ## Common Themes
 
@@ -133,5 +134,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-02-06*
-*Total Postmortems: 9*
+*Last Updated: 2026-02-23*
+*Total Postmortems: 10*

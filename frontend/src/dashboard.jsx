@@ -348,6 +348,7 @@ import { createRoot } from 'react-dom/client';
             const sprintFetchControllersRef = useRef(new Set());
             const lastLoadedSprintRef = useRef(null);
             const sprintLoadRef = useRef({ sprintId: null, product: false, tech: false });
+            const readyToCloseLoadRef = useRef('');
             const abortSprintFetches = React.useCallback(() => {
                 sprintFetchControllersRef.current.forEach(controller => {
                     try {
@@ -3038,6 +3039,15 @@ import { createRoot } from 'react-dom/client';
                     if (groupTeamIds.length > 0) {
                         params.set('teamIds', groupTeamIds.join(','));
                     }
+                    if (options.purpose) {
+                        params.set('purpose', String(options.purpose));
+                    }
+                    if (options.epicKeys && options.epicKeys.length) {
+                        const epicKeys = Array.from(new Set(options.epicKeys.filter(Boolean)));
+                        if (epicKeys.length) {
+                            params.set('epicKeys', epicKeys.join(','));
+                        }
+                    }
                     const response = await fetch(`${BACKEND_URL}/api/tasks-with-team-name?${params}`, {
                         method: 'GET',
                         headers: {
@@ -3285,8 +3295,20 @@ import { createRoot } from 'react-dom/client';
                     setReadyToCloseProductEpicsInScope([]);
                     return;
                 }
+                const epicKeys = Array.from(new Set(
+                    (loadedProductTasks || [])
+                        .map(task => task.fields?.epicKey)
+                        .filter(Boolean)
+                ));
+                if (!epicKeys.length) {
+                    setReadyToCloseProductTasks([]);
+                    setReadyToCloseProductEpicsInScope([]);
+                    return;
+                }
                 const data = await fetchTasks('product', {
                     sprintOverride: '',
+                    purpose: 'ready-to-close',
+                    epicKeys,
                     updateEpics: false,
                     epicsInScopeSetter: setReadyToCloseProductEpicsInScope,
                     useLoading: false,
@@ -3301,8 +3323,20 @@ import { createRoot } from 'react-dom/client';
                     setReadyToCloseTechEpicsInScope([]);
                     return;
                 }
+                const epicKeys = Array.from(new Set(
+                    (loadedTechTasks || [])
+                        .map(task => task.fields?.epicKey)
+                        .filter(Boolean)
+                ));
+                if (!epicKeys.length) {
+                    setReadyToCloseTechTasks([]);
+                    setReadyToCloseTechEpicsInScope([]);
+                    return;
+                }
                 const data = await fetchTasks('tech', {
                     sprintOverride: '',
+                    purpose: 'ready-to-close',
+                    epicKeys,
                     updateEpics: false,
                     epicsInScopeSetter: setReadyToCloseTechEpicsInScope,
                     useLoading: false,
@@ -3314,9 +3348,17 @@ import { createRoot } from 'react-dom/client';
 
             useEffect(() => {
                 if (!activeGroupId) return;
+                if (selectedSprint === null) return;
+                if (groupsLoading) return;
+                if (lastLoadedSprintRef.current !== selectedSprint) return;
+                if (!tasksFetched) return;
+                if (productTasksLoading || techTasksLoading) return;
+                const signature = `${activeGroupId}::${activeGroupTeamIds.join('|')}::${selectedSprint}`;
+                if (readyToCloseLoadRef.current === signature) return;
+                readyToCloseLoadRef.current = signature;
                 loadReadyToCloseProductTasks();
                 loadReadyToCloseTechTasks();
-            }, [activeGroupId, activeGroupTeamIds.join('|')]);
+            }, [activeGroupId, activeGroupTeamIds.join('|'), selectedSprint, groupsLoading, tasksFetched, productTasksLoading, techTasksLoading]);
 
 
             const formatPercent = (value) => `${(value * 100).toFixed(2)}%`;
@@ -5413,13 +5455,22 @@ import { createRoot } from 'react-dom/client';
                     setDependencyData({});
                     return;
                 }
+                if (selectedSprint !== null && lastLoadedSprintRef.current !== selectedSprint) {
+                    return;
+                }
+                if (!tasksFetched) {
+                    return;
+                }
+                if (productTasksLoading || techTasksLoading) {
+                    return;
+                }
                 if (!dependencyKeySignature) {
                     setDependencyData({});
                     return;
                 }
                 const keys = dependencyKeySignature.split('|').filter(Boolean);
                 fetchDependencies(keys);
-            }, [showDependencies, showBlockedAlert, dependencyKeySignature]);
+            }, [showDependencies, showBlockedAlert, dependencyKeySignature, selectedSprint, tasksFetched, productTasksLoading, techTasksLoading]);
 
             useEffect(() => {
                 if (!showDependencies) {
@@ -6750,7 +6801,8 @@ import { createRoot } from 'react-dom/client';
                         return true;
                     });
                     if (epicStories.length === 0) return false;
-                    if (!epicMatchesSelectedSprint(epic, epicStories)) return false;
+                    // readyToCloseTasks are loaded only for epics referenced by current-sprint tasks
+                    // (scoped via `epicKeys`), so selected-sprint matching is already implied here.
                     return epicStories.every(task => readyToCloseStoryStatuses.has(normalizeStatus(task.fields.status?.name)));
                 });
             }, [

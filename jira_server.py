@@ -8,6 +8,7 @@ import base64
 import csv
 import logging
 import os
+import random
 import re
 import json
 import hashlib
@@ -67,6 +68,12 @@ UPDATE_CHECK_BRANCH = os.getenv('UPDATE_CHECK_BRANCH', 'main').strip() or 'main'
 UPDATE_CHECK_TTL_SECONDS = int(os.getenv('UPDATE_CHECK_TTL_SECONDS', '300'))
 UPDATE_CHECK_RELEASE_INFO = os.getenv('UPDATE_CHECK_RELEASE_INFO', 'release-info.json').strip() or 'release-info.json'
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').strip().upper() or 'INFO'
+JIRA_RETRY_MAX_ATTEMPTS = int(os.getenv('JIRA_RETRY_MAX_ATTEMPTS', '4'))
+JIRA_RETRY_MAX_ELAPSED_SECONDS = float(os.getenv('JIRA_RETRY_MAX_ELAPSED_SECONDS', '10'))
+JIRA_RETRY_BASE_DELAY_SECONDS = float(os.getenv('JIRA_RETRY_BASE_DELAY_SECONDS', '0.5'))
+JIRA_RETRY_MAX_DELAY_SECONDS = float(os.getenv('JIRA_RETRY_MAX_DELAY_SECONDS', '3'))
+JIRA_CIRCUIT_FAILURE_THRESHOLD = int(os.getenv('JIRA_CIRCUIT_FAILURE_THRESHOLD', '5'))
+JIRA_CIRCUIT_OPEN_SECONDS = float(os.getenv('JIRA_CIRCUIT_OPEN_SECONDS', '30'))
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
@@ -144,6 +151,188 @@ def log_error(*parts):
 
 
 configure_logging()
+
+
+RETRYABLE_JIRA_STATUS_CODES = {429, 500, 502, 503, 504}
+
+
+class SyntheticJiraResponse:
+    """Small response-like object for fast-fail and retry exhaustion paths."""
+    def __init__(self, status_code, payload):
+        self.status_code = int(status_code)
+        self._payload = payload if isinstance(payload, dict) else {'message': str(payload)}
+        self.text = json.dumps(self._payload)
+
+    def json(self):
+        return self._payload
+
+
+class JiraCircuitBreaker:
+    def __init__(self, failure_threshold=5, open_seconds=30.0):
+        self.failure_threshold = max(1, int(failure_threshold))
+        self.open_seconds = max(1.0, float(open_seconds))
+        self._lock = threading.RLock()
+        self._state = 'closed'
+        self._failure_count = 0
+        self._opened_until = 0.0
+
+    def before_request(self, now):
+        with self._lock:
+            if self._state == 'open':
+                if now >= self._opened_until:
+                    self._state = 'half-open'
+                    return True, {'state': self._state, 'failureCount': self._failure_count}
+                return False, {
+                    'state': 'open',
+                    'failureCount': self._failure_count,
+                    'retryAfterSeconds': max(0.0, round(self._opened_until - now, 3))
+                }
+            return True, {'state': self._state, 'failureCount': self._failure_count}
+
+    def record_success(self):
+        with self._lock:
+            self._state = 'closed'
+            self._failure_count = 0
+            self._opened_until = 0.0
+
+    def record_failure(self, now):
+        with self._lock:
+            if self._state == 'half-open':
+                self._state = 'open'
+                self._failure_count = max(1, self._failure_count)
+                self._opened_until = now + self.open_seconds
+                return {'state': self._state, 'failureCount': self._failure_count, 'openedForSeconds': self.open_seconds}
+
+            self._failure_count += 1
+            if self._failure_count >= self.failure_threshold:
+                self._state = 'open'
+                self._opened_until = now + self.open_seconds
+            return {'state': self._state, 'failureCount': self._failure_count, 'openedForSeconds': self.open_seconds if self._state == 'open' else 0.0}
+
+    def force_open(self, now=None):
+        now_value = time.monotonic() if now is None else float(now)
+        with self._lock:
+            self._state = 'open'
+            self._failure_count = max(self._failure_count, self.failure_threshold)
+            self._opened_until = now_value + self.open_seconds
+
+    def reset(self):
+        with self._lock:
+            self._state = 'closed'
+            self._failure_count = 0
+            self._opened_until = 0.0
+
+
+JIRA_SEARCH_CIRCUIT_BREAKER = JiraCircuitBreaker(
+    failure_threshold=JIRA_CIRCUIT_FAILURE_THRESHOLD,
+    open_seconds=JIRA_CIRCUIT_OPEN_SECONDS
+)
+
+
+def _build_jira_unavailable_response(message, attempts=0, elapsed_seconds=0.0, upstream_status=None, circuit=None):
+    payload = {
+        'error': 'Jira temporarily unavailable',
+        'message': message,
+        'attempts': int(attempts),
+        'retryElapsedSeconds': round(float(elapsed_seconds), 2)
+    }
+    if upstream_status is not None:
+        payload['upstreamStatus'] = int(upstream_status)
+    if circuit:
+        payload['circuit'] = circuit
+    return SyntheticJiraResponse(503, payload)
+
+
+def resilient_jira_get(url, *, params=None, headers=None, timeout=30, session=None, breaker=None,
+                       now_fn=None, sleep_fn=None, rand_fn=None,
+                       max_attempts=None, max_elapsed_seconds=None,
+                       base_delay_seconds=None, max_delay_seconds=None):
+    """GET with bounded retries + circuit breaker for Jira upstream calls."""
+    session = session or HTTP_SESSION
+    breaker = breaker or JIRA_SEARCH_CIRCUIT_BREAKER
+    now_fn = now_fn or time.monotonic
+    sleep_fn = sleep_fn or time.sleep
+    rand_fn = rand_fn or random.random
+    max_attempts = max(1, int(max_attempts if max_attempts is not None else JIRA_RETRY_MAX_ATTEMPTS))
+    max_elapsed_seconds = float(max_elapsed_seconds if max_elapsed_seconds is not None else JIRA_RETRY_MAX_ELAPSED_SECONDS)
+    base_delay_seconds = float(base_delay_seconds if base_delay_seconds is not None else JIRA_RETRY_BASE_DELAY_SECONDS)
+    max_delay_seconds = float(max_delay_seconds if max_delay_seconds is not None else JIRA_RETRY_MAX_DELAY_SECONDS)
+
+    started_at = now_fn()
+    allowed, breaker_state = breaker.before_request(started_at)
+    if not allowed:
+        log_warning(
+            f'Jira circuit open; fast-failing request retry_after_s={breaker_state.get("retryAfterSeconds", 0)}'
+        )
+        return _build_jira_unavailable_response(
+            'Jira is temporarily unavailable. Please retry shortly.',
+            attempts=0,
+            elapsed_seconds=0.0,
+            circuit=breaker_state
+        )
+
+    last_status = None
+    last_exception = None
+    attempts = 0
+
+    while attempts < max_attempts:
+        attempts += 1
+        attempt_started = now_fn()
+        try:
+            response = session.get(url, params=params, headers=headers, timeout=timeout)
+            latency_ms = round((now_fn() - attempt_started) * 1000, 1)
+            last_status = getattr(response, 'status_code', None)
+            if last_status not in RETRYABLE_JIRA_STATUS_CODES:
+                breaker.record_success()
+                log_debug(f'Jira GET ok status={last_status} attempt={attempts} latency_ms={latency_ms}')
+                return response
+            log_warning(f'Jira GET retryable status={last_status} attempt={attempts} latency_ms={latency_ms}')
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            last_exception = exc
+            latency_ms = round((now_fn() - attempt_started) * 1000, 1)
+            log_warning(f'Jira GET transient exception type={type(exc).__name__} attempt={attempts} latency_ms={latency_ms}')
+        except Exception:
+            # Unknown exceptions are not retried; keep existing behavior predictable.
+            breaker.record_failure(now_fn())
+            raise
+
+        elapsed = now_fn() - started_at
+        if attempts >= max_attempts or elapsed >= max_elapsed_seconds:
+            state = breaker.record_failure(now_fn())
+            message = (
+                f'Jira server may be unavailable. Retried for {int(round(elapsed))} seconds and failed.'
+                if elapsed >= max_elapsed_seconds else
+                'Jira request failed after retry attempts.'
+            )
+            if state.get('state') == 'open':
+                log_error(f'Jira circuit opened after failed request failures={state.get("failureCount")}')
+            return _build_jira_unavailable_response(
+                message,
+                attempts=attempts,
+                elapsed_seconds=elapsed,
+                upstream_status=last_status,
+                circuit=state
+            )
+
+        delay = min(max_delay_seconds, base_delay_seconds * (2 ** (attempts - 1)))
+        jitter = min(0.25, delay * 0.25) * rand_fn()
+        total_delay = delay + jitter
+        if elapsed + total_delay > max_elapsed_seconds:
+            total_delay = max(0.0, max_elapsed_seconds - elapsed)
+        if total_delay <= 0:
+            continue
+        log_info(f'Jira GET retry scheduled attempt={attempts + 1} sleep_s={round(total_delay, 2)}')
+        sleep_fn(total_delay)
+
+    # Defensive fallback (loop should return above)
+    state = breaker.record_failure(now_fn())
+    return _build_jira_unavailable_response(
+        f'Jira request failed after {attempts} attempts.',
+        attempts=attempts,
+        elapsed_seconds=(now_fn() - started_at),
+        upstream_status=last_status,
+        circuit=state
+    )
 
 def parse_args():
     """Parse CLI arguments to optionally override environment variables."""
@@ -391,7 +580,14 @@ def jira_search_request(headers, payload):
         if key in payload and payload[key] is not None:
             params[key] = to_csv(payload[key])
 
-    return HTTP_SESSION.get(url, params=params, headers=headers, timeout=30)
+    return resilient_jira_get(
+        url,
+        params=params,
+        headers=headers,
+        timeout=30,
+        session=HTTP_SESSION,
+        breaker=JIRA_SEARCH_CIRCUIT_BREAKER
+    )
 
 
 def fetch_teams_from_jira_api(headers):

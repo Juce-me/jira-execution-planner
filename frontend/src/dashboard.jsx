@@ -339,9 +339,11 @@ import { createRoot } from 'react-dom/client';
             const [showUpdateModal, setShowUpdateModal] = useState(false);
             const [updateDismissedHash, setUpdateDismissedHash] = useState(savedPrefsRef.current.updateDismissedHash || '');
             const [showBackToTop, setShowBackToTop] = useState(false);
+            const [stickyEpicFocusKey, setStickyEpicFocusKey] = useState(null);
             const epicOrderRef = useRef({});
             const epicOrderCounterRef = useRef(0);
             const epicRefMap = useRef(new Map());
+            const stickyEpicFrameRef = useRef(null);
             const groupStateRef = useRef(new Map());
             const restoringGroupRef = useRef(false);
             const activeGroupRef = useRef(null);
@@ -5441,6 +5443,48 @@ import { createRoot } from 'react-dom/client';
                     .sort((a, b) => (epicOrderRef.current[a.key] ?? 999999) - (epicOrderRef.current[b.key] ?? 999999));
             }, [visibleTasks, epicDetails]);
 
+            useEffect(() => {
+                const computeStickyEpicFocus = () => {
+                    stickyEpicFrameRef.current = null;
+                    const stickyTop = Math.max(0, Number(planningOffset) || 0);
+                    let nextStickyKey = null;
+                    let closestTop = -Infinity;
+                    epicRefMap.current.forEach((node, epicKey) => {
+                        if (!node || !node.isConnected) return;
+                        const header = node.querySelector('.epic-header');
+                        if (!header) return;
+                        const blockRect = node.getBoundingClientRect();
+                        const headerRect = header.getBoundingClientRect();
+                        const headerHeight = headerRect.height || 0;
+                        const isHeaderPinned = blockRect.top <= stickyTop
+                            && blockRect.bottom > (stickyTop + headerHeight + 8);
+                        if (!isHeaderPinned) return;
+                        if (blockRect.top > closestTop) {
+                            closestTop = blockRect.top;
+                            nextStickyKey = epicKey;
+                        }
+                    });
+                    setStickyEpicFocusKey(prev => (prev === nextStickyKey ? prev : nextStickyKey));
+                };
+
+                const scheduleStickyEpicFocus = () => {
+                    if (stickyEpicFrameRef.current != null) return;
+                    stickyEpicFrameRef.current = window.requestAnimationFrame(computeStickyEpicFocus);
+                };
+
+                scheduleStickyEpicFocus();
+                window.addEventListener('scroll', scheduleStickyEpicFocus, { passive: true });
+                window.addEventListener('resize', scheduleStickyEpicFocus);
+                return () => {
+                    window.removeEventListener('scroll', scheduleStickyEpicFocus);
+                    window.removeEventListener('resize', scheduleStickyEpicFocus);
+                    if (stickyEpicFrameRef.current != null) {
+                        window.cancelAnimationFrame(stickyEpicFrameRef.current);
+                        stickyEpicFrameRef.current = null;
+                    }
+                };
+            }, [epicGroups, planningOffset]);
+
             const dependencyTasks = React.useMemo(
                 () => [...loadedProductTasks, ...loadedTechTasks],
                 [loadedProductTasks, loadedTechTasks]
@@ -9802,9 +9846,12 @@ import { createRoot } from 'react-dom/client';
                                         return (
                                             <div
                                                 key={epicGroup.key}
-                                                className={`epic-block ${excludedEpicSet.has(epicGroup.key) ? 'epic-excluded' : ''}`}
+                                                className={`epic-block ${excludedEpicSet.has(epicGroup.key) ? 'epic-excluded' : ''} ${stickyEpicFocusKey === epicGroup.key ? 'epic-block-sticky-focus' : ''}`}
                                                 ref={(node) => {
-                                                    if (!node) return;
+                                                    if (!node) {
+                                                        epicRefMap.current.delete(epicGroup.key);
+                                                        return;
+                                                    }
                                                     epicRefMap.current.set(epicGroup.key, node);
                                                 }}
                                             >

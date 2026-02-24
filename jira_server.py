@@ -52,7 +52,6 @@ STATS_JQL_BASE = os.getenv('STATS_JQL_BASE', '').strip()
 STATS_JQL_ORDER_BY = os.getenv('STATS_JQL_ORDER_BY', 'ORDER BY cf[30101] ASC, status ASC').strip()
 STATS_PRODUCT_PROJECTS = [s.strip() for s in os.getenv('STATS_PRODUCT_PROJECTS', JIRA_PRODUCT_PROJECT).split(',') if s.strip()]
 STATS_TECH_PROJECTS = [s.strip() for s in os.getenv('STATS_TECH_PROJECTS', JIRA_TECH_PROJECT).split(',') if s.strip()]
-STATS_EXAMPLE_FILE = os.getenv('STATS_EXAMPLE_FILE', '2025q3.example.json').strip()
 STATS_TEAM_IDS = [s.strip() for s in os.getenv('STATS_TEAM_IDS', '').split(',') if s.strip()]
 CAPACITY_PROJECT = os.getenv('CAPACITY_PROJECT', '').strip()
 CAPACITY_FIELD_ID = os.getenv('CAPACITY_FIELD_ID', '').strip()
@@ -100,19 +99,16 @@ def configure_logging():
             message = record.getMessage()
             if record.exc_info:
                 message = f'{message}\n{self.formatException(record.exc_info)}'
-            # Keep logs single-line for tail/grep and CSV ingestion.
-            message = str(message).replace('\r', '\\r').replace('\n', '\\n')
-
-            row = [
-                self.formatTime(record, self.datefmt),
-                record.levelname,
-                record.name,
-                message
-            ]
-            buf = io.StringIO()
-            writer = csv.writer(buf)
-            writer.writerow(row)
-            return buf.getvalue().rstrip('\r\n')
+            # Keep one CSV record per visible log line.
+            lines = str(message).replace('\r', '\\r').split('\n')
+            ts = self.formatTime(record, self.datefmt)
+            rows = []
+            for line in lines:
+                buf = io.StringIO()
+                writer = csv.writer(buf)
+                writer.writerow([ts, record.levelname, record.name, line])
+                rows.append(buf.getvalue().rstrip('\r\n'))
+            return '\n'.join(rows)
 
     formatter = CsvLineFormatter(datefmt='%Y-%m-%dT%H:%M:%S')
     root_logger = logging.getLogger()
@@ -135,19 +131,31 @@ def _format_log_parts(parts):
 
 
 def log_debug(*parts):
-    logger.debug(_format_log_parts(parts))
+    message = _format_log_parts(parts)
+    if not message:
+        return
+    logger.debug(message)
 
 
 def log_info(*parts):
-    logger.info(_format_log_parts(parts))
+    message = _format_log_parts(parts)
+    if not message:
+        return
+    logger.info(message)
 
 
 def log_warning(*parts):
-    logger.warning(_format_log_parts(parts))
+    message = _format_log_parts(parts)
+    if not message:
+        return
+    logger.warning(message)
 
 
 def log_error(*parts):
-    logger.error(_format_log_parts(parts))
+    message = _format_log_parts(parts)
+    if not message:
+        return
+    logger.error(message)
 
 
 configure_logging()
@@ -3842,19 +3850,6 @@ def get_completed_sprint_stats():
         'generatedAt': generated_at,
         'data': stats_payload
     })
-
-
-@app.route('/api/stats-example', methods=['GET'])
-def get_stats_example():
-    """Serve example stats payload if available."""
-    if not STATS_EXAMPLE_FILE or not os.path.exists(STATS_EXAMPLE_FILE):
-        return jsonify({'error': 'Stats example file not found'}), 404
-    try:
-        with open(STATS_EXAMPLE_FILE, 'r') as f:
-            payload = json.load(f)
-        return jsonify(payload)
-    except Exception as e:
-        return jsonify({'error': 'Failed to load stats example', 'details': str(e)}), 500
 
 
 @app.route('/api/boards', methods=['GET'])

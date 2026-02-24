@@ -61,6 +61,7 @@ DASHBOARD_CONFIG_PATH = os.getenv('DASHBOARD_CONFIG_PATH', '').strip()
 TEAM_GROUPS_JSON = os.getenv('TEAM_GROUPS_JSON', '').strip()
 JQL_QUERY_TEMPLATE = os.getenv('JQL_QUERY_TEMPLATE', '').strip()
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
+SETTINGS_ADMIN_ONLY = os.getenv('SETTINGS_ADMIN_ONLY', 'true').lower() not in ('0', 'false', 'no')
 UPDATE_CHECK_ENABLED = os.getenv('UPDATE_CHECK', 'true').lower() not in ('0', 'false', 'no')
 UPDATE_CHECK_REMOTE = os.getenv('UPDATE_CHECK_REMOTE', 'origin').strip() or 'origin'
 UPDATE_CHECK_BRANCH = os.getenv('UPDATE_CHECK_BRANCH', 'main').strip() or 'main'
@@ -1092,6 +1093,27 @@ def get_capacity_config():
     }
 
 
+def get_board_config():
+    """Return dashboard Jira board config, falling back to env var."""
+    config = load_dashboard_config()
+    if config and 'board' in config:
+        board = config.get('board') or {}
+        return {
+            'boardId': str(board.get('boardId', '') or '').strip(),
+            'boardName': str(board.get('boardName', '') or '').strip(),
+            'source': 'config'
+        }
+    return {
+        'boardId': str(JIRA_BOARD_ID or '').strip(),
+        'boardName': '',
+        'source': 'env' if JIRA_BOARD_ID else 'default'
+    }
+
+
+def get_effective_board_id():
+    return get_board_config().get('boardId', '').strip()
+
+
 # --- Custom field config getters ---
 SPRINT_FIELD_DEFAULT = 'customfield_10101'
 STORY_POINTS_FIELD_DEFAULT = 'customfield_10004'
@@ -1172,6 +1194,14 @@ def parse_groups_config_env():
     except Exception as e:
         log_warning(f'Failed to parse TEAM_GROUPS_JSON: {e}')
         return None
+
+
+def invalidate_sprints_cache():
+    try:
+        if os.path.exists(SPRINTS_CACHE_FILE):
+            os.remove(SPRINTS_CACHE_FILE)
+    except Exception as e:
+        log_warning(f'Failed to invalidate sprints cache file: {e}')
 
 
 def run_git_command(args):
@@ -1442,15 +1472,16 @@ def fetch_sprints_from_jira():
     }
 
     formatted_sprints = []
+    effective_board_id = get_effective_board_id()
 
     # Method 1: Try to get sprints from board (if JIRA_BOARD_ID is set)
-    if JIRA_BOARD_ID:
+    if effective_board_id:
         try:
-            log_info(f'Fetching sprints from board {JIRA_BOARD_ID}')
+            log_info(f'Fetching sprints from board {effective_board_id}')
             start_at = 0
             while True:
                 response = requests.get(
-                    f'{JIRA_URL}/rest/agile/1.0/board/{JIRA_BOARD_ID}/sprint',
+                    f'{JIRA_URL}/rest/agile/1.0/board/{effective_board_id}/sprint',
                     headers=headers,
                     params={'maxResults': 100, 'startAt': start_at, 'state': 'active,future,closed'},
                     timeout=30
@@ -3964,9 +3995,15 @@ def get_sprints():
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """Get public configuration"""
+    board_cfg = get_board_config()
     return jsonify({
         'jiraUrl': JIRA_URL,
         'capacityProject': get_effective_capacity_project(),
+        'boardId': board_cfg.get('boardId', ''),
+        'boardName': board_cfg.get('boardName', ''),
+        'boardConfigSource': board_cfg.get('source', 'default'),
+        'settingsAdminOnly': bool(SETTINGS_ADMIN_ONLY),
+        'userCanEditSettings': True,  # Placeholder until SSO/admin roles are implemented
         'groupsConfigPath': resolve_groups_config_path(),
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),
         'projectsConfigured': bool(get_selected_projects())
@@ -4321,6 +4358,43 @@ def get_capacity_config_endpoint():
     """Return current capacity configuration."""
     cap = get_capacity_config()
     return jsonify(cap)
+
+
+@app.route('/api/board-config', methods=['GET'])
+def get_board_config_endpoint():
+    """Return current Jira board configuration."""
+    board_cfg = get_board_config()
+    return jsonify({
+        'boardId': board_cfg.get('boardId', ''),
+        'boardName': board_cfg.get('boardName', ''),
+        'source': board_cfg.get('source', 'default')
+    })
+
+
+@app.route('/api/board-config', methods=['POST'])
+def save_board_config_endpoint():
+    """Save Jira board configuration used for sprint loading."""
+    payload = request.get_json(silent=True) or {}
+    board_id = str(payload.get('boardId', '') or '').strip()
+    board_name = str(payload.get('boardName', '') or '').strip()
+
+    if board_id and not re.match(r'^\d+$', board_id):
+        return jsonify({'error': 'boardId must be numeric'}), 400
+
+    try:
+        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+        dashboard_config['board'] = {
+            'boardId': board_id,
+            'boardName': board_name,
+        }
+        save_dashboard_config(dashboard_config)
+        with _cache_lock:
+            TASKS_CACHE.clear()
+        invalidate_sprints_cache()
+    except Exception as e:
+        return jsonify({'error': 'Failed to save board config', 'message': str(e)}), 500
+
+    return jsonify({'boardId': board_id, 'boardName': board_name, 'source': 'config'})
 
 
 @app.route('/api/capacity/config', methods=['POST'])
@@ -4868,8 +4942,9 @@ if __name__ == '__main__':
         log_info(f'Jira Proxy Server starting on http://localhost:{SERVER_PORT}')
         log_info(f'   Jira: {JIRA_URL}')
         log_info(f'   Email: {JIRA_EMAIL}')
-        if JIRA_BOARD_ID:
-            log_info(f'   Board: {JIRA_BOARD_ID}')
+        effective_board_id = get_effective_board_id()
+        if effective_board_id:
+            log_info(f'   Board: {effective_board_id}')
         if GROUPS_CONFIG_PATH and os.path.exists(GROUPS_CONFIG_PATH):
             log_info(f'   Groups: {GROUPS_CONFIG_PATH}')
         log_info('Key Endpoints:')

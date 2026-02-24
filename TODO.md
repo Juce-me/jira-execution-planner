@@ -27,6 +27,27 @@ Tool-for-all phase (multi-user, internal SSO)
 - Multi-tenant caching + rate limits to protect Jira API and keep dashboards fast.
 - Pack to Docker — requires in-app config + SSO first (manual .env edits inside a container defeat the purpose).
 - Hosted deployment plan (Docker/VM/PaaS) with HTTPS, secrets management, and audit logging.
+- Next env -> UI/admin config migrations (company profile)
+  - `JIRA_BOARD_ID` migration plan (board selection in UI/admin settings)
+    - Add `board` config in unified `dashboard-config.json` / future company profile (store `boardId`, optional `boardName`).
+    - Backend resolution order: DB/company profile -> dashboard config -> `.env` fallback.
+    - Add `GET/POST /api/board-config` and reuse `/api/boards` for selection/search.
+    - Invalidate sprint cache on save (board changes affect `/api/sprints` source and speed).
+    - UI placement: put board selection in the Scope/Projects configuration area (not a separate advanced-only control); editing remains admin-only.
+    - Rollout: keep `.env` fallback until SSO/company-profile migration is complete.
+  - `STATS_PRIORITY_WEIGHTS` migration plan (new Stats settings tab)
+    - Add a dedicated "Priority Weights" tab in settings (separate from scope/mapping/capacity).
+    - Persist weights in dashboard config/company profile as structured JSON (`[{priority, weight}]`) with validation.
+    - Backend resolution order: DB/company profile -> dashboard config -> `.env` fallback -> built-in defaults.
+    - Add validation rules: numeric, non-negative, duplicate-priority prevention, missing priorities allowed but explicit.
+    - Add "Reset to defaults" action and versioned schema for future priority names.
+    - Tests: backend parse/validation + frontend serialization/apply + weighted stats regression checks.
+  - Alerts configuration (add to UI/admin config)
+    - Empty Epic alert settings: excluded statuses, optional team scope (`EPIC_EMPTY_EXCLUDED_STATUSES`, `EPIC_EMPTY_TEAM_IDS`)
+    - Missing Info alert defaults: component/team scope (`MISSING_INFO_COMPONENT`, `MISSING_INFO_TEAM_IDS`)
+    - Access model: config tabs/settings are admin-only; group configuration stays editable for non-admin users.
+    - Keep per-user panel show/hide toggles in local UI prefs (not shared company profile)
+    - Add config precedence and fallback to `.env` for non-prod compatibility during rollout
 
 ---
 

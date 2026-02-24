@@ -2625,6 +2625,12 @@
             padding: 0.75rem;
             position: relative;
             border-radius: 10px;
+            transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .epic-block.epic-block-sticky-focus {
+            border-color: rgba(59, 130, 246, 0.48);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.16), 0 8px 20px rgba(15, 23, 42, 0.06);
         }
 
         .dependency-strip {

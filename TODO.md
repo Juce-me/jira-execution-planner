@@ -1,5 +1,21 @@
 # TODO
 - pack statistics bar to 6 in one row, right now it's 8. make it two row or one row (need to think how to fit 12 teams)
+- Revisit sticky search UX (reverted experiment on `ui/sticky-search-always`)
+  - Goal (still valid): search should be reachable in one move/click while scrolling, without breaking sticky layering.
+  - Current failures from rejected attempt:
+    - First attempt only styled the existing header search as sticky; it did not actually stick because `position: sticky` was inside `<header>` and bounded by that parent.
+    - Second attempt added a separate sticky search shell below the header and kept a header placeholder search; this technically stuck, but UI became confusing (duplicate search fields / visual ambiguity).
+    - Planning mode made the extra search treatment feel especially noisy and hard to parse (see rejected screenshot review).
+  - Constraints to preserve (important):
+    - Sticky stacking is fragile: planning panel > search (if made sticky) > epic header.
+    - No overlap/intersection in Catch Up, Planning, Scenario.
+    - No duplicate visible search controls.
+    - Epic header sticky top must use measured offsets (no hardcoded px).
+  - Recommended future approach:
+    - Use a single search input only (no placeholder clone).
+    - Move the real search control into a stable sticky container outside the short-lived header flow OR refactor the header layout so the search lives in a sticky-capable parent from the start.
+    - Implement one mode at a time (first sticky positioning only, then shortcut like `Ctrl/Cmd+F`, then visual polish).
+    - Validate manually in Planning mode before building additional behavior.
 
 Whistles
 - dark mode/company colors?

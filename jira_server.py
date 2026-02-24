@@ -5,6 +5,8 @@ from flask_cors import CORS
 import requests
 import argparse
 import base64
+import csv
+import logging
 import os
 import re
 import json
@@ -30,6 +32,7 @@ CORS(app)  # Enable CORS for all routes
 
 # Reuse a single HTTP session to avoid reconnect overhead on repeated calls
 HTTP_SESSION = Session()
+logger = logging.getLogger(__name__)
 
 # CONFIGURATION - Load from environment variables
 JIRA_URL = os.getenv('JIRA_URL')
@@ -63,6 +66,7 @@ UPDATE_CHECK_REMOTE = os.getenv('UPDATE_CHECK_REMOTE', 'origin').strip() or 'ori
 UPDATE_CHECK_BRANCH = os.getenv('UPDATE_CHECK_BRANCH', 'main').strip() or 'main'
 UPDATE_CHECK_TTL_SECONDS = int(os.getenv('UPDATE_CHECK_TTL_SECONDS', '300'))
 UPDATE_CHECK_RELEASE_INFO = os.getenv('UPDATE_CHECK_RELEASE_INFO', 'release-info.json').strip() or 'release-info.json'
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').strip().upper() or 'INFO'
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
@@ -79,6 +83,67 @@ STATS_CACHE_FILE = 'stats_cache.json'
 CACHE_EXPIRY_HOURS = 24
 GROUPS_CONFIG_VERSION = 1
 GROUPS_MAX_TEAMS = 12
+
+
+def configure_logging():
+    """Initialize process logging once with a readable default format."""
+    class CsvLineFormatter(logging.Formatter):
+        """Emit one CSV record per log line: timestamp,level,logger,message."""
+        def format(self, record):
+            message = record.getMessage()
+            if record.exc_info:
+                message = f'{message}\n{self.formatException(record.exc_info)}'
+            # Keep logs single-line for tail/grep and CSV ingestion.
+            message = str(message).replace('\r', '\\r').replace('\n', '\\n')
+
+            row = [
+                self.formatTime(record, self.datefmt),
+                record.levelname,
+                record.name,
+                message
+            ]
+            buf = io.StringIO()
+            writer = csv.writer(buf)
+            writer.writerow(row)
+            return buf.getvalue().rstrip('\r\n')
+
+    formatter = CsvLineFormatter(datefmt='%Y-%m-%dT%H:%M:%S')
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(
+            level=getattr(logging, LOG_LEVEL, logging.INFO),
+            handlers=[logging.StreamHandler()]
+        )
+    else:
+        root_logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+    for handler in root_logger.handlers:
+        handler.setFormatter(formatter)
+    logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+
+
+def _format_log_parts(parts):
+    if not parts:
+        return ''
+    return ' '.join(str(part) for part in parts)
+
+
+def log_debug(*parts):
+    logger.debug(_format_log_parts(parts))
+
+
+def log_info(*parts):
+    logger.info(_format_log_parts(parts))
+
+
+def log_warning(*parts):
+    logger.warning(_format_log_parts(parts))
+
+
+def log_error(*parts):
+    logger.error(_format_log_parts(parts))
+
+
+configure_logging()
 
 def parse_args():
     """Parse CLI arguments to optionally override environment variables."""
@@ -348,7 +413,7 @@ def fetch_teams_from_jira_api(headers):
                 timeout=30
             )
             if response.status_code != 200:
-                print(f'[teams-api] Teams API returned {response.status_code}, falling back to issue scan only')
+                log_warning(f'[teams-api] Teams API returned {response.status_code}, falling back to issue scan only')
                 break
             data = response.json()
             team_list = data if isinstance(data, list) else data.get('teams', [])
@@ -364,9 +429,9 @@ def fetch_teams_from_jira_api(headers):
                 break
             start_at += max_results
         if teams:
-            print(f'[teams-api] Fetched {len(teams)} teams from Jira Teams API')
+            log_info(f'[teams-api] Fetched {len(teams)} teams from Jira Teams API')
     except Exception as e:
-        print(f'[teams-api] Teams API unavailable ({e}), using issue scan only')
+        log_warning(f'[teams-api] Teams API unavailable ({e}), using issue scan only')
     return teams
 
 
@@ -473,7 +538,7 @@ def fetch_watchers_count(issue_key, headers):
             timeout=20
         )
         if response.status_code != 200:
-            print(f'❌ Watchers fetch error for {issue_key}: {response.status_code} {response.text}')
+            log_warning(f'Watchers fetch failed: status={response.status_code}')
             return None
         data = response.json() or {}
         if isinstance(data.get('watchCount'), int):
@@ -481,7 +546,7 @@ def fetch_watchers_count(issue_key, headers):
         watchers = data.get('watchers') or []
         return len(watchers)
     except Exception as e:
-        print(f'❌ Watchers fetch exception for {issue_key}: {e}')
+        logger.exception('Watchers fetch exception')
         return None
 
 
@@ -508,7 +573,7 @@ def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
         }
         response = jira_search_request(headers, payload)
         if response.status_code != 200:
-            print(f'❌ Capacity size fetch error: {response.status_code} {response.text}')
+            log_warning(f'Capacity size fetch failed: status={response.status_code}')
             continue
         data = response.json() or {}
         issues.extend(data.get('issues') or [])
@@ -543,7 +608,7 @@ def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
                 'reporter': reporter_name
             }
             if issue.get('key'):
-                print(f'🧭 Capacity size: {short_name} -> {issue.get("key")} watchers={count} reporter={reporter_name}')
+                log_debug(f'Capacity size resolved team={short_name} watchers={count} reporter={reporter_name}')
         except (TypeError, ValueError):
             continue
 
@@ -560,7 +625,7 @@ def load_sprints_cache():
                 return cache_data
         return None
     except Exception as e:
-        print(f'⚠️ Failed to load cache: {e}')
+        log_warning(f'Failed to load cache: {e}')
         return None
 
 
@@ -573,10 +638,10 @@ def save_sprints_cache(sprints):
         }
         with open(SPRINTS_CACHE_FILE, 'w') as f:
             json.dump(cache_data, f, indent=2)
-        print(f'💾 Cached {len(sprints)} sprints to {SPRINTS_CACHE_FILE}')
+        log_info(f'Cached {len(sprints)} sprints to {SPRINTS_CACHE_FILE}')
         return True
     except Exception as e:
-        print(f'⚠️ Failed to save cache: {e}')
+        log_warning(f'Failed to save cache: {e}')
         return False
 
 
@@ -593,13 +658,13 @@ def is_cache_valid():
 
         if is_valid:
             hours_old = (datetime.now() - cache_time).total_seconds() / 3600
-            print(f'✅ Cache is valid (age: {hours_old:.1f} hours)')
+            log_debug(f'Cache is valid (age: {hours_old:.1f} hours)')
         else:
-            print(f'⏰ Cache expired (age: {(datetime.now() - cache_time).total_seconds() / 3600:.1f} hours)')
+            log_info(f'Cache expired (age: {(datetime.now() - cache_time).total_seconds() / 3600:.1f} hours)')
 
         return is_valid
     except Exception as e:
-        print(f'⚠️ Failed to validate cache: {e}')
+        log_warning(f'Failed to validate cache: {e}')
         return False
 
 
@@ -611,7 +676,7 @@ def load_stats_cache():
                 return json.load(f)
         return {}
     except Exception as e:
-        print(f'⚠️ Failed to load stats cache: {e}')
+        log_warning(f'Failed to load stats cache: {e}')
         return {}
 
 
@@ -622,7 +687,7 @@ def save_stats_cache(cache_data):
             json.dump(cache_data, f, indent=2)
         return True
     except Exception as e:
-        print(f'⚠️ Failed to save stats cache: {e}')
+        log_warning(f'Failed to save stats cache: {e}')
         return False
 
 
@@ -723,7 +788,7 @@ def load_groups_config_file(path):
         with open(path, 'r') as handle:
             return json.load(handle)
     except Exception as e:
-        print(f'⚠️ Failed to read groups config: {e}')
+        log_warning(f'Failed to read groups config: {e}')
         return None
 
 
@@ -739,7 +804,7 @@ def load_dashboard_config():
             with open(path, 'r') as handle:
                 return json.load(handle)
         except Exception as e:
-            print(f'⚠️ Failed to read dashboard config: {e}')
+            log_warning(f'Failed to read dashboard config: {e}')
             return None
     # Migrate from legacy team-groups.json
     legacy = load_groups_config_file(resolve_groups_config_path())
@@ -901,7 +966,7 @@ def parse_groups_config_env():
     try:
         return json.loads(TEAM_GROUPS_JSON)
     except Exception as e:
-        print(f'⚠️ Failed to parse TEAM_GROUPS_JSON: {e}')
+        log_warning(f'Failed to parse TEAM_GROUPS_JSON: {e}')
         return None
 
 
@@ -934,7 +999,7 @@ def load_release_info():
             return None
         return data
     except Exception as e:
-        print(f'⚠️ Failed to read release info: {e}')
+        log_warning(f'Failed to read release info: {e}')
         return None
 
 
@@ -1177,7 +1242,7 @@ def fetch_sprints_from_jira():
     # Method 1: Try to get sprints from board (if JIRA_BOARD_ID is set)
     if JIRA_BOARD_ID:
         try:
-            print(f'\n📅 Fetching sprints from board {JIRA_BOARD_ID}...')
+            log_info(f'Fetching sprints from board {JIRA_BOARD_ID}')
             start_at = 0
             while True:
                 response = requests.get(
@@ -1188,7 +1253,7 @@ def fetch_sprints_from_jira():
                 )
 
                 if response.status_code != 200:
-                    print(f'⚠️ Board API returned {response.status_code}, trying alternative method...')
+                    log_warning(f'Board API returned {response.status_code}, trying alternative method')
                     break
 
                 data = response.json()
@@ -1212,15 +1277,15 @@ def fetch_sprints_from_jira():
                 start_at += len(sprints)
 
             if formatted_sprints:
-                print(f'✅ Found {len(formatted_sprints)} sprints from board')
+                log_info(f'Found {len(formatted_sprints)} sprints from board')
             else:
-                print(f'⚠️ Board API returned {response.status_code}, trying alternative method...')
+                log_warning(f'Board API returned {response.status_code}, trying alternative method')
         except Exception as board_error:
-            print(f'⚠️ Board API failed: {board_error}, trying alternative method...')
+            log_warning(f'Board API failed: {board_error}, trying alternative method')
 
     # Method 2: If board method failed or found no sprints, get sprints from issues
     if len(formatted_sprints) == 0:
-        print(f'\n📅 Fetching sprints from issues (alternative method)...')
+        log_info('Fetching sprints from issues (alternative method)')
 
         # Build JQL query without sprint filter to get all issues
         base_jql = STATS_JQL_BASE or f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")'
@@ -1279,7 +1344,7 @@ def fetch_sprints_from_jira():
         issues_count += collect_sprints_by_jql(open_jql, sprints_dict)
 
         formatted_sprints = list(sprints_dict.values())
-        print(f'✅ Found {len(formatted_sprints)} unique sprints from {issues_count} issues')
+        log_info(f'Found {len(formatted_sprints)} unique sprints from {issues_count} issues')
 
     # Sort sprints by name (latest first)
     formatted_sprints.sort(key=lambda x: x['name'], reverse=True)
@@ -1309,7 +1374,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
         try:
             resp = jira_search_request(headers, payload)
             if resp.status_code != 200:
-                print(f'⚠️ Epic batch {start}-{start + len(batch_keys)} failed: {resp.status_code}')
+                log_warning(f'Epic batch {start}-{start + len(batch_keys)} failed: status={resp.status_code}')
                 continue
 
             data = resp.json()
@@ -1323,7 +1388,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
                     'assignee': {'displayName': (fields.get('assignee') or {}).get('displayName')} if fields.get('assignee') else None,
                 }
         except Exception as exc:
-            print(f'⚠️ Epic batch fetch error: {exc}')
+            log_warning(f'Epic batch fetch error: {exc}')
 
     return epic_details
 
@@ -1384,7 +1449,7 @@ def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field):
     }
     resp = jira_search_request(headers, payload)
     if resp.status_code != 200:
-        print(f'⚠️ Epic empty-state fetch failed: {resp.status_code}')
+        log_warning(f'Epic empty-state fetch failed: status={resp.status_code}')
         return []
 
     data = resp.json() or {}
@@ -1757,10 +1822,10 @@ def fetch_tasks(include_team_name=False):
         names_map = {}
         total_issues = None
 
-        print(f'\n🔍 Making request to Jira API...')
-        print(f'URL: {JIRA_URL}/rest/api/3/search/jql')
-        print(f'Sprint: {sprint if sprint else "All"}')
-        print(f'JQL: {tasks_jql}')
+        log_info(
+            f'Jira task fetch start purpose={request_purpose} sprint={sprint or "all"} '
+            f'project={project_filter or "all"} mode={"lightweight" if lightweight_ready_to_close else "full"}'
+        )
 
         jira_fetch_started = time.perf_counter()
         while len(collected_issues) < max_results:
@@ -1777,16 +1842,16 @@ def fetch_tasks(include_team_name=False):
                 payload['startAt'] = start_at
 
             response = jira_search_request(headers, payload)
-            print(f'📊 Response Status: {response.status_code}')
+            log_debug(f'Jira search page response status={response.status_code}')
 
             if response.status_code != 200:
                 error_text = response.text
-                print(f'❌ Error Response: {error_text}')
+                log_error(f'Jira search failed: status={response.status_code}')
 
                 try:
                     error_json = response.json()
-                    print(f'Error Details: {error_json}')
-                except:
+                    log_debug(f'Jira error payload keys={sorted((error_json or {}).keys()) if isinstance(error_json, dict) else "non-dict"}')
+                except Exception:
                     pass
 
                 error_response = jsonify({
@@ -1960,9 +2025,9 @@ def fetch_tasks(include_team_name=False):
             timings_ms['epicsInScopeCount'] = len(epics_in_scope)
             data['debugTimingsMs'] = timings_ms
 
-        print(f'✅ Success! Found {len(data.get("issues", []))} issues')
+        log_info(f'Tasks fetch success issues={len(data.get("issues", []))}')
         timings_ms['total'] = round((time.perf_counter() - request_started) * 1000, 1)
-        print(
+        log_info(
             f'⏱️ tasks-with-team-name timing purpose={request_purpose} sprint={sprint or "all"} '
             f'project={project_filter or "all"} issues={len(slim_issues)} epics={len(epics_in_scope)} '
             f'timings_ms={timings_ms}'
@@ -1990,9 +2055,7 @@ def fetch_tasks(include_team_name=False):
         return success_response
         
     except Exception as e:
-        print(f'❌ Exception: {str(e)}')
-        import traceback
-        traceback.print_exc()
+        logger.exception('Failed to fetch tasks from Jira')
         error_response = jsonify({
             'error': 'Failed to fetch tasks from Jira',
             'message': str(e)
@@ -2020,7 +2083,7 @@ def fetch_issues_by_keys(keys, headers, fields_list):
         }
         response = jira_search_request(headers, payload)
         if response.status_code != 200:
-            print(f'❌ Dependencies fetch error: {response.status_code} {response.text}')
+            log_warning(f'Dependencies fetch error: status={response.status_code}')
             continue
         data = response.json() or {}
         results.extend(data.get('issues', []) or [])
@@ -2047,7 +2110,7 @@ def fetch_issues_by_jql(jql, headers, fields_list, max_results=500):
             payload['startAt'] = start_at
         response = jira_search_request(headers, payload)
         if response.status_code != 200:
-            print(f'❌ Scenario fetch error: {response.status_code} {response.text}')
+            log_warning(f'Scenario fetch error: status={response.status_code}')
             break
         data = response.json() or {}
         issues = data.get('issues', []) or []
@@ -2306,9 +2369,7 @@ def get_dependencies():
         dependencies = collect_dependencies(keys, headers)
         return jsonify({'dependencies': dependencies})
     except Exception as e:
-        print(f'❌ Dependencies error: {e}')
-        import traceback
-        traceback.print_exc()
+        logger.exception('Dependencies endpoint error')
         return jsonify({'error': 'Failed to fetch dependencies', 'message': str(e)}), 500
 
 
@@ -2368,7 +2429,7 @@ def lookup_issues():
                 data = response.json() or {}
                 issues.extend(data.get('issues', []) or [])
             else:
-                print(f'❌ Lookup fetch error: {response.status_code} {response.text}')
+                log_warning(f'Lookup fetch error: status={response.status_code}')
 
         snapshots = []
         for issue in issues:
@@ -2378,9 +2439,7 @@ def lookup_issues():
 
         return jsonify({'issues': snapshots})
     except Exception as e:
-        print(f'❌ Issue lookup error: {e}')
-        import traceback
-        traceback.print_exc()
+        logger.exception('Issue lookup error')
         return jsonify({'error': 'Failed to lookup issues', 'message': str(e)}), 500
 
 
@@ -2666,11 +2725,11 @@ def scenario_planner():
                 prereq_end = prereq_item.end_date.isoformat() if prereq_item and prereq_item.end_date else None
                 dependent_start = dependent_item.start_date.isoformat() if dependent_item and dependent_item.start_date else None
                 dependent_end = dependent_item.end_date.isoformat() if dependent_item and dependent_item.end_date else None
-                print(
-                    "scenario blocked_by edge",
+                log_debug(
+                    "scenario blocked_by edge timing",
                     {
-                        "prereqKey": prereq_key,
-                        "dependentKey": dependent_key,
+                        "prereqScheduled": bool(prereq_item),
+                        "dependentScheduled": bool(dependent_item),
                         "prereqStart": prereq_start,
                         "prereqEnd": prereq_end,
                         "dependentStart": dependent_start,
@@ -2765,9 +2824,7 @@ def scenario_planner():
 
         return jsonify(result)
     except Exception as e:
-        print(f'❌ Scenario error: {e}')
-        import traceback
-        traceback.print_exc()
+        logger.exception('Scenario error')
         return jsonify({'error': 'Failed to compute scenario', 'message': str(e)}), 500
 
 
@@ -3200,9 +3257,7 @@ def get_missing_info():
         response.headers['Expires'] = '0'
         return response
     except Exception as e:
-        print(f'❌ Missing-info error: {e}')
-        import traceback
-        traceback.print_exc()
+        logger.exception('Missing-info error')
         return jsonify({'error': 'Failed to compute missing-info', 'message': str(e)}), 500
 
 
@@ -3620,7 +3675,7 @@ def get_boards():
             'Content-Type': 'application/json'
         }
 
-        print(f'\n📋 Fetching all boards...')
+        log_info('Fetching all boards')
 
         # Get boards from Jira Agile API
         response = requests.get(
@@ -3630,11 +3685,11 @@ def get_boards():
             timeout=30
         )
 
-        print(f'Boards Response Status: {response.status_code}')
+        log_debug(f'Boards response status={response.status_code}')
 
         if response.status_code != 200:
             error_text = response.text
-            print(f'❌ Error Response: {error_text}')
+            log_error(f'Boards fetch failed: status={response.status_code}')
             return jsonify({
                 'error': f'Jira API error: {response.status_code}',
                 'details': error_text
@@ -3653,7 +3708,7 @@ def get_boards():
                 'location': board.get('location', {})
             })
 
-        print(f'✅ Found {len(formatted_boards)} boards')
+        log_info(f'Found {len(formatted_boards)} boards')
 
         success_response = jsonify({'boards': formatted_boards})
         success_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -3662,9 +3717,7 @@ def get_boards():
         return success_response
 
     except Exception as e:
-        print(f'❌ Exception: {str(e)}')
-        import traceback
-        traceback.print_exc()
+        logger.exception('Boards endpoint error')
         error_response = jsonify({
             'error': 'Failed to fetch boards from Jira',
             'message': str(e)
@@ -3686,12 +3739,12 @@ def get_sprints():
             cache_data = load_sprints_cache()
             if cache_data and 'sprints' in cache_data:
                 formatted_sprints = cache_data['sprints']
-                print(f'📦 Loaded {len(formatted_sprints)} sprints from cache')
+                log_info(f'Loaded {len(formatted_sprints)} sprints from cache')
 
         # If no valid cache or force refresh, fetch from Jira
         if not formatted_sprints or force_refresh:
             if force_refresh:
-                print('🔄 Force refresh requested')
+                log_info('Force refresh requested')
 
             formatted_sprints = fetch_sprints_from_jira()
 
@@ -3699,7 +3752,7 @@ def get_sprints():
             if formatted_sprints:
                 save_sprints_cache(formatted_sprints)
 
-        print(f'✅ Total quarterly sprints: {len(formatted_sprints)}')
+        log_info(f'Total quarterly sprints: {len(formatted_sprints)}')
 
         success_response = jsonify({'sprints': formatted_sprints})
         success_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -3708,9 +3761,7 @@ def get_sprints():
         return success_response
 
     except Exception as e:
-        print(f'❌ Exception: {str(e)}')
-        import traceback
-        traceback.print_exc()
+        logger.exception('Sprints endpoint error')
         error_response = jsonify({
             'error': 'Failed to fetch sprints from Jira',
             'message': str(e)
@@ -4382,12 +4433,11 @@ def test_connection():
             'fields': ['summary', 'status', 'priority']
         }
 
-        print(f'\n🧪 Testing Jira connection...')
-        print(f'Test JQL: {test_payload["jql"]}')
+        log_info('Testing Jira connection')
 
         response = jira_search_request(headers, test_payload)
 
-        print(f'Test Response Status: {response.status_code}')
+        log_info(f'Test response status={response.status_code}')
 
         if response.status_code != 200:
             return jsonify({
@@ -4431,7 +4481,7 @@ def debug_fields():
             'fields': ['*all']
         }
 
-        print(f'\n🔍 Fetching all fields for debugging...')
+        log_info('Fetching all fields for debugging')
 
         response = jira_search_request(headers, payload)
 
@@ -4496,7 +4546,7 @@ def get_tasks_fields():
             'fields': ['*all']
         }
 
-        print(f'\n🔍 Fetching all fields for {limit_value} issues...')
+        log_info(f'Fetching all fields for {limit_value} issues')
 
         response = jira_search_request(headers, payload)
 
@@ -4531,7 +4581,7 @@ def export_excel():
         if not tasks:
             return jsonify({'error': 'No tasks provided'}), 400
 
-        print(f'\n📊 Exporting {len(tasks)} tasks to Excel...')
+        log_info(f'Exporting {len(tasks)} tasks to Excel')
 
         # Create a new workbook
         wb = Workbook()
@@ -4572,7 +4622,7 @@ def export_excel():
         wb.save(output)
         output.seek(0)
 
-        print(f'✅ Excel file generated successfully')
+        log_info('Excel file generated successfully')
 
         return send_file(
             output,
@@ -4582,9 +4632,7 @@ def export_excel():
         )
 
     except Exception as e:
-        print(f'❌ Export error: {str(e)}')
-        import traceback
-        traceback.print_exc()
+        logger.exception('Export Excel error')
         return jsonify({
             'error': 'Failed to export to Excel',
             'message': str(e)
@@ -4616,8 +4664,8 @@ if __name__ == '__main__':
 
     # Validate configuration
     if not JIRA_URL or not JIRA_EMAIL or not JIRA_TOKEN:
-        print('\n❌ ERROR: JIRA_URL, JIRA_EMAIL and JIRA_TOKEN must be set via environment or CLI!')
-        print('📝 Please copy .env.example to .env, fill in your credentials, or pass them as flags.\n')
+        log_error('JIRA_URL, JIRA_EMAIL and JIRA_TOKEN must be set via environment or CLI')
+        log_info('Please copy .env.example to .env, fill in credentials, or pass them as flags')
         exit(1)
 
     # Only print on first startup, not on reload
@@ -4626,19 +4674,19 @@ if __name__ == '__main__':
         today = date.today()
         current_quarter = f"{today.year}Q{(today.month - 1) // 3 + 1}"
 
-        print(f'\n✅ Jira Proxy Server starting on http://localhost:{SERVER_PORT}')
-        print(f'   Jira: {JIRA_URL}')
-        print(f'   Email: {JIRA_EMAIL}')
+        log_info(f'Jira Proxy Server starting on http://localhost:{SERVER_PORT}')
+        log_info(f'   Jira: {JIRA_URL}')
+        log_info(f'   Email: {JIRA_EMAIL}')
         if JIRA_BOARD_ID:
-            print(f'   Board: {JIRA_BOARD_ID}')
+            log_info(f'   Board: {JIRA_BOARD_ID}')
         if GROUPS_CONFIG_PATH and os.path.exists(GROUPS_CONFIG_PATH):
-            print(f'   Groups: {GROUPS_CONFIG_PATH}')
-        print('\n📋 Key Endpoints:')
-        print(f'   • http://localhost:{SERVER_PORT}/api/tasks?sprint={current_quarter}')
-        print(f'   • http://localhost:{SERVER_PORT}/api/teams?sprint={current_quarter}&all=true')
-        print(f'   • http://localhost:{SERVER_PORT}/api/teams/all?sprint={current_quarter}  (all teams with names)')
-        print(f'   • http://localhost:{SERVER_PORT}/api/sprints')
-        print(f'   • http://localhost:{SERVER_PORT}/api/groups-config')
-        print()
+            log_info(f'   Groups: {GROUPS_CONFIG_PATH}')
+        log_info('Key Endpoints:')
+        log_info(f'   • http://localhost:{SERVER_PORT}/api/tasks?sprint={current_quarter}')
+        log_info(f'   • http://localhost:{SERVER_PORT}/api/teams?sprint={current_quarter}&all=true')
+        log_info(f'   • http://localhost:{SERVER_PORT}/api/teams/all?sprint={current_quarter}  (all teams with names)')
+        log_info(f'   • http://localhost:{SERVER_PORT}/api/sprints')
+        log_info(f'   • http://localhost:{SERVER_PORT}/api/groups-config')
+        log_info()
 
     app.run(host='0.0.0.0', port=SERVER_PORT, debug=DEBUG_MODE)

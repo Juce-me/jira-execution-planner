@@ -158,6 +158,8 @@ import { createRoot } from 'react-dom/client';
             const [groupQueryTemplateEnabled, setGroupQueryTemplateEnabled] = useState(false);
             const [groupManageTab, setGroupManageTab] = useState('scope');
             const [showTechnicalFieldIds, setShowTechnicalFieldIds] = useState(false);
+            const [settingsAdminOnly, setSettingsAdminOnly] = useState(true);
+            const [userCanEditSettings, setUserCanEditSettings] = useState(true);
             const [jiraProjects, setJiraProjects] = useState([]);
             const [loadingProjects, setLoadingProjects] = useState(false);
             const [projectSearchQuery, setProjectSearchQuery] = useState('');
@@ -184,6 +186,15 @@ import { createRoot } from 'react-dom/client';
             }, [savedSelectedProjects]);
             const selectedProjectsBaselineRef = useRef('[]');
             const projectSearchInputRef = useRef(null);
+            const [jiraBoards, setJiraBoards] = useState([]);
+            const [loadingBoards, setLoadingBoards] = useState(false);
+            const [boardIdDraft, setBoardIdDraft] = useState('');
+            const [boardNameDraft, setBoardNameDraft] = useState('');
+            const boardConfigBaselineRef = useRef('');
+            const [boardSearchQuery, setBoardSearchQuery] = useState('');
+            const [boardSearchOpen, setBoardSearchOpen] = useState(false);
+            const [boardSearchIndex, setBoardSearchIndex] = useState(0);
+            const boardSearchInputRef = useRef(null);
             const [capacityProjectDraft, setCapacityProjectDraft] = useState('');
             const [capacityFieldIdDraft, setCapacityFieldIdDraft] = useState('');
             const [capacityFieldNameDraft, setCapacityFieldNameDraft] = useState('');
@@ -466,6 +477,7 @@ import { createRoot } from 'react-dom/client';
                 setProjectSearchQuery('');
                 setActiveGroupDraftId(resolveInitialGroupId(normalized));
                 loadSelectedProjects();
+                loadBoardConfig();
                 loadCapacityConfig();
                 loadSprintFieldConfig();
                 loadParentNameFieldConfig();
@@ -474,6 +486,7 @@ import { createRoot } from 'react-dom/client';
                 loadIssueTypesConfig();
                 fetchAvailableIssueTypes();
                 if (!jiraProjects.length) fetchJiraProjects();
+                if (!jiraBoards.length) fetchJiraBoards();
                 const catalogTeams = buildTeamCatalogList(normalized.teamCatalog);
                 if (catalogTeams.length) {
                     setAvailableTeams(catalogTeams);
@@ -871,6 +884,9 @@ import { createRoot } from 'react-dom/client';
                 setProjectSearchQuery('');
                 setProjectSearchOpen(false);
                 setProjectSearchIndex(0);
+                setBoardSearchQuery('');
+                setBoardSearchOpen(false);
+                setBoardSearchIndex(0);
                 setGroupTesting(false);
                 setGroupTestMessage('');
                 setCapacityProjectSearchQuery('');
@@ -893,6 +909,10 @@ import { createRoot } from 'react-dom/client';
             const isProjectsDraftDirty = React.useMemo(() => {
                 return JSON.stringify(selectedProjectsDraft) !== selectedProjectsBaselineRef.current;
             }, [selectedProjectsDraft]);
+
+            const isBoardConfigDirty = React.useMemo(() => {
+                return JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }) !== boardConfigBaselineRef.current;
+            }, [boardIdDraft, boardNameDraft]);
 
             const isCapacityDraftDirty = React.useMemo(() => {
                 return JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }) !== capacityBaselineRef.current;
@@ -920,6 +940,7 @@ import { createRoot } from 'react-dom/client';
 
             const isGroupDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
+                if (isBoardConfigDirty) return true;
                 if (isCapacityDraftDirty) return true;
                 if (isIssueTypesDraftDirty) return true;
                 if (isSprintFieldDirty) return true;
@@ -928,10 +949,11 @@ import { createRoot } from 'react-dom/client';
                 if (isTeamFieldDirty) return true;
                 if (!groupDraft) return false;
                 return groupDraftSignature !== groupDraftBaselineRef.current;
-            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty]);
+            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty]);
             const unsavedSectionsCount = React.useMemo(() => {
                 return [
                     isProjectsDraftDirty,
+                    isBoardConfigDirty,
                     isCapacityDraftDirty,
                     isIssueTypesDraftDirty,
                     isSprintFieldDirty,
@@ -940,7 +962,7 @@ import { createRoot } from 'react-dom/client';
                     isTeamFieldDirty,
                     Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current)
                 ].filter(Boolean).length;
-            }, [isProjectsDraftDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, groupDraft, groupDraftSignature]);
+            }, [isProjectsDraftDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, groupDraft, groupDraftSignature]);
             const groupConfigValidationErrors = React.useMemo(() => {
                 const errors = [];
                 if (!selectedProjectsDraft.length) {
@@ -1337,6 +1359,11 @@ import { createRoot } from 'react-dom/client';
                         await saveProjectSelection();
                     }
 
+                    const boardChanged = isBoardConfigDirty;
+                    if (boardChanged) {
+                        await saveBoardConfig();
+                    }
+
                     // Save capacity config if changed
                     const capacityChanged = isCapacityDraftDirty;
                     if (capacityChanged) {
@@ -1391,7 +1418,7 @@ import { createRoot } from 'react-dom/client';
                     }
 
                     // If projects or capacity changed, invalidate all group caches to refetch with new scope
-                    if (projectsChanged || capacityChanged || issueTypesChanged || fieldConfigsChanged) {
+                    if (projectsChanged || boardChanged || capacityChanged || issueTypesChanged || fieldConfigsChanged) {
                         groupStateRef.current.clear();
                     }
 
@@ -1411,8 +1438,14 @@ import { createRoot } from 'react-dom/client';
                         if (cfgResp.ok) {
                             const cfg = await cfgResp.json();
                             setCapacityEnabled(Boolean(cfg.capacityProject));
+                            setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
+                            setUserCanEditSettings(cfg.userCanEditSettings !== false);
                         }
                     } catch (_) { /* best-effort */ }
+
+                    if (boardChanged) {
+                        loadSprints(true);
+                    }
 
                     closeGroupManage();
                 } catch (err) {
@@ -1437,6 +1470,24 @@ import { createRoot } from 'react-dom/client';
                     console.error('Failed to fetch Jira projects:', err);
                 } finally {
                     setLoadingProjects(false);
+                }
+            };
+
+            const fetchJiraBoards = async () => {
+                setLoadingBoards(true);
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/boards`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' },
+                        cache: 'no-cache'
+                    });
+                    if (!response.ok) throw new Error(`Boards fetch error ${response.status}`);
+                    const data = await response.json();
+                    setJiraBoards(data.boards || []);
+                } catch (err) {
+                    console.error('Failed to fetch Jira boards:', err);
+                } finally {
+                    setLoadingBoards(false);
                 }
             };
 
@@ -1605,6 +1656,38 @@ import { createRoot } from 'react-dom/client';
                 }
             };
 
+            const loadBoardConfig = async () => {
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/board-config`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' },
+                        cache: 'no-cache'
+                    });
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    const nextBoardId = String(data.boardId || '');
+                    const nextBoardName = String(data.boardName || '');
+                    setBoardIdDraft(nextBoardId);
+                    setBoardNameDraft(nextBoardName);
+                    boardConfigBaselineRef.current = JSON.stringify({ boardId: nextBoardId, boardName: nextBoardName });
+                } catch (err) {
+                    console.error('Failed to load board config:', err);
+                }
+            };
+
+            const saveBoardConfig = async () => {
+                const response = await fetch(`${BACKEND_URL}/api/board-config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft })
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.error || `Save failed (${response.status})`);
+                }
+                boardConfigBaselineRef.current = JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft });
+            };
+
             const addProjectSelection = (key, type = 'product') => {
                 setSelectedProjectsDraft(prev => {
                     if (prev.some(p => p.key === key)) return prev;
@@ -1615,6 +1698,13 @@ import { createRoot } from 'react-dom/client';
                 if (projectSearchInputRef.current) projectSearchInputRef.current.focus();
             };
 
+            const clearBoardSelection = () => {
+                setBoardIdDraft('');
+                setBoardNameDraft('');
+                setBoardSearchQuery('');
+                setBoardSearchOpen(false);
+            };
+
             const removeProjectSelection = (key) => {
                 setSelectedProjectsDraft(prev => prev.filter(p => p.key !== key));
             };
@@ -1622,6 +1712,19 @@ import { createRoot } from 'react-dom/client';
             const selectedProjectKeys = React.useMemo(() => {
                 return new Set(selectedProjectsDraft.map(p => p.key));
             }, [selectedProjectsDraft]);
+
+            const boardSearchResults = React.useMemo(() => {
+                const query = boardSearchQuery.trim().toLowerCase();
+                if (!query) return [];
+                return (jiraBoards || [])
+                    .filter((board) => {
+                        const id = String(board.id || '');
+                        const name = String(board.name || '');
+                        const type = String(board.type || '');
+                        return id.includes(query) || name.toLowerCase().includes(query) || type.toLowerCase().includes(query);
+                    })
+                    .slice(0, 20);
+            }, [boardSearchQuery, jiraBoards]);
 
             const projectSearchResults = React.useMemo(() => {
                 const query = projectSearchQuery.toLowerCase().trim();
@@ -1637,6 +1740,11 @@ import { createRoot } from 'react-dom/client';
                 const maxIndex = projectSearchResults.length - 1;
                 if (projectSearchIndex > maxIndex) setProjectSearchIndex(0);
             }, [projectSearchResults.length]);
+
+            React.useEffect(() => {
+                const maxIndex = boardSearchResults.length - 1;
+                if (boardSearchIndex > maxIndex) setBoardSearchIndex(0);
+            }, [boardSearchResults.length]);
 
             const handleProjectSearchKeyDown = (event) => {
                 if (event.key === 'ArrowDown') {
@@ -1657,6 +1765,33 @@ import { createRoot } from 'react-dom/client';
                         event.preventDefault();
                         event.stopPropagation();
                         setProjectSearchOpen(false);
+                    }
+                }
+            };
+
+            const handleBoardSearchKeyDown = (event) => {
+                if (event.key === 'ArrowDown') {
+                    if (!boardSearchResults.length) return;
+                    event.preventDefault();
+                    setBoardSearchIndex((prev) => Math.min(prev + 1, boardSearchResults.length - 1));
+                } else if (event.key === 'ArrowUp') {
+                    if (!boardSearchResults.length) return;
+                    event.preventDefault();
+                    setBoardSearchIndex((prev) => Math.max(prev - 1, 0));
+                } else if (event.key === 'Enter') {
+                    if (!boardSearchResults.length) return;
+                    event.preventDefault();
+                    const board = boardSearchResults[boardSearchIndex] || boardSearchResults[0];
+                    if (!board) return;
+                    setBoardIdDraft(String(board.id || ''));
+                    setBoardNameDraft(String(board.name || ''));
+                    setBoardSearchQuery('');
+                    setBoardSearchOpen(false);
+                } else if (event.key === 'Escape') {
+                    if (boardSearchOpen) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setBoardSearchOpen(false);
                     }
                 }
             };
@@ -2741,6 +2876,8 @@ import { createRoot } from 'react-dom/client';
                         setJiraUrl(config.jiraUrl || '');
                         setCapacityEnabled(Boolean(config.capacityProject));
                         setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
+                        setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
+                        setUserCanEditSettings(config.userCanEditSettings !== false);
                     }
                 } catch (err) {
                     console.error('Failed to load config:', err);
@@ -10273,6 +10410,11 @@ import { createRoot } from 'react-dom/client';
                                         type="button"
                                     >Scope projects</button>
                                     <button
+                                        className={`group-modal-tab ${groupManageTab === 'source' ? 'active' : ''}`}
+                                        onClick={() => setGroupManageTab('source')}
+                                        type="button"
+                                    >Jira source</button>
+                                    <button
                                         className={`group-modal-tab ${groupManageTab === 'mapping' ? 'active' : ''}`}
                                         onClick={() => setGroupManageTab('mapping')}
                                         type="button"
@@ -10290,11 +10432,25 @@ import { createRoot } from 'react-dom/client';
                                         title={savedSelectedProjects.length === 0 ? 'Configure data sources first' : ''}
                                     >Team groups</button>
                                 </div>
-                                {(groupManageTab === 'scope' || groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
+                                {(groupManageTab === 'scope' || groupManageTab === 'source' || groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
                                     <div className="group-modal-body group-modal-split group-projects-layout">
-                                        {groupManageTab === 'scope' && (
+                                        {(groupManageTab === 'source' || groupManageTab === 'scope') && (
                                         <>
-                                        <div className="group-pane group-projects-pane-left">
+                                        {groupManageTab === 'source' && (
+                                        <div className="group-pane group-projects-pane-left group-single-pane" style={{ borderRight: 'none' }}>
+                                            <div className="group-pane-tools group-pane-tools-right" style={{ padding: '0.8rem 1rem 0 1rem' }}>
+                                                <button
+                                                    className={`secondary compact ${showTechnicalFieldIds ? 'active' : ''}`}
+                                                    onClick={() => setShowTechnicalFieldIds((prev) => !prev)}
+                                                    type="button"
+                                                >
+                                                    {showTechnicalFieldIds ? 'Hide Jira technical IDs' : 'Show Jira technical IDs'}
+                                                </button>
+                                            </div>
+                                            <div className="group-projects-subsection" style={{padding: '12px 16px 0'}}>
+                                                <div className="group-pane-title">Jira Source</div>
+                                                <div className="group-field-helper">Configure how sprint data is discovered and read from Jira.</div>
+                                            </div>
                                             <div className="group-projects-subsection" style={{padding: '12px 16px 0'}}>
                                                 <div className="team-selector-label">Sprint Field</div>
                                                 <div className="group-field-helper">Used to determine which sprint each ticket belongs to.</div>
@@ -10320,8 +10476,68 @@ import { createRoot } from 'react-dom/client';
                                                     )}
                                                 </div>
                                             </div>
+                                            <div className="group-projects-subsection" style={{padding: '12px 16px 12px'}}>
+                                                <div className="team-selector-label">Sprint Board (optional)</div>
+                                                <div className="group-field-helper">Used for faster sprint loading. If empty, the server falls back to env/default issue-based sprint discovery.</div>
+                                                <div className="capacity-inline-row">
+                                                    <div className="team-search-wrapper capacity-inline-search">
+                                                        <input
+                                                            type="text"
+                                                            className="team-search-input"
+                                                            placeholder={loadingBoards ? 'Loading boards...' : 'Search boards...'}
+                                                            value={boardSearchQuery}
+                                                            onChange={(e) => { setBoardSearchQuery(e.target.value); setBoardSearchOpen(true); setBoardSearchIndex(0); }}
+                                                            onFocus={() => {
+                                                                setBoardSearchOpen(true);
+                                                                if (!jiraBoards.length && !loadingBoards) fetchJiraBoards();
+                                                            }}
+                                                            onBlur={() => { window.setTimeout(() => setBoardSearchOpen(false), 120); }}
+                                                            onKeyDown={handleBoardSearchKeyDown}
+                                                            ref={boardSearchInputRef}
+                                                            disabled={loadingBoards && !jiraBoards.length}
+                                                        />
+                                                        {boardSearchOpen && boardSearchQuery.trim() && (
+                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                                {loadingBoards ? (
+                                                                    <div className="team-search-result-item is-empty">Loading boards...</div>
+                                                                ) : boardSearchResults.length === 0 ? (
+                                                                    <div className="team-search-result-item is-empty">No boards found</div>
+                                                                ) : boardSearchResults.map((b, index) => (
+                                                                    <div
+                                                                        key={b.id}
+                                                                        className={`team-search-result-item ${index === boardSearchIndex ? 'active' : ''}`}
+                                                                        onClick={() => {
+                                                                            setBoardIdDraft(String(b.id || ''));
+                                                                            setBoardNameDraft(String(b.name || ''));
+                                                                            setBoardSearchQuery('');
+                                                                            setBoardSearchOpen(false);
+                                                                        }}
+                                                                    >
+                                                                        <strong>{b.name || `Board ${b.id}`}</strong> <span style={{opacity: 0.55}}>({b.id}{b.type ? ` · ${b.type}` : ''})</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                {boardIdDraft ? (
+                                                    <div className="selected-teams-list" style={{ marginTop: '0.45rem' }}>
+                                                        <div className="selected-team-chip" title={boardIdDraft}>
+                                                            <span className="team-name">
+                                                                <strong>{boardNameDraft || `Board ${boardIdDraft}`}</strong>
+                                                                {showTechnicalFieldIds && boardNameDraft ? ` (${boardIdDraft})` : ''}
+                                                            </span>
+                                                            <button className="remove-btn" onClick={clearBoardSelection} type="button" title="Clear board" aria-label="Clear sprint board">&times;</button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="team-selector-empty">No board selected (fallback mode).</div>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="group-pane group-projects-pane-right">
+                                        )}
+                                        {groupManageTab === 'scope' && (
+                                        <div className="group-pane group-projects-pane-right group-single-pane">
                                             <div className="group-pane-header group-projects-pane-header">
                                                 <div className="group-pane-title">Dashboard Projects</div>
                                                 <div className="group-projects-desc">
@@ -10397,6 +10613,7 @@ import { createRoot } from 'react-dom/client';
                                                 </div>
                                             </div>
                                         </div>
+                                        )}
                                         </>
                                         )}
                                         {(groupManageTab === 'mapping' || groupManageTab === 'capacity') && (

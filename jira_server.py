@@ -53,6 +53,7 @@ STATS_JQL_ORDER_BY = os.getenv('STATS_JQL_ORDER_BY', 'ORDER BY cf[30101] ASC, st
 STATS_PRODUCT_PROJECTS = [s.strip() for s in os.getenv('STATS_PRODUCT_PROJECTS', JIRA_PRODUCT_PROJECT).split(',') if s.strip()]
 STATS_TECH_PROJECTS = [s.strip() for s in os.getenv('STATS_TECH_PROJECTS', JIRA_TECH_PROJECT).split(',') if s.strip()]
 STATS_TEAM_IDS = [s.strip() for s in os.getenv('STATS_TEAM_IDS', '').split(',') if s.strip()]
+STATS_PRIORITY_WEIGHTS = os.getenv('STATS_PRIORITY_WEIGHTS', '').strip()
 CAPACITY_PROJECT = os.getenv('CAPACITY_PROJECT', '').strip()
 CAPACITY_FIELD_ID = os.getenv('CAPACITY_FIELD_ID', '').strip()
 CAPACITY_FIELD_NAME = os.getenv('CAPACITY_FIELD_NAME', 'Team capacity[Number]').strip()
@@ -90,6 +91,20 @@ STATS_CACHE_FILE = 'stats_cache.json'
 CACHE_EXPIRY_HOURS = 24
 GROUPS_CONFIG_VERSION = 1
 GROUPS_MAX_TEAMS = 12
+PRIORITY_WEIGHT_DEFAULTS = [
+    {'priority': 'Blocker', 'weight': 0.4},
+    {'priority': 'Critical', 'weight': 0.3},
+    {'priority': 'Major', 'weight': 0.2},
+    {'priority': 'Minor', 'weight': 0.06},
+    {'priority': 'Low', 'weight': 0.03},
+    {'priority': 'Trivial', 'weight': 0.01},
+]
+PRIORITY_WEIGHT_NAME_ALIASES = {
+    'highest': 'blocker',
+    'high': 'major',
+    'medium': 'minor',
+    'lowest': 'trivial',
+}
 
 
 def configure_logging():
@@ -1179,6 +1194,78 @@ def get_configured_issue_types():
     if types is None:
         return ['Story']
     return [str(t).strip() for t in types if str(t).strip()]
+
+
+def normalize_priority_weight_name(name):
+    key = str(name or '').strip().lower()
+    return PRIORITY_WEIGHT_NAME_ALIASES.get(key, key)
+
+
+def build_priority_weight_defaults():
+    return [dict(item) for item in PRIORITY_WEIGHT_DEFAULTS]
+
+
+def normalize_priority_weight_rows(rows):
+    """Validate and normalize weight rows into canonical list format."""
+    if not isinstance(rows, list):
+        raise ValueError('weights must be an array')
+    normalized = []
+    seen = set()
+    for item in rows:
+        if not isinstance(item, dict):
+            raise ValueError('each weight entry must be an object')
+        priority = str(item.get('priority', '') or '').strip()
+        if not priority:
+            raise ValueError('priority is required')
+        norm_name = normalize_priority_weight_name(priority)
+        if norm_name in seen:
+            raise ValueError(f'duplicate priority: {priority}')
+        raw_weight = item.get('weight', None)
+        try:
+            weight = float(raw_weight)
+        except (TypeError, ValueError):
+            raise ValueError(f'invalid weight for {priority}')
+        if weight < 0:
+            raise ValueError(f'weight must be non-negative for {priority}')
+        seen.add(norm_name)
+        normalized.append({'priority': priority, 'weight': weight})
+    return normalized
+
+
+def parse_stats_priority_weights_env(raw):
+    if not raw:
+        return None
+    rows = []
+    for chunk in str(raw).split(','):
+        token = chunk.strip()
+        if not token:
+            continue
+        if ':' not in token:
+            raise ValueError(f'invalid STATS_PRIORITY_WEIGHTS token: {token}')
+        name, weight = token.split(':', 1)
+        rows.append({'priority': name.strip(), 'weight': weight.strip()})
+    return normalize_priority_weight_rows(rows)
+
+
+def get_priority_weights_config():
+    """Return effective stats priority weights with source metadata."""
+    config = load_dashboard_config()
+    if config and 'statsPriorityWeights' in config:
+        try:
+            rows = normalize_priority_weight_rows(config.get('statsPriorityWeights') or [])
+            return {'weights': rows, 'source': 'config'}
+        except ValueError as e:
+            log_warning(f'Invalid statsPriorityWeights in dashboard config; falling back: {e}')
+
+    if STATS_PRIORITY_WEIGHTS:
+        try:
+            rows = parse_stats_priority_weights_env(STATS_PRIORITY_WEIGHTS)
+            if rows:
+                return {'weights': rows, 'source': 'env'}
+        except ValueError as e:
+            log_warning(f'Invalid STATS_PRIORITY_WEIGHTS env; using defaults: {e}')
+
+    return {'weights': build_priority_weight_defaults(), 'source': 'default'}
 
 
 def get_effective_capacity_project():
@@ -4485,6 +4572,31 @@ def get_team_field_config_endpoint():
 @app.route('/api/team-field/config', methods=['POST'])
 def save_team_field_config_endpoint():
     return _save_field_config('teamField', 'TEAM_FIELD_CACHE')
+
+
+@app.route('/api/stats/priority-weights-config', methods=['GET'])
+def get_stats_priority_weights_config_endpoint():
+    payload = get_priority_weights_config()
+    return jsonify(payload)
+
+
+@app.route('/api/stats/priority-weights-config', methods=['POST'])
+def save_stats_priority_weights_config_endpoint():
+    payload = request.get_json(silent=True) or {}
+    raw_weights = payload.get('weights', [])
+    try:
+        normalized = normalize_priority_weight_rows(raw_weights)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    try:
+        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+        dashboard_config['statsPriorityWeights'] = normalized
+        save_dashboard_config(dashboard_config)
+    except Exception as e:
+        return jsonify({'error': 'Failed to save stats priority weights', 'message': str(e)}), 500
+
+    return jsonify({'weights': normalized, 'source': 'config'})
 
 
 # --- Issue Types ---

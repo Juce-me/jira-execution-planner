@@ -46,6 +46,22 @@ import { createRoot } from 'react-dom/client';
         }
 
         const UI_PREFS_KEY = 'jira_dashboard_ui_prefs_v1';
+        const DEFAULT_PRIORITY_WEIGHT_ROWS = Object.freeze([
+            { priority: 'Blocker', weight: '0.4' },
+            { priority: 'Critical', weight: '0.3' },
+            { priority: 'Major', weight: '0.2' },
+            { priority: 'Minor', weight: '0.06' },
+            { priority: 'Low', weight: '0.03' },
+            { priority: 'Trivial', weight: '0.01' }
+        ]);
+
+        function clonePriorityWeightRows(rows) {
+            const source = Array.isArray(rows) && rows.length ? rows : DEFAULT_PRIORITY_WEIGHT_ROWS;
+            return source.map((row) => ({
+                priority: String(row.priority || '').trim(),
+                weight: String(row.weight ?? '').trim()
+            }));
+        }
 
         function loadUiPrefs() {
             try {
@@ -160,6 +176,10 @@ import { createRoot } from 'react-dom/client';
             const [showTechnicalFieldIds, setShowTechnicalFieldIds] = useState(false);
             const [settingsAdminOnly, setSettingsAdminOnly] = useState(true);
             const [userCanEditSettings, setUserCanEditSettings] = useState(true);
+            const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
+            const [priorityWeightsSource, setPriorityWeightsSource] = useState('default');
+            const [effectivePriorityWeightsRows, setEffectivePriorityWeightsRows] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
+            const priorityWeightsBaselineRef = useRef(JSON.stringify(clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS)));
             const [jiraProjects, setJiraProjects] = useState([]);
             const [loadingProjects, setLoadingProjects] = useState(false);
             const [projectSearchQuery, setProjectSearchQuery] = useState('');
@@ -411,6 +431,7 @@ import { createRoot } from 'react-dom/client';
                 loadConfig();
                 loadGroupsConfig();
                 loadSelectedProjects();
+                loadPriorityWeightsConfig();
                 loadSprints();
             }, []);
 
@@ -477,6 +498,7 @@ import { createRoot } from 'react-dom/client';
                 setProjectSearchQuery('');
                 setActiveGroupDraftId(resolveInitialGroupId(normalized));
                 loadSelectedProjects();
+                loadPriorityWeightsConfig();
                 loadBoardConfig();
                 loadCapacityConfig();
                 loadSprintFieldConfig();
@@ -910,6 +932,10 @@ import { createRoot } from 'react-dom/client';
                 return JSON.stringify(selectedProjectsDraft) !== selectedProjectsBaselineRef.current;
             }, [selectedProjectsDraft]);
 
+            const isPriorityWeightsDirty = React.useMemo(() => {
+                return JSON.stringify(priorityWeightsDraft) !== priorityWeightsBaselineRef.current;
+            }, [priorityWeightsDraft]);
+
             const isBoardConfigDirty = React.useMemo(() => {
                 return JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }) !== boardConfigBaselineRef.current;
             }, [boardIdDraft, boardNameDraft]);
@@ -940,6 +966,7 @@ import { createRoot } from 'react-dom/client';
 
             const isGroupDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
+                if (isPriorityWeightsDirty) return true;
                 if (isBoardConfigDirty) return true;
                 if (isCapacityDraftDirty) return true;
                 if (isIssueTypesDraftDirty) return true;
@@ -949,10 +976,11 @@ import { createRoot } from 'react-dom/client';
                 if (isTeamFieldDirty) return true;
                 if (!groupDraft) return false;
                 return groupDraftSignature !== groupDraftBaselineRef.current;
-            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty]);
+            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty]);
             const unsavedSectionsCount = React.useMemo(() => {
                 return [
                     isProjectsDraftDirty,
+                    isPriorityWeightsDirty,
                     isBoardConfigDirty,
                     isCapacityDraftDirty,
                     isIssueTypesDraftDirty,
@@ -962,7 +990,27 @@ import { createRoot } from 'react-dom/client';
                     isTeamFieldDirty,
                     Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current)
                 ].filter(Boolean).length;
-            }, [isProjectsDraftDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, groupDraft, groupDraftSignature]);
+            }, [isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, groupDraft, groupDraftSignature]);
+            const priorityWeightsValidationError = React.useMemo(() => {
+                for (const row of (priorityWeightsDraft || [])) {
+                    const label = String(row?.priority || '').trim() || 'Priority';
+                    const numeric = Number(row?.weight);
+                    if (Number.isNaN(numeric) || !Number.isFinite(numeric)) {
+                        return `Priority weight must be numeric for ${label}.`;
+                    }
+                    if (numeric < 0) {
+                        return `Priority weight must be non-negative for ${label}.`;
+                    }
+                }
+                return '';
+            }, [priorityWeightsDraft]);
+            const priorityWeightsSum = React.useMemo(() => {
+                return (priorityWeightsDraft || []).reduce((acc, row) => {
+                    const numeric = Number(row?.weight);
+                    if (Number.isNaN(numeric) || !Number.isFinite(numeric)) return acc;
+                    return acc + numeric;
+                }, 0);
+            }, [priorityWeightsDraft]);
             const groupConfigValidationErrors = React.useMemo(() => {
                 const errors = [];
                 if (!selectedProjectsDraft.length) {
@@ -986,8 +1034,11 @@ import { createRoot } from 'react-dom/client';
                 if (!capacityProjectDraft && capacityFieldIdDraft) {
                     errors.push('Capacity project is required when a capacity field is selected.');
                 }
+                if (priorityWeightsValidationError) {
+                    errors.push(priorityWeightsValidationError);
+                }
                 return errors;
-            }, [selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft]);
+            }, [selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError]);
             const saveBlockedReason = React.useMemo(() => {
                 if (groupSaving) return 'Save in progress';
                 if (groupConfigValidationErrors.length > 0) return groupConfigValidationErrors[0];
@@ -1359,6 +1410,11 @@ import { createRoot } from 'react-dom/client';
                         await saveProjectSelection();
                     }
 
+                    const priorityWeightsChanged = isPriorityWeightsDirty;
+                    if (priorityWeightsChanged) {
+                        await savePriorityWeightsConfig();
+                    }
+
                     const boardChanged = isBoardConfigDirty;
                     if (boardChanged) {
                         await saveBoardConfig();
@@ -1418,7 +1474,7 @@ import { createRoot } from 'react-dom/client';
                     }
 
                     // If projects or capacity changed, invalidate all group caches to refetch with new scope
-                    if (projectsChanged || boardChanged || capacityChanged || issueTypesChanged || fieldConfigsChanged) {
+                    if (projectsChanged || priorityWeightsChanged || boardChanged || capacityChanged || issueTypesChanged || fieldConfigsChanged) {
                         groupStateRef.current.clear();
                     }
 
@@ -1675,6 +1731,25 @@ import { createRoot } from 'react-dom/client';
                 }
             };
 
+            const loadPriorityWeightsConfig = async () => {
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/stats/priority-weights-config`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' },
+                        cache: 'no-cache'
+                    });
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    const rows = clonePriorityWeightRows(data.weights);
+                    setPriorityWeightsDraft(rows);
+                    setEffectivePriorityWeightsRows(rows);
+                    setPriorityWeightsSource(String(data.source || 'default'));
+                    priorityWeightsBaselineRef.current = JSON.stringify(rows);
+                } catch (err) {
+                    console.error('Failed to load priority weights config:', err);
+                }
+            };
+
             const saveBoardConfig = async () => {
                 const response = await fetch(`${BACKEND_URL}/api/board-config`, {
                     method: 'POST',
@@ -1686,6 +1761,29 @@ import { createRoot } from 'react-dom/client';
                     throw new Error(err.error || `Save failed (${response.status})`);
                 }
                 boardConfigBaselineRef.current = JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft });
+            };
+
+            const savePriorityWeightsConfig = async () => {
+                const response = await fetch(`${BACKEND_URL}/api/stats/priority-weights-config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        weights: (priorityWeightsDraft || []).map((row) => ({
+                            priority: String(row.priority || '').trim(),
+                            weight: Number(row.weight)
+                        }))
+                    })
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.error || `Save failed (${response.status})`);
+                }
+                const data = await response.json();
+                const rows = clonePriorityWeightRows(data.weights);
+                setPriorityWeightsDraft(rows);
+                setEffectivePriorityWeightsRows(rows);
+                setPriorityWeightsSource(String(data.source || 'config'));
+                priorityWeightsBaselineRef.current = JSON.stringify(rows);
             };
 
             const addProjectSelection = (key, type = 'product') => {
@@ -1703,6 +1801,16 @@ import { createRoot } from 'react-dom/client';
                 setBoardNameDraft('');
                 setBoardSearchQuery('');
                 setBoardSearchOpen(false);
+            };
+
+            const updatePriorityWeightDraft = (priorityName, nextValue) => {
+                setPriorityWeightsDraft((prev) => (prev || []).map((row) => (
+                    row.priority === priorityName ? { ...row, weight: nextValue } : row
+                )));
+            };
+
+            const resetPriorityWeightsDraft = () => {
+                setPriorityWeightsDraft(clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
             };
 
             const removeProjectSelection = (key) => {
@@ -3502,21 +3610,28 @@ import { createRoot } from 'react-dom/client';
 
             const formatPercent = (value) => `${(value * 100).toFixed(2)}%`;
 
-            const priorityWeights = {
-                blocker: 0.4,
-                critical: 0.3,
-                major: 0.2,
-                minor: 0.06,
-                low: 0.03,
-                trivial: 0.01
-            };
-
             const priorityAliases = {
                 highest: 'blocker',
                 high: 'major',
                 medium: 'minor',
                 lowest: 'trivial'
             };
+
+            const effectivePriorityWeightMap = React.useMemo(() => {
+                const map = {};
+                (effectivePriorityWeightsRows || []).forEach((row) => {
+                    const key = String(row?.priority || '').toLowerCase().trim();
+                    const numeric = Number(row?.weight);
+                    if (!key || Number.isNaN(numeric) || !Number.isFinite(numeric) || numeric < 0) return;
+                    map[key] = numeric;
+                });
+                if (Object.keys(map).length === 0) {
+                    clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS).forEach((row) => {
+                        map[String(row.priority || '').toLowerCase()] = Number(row.weight);
+                    });
+                }
+                return map;
+            }, [effectivePriorityWeightsRows]);
 
             const normalizePriority = (name) => {
                 const key = String(name || '').toLowerCase().trim();
@@ -3532,7 +3647,7 @@ import { createRoot } from 'react-dom/client';
                 const totals = { done: 0, incomplete: 0, killed: 0 };
                 Object.entries(priorities || {}).forEach(([priorityName, counts]) => {
                     const normalized = normalizePriority(priorityName);
-                    const weight = priorityWeights[normalized] || 0;
+                    const weight = effectivePriorityWeightMap[normalized] || 0;
                     totals.done += weight * (counts.done || 0);
                     totals.incomplete += weight * (counts.incomplete || 0);
                     totals.killed += weight * (counts.killed || 0);
@@ -10425,6 +10540,11 @@ import { createRoot } from 'react-dom/client';
                                         type="button"
                                     >Capacity</button>
                                     <button
+                                        className={`group-modal-tab ${groupManageTab === 'priorityWeights' ? 'active' : ''}`}
+                                        onClick={() => setGroupManageTab('priorityWeights')}
+                                        type="button"
+                                    >Priority weights</button>
+                                    <button
                                         className={`group-modal-tab ${groupManageTab === 'teams' ? 'active' : ''}`}
                                         onClick={() => savedSelectedProjects.length > 0 && setGroupManageTab('teams')}
                                         type="button"
@@ -10432,7 +10552,7 @@ import { createRoot } from 'react-dom/client';
                                         title={savedSelectedProjects.length === 0 ? 'Configure data sources first' : ''}
                                     >Team groups</button>
                                 </div>
-                                {(groupManageTab === 'scope' || groupManageTab === 'source' || groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
+                                {(groupManageTab === 'scope' || groupManageTab === 'source' || groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
                                     <div className="group-modal-body group-modal-split group-projects-layout">
                                         {(groupManageTab === 'source' || groupManageTab === 'scope') && (
                                         <>
@@ -10479,47 +10599,49 @@ import { createRoot } from 'react-dom/client';
                                             <div className="group-projects-subsection" style={{padding: '12px 16px 12px'}}>
                                                 <div className="team-selector-label">Sprint Board (optional)</div>
                                                 <div className="group-field-helper">Used for faster sprint loading. If empty, the server falls back to env/default issue-based sprint discovery.</div>
-                                                <div className="capacity-inline-row">
-                                                    <div className="team-search-wrapper capacity-inline-search">
-                                                        <input
-                                                            type="text"
-                                                            className="team-search-input"
-                                                            placeholder={loadingBoards ? 'Loading boards...' : 'Search boards...'}
-                                                            value={boardSearchQuery}
-                                                            onChange={(e) => { setBoardSearchQuery(e.target.value); setBoardSearchOpen(true); setBoardSearchIndex(0); }}
-                                                            onFocus={() => {
-                                                                setBoardSearchOpen(true);
-                                                                if (!jiraBoards.length && !loadingBoards) fetchJiraBoards();
-                                                            }}
-                                                            onBlur={() => { window.setTimeout(() => setBoardSearchOpen(false), 120); }}
-                                                            onKeyDown={handleBoardSearchKeyDown}
-                                                            ref={boardSearchInputRef}
-                                                            disabled={loadingBoards && !jiraBoards.length}
-                                                        />
-                                                        {boardSearchOpen && boardSearchQuery.trim() && (
-                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                {loadingBoards ? (
-                                                                    <div className="team-search-result-item is-empty">Loading boards...</div>
-                                                                ) : boardSearchResults.length === 0 ? (
-                                                                    <div className="team-search-result-item is-empty">No boards found</div>
-                                                                ) : boardSearchResults.map((b, index) => (
-                                                                    <div
-                                                                        key={b.id}
-                                                                        className={`team-search-result-item ${index === boardSearchIndex ? 'active' : ''}`}
-                                                                        onClick={() => {
-                                                                            setBoardIdDraft(String(b.id || ''));
-                                                                            setBoardNameDraft(String(b.name || ''));
-                                                                            setBoardSearchQuery('');
-                                                                            setBoardSearchOpen(false);
+                                                {!boardIdDraft && (
+                                                    <div className="capacity-inline-row">
+                                                        <div className="team-search-wrapper capacity-inline-search">
+                                                            <input
+                                                                type="text"
+                                                                className="team-search-input"
+                                                                placeholder={loadingBoards ? 'Loading boards...' : 'Search boards...'}
+                                                                value={boardSearchQuery}
+                                                                onChange={(e) => { setBoardSearchQuery(e.target.value); setBoardSearchOpen(true); setBoardSearchIndex(0); }}
+                                                                onFocus={() => {
+                                                                    setBoardSearchOpen(true);
+                                                                    if (!jiraBoards.length && !loadingBoards) fetchJiraBoards();
+                                                                }}
+                                                                onBlur={() => { window.setTimeout(() => setBoardSearchOpen(false), 120); }}
+                                                                onKeyDown={handleBoardSearchKeyDown}
+                                                                ref={boardSearchInputRef}
+                                                                disabled={loadingBoards && !jiraBoards.length}
+                                                            />
+                                                            {boardSearchOpen && boardSearchQuery.trim() && (
+                                                                <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                                    {loadingBoards ? (
+                                                                        <div className="team-search-result-item is-empty">Loading boards...</div>
+                                                                    ) : boardSearchResults.length === 0 ? (
+                                                                        <div className="team-search-result-item is-empty">No boards found</div>
+                                                                    ) : boardSearchResults.map((b, index) => (
+                                                                        <div
+                                                                            key={b.id}
+                                                                            className={`team-search-result-item ${index === boardSearchIndex ? 'active' : ''}`}
+                                                                            onClick={() => {
+                                                                                setBoardIdDraft(String(b.id || ''));
+                                                                                setBoardNameDraft(String(b.name || ''));
+                                                                                setBoardSearchQuery('');
+                                                                                setBoardSearchOpen(false);
                                                                         }}
                                                                     >
-                                                                        <strong>{b.name || `Board ${b.id}`}</strong> <span style={{opacity: 0.55}}>({b.id}{b.type ? ` · ${b.type}` : ''})</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
+                                                                            <strong>{b.name || `Board ${b.id}`}</strong> <span style={{opacity: 0.55}}>({b.id}{b.type ? ` · ${b.type}` : ''})</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                )}
                                                 {boardIdDraft ? (
                                                     <div className="selected-teams-list" style={{ marginTop: '0.45rem' }}>
                                                         <div className="selected-team-chip" title={boardIdDraft}>
@@ -10616,16 +10738,18 @@ import { createRoot } from 'react-dom/client';
                                         )}
                                         </>
                                         )}
-                                        {(groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
+                                        {(groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
                                         <div className="group-pane group-projects-pane-right group-single-pane">
                                             <div className="group-pane-tools group-pane-tools-right">
-                                                <button
-                                                    className={`secondary compact ${showTechnicalFieldIds ? 'active' : ''}`}
-                                                    onClick={() => setShowTechnicalFieldIds((prev) => !prev)}
-                                                    type="button"
-                                                >
-                                                    {showTechnicalFieldIds ? 'Hide Jira technical IDs' : 'Show Jira technical IDs'}
-                                                </button>
+                                                {(groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
+                                                    <button
+                                                        className={`secondary compact ${showTechnicalFieldIds ? 'active' : ''}`}
+                                                        onClick={() => setShowTechnicalFieldIds((prev) => !prev)}
+                                                        type="button"
+                                                    >
+                                                        {showTechnicalFieldIds ? 'Hide Jira technical IDs' : 'Show Jira technical IDs'}
+                                                    </button>
+                                                )}
                                             </div>
                                             {groupManageTab === 'mapping' && (
                                             <>
@@ -10833,6 +10957,58 @@ import { createRoot } from 'react-dom/client';
                                                         )}
                                                     </div>
                                                 </div>
+                                            </div>
+                                            )}
+                                            {groupManageTab === 'priorityWeights' && (
+                                            <div className="group-projects-section group-config-card">
+                                                <div className="group-pane-title">Priority Weights</div>
+                                                <div className="group-field-helper">
+                                                    Used for the weighted delivery metric in Statistics. Source: <strong>{priorityWeightsSource}</strong>.
+                                                </div>
+                                                <div className="group-field-helper">
+                                                    Higher values increase the impact of that priority on weighted completion rate.
+                                                </div>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.25rem', alignItems: 'flex-start', marginTop: '0.35rem' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', minWidth: '320px', flex: '0 1 420px' }}>
+                                                        {(priorityWeightsDraft || []).map((row) => (
+                                                            <div key={row.priority} style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 220px) 120px', gap: '0.6rem', alignItems: 'center' }}>
+                                                                <label className="team-selector-label" style={{ margin: 0 }}>{row.priority}</label>
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    step="0.01"
+                                                                    className="team-search-input"
+                                                                    value={row.weight}
+                                                                    onChange={(e) => updatePriorityWeightDraft(row.priority, e.target.value)}
+                                                                    aria-label={`${row.priority} weight`}
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div style={{ flex: '1 1 260px', minWidth: '240px', border: '1px solid var(--border)', borderRadius: '12px', background: '#fbfaf7', padding: '0.8rem 0.9rem' }}>
+                                                        <div className="team-selector-label" style={{ margin: 0 }}>Weights Sum</div>
+                                                        <div style={{ marginTop: '0.35rem', fontFamily: '\'IBM Plex Mono\', monospace', fontSize: '1.1rem', color: '#111827' }}>
+                                                            {priorityWeightsSum.toFixed(2)}
+                                                        </div>
+                                                        <div className="group-field-helper" style={{ marginTop: '0.25rem' }}>
+                                                            Recommended target: <strong>1.00</strong>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="group-pane-tools" style={{ marginTop: '0.55rem' }}>
+                                                    <button
+                                                        type="button"
+                                                        className="secondary compact"
+                                                        onClick={resetPriorityWeightsDraft}
+                                                    >
+                                                        Reset to defaults
+                                                    </button>
+                                                </div>
+                                                {priorityWeightsValidationError && (
+                                                    <div className="group-test-message error" style={{ marginTop: '0.35rem' }}>
+                                                        {priorityWeightsValidationError}
+                                                    </div>
+                                                )}
                                             </div>
                                             )}
                                         </div>

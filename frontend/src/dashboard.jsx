@@ -10799,6 +10799,129 @@ import { createRoot } from 'react-dom/client';
                                             </div>
                                             {groupManageTab === 'mapping' && (
                                             <>
+                                            <div className="mapping-preview-section group-config-card">
+                                                <div className="group-pane-title">Live preview</div>
+                                                <div className="group-field-helper">This is how a story will be shown with your current mapping.</div>
+                                                {(() => {
+                                                    const previewIssueType = issueTypesDraft[0] || 'Any';
+                                                    const previewParentFieldName = parentNameFieldNameDraft || 'Parent Name Field';
+                                                    const previewStoryPointsFieldName = storyPointsFieldNameDraft || 'Story Points Field';
+                                                    const previewTeamFieldName = teamFieldNameDraft || 'Team Field';
+                                                    const previewParentFieldId = parentNameFieldIdDraft || '';
+                                                    const previewStoryPointsFieldId = storyPointsFieldIdDraft || '';
+                                                    const previewTeamFieldId = teamFieldIdDraft || '';
+                                                    const previewEpic = {
+                                                        key: 'TECH-15396',
+                                                        parentValue: 'Distribution improvements'
+                                                    };
+                                                    const previewStories = [
+                                                        {
+                                                            key: 'TECH-25283',
+                                                            summary: 'Integrate automated AI solution in bswx code',
+                                                            status: 'ACCEPTED',
+                                                            updated: '2025-12-19',
+                                                            storyPoints: 1,
+                                                            team: 'R&D DISTRIBUTION'
+                                                        },
+                                                        {
+                                                            key: 'TECH-25314',
+                                                            summary: '[D] Infra improvements (grafana)',
+                                                            status: 'ACCEPTED',
+                                                            updated: '2025-12-19',
+                                                            storyPoints: 0.25,
+                                                            team: 'R&D DISTRIBUTION'
+                                                        }
+                                                    ];
+                                                    const previewTotalSp = previewStories.reduce((sum, story) => sum + Number(story.storyPoints || 0), 0);
+                                                    const renderFieldLabel = (label, id) => (
+                                                        <>
+                                                            {label}
+                                                            {showTechnicalFieldIds && id && <span className="field-id-hint">({id})</span>}
+                                                        </>
+                                                    );
+                                                    return (
+                                                        <div className="epic-block">
+                                                            <div className="epic-header">
+                                                                <div className="epic-title">
+                                                                    <div className="mapping-preview-parent-label">
+                                                                        Parent field: <strong>{previewParentFieldName}</strong>
+                                                                        {showTechnicalFieldIds && previewParentFieldId && <span className="field-id-hint">({previewParentFieldId})</span>}
+                                                                    </div>
+                                                                    <div className="epic-title-row">
+                                                                        <span className="epic-icon" aria-hidden="true" title="EPIC">
+                                                                            <svg viewBox="0 0 24 24" fill="none">
+                                                                                <rect x="3" y="3" width="18" height="18" rx="3" stroke="#1D7AFC" strokeWidth="2"/>
+                                                                                <path d="M7.5 12.5l3 3 6-6" stroke="#1D7AFC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                                                            </svg>
+                                                                        </span>
+                                                                        <a className="epic-link" href="#" onClick={(e) => e.preventDefault()}>
+                                                                            <span className="epic-name">{previewEpic.parentValue}</span>
+                                                                            <span className="epic-key">{previewEpic.key}</span>
+                                                                        </a>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="epic-meta">
+                                                                    <span>SP: {previewTotalSp.toFixed(2)}</span>
+                                                                    <span className="mapping-preview-meta-note">Preview only</span>
+                                                                </div>
+                                                            </div>
+                                                            {previewStories.map((story) => (
+                                                                <div
+                                                                    key={story.key}
+                                                                    className="task-item priority-major"
+                                                                    data-task-key={`preview-${story.key}`}
+                                                                >
+                                                                    <div className="task-header">
+                                                                        <div className="task-headline">
+                                                                            <span className="story-icon" aria-hidden="true" title="STORY">
+                                                                                <svg viewBox="0 0 24 24" fill="none">
+                                                                                    <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
+                                                                                </svg>
+                                                                            </span>
+                                                                            <h3 className="task-title">
+                                                                                <a href="#" onClick={(e) => e.preventDefault()}>{story.summary}</a>
+                                                                            </h3>
+                                                                            <span className="task-inline-meta">
+                                                                                <a className="task-key-link" href="#" onClick={(e) => e.preventDefault()}>{story.key}</a>
+                                                                                <span className="task-inline-sp">{story.storyPoints} SP</span>
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="task-meta">
+                                                                        <span className={`task-status ${story.status.toLowerCase().replace(/\s+/g, '-')}`}>
+                                                                            {story.status}
+                                                                        </span>
+                                                                        <span className="task-team">{story.team}</span>
+                                                                        <span className="task-updated">
+                                                                            Last Update: {story.updated}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="task-meta mapping-preview-mapped-meta">
+                                                                        <span className="task-team">
+                                                                            <span className="mapping-preview-field-label">
+                                                                                {renderFieldLabel('Issue Type', '')}:
+                                                                            </span>{' '}
+                                                                            {previewIssueType}
+                                                                        </span>
+                                                                        <span className="task-team">
+                                                                            <span className="mapping-preview-field-label">
+                                                                                {renderFieldLabel(previewTeamFieldName, previewTeamFieldId)}:
+                                                                            </span>{' '}
+                                                                            {story.team}
+                                                                        </span>
+                                                                        <span className="task-team mapping-preview-sp-pill">
+                                                                            <span className="mapping-preview-field-label">
+                                                                                {renderFieldLabel(previewStoryPointsFieldName, previewStoryPointsFieldId)}:
+                                                                            </span>{' '}
+                                                                            {story.storyPoints}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
                                             <div className="group-projects-section group-config-card">
                                                 <div className="group-pane-title">Issue Type</div>
                                                 <div className="group-field-helper">Only these issue types are loaded into the dashboard.</div>

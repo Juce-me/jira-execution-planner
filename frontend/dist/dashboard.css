@@ -1074,6 +1074,68 @@
             background: #fff;
         }
 
+        .mapping-preview-section {
+            margin-bottom: 0.1rem;
+        }
+
+        .mapping-preview-section .group-field-helper {
+            margin-bottom: 0.45rem;
+        }
+
+        .mapping-preview-section .epic-block {
+            margin-bottom: 0;
+            background: #fff;
+        }
+
+        .mapping-preview-section .epic-header {
+            position: static;
+            top: auto;
+            z-index: auto;
+            box-shadow: none;
+            background: transparent;
+        }
+
+        .mapping-preview-parent-label {
+            font-size: 0.66rem;
+            color: var(--text-secondary);
+            line-height: 1.3;
+            margin-bottom: 0.15rem;
+        }
+
+        .mapping-preview-parent-label strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .mapping-preview-meta-note {
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        .mapping-preview-mapped-meta {
+            margin-top: 0.4rem;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .mapping-preview-field-label {
+            opacity: 0.8;
+            font-weight: 600;
+        }
+
+        .mapping-preview-mapped-meta .task-team {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.1rem;
+            white-space: nowrap;
+        }
+
+        .mapping-preview-sp-pill {
+            background: #fff7e6;
+            color: #d48806;
+            border-color: #ffd591;
+        }
+
         .group-editor-header {
             display: flex;
             align-items: center;

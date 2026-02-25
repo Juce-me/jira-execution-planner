@@ -89,6 +89,7 @@ python3 -m unittest discover -s tests
 
 ## UI & Styling Changes
 - For UI/styling changes, implement ONE small change at a time and ask the user to verify before proceeding. Do not make sweeping visual changes in a single pass.
+- In existing configuration/settings modals, preserve established interaction patterns (e.g., selected chip + remove button, search/dropdown behavior). Do not introduce a new control pattern (such as custom Change/Clear button rows) for a similar field unless the user explicitly requests a different UX.
 
 ## Git Workflow Protocol
 Follow this checklist for ALL work in this repo. No exceptions.

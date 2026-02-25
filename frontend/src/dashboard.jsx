@@ -208,6 +208,8 @@ import { createRoot } from 'react-dom/client';
             const projectSearchInputRef = useRef(null);
             const [jiraBoards, setJiraBoards] = useState([]);
             const [loadingBoards, setLoadingBoards] = useState(false);
+            const [boardSearchRemoteResults, setBoardSearchRemoteResults] = useState([]);
+            const [boardSearchRemoteLoading, setBoardSearchRemoteLoading] = useState(false);
             const [boardIdDraft, setBoardIdDraft] = useState('');
             const [boardNameDraft, setBoardNameDraft] = useState('');
             const boardConfigBaselineRef = useRef('');
@@ -508,7 +510,6 @@ import { createRoot } from 'react-dom/client';
                 loadIssueTypesConfig();
                 fetchAvailableIssueTypes();
                 if (!jiraProjects.length) fetchJiraProjects();
-                if (!jiraBoards.length) fetchJiraBoards();
                 const catalogTeams = buildTeamCatalogList(normalized.teamCatalog);
                 if (catalogTeams.length) {
                     setAvailableTeams(catalogTeams);
@@ -1589,6 +1590,48 @@ import { createRoot } from 'react-dom/client';
                 };
             }, [showGroupManage, groupManageTab, projectSearchQuery]);
 
+            useEffect(() => {
+                const query = boardSearchQuery.trim();
+                if (!showGroupManage || groupManageTab !== 'source' || boardIdDraft || !query) {
+                    setBoardSearchRemoteResults([]);
+                    setBoardSearchRemoteLoading(false);
+                    return undefined;
+                }
+
+                const controller = new AbortController();
+                const timeoutId = window.setTimeout(async () => {
+                    setBoardSearchRemoteLoading(true);
+                    try {
+                        const params = new URLSearchParams();
+                        params.set('query', query);
+                        params.set('limit', '25');
+                        const response = await fetch(`${BACKEND_URL}/api/boards?${params.toString()}`, {
+                            method: 'GET',
+                            headers: { 'Content-Type': 'application/json' },
+                            cache: 'no-cache',
+                            signal: controller.signal
+                        });
+                        if (!response.ok) throw new Error(`Boards search error ${response.status}`);
+                        const data = await response.json();
+                        setBoardSearchRemoteResults(data.boards || []);
+                    } catch (err) {
+                        if (err.name !== 'AbortError') {
+                            console.error('Failed to search Jira boards:', err);
+                            setBoardSearchRemoteResults([]);
+                        }
+                    } finally {
+                        if (!controller.signal.aborted) {
+                            setBoardSearchRemoteLoading(false);
+                        }
+                    }
+                }, 220);
+
+                return () => {
+                    window.clearTimeout(timeoutId);
+                    controller.abort();
+                };
+            }, [showGroupManage, groupManageTab, boardIdDraft, boardSearchQuery]);
+
             // Component search debounced fetch
             useEffect(() => {
                 const query = componentSearchQuery.trim();
@@ -1824,15 +1867,14 @@ import { createRoot } from 'react-dom/client';
             const boardSearchResults = React.useMemo(() => {
                 const query = boardSearchQuery.trim().toLowerCase();
                 if (!query) return [];
-                return (jiraBoards || [])
+                return (boardSearchRemoteResults || [])
                     .filter((board) => {
                         const id = String(board.id || '');
                         const name = String(board.name || '');
-                        const type = String(board.type || '');
-                        return id.includes(query) || name.toLowerCase().includes(query) || type.toLowerCase().includes(query);
+                        return id.includes(query) || name.toLowerCase().includes(query);
                     })
                     .slice(0, 20);
-            }, [boardSearchQuery, jiraBoards]);
+            }, [boardSearchQuery, boardSearchRemoteResults]);
 
             const projectSearchResults = React.useMemo(() => {
                 const query = projectSearchQuery.toLowerCase().trim();
@@ -7090,6 +7132,14 @@ import { createRoot } from 'react-dom/client';
                     if (readyToCloseEpicStatuses.has(status)) return false;
                     if (status === 'killed' || status === 'done' || status === 'incomplete') return false;
                     if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
+                    const selectedSprintEpicStories = tasks.filter(task => {
+                        if (!task.fields?.epicKey) return false;
+                        if (task.fields.epicKey !== epic.key) return false;
+                        if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return false;
+                        return true;
+                    });
+                    // Waiting for Stories must only surface epics that belong to the currently selected sprint.
+                    if (!epicMatchesSelectedSprint(epic, selectedSprintEpicStories)) return false;
                     const epicStories = readyToCloseTasks.filter(task => {
                         if (!task.fields?.epicKey) return false;
                         if (task.fields.epicKey !== epic.key) return false;
@@ -7097,8 +7147,6 @@ import { createRoot } from 'react-dom/client';
                         return true;
                     });
                     if (epicStories.length === 0) return false;
-                    // readyToCloseTasks are loaded only for epics referenced by current-sprint tasks
-                    // (scoped via `epicKeys`), so selected-sprint matching is already implied here.
                     return epicStories.every(task => readyToCloseStoryStatuses.has(normalizeStatus(task.fields.status?.name)));
                 });
             }, [
@@ -7107,6 +7155,7 @@ import { createRoot } from 'react-dom/client';
                 isAllTeamsSelected,
                 selectedTeamSet,
                 tasks,
+                readyToCloseTasks,
                 readyToCloseStoryStatuses,
                 readyToCloseEpicStatuses,
                 selectedSprint,
@@ -10602,25 +10651,22 @@ import { createRoot } from 'react-dom/client';
                                                 {!boardIdDraft && (
                                                     <div className="capacity-inline-row">
                                                         <div className="team-search-wrapper capacity-inline-search">
-                                                            <input
-                                                                type="text"
-                                                                className="team-search-input"
-                                                                placeholder={loadingBoards ? 'Loading boards...' : 'Search boards...'}
-                                                                value={boardSearchQuery}
-                                                                onChange={(e) => { setBoardSearchQuery(e.target.value); setBoardSearchOpen(true); setBoardSearchIndex(0); }}
-                                                                onFocus={() => {
-                                                                    setBoardSearchOpen(true);
-                                                                    if (!jiraBoards.length && !loadingBoards) fetchJiraBoards();
-                                                                }}
-                                                                onBlur={() => { window.setTimeout(() => setBoardSearchOpen(false), 120); }}
-                                                                onKeyDown={handleBoardSearchKeyDown}
-                                                                ref={boardSearchInputRef}
-                                                                disabled={loadingBoards && !jiraBoards.length}
-                                                            />
+                                                                <input
+                                                                    type="text"
+                                                                    className="team-search-input"
+                                                                    placeholder={boardSearchRemoteLoading ? 'Searching boards...' : 'Search boards...'}
+                                                                    value={boardSearchQuery}
+                                                                    onChange={(e) => { setBoardSearchQuery(e.target.value); setBoardSearchOpen(true); setBoardSearchIndex(0); }}
+                                                                    onFocus={() => { setBoardSearchOpen(true); }}
+                                                                    onBlur={() => { window.setTimeout(() => setBoardSearchOpen(false), 120); }}
+                                                                    onKeyDown={handleBoardSearchKeyDown}
+                                                                    ref={boardSearchInputRef}
+                                                                    disabled={false}
+                                                                />
                                                             {boardSearchOpen && boardSearchQuery.trim() && (
                                                                 <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                    {loadingBoards ? (
-                                                                        <div className="team-search-result-item is-empty">Loading boards...</div>
+                                                                    {boardSearchRemoteLoading ? (
+                                                                        <div className="team-search-result-item is-empty">Searching boards...</div>
                                                                     ) : boardSearchResults.length === 0 ? (
                                                                         <div className="team-search-result-item is-empty">No boards found</div>
                                                                     ) : boardSearchResults.map((b, index) => (

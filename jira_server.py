@@ -3974,6 +3974,14 @@ def get_completed_sprint_stats():
 def get_boards():
     """Fetch available boards from Jira API"""
     try:
+        query = (request.args.get('query') or '').strip()
+        limit_raw = request.args.get('limit') or ''
+        try:
+            limit = int(limit_raw) if limit_raw else 200
+        except ValueError:
+            limit = 200
+        limit = max(1, min(limit, 500))
+
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
         auth_bytes = auth_string.encode('ascii')
         auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
@@ -3984,40 +3992,116 @@ def get_boards():
             'Content-Type': 'application/json'
         }
 
-        log_info('Fetching all boards')
-
-        # Get boards from Jira Agile API
-        response = requests.get(
-            f'{JIRA_URL}/rest/agile/1.0/board',
-            headers=headers,
-            params={'maxResults': 100},
-            timeout=30
+        log_info(
+            f'Fetching boards mode={"search" if query else "all"} '
+            f'limit={limit} queryLen={len(query)}'
         )
 
-        log_debug(f'Boards response status={response.status_code}')
+        # Get boards from Jira Agile API (paginated)
+        boards = []
+        seen_board_ids = set()
+        start_at = 0
+        page_size = 100
+        max_pages = 50  # safety cap (up to 5000 boards)
+        pages_fetched = 0
 
-        if response.status_code != 200:
-            error_text = response.text
-            log_error(f'Boards fetch failed: status={response.status_code}')
-            return jsonify({
-                'error': f'Jira API error: {response.status_code}',
-                'details': error_text
-            }), response.status_code
+        # Fast path: direct board-id lookup for numeric search terms.
+        if query and query.isdigit():
+            direct_resp = requests.get(
+                f'{JIRA_URL}/rest/agile/1.0/board/{query}',
+                headers=headers,
+                timeout=30
+            )
+            log_debug(f'Board direct lookup status={direct_resp.status_code} boardId={query}')
+            if direct_resp.status_code == 200:
+                board = direct_resp.json() or {}
+                board_id = board.get('id')
+                if board_id is not None and board_id not in seen_board_ids:
+                    boards.append(board)
+                    seen_board_ids.add(board_id)
+            elif direct_resp.status_code not in (400, 401, 403, 404):
+                error_text = direct_resp.text
+                log_error(f'Board direct lookup failed: status={direct_resp.status_code}')
+                return jsonify({
+                    'error': f'Jira API error: {direct_resp.status_code}',
+                    'details': error_text
+                }), direct_resp.status_code
 
-        data = response.json()
-        boards = data.get('values', [])
+        while pages_fetched < max_pages:
+            params = {'maxResults': page_size, 'startAt': start_at}
+            if query:
+                params['name'] = query
+            response = requests.get(
+                f'{JIRA_URL}/rest/agile/1.0/board',
+                headers=headers,
+                params=params,
+                timeout=30
+            )
+
+            log_debug(f'Boards response status={response.status_code} startAt={start_at}')
+
+            if response.status_code != 200:
+                error_text = response.text
+                log_error(f'Boards fetch failed: status={response.status_code} startAt={start_at}')
+                return jsonify({
+                    'error': f'Jira API error: {response.status_code}',
+                    'details': error_text
+                }), response.status_code
+
+            data = response.json() or {}
+            page_boards = data.get('values', []) or []
+            for board in page_boards:
+                board_id = board.get('id')
+                if board_id is None or board_id in seen_board_ids:
+                    continue
+                boards.append(board)
+                seen_board_ids.add(board_id)
+            pages_fetched += 1
+
+            if query and len(boards) >= limit:
+                break
+
+            is_last = bool(data.get('isLast'))
+            if is_last:
+                break
+
+            if not page_boards:
+                break
+
+            # Jira Agile board API typically returns paging metadata;
+            # fall back to page length progression if absent.
+            start_at = int(data.get('startAt', start_at)) + len(page_boards)
+            total = data.get('total')
+            if isinstance(total, int) and start_at >= total:
+                break
 
         # Format boards
         formatted_boards = []
+        query_lower = query.lower()
         for board in boards:
-            formatted_boards.append({
+            formatted = {
                 'id': board.get('id'),
                 'name': board.get('name'),
                 'type': board.get('type'),
                 'location': board.get('location', {})
-            })
+            }
+            if query:
+                board_id = str(formatted.get('id') or '')
+                board_name = str(formatted.get('name') or '').lower()
+                if not (
+                    query_lower in board_id.lower()
+                    or query_lower in board_name
+                ):
+                    continue
+            formatted_boards.append(formatted)
 
-        log_info(f'Found {len(formatted_boards)} boards')
+        if query:
+            formatted_boards = formatted_boards[:limit]
+
+        log_info(
+            f'Found {len(formatted_boards)} boards pages={pages_fetched} '
+            f'mode={"search" if query else "all"}'
+        )
 
         success_response = jsonify({'boards': formatted_boards})
         success_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'

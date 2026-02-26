@@ -10833,7 +10833,7 @@ import { createRoot } from 'react-dom/client';
                                                         </>
                                                     );
                                                     return (
-                                                            <div className="epic-block">
+                                                            <div className={`epic-block mapping-preview-card ${mappingHoverKey ? 'mapping-hover-active' : ''}`}>
                                                                 <div className="epic-header">
                                                                     <div className="epic-title">
                                                                         <div className="epic-title-row">
@@ -10844,7 +10844,7 @@ import { createRoot } from 'react-dom/client';
                                                                             </svg>
                                                                         </span>
                                                                         <a
-                                                                            className={`epic-link mapping-preview-linkable mapping-preview-link-parent ${mappingHoverKey === 'parent' ? 'is-linked-hover' : ''}`}
+                                                                            className={`epic-link mapping-preview-dimmable mapping-preview-linkable mapping-preview-link-parent ${mappingHoverKey === 'parent' ? 'is-linked-hover' : ''}`}
                                                                             href="#"
                                                                             onClick={(e) => e.preventDefault()}
                                                                             onMouseEnter={() => setMappingHoverKey('parent')}
@@ -10858,7 +10858,7 @@ import { createRoot } from 'react-dom/client';
                                                                 </div>
                                                                 <div className="epic-meta mapping-preview-epic-meta">
                                                                     <span
-                                                                        className={`mapping-preview-linkable mapping-preview-link-story-points ${mappingHoverKey === 'storyPoints' ? 'is-linked-hover' : ''}`}
+                                                                        className={`mapping-preview-dimmable mapping-preview-linkable mapping-preview-link-story-points ${mappingHoverKey === 'storyPoints' ? 'is-linked-hover' : ''}`}
                                                                         onMouseEnter={() => setMappingHoverKey('storyPoints')}
                                                                         onMouseLeave={() => setMappingHoverKey(null)}
                                                                         data-map-key="storyPoints"
@@ -10880,22 +10880,33 @@ import { createRoot } from 'react-dom/client';
                                                                                     <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
                                                                                 </svg>
                                                                             </span>
-                                                                            <span
-                                                                                className={`task-team mapping-preview-task-issue mapping-preview-linkable mapping-preview-link-issue ${mappingHoverKey === 'issueType' ? 'is-linked-hover' : ''}`}
-                                                                                onMouseEnter={() => setMappingHoverKey('issueType')}
-                                                                                onMouseLeave={() => setMappingHoverKey(null)}
-                                                                                data-map-key="issueType"
-                                                                                title={showTechnicalFieldIds ? `Issue Type: ${previewIssueType}` : undefined}
-                                                                            >
-                                                                                {showTechnicalFieldIds ? renderFieldLabel(previewIssueType, '') : previewIssueType}
-                                                                            </span>
                                                                             <h3 className="task-title">
-                                                                                <a href="#" onClick={(e) => e.preventDefault()}>{story.summary}</a>
+                                                                                <a
+                                                                                    href="#"
+                                                                                    onClick={(e) => e.preventDefault()}
+                                                                                    className={`mapping-preview-dimmable mapping-preview-linkable mapping-preview-link-issue ${mappingHoverKey === 'issueType' ? 'is-linked-hover' : ''}`}
+                                                                                    onMouseEnter={() => setMappingHoverKey('issueType')}
+                                                                                    onMouseLeave={() => setMappingHoverKey(null)}
+                                                                                    data-map-key="issueType"
+                                                                                    title={showTechnicalFieldIds ? `Issue Type: ${previewIssueType}` : undefined}
+                                                                                >
+                                                                                    {story.summary}
+                                                                                </a>
                                                                             </h3>
                                                                             <span className="task-inline-meta">
-                                                                                <a className="task-key-link" href="#" onClick={(e) => e.preventDefault()}>{story.key}</a>
+                                                                                <a
+                                                                                    className={`task-key-link mapping-preview-dimmable mapping-preview-linkable mapping-preview-link-issue ${mappingHoverKey === 'issueType' ? 'is-linked-hover' : ''}`}
+                                                                                    href="#"
+                                                                                    onClick={(e) => e.preventDefault()}
+                                                                                    onMouseEnter={() => setMappingHoverKey('issueType')}
+                                                                                    onMouseLeave={() => setMappingHoverKey(null)}
+                                                                                    data-map-key="issueType"
+                                                                                    title={showTechnicalFieldIds ? `Issue Type: ${previewIssueType}` : undefined}
+                                                                                >
+                                                                                    {story.key}
+                                                                                </a>
                                                                                 <span
-                                                                                    className={`task-inline-sp mapping-preview-linkable mapping-preview-link-story-points ${mappingHoverKey === 'storyPoints' ? 'is-linked-hover' : ''}`}
+                                                                                    className={`task-inline-sp mapping-preview-dimmable mapping-preview-linkable mapping-preview-link-story-points ${mappingHoverKey === 'storyPoints' ? 'is-linked-hover' : ''}`}
                                                                                     onMouseEnter={() => setMappingHoverKey('storyPoints')}
                                                                                     onMouseLeave={() => setMappingHoverKey(null)}
                                                                                     data-map-key="storyPoints"
@@ -10906,18 +10917,18 @@ import { createRoot } from 'react-dom/client';
                                                                         </div>
                                                                     </div>
                                                                     <div className="task-meta">
-                                                                        <span className={`task-status ${story.statusClass || story.status.toLowerCase().replace(/\s+/g, '-')}`}>
+                                                                        <span className={`task-status mapping-preview-dimmable ${story.statusClass || story.status.toLowerCase().replace(/\s+/g, '-')}`}>
                                                                             {story.status}
                                                                         </span>
                                                                         <span
-                                                                            className={`task-team mapping-preview-task-team mapping-preview-linkable mapping-preview-link-team ${mappingHoverKey === 'team' ? 'is-linked-hover' : ''}`}
+                                                                            className={`task-team mapping-preview-dimmable mapping-preview-task-team mapping-preview-linkable mapping-preview-link-team ${mappingHoverKey === 'team' ? 'is-linked-hover' : ''}`}
                                                                             onMouseEnter={() => setMappingHoverKey('team')}
                                                                             onMouseLeave={() => setMappingHoverKey(null)}
                                                                             data-map-key="team"
                                                                         >
                                                                             {story.team}
                                                                         </span>
-                                                                        <span className="task-updated">
+                                                                        <span className="task-updated mapping-preview-dimmable">
                                                                             Last Update: {story.updated}
                                                                         </span>
                                                                     </div>

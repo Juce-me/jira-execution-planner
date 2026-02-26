@@ -10590,17 +10590,17 @@ import { createRoot } from 'react-dom/client';
                                         type="button"
                                     >Capacity</button>
                                     <button
-                                        className={`group-modal-tab ${groupManageTab === 'priorityWeights' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('priorityWeights')}
-                                        type="button"
-                                    >Priority weights</button>
-                                    <button
                                         className={`group-modal-tab ${groupManageTab === 'teams' ? 'active' : ''}`}
                                         onClick={() => savedSelectedProjects.length > 0 && setGroupManageTab('teams')}
                                         type="button"
                                         disabled={savedSelectedProjects.length === 0}
                                         title={savedSelectedProjects.length === 0 ? 'Configure data sources first' : ''}
                                     >Team groups</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'priorityWeights' ? 'active' : ''}`}
+                                        onClick={() => setGroupManageTab('priorityWeights')}
+                                        type="button"
+                                    >Priority weights</button>
                                 </div>
                                 {(groupManageTab === 'scope' || groupManageTab === 'source' || groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
                                     <div className="group-modal-body group-modal-split group-projects-layout">
@@ -10621,87 +10621,89 @@ import { createRoot } from 'react-dom/client';
                                                 <div className="group-pane-title">Jira Source</div>
                                                 <div className="group-field-helper">Configure how sprint data is discovered and read from Jira.</div>
                                             </div>
-                                            <div className="group-projects-subsection" style={{padding: '12px 16px 0'}}>
-                                                <div className="team-selector-label">Sprint Field</div>
-                                                <div className="group-field-helper">Used to determine which sprint each ticket belongs to.</div>
-                                                <div className="capacity-inline-row">
-                                                    {sprintFieldNameDraft ? (
-                                                        <div className="selected-team-chip" title={sprintFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{sprintFieldNameDraft}</strong>{showTechnicalFieldIds && sprintFieldIdDraft && <span className="field-id-hint">({sprintFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setSprintFieldIdDraft(''); setSprintFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove sprint field">&times;</button>
-                                                        </div>
-                                                    ) : (
-                                                    <div className="team-search-wrapper capacity-inline-search">
-                                                        <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={sprintFieldSearchQuery} onChange={(e) => { setSprintFieldSearchQuery(e.target.value); setSprintFieldSearchOpen(true); setSprintFieldSearchIndex(0); }} onFocus={() => setSprintFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setSprintFieldSearchOpen(false), 120); }} onKeyDown={handleSprintFieldSearchKeyDown} ref={sprintFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
-                                                        {sprintFieldSearchOpen && sprintFieldSearchResults.length > 0 && (
-                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                {sprintFieldSearchResults.map((f, index) => (
-                                                                    <div key={f.id} className={`team-search-result-item ${index === sprintFieldSearchIndex ? 'active' : ''}`} onClick={() => { setSprintFieldIdDraft(f.id); setSprintFieldNameDraft(f.name); setSprintFieldSearchQuery(''); setSprintFieldSearchOpen(false); }}>
-                                                                        <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="group-projects-subsection" style={{padding: '12px 16px 12px'}}>
-                                                <div className="team-selector-label">Sprint Board (optional)</div>
-                                                <div className="group-field-helper">Used for faster sprint loading. If empty, the server falls back to env/default issue-based sprint discovery.</div>
-                                                {!boardIdDraft && (
+                                            <div className="settings-two-col-grid settings-source-grid" style={{ padding: '12px 16px 12px' }}>
+                                                <div className="group-projects-subsection" style={{marginTop: 0}}>
+                                                    <div className="team-selector-label">Sprint Field</div>
+                                                    <div className="group-field-helper">Used to determine which sprint each ticket belongs to.</div>
                                                     <div className="capacity-inline-row">
+                                                        {sprintFieldNameDraft ? (
+                                                            <div className="selected-team-chip" title={sprintFieldIdDraft || ''}>
+                                                                <span className="team-name"><strong>{sprintFieldNameDraft}</strong>{showTechnicalFieldIds && sprintFieldIdDraft && <span className="field-id-hint">({sprintFieldIdDraft})</span>}</span>
+                                                                <button className="remove-btn" onClick={() => { setSprintFieldIdDraft(''); setSprintFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove sprint field">&times;</button>
+                                                            </div>
+                                                        ) : (
                                                         <div className="team-search-wrapper capacity-inline-search">
-                                                                <input
-                                                                    type="text"
-                                                                    className="team-search-input"
-                                                                    placeholder={boardSearchRemoteLoading ? 'Searching boards...' : 'Search boards...'}
-                                                                    value={boardSearchQuery}
-                                                                    onChange={(e) => { setBoardSearchQuery(e.target.value); setBoardSearchOpen(true); setBoardSearchIndex(0); }}
-                                                                    onFocus={() => { setBoardSearchOpen(true); }}
-                                                                    onBlur={() => { window.setTimeout(() => setBoardSearchOpen(false), 120); }}
-                                                                    onKeyDown={handleBoardSearchKeyDown}
-                                                                    ref={boardSearchInputRef}
-                                                                    disabled={false}
-                                                                />
-                                                            {boardSearchOpen && boardSearchQuery.trim() && (
+                                                            <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={sprintFieldSearchQuery} onChange={(e) => { setSprintFieldSearchQuery(e.target.value); setSprintFieldSearchOpen(true); setSprintFieldSearchIndex(0); }} onFocus={() => setSprintFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setSprintFieldSearchOpen(false), 120); }} onKeyDown={handleSprintFieldSearchKeyDown} ref={sprintFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
+                                                            {sprintFieldSearchOpen && sprintFieldSearchResults.length > 0 && (
                                                                 <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                    {boardSearchRemoteLoading ? (
-                                                                        <div className="team-search-result-item is-empty">Searching boards...</div>
-                                                                    ) : boardSearchResults.length === 0 ? (
-                                                                        <div className="team-search-result-item is-empty">No boards found</div>
-                                                                    ) : boardSearchResults.map((b, index) => (
-                                                                        <div
-                                                                            key={b.id}
-                                                                            className={`team-search-result-item ${index === boardSearchIndex ? 'active' : ''}`}
-                                                                            onClick={() => {
-                                                                                setBoardIdDraft(String(b.id || ''));
-                                                                                setBoardNameDraft(String(b.name || ''));
-                                                                                setBoardSearchQuery('');
-                                                                                setBoardSearchOpen(false);
-                                                                        }}
-                                                                    >
-                                                                            <strong>{b.name || `Board ${b.id}`}</strong> <span style={{opacity: 0.55}}>({b.id}{b.type ? ` · ${b.type}` : ''})</span>
+                                                                    {sprintFieldSearchResults.map((f, index) => (
+                                                                        <div key={f.id} className={`team-search-result-item ${index === sprintFieldSearchIndex ? 'active' : ''}`} onClick={() => { setSprintFieldIdDraft(f.id); setSprintFieldNameDraft(f.name); setSprintFieldSearchQuery(''); setSprintFieldSearchOpen(false); }}>
+                                                                            <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
                                                                         </div>
                                                                     ))}
                                                                 </div>
                                                             )}
                                                         </div>
+                                                        )}
                                                     </div>
-                                                )}
-                                                {boardIdDraft ? (
-                                                    <div className="selected-teams-list" style={{ marginTop: '0.45rem' }}>
-                                                        <div className="selected-team-chip" title={boardIdDraft}>
-                                                            <span className="team-name">
-                                                                <strong>{boardNameDraft || `Board ${boardIdDraft}`}</strong>
-                                                                {showTechnicalFieldIds && boardNameDraft ? ` (${boardIdDraft})` : ''}
-                                                            </span>
-                                                            <button className="remove-btn" onClick={clearBoardSelection} type="button" title="Clear board" aria-label="Clear sprint board">&times;</button>
+                                                </div>
+                                                <div className="group-projects-subsection" style={{marginTop: 0}}>
+                                                    <div className="team-selector-label">Sprint Board (optional)</div>
+                                                    <div className="group-field-helper">Used for faster sprint loading. If empty, the server falls back to env/default issue-based sprint discovery.</div>
+                                                    {!boardIdDraft && (
+                                                        <div className="capacity-inline-row">
+                                                            <div className="team-search-wrapper capacity-inline-search">
+                                                                    <input
+                                                                        type="text"
+                                                                        className="team-search-input"
+                                                                        placeholder={boardSearchRemoteLoading ? 'Searching boards...' : 'Search boards...'}
+                                                                        value={boardSearchQuery}
+                                                                        onChange={(e) => { setBoardSearchQuery(e.target.value); setBoardSearchOpen(true); setBoardSearchIndex(0); }}
+                                                                        onFocus={() => { setBoardSearchOpen(true); }}
+                                                                        onBlur={() => { window.setTimeout(() => setBoardSearchOpen(false), 120); }}
+                                                                        onKeyDown={handleBoardSearchKeyDown}
+                                                                        ref={boardSearchInputRef}
+                                                                        disabled={false}
+                                                                    />
+                                                                {boardSearchOpen && boardSearchQuery.trim() && (
+                                                                    <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                                        {boardSearchRemoteLoading ? (
+                                                                            <div className="team-search-result-item is-empty">Searching boards...</div>
+                                                                        ) : boardSearchResults.length === 0 ? (
+                                                                            <div className="team-search-result-item is-empty">No boards found</div>
+                                                                        ) : boardSearchResults.map((b, index) => (
+                                                                            <div
+                                                                                key={b.id}
+                                                                                className={`team-search-result-item ${index === boardSearchIndex ? 'active' : ''}`}
+                                                                                onClick={() => {
+                                                                                    setBoardIdDraft(String(b.id || ''));
+                                                                                    setBoardNameDraft(String(b.name || ''));
+                                                                                    setBoardSearchQuery('');
+                                                                                    setBoardSearchOpen(false);
+                                                                            }}
+                                                                        >
+                                                                                <strong>{b.name || `Board ${b.id}`}</strong> <span style={{opacity: 0.55}}>({b.id}{b.type ? ` · ${b.type}` : ''})</span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="team-selector-empty">No board selected (fallback mode).</div>
-                                                )}
+                                                    )}
+                                                    {boardIdDraft ? (
+                                                        <div className="selected-teams-list" style={{ marginTop: '0.45rem' }}>
+                                                            <div className="selected-team-chip" title={boardIdDraft}>
+                                                                <span className="team-name">
+                                                                    <strong>{boardNameDraft || `Board ${boardIdDraft}`}</strong>
+                                                                    {showTechnicalFieldIds && boardNameDraft ? ` (${boardIdDraft})` : ''}
+                                                                </span>
+                                                                <button className="remove-btn" onClick={clearBoardSelection} type="button" title="Clear board" aria-label="Clear sprint board">&times;</button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="team-selector-empty">No board selected (fallback mode).</div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                         )}
@@ -10748,6 +10750,7 @@ import { createRoot } from 'react-dom/client';
                                                 </div>
                                             </div>
                                             <div className="group-pane-list group-projects-pane-list">
+                                                <div className="settings-two-col-grid settings-scope-grid">
                                                 <div className="group-projects-subsection">
                                                     <div className="team-selector-label">Product</div>
                                                     <div className="group-field-helper">Projects counted as Product work in planning and stats.</div>
@@ -10779,6 +10782,7 @@ import { createRoot } from 'react-dom/client';
                                                             ))}
                                                         </div>
                                                     )}
+                                                </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -11085,7 +11089,7 @@ import { createRoot } from 'react-dom/client';
                                             <div className="group-projects-section group-config-card">
                                                 <div className="group-pane-title">Capacity Project</div>
                                                 <div className="group-projects-desc">
-                                                    Select one Jira project that stores team capacity entries, and the field used for estimated capacity.
+                                                    Select one Jira project that stores team capacity entries, and the numeric field used for estimated capacity (used by the <strong>Planning</strong> module).
                                                 </div>
                                                 <div className="capacity-inline-row">
                                                     {capacityProjectDraft ? (

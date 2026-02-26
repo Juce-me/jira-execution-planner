@@ -41,10 +41,10 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 If you just want to see the dashboard working locally:
 1. Install dependencies: `python3 -m pip install --user -r requirements.txt`
 2. Copy the env template: `cp .env.example .env`
-3. Edit `.env` and set **JIRA_URL**, **JIRA_EMAIL**, **JIRA_TOKEN**, and **JQL_QUERY** (leave the sample JQL if it already fits your projects/teams).
+3. Edit `.env` and set **JIRA_URL**, **JIRA_EMAIL**, **JIRA_TOKEN**.
 4. Start the backend: `python3 jira_server.py`
 5. Visit `http://localhost:5050/api/test` in your browser to confirm connectivity.
-6. Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`) to view the UI. Tasks should load automatically using your JQL and sprint selection.
+6. Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`), complete **Dashboard Settings** onboarding, then click **Save**.
 
 More detailed setup guidance remains below if you need it.
 
@@ -93,7 +93,7 @@ pip3 install --user flask flask-cors requests python-dotenv openpyxl "urllib3<2"
 python3 -m pip install --user flask flask-cors requests python-dotenv openpyxl "urllib3<2"
 ```
 
-### Step 3: Configure credentials
+### Step 3: Configure credentials (and optional server settings)
 
 **Create .env file from template:**
 ```bash
@@ -115,36 +115,15 @@ JIRA_EMAIL=your-email@company.com
 # Your Jira API token
 JIRA_TOKEN=your-api-token-here
 
-# JQL Query to filter tasks (customize based on your needs)
-JQL_QUERY=project IN (PROJECT1, PROJECT2) AND issuetype = Story ORDER BY priority DESC
+# Optional: server port for the local backend
+SERVER_PORT=5050
 
-# Optional: shareable team groups config path (created if missing)
-GROUPS_CONFIG_PATH=./team-groups.json
+# Optional: debug mode (auto-reload, verbose errors)
+DEBUG_MODE=false
 
-# Optional: bootstrap group config if no file exists yet (JSON string)
-TEAM_GROUPS_JSON={"version":1,"groups":[{"id":"default","name":"Default","teamIds":["<team-id>"]}],"defaultGroupId":"default"}
-
-# Optional: JQL template for per-group fetches (use {TEAM_IDS} placeholder)
-JQL_QUERY_TEMPLATE=project IN (PROJECT1, PROJECT2) AND "Team[Team]" in ({TEAM_IDS}) ORDER BY priority DESC
-
-# Optional: Board ID for faster sprint fetching (leave empty if unknown)
-JIRA_BOARD_ID=
-
-# Optional: priority weights for stats (done/incomplete)
-STATS_PRIORITY_WEIGHTS=Blocker:0.40,Critical:0.30,Major:0.20,Minor:0.06,Low:0.03,Trivial:0.01
-
-# Optional: capacity planning (team capacity project + field id)
-CAPACITY_PROJECT=
-CAPACITY_FIELD_ID=
+# Optional: server log level
+LOG_LEVEL=INFO
 ```
-
-### Team groups (optional)
-
-Use the Group selector to save multiple named team sets. The config is stored in a local JSON file (shareable, no auth tokens).
-
-- `GROUPS_CONFIG_PATH` (default: `./team-groups.json`) controls where the JSON is saved.
-- `TEAM_GROUPS_JSON` can bootstrap the first config if the file does not exist yet.
-- `JQL_QUERY_TEMPLATE` can be used for per-group fetches. Use the `{TEAM_IDS}` placeholder.
 
 **How to get Jira API token:**
 1. Go to https://id.atlassian.com/manage-profile/security/api-tokens
@@ -219,7 +198,29 @@ Jira API docs used:
 
 ### Step 5: Open the dashboard
 
-Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`). Tasks will load automatically!
+Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`).
+
+On first launch (or when local config files do not exist), open **Dashboard Settings** and configure:
+
+1. **Scope projects**
+   - Add Jira projects and assign each to **Product** or **Tech**
+2. **Jira source**
+   - Select **Sprint Field**
+   - Optionally select **Sprint Board** (faster sprint loading)
+3. **Field mapping**
+   - Set **Issue Type**, **Parent Name Field**, **Story Points Field**, **Team Field**
+4. **Capacity** (used by the Planning module)
+   - Select **Capacity Project**
+   - Select **Capacity Field** (numeric team capacity field)
+5. **Team groups**
+   - Create at least one group and choose which teams it contains
+6. Click **Save** to persist configuration locally
+
+Saved local JSON files:
+- `dashboard-config.json` (projects, Jira source, field mapping, capacity, priority weights)
+- `team-groups.json` (team groups and team catalog metadata)
+
+The app now relies on Dashboard Settings for supported runtime configuration. Keep `.env` focused on credentials and local server settings.
 
 ## 🔧 How it works
 
@@ -258,8 +259,8 @@ The dashboard supports dynamic sprint selection:
 3. **Caching**: Sprint list cached for 24 hours for fast loading
 4. **Refresh button**: Manually update sprint list from Jira
 5. **Two fetch methods**:
-   - Fast: Via Board API (requires `JIRA_BOARD_ID` in .env)
-   - Fallback: Via Issues API (uses `STATS_JQL_BASE` if set, otherwise `JQL_QUERY`)
+   - Fast: Via Board API (set Sprint Board in Dashboard Settings → Jira source)
+   - Fallback: Via Issues API (uses your dashboard configuration and selected projects)
 
 ## 📊 Sprint Statistics
 
@@ -276,7 +277,7 @@ The Statistics panel focuses on active or completed (closed) quarter sprints:
 
 Capacity planning uses the loaded sprint tasks plus a separate Jira project for team capacity:
 
-- **Team capacity**: pulled from the capacity project using `CAPACITY_PROJECT` and `CAPACITY_FIELD_ID`.
+- **Team capacity**: pulled from the configured Capacity project/field (Dashboard Settings → Capacity).
 - **Planning capacity**: team capacity minus excluded epic story points (same epic include/exclude toggle).
 - **Split**: estimated capacity split is 70% Product / 30% Tech.
 
@@ -339,18 +340,23 @@ Scenario API response (used by the UI):
 - Verify your token hasn't expired
 
 **"No tasks found":**
-- Verify the JQL query matches your Jira setup
+- Verify your configured projects and team groups match your Jira setup
 - Check that the sprint exists and has tasks
-- Try simplifying the query in `.env`
+- If you use a custom JQL override, try simplifying it
 
 **"Team name missing" in tasks output:**
-- Open the config modal and set the **Team Field** to your Jira Team[Team] custom field
+- Open Dashboard Settings → **Field mapping** and set the **Team Field** to your Jira Team[Team] custom field
 
 **"No sprints available" in dropdown:**
-- Option 1: Set `JIRA_BOARD_ID` in `.env` file (faster method)
+- Option 1: Set **Sprint Board** in Dashboard Settings → **Jira source** (faster method)
   - Find your board ID: go to `/api/boards` endpoint or check Jira board URL
-- Option 2: Leave `JIRA_BOARD_ID` empty (fallback method works automatically)
-- Check that your JQL query returns tasks with sprint information
+- Option 2: Leave Sprint Board empty (fallback method works automatically)
+- Check that your selected projects return tasks with sprint information
+
+**Planning panel shows no capacity / capacity comparison looks wrong:**
+- Open Dashboard Settings → **Capacity**
+- Select both **Capacity Project** and **Capacity Field**
+- Click **Save** (changes are applied only after saving)
 
 **Sprints loading slowly:**
 - First load fetches from Jira (may take a few seconds)
@@ -364,26 +370,6 @@ Scenario API response (used by the UI):
 **Browser shows old errors after fixing:**
 - Do a hard refresh: `Ctrl+Shift+R` (Windows/Linux) or `Cmd+Shift+R` (Mac)
 - Or open in incognito/private mode
-
-## 📝 Customizing the query
-
-To change the query, edit the `JQL_QUERY` in your `.env` file:
-
-```env
-# Simple query - all stories from PROJECT1
-JQL_QUERY=project = PROJECT1 AND issuetype = Story ORDER BY priority DESC
-
-# Multiple projects
-JQL_QUERY=project IN (PROJECT1, PROJECT2) AND issuetype = Story ORDER BY priority DESC
-
-# Filter by assignee
-JQL_QUERY=project = PROJECT1 AND assignee = currentUser() ORDER BY priority DESC
-
-# Tasks from last 30 days
-JQL_QUERY=project = PROJECT1 AND created >= -30d ORDER BY priority DESC
-```
-
-**Note**: Don't include `Sprint = ID` in your JQL - the app adds it automatically based on dropdown selection (ready-to-close ignores sprint filtering). Statistics use the same loaded sprint tasks.
 
 ## 🔄 Updating data
 
@@ -411,6 +397,8 @@ jira-dashboard/
 ├── install.sh             # Installation script
 ├── README.md              # This file
 ├── .env                   # Your credentials (NOT in git!)
+├── dashboard-config.json  # Dashboard settings (auto-generated, NOT in git!)
+├── team-groups.json       # Team groups config (auto-generated, NOT in git!)
 ├── sprints_cache.json     # Sprint cache (auto-generated, NOT in git!)
 └── tasks.test.local.json  # Local task snapshots (optional, NOT in git!)
 ```

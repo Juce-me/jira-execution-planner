@@ -10705,7 +10705,7 @@ import { createRoot } from 'react-dom/client';
                                         </div>
                                         )}
                                         {groupManageTab === 'scope' && (
-                                        <div className="group-pane group-projects-pane-right group-single-pane">
+                                        <div className={`group-pane group-projects-pane-right group-single-pane ${groupManageTab === 'mapping' ? 'mapping-config-pane' : ''}`}>
                                             <div className="group-pane-header group-projects-pane-header">
                                                 <div className="group-pane-title">Dashboard Projects</div>
                                                 <div className="group-projects-desc">
@@ -10800,10 +10800,10 @@ import { createRoot } from 'react-dom/client';
                                             {groupManageTab === 'mapping' && (
                                             <>
                                             <div className="mapping-preview-section group-config-card">
-                                                <div className="group-pane-title">Live preview</div>
+                                                <div className="group-pane-title">Preview</div>
                                                 <div className="group-field-helper">This is how a story will be shown with your current mapping.</div>
                                                 {(() => {
-                                                    const previewIssueType = issueTypesDraft[0] || 'Any';
+                                                    const previewIssueType = issueTypesDraft[0] || 'Issue Type';
                                                     const previewParentFieldName = parentNameFieldNameDraft || 'Parent Name Field';
                                                     const previewStoryPointsFieldName = storyPointsFieldNameDraft || 'Story Points Field';
                                                     const previewTeamFieldName = teamFieldNameDraft || 'Team Field';
@@ -10811,28 +10811,20 @@ import { createRoot } from 'react-dom/client';
                                                     const previewStoryPointsFieldId = storyPointsFieldIdDraft || '';
                                                     const previewTeamFieldId = teamFieldIdDraft || '';
                                                     const previewEpic = {
-                                                        key: 'TECH-15396',
-                                                        parentValue: 'Distribution improvements'
+                                                        key: 'Parent-Key',
+                                                        parentValue: parentNameFieldNameDraft || 'Parent Name Field'
                                                     };
                                                     const previewStories = [
                                                         {
-                                                            key: 'TECH-25283',
-                                                            summary: 'Integrate automated AI solution in bswx code',
-                                                            status: 'ACCEPTED',
-                                                            updated: '2025-12-19',
-                                                            storyPoints: 1,
-                                                            team: 'R&D DISTRIBUTION'
-                                                        },
-                                                        {
-                                                            key: 'TECH-25314',
-                                                            summary: '[D] Infra improvements (grafana)',
-                                                            status: 'ACCEPTED',
-                                                            updated: '2025-12-19',
-                                                            storyPoints: 0.25,
-                                                            team: 'R&D DISTRIBUTION'
+                                                            key: 'STORY-KEY',
+                                                            summary: 'Story Summary',
+                                                            status: 'Status',
+                                                            statusClass: 'accepted',
+                                                            updated: 'Last Updated Date',
+                                                            storyPoints: storyPointsFieldNameDraft ? 'Story Points' : 'Story Points Field',
+                                                            team: teamFieldNameDraft ? 'Team Name' : 'Team Field'
                                                         }
                                                     ];
-                                                    const previewTotalSp = previewStories.reduce((sum, story) => sum + Number(story.storyPoints || 0), 0);
                                                     const renderFieldLabel = (label, id) => (
                                                         <>
                                                             {label}
@@ -10855,14 +10847,13 @@ import { createRoot } from 'react-dom/client';
                                                                             </svg>
                                                                         </span>
                                                                         <a className="epic-link" href="#" onClick={(e) => e.preventDefault()}>
-                                                                            <span className="epic-name">{previewEpic.parentValue}</span>
+                                                                            <span className="epic-name mapping-preview-parent-value">{previewEpic.parentValue}</span>
                                                                             <span className="epic-key">{previewEpic.key}</span>
                                                                         </a>
                                                                     </div>
                                                                 </div>
-                                                                <div className="epic-meta">
-                                                                    <span>SP: {previewTotalSp.toFixed(2)}</span>
-                                                                    <span className="mapping-preview-meta-note">Preview only</span>
+                                                                <div className="epic-meta mapping-preview-epic-meta">
+                                                                    <span>SP: Story Points Total</span>
                                                                 </div>
                                                             </div>
                                                             {previewStories.map((story) => (
@@ -10883,12 +10874,12 @@ import { createRoot } from 'react-dom/client';
                                                                             </h3>
                                                                             <span className="task-inline-meta">
                                                                                 <a className="task-key-link" href="#" onClick={(e) => e.preventDefault()}>{story.key}</a>
-                                                                                <span className="task-inline-sp">{story.storyPoints} SP</span>
+                                                                                <span className="task-inline-sp">{storyPointsFieldNameDraft ? 'Story Points' : 'SP Value'}</span>
                                                                             </span>
                                                                         </div>
                                                                     </div>
                                                                     <div className="task-meta">
-                                                                        <span className={`task-status ${story.status.toLowerCase().replace(/\s+/g, '-')}`}>
+                                                                        <span className={`task-status ${story.statusClass || story.status.toLowerCase().replace(/\s+/g, '-')}`}>
                                                                             {story.status}
                                                                         </span>
                                                                         <span className="task-team">{story.team}</span>
@@ -10922,6 +10913,7 @@ import { createRoot } from 'react-dom/client';
                                                     );
                                                 })()}
                                             </div>
+                                            <div className="mapping-config-grid">
                                             <div className="group-projects-section group-config-card">
                                                 <div className="group-pane-title">Issue Type</div>
                                                 <div className="group-field-helper">Only these issue types are loaded into the dashboard.</div>
@@ -10971,7 +10963,7 @@ import { createRoot } from 'react-dom/client';
                                                 <div className="group-field-helper">Field used to map stories back to their parent epic name.</div>
                                                 <div className="capacity-inline-row">
                                                     {parentNameFieldNameDraft ? (
-                                                        <div className="selected-team-chip" title={parentNameFieldIdDraft || ''}>
+                                                        <div className="selected-team-chip mapping-parent-chip" title={parentNameFieldIdDraft || ''}>
                                                             <span className="team-name"><strong>{parentNameFieldNameDraft}</strong>{showTechnicalFieldIds && parentNameFieldIdDraft && <span className="field-id-hint">({parentNameFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setParentNameFieldIdDraft(''); setParentNameFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove parent name field">&times;</button>
                                                         </div>
@@ -10996,7 +10988,7 @@ import { createRoot } from 'react-dom/client';
                                                 <div className="group-field-helper">Field used for effort, velocity, and capacity comparisons.</div>
                                                 <div className="capacity-inline-row">
                                                     {storyPointsFieldNameDraft ? (
-                                                        <div className="selected-team-chip" title={storyPointsFieldIdDraft || ''}>
+                                                        <div className="selected-team-chip mapping-sp-chip" title={storyPointsFieldIdDraft || ''}>
                                                             <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong>{showTechnicalFieldIds && storyPointsFieldIdDraft && <span className="field-id-hint">({storyPointsFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove story points field">&times;</button>
                                                         </div>
@@ -11021,7 +11013,7 @@ import { createRoot } from 'react-dom/client';
                                                 <div className="group-field-helper">Field used to assign each ticket to a team.</div>
                                                 <div className="capacity-inline-row">
                                                     {teamFieldNameDraft ? (
-                                                        <div className="selected-team-chip" title={teamFieldIdDraft || ''}>
+                                                        <div className="selected-team-chip mapping-team-chip" title={teamFieldIdDraft || ''}>
                                                             <span className="team-name"><strong>{teamFieldNameDraft}</strong>{showTechnicalFieldIds && teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove team field">&times;</button>
                                                         </div>
@@ -11040,6 +11032,7 @@ import { createRoot } from 'react-dom/client';
                                                     </div>
                                                     )}
                                                 </div>
+                                            </div>
                                             </div>
                                             </>
                                             )}

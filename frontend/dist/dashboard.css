@@ -1076,6 +1076,8 @@
 
         .mapping-preview-section {
             margin-bottom: 0.1rem;
+            order: 99;
+            grid-column: 1 / -1;
         }
 
         .mapping-preview-section .group-field-helper {
@@ -1095,6 +1097,18 @@
             background: transparent;
         }
 
+        .mapping-preview-section .epic-title {
+            font-size: 0.88rem;
+        }
+
+        .mapping-preview-section .epic-name {
+            font-size: 0.88rem;
+        }
+
+        .mapping-preview-section .epic-key {
+            font-size: 0.62rem;
+        }
+
         .mapping-preview-parent-label {
             font-size: 0.66rem;
             color: var(--text-secondary);
@@ -1107,9 +1121,8 @@
             font-weight: 600;
         }
 
-        .mapping-preview-meta-note {
-            color: var(--text-secondary);
-            font-style: italic;
+        .mapping-preview-parent-value {
+            color: #69c0ff;
         }
 
         .mapping-preview-mapped-meta {
@@ -1134,6 +1147,80 @@
             background: #fff7e6;
             color: #d48806;
             border-color: #ffd591;
+        }
+
+        .mapping-preview-epic-meta {
+            font-size: 0.62rem;
+            gap: 0.4rem;
+            color: var(--text-secondary);
+        }
+
+        .mapping-config-pane .group-pane-tools {
+            margin-bottom: 0;
+        }
+
+        .mapping-config-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.75rem;
+            align-content: start;
+        }
+
+        .mapping-config-grid .group-projects-section,
+        .mapping-config-grid .group-projects-subsection {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.65rem 0.75rem;
+            background: #fff;
+            margin-top: 0;
+        }
+
+        .mapping-config-grid .group-projects-subsection {
+            gap: 0.4rem;
+        }
+
+        .mapping-config-grid .capacity-inline-row {
+            margin-top: 0.15rem;
+        }
+
+        .mapping-config-grid .capacity-inline-search {
+            width: 100%;
+            min-width: 0;
+        }
+
+        .mapping-config-grid .selected-team-chip {
+            margin: 0;
+        }
+
+        .mapping-config-grid .selected-team-chip.issue-type-chip {
+            background: rgba(167, 139, 250, 0.07);
+            border-left-width: 3px;
+            border-left-color: rgba(167, 139, 250, 0.72);
+        }
+
+        .mapping-config-grid .selected-team-chip.mapping-parent-chip {
+            background: rgba(105, 192, 255, 0.07);
+            border-left: 3px solid rgba(105, 192, 255, 0.72);
+        }
+
+        .mapping-config-grid .selected-team-chip.mapping-sp-chip {
+            background: rgba(250, 140, 22, 0.07);
+            border-left: 3px solid rgba(250, 140, 22, 0.72);
+        }
+
+        .mapping-config-grid .selected-team-chip.mapping-team-chip {
+            background: rgba(82, 196, 26, 0.08);
+            border-left: 3px solid rgba(82, 196, 26, 0.72);
+        }
+
+        .mapping-config-grid .team-selector-empty {
+            margin-top: 0.25rem;
+        }
+
+        @media (max-width: 1100px) {
+            .mapping-config-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         .group-editor-header {

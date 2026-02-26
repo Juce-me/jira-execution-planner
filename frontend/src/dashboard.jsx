@@ -174,6 +174,7 @@ import { createRoot } from 'react-dom/client';
             const [groupQueryTemplateEnabled, setGroupQueryTemplateEnabled] = useState(false);
             const [groupManageTab, setGroupManageTab] = useState('scope');
             const [showTechnicalFieldIds, setShowTechnicalFieldIds] = useState(false);
+            const [mappingHoverKey, setMappingHoverKey] = useState(null);
             const [settingsAdminOnly, setSettingsAdminOnly] = useState(true);
             const [userCanEditSettings, setUserCanEditSettings] = useState(true);
             const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
@@ -10705,7 +10706,7 @@ import { createRoot } from 'react-dom/client';
                                         </div>
                                         )}
                                         {groupManageTab === 'scope' && (
-                                        <div className="group-pane group-projects-pane-right group-single-pane">
+                                        <div className={`group-pane group-projects-pane-right group-single-pane ${groupManageTab === 'mapping' ? 'mapping-config-pane' : ''}`}>
                                             <div className="group-pane-header group-projects-pane-header">
                                                 <div className="group-pane-title">Dashboard Projects</div>
                                                 <div className="group-projects-desc">
@@ -10799,7 +10800,140 @@ import { createRoot } from 'react-dom/client';
                                             </div>
                                             {groupManageTab === 'mapping' && (
                                             <>
-                                            <div className="group-projects-section group-config-card">
+                                            <div className="mapping-preview-section group-config-card">
+                                                <div className="group-pane-title">Preview</div>
+                                                <div className="group-field-helper">This is how a story will be shown with your current mapping.</div>
+                                                {(() => {
+                                                    const previewIssueType = issueTypesDraft[0] || 'Issue Type';
+                                                    const previewParentFieldName = parentNameFieldNameDraft || 'Parent Name Field';
+                                                    const previewStoryPointsFieldName = storyPointsFieldNameDraft || 'Story Points Field';
+                                                    const previewTeamFieldName = teamFieldNameDraft || 'Team Field';
+                                                    const previewParentFieldId = parentNameFieldIdDraft || '';
+                                                    const previewStoryPointsFieldId = storyPointsFieldIdDraft || '';
+                                                    const previewTeamFieldId = teamFieldIdDraft || '';
+                                                    const previewEpic = {
+                                                        key: 'Parent-Key',
+                                                        parentValue: parentNameFieldNameDraft || 'Parent Name Field'
+                                                    };
+                                                    const previewStories = [
+                                                        {
+                                                            key: 'STORY-KEY',
+                                                            summary: 'Story Summary',
+                                                            status: 'Status',
+                                                            statusClass: 'accepted',
+                                                            updated: 'Last Updated Date',
+                                                            storyPoints: storyPointsFieldNameDraft ? 'Story Points' : 'Story Points Field',
+                                                            team: teamFieldNameDraft ? 'Team Name' : 'Team Field'
+                                                        }
+                                                    ];
+                                                    const renderFieldLabel = (label, id) => (
+                                                        <>
+                                                            {label}
+                                                            {showTechnicalFieldIds && id && <span className="field-id-hint">({id})</span>}
+                                                        </>
+                                                    );
+                                                    return (
+                                                            <div className="epic-block">
+                                                                <div className="epic-header">
+                                                                    <div className="epic-title">
+                                                                        <div className="epic-title-row">
+                                                                            <span className="epic-icon" aria-hidden="true" title="EPIC">
+                                                                                <svg viewBox="0 0 24 24" fill="none">
+                                                                                <rect x="3" y="3" width="18" height="18" rx="3" stroke="#1D7AFC" strokeWidth="2"/>
+                                                                                <path d="M7.5 12.5l3 3 6-6" stroke="#1D7AFC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                                                            </svg>
+                                                                        </span>
+                                                                        <a
+                                                                            className={`epic-link mapping-preview-linkable mapping-preview-link-parent ${mappingHoverKey === 'parent' ? 'is-linked-hover' : ''}`}
+                                                                            href="#"
+                                                                            onClick={(e) => e.preventDefault()}
+                                                                            onMouseEnter={() => setMappingHoverKey('parent')}
+                                                                            onMouseLeave={() => setMappingHoverKey(null)}
+                                                                            data-map-key="parent"
+                                                                        >
+                                                                            <span className="epic-name mapping-preview-parent-value">{previewEpic.parentValue}</span>
+                                                                            <span className="epic-key">{previewEpic.key}</span>
+                                                                        </a>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="epic-meta mapping-preview-epic-meta">
+                                                                    <span
+                                                                        className={`mapping-preview-linkable mapping-preview-link-story-points ${mappingHoverKey === 'storyPoints' ? 'is-linked-hover' : ''}`}
+                                                                        onMouseEnter={() => setMappingHoverKey('storyPoints')}
+                                                                        onMouseLeave={() => setMappingHoverKey(null)}
+                                                                        data-map-key="storyPoints"
+                                                                    >
+                                                                        SP: Story Points Total
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            {previewStories.map((story) => (
+                                                                <div
+                                                                    key={story.key}
+                                                                    className="task-item priority-major"
+                                                                    data-task-key={`preview-${story.key}`}
+                                                                >
+                                                                    <div className="task-header">
+                                                                        <div className="task-headline">
+                                                                            <span className="story-icon" aria-hidden="true" title="STORY">
+                                                                                <svg viewBox="0 0 24 24" fill="none">
+                                                                                    <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
+                                                                                </svg>
+                                                                            </span>
+                                                                            <span
+                                                                                className={`task-team mapping-preview-task-issue mapping-preview-linkable mapping-preview-link-issue ${mappingHoverKey === 'issueType' ? 'is-linked-hover' : ''}`}
+                                                                                onMouseEnter={() => setMappingHoverKey('issueType')}
+                                                                                onMouseLeave={() => setMappingHoverKey(null)}
+                                                                                data-map-key="issueType"
+                                                                                title={showTechnicalFieldIds ? `Issue Type: ${previewIssueType}` : undefined}
+                                                                            >
+                                                                                {showTechnicalFieldIds ? renderFieldLabel(previewIssueType, '') : previewIssueType}
+                                                                            </span>
+                                                                            <h3 className="task-title">
+                                                                                <a href="#" onClick={(e) => e.preventDefault()}>{story.summary}</a>
+                                                                            </h3>
+                                                                            <span className="task-inline-meta">
+                                                                                <a className="task-key-link" href="#" onClick={(e) => e.preventDefault()}>{story.key}</a>
+                                                                                <span
+                                                                                    className={`task-inline-sp mapping-preview-linkable mapping-preview-link-story-points ${mappingHoverKey === 'storyPoints' ? 'is-linked-hover' : ''}`}
+                                                                                    onMouseEnter={() => setMappingHoverKey('storyPoints')}
+                                                                                    onMouseLeave={() => setMappingHoverKey(null)}
+                                                                                    data-map-key="storyPoints"
+                                                                                >
+                                                                                    {storyPointsFieldNameDraft ? 'Story Points' : 'SP Value'}
+                                                                                </span>
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="task-meta">
+                                                                        <span className={`task-status ${story.statusClass || story.status.toLowerCase().replace(/\s+/g, '-')}`}>
+                                                                            {story.status}
+                                                                        </span>
+                                                                        <span
+                                                                            className={`task-team mapping-preview-task-team mapping-preview-linkable mapping-preview-link-team ${mappingHoverKey === 'team' ? 'is-linked-hover' : ''}`}
+                                                                            onMouseEnter={() => setMappingHoverKey('team')}
+                                                                            onMouseLeave={() => setMappingHoverKey(null)}
+                                                                            data-map-key="team"
+                                                                        >
+                                                                            {story.team}
+                                                                        </span>
+                                                                        <span className="task-updated">
+                                                                            Last Update: {story.updated}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+                                            <div className="mapping-config-grid">
+                                            <div
+                                                className={`group-projects-section group-config-card ${mappingHoverKey === 'issueType' ? 'is-linked-hover' : ''}`}
+                                                onMouseEnter={() => setMappingHoverKey('issueType')}
+                                                onMouseLeave={() => setMappingHoverKey(null)}
+                                                data-map-key="issueType"
+                                            >
                                                 <div className="group-pane-title">Issue Type</div>
                                                 <div className="group-field-helper">Only these issue types are loaded into the dashboard.</div>
                                                 <div className="capacity-inline-row">
@@ -10843,12 +10977,17 @@ import { createRoot } from 'react-dom/client';
                                                     <div className="team-selector-empty">No filter — all issue types will be included.</div>
                                                 )}
                                             </div>
-                                            <div className="group-projects-subsection">
+                                            <div
+                                                className={`group-projects-subsection ${mappingHoverKey === 'parent' ? 'is-linked-hover' : ''}`}
+                                                onMouseEnter={() => setMappingHoverKey('parent')}
+                                                onMouseLeave={() => setMappingHoverKey(null)}
+                                                data-map-key="parent"
+                                            >
                                                 <div className="team-selector-label">Parent Name Field</div>
                                                 <div className="group-field-helper">Field used to map stories back to their parent epic name.</div>
                                                 <div className="capacity-inline-row">
                                                     {parentNameFieldNameDraft ? (
-                                                        <div className="selected-team-chip" title={parentNameFieldIdDraft || ''}>
+                                                        <div className="selected-team-chip mapping-parent-chip" title={parentNameFieldIdDraft || ''}>
                                                             <span className="team-name"><strong>{parentNameFieldNameDraft}</strong>{showTechnicalFieldIds && parentNameFieldIdDraft && <span className="field-id-hint">({parentNameFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setParentNameFieldIdDraft(''); setParentNameFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove parent name field">&times;</button>
                                                         </div>
@@ -10868,12 +11007,17 @@ import { createRoot } from 'react-dom/client';
                                                     )}
                                                 </div>
                                             </div>
-                                            <div className="group-projects-subsection">
+                                            <div
+                                                className={`group-projects-subsection ${mappingHoverKey === 'storyPoints' ? 'is-linked-hover' : ''}`}
+                                                onMouseEnter={() => setMappingHoverKey('storyPoints')}
+                                                onMouseLeave={() => setMappingHoverKey(null)}
+                                                data-map-key="storyPoints"
+                                            >
                                                 <div className="team-selector-label">Story Points Field</div>
                                                 <div className="group-field-helper">Field used for effort, velocity, and capacity comparisons.</div>
                                                 <div className="capacity-inline-row">
                                                     {storyPointsFieldNameDraft ? (
-                                                        <div className="selected-team-chip" title={storyPointsFieldIdDraft || ''}>
+                                                        <div className="selected-team-chip mapping-sp-chip" title={storyPointsFieldIdDraft || ''}>
                                                             <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong>{showTechnicalFieldIds && storyPointsFieldIdDraft && <span className="field-id-hint">({storyPointsFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove story points field">&times;</button>
                                                         </div>
@@ -10893,12 +11037,17 @@ import { createRoot } from 'react-dom/client';
                                                     )}
                                                 </div>
                                             </div>
-                                            <div className="group-projects-subsection">
+                                            <div
+                                                className={`group-projects-subsection ${mappingHoverKey === 'team' ? 'is-linked-hover' : ''}`}
+                                                onMouseEnter={() => setMappingHoverKey('team')}
+                                                onMouseLeave={() => setMappingHoverKey(null)}
+                                                data-map-key="team"
+                                            >
                                                 <div className="team-selector-label">Team Field</div>
                                                 <div className="group-field-helper">Field used to assign each ticket to a team.</div>
                                                 <div className="capacity-inline-row">
                                                     {teamFieldNameDraft ? (
-                                                        <div className="selected-team-chip" title={teamFieldIdDraft || ''}>
+                                                        <div className="selected-team-chip mapping-team-chip" title={teamFieldIdDraft || ''}>
                                                             <span className="team-name"><strong>{teamFieldNameDraft}</strong>{showTechnicalFieldIds && teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove team field">&times;</button>
                                                         </div>
@@ -10917,6 +11066,7 @@ import { createRoot } from 'react-dom/client';
                                                     </div>
                                                     )}
                                                 </div>
+                                            </div>
                                             </div>
                                             </>
                                             )}

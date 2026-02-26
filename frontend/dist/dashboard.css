@@ -1113,24 +1113,6 @@
             color: #69c0ff;
         }
 
-        .mapping-preview-mapped-meta {
-            margin-top: 0.4rem;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-        }
-
-        .mapping-preview-field-label {
-            opacity: 0.8;
-            font-weight: 600;
-        }
-
-        .mapping-preview-mapped-meta .task-team {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.1rem;
-            white-space: nowrap;
-        }
-
         .mapping-preview-linkable {
             transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
         }
@@ -1148,14 +1130,16 @@
             padding: 0.08rem 0.25rem;
         }
 
-        .mapping-preview-map-chip {
-            border-width: 1px;
-        }
-
         .mapping-preview-task-team {
             background: rgba(82, 196, 26, 0.08);
             border-color: rgba(82, 196, 26, 0.35);
             color: #389e0d;
+        }
+
+        .mapping-preview-task-issue {
+            background: rgba(167, 139, 250, 0.08);
+            border-color: rgba(167, 139, 250, 0.35);
+            color: #6d4dbb;
         }
 
         .mapping-preview-link-issue.is-linked-hover {
@@ -1183,12 +1167,6 @@
             border-color: rgba(82, 196, 26, 0.45);
             color: #389e0d;
             box-shadow: 0 0 0 1px rgba(82, 196, 26, 0.12);
-        }
-
-        .mapping-preview-sp-pill {
-            background: #fff7e6;
-            color: #d48806;
-            border-color: #ffd591;
         }
 
         .mapping-preview-epic-meta {

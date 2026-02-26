@@ -10880,6 +10880,15 @@ import { createRoot } from 'react-dom/client';
                                                                                     <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
                                                                                 </svg>
                                                                             </span>
+                                                                            <span
+                                                                                className={`task-team mapping-preview-task-issue mapping-preview-linkable mapping-preview-link-issue ${mappingHoverKey === 'issueType' ? 'is-linked-hover' : ''}`}
+                                                                                onMouseEnter={() => setMappingHoverKey('issueType')}
+                                                                                onMouseLeave={() => setMappingHoverKey(null)}
+                                                                                data-map-key="issueType"
+                                                                                title={showTechnicalFieldIds ? `Issue Type: ${previewIssueType}` : undefined}
+                                                                            >
+                                                                                {showTechnicalFieldIds ? renderFieldLabel(previewIssueType, '') : previewIssueType}
+                                                                            </span>
                                                                             <h3 className="task-title">
                                                                                 <a href="#" onClick={(e) => e.preventDefault()}>{story.summary}</a>
                                                                             </h3>
@@ -10910,41 +10919,6 @@ import { createRoot } from 'react-dom/client';
                                                                         </span>
                                                                         <span className="task-updated">
                                                                             Last Update: {story.updated}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div className="task-meta mapping-preview-mapped-meta">
-                                                                        <span
-                                                                            className={`task-team mapping-preview-map-chip mapping-preview-linkable mapping-preview-link-issue ${mappingHoverKey === 'issueType' ? 'is-linked-hover' : ''}`}
-                                                                            onMouseEnter={() => setMappingHoverKey('issueType')}
-                                                                            onMouseLeave={() => setMappingHoverKey(null)}
-                                                                            data-map-key="issueType"
-                                                                        >
-                                                                            <span className="mapping-preview-field-label">
-                                                                                {renderFieldLabel('Issue Type', '')}:
-                                                                            </span>{' '}
-                                                                            {previewIssueType}
-                                                                        </span>
-                                                                        <span
-                                                                            className={`task-team mapping-preview-map-chip mapping-preview-linkable mapping-preview-link-team ${mappingHoverKey === 'team' ? 'is-linked-hover' : ''}`}
-                                                                            onMouseEnter={() => setMappingHoverKey('team')}
-                                                                            onMouseLeave={() => setMappingHoverKey(null)}
-                                                                            data-map-key="team"
-                                                                        >
-                                                                            <span className="mapping-preview-field-label">
-                                                                                {renderFieldLabel(previewTeamFieldName, previewTeamFieldId)}:
-                                                                            </span>{' '}
-                                                                            {story.team}
-                                                                        </span>
-                                                                        <span
-                                                                            className={`task-team mapping-preview-sp-pill mapping-preview-map-chip mapping-preview-linkable mapping-preview-link-story-points ${mappingHoverKey === 'storyPoints' ? 'is-linked-hover' : ''}`}
-                                                                            onMouseEnter={() => setMappingHoverKey('storyPoints')}
-                                                                            onMouseLeave={() => setMappingHoverKey(null)}
-                                                                            data-map-key="storyPoints"
-                                                                        >
-                                                                            <span className="mapping-preview-field-label">
-                                                                                {renderFieldLabel(previewStoryPointsFieldName, previewStoryPointsFieldId)}:
-                                                                            </span>{' '}
-                                                                            {story.storyPoints}
                                                                         </span>
                                                                     </div>
                                                                 </div>

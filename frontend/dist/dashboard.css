@@ -1130,16 +1130,16 @@
             padding: 0.08rem 0.25rem;
         }
 
+        .mapping-preview-link-issue {
+            border-radius: 6px;
+            border: 1px solid transparent;
+            padding: 0.04rem 0.22rem;
+        }
+
         .mapping-preview-task-team {
             background: rgba(82, 196, 26, 0.08);
             border-color: rgba(82, 196, 26, 0.35);
             color: #389e0d;
-        }
-
-        .mapping-preview-task-issue {
-            background: rgba(167, 139, 250, 0.08);
-            border-color: rgba(167, 139, 250, 0.35);
-            color: #6d4dbb;
         }
 
         .mapping-preview-link-issue.is-linked-hover {
@@ -1167,6 +1167,19 @@
             border-color: rgba(82, 196, 26, 0.45);
             color: #389e0d;
             box-shadow: 0 0 0 1px rgba(82, 196, 26, 0.12);
+        }
+
+        .mapping-preview-card.mapping-hover-active .mapping-preview-dimmable {
+            opacity: 0.62;
+        }
+
+        .mapping-preview-card.mapping-hover-active .mapping-preview-linkable.is-linked-hover {
+            opacity: 1;
+        }
+
+        .mapping-preview-card.mapping-hover-active .mapping-preview-linkable.is-linked-hover .epic-name,
+        .mapping-preview-card.mapping-hover-active .mapping-preview-linkable.is-linked-hover .epic-key {
+            opacity: 1;
         }
 
         .mapping-preview-epic-meta {

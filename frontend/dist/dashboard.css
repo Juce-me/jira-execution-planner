@@ -1109,18 +1109,6 @@
             font-size: 0.62rem;
         }
 
-        .mapping-preview-parent-label {
-            font-size: 0.66rem;
-            color: var(--text-secondary);
-            line-height: 1.3;
-            margin-bottom: 0.15rem;
-        }
-
-        .mapping-preview-parent-label strong {
-            color: var(--text-primary);
-            font-weight: 600;
-        }
-
         .mapping-preview-parent-value {
             color: #69c0ff;
         }
@@ -1141,6 +1129,60 @@
             align-items: center;
             gap: 0.1rem;
             white-space: nowrap;
+        }
+
+        .mapping-preview-linkable {
+            transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+        }
+
+        .mapping-preview-link-parent {
+            border-radius: 8px;
+            border: 1px solid transparent;
+            padding: 0.12rem 0.25rem;
+            margin-left: -0.25rem;
+        }
+
+        .mapping-preview-link-story-points {
+            border-radius: 6px;
+            border: 1px solid transparent;
+            padding: 0.08rem 0.25rem;
+        }
+
+        .mapping-preview-map-chip {
+            border-width: 1px;
+        }
+
+        .mapping-preview-task-team {
+            background: rgba(82, 196, 26, 0.08);
+            border-color: rgba(82, 196, 26, 0.35);
+            color: #389e0d;
+        }
+
+        .mapping-preview-link-issue.is-linked-hover {
+            background: rgba(167, 139, 250, 0.10);
+            border-color: rgba(167, 139, 250, 0.45);
+            color: #6d4dbb;
+            box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.15);
+        }
+
+        .mapping-preview-link-parent.is-linked-hover {
+            background: rgba(105, 192, 255, 0.10);
+            border-color: rgba(105, 192, 255, 0.45);
+            box-shadow: 0 0 0 1px rgba(105, 192, 255, 0.12);
+        }
+
+        .mapping-preview-link-story-points.is-linked-hover {
+            background: rgba(250, 140, 22, 0.10);
+            border-color: rgba(250, 140, 22, 0.45);
+            color: #d48806;
+            box-shadow: 0 0 0 1px rgba(250, 140, 22, 0.12);
+        }
+
+        .mapping-preview-link-team.is-linked-hover {
+            background: rgba(82, 196, 26, 0.12);
+            border-color: rgba(82, 196, 26, 0.45);
+            color: #389e0d;
+            box-shadow: 0 0 0 1px rgba(82, 196, 26, 0.12);
         }
 
         .mapping-preview-sp-pill {
@@ -1211,6 +1253,12 @@
         .mapping-config-grid .selected-team-chip.mapping-team-chip {
             background: rgba(82, 196, 26, 0.08);
             border-left: 3px solid rgba(82, 196, 26, 0.72);
+        }
+
+        .mapping-config-grid .group-config-card.is-linked-hover,
+        .mapping-config-grid .group-projects-subsection.is-linked-hover {
+            border-color: rgba(59, 130, 246, 0.45);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.10);
         }
 
         .mapping-config-grid .team-selector-empty {

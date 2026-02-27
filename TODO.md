@@ -7,6 +7,7 @@
 - Scenario planner: implement editable timeline with Jira date sync + rollback history
   - Detailed plan: `scenario_planner_improvement_plan.md`
   - Include saved scenarios per quarter + team/group so users can return later.
+  - Prioritize scenario history + rollback before any Jira write-back.
   - Excluded-capacity visualization rule:
     - excluded bars must never stretch across sprint boundaries;
     - they should stack in dedicated lower lanes when overlap exceeds a sprint;
@@ -83,3 +84,4 @@ High-value features (RICE > 4, effort > 1 week): #5, #6
 
 ## Low Priority / Low Value / Low Impact
 - Export improvements (CSV/PDF) — defer until core planning workflows are stable.
+- Scenario planner `Publish to Jira` (write start/end dates back to Jira) — parked until draft/history/rollback flow is stable.

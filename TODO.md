@@ -6,6 +6,11 @@
 ## Functional Priorities (Next)
 - Scenario planner: implement editable timeline with Jira date sync + rollback history
   - Detailed plan: `scenario_planner_improvement_plan.md`
+  - Include saved scenarios per quarter + team/group so users can return later.
+  - Excluded-capacity visualization rule:
+    - excluded bars must never stretch across sprint boundaries;
+    - they should stack in dedicated lower lanes when overlap exceeds a sprint;
+    - render excluded capacity in gray and keep it visually at the bottom of the epic/assignee stack.
 - Revisit sticky search UX (reverted experiment on `ui/sticky-search-always`)
   - Goal: search reachable in one move/click while scrolling, without breaking sticky layering.
   - Constraints to preserve:
@@ -16,6 +21,9 @@
 - Statistics cards layout clarification (previously unclear "pack statistics bar")
   - Current problem: statistics cards overflow/wrap awkwardly for many teams.
   - Desired outcome: stable layout that supports up to 12 teams cleanly (single compact row where possible, else predictable two-row layout).
+- Statistics feature: sprint burnout rate by team
+  - Add per-sprint burnout chart showing how tasks are closed during the sprint for each team.
+  - Visualization requirement: stacked segments by status (`Killed`, `Done`, `Incomplete`) from top to bottom for each team over sprint time.
 - Bulk actions UI for planning workflows
 - Dependency graph visualization
 - Notifications / changelog for users

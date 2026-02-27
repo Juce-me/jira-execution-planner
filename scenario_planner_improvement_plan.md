@@ -7,8 +7,10 @@ Branch for this plan and implementation:
 Upgrade Scenario Planner from read-only schedule visualization to an editable planning tool that can:
 1. Read schedule dates from Jira when available.
 2. Allow users to move/reschedule story bars in a controlled edit mode.
-3. Persist approved start/end dates back to Jira.
-4. Provide rollback/history by quarter + group.
+3. Let users save scenarios per quarter + team/group and reopen them later.
+4. Synchronize approved start/end dates back to Jira.
+5. Provide rollback/history by quarter + group.
+6. Render excluded-capacity work in constrained gray lanes that do not span across sprint boundaries.
 
 ## Scope Boundaries
 - In scope:
@@ -61,6 +63,16 @@ Expose this source in UI with subtle badge (e.g., `jira`, `override`, `computed`
   - compare changed issues
   - rollback selected entry (writes previous dates back to Jira)
 
+### E) Excluded Capacity Visualization (Planning module)
+- Excluded-capacity bars must be treated as flexible/ignored for sprint-span stretching:
+  - never render a single excluded bar segment across multiple sprint boundaries;
+  - split/chunk excluded segments per sprint window.
+- When excluded items overlap in the same sprint window, stack them in dedicated lower lanes.
+- Visual treatment:
+  - gray palette for excluded bars/chips;
+  - positioned at the bottom of each epic lane (or as the last items per assignee lane in assignee mode).
+- This is a display/layout rule only; it must not change dependency logic for non-excluded issues.
+
 ## Dependencies and Decisions
 
 ### 1) Jira Date Fields
@@ -83,6 +95,11 @@ Need storage for drafts/history snapshots:
 - Phase 1: local JSON store (consistent with current local mode).
 - Phase 2: DB-backed per user/team (required for multi-user rollout).
 
+### 4) Scope Key for Saved Scenarios
+- Primary key should include quarter + selected group (or team scope signature).
+- If team filters can vary inside a group, include a stable team-scope hash in the key.
+- Keep save/load deterministic so users can reliably return to the same scenario state.
+
 ## Proposed Architecture
 
 ## Phase 1 — Read Dates + UI Edit Drafts (no Jira write)
@@ -94,11 +111,16 @@ Need storage for drafts/history snapshots:
 - Frontend:
   - Add Edit mode.
   - Drag bars updates in-memory draft.
-  - Save/load draft by quarter+group.
+  - Save/load draft by quarter+group (or quarter+team scope key).
+  - Add excluded-capacity lane layout:
+    - sprint-bounded segment splitting,
+    - dedicated bottom stacking rows,
+    - gray styling.
 
 Acceptance:
 - User can move bars and save draft.
-- Reload restores draft.
+- Reload restores draft for the same quarter+team/group scope.
+- Excluded bars are gray, bottom-stacked, and do not render across sprint boundaries.
 - No Jira writes yet.
 
 ## Phase 2 — Publish to Jira + Validation
@@ -159,6 +181,7 @@ Acceptance:
 - Start date <= end date.
 - Respect dependency direction (`depends_on` must not start after dependent starts if rule forbids).
 - Capacity violations are warnings or blocking based on policy.
+- Excluded-capacity segment rendering is constrained per sprint window.
 
 ## Risks and Mitigations
 - Risk: accidental Jira date corruption.
@@ -180,6 +203,10 @@ Acceptance:
   - edit mode drag interactions
   - publish confirmation flow
   - history compare + rollback
+  - excluded-capacity rendering:
+    - no cross-sprint stretch,
+    - bottom-stacked rows,
+    - gray visual style.
 
 ## Rollout Plan
 1. Ship Phase 1 behind feature flag (draft-only).

@@ -1,57 +1,47 @@
 # TODO
-- pack statistics bar to 6 in one row, right now it's 8. make it two row or one row (need to think how to fit 12 teams)
+
+## Active Development Branch
+- Scenario planner improvement planning branch: `plan/scenario-planner-improvements`
+
+## Functional Priorities (Next)
+- Scenario planner: implement editable timeline with Jira date sync + rollback history
+  - Detailed plan: `scenario_planner_improvement_plan.md`
 - Revisit sticky search UX (reverted experiment on `ui/sticky-search-always`)
-  - Goal (still valid): search should be reachable in one move/click while scrolling, without breaking sticky layering.
-  - Current failures from rejected attempt:
-    - First attempt only styled the existing header search as sticky; it did not actually stick because `position: sticky` was inside `<header>` and bounded by that parent.
-    - Second attempt added a separate sticky search shell below the header and kept a header placeholder search; this technically stuck, but UI became confusing (duplicate search fields / visual ambiguity).
-    - Planning mode made the extra search treatment feel especially noisy and hard to parse (see rejected screenshot review).
-  - Constraints to preserve (important):
-    - Sticky stacking is fragile: planning panel > search (if made sticky) > epic header.
-    - No overlap/intersection in Catch Up, Planning, Scenario.
+  - Goal: search reachable in one move/click while scrolling, without breaking sticky layering.
+  - Constraints to preserve:
+    - Sticky stacking: planning panel > search (if sticky) > epic header.
+    - No overlap in Catch Up, Planning, Scenario.
     - No duplicate visible search controls.
-    - Epic header sticky top must use measured offsets (no hardcoded px).
-  - Recommended future approach:
-    - Use a single search input only (no placeholder clone).
-    - Move the real search control into a stable sticky container outside the short-lived header flow OR refactor the header layout so the search lives in a sticky-capable parent from the start.
-    - Implement one mode at a time (first sticky positioning only, then shortcut like `Ctrl/Cmd+F`, then visual polish).
-    - Validate manually in Planning mode before building additional behavior.
+    - Epic header top offset must use measured values (no hardcoded px).
+- Statistics cards layout clarification (previously unclear "pack statistics bar")
+  - Current problem: statistics cards overflow/wrap awkwardly for many teams.
+  - Desired outcome: stable layout that supports up to 12 teams cleanly (single compact row where possible, else predictable two-row layout).
+- Bulk actions UI for planning workflows
+- Dependency graph visualization
+- Notifications / changelog for users
 
-Whistles
-- dark mode/company colors?
+## Tool-for-all Phase (Multi-user / SSO)
+- Azure AD (Microsoft SSO) OIDC login + authenticated API sessions
+- Per-user config storage (DB-backed) with company defaults
+- Jira user OAuth (3LO) or explicit admin-service-account fallback policy
+- Multi-tenant caching + rate limits
+- Hosted deployment plan (Docker/VM/PaaS) with HTTPS, secrets, audit logging
 
-Tool-for-all phase (multi-user, internal SSO)
-- Azure AD (Microsoft SSO) OIDC for login; enforce authenticated sessions in the Flask API.
-- Per-user config storage (DB-backed): JQL, board, projects, team field; ship defaults as a template.
-- Jira access via user OAuth (3LO) so data is scoped to the signed-in user; define admin fallback if needed.
-- Multi-tenant caching + rate limits to protect Jira API and keep dashboards fast.
-- Pack to Docker — requires in-app config + SSO first (manual .env edits inside a container defeat the purpose).
-- Hosted deployment plan (Docker/VM/PaaS) with HTTPS, secrets management, and audit logging.
-- Next env -> UI/admin config migrations (company profile)
-  - `JIRA_BOARD_ID` migration plan (board selection in UI/admin settings)
-    - Add `board` config in unified `dashboard-config.json` / future company profile (store `boardId`, optional `boardName`).
-    - Backend resolution order: DB/company profile -> dashboard config -> `.env` fallback.
-    - Add `GET/POST /api/board-config` and reuse `/api/boards` for selection/search.
-    - Invalidate sprint cache on save (board changes affect `/api/sprints` source and speed).
-    - UI placement: put board selection in the Scope/Projects configuration area (not a separate advanced-only control); editing remains admin-only.
-    - Rollout: keep `.env` fallback until SSO/company-profile migration is complete.
-  - `STATS_PRIORITY_WEIGHTS` migration plan (new Stats settings tab)
-    - Add a dedicated "Priority Weights" tab in settings (separate from scope/mapping/capacity).
-    - Persist weights in dashboard config/company profile as structured JSON (`[{priority, weight}]`) with validation.
-    - Backend resolution order: DB/company profile -> dashboard config -> `.env` fallback -> built-in defaults.
-    - Add validation rules: numeric, non-negative, duplicate-priority prevention, missing priorities allowed but explicit.
-    - Add "Reset to defaults" action and versioned schema for future priority names.
-    - Tests: backend parse/validation + frontend serialization/apply + weighted stats regression checks.
-  - Alerts configuration (add to UI/admin config)
-    - Empty Epic alert settings: excluded statuses, optional team scope (`EPIC_EMPTY_EXCLUDED_STATUSES`, `EPIC_EMPTY_TEAM_IDS`)
-    - Missing Info alert defaults: component/team scope (`MISSING_INFO_COMPONENT`, `MISSING_INFO_TEAM_IDS`)
-    - Access model: config tabs/settings are admin-only; group configuration stays editable for non-admin users.
-    - Keep per-user panel show/hide toggles in local UI prefs (not shared company profile)
-    - Add config precedence and fallback to `.env` for non-prod compatibility during rollout
+## Config Migration (Env -> UI/Admin)
+- Alerts configuration in UI/admin settings
+  - Empty Epic: excluded statuses + optional team scope
+  - Missing Info: component/team scope
+  - Access model: config tabs/settings admin-only; group config remains editable for non-admin users
+- Keep per-user panel show/hide toggles in local UI prefs
 
----
+## Recently Completed (Keep for traceability)
+- ✅ Replace `print()` with structured logging
+- ✅ Add retry + circuit breaker for Jira requests
+- ✅ Extract CSS from HTML shell
+- ✅ `JIRA_BOARD_ID` config moved into UI/admin flow with API support
+- ✅ `STATS_PRIORITY_WEIGHTS` settings tab implemented
 
-## RICE Prioritization (Backlog)
+## RICE Backlog (Active)
 
 RICE = (Reach x Impact x Confidence) / Effort
 - Reach: % of user sessions affected (1-10)
@@ -61,23 +51,15 @@ RICE = (Reach x Impact x Confidence) / Effort
 
 | # | Item | Category | R | I | C | E (wks) | RICE |
 |---|---|---|---|---|---|---|---|
-| ~~1~~ | ~~Fix thread-safety in global caches~~ | ~~Backend~~ | ~~8~~ | ~~2~~ | ~~80%~~ | ~~0.5~~ | ~~**25.6**~~ |
-| ~~2~~ | ~~Dockerize~~ (deferred to Tool-for-all) | ~~Backend~~ | ~~5~~ | ~~2~~ | ~~100%~~ | ~~0.5~~ | ~~**20.0**~~ |
-| 3 | Replace `print()` with logging | Backend | 3 | 1 | 100% | 0.5 | **6.0** |
-| 4 | Add retry + circuit breaker | Backend | 8 | 1 | 80% | 1 | **6.4** |
 | 5 | React Query for data fetching | Frontend | 8 | 2 | 80% | 2 | **6.4** |
 | 6 | Bulk actions UI | Feature | 6 | 2 | 80% | 2 | **4.8** |
 | 7 | Virtual scrolling (large lists) | Frontend | 6 | 1 | 80% | 1 | **4.8** |
 | 8 | Rate limiting | Backend | 3 | 1 | 80% | 0.5 | **4.8** |
-| ~~9~~ | ~~In-app configuration UI~~ | ~~Feature~~ | ~~8~~ | ~~2~~ | ~~80%~~ | ~~3~~ | ~~**4.3**~~ |
-| ~~10~~ | ~~Remove hardcoded Jira field IDs~~ | ~~Backend~~ | ~~5~~ | ~~2~~ | ~~80%~~ | ~~2~~ | ~~**4.0**~~ |
 | 11 | Dark mode | Feature | 8 | 0.5 | 100% | 1 | **4.0** |
 | 12 | Centralize auth header construction | Backend | 2 | 0.5 | 100% | 0.25 | **4.0** |
 | 13 | Code splitting (lazy load panels) | Frontend | 8 | 0.5 | 80% | 1 | **3.2** |
 | 14 | API integration tests | Backend | 3 | 2 | 80% | 2 | **2.4** |
-| 15 | Export improvements (CSV/PDF) | Feature | 4 | 1 | 80% | 1.5 | **2.1** |
 | 16 | Dependency graph visualization | Feature | 6 | 2 | 50% | 3 | **2.0** |
-| 17 | Extract CSS from HTML | Frontend | 2 | 0.5 | 100% | 0.5 | **2.0** |
 | 18 | Notifications / changelog | Feature | 7 | 1 | 50% | 2 | **1.75** |
 | 19 | Accessibility fixes | Frontend | 4 | 1 | 80% | 2 | **1.6** |
 | 20 | Extract service layer (backend) | Backend | 3 | 2 | 80% | 3 | **1.6** |
@@ -88,6 +70,8 @@ RICE = (Reach x Impact x Confidence) / Effort
 | 25 | Frontend tests | Frontend | 3 | 2 | 50% | 3 | **1.0** |
 | 26 | TypeScript migration | Frontend | 3 | 2 | 50% | 8 | **0.4** |
 
-Quick wins (RICE > 4, effort <= 1 week): #3, 4, 8, 11, 12
-High-value features (RICE > 4, effort > 1 week): #5, 6
-Note: #23-24 score low but are prerequisites for most future frontend work.
+Quick wins (RICE > 4, effort <= 1 week): #7, #8, #11, #12
+High-value features (RICE > 4, effort > 1 week): #5, #6
+
+## Low Priority / Low Value / Low Impact
+- Export improvements (CSV/PDF) — defer until core planning workflows are stable.

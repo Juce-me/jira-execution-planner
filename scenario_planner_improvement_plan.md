@@ -7,8 +7,8 @@ Branch for this plan and implementation:
 Upgrade Scenario Planner from read-only schedule visualization to an editable planning tool that can:
 1. Read schedule dates from Jira when available.
 2. Allow users to move/reschedule story bars in a controlled edit mode.
-3. Let users save scenarios per quarter + team/group and reopen them later.
-4. Provide rollback/history by quarter + group before any Jira write-back.
+3. Let users save scenarios per sprint + team/group and reopen them later.
+4. Provide rollback/history by sprint + group before any Jira write-back.
 5. Render excluded-capacity work in constrained gray lanes that do not span across sprint boundaries.
 6. Keep Jira write-back (`Publish to Jira`) as a deferred future phase.
 
@@ -16,8 +16,8 @@ Upgrade Scenario Planner from read-only schedule visualization to an editable pl
 - In scope:
   - UI edit mode for story bars.
   - Start/end date data model and synchronization.
-  - Save/load scenario drafts per quarter + team/group.
-  - History + rollback per quarter/group.
+  - Save/load scenario drafts per sprint + team/group.
+  - History + rollback per sprint/group.
   - Excluded-capacity lane rendering constraints.
 - Out of scope for first release:
   - Jira write-back/publish.
@@ -33,9 +33,9 @@ Upgrade Scenario Planner from read-only schedule visualization to an editable pl
 ## Target Functional Behavior
 
 ### A) Date Sources
-For each story, effective schedule date source should be explicit:
-1. Jira manual date (if present and valid)
-2. Scenario override (if user moved bar in edit mode and saved as draft)
+For each story, schedule date source should be explicit:
+1. Scenario override (if user moved bar in edit mode and saved as draft)
+2. Jira manual date (if present and valid)
 3. Computed schedule fallback
 
 Expose this source in UI with subtle badge (e.g., `jira`, `override`, `computed`).
@@ -43,19 +43,17 @@ Expose this source in UI with subtle badge (e.g., `jira`, `override`, `computed`
 #### Date Field Matrix (read side)
 - Story-level optional fields to fetch when available:
   - `Start date`
-  - `Target date`
   - `Due date`
-- Epic-level optional field to fetch when available:
-  - `Release date`
-- Progress fields (story/epic) are read-only context indicators in the planner UI.
 
 #### Date Precedence (MVP)
-- Story effective date precedence:
-  1. Scenario override
-  2. Jira `Start date` / `Due date` mapping (configured)
-  3. Jira `Target date` (fallback if configured)
-  4. Computed schedule
-- Epic `Release date` is advisory context (epic rail marker), not a forced story schedule input in MVP.
+- Story effective **start** precedence:
+  1. Scenario override start
+  2. Jira `Start date`
+  3. Computed start (scheduler model)
+- Story effective **end** precedence:
+  1. Scenario override end
+  2. Jira `Due date`
+  3. Computed end (scheduler model)
 
 ### B) Edit Mode
 - Add explicit `Edit mode` toggle in Scenario panel.
@@ -67,7 +65,7 @@ Expose this source in UI with subtle badge (e.g., `jira`, `override`, `computed`
   - Current read-only behavior remains.
 
 ### C) Rollback / History
-- History key: `quarter + group + optional sprint`.
+- History key: `sprint + group + team-scope hash` (team scope hash is mandatory).
 - Each scenario save writes a snapshot entry:
   - who, when, issue count, old dates, new dates, note/comment.
 - Add `History` panel:
@@ -85,10 +83,10 @@ Expose this source in UI with subtle badge (e.g., `jira`, `override`, `computed`
   - positioned at the bottom of each epic lane (or as the last items per assignee lane in assignee mode).
 - This is a display/layout rule only; it must not change dependency logic for non-excluded issues.
 - Clipping/stacking rule (explicit):
-  - derive sprint windows from selected sprint cadence;
+  - derive sprint windows from Jira sprint boundaries for the selected scope;
   - split excluded bar spans at each sprint boundary;
   - assign clipped segments to dedicated excluded rows after regular rows;
-  - never allow excluded segments to increase regular lane height requirements.
+  - excluded segments must never consume regular rows; they may only consume dedicated excluded rows.
 
 ## Dependencies and Decisions
 
@@ -96,23 +94,14 @@ Expose this source in UI with subtle badge (e.g., `jira`, `override`, `computed`
 Need final field mapping for scenario dates:
 - Option A: Jira native fields (`startDate`, `duedate`) when available.
 - Option B: Custom fields (e.g., `customfield_xxx_start`, `customfield_xxx_end`).
-- Additional optional read fields:
-  - story `Target date`
-  - epic `Release date`
-  - progress fields (display-only)
 
 Action:
 - Add configurable fields in settings:
   - `Scenario Start Field`
   - `Scenario End Field`
-  - optional `Scenario Target Field` (read fallback)
-  - optional `Scenario Epic Release Field` (read advisory)
-  - optional `Scenario Progress Field` (display-only)
 
 ### 1b) Write Policy (deferred phase)
 - Deferred publish phase writes only explicitly configured scenario date targets.
-- Do not write `Target date` / `Release date` / `Progress` unless explicitly enabled by policy.
-- Default behavior: progress stays read-only.
 
 ### 2) Jira Permissions
 Required for future publish/rollback to Jira:
@@ -123,12 +112,11 @@ Required for future publish/rollback to Jira:
 
 ### 3) Data Storage
 Need storage for drafts/history snapshots:
-- Phase 1: local JSON store (consistent with current local mode).
+- Phase 1: dashboard-local external JSON store (same local model as current app config files).
 - Phase 2: DB-backed per user/team (required for multi-user rollout).
 
 ### 4) Scope Key for Saved Scenarios
-- Primary key should include quarter + selected group (or team scope signature).
-- If team filters can vary inside a group, include a stable team-scope hash in the key.
+- Primary key must include sprint + selected group + stable team-scope hash.
 - Keep save/load deterministic so users can reliably return to the same scenario state.
 
 ### 5) Scenario Identity and Versioning
@@ -137,6 +125,14 @@ Need storage for drafts/history snapshots:
   - optimistic `version`
   - `created_by`, `updated_by`, timestamps
 - Rollback operations should create a new head version (no destructive rewrite of history).
+
+### 6) Local Storage Shape (Phase 1)
+- Store scenario metadata and per-issue overrides in a dedicated dashboard-local JSON file.
+- Recommended top-level shape:
+  - `scenarios[]` header entries (`scenario_id`, `name`, `scope_key`, `version`, `created_by`, `updated_by`, timestamps)
+  - `overrides[]` rows (`scenario_id`, `issue_key`, `start_date`, `end_date`)
+  - `history[]` snapshot entries (`scenario_id`, `scenario_version`, `changes[]`, `created_by`, `created_at`, `comment`)
+- Keep this file separate from `dashboard-config.json` to avoid config/schema coupling.
 
 ## Proposed Architecture
 
@@ -149,7 +145,7 @@ Need storage for drafts/history snapshots:
 - Frontend:
   - Add Edit mode.
   - Drag bars updates in-memory draft.
-  - Save/load draft by quarter+group (or quarter+team scope key).
+  - Save/load draft by sprint+group (or sprint+team scope key).
   - Add excluded-capacity lane layout:
     - sprint-bounded segment splitting,
     - dedicated bottom stacking rows,
@@ -157,7 +153,7 @@ Need storage for drafts/history snapshots:
 
 Acceptance:
 - User can move bars and save draft.
-- Reload restores draft for the same quarter+team/group scope.
+- Reload restores draft for the same sprint+team/group scope.
 - Excluded bars are gray, bottom-stacked, and do not render across sprint boundaries.
 - No Jira writes yet.
 
@@ -171,7 +167,7 @@ Acceptance:
   - Rollback action with confirmation.
 
 Acceptance:
-- User can rollback a prior saved scenario state for selected quarter+group.
+- User can rollback a prior saved scenario state for selected sprint+group.
 
 ## Phase 3 (Deferred/Parked) — Publish to Jira
 - Keep out of immediate implementation scope.
@@ -188,7 +184,7 @@ Acceptance:
 `scenario_overrides` (drafts)
 - scenario_id
 - scenario_name
-- scope_key (quarter/group/sprint)
+- scope_key (sprint/group/team-scope-hash)
 - version
 - issue_key
 - start_date
@@ -215,9 +211,11 @@ Acceptance:
 - For active phases, API scope is draft/history/rollback only.
 - Future (deferred): publish endpoint should support dry-run and idempotency key.
 - Preserve retry/circuit-breaker behavior for Jira calls.
-- Conflict safety:
-  - include Jira `updated` timestamp (or version token) per issue in draft payload;
-  - rollback/publish must compare current Jira state before applying changes;
+- Conflict safety (active phases):
+  - scenario save/rollback uses optimistic `version` checks on local JSON scenario snapshots.
+- Conflict safety (deferred Jira publish phase):
+  - include Jira `updated` timestamp (or version token) per issue in publish payload;
+  - publish compares current Jira state before write;
   - on mismatch, skip issue and return conflict details.
 
 ## Validation Rules
@@ -226,7 +224,9 @@ Acceptance:
 - Capacity violations are warnings or blocking based on policy.
 - Excluded-capacity segment rendering is constrained per sprint window.
 - Date parsing must handle optional/missing field values and date-only formats consistently.
-- Progress is informational in MVP (must not alter schedule computation).
+- Missing-date fallback policy:
+  - if Jira `Due date` is missing, use scheduler-computed end date (current model behavior).
+  - if no Jira dates are fetched, use scheduler-computed dates (current model behavior).
 
 ## Risks and Mitigations
 - Risk: accidental Jira date corruption (deferred publish phase).
@@ -234,7 +234,9 @@ Acceptance:
 - Risk: conflicting edits from multiple users.
   - Mitigation: scenario versioning + Jira updated-token conflict checks + non-destructive rollback.
 - Risk: field mismatch across Jira projects.
-  - Mitigation: configurable field matrix (start/target/due/release/progress) + per-project fallback rules.
+  - Mitigation: configurable field matrix (start/due) + per-project fallback rules.
+- Risk: local JSON growth/corruption for scenario history in Phase 1.
+  - Mitigation: versioned schema, append-safe writes, snapshot rotation/backup, and JSON integrity checks.
 
 ## Test Plan
 - Unit tests:
@@ -245,6 +247,7 @@ Acceptance:
   - draft save/load
   - rollback
   - version conflict handling on rollback and deferred publish endpoint
+  - local JSON integrity checks (read/write/recover on malformed file)
 - UI tests/manual:
   - edit mode drag interactions
   - history compare + rollback
@@ -252,7 +255,7 @@ Acceptance:
     - no cross-sprint stretch,
     - bottom-stacked rows,
     - gray visual style.
-  - progress/date-source badges render correctly with optional Jira fields.
+  - date-source badges render correctly.
 
 ## Rollout Plan
 1. Ship Phase 1 behind feature flag (draft-only).

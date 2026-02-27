@@ -6,7 +6,7 @@
 ## Functional Priorities (Next)
 - Scenario planner: implement editable timeline with Jira date sync + rollback history
   - Detailed plan: `scenario_planner_improvement_plan.md`
-  - Include saved scenarios per quarter + team/group so users can return later.
+  - Include saved scenarios per sprint + team/group so users can return later.
   - Prioritize scenario history + rollback before any Jira write-back.
   - Excluded-capacity visualization rule:
     - excluded bars must never stretch across sprint boundaries;

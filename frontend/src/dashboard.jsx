@@ -319,6 +319,8 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const scenarioTimelineRef = useRef(null);
             const [scenarioLayout, setScenarioLayout] = useState({ width: 0, height: 0 });
             const [scenarioCollapsedLanes, setScenarioCollapsedLanes] = useState({});
+            const [scenarioCollapsedCards, setScenarioCollapsedCards] = useState({});
+            const [scenarioSummaryHidden, setScenarioSummaryHidden] = useState(false);
             const [scenarioHoverKey, setScenarioHoverKey] = useState(null);
             const [scenarioFlashKey, setScenarioFlashKey] = useState(null);
             const [scenarioScrollTop, setScenarioScrollTop] = useState(0);
@@ -4538,6 +4540,27 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 });
                 return { meta, totalHeight: offset };
             }, [scenarioLanes, scenarioLaneStacking, scenarioCollapsedLanes, scenarioEpicFocus, scenarioBarGap]);
+            const scenarioLaneAssigneeGroups = React.useMemo(() => {
+                if (scenarioLaneMode !== 'team') return new Map();
+                const result = new Map();
+                scenarioLanes.forEach((lane) => {
+                    const rowAssignees = scenarioLaneStacking.laneRowAssignees?.get(lane) || [];
+                    const visibleRows = scenarioLaneStacking.laneVisibleRows.get(lane) || 1;
+                    const groups = [];
+                    let current = null;
+                    for (let i = 0; i < Math.min(rowAssignees.length, visibleRows); i++) {
+                        const assignee = rowAssignees[i] || null;
+                        if (current && current.assignee === assignee) {
+                            current.rowCount += 1;
+                        } else {
+                            current = { assignee, startRow: i, rowCount: 1 };
+                            groups.push(current);
+                        }
+                    }
+                    result.set(lane, groups);
+                });
+                return result;
+            }, [scenarioLaneMode, scenarioLanes, scenarioLaneStacking]);
             const areScenarioCollapsedLanesEqual = (a, b) => {
                 if (a === b) return true;
                 const aKeys = Object.keys(a || {});
@@ -8579,10 +8602,21 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
 
                                     {scenarioData && (
                                         <>
-                                            <div className="scenario-summary">
-                                                {scenarioAssigneeConflicts.conflicts.size > 0 && (
-                                                    <div className="scenario-card scenario-card-warning">
-                                                        <h4>⚠️ Schedule Warnings</h4>
+                                            <div className={`scenario-summary ${scenarioSummaryHidden ? 'hidden' : ''}`}>
+                                                <button
+                                                    type="button"
+                                                    className="scenario-summary-toggle"
+                                                    onClick={() => setScenarioSummaryHidden(prev => !prev)}
+                                                    title={scenarioSummaryHidden ? 'Show summary cards' : 'Hide summary cards'}
+                                                >
+                                                    {scenarioSummaryHidden ? 'Show summary' : 'Hide summary'}
+                                                </button>
+                                                {!scenarioSummaryHidden && scenarioAssigneeConflicts.conflicts.size > 0 && (
+                                                    <div className={`scenario-card scenario-card-warning ${scenarioCollapsedCards.warnings ? 'collapsed' : ''}`}>
+                                                        <h4 className="scenario-card-toggle" onClick={() => setScenarioCollapsedCards(prev => ({ ...prev, warnings: !prev.warnings }))}>
+                                                            <span className="scenario-card-chevron">{scenarioCollapsedCards.warnings ? '▸' : '▾'}</span>
+                                                            ⚠️ Schedule Warnings
+                                                        </h4>
                                                         <div className="scenario-value">
                                                             {scenarioAssigneeConflicts.conflicts.size} conflicts
                                                         </div>
@@ -8594,82 +8628,94 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                                 }).filter(Boolean)
                                                             )).length} assignees with overlapping tasks
                                                         </div>
-                                                        <div className="scenario-issues-list">
-                                                            {Array.from(scenarioAssigneeConflicts.conflicts).map(key => {
-                                                                const issue = scenarioIssueByKey.get(key);
-                                                                return (
-                                                                    <button
-                                                                        key={key}
-                                                                        type="button"
-                                                                        className="scenario-link"
-                                                                        onClick={() => scrollToScenarioIssue(key)}
-                                                                    >
-                                                                        <span>{issue?.summary || key}</span>
-                                                                        <span className="scenario-link-key">{key} · {issue?.assignee}</span>
-                                                                    </button>
-                                                                );
-                                                            })}
-                                                        </div>
+                                                        {!scenarioCollapsedCards.warnings && (
+                                                            <div className="scenario-issues-list">
+                                                                {Array.from(scenarioAssigneeConflicts.conflicts).map(key => {
+                                                                    const issue = scenarioIssueByKey.get(key);
+                                                                    return (
+                                                                        <button
+                                                                            key={key}
+                                                                            type="button"
+                                                                            className="scenario-link"
+                                                                            onClick={() => scrollToScenarioIssue(key)}
+                                                                        >
+                                                                            <span>{issue?.summary || key}</span>
+                                                                            <span className="scenario-link-key">{key} · {issue?.assignee}</span>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
-                                                <div className="scenario-card">
-                                                    <h4>Timeline Status</h4>
+                                                {!scenarioSummaryHidden && <div className={`scenario-card ${scenarioCollapsedCards.timeline ? 'collapsed' : ''}`}>
+                                                    <h4 className="scenario-card-toggle" onClick={() => setScenarioCollapsedCards(prev => ({ ...prev, timeline: !prev.timeline }))}>
+                                                        <span className="scenario-card-chevron">{scenarioCollapsedCards.timeline ? '▸' : '▾'}</span>
+                                                        Timeline Status
+                                                    </h4>
                                                     <div className="scenario-value">
                                                         {scenarioDeadlineAtRisk ? 'At risk' : 'On track'}
                                                     </div>
                                                     <div className="scenario-subtitle">
                                                         {scenarioLateItems.length} late · {scenarioCriticalPathItems.length} critical path
                                                     </div>
-                                                    <div className="scenario-issues-list">
-                                                        {[...scenarioLateItems, ...scenarioCriticalPathItems]
-                                                            .filter((key, idx, arr) => arr.indexOf(key) === idx)
-                                                            .map(key => {
-                                                            const issue = scenarioIssueByKey.get(key);
-                                                            const isLate = scenarioLateItems.includes(key);
-                                                            return (
-                                                                <button
-                                                                    type="button"
-                                                                    key={key}
-                                                                    className="scenario-link"
-                                                                    onClick={() => scrollToScenarioIssue(key)}
-                                                                >
-                                                                    <span>{issue?.summary || key}</span>
-                                                                    <span className="scenario-link-key">{key}{isLate ? ' · Late' : ' · Critical'}</span>
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                                <div className="scenario-card">
-                                                    <h4>Unschedulable</h4>
+                                                    {!scenarioCollapsedCards.timeline && (
+                                                        <div className="scenario-issues-list">
+                                                            {[...scenarioLateItems, ...scenarioCriticalPathItems]
+                                                                .filter((key, idx, arr) => arr.indexOf(key) === idx)
+                                                                .map(key => {
+                                                                const issue = scenarioIssueByKey.get(key);
+                                                                const isLate = scenarioLateItems.includes(key);
+                                                                return (
+                                                                    <button
+                                                                        type="button"
+                                                                        key={key}
+                                                                        className="scenario-link"
+                                                                        onClick={() => scrollToScenarioIssue(key)}
+                                                                    >
+                                                                        <span>{issue?.summary || key}</span>
+                                                                        <span className="scenario-link-key">{key}{isLate ? ' · Late' : ' · Critical'}</span>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>}
+                                                {!scenarioSummaryHidden && <div className={`scenario-card ${scenarioCollapsedCards.unschedulable ? 'collapsed' : ''}`}>
+                                                    <h4 className="scenario-card-toggle" onClick={() => setScenarioCollapsedCards(prev => ({ ...prev, unschedulable: !prev.unschedulable }))}>
+                                                        <span className="scenario-card-chevron">{scenarioCollapsedCards.unschedulable ? '▸' : '▾'}</span>
+                                                        Unschedulable
+                                                    </h4>
                                                     <div className="scenario-value">{scenarioUnschedulableItems.length}</div>
                                                     <div className="scenario-subtitle">Missing SP or dependencies</div>
-                                                    <div className="scenario-issues-list">
-                                                        {scenarioUnschedulableItems.map(key => {
-                                                            const issue = scenarioIssueByKey.get(key);
-                                                            const reason = issue?.scheduledReason;
-                                                            let reasonLabel = '';
-                                                            if (reason === 'missing_story_points') {
-                                                                reasonLabel = 'Missing SP';
-                                                            } else if (reason === 'missing_dependency') {
-                                                                reasonLabel = 'Missing dependency';
-                                                            }
-                                                            return (
-                                                                <button
-                                                                    type="button"
-                                                                    key={key}
-                                                                    className="scenario-link"
-                                                                    onClick={() => scrollToScenarioIssue(key)}
-                                                                >
-                                                                    <span>{issue?.summary || key}</span>
-                                                                    <span className="scenario-link-key">
-                                                                        {key}{reasonLabel ? ` · ${reasonLabel}` : ''}
-                                                                    </span>
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
+                                                    {!scenarioCollapsedCards.unschedulable && (
+                                                        <div className="scenario-issues-list">
+                                                            {scenarioUnschedulableItems.map(key => {
+                                                                const issue = scenarioIssueByKey.get(key);
+                                                                const reason = issue?.scheduledReason;
+                                                                let reasonLabel = '';
+                                                                if (reason === 'missing_story_points') {
+                                                                    reasonLabel = 'Missing SP';
+                                                                } else if (reason === 'missing_dependency') {
+                                                                    reasonLabel = 'Missing dependency';
+                                                                }
+                                                                return (
+                                                                    <button
+                                                                        type="button"
+                                                                        key={key}
+                                                                        className="scenario-link"
+                                                                        onClick={() => scrollToScenarioIssue(key)}
+                                                                    >
+                                                                        <span>{issue?.summary || key}</span>
+                                                                        <span className="scenario-link-key">
+                                                                            {key}{reasonLabel ? ` · ${reasonLabel}` : ''}
+                                                                        </span>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>}
                                             </div>
 
                                             {scenarioEpicFocus && (
@@ -8739,6 +8785,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                             className="scenario-lane"
                                                             style={{ top: `${laneMeta.offset}px` }}
                                                         >
+                                                            <div className="scenario-lane-label-container" style={{ height: `${laneHeight}px` }}>
                                                             <button
                                                                 className="scenario-lane-label"
                                                                 type="button"
@@ -8776,18 +8823,30 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                                     )}
                                                                 </div>
                                                             </button>
+                                                            {scenarioLaneMode === 'team' && (() => {
+                                                                const groups = scenarioLaneAssigneeGroups.get(lane) || [];
+                                                                return groups.map((group, idx) => {
+                                                                    if (!group.assignee) return null;
+                                                                    const top = scenarioBarGap + group.startRow * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
+                                                                    const height = group.rowCount * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
+                                                                    return (
+                                                                        <div key={`al-${idx}`} className="scenario-assignee-label"
+                                                                             style={{ top: `${top}px`, height: `${height}px` }}
+                                                                             title={group.assignee}>
+                                                                            {group.assignee.split(' ')[0]}
+                                                                        </div>
+                                                                    );
+                                                                });
+                                                            })()}
+                                                            </div>
                                                             <div className="scenario-lane-track" style={{ height: `${laneHeight}px` }}>
                                                                 {scenarioLaneMode === 'team' && (() => {
-                                                                    const assignees = scenarioLaneStacking.laneRowAssignees?.get(lane) || [];
-                                                                    const visibleRows = scenarioLaneStacking.laneVisibleRows.get(lane) || 1;
-                                                                    return assignees.slice(0, visibleRows).map((name, rowIdx) => {
-                                                                        if (!name) return null;
-                                                                        const top = scenarioBarGap + rowIdx * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
+                                                                    const groups = scenarioLaneAssigneeGroups.get(lane) || [];
+                                                                    return groups.slice(1).map((group, idx) => {
+                                                                        const dividerY = group.startRow * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
                                                                         return (
-                                                                            <div key={`assignee-${rowIdx}`} className="scenario-row-assignee"
-                                                                                 style={{ top: `${top}px`, height: `${SCENARIO_BAR_HEIGHT}px` }}>
-                                                                                {name.split(' ')[0]}
-                                                                            </div>
+                                                                            <div key={`assignee-div-${idx}`} className="scenario-assignee-divider"
+                                                                                 style={{ top: `${dividerY}px` }} />
                                                                         );
                                                                     });
                                                                 })()}

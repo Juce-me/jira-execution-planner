@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
+import ScenarioBar from './scenario/ScenarioBar.jsx';
 
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
@@ -8857,23 +8858,23 @@ import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayloa
                                                                     const isFocusContext = scenarioEpicFocus && scenarioFocusContextKeys.has(issue.key) && !scenarioFocusIssueKeys.has(issue.key);
                                                                     const isSearchMatch = scenarioSearchQuery && scenarioSearchMatchSet.has(issue.key);
                                                                     const isDone = issue.scheduledReason === 'already_done';
+                                                                    const barClassName = `scenario-bar ${isDone ? 'done' : ''} ${issue.isCritical ? 'critical' : ''} ${issue.isLate ? 'late' : ''} ${((issue.blockedBy || []).length > 0 || scenarioBlockedSet.has(issue.key)) ? 'blocked' : ''} ${(issue.isContext || isFocusContext) ? 'context' : ''} ${isUnscheduled ? 'unscheduled' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''} ${isDimmed ? 'dimmed' : ''} ${scenarioFlashKey === issue.key ? 'flash' : ''} ${isExcluded ? 'excluded' : ''} ${isSearchMatch ? 'search-match' : ''} ${hasAssigneeConflict ? 'assignee-conflict' : ''} ${isOutOfSprint ? 'out-of-sprint' : ''} ${isInProgress ? 'in-progress' : ''}`;
+                                                                    const barStyle = { left, width, height: `${SCENARIO_BAR_HEIGHT}px`, top };
                                                                     return (
-                                                                        <a
+                                                                        <ScenarioBar
                                                                             key={issue.key}
-                                                                            className={`scenario-bar ${isDone ? 'done' : ''} ${issue.isCritical ? 'critical' : ''} ${issue.isLate ? 'late' : ''} ${((issue.blockedBy || []).length > 0 || scenarioBlockedSet.has(issue.key)) ? 'blocked' : ''} ${(issue.isContext || isFocusContext) ? 'context' : ''} ${isUnscheduled ? 'unscheduled' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''} ${isDimmed ? 'dimmed' : ''} ${scenarioFlashKey === issue.key ? 'flash' : ''} ${isExcluded ? 'excluded' : ''} ${isSearchMatch ? 'search-match' : ''} ${hasAssigneeConflict ? 'assignee-conflict' : ''} ${isOutOfSprint ? 'out-of-sprint' : ''} ${isInProgress ? 'in-progress' : ''}`}
-                                                                            style={{ left, width, height: `${SCENARIO_BAR_HEIGHT}px`, top }}
+                                                                            issueKey={issue.key}
+                                                                            className={barClassName}
+                                                                            style={barStyle}
                                                                             href={issueUrl || '#'}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            ref={registerScenarioIssueRef(issue.key)}
+                                                                            displaySummary={issueSummary}
+                                                                            registerRef={registerScenarioIssueRef(issue.key)}
                                                                             onClick={(event) => {
                                                                                 event.preventDefault();
-                                                                                // Scroll to task in the task list below
                                                                                 const taskElement = document.querySelector(`[data-task-key="${issue.key}"]`);
                                                                                 if (taskElement) {
                                                                                     const elementTop = taskElement.getBoundingClientRect().top + window.scrollY;
                                                                                     window.scrollTo({ top: elementTop - 100, behavior: 'smooth' });
-                                                                                    // Flash highlight the task
                                                                                     taskElement.classList.add('is-focused');
                                                                                     setTimeout(() => {
                                                                                         taskElement.classList.remove('is-focused');
@@ -8897,11 +8898,7 @@ import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayloa
                                                                                 setScenarioHoverKey(null);
                                                                                 hideScenarioTooltip();
                                                                             }}
-                                                                        >
-                                                                            <div className="scenario-bar-inner">
-                                                                                <div className="scenario-bar-summary">{issueSummary}</div>
-                                                                            </div>
-                                                                        </a>
+                                                                        />
                                                                     );
                                                                 })}
                                                             </div>

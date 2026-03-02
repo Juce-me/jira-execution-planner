@@ -4420,7 +4420,8 @@ import { createRoot } from 'react-dom/client';
                         rowIndexByKey: new Map(),
                         laneRowCounts: new Map(),
                         laneVisibleRows: new Map(),
-                        laneHiddenCounts: new Map()
+                        laneHiddenCounts: new Map(),
+                        laneRowAssignees: new Map()
                     };
                 }
 
@@ -4432,6 +4433,7 @@ import { createRoot } from 'react-dom/client';
                 const laneRowCounts = new Map();
                 const laneVisibleRows = new Map();
                 const laneHiddenCounts = new Map();
+                const laneRowAssignees = new Map();
                 const fallbackStart = scenarioViewStart || new Date(0);
                 const DAY_MS = 24 * 60 * 60 * 1000;
                 const assignRows = (issueList, rowEnds, baseOffset, rowAssignees, options = {}) => {
@@ -4496,6 +4498,7 @@ import { createRoot } from 'react-dom/client';
                     });
                     assignRows(regularIssues, rowEnds, 0, rowAssignees);
                     assignRows(excludedIssues, rowEnds, 0, rowAssignees, { allowAssigneeMix: true, allowNewRows: false });
+                    laneRowAssignees.set(lane, [...rowAssignees]);
                     const totalRows = Math.max(1, rowEnds.length, capacityRows || 0);
                     const isCollapsed = scenarioEpicFocus ? false : Boolean(scenarioCollapsedLanes[lane]);
                     const collapsedRows = scenarioLaneMode === 'epic'
@@ -4521,7 +4524,7 @@ import { createRoot } from 'react-dom/client';
                     performance.clearMarks('scenarioLaneStacking:end');
                     performance.clearMeasures('scenarioLaneStacking');
                 }
-                return { rowIndexByKey, laneRowCounts, laneVisibleRows, laneHiddenCounts };
+                return { rowIndexByKey, laneRowCounts, laneVisibleRows, laneHiddenCounts, laneRowAssignees };
             }, [
                 scenarioLanes,
                 scenarioIssuesByLane,

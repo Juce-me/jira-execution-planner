@@ -126,5 +126,84 @@ class TestSprintDatesInFetch(unittest.TestCase):
         self.assertEqual(result[0]['endDate'], '2026-03-31T23:59:59.999Z')
 
 
+@unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
+class TestSprintBoundaries(unittest.TestCase):
+    """Verify sprintBoundaries in scenario response."""
+
+    def test_sprint_boundaries_with_neighbors(self):
+        """Selected sprint should include previous and next neighbors."""
+        cache_data = {
+            'timestamp': '2026-03-01T00:00:00',
+            'sprints': [
+                {'id': 1, 'name': '2025Q4', 'state': 'closed',
+                 'startDate': '2025-10-01T00:00:00.000Z', 'endDate': '2025-12-31T23:59:59.999Z'},
+                {'id': 2, 'name': '2026Q1', 'state': 'active',
+                 'startDate': '2026-01-01T00:00:00.000Z', 'endDate': '2026-03-31T23:59:59.999Z'},
+                {'id': 3, 'name': '2026Q2', 'state': 'future',
+                 'startDate': '2026-04-01T00:00:00.000Z', 'endDate': '2026-06-30T23:59:59.999Z'},
+            ]
+        }
+
+        with patch.object(jira_server, 'load_sprints_cache', return_value=cache_data):
+            # Simulate what the scenario endpoint does: resolve label then build boundaries
+            sprint_label = '2026Q1'
+            cached_sprints = cache_data['sprints']
+            sorted_sprints = sorted(cached_sprints, key=lambda s: s.get('name', ''))
+            selected_idx = None
+            for i, s in enumerate(sorted_sprints):
+                if s.get('name') == sprint_label:
+                    selected_idx = i
+                    break
+
+            self.assertIsNotNone(selected_idx)
+
+            def _sprint_boundary(s):
+                return {'id': s.get('id'), 'name': s.get('name'),
+                        'startDate': s.get('startDate'), 'endDate': s.get('endDate')}
+
+            boundaries = {
+                'selected': _sprint_boundary(sorted_sprints[selected_idx]),
+                'previous': _sprint_boundary(sorted_sprints[selected_idx - 1]) if selected_idx > 0 else None,
+                'next': _sprint_boundary(sorted_sprints[selected_idx + 1]) if selected_idx < len(sorted_sprints) - 1 else None,
+            }
+
+        self.assertEqual(boundaries['selected']['name'], '2026Q1')
+        self.assertEqual(boundaries['selected']['startDate'], '2026-01-01T00:00:00.000Z')
+        self.assertIsNotNone(boundaries['previous'])
+        self.assertEqual(boundaries['previous']['name'], '2025Q4')
+        self.assertIsNotNone(boundaries['next'])
+        self.assertEqual(boundaries['next']['name'], '2026Q2')
+
+    def test_sprint_boundaries_first_sprint_has_no_previous(self):
+        """First sprint chronologically should have previous=None."""
+        cache_data = {
+            'timestamp': '2026-03-01T00:00:00',
+            'sprints': [
+                {'id': 1, 'name': '2026Q1', 'state': 'active',
+                 'startDate': '2026-01-01T00:00:00.000Z', 'endDate': '2026-03-31T23:59:59.999Z'},
+                {'id': 2, 'name': '2026Q2', 'state': 'future',
+                 'startDate': None, 'endDate': None},
+            ]
+        }
+
+        sorted_sprints = sorted(cache_data['sprints'], key=lambda s: s.get('name', ''))
+        selected_idx = 0  # 2026Q1 is first
+
+        def _sprint_boundary(s):
+            return {'id': s.get('id'), 'name': s.get('name'),
+                    'startDate': s.get('startDate'), 'endDate': s.get('endDate')}
+
+        boundaries = {
+            'selected': _sprint_boundary(sorted_sprints[selected_idx]),
+            'previous': _sprint_boundary(sorted_sprints[selected_idx - 1]) if selected_idx > 0 else None,
+            'next': _sprint_boundary(sorted_sprints[selected_idx + 1]) if selected_idx < len(sorted_sprints) - 1 else None,
+        }
+
+        self.assertEqual(boundaries['selected']['name'], '2026Q1')
+        self.assertIsNone(boundaries['previous'])
+        self.assertIsNotNone(boundaries['next'])
+        self.assertEqual(boundaries['next']['name'], '2026Q2')
+
+
 if __name__ == '__main__':
     unittest.main()

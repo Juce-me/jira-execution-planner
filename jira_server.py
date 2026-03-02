@@ -2785,6 +2785,28 @@ def scenario_planner():
 
         sprint_label = resolve_sprint_label(filters.get('sprint'))
         quarter_start, quarter_end = quarter_dates_from_label(sprint_label)
+
+        # Build sprint boundaries (selected + previous/next neighbors)
+        sprint_boundaries = None
+        if sprint_label:
+            cache_data = load_sprints_cache() or {}
+            cached_sprints = cache_data.get('sprints') or []
+            # Sort chronologically by name (e.g. 2025Q4, 2026Q1, 2026Q2)
+            sorted_sprints = sorted(cached_sprints, key=lambda s: s.get('name', ''))
+            selected_idx = None
+            for i, s in enumerate(sorted_sprints):
+                if s.get('name') == sprint_label:
+                    selected_idx = i
+                    break
+            if selected_idx is not None:
+                def _sprint_boundary(s):
+                    return {'id': s.get('id'), 'name': s.get('name'),
+                            'startDate': s.get('startDate'), 'endDate': s.get('endDate')}
+                sprint_boundaries = {
+                    'selected': _sprint_boundary(sorted_sprints[selected_idx]),
+                    'previous': _sprint_boundary(sorted_sprints[selected_idx - 1]) if selected_idx > 0 else None,
+                    'next': _sprint_boundary(sorted_sprints[selected_idx + 1]) if selected_idx < len(sorted_sprints) - 1 else None,
+                }
         start_date = parse_iso_date(config_payload.get('start_date')) or quarter_start or date.today()
         quarter_end_date = parse_iso_date(config_payload.get('quarter_end_date')) or quarter_end or (start_date + timedelta(days=90))
         anchor_date = parse_iso_date(config_payload.get('anchor_date')) if config_payload.get('anchor_date') else None
@@ -3142,6 +3164,7 @@ def scenario_planner():
                 'focused_issue_keys': sorted(focus_set),
                 'context_issue_keys': sorted(context_keys),
             },
+            'sprintBoundaries': sprint_boundaries,
         }
 
         with _cache_lock:

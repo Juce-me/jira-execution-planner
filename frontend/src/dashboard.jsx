@@ -8818,6 +8818,20 @@ import { createRoot } from 'react-dom/client';
                                                                 </div>
                                                             </button>
                                                             <div className="scenario-lane-track" style={{ height: `${laneHeight}px` }}>
+                                                                {scenarioLaneMode === 'team' && (() => {
+                                                                    const assignees = scenarioLaneStacking.laneRowAssignees?.get(lane) || [];
+                                                                    const visibleRows = scenarioLaneStacking.laneVisibleRows.get(lane) || 1;
+                                                                    return assignees.slice(0, visibleRows).map((name, rowIdx) => {
+                                                                        if (!name) return null;
+                                                                        const top = scenarioBarGap + rowIdx * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
+                                                                        return (
+                                                                            <div key={`assignee-${rowIdx}`} className="scenario-row-assignee"
+                                                                                 style={{ top: `${top}px`, height: `${SCENARIO_BAR_HEIGHT}px` }}>
+                                                                                {name.split(' ')[0]}
+                                                                            </div>
+                                                                        );
+                                                                    });
+                                                                })()}
                                                                 {laneEpicBars.map(bar => {
                                                                     const left = `${(bar.xStart / scenarioLayout.width) * 100}%`;
                                                                     const width = `${Math.max(2, ((bar.xEnd - bar.xStart) / scenarioLayout.width) * 100)}%`;

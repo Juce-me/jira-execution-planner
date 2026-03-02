@@ -3800,6 +3800,22 @@
             min-width: 0;
         }
 
+        .scenario-row-assignee {
+            position: absolute;
+            left: 2px;
+            display: flex;
+            align-items: center;
+            font-size: 0.55rem;
+            color: var(--text-secondary);
+            opacity: 0.5;
+            pointer-events: none;
+            z-index: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 60px;
+        }
+
         .scenario-bar {
             position: absolute;
             top: 6px;

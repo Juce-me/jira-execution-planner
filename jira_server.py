@@ -2843,7 +2843,9 @@ def scenario_planner():
             'assignee',
             'updated',
             get_story_points_field_id(),
-            'parent'
+            'parent',
+            'startDate',
+            'duedate',
         ]
         if epic_link_field_id and epic_link_field_id not in fields_list:
             fields_list.append(epic_link_field_id)
@@ -2884,6 +2886,8 @@ def scenario_planner():
             story_points = fields.get(get_story_points_field_id())
             priority = (fields.get('priority') or {}).get('name')
             status = (fields.get('status') or {}).get('name')
+            jira_start_date = fields.get('startDate')   # ISO string or None
+            jira_due_date = fields.get('duedate')       # ISO string or None
             issue_obj = Issue(
                 key=issue.get('key'),
                 summary=fields.get('summary') or '',
@@ -2914,6 +2918,8 @@ def scenario_planner():
                     'priority': priority,
                     'status': status,
                     'epicKey': epic_key,
+                    'jiraStartDate': jira_start_date,
+                    'jiraDueDate': jira_due_date,
                 }
 
         dependencies = collect_dependencies(issue_keys, headers)
@@ -3136,6 +3142,8 @@ def scenario_planner():
                 'isLate': item.is_late if item else False,
                 'isContext': key in context_keys,
                 'url': f'{jira_base_url}/browse/{key}' if jira_base_url else None,
+                'jiraStartDate': entry.get('jiraStartDate'),
+                'jiraDueDate': entry.get('jiraDueDate'),
             })
 
         result = {

@@ -4484,7 +4484,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                         }
                     });
                     assignRows(regularIssues, rowEnds, 0, rowAssignees);
-                    assignRows(excludedIssues, rowEnds, 0, rowAssignees, { allowAssigneeMix: true, allowNewRows: false });
+                    assignRows(excludedIssues, rowEnds, 0, rowAssignees);
                     laneRowAssignees.set(lane, [...rowAssignees]);
                     const totalRows = Math.max(1, rowEnds.length, capacityRows || 0);
                     const isCollapsed = scenarioEpicFocus ? false : Boolean(scenarioCollapsedLanes[lane]);
@@ -8826,14 +8826,14 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                             {scenarioLaneMode === 'team' && (() => {
                                                                 const groups = scenarioLaneAssigneeGroups.get(lane) || [];
                                                                 return groups.map((group, idx) => {
-                                                                    if (!group.assignee) return null;
+                                                                    const displayName = group.assignee ? group.assignee.split(' ')[0] : 'Unassigned';
                                                                     const top = scenarioBarGap + group.startRow * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
                                                                     const height = group.rowCount * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
                                                                     return (
                                                                         <div key={`al-${idx}`} className="scenario-assignee-label"
                                                                              style={{ top: `${top}px`, height: `${height}px` }}
-                                                                             title={group.assignee}>
-                                                                            {group.assignee.split(' ')[0]}
+                                                                             title={group.assignee || 'Unassigned'}>
+                                                                            {displayName}
                                                                         </div>
                                                                     );
                                                                 });

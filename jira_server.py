@@ -1590,7 +1590,9 @@ def fetch_sprints_from_jira():
                         formatted_sprints.append({
                             'id': sprint_id,
                             'name': name,
-                            'state': state
+                            'state': state,
+                            'startDate': sprint.get('startDate'),
+                            'endDate': sprint.get('endDate'),
                         })
 
                 if data.get('isLast', False) or not sprints:
@@ -1645,7 +1647,9 @@ def fetch_sprints_from_jira():
                                     sprints_dict[sprint_id] = {
                                         'id': sprint_id,
                                         'name': name,
-                                        'state': state
+                                        'state': state,
+                                        'startDate': sprint.get('startDate'),
+                                        'endDate': sprint.get('endDate'),
                                     }
 
                 total_issues += len(issues)

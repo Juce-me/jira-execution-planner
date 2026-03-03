@@ -4130,6 +4130,17 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 });
                 return keys;
             }, [statsTaskList, isAllTeamsSelected, selectedTeamSet]);
+            const burnoutAllIssueKeys = React.useMemo(() => {
+                const keys = [];
+                const seen = new Set();
+                (statsTaskList || []).forEach((task) => {
+                    const key = String(task?.key || '').trim().toUpperCase();
+                    if (!key || seen.has(key)) return;
+                    seen.add(key);
+                    keys.push(key);
+                });
+                return keys;
+            }, [statsTaskList]);
             const burnoutScopedTeamIds = React.useMemo(() => {
                 if (isAllTeamsSelected) return [];
                 return Array.from(selectedTeamSet).filter(Boolean).sort();
@@ -4142,15 +4153,72 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 () => burnoutIssueKeys.join(','),
                 [burnoutIssueKeys]
             );
+            const burnoutAllIssueKeysSignature = React.useMemo(
+                () => burnoutAllIssueKeys.join(','),
+                [burnoutAllIssueKeys]
+            );
             const burnoutQueryKey = React.useMemo(() => {
                 const sprintLabel = selectedSprintInfo?.name || '';
                 if (!sprintLabel) return '';
                 return `${sprintLabel}::${burnoutScopedTeamSignature || 'all'}::${burnoutIssueKeysSignature}`;
             }, [selectedSprintInfo?.name, burnoutScopedTeamSignature, burnoutIssueKeysSignature]);
+            const burnoutAllTeamsQueryKey = React.useMemo(() => {
+                const sprintLabel = selectedSprintInfo?.name || '';
+                if (!sprintLabel) return '';
+                return `${sprintLabel}::all::${burnoutAllIssueKeysSignature}`;
+            }, [selectedSprintInfo?.name, burnoutAllIssueKeysSignature]);
 
             useEffect(() => {
                 if (!showStats || statsView !== 'burnout') return;
                 const sprintLabel = selectedSprintInfo?.name || '';
+                const buildBurnoutSubsetFromSource = (sourceData) => {
+                    if (!sourceData || !Array.isArray(sourceData.issuesMeta)) return null;
+                    const requestedIssueSet = new Set(
+                        (burnoutIssueKeys || []).map((key) => String(key || '').trim().toUpperCase()).filter(Boolean)
+                    );
+                    if (!requestedIssueSet.size) return null;
+                    const scopedTeamIdSet = burnoutScopedTeamIds.length
+                        ? new Set(burnoutScopedTeamIds.map((value) => String(value || '').trim()).filter(Boolean))
+                        : null;
+                    const issuesMeta = (sourceData.issuesMeta || []).filter((issue) => {
+                        const key = String(issue?.issueKey || '').trim().toUpperCase();
+                        return requestedIssueSet.has(key);
+                    });
+                    const events = (sourceData.events || []).filter((event) => {
+                        const key = String(event?.issueKey || '').trim().toUpperCase();
+                        if (!requestedIssueSet.has(key)) return false;
+                        if (!scopedTeamIdSet) return true;
+                        return scopedTeamIdSet.has(String(event?.teamId || '').trim());
+                    });
+                    const assigneeCounts = {};
+                    issuesMeta.forEach((issue) => {
+                        const assignee = issue?.assignee || {};
+                        const key = assignee.id || assignee.name || 'unassigned';
+                        if (!assigneeCounts[key]) {
+                            assigneeCounts[key] = {
+                                id: assignee.id,
+                                name: assignee.name || 'Unassigned',
+                                events: 0
+                            };
+                        }
+                        assigneeCounts[key].events += 1;
+                    });
+                    const assignees = Object.values(assigneeCounts).sort((a, b) => {
+                        const nameA = String(a?.name || '').toLowerCase();
+                        const nameB = String(b?.name || '').toLowerCase();
+                        if (nameA !== nameB) return nameA.localeCompare(nameB);
+                        return String(a?.id || '').localeCompare(String(b?.id || ''));
+                    });
+                    return {
+                        sprint: sourceData.sprint,
+                        timezone: sourceData.timezone,
+                        range: sourceData.range || { startDate: null, endDate: null },
+                        issues: issuesMeta.length,
+                        events,
+                        issuesMeta,
+                        assignees
+                    };
+                };
                 if (!sprintLabel) {
                     setBurnoutData(null);
                     setBurnoutError('');
@@ -4174,6 +4242,28 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     setBurnoutError('');
                     setBurnoutLoading(false);
                     return;
+                }
+                if (!isAllTeamsSelected && burnoutAllTeamsQueryKey) {
+                    const fullScopeCached = burnoutCacheRef.current[burnoutAllTeamsQueryKey];
+                    if (fullScopeCached) {
+                        const allIssueSet = new Set(
+                            (burnoutAllIssueKeys || []).map((key) => String(key || '').trim().toUpperCase()).filter(Boolean)
+                        );
+                        const canReuseAllScope = (burnoutIssueKeys || []).every((key) => {
+                            const issueKey = String(key || '').trim().toUpperCase();
+                            return issueKey && allIssueSet.has(issueKey);
+                        });
+                        if (canReuseAllScope) {
+                            const subset = buildBurnoutSubsetFromSource(fullScopeCached);
+                            if (subset) {
+                                burnoutCacheRef.current[burnoutQueryKey] = subset;
+                                setBurnoutData(subset);
+                                setBurnoutError('');
+                                setBurnoutLoading(false);
+                                return;
+                            }
+                        }
+                    }
                 }
 
                 const controller = new AbortController();
@@ -4208,6 +4298,9 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                         if (cancelled) return;
                         const data = payload?.data || null;
                         burnoutCacheRef.current[burnoutQueryKey] = data;
+                        if (isAllTeamsSelected && burnoutAllTeamsQueryKey) {
+                            burnoutCacheRef.current[burnoutAllTeamsQueryKey] = data;
+                        }
                         setBurnoutData(data);
                     } catch (err) {
                         if (cancelled) return;
@@ -4245,7 +4338,9 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 tasksFetched,
                 burnoutQueryKey,
                 burnoutScopedTeamSignature,
-                burnoutIssueKeysSignature
+                burnoutIssueKeysSignature,
+                burnoutAllIssueKeysSignature,
+                burnoutAllTeamsQueryKey
             ]);
 
             useEffect(() => {

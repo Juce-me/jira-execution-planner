@@ -4027,6 +4027,22 @@ import { createRoot } from 'react-dom/client';
             }, [statsTaskList, selectedSprintInfo?.name, showStats, perfEnabled]);
 
             const effectiveStatsData = localStatsData;
+            const burnoutTaskTeamByIssueKey = React.useMemo(() => {
+                const byIssue = new Map();
+                (statsTaskList || []).forEach((task) => {
+                    const issueKey = String(task?.key || '').trim().toUpperCase();
+                    if (!issueKey) return;
+                    const teamInfo = getTeamInfo(task);
+                    const teamId = teamInfo?.id && teamInfo.id !== 'unknown' ? String(teamInfo.id) : null;
+                    const teamName = String(teamInfo?.name || '').trim();
+                    if (!teamId && !teamName) return;
+                    byIssue.set(issueKey, {
+                        id: teamId,
+                        name: teamName || 'Unknown Team'
+                    });
+                });
+                return byIssue;
+            }, [statsTaskList, getTeamInfo]);
             const burnoutIssueKeys = React.useMemo(() => {
                 const keys = [];
                 const seen = new Set();
@@ -5923,6 +5939,17 @@ import { createRoot } from 'react-dom/client';
 
                 const issueMeta = Array.isArray(burnoutData?.issuesMeta) ? burnoutData.issuesMeta : [];
                 const allEvents = Array.isArray(burnoutData?.events) ? burnoutData.events : [];
+                const normalizeTeamCandidate = (teamValue) => {
+                    const idRaw = teamValue?.id;
+                    const id = idRaw === undefined || idRaw === null || idRaw === '' ? null : String(idRaw);
+                    const nameRaw = String(teamValue?.name || '').trim();
+                    const hasRealName = nameRaw && nameRaw.toLowerCase() !== 'unknown team';
+                    if (!id && !hasRealName) return null;
+                    return {
+                        id,
+                        name: hasRealName ? nameRaw : 'Unknown Team'
+                    };
+                };
                 const asAssigneeKey = (value) => value?.id || value?.name || 'unassigned';
                 const isAssigneeMatch = (assignee) => {
                     if (burnoutAssigneeFilter === 'all') return true;
@@ -5940,14 +5967,16 @@ import { createRoot } from 'react-dom/client';
                     if (!eventDate || Number.isNaN(eventDate.getTime())) return;
                     if (eventDate < rangeStart || eventDate > rangeEnd) return;
                     const dateKey = toDateKey(eventDate);
+                    const fallbackTeam = burnoutTaskTeamByIssueKey.get(issueKey.toUpperCase());
+                    const resolvedTeam = normalizeTeamCandidate({
+                        id: event?.teamId,
+                        name: event?.teamName
+                    }) || normalizeTeamCandidate(fallbackTeam) || { id: null, name: 'Unknown Team' };
                     const existing = closureByIssue.get(issueKey);
                     if (!existing || dateKey < existing.date) {
                         closureByIssue.set(issueKey, {
                             date: dateKey,
-                            team: {
-                                id: event?.teamId || null,
-                                name: event?.teamName || 'Unknown Team'
-                            },
+                            team: resolvedTeam,
                             assigneeName: event?.assigneeName || 'Unassigned',
                             bucket: String(event?.bucket || '').toLowerCase()
                         });
@@ -5998,8 +6027,17 @@ import { createRoot } from 'react-dom/client';
                     const createdDate = parseDate(issue?.createdDate);
                     if (createdDate && createdDate > rangeEnd) return;
 
-                    const startTeam = resolveTeamDescriptor(issue?.teamAtStart || issue?.teamAtCreated || { id: null, name: 'Unknown Team' });
-                    const createdTeam = resolveTeamDescriptor(issue?.teamAtCreated || issue?.teamAtStart || { id: null, name: 'Unknown Team' });
+                    const fallbackIssueTeam = burnoutTaskTeamByIssueKey.get(issueKey.toUpperCase());
+                    const startTeamSource = normalizeTeamCandidate(issue?.teamAtStart)
+                        || normalizeTeamCandidate(issue?.teamAtCreated)
+                        || normalizeTeamCandidate(fallbackIssueTeam)
+                        || { id: null, name: 'Unknown Team' };
+                    const createdTeamSource = normalizeTeamCandidate(issue?.teamAtCreated)
+                        || normalizeTeamCandidate(issue?.teamAtStart)
+                        || normalizeTeamCandidate(fallbackIssueTeam)
+                        || { id: null, name: 'Unknown Team' };
+                    const startTeam = resolveTeamDescriptor(startTeamSource);
+                    const createdTeam = resolveTeamDescriptor(createdTeamSource);
                     const closure = closureByIssue.get(issueKey);
 
                     const createdDateKey = createdDate ? toDateKey(createdDate) : null;
@@ -6064,7 +6102,15 @@ import { createRoot } from 'react-dom/client';
                 });
 
                 if (!timeline.length) return null;
-                const width = Math.max(760, timeline.length * 24);
+                const activeTeamKeys = new Set();
+                orderedTeams.forEach((team) => {
+                    const hasAnyValue = timeline.some((row) => (row.countsByTeam?.[team.key] || 0) > 0);
+                    if (hasAnyValue) {
+                        activeTeamKeys.add(team.key);
+                    }
+                });
+                const visibleTeams = orderedTeams.filter((team) => activeTeamKeys.has(team.key));
+                const width = Math.max(760, timeline.length * 9);
                 const height = 260;
                 const padding = { left: 46, right: 14, top: 12, bottom: 30 };
                 const plotWidth = Math.max(1, width - padding.left - padding.right);
@@ -6083,7 +6129,7 @@ import { createRoot } from 'react-dom/client';
                     const x = toX(index);
                     let running = 0;
                     const stacks = {};
-                    orderedTeams.forEach((team) => {
+                    visibleTeams.forEach((team) => {
                         const value = row.countsByTeam[team.key] || 0;
                         const bottom = running;
                         const top = bottom + value;
@@ -6120,19 +6166,7 @@ import { createRoot } from 'react-dom/client';
                         .join(' ');
                 };
 
-                const hoverBands = rows.map((row, index) => {
-                    const prevX = index > 0 ? rows[index - 1].x : row.x;
-                    const nextX = index < rows.length - 1 ? rows[index + 1].x : row.x;
-                    const x0 = index === 0 ? padding.left : (prevX + row.x) / 2;
-                    const x1 = index === rows.length - 1 ? width - padding.right : (row.x + nextX) / 2;
-                    return {
-                        key: row.date,
-                        x: x0,
-                        width: Math.max(2, x1 - x0),
-                        centerX: x0 + Math.max(2, x1 - x0) / 2,
-                        row
-                    };
-                });
+                const xStep = rows.length > 1 ? (plotWidth / (rows.length - 1)) : plotWidth;
 
                 const yTickValues = [];
                 [1, 0.75, 0.5, 0.25, 0].forEach((ratio) => {
@@ -6167,7 +6201,7 @@ import { createRoot } from 'react-dom/client';
                     ? { x: todayX, width: Math.max(0, (width - padding.right) - todayX) }
                     : null;
                 const teamColors = {};
-                orderedTeams.forEach((team) => {
+                visibleTeams.forEach((team) => {
                     teamColors[team.name] = team.color;
                 });
 
@@ -6176,15 +6210,15 @@ import { createRoot } from 'react-dom/client';
                     height,
                     padding,
                     rows,
-                    teams: orderedTeams,
-                    areas: orderedTeams.map((team) => ({
+                    teams: visibleTeams,
+                    areas: visibleTeams.map((team) => ({
                         team,
                         areaPath: buildAreaPath(team.key),
                         linePath: buildLinePath(team.key),
                         linePastPath: todayIndex >= 0 ? buildLinePathSegment(team.key, 0, todayIndex) : buildLinePath(team.key),
                         lineFuturePath: todayIndex >= 0 ? buildLinePathSegment(team.key, todayIndex, rows.length - 1) : ''
                     })),
-                    hoverBands,
+                    xStep,
                     yTicks,
                     weeklyMarkers,
                     todayDateKey,
@@ -6199,7 +6233,7 @@ import { createRoot } from 'react-dom/client';
                         closureBuckets
                     }
                 };
-            }, [burnoutData, burnoutAssigneeFilter]);
+            }, [burnoutData, burnoutAssigneeFilter, burnoutTaskTeamByIssueKey]);
 
             const burnoutTotals = burnoutChartModel?.summary || {
                 start: 0,
@@ -6208,6 +6242,22 @@ import { createRoot } from 'react-dom/client';
                 remaining: 0,
                 closureBuckets: { done: 0, killed: 0, incomplete: 0 }
             };
+            useEffect(() => {
+                if (!burnoutChartModel || statsView !== 'burnout') return;
+                const chart = burnoutChartRef.current;
+                if (!chart) return;
+                if ((chart.scrollWidth || 0) <= (chart.clientWidth || 0) + 2) {
+                    chart.scrollLeft = 0;
+                    return;
+                }
+                const todayX = Number(burnoutChartModel.todayX);
+                if (!Number.isFinite(todayX)) {
+                    chart.scrollLeft = 0;
+                    return;
+                }
+                const target = Math.max(0, todayX - (chart.clientWidth * 0.6));
+                chart.scrollLeft = target;
+            }, [burnoutChartModel, statsView]);
             const canRenderStatsPanel = Boolean(effectiveStatsData) || statsView === 'burnout';
             const groupTasksByEpic = (taskList) => {
                 const grouped = {};
@@ -9126,16 +9176,9 @@ import { createRoot } from 'react-dom/client';
                                             >
                                                 <svg
                                                     className="burnout-area-chart"
-                                                    width={burnoutChartModel.width}
-                                                    height={burnoutChartModel.height}
                                                     viewBox={`0 0 ${burnoutChartModel.width} ${burnoutChartModel.height}`}
-                                                    preserveAspectRatio="xMinYMin meet"
+                                                    preserveAspectRatio="none"
                                                 >
-                                                    <defs>
-                                                        <pattern id="burnout-future-dots" patternUnits="userSpaceOnUse" width="8" height="8">
-                                                            <circle cx="2" cy="2" r="1.2" fill="rgba(76, 76, 76, 0.28)" />
-                                                        </pattern>
-                                                    </defs>
                                                     {burnoutChartModel.yTicks.map((tick) => (
                                                         <line
                                                             key={`grid-${tick.value}`}
@@ -9163,7 +9206,6 @@ import { createRoot } from 'react-dom/client';
                                                             y={burnoutChartModel.padding.top}
                                                             width={burnoutChartModel.futureOverlay.width}
                                                             height={burnoutChartModel.height - burnoutChartModel.padding.top - burnoutChartModel.padding.bottom}
-                                                            fill="url(#burnout-future-dots)"
                                                         />
                                                     )}
                                                     {burnoutChartModel.areas.map((area) => (
@@ -9204,100 +9246,68 @@ import { createRoot } from 'react-dom/client';
                                                                     }}
                                                                 />
                                                             )}
-                                                            {burnoutChartModel.rows.map((row) => {
-                                                                const stack = row.stacks?.[area.team.key];
-                                                                if (!stack || stack.value <= 0) return null;
-                                                                const isActive = burnoutHoverPoint?.key === row.date;
-                                                                return (
-                                                                    <circle
-                                                                        key={`point-${area.team.key}-${row.date}`}
-                                                                        className="burnout-team-point"
-                                                                        cx={row.x}
-                                                                        cy={stack.yTop}
-                                                                        r={isActive ? 3 : 2}
-                                                                        onMouseEnter={() => setBurnoutHoverTeamKey(area.team.key)}
-                                                                        style={{ fill: area.team.color }}
-                                                                    />
-                                                                );
-                                                            })}
                                                         </g>
                                                     ))}
-                                                    {burnoutChartModel.hoverBands.map((band) => (
+                                                    {burnoutHoverPoint && (
                                                         <rect
-                                                            key={`hover-${band.key}`}
-                                                            className={`burnout-hover-band ${burnoutHoverPoint?.key === band.key ? 'active' : ''}`}
-                                                            x={band.x}
+                                                            className="burnout-hover-band active"
+                                                            x={Math.max(
+                                                                burnoutChartModel.padding.left,
+                                                                (burnoutHoverPoint.row?.x || burnoutChartModel.padding.left) - (burnoutChartModel.xStep / 2)
+                                                            )}
                                                             y={burnoutChartModel.padding.top}
-                                                            width={band.width}
+                                                            width={Math.max(8, burnoutChartModel.xStep)}
                                                             height={burnoutChartModel.height - burnoutChartModel.padding.top - burnoutChartModel.padding.bottom}
-                                                            onMouseEnter={(event) => {
-                                                                const chart = burnoutChartRef.current;
-                                                                const rect = chart?.getBoundingClientRect();
-                                                                const ratioY = rect?.height ? (burnoutChartModel.height / rect.height) : 1;
-                                                                const viewportX = rect
-                                                                    ? (event.clientX - rect.left)
-                                                                    : band.centerX;
-                                                                const viewportY = rect
-                                                                    ? (event.clientY - rect.top)
-                                                                    : burnoutChartModel.padding.top;
-                                                                const localX = rect
-                                                                    ? viewportX + (chart?.scrollLeft || 0)
-                                                                    : band.centerX;
-                                                                const localY = viewportY * ratioY;
-                                                                let hoveredTeamKey = null;
-                                                                for (let i = burnoutChartModel.teams.length - 1; i >= 0; i -= 1) {
-                                                                    const team = burnoutChartModel.teams[i];
-                                                                    const stack = band.row?.stacks?.[team.key];
-                                                                    if (!stack) continue;
-                                                                    if (localY >= stack.yTop && localY <= stack.yBottom) {
-                                                                        hoveredTeamKey = team.key;
-                                                                        break;
-                                                                    }
-                                                                }
-                                                                setBurnoutHoverTeamKey(hoveredTeamKey);
-                                                                setBurnoutHoverPoint({
-                                                                    key: band.key,
-                                                                    date: band.row.date,
-                                                                    row: band.row,
-                                                                    x: localX,
-                                                                    bubbleX: rect ? Math.max(180, Math.min(rect.width - 180, viewportX)) : 180
-                                                                });
-                                                            }}
-                                                            onMouseMove={(event) => {
-                                                                const chart = burnoutChartRef.current;
-                                                                const rect = chart?.getBoundingClientRect();
-                                                                const ratioY = rect?.height ? (burnoutChartModel.height / rect.height) : 1;
-                                                                const viewportX = rect
-                                                                    ? (event.clientX - rect.left)
-                                                                    : band.centerX;
-                                                                const viewportY = rect
-                                                                    ? (event.clientY - rect.top)
-                                                                    : burnoutChartModel.padding.top;
-                                                                const localX = rect
-                                                                    ? viewportX + (chart?.scrollLeft || 0)
-                                                                    : band.centerX;
-                                                                const localY = viewportY * ratioY;
-                                                                let hoveredTeamKey = null;
-                                                                for (let i = burnoutChartModel.teams.length - 1; i >= 0; i -= 1) {
-                                                                    const team = burnoutChartModel.teams[i];
-                                                                    const stack = band.row?.stacks?.[team.key];
-                                                                    if (!stack) continue;
-                                                                    if (localY >= stack.yTop && localY <= stack.yBottom) {
-                                                                        hoveredTeamKey = team.key;
-                                                                        break;
-                                                                    }
-                                                                }
-                                                                setBurnoutHoverTeamKey(hoveredTeamKey);
-                                                                setBurnoutHoverPoint({
-                                                                    key: band.key,
-                                                                    date: band.row.date,
-                                                                    row: band.row,
-                                                                    x: localX,
-                                                                    bubbleX: rect ? Math.max(180, Math.min(rect.width - 180, viewportX)) : 180
-                                                                });
-                                                            }}
                                                         />
-                                                    ))}
+                                                    )}
+                                                    <rect
+                                                        className="burnout-hover-capture"
+                                                        x={burnoutChartModel.padding.left}
+                                                        y={burnoutChartModel.padding.top}
+                                                        width={burnoutChartModel.width - burnoutChartModel.padding.left - burnoutChartModel.padding.right}
+                                                        height={burnoutChartModel.height - burnoutChartModel.padding.top - burnoutChartModel.padding.bottom}
+                                                        onMouseMove={(event) => {
+                                                            const chart = burnoutChartRef.current;
+                                                            const rect = chart?.getBoundingClientRect();
+                                                            if (!rect) return;
+                                                            const viewportX = event.clientX - rect.left;
+                                                            const viewportY = event.clientY - rect.top;
+                                                            const contentWidth = Math.max(chart.scrollWidth || rect.width, 1);
+                                                            const ratioX = burnoutChartModel.width / contentWidth;
+                                                            const localX = (viewportX + (chart.scrollLeft || 0)) * ratioX;
+                                                            const localY = viewportY * (burnoutChartModel.height / rect.height);
+                                                            const clampedX = Math.max(
+                                                                burnoutChartModel.padding.left,
+                                                                Math.min(burnoutChartModel.width - burnoutChartModel.padding.right, localX)
+                                                            );
+                                                            const relative = clampedX - burnoutChartModel.padding.left;
+                                                            const rawIndex = burnoutChartModel.rows.length <= 1
+                                                                ? 0
+                                                                : Math.round(relative / Math.max(1, burnoutChartModel.xStep));
+                                                            const index = Math.max(0, Math.min(burnoutChartModel.rows.length - 1, rawIndex));
+                                                            const row = burnoutChartModel.rows[index];
+                                                            if (!row) return;
+                                                            let hoveredTeamKey = null;
+                                                            for (let i = burnoutChartModel.teams.length - 1; i >= 0; i -= 1) {
+                                                                const team = burnoutChartModel.teams[i];
+                                                                const stack = row.stacks?.[team.key];
+                                                                if (!stack) continue;
+                                                                if ((stack.value || 0) <= 0) continue;
+                                                                if (localY >= stack.yTop && localY <= stack.yBottom) {
+                                                                    hoveredTeamKey = team.key;
+                                                                    break;
+                                                                }
+                                                            }
+                                                            setBurnoutHoverTeamKey(hoveredTeamKey);
+                                                            setBurnoutHoverPoint({
+                                                                key: row.date,
+                                                                date: row.date,
+                                                                row,
+                                                                x: row.x,
+                                                                bubbleX: Math.max(180, Math.min(rect.width - 180, viewportX))
+                                                            });
+                                                        }}
+                                                    />
                                                     {burnoutChartModel.todayX !== null && (
                                                         <>
                                                             <line

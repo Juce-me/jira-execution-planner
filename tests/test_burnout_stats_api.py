@@ -140,6 +140,55 @@ class TestBurnoutStatsApi(unittest.TestCase):
         self.assertIn('issueKey in (TECH-1,TECH-2)', joined_jql)
         self.assertIn('status CHANGED TO ("Done","Killed","Incomplete")', joined_jql)
 
+    def test_burnout_completed_sprint_can_include_post_sprint_closures(self):
+        calls = []
+        issue = {
+            'key': 'TECH-100',
+            'fields': {
+                'assignee': {'accountId': 'a1', 'displayName': 'Alice'},
+                'customfield_30101': {'id': 'T1', 'name': 'Team A'}
+            },
+            'changelog': {
+                'histories': [
+                    {
+                        'created': '2026-04-05T10:00:00.000+0000',
+                        'items': [
+                            {'field': 'status', 'fromString': 'In Progress', 'toString': 'Incomplete'}
+                        ]
+                    }
+                ]
+            }
+        }
+
+        def fake_search(_headers, payload):
+            calls.append(payload)
+            return DummyResponse({'issues': [issue], 'total': 1})
+
+        with patch.object(jira_server, 'jira_search_request', side_effect=fake_search), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_30101'):
+            response = self.client.post('/api/stats/burnout', json={
+                'sprint': '2026Q1',
+                'teamIds': ['T1'],
+                'issueKeys': ['TECH-100'],
+                'includePostSprintClosures': True
+            })
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = response.get_json()
+        data = payload.get('data') or {}
+        events = data.get('events') or []
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].get('bucket'), 'incomplete')
+        self.assertEqual(events[0].get('date'), '2026-04-05')
+
+        changelog_queries = [
+            call.get('jql', '')
+            for call in calls
+            if 'status CHANGED TO ("Done","Killed","Incomplete")' in (call.get('jql', ''))
+        ]
+        self.assertTrue(changelog_queries, 'Expected changelog query call')
+        self.assertTrue(all(' BEFORE "' not in query for query in changelog_queries))
+
 
 if __name__ == '__main__':
     unittest.main()

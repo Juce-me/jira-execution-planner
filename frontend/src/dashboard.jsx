@@ -4157,16 +4157,17 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 () => burnoutAllIssueKeys.join(','),
                 [burnoutAllIssueKeys]
             );
+            const burnoutClosureScopeKey = isCompletedSprintSelected ? 'post' : 'inSprint';
             const burnoutQueryKey = React.useMemo(() => {
                 const sprintLabel = selectedSprintInfo?.name || '';
                 if (!sprintLabel) return '';
-                return `${sprintLabel}::${burnoutScopedTeamSignature || 'all'}::${burnoutIssueKeysSignature}`;
-            }, [selectedSprintInfo?.name, burnoutScopedTeamSignature, burnoutIssueKeysSignature]);
+                return `${sprintLabel}::${burnoutClosureScopeKey}::${burnoutScopedTeamSignature || 'all'}::${burnoutIssueKeysSignature}`;
+            }, [selectedSprintInfo?.name, burnoutClosureScopeKey, burnoutScopedTeamSignature, burnoutIssueKeysSignature]);
             const burnoutAllTeamsQueryKey = React.useMemo(() => {
                 const sprintLabel = selectedSprintInfo?.name || '';
                 if (!sprintLabel) return '';
-                return `${sprintLabel}::all::${burnoutAllIssueKeysSignature}`;
-            }, [selectedSprintInfo?.name, burnoutAllIssueKeysSignature]);
+                return `${sprintLabel}::${burnoutClosureScopeKey}::all::${burnoutAllIssueKeysSignature}`;
+            }, [selectedSprintInfo?.name, burnoutClosureScopeKey, burnoutAllIssueKeysSignature]);
 
             useEffect(() => {
                 if (!showStats || statsView !== 'burnout') return;
@@ -4287,7 +4288,8 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                             body: JSON.stringify({
                                 sprint: sprintLabel,
                                 teamIds: burnoutScopedTeamIds,
-                                issueKeys: burnoutIssueKeys
+                                issueKeys: burnoutIssueKeys,
+                                includePostSprintClosures: isCompletedSprintSelected
                             })
                         });
                         if (!response.ok) {
@@ -4340,7 +4342,8 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 burnoutScopedTeamSignature,
                 burnoutIssueKeysSignature,
                 burnoutAllIssueKeysSignature,
-                burnoutAllTeamsQueryKey
+                burnoutAllTeamsQueryKey,
+                isCompletedSprintSelected
             ]);
 
             useEffect(() => {
@@ -6299,7 +6302,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     if (!issueKey || !issueKeySet.has(issueKey)) return;
                     const eventDate = parseDate(event?.date);
                     if (!eventDate || Number.isNaN(eventDate.getTime())) return;
-                    if (eventDate < rangeStart || eventDate > rangeEnd) return;
+                    if (eventDate < rangeStart || (eventDate > rangeEnd && !isCompletedSprintSelected)) return;
                     const dateKey = toDateKey(eventDate);
                     const fallbackTeam = burnoutTaskTeamByIssueKey.get(issueKey.toUpperCase());
                     const resolvedTeam = normalizeTeamCandidate({
@@ -6316,12 +6319,23 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                         });
                     }
                 });
+                const closureDateKeys = Array.from(closureByIssue.values())
+                    .map((item) => String(item?.date || '').trim())
+                    .filter(Boolean)
+                    .sort();
+                const lastClosureDateKey = closureDateKeys.length ? closureDateKeys[closureDateKeys.length - 1] : null;
+                let chartEndDateKey = toDateKey(rangeEnd);
+                if (isCompletedSprintSelected && lastClosureDateKey) {
+                    chartEndDateKey = lastClosureDateKey;
+                }
+                const chartEndDate = parseDate(chartEndDateKey) || rangeEnd;
+                const fullRangeEnd = chartEndDate > rangeEnd ? chartEndDate : rangeEnd;
 
                 const dayRows = [];
                 const dayDeltaByTeam = {};
                 const dayDetails = {};
                 let cursor = new Date(rangeStart.getTime());
-                while (cursor <= rangeEnd) {
+                while (cursor <= fullRangeEnd) {
                     const key = toDateKey(cursor);
                     dayRows.push(key);
                     dayDeltaByTeam[key] = {};
@@ -6436,30 +6450,37 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 });
 
                 if (!timeline.length) return null;
+                const fullTimeline = timeline;
+                const shouldTrimCompletedRange = Boolean(isCompletedSprintSelected && chartEndDateKey);
+                const chartTimeline = shouldTrimCompletedRange
+                    ? fullTimeline.filter((row) => row.date <= chartEndDateKey)
+                    : fullTimeline;
+                const timelineForChart = chartTimeline.length ? chartTimeline : fullTimeline;
+                const maxTotalForChart = timelineForChart.reduce((acc, row) => Math.max(acc, row.total || 0), 0);
                 const activeTeamKeys = new Set();
                 orderedTeams.forEach((team) => {
-                    const hasAnyValue = timeline.some((row) => (row.countsByTeam?.[team.key] || 0) > 0);
+                    const hasAnyValue = timelineForChart.some((row) => (row.countsByTeam?.[team.key] || 0) > 0);
                     if (hasAnyValue) {
                         activeTeamKeys.add(team.key);
                     }
                 });
                 const visibleTeams = orderedTeams.filter((team) => activeTeamKeys.has(team.key));
-                const width = Math.max(760, timeline.length * 9);
+                const width = Math.max(760, timelineForChart.length * 9);
                 const height = 260;
                 const padding = { left: 46, right: 14, top: 12, bottom: 30 };
                 const plotWidth = Math.max(1, width - padding.left - padding.right);
                 const plotHeight = Math.max(1, height - padding.top - padding.bottom);
-                const axisMax = Math.max(1, maxTotal);
+                const axisMax = Math.max(1, maxTotalForChart || maxTotal);
                 const toX = (index) => {
-                    if (timeline.length <= 1) return padding.left + plotWidth / 2;
-                    return padding.left + (plotWidth * index) / (timeline.length - 1);
+                    if (timelineForChart.length <= 1) return padding.left + plotWidth / 2;
+                    return padding.left + (plotWidth * index) / (timelineForChart.length - 1);
                 };
                 const toY = (value) => {
                     const safe = Math.max(0, Number(value) || 0);
                     return height - padding.bottom - (safe / axisMax) * plotHeight;
                 };
 
-                const rows = timeline.map((row, index) => {
+                const rows = timelineForChart.map((row, index) => {
                     const x = toX(index);
                     let running = 0;
                     const stacks = {};
@@ -6521,7 +6542,9 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 }));
 
                 const startTotal = orderedTeams.reduce((acc, team) => acc + (baselineByTeam[team.key] || 0), 0);
-                const remainingTotal = rows[rows.length - 1]?.total || 0;
+                const sprintEndKey = toDateKey(rangeEnd);
+                const sprintEndRow = fullTimeline.find((row) => row.date === sprintEndKey);
+                const remainingTotal = (sprintEndRow?.total ?? fullTimeline[fullTimeline.length - 1]?.total) || 0;
                 const now = new Date();
                 const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                 const todayDateKey = toDateKey(todayDate);
@@ -6567,7 +6590,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                         closureBuckets
                     }
                 };
-            }, [burnoutData, burnoutAssigneeFilter, burnoutTaskTeamByIssueKey]);
+            }, [burnoutData, burnoutAssigneeFilter, burnoutTaskTeamByIssueKey, isCompletedSprintSelected]);
 
             const burnoutTotals = burnoutChartModel?.summary || {
                 start: 0,

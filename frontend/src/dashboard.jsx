@@ -296,11 +296,19 @@ import { createRoot } from 'react-dom/client';
             const [planningOffset, setPlanningOffset] = useState(0);
             const [isPlanningStuck, setIsPlanningStuck] = useState(false);
             const planningPanelRef = useRef(null);
-            const resolveStatsView = (value) => (value === 'teams' || value === 'priority') ? value : 'teams';
+            const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout') ? value : 'teams';
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
             const [statsView, setStatsView] = useState(resolveStatsView(savedPrefsRef.current.statsView));
             const [statsGraphMode, setStatsGraphMode] = useState(resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode));
             const [priorityHoverIndex, setPriorityHoverIndex] = useState(null);
+            const [burnoutData, setBurnoutData] = useState(null);
+            const [burnoutLoading, setBurnoutLoading] = useState(false);
+            const [burnoutError, setBurnoutError] = useState('');
+            const [burnoutAssigneeFilter, setBurnoutAssigneeFilter] = useState(savedPrefsRef.current.burnoutAssigneeFilter || 'all');
+            const [burnoutHoverPoint, setBurnoutHoverPoint] = useState(null);
+            const [burnoutHoverTeamKey, setBurnoutHoverTeamKey] = useState(null);
+            const burnoutCacheRef = useRef({});
+            const burnoutChartRef = useRef(null);
             const [showTeamDropdown, setShowTeamDropdown] = useState(false);
             const teamDropdownRef = useRef(null);
             const [sprintSearch, setSprintSearch] = useState('');
@@ -2475,6 +2483,10 @@ import { createRoot } from 'react-dom/client';
                     epicDetails: {},
                     statsView: resolveStatsView(savedPrefsRef.current.statsView),
                     statsGraphMode: resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode),
+                    burnoutData: null,
+                    burnoutLoading: false,
+                    burnoutError: '',
+                    burnoutAssigneeFilter: savedPrefsRef.current.burnoutAssigneeFilter || 'all',
                     scenarioData: null,
                     scenarioError: '',
                     scenarioLaneMode: savedPrefsRef.current.scenarioLaneMode ?? 'team',
@@ -2548,6 +2560,10 @@ import { createRoot } from 'react-dom/client';
                 epicDetails,
                 statsView,
                 statsGraphMode,
+                burnoutData,
+                burnoutLoading,
+                burnoutError,
+                burnoutAssigneeFilter,
                 scenarioData,
                 scenarioError,
                 scenarioLaneMode,
@@ -2630,6 +2646,10 @@ import { createRoot } from 'react-dom/client';
                 setEpicDetails(nextState.epicDetails || {});
                 setStatsView(resolveStatsView(nextState.statsView));
                 setStatsGraphMode(resolveStatsGraphMode(nextState.statsGraphMode));
+                setBurnoutData(nextState.burnoutData || null);
+                setBurnoutLoading(false);
+                setBurnoutError(nextState.burnoutError || '');
+                setBurnoutAssigneeFilter(nextState.burnoutAssigneeFilter || 'all');
                 setScenarioData(nextState.scenarioData || null);
                 setScenarioError(nextState.scenarioError || '');
                 setScenarioLaneMode(nextState.scenarioLaneMode || 'team');
@@ -2707,6 +2727,10 @@ import { createRoot } from 'react-dom/client';
                 epicDetails,
                 statsView,
                 statsGraphMode,
+                burnoutData,
+                burnoutLoading,
+                burnoutError,
+                burnoutAssigneeFilter,
                 scenarioData,
                 scenarioError,
                 scenarioLaneMode,
@@ -2981,6 +3005,7 @@ import { createRoot } from 'react-dom/client';
                     searchQuery,
                     statsView,
                     statsGraphMode,
+                    burnoutAssigneeFilter,
                     scenarioLaneMode,
                     excludedStatsEpics,
                     hideExcludedStats,
@@ -3008,6 +3033,7 @@ import { createRoot } from 'react-dom/client';
                 searchQuery,
                 statsView,
                 statsGraphMode,
+                burnoutAssigneeFilter,
                 scenarioLaneMode,
                 excludedStatsEpics,
                 hideExcludedStats,
@@ -4001,6 +4027,181 @@ import { createRoot } from 'react-dom/client';
             }, [statsTaskList, selectedSprintInfo?.name, showStats, perfEnabled]);
 
             const effectiveStatsData = localStatsData;
+            const burnoutTaskTeamByIssueKey = React.useMemo(() => {
+                const byIssue = new Map();
+                (statsTaskList || []).forEach((task) => {
+                    const issueKey = String(task?.key || '').trim().toUpperCase();
+                    if (!issueKey) return;
+                    const teamInfo = getTeamInfo(task);
+                    const teamId = teamInfo?.id && teamInfo.id !== 'unknown' ? String(teamInfo.id) : null;
+                    const teamName = String(teamInfo?.name || '').trim();
+                    if (!teamId && !teamName) return;
+                    byIssue.set(issueKey, {
+                        id: teamId,
+                        name: teamName || 'Unknown Team'
+                    });
+                });
+                return byIssue;
+            }, [statsTaskList, getTeamInfo]);
+            const burnoutIssueKeys = React.useMemo(() => {
+                const keys = [];
+                const seen = new Set();
+                (statsTaskList || []).forEach((task) => {
+                    if (!task?.key) return;
+                    if (!isAllTeamsSelected) {
+                        const teamInfo = getTeamInfo(task);
+                        if (!selectedTeamSet.has(teamInfo.id)) {
+                            return;
+                        }
+                    }
+                    const key = String(task.key || '').trim().toUpperCase();
+                    if (!key || seen.has(key)) return;
+                    seen.add(key);
+                    keys.push(key);
+                });
+                return keys;
+            }, [statsTaskList, isAllTeamsSelected, selectedTeamSet]);
+            const burnoutScopedTeamIds = React.useMemo(() => {
+                if (isAllTeamsSelected) return [];
+                return Array.from(selectedTeamSet).filter(Boolean).sort();
+            }, [isAllTeamsSelected, selectedTeamSet]);
+            const burnoutScopedTeamSignature = React.useMemo(
+                () => burnoutScopedTeamIds.join(','),
+                [burnoutScopedTeamIds]
+            );
+            const burnoutIssueKeysSignature = React.useMemo(
+                () => burnoutIssueKeys.join(','),
+                [burnoutIssueKeys]
+            );
+            const burnoutQueryKey = React.useMemo(() => {
+                const sprintLabel = selectedSprintInfo?.name || '';
+                if (!sprintLabel) return '';
+                return `${sprintLabel}::${burnoutScopedTeamSignature || 'all'}::${burnoutIssueKeysSignature}`;
+            }, [selectedSprintInfo?.name, burnoutScopedTeamSignature, burnoutIssueKeysSignature]);
+
+            useEffect(() => {
+                if (!showStats || statsView !== 'burnout') return;
+                const sprintLabel = selectedSprintInfo?.name || '';
+                if (!sprintLabel) {
+                    setBurnoutData(null);
+                    setBurnoutError('');
+                    setBurnoutLoading(false);
+                    return;
+                }
+                if (!tasksFetched) {
+                    setBurnoutLoading(true);
+                    setBurnoutError('');
+                    return;
+                }
+                if (!burnoutIssueKeys.length) {
+                    setBurnoutData(null);
+                    setBurnoutError('No scoped tasks available for burnout in the current filters.');
+                    setBurnoutLoading(false);
+                    return;
+                }
+                const cached = burnoutCacheRef.current[burnoutQueryKey];
+                if (cached) {
+                    setBurnoutData(cached);
+                    setBurnoutError('');
+                    setBurnoutLoading(false);
+                    return;
+                }
+
+                const controller = new AbortController();
+                const timeoutId = window.setTimeout(() => {
+                    try {
+                        controller.abort();
+                    } catch (err) {
+                        // ignore abort errors
+                    }
+                }, 30000);
+                let cancelled = false;
+                const fetchBurnout = async () => {
+                    setBurnoutLoading(true);
+                    setBurnoutError('');
+                    try {
+                        const response = await fetch(`${BACKEND_URL}/api/stats/burnout`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            cache: 'no-cache',
+                            signal: controller.signal,
+                            body: JSON.stringify({
+                                sprint: sprintLabel,
+                                teamIds: burnoutScopedTeamIds,
+                                issueKeys: burnoutIssueKeys
+                            })
+                        });
+                        if (!response.ok) {
+                            const err = await response.json().catch(() => ({}));
+                            throw new Error(err.error || err.message || `Burnout fetch failed (${response.status})`);
+                        }
+                        const payload = await response.json();
+                        if (cancelled) return;
+                        const data = payload?.data || null;
+                        burnoutCacheRef.current[burnoutQueryKey] = data;
+                        setBurnoutData(data);
+                    } catch (err) {
+                        if (cancelled) return;
+                        if (err.name === 'AbortError') {
+                            setBurnoutError('Burnout request timed out (30s). Narrow scope with team or assignee filter.');
+                            setBurnoutData(null);
+                            return;
+                        }
+                        setBurnoutError(String(err.message || err));
+                        setBurnoutData(null);
+                    } finally {
+                        window.clearTimeout(timeoutId);
+                        if (!cancelled) {
+                            setBurnoutLoading(false);
+                        }
+                    }
+                };
+                const debounceId = window.setTimeout(() => {
+                    fetchBurnout();
+                }, 120);
+                return () => {
+                    cancelled = true;
+                    window.clearTimeout(debounceId);
+                    window.clearTimeout(timeoutId);
+                    try {
+                        controller.abort();
+                    } catch (err) {
+                        // ignore abort errors
+                    }
+                };
+            }, [
+                showStats,
+                statsView,
+                selectedSprintInfo?.name,
+                tasksFetched,
+                burnoutQueryKey,
+                burnoutScopedTeamSignature,
+                burnoutIssueKeysSignature
+            ]);
+
+            useEffect(() => {
+                const available = burnoutData?.assignees || [];
+                if (!available.length) {
+                    if (burnoutAssigneeFilter !== 'all') {
+                        setBurnoutAssigneeFilter('all');
+                    }
+                    return;
+                }
+                if (burnoutAssigneeFilter === 'all') return;
+                const exists = available.some((item) => {
+                    const id = item?.id || item?.name || 'unassigned';
+                    return id === burnoutAssigneeFilter;
+                });
+                if (!exists) {
+                    setBurnoutAssigneeFilter('all');
+                }
+            }, [burnoutData, burnoutAssigneeFilter]);
+
+            useEffect(() => {
+                setBurnoutHoverPoint(null);
+                setBurnoutHoverTeamKey(null);
+            }, [burnoutData, burnoutAssigneeFilter, statsView]);
+
             const scenarioRawIssues = scenarioData?.issues || EMPTY_ARRAY;
             const scenarioConfig = scenarioData?.config || EMPTY_OBJECT;
             const scenarioSummary = scenarioData?.summary || EMPTY_OBJECT;
@@ -5704,6 +5905,360 @@ import { createRoot } from 'react-dom/client';
                 weightedProduct: { done: 0, incomplete: 0, killed: 0 },
                 weightedTech: { done: 0, incomplete: 0, killed: 0 }
             });
+            const burnoutAssigneeOptions = React.useMemo(() => {
+                const source = burnoutData?.assignees || [];
+                const rows = source.map((item) => {
+                    const value = item?.id || item?.name || 'unassigned';
+                    const label = item?.name || 'Unassigned';
+                    return {
+                        value,
+                        label,
+                        events: Number(item?.events || 0)
+                    };
+                });
+                return [{ value: 'all', label: 'All Assignees', events: 0 }, ...rows];
+            }, [burnoutData]);
+
+            const burnoutChartModel = React.useMemo(() => {
+                const parseDate = (value) => {
+                    if (!value) return null;
+                    return new Date(`${value}T00:00:00`);
+                };
+                const toDateKey = (value) => {
+                    const year = value.getFullYear();
+                    const month = String(value.getMonth() + 1).padStart(2, '0');
+                    const day = String(value.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                };
+
+                const rangeStart = parseDate(burnoutData?.range?.startDate);
+                const rangeEnd = parseDate(burnoutData?.range?.endDate);
+                if (!rangeStart || !rangeEnd || Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime()) || rangeStart > rangeEnd) {
+                    return null;
+                }
+
+                const issueMeta = Array.isArray(burnoutData?.issuesMeta) ? burnoutData.issuesMeta : [];
+                const allEvents = Array.isArray(burnoutData?.events) ? burnoutData.events : [];
+                const normalizeTeamCandidate = (teamValue) => {
+                    const idRaw = teamValue?.id;
+                    const id = idRaw === undefined || idRaw === null || idRaw === '' ? null : String(idRaw);
+                    const nameRaw = String(teamValue?.name || '').trim();
+                    const hasRealName = nameRaw && nameRaw.toLowerCase() !== 'unknown team';
+                    if (!id && !hasRealName) return null;
+                    return {
+                        id,
+                        name: hasRealName ? nameRaw : 'Unknown Team'
+                    };
+                };
+                const asAssigneeKey = (value) => value?.id || value?.name || 'unassigned';
+                const isAssigneeMatch = (assignee) => {
+                    if (burnoutAssigneeFilter === 'all') return true;
+                    return asAssigneeKey(assignee || {}) === burnoutAssigneeFilter;
+                };
+
+                const filteredIssues = issueMeta.filter((issue) => isAssigneeMatch(issue?.assignee));
+                const issueKeySet = new Set(filteredIssues.map((issue) => String(issue?.issueKey || '').trim()).filter(Boolean));
+
+                const closureByIssue = new Map();
+                allEvents.forEach((event) => {
+                    const issueKey = String(event?.issueKey || '').trim();
+                    if (!issueKey || !issueKeySet.has(issueKey)) return;
+                    const eventDate = parseDate(event?.date);
+                    if (!eventDate || Number.isNaN(eventDate.getTime())) return;
+                    if (eventDate < rangeStart || eventDate > rangeEnd) return;
+                    const dateKey = toDateKey(eventDate);
+                    const fallbackTeam = burnoutTaskTeamByIssueKey.get(issueKey.toUpperCase());
+                    const resolvedTeam = normalizeTeamCandidate({
+                        id: event?.teamId,
+                        name: event?.teamName
+                    }) || normalizeTeamCandidate(fallbackTeam) || { id: null, name: 'Unknown Team' };
+                    const existing = closureByIssue.get(issueKey);
+                    if (!existing || dateKey < existing.date) {
+                        closureByIssue.set(issueKey, {
+                            date: dateKey,
+                            team: resolvedTeam,
+                            assigneeName: event?.assigneeName || 'Unassigned',
+                            bucket: String(event?.bucket || '').toLowerCase()
+                        });
+                    }
+                });
+
+                const dayRows = [];
+                const dayDeltaByTeam = {};
+                const dayDetails = {};
+                let cursor = new Date(rangeStart.getTime());
+                while (cursor <= rangeEnd) {
+                    const key = toDateKey(cursor);
+                    dayRows.push(key);
+                    dayDeltaByTeam[key] = {};
+                    dayDetails[key] = { added: [], closed: [] };
+                    cursor.setDate(cursor.getDate() + 1);
+                }
+
+                const teamByKey = new Map();
+                const resolveTeamDescriptor = (teamValue) => {
+                    const id = teamValue?.id || null;
+                    const name = teamValue?.name || 'Unknown Team';
+                    const key = id || `name:${name}`;
+                    if (!teamByKey.has(key)) {
+                        teamByKey.set(key, {
+                            key,
+                            id,
+                            name,
+                            color: resolveTeamColor(key)
+                        });
+                    }
+                    return teamByKey.get(key);
+                };
+
+                const baselineByTeam = {};
+                const bumpDelta = (dateKey, teamKey, value) => {
+                    if (!dayDeltaByTeam[dateKey]) return;
+                    dayDeltaByTeam[dateKey][teamKey] = (dayDeltaByTeam[dateKey][teamKey] || 0) + value;
+                };
+
+                let additions = 0;
+                let closures = 0;
+                const closureBuckets = { done: 0, killed: 0, incomplete: 0 };
+
+                filteredIssues.forEach((issue) => {
+                    const issueKey = String(issue?.issueKey || '').trim();
+                    if (!issueKey) return;
+                    const createdDate = parseDate(issue?.createdDate);
+                    if (createdDate && createdDate > rangeEnd) return;
+
+                    const fallbackIssueTeam = burnoutTaskTeamByIssueKey.get(issueKey.toUpperCase());
+                    const startTeamSource = normalizeTeamCandidate(issue?.teamAtStart)
+                        || normalizeTeamCandidate(issue?.teamAtCreated)
+                        || normalizeTeamCandidate(fallbackIssueTeam)
+                        || { id: null, name: 'Unknown Team' };
+                    const createdTeamSource = normalizeTeamCandidate(issue?.teamAtCreated)
+                        || normalizeTeamCandidate(issue?.teamAtStart)
+                        || normalizeTeamCandidate(fallbackIssueTeam)
+                        || { id: null, name: 'Unknown Team' };
+                    const startTeam = resolveTeamDescriptor(startTeamSource);
+                    const createdTeam = resolveTeamDescriptor(createdTeamSource);
+                    const closure = closureByIssue.get(issueKey);
+
+                    const createdDateKey = createdDate ? toDateKey(createdDate) : null;
+                    if (createdDateKey && createdDate > rangeStart && dayDeltaByTeam[createdDateKey]) {
+                        bumpDelta(createdDateKey, createdTeam.key, 1);
+                        additions += 1;
+                        dayDetails[createdDateKey].added.push({
+                            issueKey,
+                            teamName: createdTeam.name,
+                            assigneeName: issue?.assignee?.name || 'Unassigned'
+                        });
+                    } else {
+                        baselineByTeam[startTeam.key] = (baselineByTeam[startTeam.key] || 0) + 1;
+                    }
+
+                    if (closure && dayDeltaByTeam[closure.date]) {
+                        const closureTeam = resolveTeamDescriptor(closure.team);
+                        bumpDelta(closure.date, closureTeam.key, -1);
+                        closures += 1;
+                        if (closure.bucket in closureBuckets) {
+                            closureBuckets[closure.bucket] += 1;
+                        }
+                        dayDetails[closure.date].closed.push({
+                            issueKey,
+                            teamName: closureTeam.name,
+                            assigneeName: closure.assigneeName || 'Unassigned',
+                            status: closure.bucket || 'closed'
+                        });
+                    }
+                });
+
+                const orderedTeams = Array.from(teamByKey.values())
+                    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+                let runningByTeam = {};
+                orderedTeams.forEach((team) => {
+                    runningByTeam[team.key] = baselineByTeam[team.key] || 0;
+                });
+
+                const timeline = [];
+                let maxTotal = 0;
+                dayRows.forEach((dateKey) => {
+                    const dayDelta = dayDeltaByTeam[dateKey] || {};
+                    Object.entries(dayDelta).forEach(([teamKey, delta]) => {
+                        const next = (runningByTeam[teamKey] || 0) + delta;
+                        runningByTeam[teamKey] = Math.max(0, next);
+                    });
+                    let total = 0;
+                    const countsByTeam = {};
+                    orderedTeams.forEach((team) => {
+                        const count = Math.max(0, runningByTeam[team.key] || 0);
+                        countsByTeam[team.key] = count;
+                        total += count;
+                    });
+                    maxTotal = Math.max(maxTotal, total);
+                    timeline.push({
+                        date: dateKey,
+                        total,
+                        countsByTeam,
+                        details: dayDetails[dateKey]
+                    });
+                });
+
+                if (!timeline.length) return null;
+                const activeTeamKeys = new Set();
+                orderedTeams.forEach((team) => {
+                    const hasAnyValue = timeline.some((row) => (row.countsByTeam?.[team.key] || 0) > 0);
+                    if (hasAnyValue) {
+                        activeTeamKeys.add(team.key);
+                    }
+                });
+                const visibleTeams = orderedTeams.filter((team) => activeTeamKeys.has(team.key));
+                const width = Math.max(760, timeline.length * 9);
+                const height = 260;
+                const padding = { left: 46, right: 14, top: 12, bottom: 30 };
+                const plotWidth = Math.max(1, width - padding.left - padding.right);
+                const plotHeight = Math.max(1, height - padding.top - padding.bottom);
+                const axisMax = Math.max(1, maxTotal);
+                const toX = (index) => {
+                    if (timeline.length <= 1) return padding.left + plotWidth / 2;
+                    return padding.left + (plotWidth * index) / (timeline.length - 1);
+                };
+                const toY = (value) => {
+                    const safe = Math.max(0, Number(value) || 0);
+                    return height - padding.bottom - (safe / axisMax) * plotHeight;
+                };
+
+                const rows = timeline.map((row, index) => {
+                    const x = toX(index);
+                    let running = 0;
+                    const stacks = {};
+                    visibleTeams.forEach((team) => {
+                        const value = row.countsByTeam[team.key] || 0;
+                        const bottom = running;
+                        const top = bottom + value;
+                        stacks[team.key] = {
+                            value,
+                            bottom,
+                            top,
+                            yTop: toY(top),
+                            yBottom: toY(bottom)
+                        };
+                        running = top;
+                    });
+                    return { ...row, x, stacks };
+                });
+
+                const buildAreaPath = (teamKey) => {
+                    if (!rows.length) return '';
+                    const top = rows.map((row, idx) => `${idx === 0 ? 'M' : 'L'}${row.x.toFixed(2)},${row.stacks[teamKey].yTop.toFixed(2)}`).join(' ');
+                    const bottom = [...rows].reverse().map((row) => `L${row.x.toFixed(2)},${row.stacks[teamKey].yBottom.toFixed(2)}`).join(' ');
+                    return `${top} ${bottom} Z`;
+                };
+                const buildLinePath = (teamKey) => {
+                    if (!rows.length) return '';
+                    return rows.map((row, idx) => `${idx === 0 ? 'M' : 'L'}${row.x.toFixed(2)},${row.stacks[teamKey].yTop.toFixed(2)}`).join(' ');
+                };
+                const buildLinePathSegment = (teamKey, startIndex, endIndex) => {
+                    if (!rows.length) return '';
+                    const start = Math.max(0, Number(startIndex) || 0);
+                    const end = Math.min(rows.length - 1, Number(endIndex) || 0);
+                    if (end <= start) return '';
+                    return rows
+                        .slice(start, end + 1)
+                        .map((row, idx) => `${idx === 0 ? 'M' : 'L'}${row.x.toFixed(2)},${row.stacks[teamKey].yTop.toFixed(2)}`)
+                        .join(' ');
+                };
+
+                const xStep = rows.length > 1 ? (plotWidth / (rows.length - 1)) : plotWidth;
+
+                const yTickValues = [];
+                [1, 0.75, 0.5, 0.25, 0].forEach((ratio) => {
+                    const value = Math.round(axisMax * ratio);
+                    if (!yTickValues.includes(value)) {
+                        yTickValues.push(value);
+                    }
+                });
+                if (!yTickValues.includes(axisMax)) {
+                    yTickValues.unshift(axisMax);
+                }
+                if (!yTickValues.includes(0)) {
+                    yTickValues.push(0);
+                }
+                const yTicks = yTickValues.map((value) => ({
+                    value,
+                    y: toY(value)
+                }));
+
+                const startTotal = orderedTeams.reduce((acc, team) => acc + (baselineByTeam[team.key] || 0), 0);
+                const remainingTotal = rows[rows.length - 1]?.total || 0;
+                const now = new Date();
+                const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const todayDateKey = toDateKey(todayDate);
+                const todayIndex = rows.findIndex((row) => row.date === todayDateKey);
+                const todayX = todayIndex >= 0 ? rows[todayIndex].x : null;
+                const weeklyMarkers = rows
+                    .map((row, index) => ({ row, index }))
+                    .filter(({ index }) => index > 0 && index % 7 === 0)
+                    .map(({ row }) => ({ key: row.date, x: row.x }));
+                const futureOverlay = (todayX !== null && todayIndex < rows.length - 1)
+                    ? { x: todayX, width: Math.max(0, (width - padding.right) - todayX) }
+                    : null;
+                const teamColors = {};
+                visibleTeams.forEach((team) => {
+                    teamColors[team.name] = team.color;
+                });
+
+                return {
+                    width,
+                    height,
+                    padding,
+                    rows,
+                    teams: visibleTeams,
+                    areas: visibleTeams.map((team) => ({
+                        team,
+                        areaPath: buildAreaPath(team.key),
+                        linePath: buildLinePath(team.key),
+                        linePastPath: todayIndex >= 0 ? buildLinePathSegment(team.key, 0, todayIndex) : buildLinePath(team.key),
+                        lineFuturePath: todayIndex >= 0 ? buildLinePathSegment(team.key, todayIndex, rows.length - 1) : ''
+                    })),
+                    xStep,
+                    yTicks,
+                    weeklyMarkers,
+                    todayDateKey,
+                    todayX,
+                    futureOverlay,
+                    teamColors,
+                    summary: {
+                        start: startTotal,
+                        added: additions,
+                        closed: closures,
+                        remaining: remainingTotal,
+                        closureBuckets
+                    }
+                };
+            }, [burnoutData, burnoutAssigneeFilter, burnoutTaskTeamByIssueKey]);
+
+            const burnoutTotals = burnoutChartModel?.summary || {
+                start: 0,
+                added: 0,
+                closed: 0,
+                remaining: 0,
+                closureBuckets: { done: 0, killed: 0, incomplete: 0 }
+            };
+            useEffect(() => {
+                if (!burnoutChartModel || statsView !== 'burnout') return;
+                const chart = burnoutChartRef.current;
+                if (!chart) return;
+                if ((chart.scrollWidth || 0) <= (chart.clientWidth || 0) + 2) {
+                    chart.scrollLeft = 0;
+                    return;
+                }
+                const todayX = Number(burnoutChartModel.todayX);
+                if (!Number.isFinite(todayX)) {
+                    chart.scrollLeft = 0;
+                    return;
+                }
+                const target = Math.max(0, todayX - (chart.clientWidth * 0.6));
+                chart.scrollLeft = target;
+            }, [burnoutChartModel, statsView]);
+            const canRenderStatsPanel = Boolean(effectiveStatsData) || statsView === 'burnout';
             const groupTasksByEpic = (taskList) => {
                 const grouped = {};
                 taskList.forEach(task => {
@@ -8069,12 +8624,11 @@ import { createRoot } from 'react-dom/client';
                         <div className="stats-note">
                             Selected sprint: {selectedSprintInfo?.name || 'Sprint'}
                         </div>
-
-                        {showStats && !effectiveStatsData && (
+                        {showStats && !canRenderStatsPanel && (
                             <div className="stats-note">Load stats for the selected sprint.</div>
                         )}
 
-                        {effectiveStatsData && (
+                        {canRenderStatsPanel && (
                             <>
                                 <div className="stats-summary">
                                     <div
@@ -8141,6 +8695,12 @@ import { createRoot } from 'react-dom/client';
                                         onClick={() => setStatsView('priority')}
                                     >
                                         Priority
+                                    </button>
+                                    <button
+                                        className={`stats-toggle ${statsView === 'burnout' ? 'active' : ''}`}
+                                        onClick={() => setStatsView('burnout')}
+                                    >
+                                        Burnout
                                     </button>
                                 </div>
 
@@ -8541,6 +9101,313 @@ import { createRoot } from 'react-dom/client';
                                             })}
                                         </tbody>
                                     </table>
+                                </div>
+
+                                <div className={`stats-view ${statsView === 'burnout' ? 'open' : ''}`}>
+                                    <div className="stats-controls">
+                                        <div className="stats-control-group">
+                                            <label>Assignee</label>
+                                            <select
+                                                className="scenario-input"
+                                                value={burnoutAssigneeFilter}
+                                                onChange={(event) => setBurnoutAssigneeFilter(event.target.value)}
+                                            >
+                                                {burnoutAssigneeOptions.map((item) => (
+                                                    <option key={item.value} value={item.value}>
+                                                        {item.events > 0 && item.value !== 'all'
+                                                            ? `${item.label} (${item.events})`
+                                                            : item.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="stats-summary burnout-summary">
+                                        <div className="stats-card">
+                                            <h4>Start</h4>
+                                            <div className="stat-value">{burnoutTotals.start}</div>
+                                            <div className="stats-note">Stories at sprint start</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Added</h4>
+                                            <div className="stat-value">{burnoutTotals.added}</div>
+                                            <div className="stats-note">Added after sprint start</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Closed</h4>
+                                            <div className="stat-value">{burnoutTotals.closed}</div>
+                                            <div className="stats-note">
+                                                {burnoutTotals.closureBuckets.done} done · {burnoutTotals.closureBuckets.killed} killed · {burnoutTotals.closureBuckets.incomplete} incomplete
+                                            </div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Remaining</h4>
+                                            <div className="stat-value">{burnoutTotals.remaining}</div>
+                                            <div className="stats-note">Open at sprint end</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Timezone</h4>
+                                            <div className="stat-value">UTC+2</div>
+                                        </div>
+                                    </div>
+
+                                    {burnoutLoading && (
+                                        <div className="stats-note">Loading burnout history…</div>
+                                    )}
+                                    {!burnoutLoading && burnoutError && (
+                                        <div className="stats-note" style={{ color: '#cf1322' }}>{burnoutError}</div>
+                                    )}
+                                    {!burnoutLoading && !burnoutError && !burnoutChartModel && (
+                                        <div className="stats-note">No burnout timeline data found for the selected sprint and filters.</div>
+                                    )}
+                                    {!burnoutLoading && !burnoutError && burnoutChartModel && (
+                                        <>
+                                            <div className="burnout-chart-wrap">
+                                            <div
+                                                className="burnout-chart"
+                                                ref={burnoutChartRef}
+                                                onMouseLeave={() => {
+                                                    setBurnoutHoverPoint(null);
+                                                    setBurnoutHoverTeamKey(null);
+                                                }}
+                                                role="img"
+                                                aria-label="Daily burnout stacked area chart by team"
+                                            >
+                                                <svg
+                                                    className="burnout-area-chart"
+                                                    viewBox={`0 0 ${burnoutChartModel.width} ${burnoutChartModel.height}`}
+                                                    preserveAspectRatio="none"
+                                                >
+                                                    {burnoutChartModel.yTicks.map((tick) => (
+                                                        <line
+                                                            key={`grid-${tick.value}`}
+                                                            className="burnout-grid-line"
+                                                            x1={burnoutChartModel.padding.left}
+                                                            x2={burnoutChartModel.width - burnoutChartModel.padding.right}
+                                                            y1={tick.y}
+                                                            y2={tick.y}
+                                                        />
+                                                    ))}
+                                                    {burnoutChartModel.weeklyMarkers.map((marker) => (
+                                                        <line
+                                                            key={`week-${marker.key}`}
+                                                            className="burnout-weekly-line"
+                                                            x1={marker.x}
+                                                            x2={marker.x}
+                                                            y1={burnoutChartModel.padding.top}
+                                                            y2={burnoutChartModel.height - burnoutChartModel.padding.bottom}
+                                                        />
+                                                    ))}
+                                                    {burnoutChartModel.futureOverlay && (
+                                                        <rect
+                                                            className="burnout-future-overlay"
+                                                            x={burnoutChartModel.futureOverlay.x}
+                                                            y={burnoutChartModel.padding.top}
+                                                            width={burnoutChartModel.futureOverlay.width}
+                                                            height={burnoutChartModel.height - burnoutChartModel.padding.top - burnoutChartModel.padding.bottom}
+                                                        />
+                                                    )}
+                                                    {burnoutChartModel.areas.map((area) => (
+                                                        <g key={`team-area-${area.team.key}`}>
+                                                            <path
+                                                                className={`burnout-area-team ${
+                                                                    burnoutHoverTeamKey && burnoutHoverTeamKey !== area.team.key ? 'dimmed' : 'active'
+                                                                }`}
+                                                                d={area.areaPath}
+                                                                onMouseEnter={() => setBurnoutHoverTeamKey(area.team.key)}
+                                                                onMouseMove={() => setBurnoutHoverTeamKey(area.team.key)}
+                                                                style={{
+                                                                    fill: area.team.color,
+                                                                    stroke: area.team.color
+                                                                }}
+                                                            />
+                                                            <path
+                                                                className={`burnout-team-line ${
+                                                                    burnoutHoverTeamKey && burnoutHoverTeamKey !== area.team.key ? 'dimmed' : 'active'
+                                                                }`}
+                                                                d={area.linePastPath || area.linePath}
+                                                                onMouseEnter={() => setBurnoutHoverTeamKey(area.team.key)}
+                                                                onMouseMove={() => setBurnoutHoverTeamKey(area.team.key)}
+                                                                style={{
+                                                                    stroke: area.team.color
+                                                                }}
+                                                            />
+                                                            {area.lineFuturePath && (
+                                                                <path
+                                                                    className={`burnout-team-line burnout-team-line-future ${
+                                                                        burnoutHoverTeamKey && burnoutHoverTeamKey !== area.team.key ? 'dimmed' : 'active'
+                                                                    }`}
+                                                                    d={area.lineFuturePath}
+                                                                    onMouseEnter={() => setBurnoutHoverTeamKey(area.team.key)}
+                                                                    onMouseMove={() => setBurnoutHoverTeamKey(area.team.key)}
+                                                                    style={{
+                                                                        stroke: area.team.color
+                                                                    }}
+                                                                />
+                                                            )}
+                                                        </g>
+                                                    ))}
+                                                    {burnoutHoverPoint && (
+                                                        <rect
+                                                            className="burnout-hover-band active"
+                                                            x={Math.max(
+                                                                burnoutChartModel.padding.left,
+                                                                (burnoutHoverPoint.row?.x || burnoutChartModel.padding.left) - (burnoutChartModel.xStep / 2)
+                                                            )}
+                                                            y={burnoutChartModel.padding.top}
+                                                            width={Math.max(8, burnoutChartModel.xStep)}
+                                                            height={burnoutChartModel.height - burnoutChartModel.padding.top - burnoutChartModel.padding.bottom}
+                                                        />
+                                                    )}
+                                                    <rect
+                                                        className="burnout-hover-capture"
+                                                        x={burnoutChartModel.padding.left}
+                                                        y={burnoutChartModel.padding.top}
+                                                        width={burnoutChartModel.width - burnoutChartModel.padding.left - burnoutChartModel.padding.right}
+                                                        height={burnoutChartModel.height - burnoutChartModel.padding.top - burnoutChartModel.padding.bottom}
+                                                        onMouseMove={(event) => {
+                                                            const chart = burnoutChartRef.current;
+                                                            const rect = chart?.getBoundingClientRect();
+                                                            if (!rect) return;
+                                                            const viewportX = event.clientX - rect.left;
+                                                            const viewportY = event.clientY - rect.top;
+                                                            const contentWidth = Math.max(chart.scrollWidth || rect.width, 1);
+                                                            const ratioX = burnoutChartModel.width / contentWidth;
+                                                            const localX = (viewportX + (chart.scrollLeft || 0)) * ratioX;
+                                                            const localY = viewportY * (burnoutChartModel.height / rect.height);
+                                                            const clampedX = Math.max(
+                                                                burnoutChartModel.padding.left,
+                                                                Math.min(burnoutChartModel.width - burnoutChartModel.padding.right, localX)
+                                                            );
+                                                            const relative = clampedX - burnoutChartModel.padding.left;
+                                                            const rawIndex = burnoutChartModel.rows.length <= 1
+                                                                ? 0
+                                                                : Math.round(relative / Math.max(1, burnoutChartModel.xStep));
+                                                            const index = Math.max(0, Math.min(burnoutChartModel.rows.length - 1, rawIndex));
+                                                            const row = burnoutChartModel.rows[index];
+                                                            if (!row) return;
+                                                            let hoveredTeamKey = null;
+                                                            for (let i = burnoutChartModel.teams.length - 1; i >= 0; i -= 1) {
+                                                                const team = burnoutChartModel.teams[i];
+                                                                const stack = row.stacks?.[team.key];
+                                                                if (!stack) continue;
+                                                                if ((stack.value || 0) <= 0) continue;
+                                                                if (localY >= stack.yTop && localY <= stack.yBottom) {
+                                                                    hoveredTeamKey = team.key;
+                                                                    break;
+                                                                }
+                                                            }
+                                                            setBurnoutHoverTeamKey(hoveredTeamKey);
+                                                            setBurnoutHoverPoint({
+                                                                key: row.date,
+                                                                date: row.date,
+                                                                row,
+                                                                x: row.x,
+                                                                bubbleX: Math.max(180, Math.min(rect.width - 180, viewportX))
+                                                            });
+                                                        }}
+                                                    />
+                                                    {burnoutChartModel.todayX !== null && (
+                                                        <>
+                                                            <line
+                                                                className="burnout-today-line"
+                                                                x1={burnoutChartModel.todayX}
+                                                                x2={burnoutChartModel.todayX}
+                                                                y1={burnoutChartModel.padding.top}
+                                                                y2={burnoutChartModel.height - burnoutChartModel.padding.bottom}
+                                                            />
+                                                            <text
+                                                                className="burnout-today-label"
+                                                                x={burnoutChartModel.todayX + 4}
+                                                                y={burnoutChartModel.padding.top + 11}
+                                                            >
+                                                                Today
+                                                            </text>
+                                                        </>
+                                                    )}
+                                                    {burnoutHoverPoint && (
+                                                        <line
+                                                            className="burnout-hover-line"
+                                                            x1={burnoutHoverPoint.x}
+                                                            x2={burnoutHoverPoint.x}
+                                                            y1={burnoutChartModel.padding.top}
+                                                            y2={burnoutChartModel.height - burnoutChartModel.padding.bottom}
+                                                        />
+                                                    )}
+                                                    {burnoutChartModel.yTicks.map((tick) => (
+                                                        <text
+                                                            key={`label-${tick.value}`}
+                                                            className="burnout-y-axis-label"
+                                                            x={burnoutChartModel.padding.left - 8}
+                                                            y={tick.y + 3}
+                                                            textAnchor="end"
+                                                        >
+                                                            {tick.value}
+                                                        </text>
+                                                    ))}
+                                                </svg>
+                                            </div>
+                                            {burnoutHoverPoint && (
+                                                <div
+                                                    className="burnout-hover-bubble"
+                                                    style={{
+                                                        left: `${burnoutHoverPoint.bubbleX || 180}px`
+                                                    }}
+                                                >
+                                                    <div className="burnout-hover-title">{burnoutHoverPoint.date}</div>
+                                                    <div className="burnout-hover-row">Total: <strong>{burnoutHoverPoint.row?.total || 0}</strong></div>
+                                                    <div className="burnout-hover-row">
+                                                        Added: <strong>{(burnoutHoverPoint.row?.details?.added || []).length}</strong> ·
+                                                        Closed: <strong>{(burnoutHoverPoint.row?.details?.closed || []).length}</strong>
+                                                    </div>
+                                                    {(burnoutHoverPoint.row?.details?.closed || []).slice(0, 5).map((event, index) => (
+                                                        <div
+                                                            key={`${event.issueKey}-${index}`}
+                                                            className="burnout-hover-row muted"
+                                                            style={{ color: burnoutChartModel.teamColors?.[event.teamName] || '#6b7280', opacity: 1 }}
+                                                        >
+                                                            <strong style={{ color: burnoutChartModel.teamColors?.[event.teamName] || '#374151' }}>
+                                                                {event.issueKey || 'Story'}
+                                                            </strong> · {String(event.status || 'closed').toUpperCase()} · {event.teamName} · {event.assigneeName}
+                                                        </div>
+                                                    ))}
+                                                    {(burnoutHoverPoint.row?.details?.closed || []).length > 5 && (
+                                                        <div className="burnout-hover-row muted">
+                                                            +{(burnoutHoverPoint.row?.details?.closed || []).length - 5} more closed stories
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            </div>
+                                            <div className="burnout-axis">
+                                                {burnoutChartModel.rows.map((row, index) => {
+                                                    const date = new Date(`${row.date}T00:00:00`);
+                                                    if (Number.isNaN(date.getTime())) return null;
+                                                    const shouldShow = index === 0 || index === burnoutChartModel.rows.length - 1 || index % 7 === 0 || row.date === burnoutChartModel.todayDateKey;
+                                                    if (!shouldShow) return null;
+                                                    return (
+                                                        <span key={row.date} className={row.date === burnoutChartModel.todayDateKey ? 'today' : ''}>
+                                                            {date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                                                        </span>
+                                                    );
+                                                })}
+                                            </div>
+                                            <div className="burnout-legend">
+                                                {burnoutChartModel.teams.map((team) => (
+                                                    <span
+                                                        key={team.key}
+                                                        className={burnoutHoverTeamKey && burnoutHoverTeamKey !== team.key ? 'dimmed' : 'active'}
+                                                        onMouseEnter={() => setBurnoutHoverTeamKey(team.key)}
+                                                        onMouseLeave={() => setBurnoutHoverTeamKey(null)}
+                                                    >
+                                                        <i className="burnout-color" style={{ background: team.color }} />
+                                                        {team.name}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             </>
                         )}

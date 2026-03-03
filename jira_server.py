@@ -16,6 +16,10 @@ import threading
 import time
 import subprocess
 from datetime import datetime, timedelta, date
+try:
+    from zoneinfo import ZoneInfo
+except Exception:  # pragma: no cover - Python < 3.9 fallback
+    ZoneInfo = None
 from urllib.parse import parse_qs, urlparse
 from dotenv import load_dotenv
 from openpyxl import Workbook
@@ -75,6 +79,7 @@ JIRA_RETRY_BASE_DELAY_SECONDS = float(os.getenv('JIRA_RETRY_BASE_DELAY_SECONDS',
 JIRA_RETRY_MAX_DELAY_SECONDS = float(os.getenv('JIRA_RETRY_MAX_DELAY_SECONDS', '3'))
 JIRA_CIRCUIT_FAILURE_THRESHOLD = int(os.getenv('JIRA_CIRCUIT_FAILURE_THRESHOLD', '5'))
 JIRA_CIRCUIT_OPEN_SECONDS = float(os.getenv('JIRA_CIRCUIT_OPEN_SECONDS', '30'))
+STATS_BURNOUT_TIMEZONE = 'Europe/Berlin'
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
@@ -3347,6 +3352,418 @@ def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):
     return stats_payload, None
 
 
+def get_stats_burnout_timezone():
+    if ZoneInfo is None:
+        return None
+    try:
+        return ZoneInfo(STATS_BURNOUT_TIMEZONE)
+    except Exception:
+        return None
+
+
+def parse_jira_datetime(value):
+    if not value:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    if raw.endswith('Z'):
+        raw = raw[:-1] + '+00:00'
+    try:
+        return datetime.fromisoformat(raw)
+    except Exception:
+        pass
+    for fmt in ('%Y-%m-%dT%H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S%z'):
+        try:
+            return datetime.strptime(raw, fmt)
+        except Exception:
+            continue
+    return None
+
+
+def normalize_assignee_value(raw_assignee):
+    if not raw_assignee:
+        return {'id': None, 'name': 'Unassigned'}
+    if isinstance(raw_assignee, dict):
+        return {
+            'id': raw_assignee.get('accountId') or raw_assignee.get('id'),
+            'name': raw_assignee.get('displayName') or raw_assignee.get('name') or raw_assignee.get('emailAddress') or 'Unassigned'
+        }
+    return {'id': None, 'name': str(raw_assignee)}
+
+
+def normalize_team_value_for_burnout(raw_team):
+    if not raw_team:
+        return {'id': None, 'name': 'Unknown Team'}
+    if isinstance(raw_team, list):
+        first = raw_team[0] if raw_team else None
+        return normalize_team_value_for_burnout(first)
+    payload = build_team_value(raw_team)
+    if isinstance(payload, dict):
+        return {
+            'id': payload.get('id'),
+            'name': payload.get('name') or extract_team_name(raw_team) or 'Unknown Team'
+        }
+    return {'id': None, 'name': extract_team_name(raw_team) or str(raw_team)}
+
+
+def normalize_team_change_value(raw_id, raw_name):
+    team_id = str(raw_id or '').strip() or None
+    team_name = str(raw_name or '').strip() or None
+    if not team_id and not team_name:
+        return {'id': None, 'name': 'Unknown Team'}
+    return {'id': team_id, 'name': team_name or team_id}
+
+
+def resolve_sprint_date_bounds(sprint_label):
+    cache = load_sprints_cache() or {}
+    for sprint in cache.get('sprints', []) or []:
+        if str(sprint.get('name') or '').strip() != str(sprint_label or '').strip():
+            continue
+        start_value = str(sprint.get('startDate') or '')[:10]
+        end_value = str(sprint.get('endDate') or '')[:10]
+        start_date = parse_iso_date(start_value)
+        end_date = parse_iso_date(end_value)
+        if start_date and end_date:
+            return start_date, end_date
+    return quarter_dates_from_label(sprint_label)
+
+
+def normalize_burnout_status_bucket(status_name):
+    normalized = str(status_name or '').strip().lower()
+    if normalized == 'done':
+        return 'done'
+    if normalized == 'killed':
+        return 'killed'
+    if normalized == 'incomplete':
+        return 'incomplete'
+    return None
+
+
+def is_assignee_history_item(item):
+    return str((item or {}).get('field') or '').strip().lower() == 'assignee'
+
+
+def is_status_history_item(item):
+    return str((item or {}).get('field') or '').strip().lower() == 'status'
+
+
+def is_team_history_item(item, team_field_id):
+    if not item:
+        return False
+    field_id = str(item.get('fieldId') or '').strip()
+    field_name = str(item.get('field') or '').strip().lower()
+    if team_field_id and field_id == str(team_field_id).strip():
+        return True
+    return field_name in ('team', 'team[team]')
+
+
+def rewind_burnout_state_from_item(item, team_field_id, current_team, current_assignee):
+    if is_assignee_history_item(item):
+        from_id = str(item.get('from') or '').strip() or None
+        from_name = str(item.get('fromString') or '').strip() or 'Unassigned'
+        current_assignee = {'id': from_id, 'name': from_name}
+    elif is_team_history_item(item, team_field_id):
+        current_team = normalize_team_change_value(item.get('from'), item.get('fromString'))
+    return current_team, current_assignee
+
+
+def resolve_team_state_at_date(current_team, current_assignee, histories_desc, team_field_id, tz_info, target_date):
+    if not target_date:
+        return {
+            'team': {'id': current_team.get('id'), 'name': current_team.get('name') or 'Unknown Team'},
+            'assignee': {'id': current_assignee.get('id'), 'name': current_assignee.get('name') or 'Unassigned'}
+        }
+    team_state = {'id': current_team.get('id'), 'name': current_team.get('name') or 'Unknown Team'}
+    assignee_state = {'id': current_assignee.get('id'), 'name': current_assignee.get('name') or 'Unassigned'}
+    for created_dt, history in histories_desc:
+        local_dt = created_dt.astimezone(tz_info) if tz_info else created_dt
+        local_date = local_dt.date()
+        if local_date <= target_date:
+            break
+        for item in (history.get('items') or []):
+            team_state, assignee_state = rewind_burnout_state_from_item(item, team_field_id, team_state, assignee_state)
+    return {'team': team_state, 'assignee': assignee_state}
+
+
+def extract_burnout_events_from_issue(issue, team_field_id, sprint_start, sprint_end, tz_info):
+    fields = issue.get('fields') or {}
+    issue_key = issue.get('key')
+    issue_created_dt_raw = parse_jira_datetime(fields.get('created'))
+    issue_created_dt = issue_created_dt_raw.astimezone(tz_info) if (issue_created_dt_raw and tz_info) else issue_created_dt_raw
+    issue_created_date = issue_created_dt.date() if issue_created_dt else None
+
+    current_assignee = normalize_assignee_value(fields.get('assignee'))
+    current_team = normalize_team_value_for_burnout(fields.get(team_field_id)) if team_field_id else {'id': None, 'name': 'Unknown Team'}
+
+    raw_histories = (issue.get('changelog') or {}).get('histories') or []
+    histories = []
+    for history in raw_histories:
+        created_dt = parse_jira_datetime(history.get('created'))
+        if not created_dt:
+            continue
+        histories.append((created_dt, history))
+    histories.sort(key=lambda item: item[0], reverse=True)
+
+    snapshot_at_start = resolve_team_state_at_date(
+        current_team,
+        current_assignee,
+        histories,
+        team_field_id,
+        tz_info,
+        sprint_start
+    ) if sprint_start else {'team': current_team, 'assignee': current_assignee}
+    snapshot_at_created = resolve_team_state_at_date(
+        current_team,
+        current_assignee,
+        histories,
+        team_field_id,
+        tz_info,
+        issue_created_date
+    ) if issue_created_date else {'team': current_team, 'assignee': current_assignee}
+
+    events = []
+    for created_dt, history in histories:
+        # Current state at this step represents issue values immediately after this history entry.
+        event_dt = created_dt.astimezone(tz_info) if tz_info else created_dt
+        event_date = event_dt.date()
+
+        items = history.get('items') or []
+        for item in items:
+            if not is_status_history_item(item):
+                continue
+            bucket = normalize_burnout_status_bucket(item.get('toString'))
+            if not bucket:
+                continue
+            if sprint_start and event_date < sprint_start:
+                continue
+            if sprint_end and event_date > sprint_end:
+                continue
+            events.append({
+                'issueKey': issue_key,
+                'date': event_date.isoformat(),
+                'status': str(item.get('toString') or '').strip(),
+                'bucket': bucket,
+                'teamId': current_team.get('id'),
+                'teamName': current_team.get('name') or 'Unknown Team',
+                'assigneeId': current_assignee.get('id'),
+                'assigneeName': current_assignee.get('name') or 'Unassigned'
+            })
+
+        # Roll state back to "before history" so older events are attributed with the correct values.
+        for item in items:
+            current_team, current_assignee = rewind_burnout_state_from_item(
+                item,
+                team_field_id,
+                current_team,
+                current_assignee
+            )
+
+    issue_meta = {
+        'issueKey': issue_key,
+        'createdDate': issue_created_date.isoformat() if issue_created_date else None,
+        'teamAtStart': snapshot_at_start.get('team') or {'id': None, 'name': 'Unknown Team'},
+        'teamAtCreated': snapshot_at_created.get('team') or {'id': None, 'name': 'Unknown Team'},
+        'assignee': normalize_assignee_value(fields.get('assignee'))
+    }
+
+    return {
+        'events': events,
+        'issue': issue_meta
+    }
+
+
+def fetch_burnout_events_for_sprint(sprint_name, headers, team_field_id, team_ids=None, issue_keys=None):
+    base_jql = STATS_JQL_BASE or f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")'
+    base_jql = strip_sprint_clause(base_jql)
+
+    scoped_team_ids = normalize_team_ids(team_ids or [])
+    if scoped_team_ids and not re.search(r'"Team\[Team\]"\s+in\s*\(', base_jql, flags=re.IGNORECASE) and \
+            not re.search(r'"Team\[Team\]"\s*=\s*', base_jql, flags=re.IGNORECASE):
+        if len(scoped_team_ids) == 1:
+            base_jql = add_clause_to_jql(base_jql, f'"Team[Team]" = "{scoped_team_ids[0]}"')
+        else:
+            quoted = ', '.join(f'"{team_id}"' for team_id in scoped_team_ids)
+            base_jql = add_clause_to_jql(base_jql, f'"Team[Team]" in ({quoted})')
+
+    configured_issue_types = [item for item in get_configured_issue_types() if item]
+    if configured_issue_types:
+        escaped = ', '.join('"{}"'.format(str(name).replace('"', '\\"')) for name in configured_issue_types)
+        base_jql = add_clause_to_jql(base_jql, f'issuetype in ({escaped})')
+
+    jql = add_clause_to_jql(base_jql, f'Sprint in ("{sprint_name}")')
+    jql = add_clause_to_jql(jql, 'status CHANGED TO ("Done","Killed","Incomplete")')
+    if not re.search(r'order\s+by', jql, flags=re.IGNORECASE):
+        jql = f'{jql} ORDER BY updated DESC'
+
+    fields_list = ['status', 'assignee', 'created']
+    if team_field_id and team_field_id not in fields_list:
+        fields_list.append(team_field_id)
+
+    sprint_start, sprint_end = resolve_sprint_date_bounds(sprint_name)
+    timezone_info = get_stats_burnout_timezone()
+    collected_issues = []
+    normalized_issue_keys = []
+    seen_issue_keys = set()
+    for key in issue_keys or []:
+        value = str(key or '').strip().upper()
+        if not value or value in seen_issue_keys:
+            continue
+        seen_issue_keys.add(value)
+        normalized_issue_keys.append(value)
+
+    debug_payload = {
+        'jql': jql,
+        'fields': fields_list,
+        'scopedTeamIds': scoped_team_ids
+    }
+
+    if normalized_issue_keys:
+        # UI already scopes keys to the selected sprint/team filter.
+        # Phase 1: fetch base fields only for all keys (fast, no changelog expansion).
+        # Phase 2: fetch changelog only for keys that changed to closed buckets in sprint window.
+        chunk_size = 100
+        debug_payload['issueKeys'] = len(normalized_issue_keys)
+        debug_payload['mode'] = 'keys-two-phase'
+        issue_map = {}
+
+        for start in range(0, len(normalized_issue_keys), chunk_size):
+            chunk = normalized_issue_keys[start:start + chunk_size]
+            quoted_keys = ','.join(chunk)
+            chunk_jql = f'issueKey in ({quoted_keys})'
+            payload = {
+                'jql': chunk_jql,
+                'startAt': 0,
+                'maxResults': len(chunk),
+                'fields': fields_list
+            }
+            response = jira_search_request(headers, payload)
+            if response.status_code != 200:
+                return None, response, payload
+            data = response.json() or {}
+            issues = data.get('issues') or []
+            if issues:
+                for issue in issues:
+                    key = str(issue.get('key') or '').strip().upper()
+                    if key:
+                        issue_map[key] = issue
+
+        closure_clause = 'status CHANGED TO ("Done","Killed","Incomplete")'
+        if sprint_start:
+            closure_clause += f' AFTER "{sprint_start.isoformat()}"'
+        if sprint_end:
+            closure_clause += f' BEFORE "{(sprint_end + timedelta(days=1)).isoformat()}"'
+
+        changelog_hits = 0
+        for start in range(0, len(normalized_issue_keys), chunk_size):
+            chunk = normalized_issue_keys[start:start + chunk_size]
+            quoted_keys = ','.join(chunk)
+            chunk_scope_jql = f'issueKey in ({quoted_keys})'
+            chunk_jql = add_clause_to_jql(chunk_scope_jql, closure_clause)
+            payload = {
+                'jql': chunk_jql,
+                'startAt': 0,
+                'maxResults': len(chunk),
+                'fields': fields_list,
+                'expand': ['changelog']
+            }
+            response = jira_search_request(headers, payload)
+            if response.status_code != 200:
+                return None, response, payload
+            data = response.json() or {}
+            issues = data.get('issues') or []
+            if issues:
+                changelog_hits += len(issues)
+                for issue in issues:
+                    key = str(issue.get('key') or '').strip().upper()
+                    if key:
+                        issue_map[key] = issue
+
+        debug_payload['changelogCandidates'] = changelog_hits
+        collected_issues = list(issue_map.values())
+    else:
+        page_size = 100
+        start_at = 0
+        total_issues = None
+        debug_payload['mode'] = 'jql'
+        while True:
+            payload = {
+                'jql': jql,
+                'startAt': start_at,
+                'maxResults': page_size,
+                'fields': fields_list,
+                'expand': ['changelog']
+            }
+            response = jira_search_request(headers, payload)
+            if response.status_code != 200:
+                return None, response, payload
+            data = response.json() or {}
+            total_issues = data.get('total', total_issues)
+            issues = data.get('issues') or []
+            if not issues:
+                break
+            collected_issues.extend(issues)
+            if len(issues) < page_size:
+                break
+            start_at += len(issues)
+            if total_issues is not None and start_at >= total_issues:
+                break
+
+    events = []
+    issues_meta = []
+    for issue in collected_issues:
+        parsed = extract_burnout_events_from_issue(issue, team_field_id, sprint_start, sprint_end, timezone_info)
+        issue_meta = parsed.get('issue') if isinstance(parsed, dict) else None
+        issue_events = parsed.get('events') if isinstance(parsed, dict) else []
+        if issue_meta:
+            issues_meta.append(issue_meta)
+        if scoped_team_ids:
+            issue_events = [event for event in issue_events if event.get('teamId') in scoped_team_ids]
+            if issue_meta and issue_meta.get('teamAtStart', {}).get('id') not in scoped_team_ids:
+                issue_meta['outOfScopeStartTeam'] = True
+        events.extend(issue_events)
+
+    if (sprint_start is None or sprint_end is None) and events:
+        parsed_dates = [parse_iso_date(event.get('date')) for event in events]
+        parsed_dates = [d for d in parsed_dates if d]
+        if parsed_dates:
+            if sprint_start is None:
+                sprint_start = min(parsed_dates)
+            if sprint_end is None:
+                sprint_end = max(parsed_dates)
+
+    assignee_counts = {}
+    for issue in issues_meta:
+        assignee = issue.get('assignee') or {}
+        key = assignee.get('id') or assignee.get('name') or 'unassigned'
+        if key not in assignee_counts:
+            assignee_counts[key] = {
+                'id': assignee.get('id'),
+                'name': assignee.get('name') or 'Unassigned',
+                'events': 0
+            }
+        assignee_counts[key]['events'] += 1
+
+    assignees = sorted(
+        assignee_counts.values(),
+        key=lambda item: (str(item.get('name') or '').lower(), str(item.get('id') or ''))
+    )
+
+    payload = {
+        'sprint': sprint_name,
+        'timezone': STATS_BURNOUT_TIMEZONE,
+        'range': {
+            'startDate': sprint_start.isoformat() if sprint_start else None,
+            'endDate': sprint_end.isoformat() if sprint_end else None
+        },
+        'issues': len(collected_issues),
+        'events': events,
+        'issuesMeta': issues_meta,
+        'assignees': assignees
+    }
+    return payload, None, debug_payload
+
+
 def build_missing_info_scope_clause(team_ids, component_names):
     clauses = []
     if isinstance(component_names, str):
@@ -3967,6 +4384,60 @@ def get_completed_sprint_stats():
         'cached': False,
         'generatedAt': generated_at,
         'data': stats_payload
+    })
+
+
+@app.route('/api/stats/burnout', methods=['GET', 'POST'])
+def get_burnout_stats():
+    """Fetch sprint burnout events from Jira changelog on demand."""
+    payload = request.get_json(silent=True) if request.method == 'POST' else None
+    sprint_name = str((payload or {}).get('sprint') or request.args.get('sprint', '')).strip()
+    raw_team_ids = (payload or {}).get('teamIds') if isinstance(payload, dict) else None
+    if isinstance(raw_team_ids, list):
+        team_ids_raw = ','.join(str(item or '').strip() for item in raw_team_ids if str(item or '').strip())
+    else:
+        team_ids_raw = str(raw_team_ids or request.args.get('teamIds', '')).strip()
+    team_id = str((payload or {}).get('team') or request.args.get('team', '')).strip()
+    raw_issue_keys = (payload or {}).get('issueKeys') if isinstance(payload, dict) else None
+    issue_keys = []
+    if isinstance(raw_issue_keys, list):
+        issue_keys = [str(key or '').strip() for key in raw_issue_keys if str(key or '').strip()]
+    if not sprint_name:
+        return jsonify({'error': 'Missing sprint name'}), 400
+
+    scoped_team_ids = []
+    if team_ids_raw:
+        scoped_team_ids = normalize_team_ids(team_ids_raw.split(','))
+    elif team_id and team_id.lower() != 'all':
+        scoped_team_ids = normalize_team_ids([team_id])
+
+    auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+    auth_bytes = auth_string.encode('ascii')
+    auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+    headers = {
+        'Authorization': f'Basic {auth_base64}',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+    }
+
+    team_field_id = resolve_team_field_id(headers)
+    burnout_payload, error_response, debug_payload = fetch_burnout_events_for_sprint(
+        sprint_name,
+        headers,
+        team_field_id,
+        team_ids=scoped_team_ids,
+        issue_keys=issue_keys
+    )
+    if error_response is not None:
+        return jsonify({
+            'error': 'Failed to fetch burnout stats',
+            'details': error_response.text,
+            'query': debug_payload
+        }), error_response.status_code
+
+    return jsonify({
+        'generatedAt': datetime.now().isoformat(),
+        'data': burnout_payload
     })
 
 

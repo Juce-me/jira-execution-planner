@@ -8833,23 +8833,12 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div className="scenario-control">
-                                                <label>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={scenarioShowConflictsOnly}
-                                                        onChange={(e) => setScenarioShowConflictsOnly(e.target.checked)}
-                                                        style={{marginRight: '0.4rem'}}
-                                                    />
-                                                    Show conflicts only
-                                                </label>
-                                            </div>
                                             <button
-                                                className="secondary"
-                                                onClick={runScenario}
-                                                disabled={scenarioLoading || !selectedSprint}
+                                                className={`scenario-toggle ${scenarioSummaryHidden ? '' : 'active'}`}
+                                                onClick={() => setScenarioSummaryHidden(prev => !prev)}
+                                                title={scenarioSummaryHidden ? 'Show summary cards' : 'Hide summary cards'}
                                             >
-                                                {scenarioLoading ? 'Running...' : 'Run Scenario'}
+                                                {scenarioSummaryHidden ? 'Show Summary' : 'Hide Summary'}
                                             </button>
                                             <button
                                                 className={`scenario-edit-toggle ${scenarioEditMode ? 'active' : ''}`}
@@ -8857,6 +8846,19 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                 disabled={!scenarioData}
                                             >
                                                 {scenarioEditMode ? 'Exit Edit' : 'Edit'}
+                                            </button>
+                                            <button
+                                                className={`scenario-toggle ${scenarioShowConflictsOnly ? 'active' : ''}`}
+                                                onClick={() => setScenarioShowConflictsOnly(prev => !prev)}
+                                            >
+                                                Conflicts Only
+                                            </button>
+                                            <button
+                                                className="secondary"
+                                                onClick={runScenario}
+                                                disabled={scenarioLoading || !selectedSprint}
+                                            >
+                                                {scenarioLoading ? 'Running...' : 'Run Scenario'}
                                             </button>
                                             {scenarioEditMode && (
                                                 <>
@@ -8906,14 +8908,6 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                     {scenarioData && (
                                         <>
                                             <div className={`scenario-summary ${scenarioSummaryHidden ? 'hidden' : ''}`}>
-                                                <button
-                                                    type="button"
-                                                    className="scenario-summary-toggle"
-                                                    onClick={() => setScenarioSummaryHidden(prev => !prev)}
-                                                    title={scenarioSummaryHidden ? 'Show summary cards' : 'Hide summary cards'}
-                                                >
-                                                    {scenarioSummaryHidden ? 'Show summary' : 'Hide summary'}
-                                                </button>
                                                 {!scenarioSummaryHidden && scenarioAssigneeConflicts.conflicts.size > 0 && (
                                                     <div className={`scenario-card scenario-card-warning ${scenarioCollapsedCards.warnings ? 'collapsed' : ''}`}>
                                                         <h4 className="scenario-card-toggle" onClick={() => setScenarioCollapsedCards(prev => ({ ...prev, warnings: !prev.warnings }))}>
@@ -9129,7 +9123,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                             {scenarioLaneMode === 'team' && (() => {
                                                                 const groups = scenarioLaneAssigneeGroups.get(lane) || [];
                                                                 return groups.map((group, idx) => {
-                                                                    const displayName = group.assignee ? group.assignee.split(' ')[0] : 'Unassigned';
+                                                                    const displayName = group.assignee ? (() => { const parts = group.assignee.split(' '); return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0]; })() : 'Unassigned';
                                                                     const top = scenarioBarGap + group.startRow * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
                                                                     const height = group.rowCount * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
                                                                     return (

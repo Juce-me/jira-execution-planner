@@ -21,6 +21,29 @@ export function normalizeScenarioSummary(summary) {
     return text.replace(/^issue\.\s*/i, '');
 }
 
+export function computeDateSource(overrideStart, overrideEnd, jiraStart, jiraDue) {
+    if (overrideStart || overrideEnd) return 'override';
+    if (jiraStart || jiraDue) return 'jira';
+    return 'computed';
+}
+
+export function applyIssueOverride(issue, override) {
+    if (!override) {
+        // No override — compute dateSource from jira dates only
+        const dateSource = computeDateSource(null, null, issue.jiraStartDate, issue.jiraDueDate);
+        return dateSource === 'computed' ? issue : { ...issue, dateSource };
+    }
+    const effectiveStart = override.start || issue.jiraStartDate || issue.start;
+    const effectiveEnd = override.end || issue.jiraDueDate || issue.end;
+    const dateSource = computeDateSource(override.start, override.end, issue.jiraStartDate, issue.jiraDueDate);
+    return {
+        ...issue,
+        start: effectiveStart,
+        end: effectiveEnd,
+        dateSource,
+    };
+}
+
 export function buildScenarioTooltipPayload(summary, key, sp, isExcluded = false, hasConflict = false, assignee = null, conflictingKeys = [], isOutOfSprint = false, isInProgress = false, team = null) {
     const cleanedSummary = normalizeScenarioSummary(summary) || key || '';
     const hasSp = sp !== null && sp !== undefined && sp !== '';

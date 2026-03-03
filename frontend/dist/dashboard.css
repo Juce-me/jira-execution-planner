@@ -4031,6 +4031,30 @@
             min-width: 0;
         }
 
+        .scenario-date-badge {
+            position: absolute;
+            top: 2px;
+            right: 4px;
+            font-size: 0.48rem;
+            font-weight: 600;
+            line-height: 1;
+            padding: 1px 3px;
+            border-radius: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            pointer-events: none;
+        }
+
+        .scenario-date-badge-override {
+            background: rgba(59, 130, 246, 0.2);
+            color: rgba(59, 130, 246, 0.9);
+        }
+
+        .scenario-date-badge-jira {
+            background: rgba(34, 197, 94, 0.15);
+            color: rgba(34, 197, 94, 0.85);
+        }
+
         .scenario-bar-meta {
             display: flex;
             gap: 0.35rem;

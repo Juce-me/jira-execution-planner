@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
-import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
+import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
 import ScenarioBar from './scenario/ScenarioBar.jsx';
 
         const { useState, useEffect, useRef } = React;
@@ -332,6 +332,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const scenarioFocusRestoreRef = useRef(null);
             const scenarioSkipAutoCollapseRef = useRef(false);
             const scenarioTeamCollapseInitRef = useRef(false);
+            const [scenarioOverrides, setScenarioOverrides] = useState({});
             const scenarioEdgeUpdatePendingRef = useRef(false);
             const scenarioEdgeFrameRef = useRef(null);
             const scenarioScrollFrameRef = useRef(null);
@@ -3559,6 +3560,15 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     }
                     const data = await response.json();
                     setScenarioData(data);
+                    // Load saved overrides for this scope
+                    if (scenarioScopeKey) {
+                        try {
+                            const ovRes = await fetch(`${BACKEND_URL}/api/scenario/overrides?scope_key=${encodeURIComponent(scenarioScopeKey)}`);
+                            if (ovRes.ok) {
+                                setScenarioOverrides((await ovRes.json()).overrides || {});
+                            }
+                        } catch (_) { /* ignore override load failure */ }
+                    }
                 } catch (err) {
                     if (err.name === 'AbortError') {
                         return;
@@ -3998,6 +4008,11 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const scenarioBaseUrl = scenarioData?.jira_base_url || jiraUrl || '';
             const scenarioDependencies = scenarioData?.dependencies || EMPTY_ARRAY;
             const scenarioCapacityByTeam = scenarioData?.capacity_by_team || EMPTY_OBJECT;
+            const scenarioScopeKey = React.useMemo(() => {
+                const sprintId = selectedSprint ? String(selectedSprint) : '';
+                const groupId = activeGroupId || 'default';
+                return sprintId && groupId ? `${sprintId}:${groupId}` : '';
+            }, [selectedSprint, activeGroupId]);
 
             // Apply virtual assignment for DevLead Management tasks
             const scenarioIssues = React.useMemo(() => {
@@ -4023,34 +4038,38 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     return issue;
                 });
             }, [scenarioRawIssues, scenarioCapacityByTeam]);
+            const scenarioEffectiveIssues = React.useMemo(() => {
+                if (!scenarioIssues || scenarioIssues.length === 0) return scenarioIssues;
+                return scenarioIssues.map(issue => applyIssueOverride(issue, scenarioOverrides[issue.key] || null));
+            }, [scenarioIssues, scenarioOverrides]);
             const scenarioSearchQuery = React.useMemo(
                 () => (searchQuery || '').trim().toLowerCase(),
                 [searchQuery]
             );
             const scenarioSearchMatchSet = React.useMemo(() => {
                 const matches = new Set();
-                if (!scenarioSearchQuery || !scenarioIssues || scenarioIssues.length === 0) return matches;
-                scenarioIssues.forEach(issue => {
+                if (!scenarioSearchQuery || !scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return matches;
+                scenarioEffectiveIssues.forEach(issue => {
                     if (issue?.key && matchesScenarioSearch(issue, scenarioSearchQuery)) {
                         matches.add(issue.key);
                     }
                 });
                 return matches;
-            }, [scenarioIssues, scenarioSearchQuery]);
+            }, [scenarioEffectiveIssues, scenarioSearchQuery]);
             const scenarioFilteredIssues = React.useMemo(() => {
-                if (!scenarioSearchQuery) return scenarioIssues;
-                return scenarioIssues.filter(issue => scenarioSearchMatchSet.has(issue.key));
-            }, [scenarioIssues, scenarioSearchQuery, scenarioSearchMatchSet]);
+                if (!scenarioSearchQuery) return scenarioEffectiveIssues;
+                return scenarioEffectiveIssues.filter(issue => scenarioSearchMatchSet.has(issue.key));
+            }, [scenarioEffectiveIssues, scenarioSearchQuery, scenarioSearchMatchSet]);
             const scenarioExcludedIssueKeys = React.useMemo(() => {
                 const keys = new Set();
-                if (!scenarioIssues || scenarioIssues.length === 0) return keys;
-                scenarioIssues.forEach(issue => {
+                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return keys;
+                scenarioEffectiveIssues.forEach(issue => {
                     if (excludedEpicSet.has(issue?.epicKey || '')) {
                         keys.add(issue.key);
                     }
                 });
                 return keys;
-            }, [scenarioIssues, excludedEpicSet]);
+            }, [scenarioEffectiveIssues, excludedEpicSet]);
             const scenarioFocusKeys = scenarioData?.focus_set?.focused_issue_keys || EMPTY_ARRAY;
             const scenarioContextKeys = scenarioData?.focus_set?.context_issue_keys || EMPTY_ARRAY;
             const scenarioFocusSet = React.useMemo(
@@ -4063,21 +4082,21 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             );
             const scenarioIssueByKey = React.useMemo(() => {
                 const map = new Map();
-                if (!scenarioIssues || scenarioIssues.length === 0) return map;
-                scenarioIssues.forEach(issue => {
+                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return map;
+                scenarioEffectiveIssues.forEach(issue => {
                     if (issue?.key) {
                         map.set(issue.key, issue);
                     }
                 });
                 return map;
-            }, [scenarioIssues]);
+            }, [scenarioEffectiveIssues]);
             const scenarioBaseStart = parseScenarioDate(scenarioConfig.start_date);
             const scenarioDeadline = parseScenarioDate(scenarioConfig.quarter_end_date);
             const scenarioBaseEnd = React.useMemo(() => {
                 if (!scenarioDeadline) return null;
-                if (!scenarioIssues || scenarioIssues.length === 0) return scenarioDeadline;
+                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return scenarioDeadline;
                 let latest = scenarioDeadline;
-                scenarioIssues.forEach(issue => {
+                scenarioEffectiveIssues.forEach(issue => {
                     if (!issue.end) return;
                     const end = parseScenarioDate(issue.end);
                     if (end && end > latest) {
@@ -4085,20 +4104,20 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     }
                 });
                 return latest;
-            }, [scenarioDeadline, scenarioIssues]);
+            }, [scenarioDeadline, scenarioEffectiveIssues]);
             const scenarioViewStart = scenarioRangeOverride?.start || scenarioBaseStart;
             const scenarioViewEnd = scenarioRangeOverride?.end || scenarioBaseEnd;
             const scenarioFocusEpicKey = scenarioEpicFocus?.key || null;
             const scenarioFocusIssueKeys = React.useMemo(() => {
                 const keys = new Set();
-                if (!scenarioFocusEpicKey || !scenarioIssues || scenarioIssues.length === 0) return keys;
-                scenarioIssues.forEach(issue => {
+                if (!scenarioFocusEpicKey || !scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return keys;
+                scenarioEffectiveIssues.forEach(issue => {
                     if (issue.epicKey === scenarioFocusEpicKey && issue.key) {
                         keys.add(issue.key);
                     }
                 });
                 return keys;
-            }, [scenarioIssues, scenarioFocusEpicKey]);
+            }, [scenarioEffectiveIssues, scenarioFocusEpicKey]);
             const scenarioFocusContextKeys = React.useMemo(() => {
                 const keys = new Set();
                 if (!scenarioFocusEpicKey) return keys;
@@ -4115,12 +4134,12 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 return keys;
             }, [scenarioDependencies, scenarioFocusIssueKeys, scenarioFocusEpicKey]);
             const scenarioTimelineIssues = React.useMemo(() => {
-                const source = scenarioEpicFocus ? scenarioIssues : scenarioFilteredIssues;
+                const source = scenarioEpicFocus ? scenarioEffectiveIssues : scenarioFilteredIssues;
                 if (!scenarioEpicFocus) return source;
                 return source.filter(issue =>
                     scenarioFocusIssueKeys.has(issue.key) || scenarioFocusContextKeys.has(issue.key)
                 );
-            }, [scenarioIssues, scenarioFilteredIssues, scenarioEpicFocus, scenarioFocusIssueKeys, scenarioFocusContextKeys]);
+            }, [scenarioEffectiveIssues, scenarioFilteredIssues, scenarioEpicFocus, scenarioFocusIssueKeys, scenarioFocusContextKeys]);
             const scenarioTimelineIssueKeys = React.useMemo(() => {
                 return new Set(scenarioTimelineIssues.map(issue => issue.key));
             }, [scenarioTimelineIssues]);
@@ -4320,13 +4339,13 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 return groups;
             }, [scenarioTimelineIssues, scenarioLaneMode, scenarioEpicFocus]);
             const scenarioHasAssignees = React.useMemo(() => {
-                if (!scenarioIssues || scenarioIssues.length === 0) return false;
-                return scenarioIssues.some(issue => issue.assignee);
-            }, [scenarioIssues]);
+                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return false;
+                return scenarioEffectiveIssues.some(issue => issue.assignee);
+            }, [scenarioEffectiveIssues]);
             const scenarioUnschedulable = React.useMemo(() => {
-                if (!scenarioIssues || scenarioIssues.length === 0) return [];
-                return scenarioIssues.filter(issue => !issue.start || !issue.end);
-            }, [scenarioIssues]);
+                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return [];
+                return scenarioEffectiveIssues.filter(issue => !issue.start || !issue.end);
+            }, [scenarioEffectiveIssues]);
             const scenarioTicks = React.useMemo(() => {
                 if (!scenarioViewStart || !scenarioViewEnd) return [];
                 const ticks = [];
@@ -8927,6 +8946,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                                             style={barStyle}
                                                                             href={issueUrl || '#'}
                                                                             displaySummary={issueSummary}
+                                                                            dateSource={issue.dateSource}
                                                                             registerRef={registerScenarioIssueRef(issue.key)}
                                                                             onClick={(event) => {
                                                                                 event.preventDefault();

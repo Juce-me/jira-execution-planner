@@ -320,7 +320,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const [scenarioLayout, setScenarioLayout] = useState({ width: 0, height: 0 });
             const [scenarioCollapsedLanes, setScenarioCollapsedLanes] = useState({});
             const [scenarioCollapsedCards, setScenarioCollapsedCards] = useState({});
-            const [scenarioSummaryHidden, setScenarioSummaryHidden] = useState(false);
+            const [scenarioSummaryHidden, setScenarioSummaryHidden] = useState(true);
             const [scenarioHoverKey, setScenarioHoverKey] = useState(null);
             const [scenarioFlashKey, setScenarioFlashKey] = useState(null);
             const [scenarioScrollTop, setScenarioScrollTop] = useState(0);
@@ -4683,9 +4683,11 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                         const isUnscheduled = !issue.start || !issue.end;
                         const start = parseScenarioDate(issue.start) || fallbackStart;
                         const end = parseScenarioDate(issue.end) || start;
-                        const normalizedEnd = end < start
-                            ? start
-                            : (isUnscheduled ? new Date(start.getTime() + DAY_MS) : end);
+                        // Ensure every task occupies at least 1 day so bars never visually overlap
+                        const rawEnd = end < start ? start : end;
+                        const normalizedEnd = rawEnd <= start
+                            ? new Date(start.getTime() + DAY_MS)
+                            : rawEnd;
 
                         // Find a row where:
                         // 1. Time is available (start >= rowEnd)
@@ -8833,6 +8835,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                     </button>
                                                 </div>
                                             </div>
+                                            <div className="scenario-controls-separator" />
                                             <button
                                                 className={`scenario-toggle ${scenarioSummaryHidden ? '' : 'active'}`}
                                                 onClick={() => setScenarioSummaryHidden(prev => !prev)}

@@ -4236,8 +4236,8 @@
         }
 
         .scenario-edge {
-            stroke: rgba(148, 163, 184, 0.7);
-            stroke-width: 1.6;
+            stroke: rgba(148, 163, 184, 0.5);
+            stroke-width: 1.4;
             fill: none;
         }
 
@@ -4252,7 +4252,7 @@
         }
 
         .scenario-edge.faded {
-            opacity: 0.4;
+            opacity: 0.15;
         }
 
         .scenario-edge.block {

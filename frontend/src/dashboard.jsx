@@ -5197,10 +5197,8 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
 
             const scenarioIsSingleTeamFocus = !isAllTeamsSelected && selectedTeamSet.size === 1;
             const scenarioBaselineEdges = React.useMemo(() => {
-                const focusKeys = scenarioFocusSet.size ? scenarioFocusSet : new Set(scenarioTimelineIssues.map(issue => issue.key));
-                if (!scenarioIsSingleTeamFocus && focusKeys.size > 10) return [];
-                return scenarioEdgeCandidates.filter(edge => focusKeys.has(edge.from) || focusKeys.has(edge.to));
-            }, [scenarioFocusSet, scenarioEdgeCandidates, scenarioTimelineIssues, scenarioIsSingleTeamFocus]);
+                return scenarioEdgeCandidates;
+            }, [scenarioEdgeCandidates]);
 
             const scenarioFocusEdges = React.useMemo(() => {
                 if (!scenarioEpicFocus) return [];

@@ -44,6 +44,30 @@ export function applyIssueOverride(issue, override) {
     };
 }
 
+export function pxToDate(px, trackWidth, viewStart, viewEnd) {
+    const totalMs = viewEnd.getTime() - viewStart.getTime();
+    const ratio = Math.max(0, Math.min(1, px / trackWidth));
+    const ms = viewStart.getTime() + ratio * totalMs;
+    // Snap to midnight (start of day)
+    const d = new Date(ms);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
+export function dateToPx(date, trackWidth, viewStart, viewEnd) {
+    const totalMs = viewEnd.getTime() - viewStart.getTime();
+    if (totalMs <= 0) return 0;
+    const ratio = (date.getTime() - viewStart.getTime()) / totalMs;
+    return ratio * trackWidth;
+}
+
+export function dateToISODate(d) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+}
+
 export function buildScenarioTooltipPayload(summary, key, sp, isExcluded = false, hasConflict = false, assignee = null, conflictingKeys = [], isOutOfSprint = false, isInProgress = false, team = null) {
     const cleanedSummary = normalizeScenarioSummary(summary) || key || '';
     const hasSp = sp !== null && sp !== undefined && sp !== '';

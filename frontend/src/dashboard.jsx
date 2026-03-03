@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
-import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
+import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
 import ScenarioBar from './scenario/ScenarioBar.jsx';
 
         const { useState, useEffect, useRef } = React;
@@ -335,6 +335,10 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const [scenarioOverrides, setScenarioOverrides] = useState({});
             const [scenarioEditMode, setScenarioEditMode] = useState(false);
             const scenarioPreEditLaneModeRef = useRef(null);
+            const [scenarioDragState, setScenarioDragState] = useState(null);
+            const scenarioDragStateRef = useRef(null);
+            const scenarioDragFrameRef = useRef(null);
+            const scenarioWasDraggedRef = useRef(false);
             const scenarioEdgeUpdatePendingRef = useRef(false);
             const scenarioEdgeFrameRef = useRef(null);
             const scenarioScrollFrameRef = useRef(null);
@@ -3599,6 +3603,91 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     return !prev;
                 });
             };
+
+            const handleScenarioBarMouseDown = (event, issue) => {
+                if (!scenarioEditMode) return;
+                if (event.button !== 0) return;
+                // Only drag issues with SP > 0
+                const sp = Number(issue.sp);
+                if (!sp || sp <= 0) return;
+                if (!issue.start || !issue.end) return;
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                const barEl = event.currentTarget;
+                const trackEl = barEl.closest('.scenario-lane-track');
+                if (!trackEl) return;
+
+                const trackRect = trackEl.getBoundingClientRect();
+                const barRect = barEl.getBoundingClientRect();
+                const startDate = parseScenarioDate(issue.start);
+                const endDate = parseScenarioDate(issue.end);
+                if (!startDate || !endDate) return;
+
+                const durationMs = endDate.getTime() - startDate.getTime();
+                const offsetX = event.clientX - barRect.left;
+
+                const dragState = {
+                    issueKey: issue.key,
+                    originalStart: issue.start,
+                    originalEnd: issue.end,
+                    durationMs,
+                    offsetX,
+                    trackLeft: trackRect.left,
+                    trackWidth: trackRect.width,
+                    currentStart: startDate,
+                    currentEnd: endDate,
+                };
+                scenarioDragStateRef.current = dragState;
+                scenarioWasDraggedRef.current = false;
+                setScenarioDragState(dragState);
+            };
+
+            // Drag mousemove/mouseup effect
+            React.useEffect(() => {
+                if (!scenarioDragState) return;
+                const handleMouseMove = (e) => {
+                    const ds = scenarioDragStateRef.current;
+                    if (!ds) return;
+                    scenarioWasDraggedRef.current = true;
+                    if (scenarioDragFrameRef.current) return; // throttle via rAF
+                    scenarioDragFrameRef.current = requestAnimationFrame(() => {
+                        scenarioDragFrameRef.current = null;
+                        const ds2 = scenarioDragStateRef.current;
+                        if (!ds2 || !scenarioViewStart || !scenarioViewEnd) return;
+                        const rawPx = e.clientX - ds2.trackLeft - ds2.offsetX;
+                        const newStart = pxToDate(rawPx, ds2.trackWidth, scenarioViewStart, scenarioViewEnd);
+                        const newEnd = new Date(newStart.getTime() + ds2.durationMs);
+                        const updated = { ...ds2, currentStart: newStart, currentEnd: newEnd };
+                        scenarioDragStateRef.current = updated;
+                        setScenarioDragState(updated);
+                    });
+                };
+                const handleMouseUp = () => {
+                    if (scenarioDragFrameRef.current) {
+                        cancelAnimationFrame(scenarioDragFrameRef.current);
+                        scenarioDragFrameRef.current = null;
+                    }
+                    const ds = scenarioDragStateRef.current;
+                    if (ds && scenarioWasDraggedRef.current) {
+                        const newStartISO = dateToISODate(ds.currentStart);
+                        const newEndISO = dateToISODate(ds.currentEnd);
+                        setScenarioOverrides(prev => ({
+                            ...prev,
+                            [ds.issueKey]: { start: newStartISO, end: newEndISO }
+                        }));
+                    }
+                    scenarioDragStateRef.current = null;
+                    setScenarioDragState(null);
+                };
+                window.addEventListener('mousemove', handleMouseMove);
+                window.addEventListener('mouseup', handleMouseUp);
+                return () => {
+                    window.removeEventListener('mousemove', handleMouseMove);
+                    window.removeEventListener('mouseup', handleMouseUp);
+                };
+            }, [scenarioDragState, scenarioViewStart, scenarioViewEnd]);
 
             const loadReadyToCloseProductTasks = async () => {
                 if (activeGroupId && activeGroupTeamIds.length === 0) {
@@ -8966,7 +9055,9 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                                     const isFocusContext = scenarioEpicFocus && scenarioFocusContextKeys.has(issue.key) && !scenarioFocusIssueKeys.has(issue.key);
                                                                     const isSearchMatch = scenarioSearchQuery && scenarioSearchMatchSet.has(issue.key);
                                                                     const isDone = issue.scheduledReason === 'already_done';
-                                                                    const barClassName = `scenario-bar ${isDone ? 'done' : ''} ${issue.isCritical ? 'critical' : ''} ${issue.isLate ? 'late' : ''} ${((issue.blockedBy || []).length > 0 || scenarioBlockedSet.has(issue.key)) ? 'blocked' : ''} ${(issue.isContext || isFocusContext) ? 'context' : ''} ${isUnscheduled ? 'unscheduled' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''} ${isDimmed ? 'dimmed' : ''} ${scenarioFlashKey === issue.key ? 'flash' : ''} ${isExcluded ? 'excluded' : ''} ${isSearchMatch ? 'search-match' : ''} ${hasAssigneeConflict ? 'assignee-conflict' : ''} ${isOutOfSprint ? 'out-of-sprint' : ''} ${isInProgress ? 'in-progress' : ''}`;
+                                                                    const isEditable = scenarioEditMode && !isExcluded && Number(issue.sp) > 0 && !isUnscheduled;
+                                                                    const isDragging = scenarioDragState?.issueKey === issue.key;
+                                                                    const barClassName = `scenario-bar ${isDone ? 'done' : ''} ${issue.isCritical ? 'critical' : ''} ${issue.isLate ? 'late' : ''} ${((issue.blockedBy || []).length > 0 || scenarioBlockedSet.has(issue.key)) ? 'blocked' : ''} ${(issue.isContext || isFocusContext) ? 'context' : ''} ${isUnscheduled ? 'unscheduled' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''} ${isDimmed ? 'dimmed' : ''} ${scenarioFlashKey === issue.key ? 'flash' : ''} ${isExcluded ? 'excluded' : ''} ${isSearchMatch ? 'search-match' : ''} ${hasAssigneeConflict ? 'assignee-conflict' : ''} ${isOutOfSprint ? 'out-of-sprint' : ''} ${isInProgress ? 'in-progress' : ''} ${isEditable ? 'editable' : ''} ${isDragging ? 'dragging' : ''}`;
                                                                     const barStyle = { left, width, height: `${SCENARIO_BAR_HEIGHT}px`, top };
                                                                     return (
                                                                         <ScenarioBar
@@ -8978,8 +9069,10 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                                             displaySummary={issueSummary}
                                                                             dateSource={issue.dateSource}
                                                                             registerRef={registerScenarioIssueRef(issue.key)}
+                                                                            onMouseDown={isEditable ? (e) => handleScenarioBarMouseDown(e, issue) : undefined}
                                                                             onClick={(event) => {
                                                                                 event.preventDefault();
+                                                                                if (scenarioWasDraggedRef.current) { scenarioWasDraggedRef.current = false; return; }
                                                                                 const taskElement = document.querySelector(`[data-task-key="${issue.key}"]`);
                                                                                 if (taskElement) {
                                                                                     const elementTop = taskElement.getBoundingClientRect().top + window.scrollY;
@@ -9010,6 +9103,29 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                                         />
                                                                     );
                                                                 })}
+                                                                {scenarioDragState && scenarioDragState.issueKey && scenarioViewStart && scenarioViewEnd && (() => {
+                                                                    // Render ghost bar in the lane that contains the dragged issue
+                                                                    const dragPosition = scenarioPositions[scenarioDragState.issueKey];
+                                                                    if (!dragPosition || dragPosition.lane !== lane) return null;
+                                                                    const ghostLeft = dateToPx(scenarioDragState.currentStart, scenarioLayout.width, scenarioViewStart, scenarioViewEnd);
+                                                                    const ghostRight = dateToPx(scenarioDragState.currentEnd, scenarioLayout.width, scenarioViewStart, scenarioViewEnd);
+                                                                    const ghostWidth = Math.max(6, ghostRight - ghostLeft);
+                                                                    const laneMeta = scenarioLaneMeta.meta.get(lane);
+                                                                    const laneOffset = laneMeta?.offset || 0;
+                                                                    const ghostTop = dragPosition.y - laneOffset;
+                                                                    return (
+                                                                        <div
+                                                                            className="scenario-drag-ghost"
+                                                                            style={{
+                                                                                left: `${ghostLeft}px`,
+                                                                                width: `${ghostWidth}px`,
+                                                                                top: `${ghostTop}px`,
+                                                                                height: `${SCENARIO_BAR_HEIGHT}px`,
+                                                                                borderRadius: '4px',
+                                                                            }}
+                                                                        />
+                                                                    );
+                                                                })()}
                                                             </div>
                                                         </div>
                                                     )})}

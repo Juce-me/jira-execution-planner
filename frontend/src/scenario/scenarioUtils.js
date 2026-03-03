@@ -44,6 +44,25 @@ export function applyIssueOverride(issue, override) {
     };
 }
 
+export function validateDependencies(dependencies, issueByKey) {
+    const violations = new Set();
+    if (!dependencies || !issueByKey) return violations;
+    dependencies.forEach(edge => {
+        if (!edge?.from || !edge?.to) return;
+        const fromIssue = issueByKey.get(edge.from);
+        const toIssue = issueByKey.get(edge.to);
+        if (!fromIssue || !toIssue) return;
+        const fromEnd = parseScenarioDate(fromIssue.end);
+        const toStart = parseScenarioDate(toIssue.start);
+        if (!fromEnd || !toStart) return;
+        // Violated if dependent (to) starts before prerequisite (from) ends
+        if (toStart.getTime() < fromEnd.getTime()) {
+            violations.add(`${edge.from}->${edge.to}`);
+        }
+    });
+    return violations;
+}
+
 export function createUndoStack() {
     let undoList = [];
     let redoList = [];

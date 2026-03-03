@@ -3621,6 +3621,16 @@
             z-index: 10;
         }
 
+        .scenario-edge.violated {
+            stroke: #ef4444;
+            stroke-width: 2.5;
+            stroke-dasharray: 6 3;
+        }
+
+        .scenario-bar.dep-violated {
+            box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.5);
+        }
+
         .scenario-team-config,
         .scenario-team-header,
         .scenario-team-title,

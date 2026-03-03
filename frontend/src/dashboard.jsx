@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
-import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, createUndoStack, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
+import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, createUndoStack, validateDependencies, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
 import ScenarioBar from './scenario/ScenarioBar.jsx';
 
         const { useState, useEffect, useRef } = React;
@@ -4381,6 +4381,19 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
 
                 return { conflicts, conflictDetails };
             }, [scenarioTimelineIssues, excludedEpicSet]);
+            const scenarioDepViolations = React.useMemo(() => {
+                if (!scenarioEditMode) return new Set();
+                return validateDependencies(scenarioDependencies, scenarioIssueByKey);
+            }, [scenarioEditMode, scenarioDependencies, scenarioIssueByKey]);
+            const scenarioDepViolatedKeys = React.useMemo(() => {
+                const keys = new Set();
+                scenarioDepViolations.forEach(edge => {
+                    const [from, to] = edge.split('->');
+                    if (from) keys.add(from);
+                    if (to) keys.add(to);
+                });
+                return keys;
+            }, [scenarioDepViolations]);
             const scenarioLaneForIssue = (issue) => {
                 if (scenarioEpicFocus?.key) {
                     return scenarioEpicFocus.key;
@@ -5385,6 +5398,8 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     const isContextEdge = !isActive && scenarioEpicFocus && ((fromInFocus && !toInFocus) || (!fromInFocus && toInFocus));
                     paths.push({
                         id: `${edge.from}-${edge.to}-${edge.type || 'link'}`,
+                        from: edge.from,
+                        to: edge.to,
                         d: `M ${startX} ${startY} C ${c1x} ${startY}, ${c2x} ${endY}, ${endX} ${endY}`,
                         type: edge.type,
                         isActive,
@@ -9137,7 +9152,8 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                                     const isDone = issue.scheduledReason === 'already_done';
                                                                     const isEditable = scenarioEditMode && !isExcluded && Number(issue.sp) > 0 && !isUnscheduled;
                                                                     const isDragging = scenarioDragState?.issueKey === issue.key;
-                                                                    const barClassName = `scenario-bar ${isDone ? 'done' : ''} ${issue.isCritical ? 'critical' : ''} ${issue.isLate ? 'late' : ''} ${((issue.blockedBy || []).length > 0 || scenarioBlockedSet.has(issue.key)) ? 'blocked' : ''} ${(issue.isContext || isFocusContext) ? 'context' : ''} ${isUnscheduled ? 'unscheduled' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''} ${isDimmed ? 'dimmed' : ''} ${scenarioFlashKey === issue.key ? 'flash' : ''} ${isExcluded ? 'excluded' : ''} ${isSearchMatch ? 'search-match' : ''} ${hasAssigneeConflict ? 'assignee-conflict' : ''} ${isOutOfSprint ? 'out-of-sprint' : ''} ${isInProgress ? 'in-progress' : ''} ${isEditable ? 'editable' : ''} ${isDragging ? 'dragging' : ''}`;
+                                                                    const hasDepViolation = scenarioDepViolatedKeys.has(issue.key);
+                                                                    const barClassName = `scenario-bar ${isDone ? 'done' : ''} ${issue.isCritical ? 'critical' : ''} ${issue.isLate ? 'late' : ''} ${((issue.blockedBy || []).length > 0 || scenarioBlockedSet.has(issue.key)) ? 'blocked' : ''} ${(issue.isContext || isFocusContext) ? 'context' : ''} ${isUnscheduled ? 'unscheduled' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''} ${isDimmed ? 'dimmed' : ''} ${scenarioFlashKey === issue.key ? 'flash' : ''} ${isExcluded ? 'excluded' : ''} ${isSearchMatch ? 'search-match' : ''} ${hasAssigneeConflict ? 'assignee-conflict' : ''} ${isOutOfSprint ? 'out-of-sprint' : ''} ${isInProgress ? 'in-progress' : ''} ${isEditable ? 'editable' : ''} ${isDragging ? 'dragging' : ''} ${hasDepViolation ? 'dep-violated' : ''}`;
                                                                     const barStyle = { left, width, height: `${SCENARIO_BAR_HEIGHT}px`, top };
                                                                     return (
                                                                         <ScenarioBar
@@ -9224,6 +9240,9 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                             <marker id="scenario-arrow-block" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
                                                                 <path d="M0,0 L6,3 L0,6 z" fill="#ef4444" />
                                                             </marker>
+                                                            <marker id="scenario-arrow-violated" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                                                                <path d="M0,0 L6,3 L0,6 z" fill="#ef4444" />
+                                                            </marker>
                                                         </defs>
                                                         {scenarioLaneMode === 'epic' && scenarioEpicEdges.map((edge, index) => (
                                                             <g key={`epic-edge-${edge.fromEpic}-${edge.toEpic}-${index}`}>
@@ -9237,12 +9256,13 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                             </g>
                                                         ))}
                                                         {scenarioEdgeRender.paths.map((path) => {
+                                                            const isViolated = scenarioDepViolations.has(`${path.from}->${path.to}`);
                                                             return (
                                                                 <path
                                                                     key={path.id}
-                                                                    className={`scenario-edge ${path.isActive ? 'active' : ''} ${path.isFaded ? 'faded' : ''} ${path.isContextEdge ? 'context' : ''} ${path.type === 'block' ? 'block' : ''}`}
+                                                                    className={`scenario-edge ${path.isActive ? 'active' : ''} ${path.isFaded ? 'faded' : ''} ${path.isContextEdge ? 'context' : ''} ${path.type === 'block' ? 'block' : ''} ${isViolated ? 'violated' : ''}`}
                                                                     d={path.d}
-                                                                    markerEnd={path.type === 'block' ? 'url(#scenario-arrow-block)' : 'url(#scenario-arrow)'}
+                                                                    markerEnd={path.type === 'block' ? 'url(#scenario-arrow-block)' : (isViolated ? 'url(#scenario-arrow-violated)' : 'url(#scenario-arrow)')}
                                                                 />
                                                             );
                                                         })}

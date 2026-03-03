@@ -19,7 +19,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Dependency focus** - Click Depends On/Dependents to highlight related tasks and show missing deps inline
 - ✅ **Planning rollups** - Selected story points summarized per team, project, and overall
 - ✅ **Capacity planning** - Team capacity vs planning capacity (exclusions via epic toggle)
-- ✅ **Scenario planner** - Timeline scheduling with capacity, WIP limits, dependencies, critical path, and slack
+- ✅ **Scenario planner** - Timeline scheduling with capacity, WIP limits, dependencies, critical path, slack, and interactive editing (drag-to-reschedule, undo/redo, save/load drafts)
 - ✅ **Alerts** - Panels for Missing Story Points, Blocked, Missing Epic, Empty Epic, and “Epic Ready to Close” (rules: `ALERT_RULES.md`, ready-to-close uses all-time data)
 - ✅ **Sprint statistics** - Teams/Priority views with product/tech split, derived from loaded sprint tasks (with epic include/exclude toggle)
 
@@ -123,6 +123,9 @@ DEBUG_MODE=false
 
 # Optional: server log level
 LOG_LEVEL=INFO
+
+# Optional: custom path for scenario overrides file
+SCENARIO_OVERRIDES_PATH=./scenario-overrides.json
 ```
 
 **How to get Jira API token:**
@@ -179,6 +182,7 @@ You should see:
    • http://localhost:<PORT>/api/dependencies - Get issue dependencies (POST)
    • http://localhost:<PORT>/api/issues/lookup?keys=KEY-1,KEY-2 - Lookup dependency issues (GET)
    • http://localhost:<PORT>/api/scenario - Scenario planner (GET/POST)
+   • http://localhost:<PORT>/api/scenario/overrides - Scenario overrides (GET/POST)
    • http://localhost:<PORT>/api/sprints - Get available sprints (cached)
    • http://localhost:<PORT>/api/sprints?refresh=true - Force refresh sprints cache
    • http://localhost:<PORT>/api/boards - Get all boards (to find board ID)
@@ -306,7 +310,7 @@ Priority weights used for weighted delivery:
 The Scenario tab builds a quarter timeline from Jira data:
 
 - **Capacity source**: team capacity comes from the Capacity Estimation project (watchers per team issue).
-- **Controls**: only lane mode switching (Team / Epic / Assignee).
+- **Controls**: lane mode switching (Team / Epic / Assignee), hide summary, show conflicts only.
 - **Scheduling**: topological dependency ordering, then priority (highest -> lowest) and larger SP first when ready.
 - **Blocked links**: blocks/is blocked by are treated as prerequisites, so blocked work does not run in parallel with blockers.
 - **Assignee lanes**: single-threaded (WIP=1) so one assignee only runs one item at a time.
@@ -314,8 +318,26 @@ The Scenario tab builds a quarter timeline from Jira data:
 - **Missing data**: issues with missing SP or missing dependencies are marked unschedulable.
 - **Context**: dependency neighbors (1 hop) are included as context/ghost nodes so cross-epic deps stay visible.
 - **UI**: quarter start markers are shown in the timeline; panel starts collapsed and unloads when closed to keep it fast.
+- **Dependency edges**: always visible in the timeline; violations highlighted in red when editing.
 
 Assumption: **1 SP = 2 working weeks** (fixed in the planner).
+
+### Edit Mode
+
+Enter Edit mode to interactively reschedule issues:
+
+- **Drag-to-move**: grab any bar with story points and drag to a new date range (snaps to day boundaries).
+- **Date-source badges**: bars show a small badge indicating their date source — "jira" (green) for Jira-sourced dates, "override" (blue) for manually moved bars.
+- **Undo/redo**: Ctrl+Z / Cmd+Z to undo, Ctrl+Shift+Z / Cmd+Shift+Z to redo.
+- **Dependency validation**: moving a bar so a dependent starts before its prerequisite ends highlights the edge in red and adds a red glow to affected bars.
+- **Capacity validation**: assignee overlap conflicts update in real time as bars are moved.
+- **Save/load drafts**: save overrides to the server (persisted in `scenario-overrides.json`); overrides auto-load when the scenario runs.
+- **Discard**: reset all overrides and return bars to their computed positions.
+- **Lane lock**: edit mode forces Assignee lane view and disables lane mode switching.
+
+### Excluded-Issue Splitting
+
+Excluded (capacity noise) issues that span sprint boundaries are automatically split into separate visual segments at each boundary, keeping the timeline clean.
 
 Scenario API response (used by the UI):
 - `jira_base_url`
@@ -324,6 +346,11 @@ Scenario API response (used by the UI):
 - `capacity_by_team`: `{ teamName: { size, capacityIssueKey, watchersCount } }`
 - `focus_set`: `focused_issue_keys`, `context_issue_keys`
 - `summary`: `critical_path`, `bottleneck_lanes`, `late_items`, `unschedulable`, `deadline_met`
+
+### Scenario Overrides API
+
+- `GET /api/scenario/overrides?scope_key=<sprint_id>:<group_id>` — returns saved overrides for the given scope.
+- `POST /api/scenario/overrides` — body `{ scope_key, name, overrides }` — saves overrides to `scenario-overrides.json`.
 
 ## 🔒 Security Notes
 
@@ -398,8 +425,8 @@ jira-dashboard/
 ├── jira_server.py          # Backend Flask server with caching
 ├── jira-dashboard.html     # Frontend interface with sprint selector
 ├── frontend/               # Frontend source + compiled bundle
-│   ├── src/                # JSX source
-│   └── dist/               # Compiled JS output (committed)
+│   ├── src/                # JSX source (dashboard.jsx + scenario/)
+│   └── dist/               # Compiled JS + CSS output (committed)
 ├── planning/               # Scenario planner core logic
 ├── tests/                  # Unit tests
 ├── postmortem/             # Postmortems and incident learnings
@@ -411,6 +438,7 @@ jira-dashboard/
 ├── .env                   # Your credentials (NOT in git!)
 ├── dashboard-config.json  # Dashboard settings (auto-generated, NOT in git!)
 ├── team-groups.json       # Team groups config (auto-generated, NOT in git!)
+├── scenario-overrides.json # Scenario planner overrides (auto-generated, NOT in git!)
 ├── sprints_cache.json     # Sprint cache (auto-generated, NOT in git!)
 └── tasks.test.local.json  # Local task snapshots (optional, NOT in git!)
 ```

@@ -3540,6 +3540,14 @@
             flex-wrap: wrap;
         }
 
+        .scenario-controls-separator {
+            width: 1px;
+            height: 1.6rem;
+            background: var(--border);
+            align-self: center;
+            flex-shrink: 0;
+        }
+
         .scenario-control label {
             display: block;
             font-size: 0.65rem;
@@ -3578,6 +3586,68 @@
             color: var(--bg-primary);
         }
 
+        .scenario-toggle:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .scenario-edit-toggle {
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+            padding: 0.35rem 0.6rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .scenario-edit-toggle.active {
+            background: rgba(59, 130, 246, 0.15);
+            color: rgba(59, 130, 246, 0.9);
+            border-color: rgba(59, 130, 246, 0.4);
+        }
+
+        .scenario-edit-toggle:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .scenario-bar.editable {
+            cursor: grab;
+        }
+
+        .scenario-bar.dragging {
+            cursor: grabbing;
+            opacity: 0.4;
+        }
+
+        .scenario-drag-ghost {
+            position: absolute;
+            border: 2px dashed rgba(59, 130, 246, 0.7);
+            background: rgba(59, 130, 246, 0.12);
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .scenario-edge.violated {
+            stroke: #ef4444;
+            stroke-width: 2.5;
+            stroke-dasharray: 6 3;
+        }
+
+        .scenario-bar.dep-violated {
+            box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.5);
+        }
+
+        .scenario-dirty-indicator {
+            font-size: 0.65rem;
+            color: rgba(59, 130, 246, 0.85);
+            padding: 0.2rem 0.4rem;
+            background: rgba(59, 130, 246, 0.1);
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+
         .scenario-team-config,
         .scenario-team-header,
         .scenario-team-title,
@@ -3595,6 +3665,28 @@
             gap: 0.75rem;
             margin-bottom: 0.9rem;
             width: 100%;
+        }
+
+        .scenario-summary.hidden {
+            display: flex;
+        }
+
+        .scenario-summary-toggle {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            color: var(--text-secondary);
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 0.35rem;
+            padding: 0.15rem 0.45rem;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: color 0.15s ease, border-color 0.15s ease;
+        }
+
+        .scenario-summary-toggle:hover {
+            color: var(--text-primary);
+            border-color: var(--text-secondary);
         }
 
         .scenario-card {
@@ -3625,6 +3717,21 @@
             letter-spacing: 0.1em;
             font-family: 'IBM Plex Mono', monospace;
             color: var(--text-secondary);
+        }
+
+        .scenario-card-toggle {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .scenario-card-toggle:hover {
+            opacity: 0.7;
+        }
+
+        .scenario-card-chevron {
+            display: inline-block;
+            width: 0.8em;
+            font-size: 0.7rem;
         }
 
         .scenario-card .scenario-value {
@@ -3698,6 +3805,8 @@
         }
 
         .scenario-lane-label {
+            position: relative;
+            z-index: 2;
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.7rem;
             color: var(--text-primary);
@@ -3798,6 +3907,41 @@
             border-radius: 0.5rem;
             overflow: hidden;
             min-width: 0;
+        }
+
+        .scenario-lane-label-container {
+            position: relative;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .scenario-assignee-label {
+            position: absolute;
+            left: 0;
+            right: 0;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.55rem;
+            color: var(--text-secondary);
+            opacity: 0.6;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 0.2rem;
+            pointer-events: none;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .scenario-assignee-divider {
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: var(--border);
+            opacity: 0.4;
+            pointer-events: none;
+            z-index: 1;
         }
 
         .scenario-bar {
@@ -3955,6 +4099,30 @@
             text-overflow: ellipsis;
             white-space: nowrap;
             min-width: 0;
+        }
+
+        .scenario-date-badge {
+            position: absolute;
+            top: 2px;
+            right: 4px;
+            font-size: 0.48rem;
+            font-weight: 600;
+            line-height: 1;
+            padding: 1px 3px;
+            border-radius: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            pointer-events: none;
+        }
+
+        .scenario-date-badge-override {
+            background: rgba(59, 130, 246, 0.2);
+            color: rgba(59, 130, 246, 0.9);
+        }
+
+        .scenario-date-badge-jira {
+            background: rgba(34, 197, 94, 0.15);
+            color: rgba(34, 197, 94, 0.85);
         }
 
         .scenario-bar-meta {

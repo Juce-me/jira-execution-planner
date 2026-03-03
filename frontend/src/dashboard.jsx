@@ -1,5 +1,7 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
+import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, createUndoStack, validateDependencies, splitAtSprintBoundaries, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
+import ScenarioBar from './scenario/ScenarioBar.jsx';
 
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
@@ -325,6 +327,8 @@ import { createRoot } from 'react-dom/client';
             const scenarioTimelineRef = useRef(null);
             const [scenarioLayout, setScenarioLayout] = useState({ width: 0, height: 0 });
             const [scenarioCollapsedLanes, setScenarioCollapsedLanes] = useState({});
+            const [scenarioCollapsedCards, setScenarioCollapsedCards] = useState({});
+            const [scenarioSummaryHidden, setScenarioSummaryHidden] = useState(true);
             const [scenarioHoverKey, setScenarioHoverKey] = useState(null);
             const [scenarioFlashKey, setScenarioFlashKey] = useState(null);
             const [scenarioScrollTop, setScenarioScrollTop] = useState(0);
@@ -336,6 +340,15 @@ import { createRoot } from 'react-dom/client';
             const scenarioFocusRestoreRef = useRef(null);
             const scenarioSkipAutoCollapseRef = useRef(false);
             const scenarioTeamCollapseInitRef = useRef(false);
+            const [scenarioOverrides, setScenarioOverrides] = useState({});
+            const [scenarioEditMode, setScenarioEditMode] = useState(false);
+            const scenarioPreEditLaneModeRef = useRef(null);
+            const scenarioUndoStackRef = useRef(createUndoStack());
+            const [scenarioUndoVersion, setScenarioUndoVersion] = useState(0);
+            const [scenarioDragState, setScenarioDragState] = useState(null);
+            const scenarioDragStateRef = useRef(null);
+            const scenarioDragFrameRef = useRef(null);
+            const scenarioWasDraggedRef = useRef(false);
             const scenarioEdgeUpdatePendingRef = useRef(false);
             const scenarioEdgeFrameRef = useRef(null);
             const scenarioScrollFrameRef = useRef(null);
@@ -657,11 +670,6 @@ import { createRoot } from 'react-dom/client';
                 return (status || '').toLowerCase().replace(/\s+/g, ' ').trim();
             };
 
-            const normalizeScenarioSummary = (summary) => {
-                const text = String(summary || '').trim();
-                if (!text) return '';
-                return text.replace(/^issue\.\s*/i, '');
-            };
 
             const normalizeGroupsConfig = (config) => {
                 const rawGroups = Array.isArray(config?.groups) ? config.groups : [];
@@ -3543,14 +3551,6 @@ import { createRoot } from 'react-dom/client';
                 }
             };
 
-            const parseScenarioDate = (value) => {
-                if (!value) return null;
-                // Parse ISO date string (YYYY-MM-DD) as local date at midnight
-                // Adding T00:00:00 without timezone creates local date, avoiding timezone day-shift bugs
-                // Backend sends dates as date.isoformat() → "2026-01-29"
-                // This must parse as local 2026-01-29, not UTC (which could shift to 2026-01-28 in some timezones)
-                return new Date(`${value}T00:00:00`);
-            };
 
             const buildScenarioPayload = () => {
                 const isActiveSprint = selectedSprintState === 'active';
@@ -3594,6 +3594,15 @@ import { createRoot } from 'react-dom/client';
                     }
                     const data = await response.json();
                     setScenarioData(data);
+                    // Load saved overrides for this scope
+                    if (scenarioScopeKey) {
+                        try {
+                            const ovRes = await fetch(`${BACKEND_URL}/api/scenario/overrides?scope_key=${encodeURIComponent(scenarioScopeKey)}`);
+                            if (ovRes.ok) {
+                                setScenarioOverrides((await ovRes.json()).overrides || {});
+                            }
+                        } catch (_) { /* ignore override load failure */ }
+                    }
                 } catch (err) {
                     if (err.name === 'AbortError') {
                         return;
@@ -3603,6 +3612,66 @@ import { createRoot } from 'react-dom/client';
                     cleanupSprintFetch(controller);
                     setScenarioLoading(false);
                 }
+            };
+
+            const toggleScenarioEditMode = () => {
+                setScenarioEditMode(prev => {
+                    if (!prev) {
+                        // Entering edit mode — save current lane mode, force assignee, clear epic focus
+                        scenarioPreEditLaneModeRef.current = scenarioLaneMode;
+                        setScenarioEpicFocus(null);
+                        setScenarioLaneMode('assignee');
+                    } else {
+                        // Exiting edit mode — restore lane mode, clear undo stack
+                        if (scenarioPreEditLaneModeRef.current) {
+                            setScenarioLaneMode(scenarioPreEditLaneModeRef.current);
+                            scenarioPreEditLaneModeRef.current = null;
+                        }
+                        scenarioUndoStackRef.current.clear();
+                        setScenarioUndoVersion(0);
+                    }
+                    return !prev;
+                });
+            };
+
+            const handleScenarioBarMouseDown = (event, issue) => {
+                if (!scenarioEditMode) return;
+                if (event.button !== 0) return;
+                // Only drag issues with SP > 0
+                const sp = Number(issue.sp);
+                if (!sp || sp <= 0) return;
+                if (!issue.start || !issue.end) return;
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                const barEl = event.currentTarget;
+                const trackEl = barEl.closest('.scenario-lane-track');
+                if (!trackEl) return;
+
+                const trackRect = trackEl.getBoundingClientRect();
+                const barRect = barEl.getBoundingClientRect();
+                const startDate = parseScenarioDate(issue.start);
+                const endDate = parseScenarioDate(issue.end);
+                if (!startDate || !endDate) return;
+
+                const durationMs = endDate.getTime() - startDate.getTime();
+                const offsetX = event.clientX - barRect.left;
+
+                const dragState = {
+                    issueKey: issue.key,
+                    originalStart: issue.start,
+                    originalEnd: issue.end,
+                    durationMs,
+                    offsetX,
+                    trackLeft: trackRect.left,
+                    trackWidth: trackRect.width,
+                    currentStart: startDate,
+                    currentEnd: endDate,
+                };
+                scenarioDragStateRef.current = dragState;
+                scenarioWasDraggedRef.current = false;
+                setScenarioDragState(dragState);
             };
 
             const loadReadyToCloseProductTasks = async () => {
@@ -4208,6 +4277,19 @@ import { createRoot } from 'react-dom/client';
             const scenarioBaseUrl = scenarioData?.jira_base_url || jiraUrl || '';
             const scenarioDependencies = scenarioData?.dependencies || EMPTY_ARRAY;
             const scenarioCapacityByTeam = scenarioData?.capacity_by_team || EMPTY_OBJECT;
+            const scenarioScopeKey = React.useMemo(() => {
+                const sprintId = selectedSprint ? String(selectedSprint) : '';
+                const groupId = activeGroupId || 'default';
+                return sprintId && groupId ? `${sprintId}:${groupId}` : '';
+            }, [selectedSprint, activeGroupId]);
+            const scenarioSprintBounds = React.useMemo(() => {
+                const b = scenarioData?.sprintBoundaries;
+                if (!b) return [];
+                return [b.previous?.startDate, b.selected?.startDate, b.selected?.endDate, b.next?.endDate]
+                    .map(d => d ? parseScenarioDate(d) : null)
+                    .filter(Boolean)
+                    .sort((a, b) => a - b);
+            }, [scenarioData]);
 
             // Apply virtual assignment for DevLead Management tasks
             const scenarioIssues = React.useMemo(() => {
@@ -4233,34 +4315,38 @@ import { createRoot } from 'react-dom/client';
                     return issue;
                 });
             }, [scenarioRawIssues, scenarioCapacityByTeam]);
+            const scenarioEffectiveIssues = React.useMemo(() => {
+                if (!scenarioIssues || scenarioIssues.length === 0) return scenarioIssues;
+                return scenarioIssues.map(issue => applyIssueOverride(issue, scenarioOverrides[issue.key] || null));
+            }, [scenarioIssues, scenarioOverrides]);
             const scenarioSearchQuery = React.useMemo(
                 () => (searchQuery || '').trim().toLowerCase(),
                 [searchQuery]
             );
             const scenarioSearchMatchSet = React.useMemo(() => {
                 const matches = new Set();
-                if (!scenarioSearchQuery || !scenarioIssues || scenarioIssues.length === 0) return matches;
-                scenarioIssues.forEach(issue => {
+                if (!scenarioSearchQuery || !scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return matches;
+                scenarioEffectiveIssues.forEach(issue => {
                     if (issue?.key && matchesScenarioSearch(issue, scenarioSearchQuery)) {
                         matches.add(issue.key);
                     }
                 });
                 return matches;
-            }, [scenarioIssues, scenarioSearchQuery]);
+            }, [scenarioEffectiveIssues, scenarioSearchQuery]);
             const scenarioFilteredIssues = React.useMemo(() => {
-                if (!scenarioSearchQuery) return scenarioIssues;
-                return scenarioIssues.filter(issue => scenarioSearchMatchSet.has(issue.key));
-            }, [scenarioIssues, scenarioSearchQuery, scenarioSearchMatchSet]);
+                if (!scenarioSearchQuery) return scenarioEffectiveIssues;
+                return scenarioEffectiveIssues.filter(issue => scenarioSearchMatchSet.has(issue.key));
+            }, [scenarioEffectiveIssues, scenarioSearchQuery, scenarioSearchMatchSet]);
             const scenarioExcludedIssueKeys = React.useMemo(() => {
                 const keys = new Set();
-                if (!scenarioIssues || scenarioIssues.length === 0) return keys;
-                scenarioIssues.forEach(issue => {
+                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return keys;
+                scenarioEffectiveIssues.forEach(issue => {
                     if (excludedEpicSet.has(issue?.epicKey || '')) {
                         keys.add(issue.key);
                     }
                 });
                 return keys;
-            }, [scenarioIssues, excludedEpicSet]);
+            }, [scenarioEffectiveIssues, excludedEpicSet]);
             const scenarioFocusKeys = scenarioData?.focus_set?.focused_issue_keys || EMPTY_ARRAY;
             const scenarioContextKeys = scenarioData?.focus_set?.context_issue_keys || EMPTY_ARRAY;
             const scenarioFocusSet = React.useMemo(
@@ -4273,21 +4359,21 @@ import { createRoot } from 'react-dom/client';
             );
             const scenarioIssueByKey = React.useMemo(() => {
                 const map = new Map();
-                if (!scenarioIssues || scenarioIssues.length === 0) return map;
-                scenarioIssues.forEach(issue => {
+                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return map;
+                scenarioEffectiveIssues.forEach(issue => {
                     if (issue?.key) {
                         map.set(issue.key, issue);
                     }
                 });
                 return map;
-            }, [scenarioIssues]);
+            }, [scenarioEffectiveIssues]);
             const scenarioBaseStart = parseScenarioDate(scenarioConfig.start_date);
             const scenarioDeadline = parseScenarioDate(scenarioConfig.quarter_end_date);
             const scenarioBaseEnd = React.useMemo(() => {
                 if (!scenarioDeadline) return null;
-                if (!scenarioIssues || scenarioIssues.length === 0) return scenarioDeadline;
+                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return scenarioDeadline;
                 let latest = scenarioDeadline;
-                scenarioIssues.forEach(issue => {
+                scenarioEffectiveIssues.forEach(issue => {
                     if (!issue.end) return;
                     const end = parseScenarioDate(issue.end);
                     if (end && end > latest) {
@@ -4295,20 +4381,20 @@ import { createRoot } from 'react-dom/client';
                     }
                 });
                 return latest;
-            }, [scenarioDeadline, scenarioIssues]);
+            }, [scenarioDeadline, scenarioEffectiveIssues]);
             const scenarioViewStart = scenarioRangeOverride?.start || scenarioBaseStart;
             const scenarioViewEnd = scenarioRangeOverride?.end || scenarioBaseEnd;
             const scenarioFocusEpicKey = scenarioEpicFocus?.key || null;
             const scenarioFocusIssueKeys = React.useMemo(() => {
                 const keys = new Set();
-                if (!scenarioFocusEpicKey || !scenarioIssues || scenarioIssues.length === 0) return keys;
-                scenarioIssues.forEach(issue => {
+                if (!scenarioFocusEpicKey || !scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return keys;
+                scenarioEffectiveIssues.forEach(issue => {
                     if (issue.epicKey === scenarioFocusEpicKey && issue.key) {
                         keys.add(issue.key);
                     }
                 });
                 return keys;
-            }, [scenarioIssues, scenarioFocusEpicKey]);
+            }, [scenarioEffectiveIssues, scenarioFocusEpicKey]);
             const scenarioFocusContextKeys = React.useMemo(() => {
                 const keys = new Set();
                 if (!scenarioFocusEpicKey) return keys;
@@ -4325,15 +4411,29 @@ import { createRoot } from 'react-dom/client';
                 return keys;
             }, [scenarioDependencies, scenarioFocusIssueKeys, scenarioFocusEpicKey]);
             const scenarioTimelineIssues = React.useMemo(() => {
-                const source = scenarioEpicFocus ? scenarioIssues : scenarioFilteredIssues;
+                const source = scenarioEpicFocus ? scenarioEffectiveIssues : scenarioFilteredIssues;
                 if (!scenarioEpicFocus) return source;
                 return source.filter(issue =>
                     scenarioFocusIssueKeys.has(issue.key) || scenarioFocusContextKeys.has(issue.key)
                 );
-            }, [scenarioIssues, scenarioFilteredIssues, scenarioEpicFocus, scenarioFocusIssueKeys, scenarioFocusContextKeys]);
+            }, [scenarioEffectiveIssues, scenarioFilteredIssues, scenarioEpicFocus, scenarioFocusIssueKeys, scenarioFocusContextKeys]);
+            const scenarioTimelineWithSegments = React.useMemo(() => {
+                if (!scenarioTimelineIssues || scenarioTimelineIssues.length === 0) return scenarioTimelineIssues;
+                if (!scenarioSprintBounds || scenarioSprintBounds.length < 2) return scenarioTimelineIssues;
+                const result = [];
+                scenarioTimelineIssues.forEach(issue => {
+                    if (scenarioExcludedIssueKeys.has(issue.key)) {
+                        const segments = splitAtSprintBoundaries(issue, scenarioSprintBounds);
+                        result.push(...segments);
+                    } else {
+                        result.push(issue);
+                    }
+                });
+                return result;
+            }, [scenarioTimelineIssues, scenarioExcludedIssueKeys, scenarioSprintBounds]);
             const scenarioTimelineIssueKeys = React.useMemo(() => {
-                return new Set(scenarioTimelineIssues.map(issue => issue.key));
-            }, [scenarioTimelineIssues]);
+                return new Set(scenarioTimelineWithSegments.map(issue => issue.key));
+            }, [scenarioTimelineWithSegments]);
             const scenarioAssigneeConflicts = React.useMemo(() => {
                 // Early return if no data to avoid unnecessary computation
                 if (!scenarioTimelineIssues || scenarioTimelineIssues.length === 0) {
@@ -4403,6 +4503,148 @@ import { createRoot } from 'react-dom/client';
 
                 return { conflicts, conflictDetails };
             }, [scenarioTimelineIssues, excludedEpicSet]);
+            const scenarioDepViolations = React.useMemo(() => {
+                if (!scenarioEditMode) return new Set();
+                return validateDependencies(scenarioDependencies, scenarioIssueByKey);
+            }, [scenarioEditMode, scenarioDependencies, scenarioIssueByKey]);
+            const scenarioDepViolatedKeys = React.useMemo(() => {
+                const keys = new Set();
+                scenarioDepViolations.forEach(edge => {
+                    const [from, to] = edge.split('->');
+                    if (from) keys.add(from);
+                    if (to) keys.add(to);
+                });
+                return keys;
+            }, [scenarioDepViolations]);
+
+            // --- Drag effect, undo/redo, save/discard (placed after scenarioViewStart/End & scenarioIssueByKey) ---
+
+            // Drag mousemove/mouseup effect
+            React.useEffect(() => {
+                if (!scenarioDragState) return;
+                const handleMouseMove = (e) => {
+                    const ds = scenarioDragStateRef.current;
+                    if (!ds) return;
+                    scenarioWasDraggedRef.current = true;
+                    if (scenarioDragFrameRef.current) return; // throttle via rAF
+                    scenarioDragFrameRef.current = requestAnimationFrame(() => {
+                        scenarioDragFrameRef.current = null;
+                        const ds2 = scenarioDragStateRef.current;
+                        if (!ds2 || !scenarioViewStart || !scenarioViewEnd) return;
+                        const rawPx = e.clientX - ds2.trackLeft - ds2.offsetX;
+                        const newStart = pxToDate(rawPx, ds2.trackWidth, scenarioViewStart, scenarioViewEnd);
+                        const newEnd = new Date(newStart.getTime() + ds2.durationMs);
+                        const updated = { ...ds2, currentStart: newStart, currentEnd: newEnd };
+                        scenarioDragStateRef.current = updated;
+                        setScenarioDragState(updated);
+                    });
+                };
+                const handleMouseUp = () => {
+                    if (scenarioDragFrameRef.current) {
+                        cancelAnimationFrame(scenarioDragFrameRef.current);
+                        scenarioDragFrameRef.current = null;
+                    }
+                    const ds = scenarioDragStateRef.current;
+                    if (ds && scenarioWasDraggedRef.current) {
+                        const newStartISO = dateToISODate(ds.currentStart);
+                        const newEndISO = dateToISODate(ds.currentEnd);
+                        scenarioUndoStackRef.current.push({
+                            issueKey: ds.issueKey,
+                            oldStart: ds.originalStart,
+                            oldEnd: ds.originalEnd,
+                            newStart: newStartISO,
+                            newEnd: newEndISO,
+                        });
+                        setScenarioUndoVersion(v => v + 1);
+                        setScenarioOverrides(prev => ({
+                            ...prev,
+                            [ds.issueKey]: { start: newStartISO, end: newEndISO }
+                        }));
+                    }
+                    scenarioDragStateRef.current = null;
+                    setScenarioDragState(null);
+                };
+                window.addEventListener('mousemove', handleMouseMove);
+                window.addEventListener('mouseup', handleMouseUp);
+                return () => {
+                    window.removeEventListener('mousemove', handleMouseMove);
+                    window.removeEventListener('mouseup', handleMouseUp);
+                };
+            }, [scenarioDragState, scenarioViewStart, scenarioViewEnd]);
+
+            const scenarioUndo = () => {
+                const cmd = scenarioUndoStackRef.current.undo();
+                if (!cmd) return;
+                setScenarioUndoVersion(v => v + 1);
+                setScenarioOverrides(prev => {
+                    const next = { ...prev };
+                    if (cmd.oldStart === cmd.newStart && cmd.oldEnd === cmd.newEnd) return next;
+                    const issue = scenarioIssueByKey.get(cmd.issueKey);
+                    const computedStart = issue?.start;
+                    const computedEnd = issue?.end;
+                    if (cmd.oldStart === computedStart && cmd.oldEnd === computedEnd) {
+                        delete next[cmd.issueKey];
+                    } else {
+                        next[cmd.issueKey] = { start: cmd.oldStart, end: cmd.oldEnd };
+                    }
+                    return next;
+                });
+            };
+
+            const scenarioRedo = () => {
+                const cmd = scenarioUndoStackRef.current.redo();
+                if (!cmd) return;
+                setScenarioUndoVersion(v => v + 1);
+                setScenarioOverrides(prev => ({
+                    ...prev,
+                    [cmd.issueKey]: { start: cmd.newStart, end: cmd.newEnd }
+                }));
+            };
+
+            // Keyboard shortcuts for undo/redo
+            React.useEffect(() => {
+                if (!scenarioEditMode) return;
+                const handler = (e) => {
+                    const isMeta = e.metaKey || e.ctrlKey;
+                    if (!isMeta || e.key.toLowerCase() !== 'z') return;
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        scenarioRedo();
+                    } else {
+                        scenarioUndo();
+                    }
+                };
+                window.addEventListener('keydown', handler);
+                return () => window.removeEventListener('keydown', handler);
+            }, [scenarioEditMode, scenarioIssueByKey]);
+
+            const scenarioOverrideCount = Object.keys(scenarioOverrides).length;
+
+            const saveScenarioDraft = async () => {
+                if (!scenarioScopeKey || scenarioOverrideCount === 0) return;
+                try {
+                    const res = await fetch(`${BACKEND_URL}/api/scenario/overrides`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            scope_key: scenarioScopeKey,
+                            name: `Draft ${new Date().toISOString().slice(0, 10)}`,
+                            overrides: scenarioOverrides,
+                        }),
+                    });
+                    if (res.ok) {
+                        scenarioUndoStackRef.current.clear();
+                        setScenarioUndoVersion(0);
+                    }
+                } catch (_) { /* ignore save failure */ }
+            };
+
+            const discardScenarioOverrides = () => {
+                setScenarioOverrides({});
+                scenarioUndoStackRef.current.clear();
+                setScenarioUndoVersion(0);
+            };
+
             const scenarioLaneForIssue = (issue) => {
                 if (scenarioEpicFocus?.key) {
                     return scenarioEpicFocus.key;
@@ -4516,8 +4758,8 @@ import { createRoot } from 'react-dom/client';
             }, [scenarioLaneInfo]);
             const scenarioIssuesByLane = React.useMemo(() => {
                 const groups = new Map();
-                if (!scenarioTimelineIssues || scenarioTimelineIssues.length === 0) return groups;
-                scenarioTimelineIssues.forEach(issue => {
+                if (!scenarioTimelineWithSegments || scenarioTimelineWithSegments.length === 0) return groups;
+                scenarioTimelineWithSegments.forEach(issue => {
                     const lane = scenarioLaneForIssue(issue);
                     if (!groups.has(lane)) {
                         groups.set(lane, []);
@@ -4528,15 +4770,15 @@ import { createRoot } from 'react-dom/client';
                     list.sort((a, b) => (a.start || '').localeCompare(b.start || ''));
                 });
                 return groups;
-            }, [scenarioTimelineIssues, scenarioLaneMode, scenarioEpicFocus]);
+            }, [scenarioTimelineWithSegments, scenarioLaneMode, scenarioEpicFocus]);
             const scenarioHasAssignees = React.useMemo(() => {
-                if (!scenarioIssues || scenarioIssues.length === 0) return false;
-                return scenarioIssues.some(issue => issue.assignee);
-            }, [scenarioIssues]);
+                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return false;
+                return scenarioEffectiveIssues.some(issue => issue.assignee);
+            }, [scenarioEffectiveIssues]);
             const scenarioUnschedulable = React.useMemo(() => {
-                if (!scenarioIssues || scenarioIssues.length === 0) return [];
-                return scenarioIssues.filter(issue => !issue.start || !issue.end);
-            }, [scenarioIssues]);
+                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return [];
+                return scenarioEffectiveIssues.filter(issue => !issue.start || !issue.end);
+            }, [scenarioEffectiveIssues]);
             const scenarioTicks = React.useMemo(() => {
                 if (!scenarioViewStart || !scenarioViewEnd) return [];
                 const ticks = [];
@@ -4609,10 +4851,6 @@ import { createRoot } from 'react-dom/client';
                 return markers;
             }, [scenarioViewStart, scenarioViewEnd, scenarioDeadline]);
             const SCENARIO_LANE_HEIGHT = 52;
-            const SCENARIO_BAR_HEIGHT = 32;
-            const SCENARIO_BAR_GAP = 10;
-            const SCENARIO_COLLAPSED_ROWS = 2;
-            const SCENARIO_TEAM_LEAD_ROWS = 1;
             const scenarioBarGap = scenarioEpicFocus ? 16 : SCENARIO_BAR_GAP;
             const scenarioLaneStacking = React.useMemo(() => {
                 // Early return if no lanes to process
@@ -4621,7 +4859,8 @@ import { createRoot } from 'react-dom/client';
                         rowIndexByKey: new Map(),
                         laneRowCounts: new Map(),
                         laneVisibleRows: new Map(),
-                        laneHiddenCounts: new Map()
+                        laneHiddenCounts: new Map(),
+                        laneRowAssignees: new Map()
                     };
                 }
 
@@ -4633,6 +4872,7 @@ import { createRoot } from 'react-dom/client';
                 const laneRowCounts = new Map();
                 const laneVisibleRows = new Map();
                 const laneHiddenCounts = new Map();
+                const laneRowAssignees = new Map();
                 const fallbackStart = scenarioViewStart || new Date(0);
                 const DAY_MS = 24 * 60 * 60 * 1000;
                 const assignRows = (issueList, rowEnds, baseOffset, rowAssignees, options = {}) => {
@@ -4644,15 +4884,17 @@ import { createRoot } from 'react-dom/client';
                         const isUnscheduled = !issue.start || !issue.end;
                         const start = parseScenarioDate(issue.start) || fallbackStart;
                         const end = parseScenarioDate(issue.end) || start;
-                        const normalizedEnd = end < start
-                            ? start
-                            : (isUnscheduled ? new Date(start.getTime() + DAY_MS) : end);
+                        // Ensure every task occupies at least 1 day so bars never visually overlap
+                        const rawEnd = end < start ? start : end;
+                        const normalizedEnd = rawEnd <= start
+                            ? new Date(start.getTime() + DAY_MS)
+                            : rawEnd;
 
                         // Find a row where:
                         // 1. Time is available (start >= rowEnd)
                         // 2. Row either has no assignee yet, OR has the same assignee
                         let rowIndex = rowEnds.findIndex((rowEnd, idx) => {
-                            const timeAvailable = isUnscheduled ? start > rowEnd : start >= rowEnd;
+                            const timeAvailable = start > rowEnd;
                             const rowAssignee = rowAssignees[idx];
                             const assigneeMatch = allowAssigneeMix || !rowAssignee || rowAssignee === assignee;
                             return timeAvailable && assigneeMatch;
@@ -4689,14 +4931,16 @@ import { createRoot } from 'react-dom/client';
                     const excludedIssues = [];
                     issues.forEach((issue) => {
                         if (!issue?.key) return;
-                        if (scenarioExcludedIssueKeys.has(issue.key)) {
+                        const issueKeyForExclude = issue.originalKey || issue.key;
+                        if (scenarioExcludedIssueKeys.has(issueKeyForExclude) || excludedEpicSet.has(issue.epicKey || '')) {
                             excludedIssues.push(issue);
                         } else {
                             regularIssues.push(issue);
                         }
                     });
                     assignRows(regularIssues, rowEnds, 0, rowAssignees);
-                    assignRows(excludedIssues, rowEnds, 0, rowAssignees, { allowAssigneeMix: true, allowNewRows: false });
+                    assignRows(excludedIssues, rowEnds, 0, rowAssignees);
+                    laneRowAssignees.set(lane, [...rowAssignees]);
                     const totalRows = Math.max(1, rowEnds.length, capacityRows || 0);
                     const isCollapsed = scenarioEpicFocus ? false : Boolean(scenarioCollapsedLanes[lane]);
                     const collapsedRows = scenarioLaneMode === 'epic'
@@ -4722,7 +4966,7 @@ import { createRoot } from 'react-dom/client';
                     performance.clearMarks('scenarioLaneStacking:end');
                     performance.clearMeasures('scenarioLaneStacking');
                 }
-                return { rowIndexByKey, laneRowCounts, laneVisibleRows, laneHiddenCounts };
+                return { rowIndexByKey, laneRowCounts, laneVisibleRows, laneHiddenCounts, laneRowAssignees };
             }, [
                 scenarioLanes,
                 scenarioIssuesByLane,
@@ -4751,6 +4995,27 @@ import { createRoot } from 'react-dom/client';
                 });
                 return { meta, totalHeight: offset };
             }, [scenarioLanes, scenarioLaneStacking, scenarioCollapsedLanes, scenarioEpicFocus, scenarioBarGap]);
+            const scenarioLaneAssigneeGroups = React.useMemo(() => {
+                if (scenarioLaneMode !== 'team') return new Map();
+                const result = new Map();
+                scenarioLanes.forEach((lane) => {
+                    const rowAssignees = scenarioLaneStacking.laneRowAssignees?.get(lane) || [];
+                    const visibleRows = scenarioLaneStacking.laneVisibleRows.get(lane) || 1;
+                    const groups = [];
+                    let current = null;
+                    for (let i = 0; i < Math.min(rowAssignees.length, visibleRows); i++) {
+                        const assignee = rowAssignees[i] || null;
+                        if (current && current.assignee === assignee) {
+                            current.rowCount += 1;
+                        } else {
+                            current = { assignee, startRow: i, rowCount: 1 };
+                            groups.push(current);
+                        }
+                    }
+                    result.set(lane, groups);
+                });
+                return result;
+            }, [scenarioLaneMode, scenarioLanes, scenarioLaneStacking]);
             const areScenarioCollapsedLanesEqual = (a, b) => {
                 if (a === b) return true;
                 const aKeys = Object.keys(a || {});
@@ -4913,7 +5178,7 @@ import { createRoot } from 'react-dom/client';
                     }
                 }
 
-                scenarioTimelineIssues.forEach((issue) => {
+                scenarioTimelineWithSegments.forEach((issue) => {
                     const lane = scenarioLaneForIssue(issue);
                     const laneMeta = scenarioLaneMeta.meta.get(lane);
                     if (!laneMeta) return;
@@ -4949,7 +5214,7 @@ import { createRoot } from 'react-dom/client';
                 });
                 return positions;
             }, [
-                scenarioTimelineIssues,
+                scenarioTimelineWithSegments,
                 scenarioViewStart,
                 scenarioViewEnd,
                 scenarioLayout,
@@ -5133,10 +5398,8 @@ import { createRoot } from 'react-dom/client';
 
             const scenarioIsSingleTeamFocus = !isAllTeamsSelected && selectedTeamSet.size === 1;
             const scenarioBaselineEdges = React.useMemo(() => {
-                const focusKeys = scenarioFocusSet.size ? scenarioFocusSet : new Set(scenarioTimelineIssues.map(issue => issue.key));
-                if (!scenarioIsSingleTeamFocus && focusKeys.size > 10) return [];
-                return scenarioEdgeCandidates.filter(edge => focusKeys.has(edge.from) || focusKeys.has(edge.to));
-            }, [scenarioFocusSet, scenarioEdgeCandidates, scenarioTimelineIssues, scenarioIsSingleTeamFocus]);
+                return scenarioEdgeCandidates;
+            }, [scenarioEdgeCandidates]);
 
             const scenarioFocusEdges = React.useMemo(() => {
                 if (!scenarioEpicFocus) return [];
@@ -5166,33 +5429,7 @@ import { createRoot } from 'react-dom/client';
                 }));
             };
 
-            const buildScenarioTooltipPayload = (summary, key, sp, isExcluded = false, hasConflict = false, assignee = null, conflictingKeys = [], isOutOfSprint = false, isInProgress = false, team = null) => {
-                const cleanedSummary = normalizeScenarioSummary(summary) || key || '';
-                const hasSp = sp !== null && sp !== undefined && sp !== '';
-                const spValue = hasSp ? Number(sp) : null;
-                let note = '';
-                if (isExcluded) {
-                    note = 'Excluded (capacity noise)';
-                } else if (hasConflict && assignee && conflictingKeys.length > 0) {
-                    const taskList = conflictingKeys.slice(0, 3).join(', ');
-                    const more = conflictingKeys.length > 3 ? ` +${conflictingKeys.length - 3} more` : '';
-                    note = `⚠️ ${assignee} also assigned to: ${taskList}${more}`;
-                } else if (hasConflict && assignee) {
-                    note = `⚠️ ${assignee} has overlapping tasks`;
-                } else if (isOutOfSprint) {
-                    note = '🟠 Finishes after quarter end';
-                } else if (isInProgress) {
-                    note = '🟡 In progress (50% estimated complete)';
-                }
-                return {
-                    summary: cleanedSummary,
-                    key: key || '',
-                    sp: Number.isFinite(spValue) ? spValue : null,
-                    note: note,
-                    assignee: assignee || null,
-                    team: team || null
-                };
-            };
+
 
             const areScenarioEdgeRendersEqual = (prev, next) => {
                 if (prev.width !== next.width || prev.height !== next.height) return false;
@@ -5413,6 +5650,8 @@ import { createRoot } from 'react-dom/client';
                     const isContextEdge = !isActive && scenarioEpicFocus && ((fromInFocus && !toInFocus) || (!fromInFocus && toInFocus));
                     paths.push({
                         id: `${edge.from}-${edge.to}-${edge.type || 'link'}`,
+                        from: edge.from,
+                        to: edge.to,
                         d: `M ${startX} ${startY} C ${c1x} ${startY}, ${c2x} ${endY}, ${endX} ${endY}`,
                         type: edge.type,
                         isActive,
@@ -9431,6 +9670,7 @@ import { createRoot } from 'react-dom/client';
                                                 <div className="scenario-toggle-group">
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'team' ? 'active' : ''}`}
+                                                        disabled={scenarioEditMode}
                                                         onClick={() => {
                                                             if (scenarioEpicFocus) clearScenarioEpicFocus();
                                                             setScenarioLaneMode('team');
@@ -9440,6 +9680,7 @@ import { createRoot } from 'react-dom/client';
                                                     </button>
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'epic' ? 'active' : ''}`}
+                                                        disabled={scenarioEditMode}
                                                         onClick={() => {
                                                             if (scenarioEpicFocus) clearScenarioEpicFocus();
                                                             setScenarioLaneMode('epic');
@@ -9449,6 +9690,7 @@ import { createRoot } from 'react-dom/client';
                                                     </button>
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'assignee' ? 'active' : ''}`}
+                                                        disabled={scenarioEditMode}
                                                         onClick={() => {
                                                             if (scenarioEpicFocus) clearScenarioEpicFocus();
                                                             setScenarioLaneMode('assignee');
@@ -9458,17 +9700,27 @@ import { createRoot } from 'react-dom/client';
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div className="scenario-control">
-                                                <label>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={scenarioShowConflictsOnly}
-                                                        onChange={(e) => setScenarioShowConflictsOnly(e.target.checked)}
-                                                        style={{marginRight: '0.4rem'}}
-                                                    />
-                                                    Show conflicts only
-                                                </label>
-                                            </div>
+                                            <div className="scenario-controls-separator" />
+                                            <button
+                                                className={`scenario-toggle ${scenarioSummaryHidden ? '' : 'active'}`}
+                                                onClick={() => setScenarioSummaryHidden(prev => !prev)}
+                                                title={scenarioSummaryHidden ? 'Show summary cards' : 'Hide summary cards'}
+                                            >
+                                                {scenarioSummaryHidden ? 'Show Summary' : 'Hide Summary'}
+                                            </button>
+                                            <button
+                                                className={`scenario-edit-toggle ${scenarioEditMode ? 'active' : ''}`}
+                                                onClick={toggleScenarioEditMode}
+                                                disabled={!scenarioData}
+                                            >
+                                                {scenarioEditMode ? 'Exit Edit' : 'Edit'}
+                                            </button>
+                                            <button
+                                                className={`scenario-toggle ${scenarioShowConflictsOnly ? 'active' : ''}`}
+                                                onClick={() => setScenarioShowConflictsOnly(prev => !prev)}
+                                            >
+                                                Conflicts Only
+                                            </button>
                                             <button
                                                 className="secondary"
                                                 onClick={runScenario}
@@ -9476,6 +9728,45 @@ import { createRoot } from 'react-dom/client';
                                             >
                                                 {scenarioLoading ? 'Running...' : 'Run Scenario'}
                                             </button>
+                                            {scenarioEditMode && (
+                                                <>
+                                                    <button
+                                                        className="scenario-edit-toggle"
+                                                        onClick={scenarioUndo}
+                                                        disabled={!scenarioUndoStackRef.current.canUndo()}
+                                                        title="Undo (Ctrl+Z)"
+                                                    >
+                                                        Undo
+                                                    </button>
+                                                    <button
+                                                        className="scenario-edit-toggle"
+                                                        onClick={scenarioRedo}
+                                                        disabled={!scenarioUndoStackRef.current.canRedo()}
+                                                        title="Redo (Ctrl+Shift+Z)"
+                                                    >
+                                                        Redo
+                                                    </button>
+                                                    <button
+                                                        className="scenario-edit-toggle"
+                                                        onClick={saveScenarioDraft}
+                                                        disabled={scenarioOverrideCount === 0 || !scenarioScopeKey}
+                                                        title="Save draft overrides to server"
+                                                    >
+                                                        Save Draft
+                                                    </button>
+                                                    <button
+                                                        className="scenario-edit-toggle"
+                                                        onClick={discardScenarioOverrides}
+                                                        disabled={scenarioOverrideCount === 0}
+                                                        title="Discard all overrides"
+                                                    >
+                                                        Discard
+                                                    </button>
+                                                    {scenarioOverrideCount > 0 && (
+                                                        <span className="scenario-dirty-indicator">{scenarioOverrideCount} override{scenarioOverrideCount !== 1 ? 's' : ''}</span>
+                                                    )}
+                                                </>
+                                            )}
                                         </div>
                                     </div>
 
@@ -9484,10 +9775,13 @@ import { createRoot } from 'react-dom/client';
 
                                     {scenarioData && (
                                         <>
-                                            <div className="scenario-summary">
-                                                {scenarioAssigneeConflicts.conflicts.size > 0 && (
-                                                    <div className="scenario-card scenario-card-warning">
-                                                        <h4>⚠️ Schedule Warnings</h4>
+                                            <div className={`scenario-summary ${scenarioSummaryHidden ? 'hidden' : ''}`}>
+                                                {!scenarioSummaryHidden && scenarioAssigneeConflicts.conflicts.size > 0 && (
+                                                    <div className={`scenario-card scenario-card-warning ${scenarioCollapsedCards.warnings ? 'collapsed' : ''}`}>
+                                                        <h4 className="scenario-card-toggle" onClick={() => setScenarioCollapsedCards(prev => ({ ...prev, warnings: !prev.warnings }))}>
+                                                            <span className="scenario-card-chevron">{scenarioCollapsedCards.warnings ? '▸' : '▾'}</span>
+                                                            ⚠️ Schedule Warnings
+                                                        </h4>
                                                         <div className="scenario-value">
                                                             {scenarioAssigneeConflicts.conflicts.size} conflicts
                                                         </div>
@@ -9499,82 +9793,94 @@ import { createRoot } from 'react-dom/client';
                                                                 }).filter(Boolean)
                                                             )).length} assignees with overlapping tasks
                                                         </div>
-                                                        <div className="scenario-issues-list">
-                                                            {Array.from(scenarioAssigneeConflicts.conflicts).map(key => {
-                                                                const issue = scenarioIssueByKey.get(key);
-                                                                return (
-                                                                    <button
-                                                                        key={key}
-                                                                        type="button"
-                                                                        className="scenario-link"
-                                                                        onClick={() => scrollToScenarioIssue(key)}
-                                                                    >
-                                                                        <span>{issue?.summary || key}</span>
-                                                                        <span className="scenario-link-key">{key} · {issue?.assignee}</span>
-                                                                    </button>
-                                                                );
-                                                            })}
-                                                        </div>
+                                                        {!scenarioCollapsedCards.warnings && (
+                                                            <div className="scenario-issues-list">
+                                                                {Array.from(scenarioAssigneeConflicts.conflicts).map(key => {
+                                                                    const issue = scenarioIssueByKey.get(key);
+                                                                    return (
+                                                                        <button
+                                                                            key={key}
+                                                                            type="button"
+                                                                            className="scenario-link"
+                                                                            onClick={() => scrollToScenarioIssue(key)}
+                                                                        >
+                                                                            <span>{issue?.summary || key}</span>
+                                                                            <span className="scenario-link-key">{key} · {issue?.assignee}</span>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
-                                                <div className="scenario-card">
-                                                    <h4>Timeline Status</h4>
+                                                {!scenarioSummaryHidden && <div className={`scenario-card ${scenarioCollapsedCards.timeline ? 'collapsed' : ''}`}>
+                                                    <h4 className="scenario-card-toggle" onClick={() => setScenarioCollapsedCards(prev => ({ ...prev, timeline: !prev.timeline }))}>
+                                                        <span className="scenario-card-chevron">{scenarioCollapsedCards.timeline ? '▸' : '▾'}</span>
+                                                        Timeline Status
+                                                    </h4>
                                                     <div className="scenario-value">
                                                         {scenarioDeadlineAtRisk ? 'At risk' : 'On track'}
                                                     </div>
                                                     <div className="scenario-subtitle">
                                                         {scenarioLateItems.length} late · {scenarioCriticalPathItems.length} critical path
                                                     </div>
-                                                    <div className="scenario-issues-list">
-                                                        {[...scenarioLateItems, ...scenarioCriticalPathItems]
-                                                            .filter((key, idx, arr) => arr.indexOf(key) === idx)
-                                                            .map(key => {
-                                                            const issue = scenarioIssueByKey.get(key);
-                                                            const isLate = scenarioLateItems.includes(key);
-                                                            return (
-                                                                <button
-                                                                    type="button"
-                                                                    key={key}
-                                                                    className="scenario-link"
-                                                                    onClick={() => scrollToScenarioIssue(key)}
-                                                                >
-                                                                    <span>{issue?.summary || key}</span>
-                                                                    <span className="scenario-link-key">{key}{isLate ? ' · Late' : ' · Critical'}</span>
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                                <div className="scenario-card">
-                                                    <h4>Unschedulable</h4>
+                                                    {!scenarioCollapsedCards.timeline && (
+                                                        <div className="scenario-issues-list">
+                                                            {[...scenarioLateItems, ...scenarioCriticalPathItems]
+                                                                .filter((key, idx, arr) => arr.indexOf(key) === idx)
+                                                                .map(key => {
+                                                                const issue = scenarioIssueByKey.get(key);
+                                                                const isLate = scenarioLateItems.includes(key);
+                                                                return (
+                                                                    <button
+                                                                        type="button"
+                                                                        key={key}
+                                                                        className="scenario-link"
+                                                                        onClick={() => scrollToScenarioIssue(key)}
+                                                                    >
+                                                                        <span>{issue?.summary || key}</span>
+                                                                        <span className="scenario-link-key">{key}{isLate ? ' · Late' : ' · Critical'}</span>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>}
+                                                {!scenarioSummaryHidden && <div className={`scenario-card ${scenarioCollapsedCards.unschedulable ? 'collapsed' : ''}`}>
+                                                    <h4 className="scenario-card-toggle" onClick={() => setScenarioCollapsedCards(prev => ({ ...prev, unschedulable: !prev.unschedulable }))}>
+                                                        <span className="scenario-card-chevron">{scenarioCollapsedCards.unschedulable ? '▸' : '▾'}</span>
+                                                        Unschedulable
+                                                    </h4>
                                                     <div className="scenario-value">{scenarioUnschedulableItems.length}</div>
                                                     <div className="scenario-subtitle">Missing SP or dependencies</div>
-                                                    <div className="scenario-issues-list">
-                                                        {scenarioUnschedulableItems.map(key => {
-                                                            const issue = scenarioIssueByKey.get(key);
-                                                            const reason = issue?.scheduledReason;
-                                                            let reasonLabel = '';
-                                                            if (reason === 'missing_story_points') {
-                                                                reasonLabel = 'Missing SP';
-                                                            } else if (reason === 'missing_dependency') {
-                                                                reasonLabel = 'Missing dependency';
-                                                            }
-                                                            return (
-                                                                <button
-                                                                    type="button"
-                                                                    key={key}
-                                                                    className="scenario-link"
-                                                                    onClick={() => scrollToScenarioIssue(key)}
-                                                                >
-                                                                    <span>{issue?.summary || key}</span>
-                                                                    <span className="scenario-link-key">
-                                                                        {key}{reasonLabel ? ` · ${reasonLabel}` : ''}
-                                                                    </span>
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
+                                                    {!scenarioCollapsedCards.unschedulable && (
+                                                        <div className="scenario-issues-list">
+                                                            {scenarioUnschedulableItems.map(key => {
+                                                                const issue = scenarioIssueByKey.get(key);
+                                                                const reason = issue?.scheduledReason;
+                                                                let reasonLabel = '';
+                                                                if (reason === 'missing_story_points') {
+                                                                    reasonLabel = 'Missing SP';
+                                                                } else if (reason === 'missing_dependency') {
+                                                                    reasonLabel = 'Missing dependency';
+                                                                }
+                                                                return (
+                                                                    <button
+                                                                        type="button"
+                                                                        key={key}
+                                                                        className="scenario-link"
+                                                                        onClick={() => scrollToScenarioIssue(key)}
+                                                                    >
+                                                                        <span>{issue?.summary || key}</span>
+                                                                        <span className="scenario-link-key">
+                                                                            {key}{reasonLabel ? ` · ${reasonLabel}` : ''}
+                                                                        </span>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>}
                                             </div>
 
                                             {scenarioEpicFocus && (
@@ -9644,6 +9950,7 @@ import { createRoot } from 'react-dom/client';
                                                             className="scenario-lane"
                                                             style={{ top: `${laneMeta.offset}px` }}
                                                         >
+                                                            <div className="scenario-lane-label-container" style={{ height: `${laneHeight}px` }}>
                                                             <button
                                                                 className="scenario-lane-label"
                                                                 type="button"
@@ -9681,7 +9988,33 @@ import { createRoot } from 'react-dom/client';
                                                                     )}
                                                                 </div>
                                                             </button>
+                                                            {scenarioLaneMode === 'team' && (() => {
+                                                                const groups = scenarioLaneAssigneeGroups.get(lane) || [];
+                                                                return groups.map((group, idx) => {
+                                                                    const displayName = group.assignee ? (() => { const parts = group.assignee.split(' '); return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0]; })() : 'Unassigned';
+                                                                    const top = scenarioBarGap + group.startRow * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
+                                                                    const height = group.rowCount * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
+                                                                    return (
+                                                                        <div key={`al-${idx}`} className="scenario-assignee-label"
+                                                                             style={{ top: `${top}px`, height: `${height}px` }}
+                                                                             title={group.assignee || 'Unassigned'}>
+                                                                            {displayName}
+                                                                        </div>
+                                                                    );
+                                                                });
+                                                            })()}
+                                                            </div>
                                                             <div className="scenario-lane-track" style={{ height: `${laneHeight}px` }}>
+                                                                {scenarioLaneMode === 'team' && (() => {
+                                                                    const groups = scenarioLaneAssigneeGroups.get(lane) || [];
+                                                                    return groups.slice(1).map((group, idx) => {
+                                                                        const dividerY = group.startRow * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
+                                                                        return (
+                                                                            <div key={`assignee-div-${idx}`} className="scenario-assignee-divider"
+                                                                                 style={{ top: `${dividerY}px` }} />
+                                                                        );
+                                                                    });
+                                                                })()}
                                                                 {laneEpicBars.map(bar => {
                                                                     const left = `${(bar.xStart / scenarioLayout.width) * 100}%`;
                                                                     const width = `${Math.max(2, ((bar.xEnd - bar.xStart) / scenarioLayout.width) * 100)}%`;
@@ -9732,15 +10065,16 @@ import { createRoot } from 'react-dom/client';
                                                                     const left = `${(position.xStart / scenarioLayout.width) * 100}%`;
                                                                     const width = `${Math.max(2, ((position.xEnd - position.xStart) / scenarioLayout.width) * 100)}%`;
                                                                     const top = `${position.y - (scenarioLaneMeta.meta.get(lane)?.offset || 0)}px`;
-                                                                    const issueUrl = scenarioBaseUrl ? `${scenarioBaseUrl}/browse/${issue.key}` : '';
-                                                                    const issueSummary = normalizeScenarioSummary(issue.summary) || issue.key;
+                                                                    const displayKey = issue.originalKey || issue.key;
+                                                                    const issueUrl = scenarioBaseUrl ? `${scenarioBaseUrl}/browse/${displayKey}` : '';
+                                                                    const issueSummary = normalizeScenarioSummary(issue.summary) || displayKey;
                                                                     const isExcluded = excludedEpicSet.has(issue.epicKey || '');
-                                                                    const hasAssigneeConflict = scenarioAssigneeConflicts.conflicts.has(issue.key);
-                                                                    const conflictingKeys = scenarioAssigneeConflicts.conflictDetails.get(issue.key) || [];
+                                                                    const hasAssigneeConflict = scenarioAssigneeConflicts.conflicts.has(displayKey);
+                                                                    const conflictingKeys = scenarioAssigneeConflicts.conflictDetails.get(displayKey) || [];
                                                                     const issueEndDate = issue.end ? parseScenarioDate(issue.end) : null;
                                                                     const isOutOfSprint = issueEndDate && scenarioViewEnd && issueEndDate > scenarioViewEnd;
                                                                     const isInProgress = issue.progressPct !== null && issue.progressPct !== undefined;
-                                                                    const issueTooltip = buildScenarioTooltipPayload(issue.summary || issue.key, issue.key, issue.sp, isExcluded, hasAssigneeConflict, issue.assignee, conflictingKeys, isOutOfSprint, isInProgress, issue.team);
+                                                                    const issueTooltip = buildScenarioTooltipPayload(issue.summary || displayKey, displayKey, issue.sp, isExcluded, hasAssigneeConflict, issue.assignee, conflictingKeys, isOutOfSprint, isInProgress, issue.team);
                                                                     const isFocused = scenarioHoverKey === issue.key || scenarioFlashKey === issue.key;
                                                                     const isUpstream = scenarioUpstreamSet.has(issue.key);
                                                                     const isDownstream = scenarioDownstreamSet.has(issue.key);
@@ -9749,23 +10083,29 @@ import { createRoot } from 'react-dom/client';
                                                                     const isFocusContext = scenarioEpicFocus && scenarioFocusContextKeys.has(issue.key) && !scenarioFocusIssueKeys.has(issue.key);
                                                                     const isSearchMatch = scenarioSearchQuery && scenarioSearchMatchSet.has(issue.key);
                                                                     const isDone = issue.scheduledReason === 'already_done';
+                                                                    const isEditable = scenarioEditMode && !isExcluded && Number(issue.sp) > 0 && !isUnscheduled;
+                                                                    const isDragging = scenarioDragState?.issueKey === issue.key;
+                                                                    const hasDepViolation = scenarioDepViolatedKeys.has(issue.key);
+                                                                    const barClassName = `scenario-bar ${isDone ? 'done' : ''} ${issue.isCritical ? 'critical' : ''} ${issue.isLate ? 'late' : ''} ${((issue.blockedBy || []).length > 0 || scenarioBlockedSet.has(issue.key)) ? 'blocked' : ''} ${(issue.isContext || isFocusContext) ? 'context' : ''} ${isUnscheduled ? 'unscheduled' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''} ${isDimmed ? 'dimmed' : ''} ${scenarioFlashKey === issue.key ? 'flash' : ''} ${isExcluded ? 'excluded' : ''} ${isSearchMatch ? 'search-match' : ''} ${hasAssigneeConflict ? 'assignee-conflict' : ''} ${isOutOfSprint ? 'out-of-sprint' : ''} ${isInProgress ? 'in-progress' : ''} ${isEditable ? 'editable' : ''} ${isDragging ? 'dragging' : ''} ${hasDepViolation ? 'dep-violated' : ''}`;
+                                                                    const barStyle = { left, width, height: `${SCENARIO_BAR_HEIGHT}px`, top };
                                                                     return (
-                                                                        <a
+                                                                        <ScenarioBar
                                                                             key={issue.key}
-                                                                            className={`scenario-bar ${isDone ? 'done' : ''} ${issue.isCritical ? 'critical' : ''} ${issue.isLate ? 'late' : ''} ${((issue.blockedBy || []).length > 0 || scenarioBlockedSet.has(issue.key)) ? 'blocked' : ''} ${(issue.isContext || isFocusContext) ? 'context' : ''} ${isUnscheduled ? 'unscheduled' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''} ${isDimmed ? 'dimmed' : ''} ${scenarioFlashKey === issue.key ? 'flash' : ''} ${isExcluded ? 'excluded' : ''} ${isSearchMatch ? 'search-match' : ''} ${hasAssigneeConflict ? 'assignee-conflict' : ''} ${isOutOfSprint ? 'out-of-sprint' : ''} ${isInProgress ? 'in-progress' : ''}`}
-                                                                            style={{ left, width, height: `${SCENARIO_BAR_HEIGHT}px`, top }}
+                                                                            issueKey={issue.key}
+                                                                            className={barClassName}
+                                                                            style={barStyle}
                                                                             href={issueUrl || '#'}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            ref={registerScenarioIssueRef(issue.key)}
+                                                                            displaySummary={issueSummary}
+                                                                            dateSource={issue.dateSource}
+                                                                            registerRef={registerScenarioIssueRef(issue.key)}
+                                                                            onMouseDown={isEditable ? (e) => handleScenarioBarMouseDown(e, issue) : undefined}
                                                                             onClick={(event) => {
                                                                                 event.preventDefault();
-                                                                                // Scroll to task in the task list below
+                                                                                if (scenarioWasDraggedRef.current) { scenarioWasDraggedRef.current = false; return; }
                                                                                 const taskElement = document.querySelector(`[data-task-key="${issue.key}"]`);
                                                                                 if (taskElement) {
                                                                                     const elementTop = taskElement.getBoundingClientRect().top + window.scrollY;
                                                                                     window.scrollTo({ top: elementTop - 100, behavior: 'smooth' });
-                                                                                    // Flash highlight the task
                                                                                     taskElement.classList.add('is-focused');
                                                                                     setTimeout(() => {
                                                                                         taskElement.classList.remove('is-focused');
@@ -9789,13 +10129,32 @@ import { createRoot } from 'react-dom/client';
                                                                                 setScenarioHoverKey(null);
                                                                                 hideScenarioTooltip();
                                                                             }}
-                                                                        >
-                                                                            <div className="scenario-bar-inner">
-                                                                                <div className="scenario-bar-summary">{issueSummary}</div>
-                                                                            </div>
-                                                                        </a>
+                                                                        />
                                                                     );
                                                                 })}
+                                                                {scenarioDragState && scenarioDragState.issueKey && scenarioViewStart && scenarioViewEnd && (() => {
+                                                                    // Render ghost bar in the lane that contains the dragged issue
+                                                                    const dragPosition = scenarioPositions[scenarioDragState.issueKey];
+                                                                    if (!dragPosition || dragPosition.lane !== lane) return null;
+                                                                    const ghostLeft = dateToPx(scenarioDragState.currentStart, scenarioLayout.width, scenarioViewStart, scenarioViewEnd);
+                                                                    const ghostRight = dateToPx(scenarioDragState.currentEnd, scenarioLayout.width, scenarioViewStart, scenarioViewEnd);
+                                                                    const ghostWidth = Math.max(6, ghostRight - ghostLeft);
+                                                                    const laneMeta = scenarioLaneMeta.meta.get(lane);
+                                                                    const laneOffset = laneMeta?.offset || 0;
+                                                                    const ghostTop = dragPosition.y - laneOffset;
+                                                                    return (
+                                                                        <div
+                                                                            className="scenario-drag-ghost"
+                                                                            style={{
+                                                                                left: `${ghostLeft}px`,
+                                                                                width: `${ghostWidth}px`,
+                                                                                top: `${ghostTop}px`,
+                                                                                height: `${SCENARIO_BAR_HEIGHT}px`,
+                                                                                borderRadius: '4px',
+                                                                            }}
+                                                                        />
+                                                                    );
+                                                                })()}
                                                             </div>
                                                         </div>
                                                     )})}
@@ -9814,6 +10173,9 @@ import { createRoot } from 'react-dom/client';
                                                             <marker id="scenario-arrow-block" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
                                                                 <path d="M0,0 L6,3 L0,6 z" fill="#ef4444" />
                                                             </marker>
+                                                            <marker id="scenario-arrow-violated" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                                                                <path d="M0,0 L6,3 L0,6 z" fill="#ef4444" />
+                                                            </marker>
                                                         </defs>
                                                         {scenarioLaneMode === 'epic' && scenarioEpicEdges.map((edge, index) => (
                                                             <g key={`epic-edge-${edge.fromEpic}-${edge.toEpic}-${index}`}>
@@ -9827,12 +10189,13 @@ import { createRoot } from 'react-dom/client';
                                                             </g>
                                                         ))}
                                                         {scenarioEdgeRender.paths.map((path) => {
+                                                            const isViolated = scenarioDepViolations.has(`${path.from}->${path.to}`);
                                                             return (
                                                                 <path
                                                                     key={path.id}
-                                                                    className={`scenario-edge ${path.isActive ? 'active' : ''} ${path.isFaded ? 'faded' : ''} ${path.isContextEdge ? 'context' : ''} ${path.type === 'block' ? 'block' : ''}`}
+                                                                    className={`scenario-edge ${path.isActive ? 'active' : ''} ${path.isFaded ? 'faded' : ''} ${path.isContextEdge ? 'context' : ''} ${path.type === 'block' ? 'block' : ''} ${isViolated ? 'violated' : ''}`}
                                                                     d={path.d}
-                                                                    markerEnd={path.type === 'block' ? 'url(#scenario-arrow-block)' : 'url(#scenario-arrow)'}
+                                                                    markerEnd={path.type === 'block' ? 'url(#scenario-arrow-block)' : (isViolated ? 'url(#scenario-arrow-violated)' : 'url(#scenario-arrow)')}
                                                                 />
                                                             );
                                                         })}

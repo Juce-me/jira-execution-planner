@@ -63,6 +63,7 @@ CAPACITY_FIELD_ID = os.getenv('CAPACITY_FIELD_ID', '').strip()
 CAPACITY_FIELD_NAME = os.getenv('CAPACITY_FIELD_NAME', '').strip()
 GROUPS_CONFIG_PATH = os.getenv('GROUPS_CONFIG_PATH', '').strip()
 DASHBOARD_CONFIG_PATH = os.getenv('DASHBOARD_CONFIG_PATH', '').strip()
+SCENARIO_OVERRIDES_PATH = os.getenv('SCENARIO_OVERRIDES_PATH', '').strip()
 TEAM_GROUPS_JSON = os.getenv('TEAM_GROUPS_JSON', '').strip()
 JQL_QUERY_TEMPLATE = os.getenv('JQL_QUERY_TEMPLATE', '').strip()
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
@@ -1054,6 +1055,35 @@ def save_dashboard_config(config):
         json.dump(config, handle, indent=2)
 
 
+def resolve_scenario_overrides_path():
+    return SCENARIO_OVERRIDES_PATH or './scenario-overrides.json'
+
+
+def load_scenario_overrides():
+    """Load scenario overrides from disk."""
+    path = resolve_scenario_overrides_path()
+    if os.path.exists(path):
+        try:
+            with open(path, 'r') as handle:
+                data = json.load(handle)
+                if isinstance(data, dict) and 'version' in data:
+                    return data
+        except Exception as e:
+            log_warning(f'Failed to read scenario overrides: {e}')
+    return {'version': 1, 'scenarios': {}}
+
+
+def save_scenario_overrides(data):
+    """Write scenario overrides to disk."""
+    path = resolve_scenario_overrides_path()
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with _cache_lock:
+        with open(path, 'w') as handle:
+            json.dump(data, handle, indent=2)
+
+
 def get_selected_projects():
     """Return the list of selected project keys from dashboard config."""
     config = load_dashboard_config()
@@ -1595,7 +1625,9 @@ def fetch_sprints_from_jira():
                         formatted_sprints.append({
                             'id': sprint_id,
                             'name': name,
-                            'state': state
+                            'state': state,
+                            'startDate': sprint.get('startDate'),
+                            'endDate': sprint.get('endDate'),
                         })
 
                 if data.get('isLast', False) or not sprints:
@@ -1650,7 +1682,9 @@ def fetch_sprints_from_jira():
                                     sprints_dict[sprint_id] = {
                                         'id': sprint_id,
                                         'name': name,
-                                        'state': state
+                                        'state': state,
+                                        'startDate': sprint.get('startDate'),
+                                        'endDate': sprint.get('endDate'),
                                     }
 
                 total_issues += len(issues)
@@ -2786,6 +2820,28 @@ def scenario_planner():
 
         sprint_label = resolve_sprint_label(filters.get('sprint'))
         quarter_start, quarter_end = quarter_dates_from_label(sprint_label)
+
+        # Build sprint boundaries (selected + previous/next neighbors)
+        sprint_boundaries = None
+        if sprint_label:
+            cache_data = load_sprints_cache() or {}
+            cached_sprints = cache_data.get('sprints') or []
+            # Sort chronologically by name (e.g. 2025Q4, 2026Q1, 2026Q2)
+            sorted_sprints = sorted(cached_sprints, key=lambda s: s.get('name', ''))
+            selected_idx = None
+            for i, s in enumerate(sorted_sprints):
+                if s.get('name') == sprint_label:
+                    selected_idx = i
+                    break
+            if selected_idx is not None:
+                def _sprint_boundary(s):
+                    return {'id': s.get('id'), 'name': s.get('name'),
+                            'startDate': s.get('startDate'), 'endDate': s.get('endDate')}
+                sprint_boundaries = {
+                    'selected': _sprint_boundary(sorted_sprints[selected_idx]),
+                    'previous': _sprint_boundary(sorted_sprints[selected_idx - 1]) if selected_idx > 0 else None,
+                    'next': _sprint_boundary(sorted_sprints[selected_idx + 1]) if selected_idx < len(sorted_sprints) - 1 else None,
+                }
         start_date = parse_iso_date(config_payload.get('start_date')) or quarter_start or date.today()
         quarter_end_date = parse_iso_date(config_payload.get('quarter_end_date')) or quarter_end or (start_date + timedelta(days=90))
         anchor_date = parse_iso_date(config_payload.get('anchor_date')) if config_payload.get('anchor_date') else None
@@ -2822,7 +2878,9 @@ def scenario_planner():
             'assignee',
             'updated',
             get_story_points_field_id(),
-            'parent'
+            'parent',
+            'startDate',
+            'duedate',
         ]
         if epic_link_field_id and epic_link_field_id not in fields_list:
             fields_list.append(epic_link_field_id)
@@ -2863,6 +2921,8 @@ def scenario_planner():
             story_points = fields.get(get_story_points_field_id())
             priority = (fields.get('priority') or {}).get('name')
             status = (fields.get('status') or {}).get('name')
+            jira_start_date = fields.get('startDate')   # ISO string or None
+            jira_due_date = fields.get('duedate')       # ISO string or None
             issue_obj = Issue(
                 key=issue.get('key'),
                 summary=fields.get('summary') or '',
@@ -2893,6 +2953,8 @@ def scenario_planner():
                     'priority': priority,
                     'status': status,
                     'epicKey': epic_key,
+                    'jiraStartDate': jira_start_date,
+                    'jiraDueDate': jira_due_date,
                 }
 
         dependencies = collect_dependencies(issue_keys, headers)
@@ -3115,6 +3177,8 @@ def scenario_planner():
                 'isLate': item.is_late if item else False,
                 'isContext': key in context_keys,
                 'url': f'{jira_base_url}/browse/{key}' if jira_base_url else None,
+                'jiraStartDate': entry.get('jiraStartDate'),
+                'jiraDueDate': entry.get('jiraDueDate'),
             })
 
         result = {
@@ -3143,6 +3207,7 @@ def scenario_planner():
                 'focused_issue_keys': sorted(focus_set),
                 'context_issue_keys': sorted(context_keys),
             },
+            'sprintBoundaries': sprint_boundaries,
         }
 
         with _cache_lock:
@@ -3153,6 +3218,37 @@ def scenario_planner():
     except Exception as e:
         logger.exception('Scenario error')
         return jsonify({'error': 'Failed to compute scenario', 'message': str(e)}), 500
+
+
+@app.route('/api/scenario/overrides', methods=['GET'])
+def get_scenario_overrides():
+    """Return overrides for a given scope_key, or empty overrides."""
+    scope_key = request.args.get('scope_key', '').strip()
+    if not scope_key:
+        return jsonify({'overrides': {}})
+    data = load_scenario_overrides()
+    entry = data.get('scenarios', {}).get(scope_key, {})
+    return jsonify({'overrides': entry.get('overrides', {})})
+
+
+@app.route('/api/scenario/overrides', methods=['POST'])
+def post_scenario_overrides():
+    """Upsert overrides for a scope_key."""
+    body = request.get_json(force=True, silent=True) or {}
+    scope_key = (body.get('scope_key') or '').strip()
+    if not scope_key:
+        return jsonify({'error': 'scope_key is required'}), 400
+    overrides = body.get('overrides', {})
+    name = body.get('name', '')
+    data = load_scenario_overrides()
+    data.setdefault('scenarios', {})[scope_key] = {
+        'scope_key': scope_key,
+        'name': name,
+        'updated_at': datetime.utcnow().isoformat(timespec='seconds'),
+        'overrides': overrides,
+    }
+    save_scenario_overrides(data)
+    return jsonify({'ok': True})
 
 
 def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):

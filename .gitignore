@@ -40,6 +40,7 @@ stats_cache.json
 teams.json
 team-groups.json
 dashboard-config.json
+scenario-overrides.json
 
 # Local artifacts
 avaliablefields.txt

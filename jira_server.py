@@ -59,6 +59,7 @@ CAPACITY_FIELD_ID = os.getenv('CAPACITY_FIELD_ID', '').strip()
 CAPACITY_FIELD_NAME = os.getenv('CAPACITY_FIELD_NAME', '').strip()
 GROUPS_CONFIG_PATH = os.getenv('GROUPS_CONFIG_PATH', '').strip()
 DASHBOARD_CONFIG_PATH = os.getenv('DASHBOARD_CONFIG_PATH', '').strip()
+SCENARIO_OVERRIDES_PATH = os.getenv('SCENARIO_OVERRIDES_PATH', '').strip()
 TEAM_GROUPS_JSON = os.getenv('TEAM_GROUPS_JSON', '').strip()
 JQL_QUERY_TEMPLATE = os.getenv('JQL_QUERY_TEMPLATE', '').strip()
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
@@ -1047,6 +1048,35 @@ def save_dashboard_config(config):
         os.makedirs(directory, exist_ok=True)
     with open(path, 'w') as handle:
         json.dump(config, handle, indent=2)
+
+
+def resolve_scenario_overrides_path():
+    return SCENARIO_OVERRIDES_PATH or './scenario-overrides.json'
+
+
+def load_scenario_overrides():
+    """Load scenario overrides from disk."""
+    path = resolve_scenario_overrides_path()
+    if os.path.exists(path):
+        try:
+            with open(path, 'r') as handle:
+                data = json.load(handle)
+                if isinstance(data, dict) and 'version' in data:
+                    return data
+        except Exception as e:
+            log_warning(f'Failed to read scenario overrides: {e}')
+    return {'version': 1, 'scenarios': {}}
+
+
+def save_scenario_overrides(data):
+    """Write scenario overrides to disk."""
+    path = resolve_scenario_overrides_path()
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with _cache_lock:
+        with open(path, 'w') as handle:
+            json.dump(data, handle, indent=2)
 
 
 def get_selected_projects():
@@ -3183,6 +3213,37 @@ def scenario_planner():
     except Exception as e:
         logger.exception('Scenario error')
         return jsonify({'error': 'Failed to compute scenario', 'message': str(e)}), 500
+
+
+@app.route('/api/scenario/overrides', methods=['GET'])
+def get_scenario_overrides():
+    """Return overrides for a given scope_key, or empty overrides."""
+    scope_key = request.args.get('scope_key', '').strip()
+    if not scope_key:
+        return jsonify({'overrides': {}})
+    data = load_scenario_overrides()
+    entry = data.get('scenarios', {}).get(scope_key, {})
+    return jsonify({'overrides': entry.get('overrides', {})})
+
+
+@app.route('/api/scenario/overrides', methods=['POST'])
+def post_scenario_overrides():
+    """Upsert overrides for a scope_key."""
+    body = request.get_json(force=True, silent=True) or {}
+    scope_key = (body.get('scope_key') or '').strip()
+    if not scope_key:
+        return jsonify({'error': 'scope_key is required'}), 400
+    overrides = body.get('overrides', {})
+    name = body.get('name', '')
+    data = load_scenario_overrides()
+    data.setdefault('scenarios', {})[scope_key] = {
+        'scope_key': scope_key,
+        'name': name,
+        'updated_at': datetime.utcnow().isoformat(timespec='seconds'),
+        'overrides': overrides,
+    }
+    save_scenario_overrides(data)
+    return jsonify({'ok': True})
 
 
 def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):

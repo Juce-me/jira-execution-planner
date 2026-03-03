@@ -3648,134 +3648,6 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 setScenarioDragState(dragState);
             };
 
-            // Drag mousemove/mouseup effect
-            React.useEffect(() => {
-                if (!scenarioDragState) return;
-                const handleMouseMove = (e) => {
-                    const ds = scenarioDragStateRef.current;
-                    if (!ds) return;
-                    scenarioWasDraggedRef.current = true;
-                    if (scenarioDragFrameRef.current) return; // throttle via rAF
-                    scenarioDragFrameRef.current = requestAnimationFrame(() => {
-                        scenarioDragFrameRef.current = null;
-                        const ds2 = scenarioDragStateRef.current;
-                        if (!ds2 || !scenarioViewStart || !scenarioViewEnd) return;
-                        const rawPx = e.clientX - ds2.trackLeft - ds2.offsetX;
-                        const newStart = pxToDate(rawPx, ds2.trackWidth, scenarioViewStart, scenarioViewEnd);
-                        const newEnd = new Date(newStart.getTime() + ds2.durationMs);
-                        const updated = { ...ds2, currentStart: newStart, currentEnd: newEnd };
-                        scenarioDragStateRef.current = updated;
-                        setScenarioDragState(updated);
-                    });
-                };
-                const handleMouseUp = () => {
-                    if (scenarioDragFrameRef.current) {
-                        cancelAnimationFrame(scenarioDragFrameRef.current);
-                        scenarioDragFrameRef.current = null;
-                    }
-                    const ds = scenarioDragStateRef.current;
-                    if (ds && scenarioWasDraggedRef.current) {
-                        const newStartISO = dateToISODate(ds.currentStart);
-                        const newEndISO = dateToISODate(ds.currentEnd);
-                        scenarioUndoStackRef.current.push({
-                            issueKey: ds.issueKey,
-                            oldStart: ds.originalStart,
-                            oldEnd: ds.originalEnd,
-                            newStart: newStartISO,
-                            newEnd: newEndISO,
-                        });
-                        setScenarioUndoVersion(v => v + 1);
-                        setScenarioOverrides(prev => ({
-                            ...prev,
-                            [ds.issueKey]: { start: newStartISO, end: newEndISO }
-                        }));
-                    }
-                    scenarioDragStateRef.current = null;
-                    setScenarioDragState(null);
-                };
-                window.addEventListener('mousemove', handleMouseMove);
-                window.addEventListener('mouseup', handleMouseUp);
-                return () => {
-                    window.removeEventListener('mousemove', handleMouseMove);
-                    window.removeEventListener('mouseup', handleMouseUp);
-                };
-            }, [scenarioDragState, scenarioViewStart, scenarioViewEnd]);
-
-            const scenarioUndo = () => {
-                const cmd = scenarioUndoStackRef.current.undo();
-                if (!cmd) return;
-                setScenarioUndoVersion(v => v + 1);
-                setScenarioOverrides(prev => {
-                    const next = { ...prev };
-                    // Restore old dates (if old values match original computed, delete the override)
-                    if (cmd.oldStart === cmd.newStart && cmd.oldEnd === cmd.newEnd) return next;
-                    // Check if there was an override before this cmd
-                    const issue = scenarioIssueByKey.get(cmd.issueKey);
-                    const computedStart = issue?.start;
-                    const computedEnd = issue?.end;
-                    if (cmd.oldStart === computedStart && cmd.oldEnd === computedEnd) {
-                        delete next[cmd.issueKey];
-                    } else {
-                        next[cmd.issueKey] = { start: cmd.oldStart, end: cmd.oldEnd };
-                    }
-                    return next;
-                });
-            };
-
-            const scenarioRedo = () => {
-                const cmd = scenarioUndoStackRef.current.redo();
-                if (!cmd) return;
-                setScenarioUndoVersion(v => v + 1);
-                setScenarioOverrides(prev => ({
-                    ...prev,
-                    [cmd.issueKey]: { start: cmd.newStart, end: cmd.newEnd }
-                }));
-            };
-
-            // Keyboard shortcuts for undo/redo
-            React.useEffect(() => {
-                if (!scenarioEditMode) return;
-                const handler = (e) => {
-                    const isMeta = e.metaKey || e.ctrlKey;
-                    if (!isMeta || e.key.toLowerCase() !== 'z') return;
-                    e.preventDefault();
-                    if (e.shiftKey) {
-                        scenarioRedo();
-                    } else {
-                        scenarioUndo();
-                    }
-                };
-                window.addEventListener('keydown', handler);
-                return () => window.removeEventListener('keydown', handler);
-            }, [scenarioEditMode, scenarioIssueByKey]);
-
-            const scenarioOverrideCount = Object.keys(scenarioOverrides).length;
-
-            const saveScenarioDraft = async () => {
-                if (!scenarioScopeKey || scenarioOverrideCount === 0) return;
-                try {
-                    const res = await fetch(`${BACKEND_URL}/api/scenario/overrides`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            scope_key: scenarioScopeKey,
-                            name: `Draft ${new Date().toISOString().slice(0, 10)}`,
-                            overrides: scenarioOverrides,
-                        }),
-                    });
-                    if (res.ok) {
-                        scenarioUndoStackRef.current.clear();
-                        setScenarioUndoVersion(0);
-                    }
-                } catch (_) { /* ignore save failure */ }
-            };
-
-            const discardScenarioOverrides = () => {
-                setScenarioOverrides({});
-                scenarioUndoStackRef.current.clear();
-                setScenarioUndoVersion(0);
-            };
-
             const loadReadyToCloseProductTasks = async () => {
                 if (activeGroupId && activeGroupTeamIds.length === 0) {
                     setReadyToCloseProductTasks([]);
@@ -4443,6 +4315,135 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 });
                 return keys;
             }, [scenarioDepViolations]);
+
+            // --- Drag effect, undo/redo, save/discard (placed after scenarioViewStart/End & scenarioIssueByKey) ---
+
+            // Drag mousemove/mouseup effect
+            React.useEffect(() => {
+                if (!scenarioDragState) return;
+                const handleMouseMove = (e) => {
+                    const ds = scenarioDragStateRef.current;
+                    if (!ds) return;
+                    scenarioWasDraggedRef.current = true;
+                    if (scenarioDragFrameRef.current) return; // throttle via rAF
+                    scenarioDragFrameRef.current = requestAnimationFrame(() => {
+                        scenarioDragFrameRef.current = null;
+                        const ds2 = scenarioDragStateRef.current;
+                        if (!ds2 || !scenarioViewStart || !scenarioViewEnd) return;
+                        const rawPx = e.clientX - ds2.trackLeft - ds2.offsetX;
+                        const newStart = pxToDate(rawPx, ds2.trackWidth, scenarioViewStart, scenarioViewEnd);
+                        const newEnd = new Date(newStart.getTime() + ds2.durationMs);
+                        const updated = { ...ds2, currentStart: newStart, currentEnd: newEnd };
+                        scenarioDragStateRef.current = updated;
+                        setScenarioDragState(updated);
+                    });
+                };
+                const handleMouseUp = () => {
+                    if (scenarioDragFrameRef.current) {
+                        cancelAnimationFrame(scenarioDragFrameRef.current);
+                        scenarioDragFrameRef.current = null;
+                    }
+                    const ds = scenarioDragStateRef.current;
+                    if (ds && scenarioWasDraggedRef.current) {
+                        const newStartISO = dateToISODate(ds.currentStart);
+                        const newEndISO = dateToISODate(ds.currentEnd);
+                        scenarioUndoStackRef.current.push({
+                            issueKey: ds.issueKey,
+                            oldStart: ds.originalStart,
+                            oldEnd: ds.originalEnd,
+                            newStart: newStartISO,
+                            newEnd: newEndISO,
+                        });
+                        setScenarioUndoVersion(v => v + 1);
+                        setScenarioOverrides(prev => ({
+                            ...prev,
+                            [ds.issueKey]: { start: newStartISO, end: newEndISO }
+                        }));
+                    }
+                    scenarioDragStateRef.current = null;
+                    setScenarioDragState(null);
+                };
+                window.addEventListener('mousemove', handleMouseMove);
+                window.addEventListener('mouseup', handleMouseUp);
+                return () => {
+                    window.removeEventListener('mousemove', handleMouseMove);
+                    window.removeEventListener('mouseup', handleMouseUp);
+                };
+            }, [scenarioDragState, scenarioViewStart, scenarioViewEnd]);
+
+            const scenarioUndo = () => {
+                const cmd = scenarioUndoStackRef.current.undo();
+                if (!cmd) return;
+                setScenarioUndoVersion(v => v + 1);
+                setScenarioOverrides(prev => {
+                    const next = { ...prev };
+                    if (cmd.oldStart === cmd.newStart && cmd.oldEnd === cmd.newEnd) return next;
+                    const issue = scenarioIssueByKey.get(cmd.issueKey);
+                    const computedStart = issue?.start;
+                    const computedEnd = issue?.end;
+                    if (cmd.oldStart === computedStart && cmd.oldEnd === computedEnd) {
+                        delete next[cmd.issueKey];
+                    } else {
+                        next[cmd.issueKey] = { start: cmd.oldStart, end: cmd.oldEnd };
+                    }
+                    return next;
+                });
+            };
+
+            const scenarioRedo = () => {
+                const cmd = scenarioUndoStackRef.current.redo();
+                if (!cmd) return;
+                setScenarioUndoVersion(v => v + 1);
+                setScenarioOverrides(prev => ({
+                    ...prev,
+                    [cmd.issueKey]: { start: cmd.newStart, end: cmd.newEnd }
+                }));
+            };
+
+            // Keyboard shortcuts for undo/redo
+            React.useEffect(() => {
+                if (!scenarioEditMode) return;
+                const handler = (e) => {
+                    const isMeta = e.metaKey || e.ctrlKey;
+                    if (!isMeta || e.key.toLowerCase() !== 'z') return;
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        scenarioRedo();
+                    } else {
+                        scenarioUndo();
+                    }
+                };
+                window.addEventListener('keydown', handler);
+                return () => window.removeEventListener('keydown', handler);
+            }, [scenarioEditMode, scenarioIssueByKey]);
+
+            const scenarioOverrideCount = Object.keys(scenarioOverrides).length;
+
+            const saveScenarioDraft = async () => {
+                if (!scenarioScopeKey || scenarioOverrideCount === 0) return;
+                try {
+                    const res = await fetch(`${BACKEND_URL}/api/scenario/overrides`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            scope_key: scenarioScopeKey,
+                            name: `Draft ${new Date().toISOString().slice(0, 10)}`,
+                            overrides: scenarioOverrides,
+                        }),
+                    });
+                    if (res.ok) {
+                        scenarioUndoStackRef.current.clear();
+                        setScenarioUndoVersion(0);
+                    }
+                } catch (_) { /* ignore save failure */ }
+            };
+
+            const discardScenarioOverrides = () => {
+                setScenarioOverrides({});
+                scenarioUndoStackRef.current.clear();
+                setScenarioUndoVersion(0);
+            };
+
             const scenarioLaneForIssue = (issue) => {
                 if (scenarioEpicFocus?.key) {
                     return scenarioEpicFocus.key;

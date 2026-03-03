@@ -333,6 +333,8 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const scenarioSkipAutoCollapseRef = useRef(false);
             const scenarioTeamCollapseInitRef = useRef(false);
             const [scenarioOverrides, setScenarioOverrides] = useState({});
+            const [scenarioEditMode, setScenarioEditMode] = useState(false);
+            const scenarioPreEditLaneModeRef = useRef(null);
             const scenarioEdgeUpdatePendingRef = useRef(false);
             const scenarioEdgeFrameRef = useRef(null);
             const scenarioScrollFrameRef = useRef(null);
@@ -3578,6 +3580,24 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     cleanupSprintFetch(controller);
                     setScenarioLoading(false);
                 }
+            };
+
+            const toggleScenarioEditMode = () => {
+                setScenarioEditMode(prev => {
+                    if (!prev) {
+                        // Entering edit mode — save current lane mode, force assignee, clear epic focus
+                        scenarioPreEditLaneModeRef.current = scenarioLaneMode;
+                        setScenarioEpicFocus(null);
+                        setScenarioLaneMode('assignee');
+                    } else {
+                        // Exiting edit mode — restore lane mode
+                        if (scenarioPreEditLaneModeRef.current) {
+                            setScenarioLaneMode(scenarioPreEditLaneModeRef.current);
+                            scenarioPreEditLaneModeRef.current = null;
+                        }
+                    }
+                    return !prev;
+                });
             };
 
             const loadReadyToCloseProductTasks = async () => {
@@ -8568,6 +8588,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                 <div className="scenario-toggle-group">
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'team' ? 'active' : ''}`}
+                                                        disabled={scenarioEditMode}
                                                         onClick={() => {
                                                             if (scenarioEpicFocus) clearScenarioEpicFocus();
                                                             setScenarioLaneMode('team');
@@ -8577,6 +8598,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                     </button>
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'epic' ? 'active' : ''}`}
+                                                        disabled={scenarioEditMode}
                                                         onClick={() => {
                                                             if (scenarioEpicFocus) clearScenarioEpicFocus();
                                                             setScenarioLaneMode('epic');
@@ -8586,6 +8608,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                     </button>
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'assignee' ? 'active' : ''}`}
+                                                        disabled={scenarioEditMode}
                                                         onClick={() => {
                                                             if (scenarioEpicFocus) clearScenarioEpicFocus();
                                                             setScenarioLaneMode('assignee');
@@ -8612,6 +8635,13 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                 disabled={scenarioLoading || !selectedSprint}
                                             >
                                                 {scenarioLoading ? 'Running...' : 'Run Scenario'}
+                                            </button>
+                                            <button
+                                                className={`scenario-edit-toggle ${scenarioEditMode ? 'active' : ''}`}
+                                                onClick={toggleScenarioEditMode}
+                                                disabled={!scenarioData}
+                                            >
+                                                {scenarioEditMode ? 'Exit Edit' : 'Edit'}
                                             </button>
                                         </div>
                                     </div>

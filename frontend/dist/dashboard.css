@@ -3578,6 +3578,32 @@
             color: var(--bg-primary);
         }
 
+        .scenario-toggle:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .scenario-edit-toggle {
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+            padding: 0.35rem 0.6rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .scenario-edit-toggle.active {
+            background: rgba(59, 130, 246, 0.15);
+            color: rgba(59, 130, 246, 0.9);
+            border-color: rgba(59, 130, 246, 0.4);
+        }
+
+        .scenario-edit-toggle:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
         .scenario-team-config,
         .scenario-team-header,
         .scenario-team-title,

@@ -44,6 +44,32 @@ export function applyIssueOverride(issue, override) {
     };
 }
 
+export function createUndoStack() {
+    let undoList = [];
+    let redoList = [];
+    return {
+        push(cmd) {
+            undoList.push(cmd);
+            redoList = [];
+        },
+        undo() {
+            if (undoList.length === 0) return null;
+            const cmd = undoList.pop();
+            redoList.push(cmd);
+            return cmd;
+        },
+        redo() {
+            if (redoList.length === 0) return null;
+            const cmd = redoList.pop();
+            undoList.push(cmd);
+            return cmd;
+        },
+        canUndo() { return undoList.length > 0; },
+        canRedo() { return redoList.length > 0; },
+        clear() { undoList = []; redoList = []; },
+    };
+}
+
 export function pxToDate(px, trackWidth, viewStart, viewEnd) {
     const totalMs = viewEnd.getTime() - viewStart.getTime();
     const ratio = Math.max(0, Math.min(1, px / trackWidth));

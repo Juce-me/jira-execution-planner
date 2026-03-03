@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
-import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
+import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, createUndoStack, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
 import ScenarioBar from './scenario/ScenarioBar.jsx';
 
         const { useState, useEffect, useRef } = React;
@@ -335,6 +335,8 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const [scenarioOverrides, setScenarioOverrides] = useState({});
             const [scenarioEditMode, setScenarioEditMode] = useState(false);
             const scenarioPreEditLaneModeRef = useRef(null);
+            const scenarioUndoStackRef = useRef(createUndoStack());
+            const [scenarioUndoVersion, setScenarioUndoVersion] = useState(0);
             const [scenarioDragState, setScenarioDragState] = useState(null);
             const scenarioDragStateRef = useRef(null);
             const scenarioDragFrameRef = useRef(null);
@@ -3594,11 +3596,13 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                         setScenarioEpicFocus(null);
                         setScenarioLaneMode('assignee');
                     } else {
-                        // Exiting edit mode — restore lane mode
+                        // Exiting edit mode — restore lane mode, clear undo stack
                         if (scenarioPreEditLaneModeRef.current) {
                             setScenarioLaneMode(scenarioPreEditLaneModeRef.current);
                             scenarioPreEditLaneModeRef.current = null;
                         }
+                        scenarioUndoStackRef.current.clear();
+                        setScenarioUndoVersion(0);
                     }
                     return !prev;
                 });
@@ -3673,6 +3677,14 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     if (ds && scenarioWasDraggedRef.current) {
                         const newStartISO = dateToISODate(ds.currentStart);
                         const newEndISO = dateToISODate(ds.currentEnd);
+                        scenarioUndoStackRef.current.push({
+                            issueKey: ds.issueKey,
+                            oldStart: ds.originalStart,
+                            oldEnd: ds.originalEnd,
+                            newStart: newStartISO,
+                            newEnd: newEndISO,
+                        });
+                        setScenarioUndoVersion(v => v + 1);
                         setScenarioOverrides(prev => ({
                             ...prev,
                             [ds.issueKey]: { start: newStartISO, end: newEndISO }
@@ -3688,6 +3700,54 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     window.removeEventListener('mouseup', handleMouseUp);
                 };
             }, [scenarioDragState, scenarioViewStart, scenarioViewEnd]);
+
+            const scenarioUndo = () => {
+                const cmd = scenarioUndoStackRef.current.undo();
+                if (!cmd) return;
+                setScenarioUndoVersion(v => v + 1);
+                setScenarioOverrides(prev => {
+                    const next = { ...prev };
+                    // Restore old dates (if old values match original computed, delete the override)
+                    if (cmd.oldStart === cmd.newStart && cmd.oldEnd === cmd.newEnd) return next;
+                    // Check if there was an override before this cmd
+                    const issue = scenarioIssueByKey.get(cmd.issueKey);
+                    const computedStart = issue?.start;
+                    const computedEnd = issue?.end;
+                    if (cmd.oldStart === computedStart && cmd.oldEnd === computedEnd) {
+                        delete next[cmd.issueKey];
+                    } else {
+                        next[cmd.issueKey] = { start: cmd.oldStart, end: cmd.oldEnd };
+                    }
+                    return next;
+                });
+            };
+
+            const scenarioRedo = () => {
+                const cmd = scenarioUndoStackRef.current.redo();
+                if (!cmd) return;
+                setScenarioUndoVersion(v => v + 1);
+                setScenarioOverrides(prev => ({
+                    ...prev,
+                    [cmd.issueKey]: { start: cmd.newStart, end: cmd.newEnd }
+                }));
+            };
+
+            // Keyboard shortcuts for undo/redo
+            React.useEffect(() => {
+                if (!scenarioEditMode) return;
+                const handler = (e) => {
+                    const isMeta = e.metaKey || e.ctrlKey;
+                    if (!isMeta || e.key.toLowerCase() !== 'z') return;
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        scenarioRedo();
+                    } else {
+                        scenarioUndo();
+                    }
+                };
+                window.addEventListener('keydown', handler);
+                return () => window.removeEventListener('keydown', handler);
+            }, [scenarioEditMode, scenarioIssueByKey]);
 
             const loadReadyToCloseProductTasks = async () => {
                 if (activeGroupId && activeGroupTeamIds.length === 0) {
@@ -8732,6 +8792,26 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                             >
                                                 {scenarioEditMode ? 'Exit Edit' : 'Edit'}
                                             </button>
+                                            {scenarioEditMode && (
+                                                <>
+                                                    <button
+                                                        className="scenario-edit-toggle"
+                                                        onClick={scenarioUndo}
+                                                        disabled={!scenarioUndoStackRef.current.canUndo()}
+                                                        title="Undo (Ctrl+Z)"
+                                                    >
+                                                        Undo
+                                                    </button>
+                                                    <button
+                                                        className="scenario-edit-toggle"
+                                                        onClick={scenarioRedo}
+                                                        disabled={!scenarioUndoStackRef.current.canRedo()}
+                                                        title="Redo (Ctrl+Shift+Z)"
+                                                    >
+                                                        Redo
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
 

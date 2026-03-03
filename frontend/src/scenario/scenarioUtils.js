@@ -44,6 +44,36 @@ export function applyIssueOverride(issue, override) {
     };
 }
 
+export function splitAtSprintBoundaries(issue, sprintBoundaries) {
+    if (!sprintBoundaries || sprintBoundaries.length < 2) return [issue];
+    const start = parseScenarioDate(issue.start);
+    const end = parseScenarioDate(issue.end);
+    if (!start || !end) return [issue];
+
+    // Find boundaries that fall strictly within the bar's range
+    const splits = sprintBoundaries.filter(b => b > start && b < end);
+    if (splits.length === 0) return [issue];
+
+    const segments = [];
+    let segStart = start;
+    const allBounds = [...splits, end];
+
+    allBounds.forEach((bound, idx) => {
+        const segEnd = bound;
+        const segKey = `${issue.key}__seg${idx}`;
+        segments.push({
+            ...issue,
+            key: segKey,
+            originalKey: issue.key,
+            start: dateToISODate(segStart),
+            end: dateToISODate(segEnd),
+        });
+        segStart = segEnd;
+    });
+
+    return segments;
+}
+
 export function validateDependencies(dependencies, issueByKey) {
     const violations = new Set();
     if (!dependencies || !issueByKey) return violations;

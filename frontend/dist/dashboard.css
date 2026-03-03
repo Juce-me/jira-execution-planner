@@ -3631,6 +3631,15 @@
             box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.5);
         }
 
+        .scenario-dirty-indicator {
+            font-size: 0.65rem;
+            color: rgba(59, 130, 246, 0.85);
+            padding: 0.2rem 0.4rem;
+            background: rgba(59, 130, 246, 0.1);
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+
         .scenario-team-config,
         .scenario-team-header,
         .scenario-team-title,

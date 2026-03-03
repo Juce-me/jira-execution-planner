@@ -4691,7 +4691,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                         // 1. Time is available (start >= rowEnd)
                         // 2. Row either has no assignee yet, OR has the same assignee
                         let rowIndex = rowEnds.findIndex((rowEnd, idx) => {
-                            const timeAvailable = isUnscheduled ? start > rowEnd : start >= rowEnd;
+                            const timeAvailable = start > rowEnd;
                             const rowAssignee = rowAssignees[idx];
                             const assigneeMatch = allowAssigneeMix || !rowAssignee || rowAssignee === assignee;
                             return timeAvailable && assigneeMatch;

@@ -266,10 +266,22 @@ The dashboard supports dynamic sprint selection:
 
 The Statistics panel focuses on active or completed (closed) quarter sprints:
 
-- Uses the same loaded sprint tasks as the list below (no separate stats fetch).
+- Teams/Priority views use the same loaded sprint tasks as the list below (no separate stats fetch).
+- Burnout view fetches changelog history on demand from `/api/stats/burnout` only when Burnout is opened.
 - Stats are available for active and completed sprints; future sprints disable the panel.
 - Teams view shows product/tech split and delivery rates by team.
 - Priority view aggregates Done vs Incomplete by priority (no team dimension).
+- Burnout view is a team-stacked area chart of open stories per day in the selected sprint:
+  - Start = stories present on sprint start day
+  - Added = stories created after sprint start
+  - Closed = transitions to Done/Killed/Incomplete on their event day
+  - Remaining = open stories at sprint end
+- Burnout chart supports:
+  - assignee filter (`All Assignees` or a specific assignee)
+  - weekly vertical split lines
+  - today marker
+  - shaded future region after today
+  - hover details (daily totals and closed story list with team/assignee)
 - Incomplete = any status except `Done` or `Killed` (killed is excluded from rate calculations).
 - Epic include/exclude toggle appears under each epic while Stats is open (selection persists locally).
 
@@ -376,7 +388,7 @@ Scenario API response (used by the UI):
 - **Tasks**: Click "Refresh Page" in the header (also refreshes ready-to-close data)
 - **Sprints**: Click "Refresh Sprints" button next to sprint dropdown
 - **Auto-reload**: Tasks reload automatically when you change sprint selection
-- **Stats**: Open Statistics panel; results update automatically as tasks load or epics are included/excluded
+- **Stats**: Teams/Priority update from loaded tasks; Burnout refreshes when sprint/team scope changes and when opening Burnout
 
 ## 📦 Project Structure
 
@@ -411,7 +423,9 @@ The application uses intelligent caching to minimize Jira API load:
 - **Cache file**: `sprints_cache.json` (auto-generated, not committed to git)
 - **Manual refresh**: Use "Refresh Sprints" button or `?refresh=true` parameter
 - **Live task data**: Stories/epics are fetched fresh on each refresh (no cache)
-- **Stats**: Derived from loaded sprint tasks (no stats cache)
+- **Stats**:
+  - Teams/Priority are derived from loaded sprint tasks
+  - Burnout uses an on-demand changelog fetch (`/api/stats/burnout`) with client-side in-session reuse per scope
 - **Reduced API calls**: Jira queries are capped (200 for sprint discovery, 250 for task fetches)
 - **Timeout protection**: Jira requests use 20–30 second timeouts
 

@@ -3582,7 +3582,14 @@ def resolve_team_state_at_date(current_team, current_assignee, histories_desc, t
     return {'team': team_state, 'assignee': assignee_state}
 
 
-def extract_burnout_events_from_issue(issue, team_field_id, sprint_start, sprint_end, tz_info):
+def extract_burnout_events_from_issue(
+        issue,
+        team_field_id,
+        sprint_start,
+        sprint_end,
+        tz_info,
+        include_post_sprint_closures=False
+):
     fields = issue.get('fields') or {}
     issue_key = issue.get('key')
     issue_created_dt_raw = parse_jira_datetime(fields.get('created'))
@@ -3633,7 +3640,7 @@ def extract_burnout_events_from_issue(issue, team_field_id, sprint_start, sprint
                 continue
             if sprint_start and event_date < sprint_start:
                 continue
-            if sprint_end and event_date > sprint_end:
+            if sprint_end and event_date > sprint_end and not include_post_sprint_closures:
                 continue
             events.append({
                 'issueKey': issue_key,
@@ -3669,7 +3676,14 @@ def extract_burnout_events_from_issue(issue, team_field_id, sprint_start, sprint
     }
 
 
-def fetch_burnout_events_for_sprint(sprint_name, headers, team_field_id, team_ids=None, issue_keys=None):
+def fetch_burnout_events_for_sprint(
+        sprint_name,
+        headers,
+        team_field_id,
+        team_ids=None,
+        issue_keys=None,
+        include_post_sprint_closures=False
+):
     base_jql = STATS_JQL_BASE or f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")'
     base_jql = strip_sprint_clause(base_jql)
 
@@ -3747,7 +3761,7 @@ def fetch_burnout_events_for_sprint(sprint_name, headers, team_field_id, team_id
         closure_clause = 'status CHANGED TO ("Done","Killed","Incomplete")'
         if sprint_start:
             closure_clause += f' AFTER "{sprint_start.isoformat()}"'
-        if sprint_end:
+        if sprint_end and not include_post_sprint_closures:
             closure_clause += f' BEFORE "{(sprint_end + timedelta(days=1)).isoformat()}"'
 
         changelog_hits = 0
@@ -3808,7 +3822,14 @@ def fetch_burnout_events_for_sprint(sprint_name, headers, team_field_id, team_id
     events = []
     issues_meta = []
     for issue in collected_issues:
-        parsed = extract_burnout_events_from_issue(issue, team_field_id, sprint_start, sprint_end, timezone_info)
+        parsed = extract_burnout_events_from_issue(
+            issue,
+            team_field_id,
+            sprint_start,
+            sprint_end,
+            timezone_info,
+            include_post_sprint_closures=include_post_sprint_closures
+        )
         issue_meta = parsed.get('issue') if isinstance(parsed, dict) else None
         issue_events = parsed.get('events') if isinstance(parsed, dict) else []
         if issue_meta:
@@ -4487,6 +4508,10 @@ def get_completed_sprint_stats():
 def get_burnout_stats():
     """Fetch sprint burnout events from Jira changelog on demand."""
     payload = request.get_json(silent=True) if request.method == 'POST' else None
+    def parse_bool(value):
+        if isinstance(value, bool):
+            return value
+        return str(value or '').strip().lower() in ('1', 'true', 'yes', 'on')
     sprint_name = str((payload or {}).get('sprint') or request.args.get('sprint', '')).strip()
     raw_team_ids = (payload or {}).get('teamIds') if isinstance(payload, dict) else None
     if isinstance(raw_team_ids, list):
@@ -4495,6 +4520,11 @@ def get_burnout_stats():
         team_ids_raw = str(raw_team_ids or request.args.get('teamIds', '')).strip()
     team_id = str((payload or {}).get('team') or request.args.get('team', '')).strip()
     raw_issue_keys = (payload or {}).get('issueKeys') if isinstance(payload, dict) else None
+    include_post_sprint_closures = parse_bool(
+        (payload or {}).get('includePostSprintClosures')
+        if isinstance(payload, dict)
+        else request.args.get('includePostSprintClosures', '')
+    )
     issue_keys = []
     if isinstance(raw_issue_keys, list):
         issue_keys = [str(key or '').strip() for key in raw_issue_keys if str(key or '').strip()]
@@ -4522,7 +4552,8 @@ def get_burnout_stats():
         headers,
         team_field_id,
         team_ids=scoped_team_ids,
-        issue_keys=issue_keys
+        issue_keys=issue_keys,
+        include_post_sprint_closures=include_post_sprint_closures
     )
     if error_response is not None:
         return jsonify({

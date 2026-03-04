@@ -73,6 +73,7 @@ python3 -m unittest discover -s tests
 
 ## Project Architecture & API Notes
 - This project uses: Backend (Python), Frontend (JavaScript/HTML). The Jira API integration uses nextPageToken/isLast pagination (NOT startAt/total). Always verify API response shapes before assuming pagination patterns.
+- Any new API implementation plan in `docs/plans/` must use the same Jira pagination contract (`nextPageToken/isLast`). Do not include `startAt/total` examples in plans or code.
 
 ## API Performance & Request Efficiency
 - Initial page-load API requests are performance-critical. When changing frontend data loading or backend endpoints, treat load time as a first-class requirement.
@@ -80,6 +81,8 @@ python3 -m unittest discover -s tests
 - Avoid redundant API requests. If two requests return overlapping data, justify why both are needed (or refactor to combine, defer, or use a lighter endpoint).
 - Do not reuse a heavy endpoint for lightweight UI needs if a narrower response can be introduced safely.
 - When adding caching, document cache scope and invalidation/refresh behavior so performance fixes do not create stale-data bugs.
+- For analytics/cohort-style views, default to one scoped fetch + client-side regroup/filter for UI controls. Trigger backend refetch only for scope changes (date range, sprint/quarter, selected teams, explicit refresh).
+- When enrichment requires per-issue Jira calls (for example changelog lookups), define and document strict fan-out limits (max items, concurrency, timeout budget) before implementation.
 
 ## Feature Implementation Rules
 - When the user describes a concept or domain term (e.g., 'quarter'), ask for clarification on how it maps to existing data structures before implementing. Never assume a new UI element is needed if the concept might map to an existing one (e.g., sprint selector).

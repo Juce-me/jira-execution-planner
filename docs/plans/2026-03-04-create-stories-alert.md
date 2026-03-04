@@ -1,20 +1,39 @@
-# "Create Stories" Alert — Implementation Plan
+# Epic Labels & "Create Stories" Alerts — Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add a "Create Stories" alert panel that shows epics (per team) which have both the current sprint label AND the team's configured label in their Jira `labels[]` field — but have no stories yet. This tells teams which epics need stories created for the upcoming sprint.
+**Goal:** Two new label-based alerts for sprint planning:
+1. **Missing Labels** — epics in scope (selected sprint + components/teams) that lack a sprint label or a team label. Surfaces labeling gaps before planning begins.
+2. **Create Stories** — epics that have both sprint + team labels but no stories yet. Tells teams which epics need breakdown.
 
 **Architecture:**
 - Backend: add `labels` to epic fetch fields, add `/api/jira/labels` endpoint for autocomplete, extend team catalog with `epicLabel` field.
-- Frontend: add label mapping to team groups settings (with Jira label autocomplete), add new alert that filters epics by sprint+team labels, render per-team like Missing Info alert.
+- Frontend: add label mapping to team groups settings (with Jira label autocomplete), add "Missing Labels" alert (fires first), then "Create Stories" alert (fires for fully-labeled epics without stories). Both render per-team like Missing Info alert.
 
-**Design doc:** `docs/plans/2026-03-03-epic-lead-time-cohort-design.md` (N/A — this is a standalone plan)
+**Design doc:** N/A — this is a standalone plan.
 
 **Tech Stack:** Python/Flask backend, React frontend, esbuild bundler, unittest.
 
 ---
 
 ## How It Works
+
+### Alert 1: Missing Labels
+
+**Scope:** Epics from `epicsInScope` (the same pool used by Missing Info / Empty Epic alerts — filtered by selected sprint + components + teams).
+
+**Matching rule:** An epic triggers the "Missing Labels" alert when:
+1. The epic is not Done/Killed/dismissed
+2. The epic belongs to a team in the active group (via Jira Team field)
+3. **At least one** of these labels is missing:
+   - `selectedSprintInfo.name` (e.g. `"2026Q1"`) is NOT in `epic.labels[]` → missing sprint label
+   - None of the configured `epicLabel` values from `teamEpicLabelMap` appear in `epic.labels[]` → missing team label
+
+**Grouping:** Per team using `getEpicTeamInfo(epic)` (Jira Team field), same as Empty Epic alert.
+
+**Example:** Epic PROD-500 has labels `["backend"]` but NOT `"2026Q1"` and NOT `"rnd_bsw_perimeter"`. The epic belongs to team "R&D Perimeter" via Jira Team field → alert fires showing "Missing: sprint, team" for that epic under "R&D Perimeter" group.
+
+### Alert 2: Create Stories
 
 **Matching rule:** An epic triggers the "Create Stories" alert for a team when:
 1. `selectedSprintInfo.name` (e.g. `"2026Q1"`) is in `epic.labels[]`
@@ -363,18 +382,19 @@ git commit -m "feat: add epic label picker to team groups settings"
 
 ---
 
-## Task 5: Frontend — "Create Stories" alert data collection
+## Task 5: Frontend — "Missing Labels" alert data collection
 
 **Files:**
 - Modify: `frontend/src/dashboard.jsx`
 
-**Step 1: Add alert toggle state (line ~388)**
+**Step 1: Add alert toggle states (near line ~388)**
 
 ```js
+const [showMissingLabelsAlert, setShowMissingLabelsAlert] = useState(savedPrefsRef.current.showMissingLabelsAlert ?? true);
 const [showCreateStoriesAlert, setShowCreateStoriesAlert] = useState(savedPrefsRef.current.showCreateStoriesAlert ?? true);
 ```
 
-Add to `saveUiPrefs` effect dependency array and object.
+Add both to `saveUiPrefs` effect dependency array and object.
 
 **Step 2: Build teamEpicLabelMap memo**
 
@@ -392,9 +412,189 @@ const teamEpicLabelMap = React.useMemo(() => {
 }, [groupsConfig?.teamCatalog]);
 ```
 
-**Step 3: Build createStoriesEpics memo**
+**Step 3: Build `missingLabelsEpics` memo**
 
-Near the other alert memos (line ~8290):
+Near the other alert memos (line ~8290), **before** `createStoriesEpics`:
+
+```js
+const missingLabelsEpics = React.useMemo(() => {
+    const sprintLabel = selectedSprintInfo?.name;
+    if (!sprintLabel || teamEpicLabelMap.size === 0) return [];
+
+    const results = [];
+    const epicPool = [...(epicsInScope || []), ...Object.values(epicDetails || {})];
+    const seen = new Set();
+
+    epicPool.forEach(epic => {
+        if (!epic?.key || seen.has(epic.key)) return;
+        seen.add(epic.key);
+
+        const status = normalizeStatus(epic.status || epic.fields?.status?.name || '');
+        if (status === 'done' || status === 'killed') return;
+        if (dismissedAlertSet.has(epic.key)) return;
+
+        // Team filter: only check epics belonging to teams in active group
+        const epicTeam = getEpicTeamInfo(epic);
+        if (!isAllTeamsSelected && !selectedTeamSet.has(epicTeam.id)) return;
+
+        const labels = epic.labels || epic.fields?.labels || [];
+        const hasSprintLabel = labels.includes(sprintLabel);
+        const hasTeamLabel = labels.some(l => teamEpicLabelMap.has(l));
+
+        const missingTypes = [];
+        if (!hasSprintLabel) missingTypes.push('sprint');
+        if (!hasTeamLabel) missingTypes.push('team');
+
+        if (missingTypes.length === 0) return; // fully labeled, skip
+
+        results.push({
+            key: epic.key,
+            summary: epic.summary || '',
+            labels,
+            status: epic.status || '',
+            missingTypes,
+            teamId: epicTeam.id,
+            teamName: epicTeam.name
+        });
+    });
+
+    return results;
+}, [
+    selectedSprintInfo?.name, teamEpicLabelMap, epicsInScope, epicDetails,
+    dismissedAlertSet, isAllTeamsSelected, selectedTeamSet
+]);
+```
+
+**Step 4: Group by team**
+
+```js
+const missingLabelsTeams = groupAlertsByTeam(
+    missingLabelsEpics,
+    (item) => ({ id: item.teamId, name: item.teamName }),
+    (a, b) => (a.key || '').localeCompare(b.key || '')
+);
+```
+
+**Step 5: Build + verify**
+
+Run: `npm run build`
+
+**Step 6: Commit**
+
+```bash
+git add frontend/src/dashboard.jsx
+git commit -m "feat: add missingLabelsEpics memo for epics without sprint/team labels"
+```
+
+---
+
+## Task 6: Frontend — "Missing Labels" alert rendering
+
+**Files:**
+- Modify: `frontend/src/dashboard.jsx`
+
+**Step 1: Add alert card JSX**
+
+Render **before** the Create Stories alert (and before existing alert cards if possible). Place near the other epic-level alerts (Empty Epic, Done Epic area). Follow the same pattern as Missing Info / Empty Epic:
+
+```jsx
+{missingLabelsEpics.length > 0 && (
+    <div className={`alert-card missing-labels ${showMissingLabelsAlert ? '' : 'collapsed'}`}>
+        <div
+            className="alert-card-header"
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowMissingLabelsAlert(prev => !prev)}
+        >
+            <div className="alert-header-left">
+                <span className={`alert-collapse-toggle ${showMissingLabelsAlert ? 'open' : ''}`}>▸</span>
+                <div className="alert-title">🏷️ Missing Labels</div>
+                <div className="alert-subtitle">
+                    These epics are missing sprint or team labels — add labels before assigning stories or teams.
+                </div>
+            </div>
+            <a
+                className="alert-chip"
+                href={buildKeyListLink(missingLabelsEpics.map(item => item.key))}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open these epics in Jira"
+                onClick={e => e.stopPropagation()}
+            >
+                {missingLabelsEpics.length} {missingLabelsEpics.length === 1 ? 'epic' : 'epics'}
+            </a>
+        </div>
+        <div className={`alert-card-body ${showMissingLabelsAlert ? '' : 'collapsed'}`}>
+            {missingLabelsTeams.map(group => {
+                const keys = group.items.map(item => item.key);
+                const teamLink = buildKeyListLink(keys);
+                return (
+                    <div key={group.id} className="alert-team-group">
+                        <div className="alert-team-header">
+                            {teamLink ? (
+                                <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
+                                    <span className="alert-pill team">{group.name}</span>
+                                    <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'} missing labels</span>
+                                </a>
+                            ) : (
+                                <div className="alert-team-title">
+                                    <span className="alert-pill team">{group.name}</span>
+                                    <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'} missing labels</span>
+                                </div>
+                            )}
+                        </div>
+                        <div className="alert-stories">
+                            {group.items.map((epic) => (
+                                <div key={epic.key} className="alert-story">
+                                    <div className="alert-story-main" role="button" tabIndex={0}
+                                         onClick={() => handleAlertStoryClick(epic.key)}>
+                                        <a
+                                            className="alert-story-link"
+                                            href={`${jiraUrl}/browse/${epic.key}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={e => e.stopPropagation()}
+                                        >
+                                            {epic.key} · {epic.summary}
+                                        </a>
+                                    </div>
+                                    <span className="alert-pill status missing-label-pill">
+                                        Missing: {epic.missingTypes.join(', ')}
+                                    </span>
+                                    <button className="task-remove alert-remove"
+                                            onClick={() => dismissAlertItem(epic.key)}>×</button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    </div>
+)}
+```
+
+**Step 2: Build + verify**
+
+Run: `npm run build`
+
+**Step 3: Commit**
+
+```bash
+git add frontend/src/dashboard.jsx
+git commit -m "feat: render Missing Labels alert panel with per-team groups"
+```
+
+---
+
+## Task 7: Frontend — "Create Stories" alert data collection
+
+**Files:**
+- Modify: `frontend/src/dashboard.jsx`
+
+**Step 1: Build `createStoriesEpics` memo**
+
+Near the other alert memos, **after** `missingLabelsEpics` (so it can exclude epics already flagged for missing labels):
 
 ```js
 const createStoriesEpics = React.useMemo(() => {
@@ -402,9 +602,7 @@ const createStoriesEpics = React.useMemo(() => {
     if (!sprintLabel || teamEpicLabelMap.size === 0) return [];
 
     const results = [];
-    const allEpics = Object.values(epicDetails || {});
-    // Also check epicsInScope from empty epic alert flow
-    const epicPool = [...allEpics, ...(epicsInScope || [])];
+    const epicPool = [...Object.values(epicDetails || {}), ...(epicsInScope || [])];
     const seen = new Set();
 
     epicPool.forEach(epic => {
@@ -418,12 +616,11 @@ const createStoriesEpics = React.useMemo(() => {
         const labels = epic.labels || epic.fields?.labels || [];
         if (!labels.includes(sprintLabel)) return;
 
-        // Find which teams this epic matches
+        // Find which teams this epic matches via labels
         const matchedTeams = [];
         labels.forEach(label => {
             const teamInfo = teamEpicLabelMap.get(label);
             if (teamInfo) {
-                // Check team is in selected group
                 if (isAllTeamsSelected || selectedTeamSet.has(teamInfo.teamId)) {
                     matchedTeams.push(teamInfo);
                 }
@@ -453,7 +650,7 @@ const createStoriesEpics = React.useMemo(() => {
 ]);
 ```
 
-**Step 4: Group by team**
+**Step 2: Group by team**
 
 ```js
 const createStoriesTeams = groupAlertsByTeam(
@@ -463,11 +660,11 @@ const createStoriesTeams = groupAlertsByTeam(
 );
 ```
 
-**Step 5: Build + verify**
+**Step 3: Build + verify**
 
 Run: `npm run build`
 
-**Step 6: Commit**
+**Step 4: Commit**
 
 ```bash
 git add frontend/src/dashboard.jsx
@@ -476,14 +673,14 @@ git commit -m "feat: add createStoriesEpics memo with sprint+team label matching
 
 ---
 
-## Task 6: Frontend — "Create Stories" alert rendering
+## Task 8: Frontend — "Create Stories" alert rendering
 
 **Files:**
 - Modify: `frontend/src/dashboard.jsx`
 
 **Step 1: Add alert card JSX**
 
-After the existing alert cards (near line ~11550), add following the same pattern as Missing Info / Empty Epic:
+After the Missing Labels alert card, add following the same pattern:
 
 ```jsx
 {createStoriesEpics.length > 0 && (
@@ -575,10 +772,10 @@ git commit -m "feat: render Create Stories alert panel with per-team groups"
 
 ---
 
-## Task 7: CSS + final polish
+## Task 9: CSS + final polish
 
 **Files:**
-- Modify: `frontend/dist/dashboard.css` (team label picker styles)
+- Modify: `frontend/dist/dashboard.css` (team label picker + missing labels styles)
 
 **Step 1: Add team label picker CSS**
 
@@ -593,11 +790,28 @@ git commit -m "feat: render Create Stories alert panel with per-team groups"
 .team-label-input:focus { border-color: #60a5fa; outline: none; }
 ```
 
-**Step 2: Update ALERT_RULES.md**
+**Step 2: Add missing label pill CSS**
 
-Add a new section for "Create Stories":
+```css
+/* Missing Labels alert pill */
+.missing-label-pill {
+    background: rgba(251, 191, 36, 0.15);
+    color: rgba(251, 191, 36, 0.9);
+}
+```
+
+**Step 3: Update ALERT_RULES.md**
+
+Add two new sections:
 
 ```markdown
+### 🏷️ Missing Labels
+- **Trigger:** Epic is in scope (selected sprint + components/teams) but is missing the sprint label (`selectedSprintInfo.name` not in `epic.labels[]`) or a team label (no configured `epicLabel` found in `epic.labels[]`).
+- **Excluded:** Done or Killed epics; dismissed items.
+- **Grouping:** Per team (via Jira Team field, same as Empty Epic alert).
+- **Pill:** Shows which labels are missing: "Missing: sprint", "Missing: team", or "Missing: sprint, team".
+- **Purpose:** Surfaces labeling gaps before planning — add labels before assigning stories or teams.
+
 ### 📝 Create Stories
 - **Trigger:** Epic has the current sprint name AND a team's configured `epicLabel` in its Jira `labels[]` field, but has no actionable stories in the selected sprint.
 - **Excluded:** Done or Killed epics; dismissed items.
@@ -606,23 +820,23 @@ Add a new section for "Create Stories":
 - **Sprint matching:** The selected sprint name (e.g. `2026Q1`) must appear as a label on the epic.
 ```
 
-**Step 3: Build + full test suite**
+**Step 4: Build + full test suite**
 
 Run: `npm run build && python -m pytest tests/ -v`
 
-**Step 4: Commit**
+**Step 5: Commit**
 
 ```bash
 git add frontend/dist/dashboard.css ALERT_RULES.md
-git commit -m "feat: add CSS for label picker and document Create Stories alert rules"
+git commit -m "feat: add CSS for label picker, missing labels pill, and document alert rules"
 ```
 
 ---
 
-## Task 8: Push branch
+## Task 10: Push branch
 
 ```bash
-git push -u origin feat/create-stories-alert
+git push origin feat/create-stories-alert
 ```
 
 ---
@@ -635,11 +849,13 @@ git push -u origin feat/create-stories-alert
 | 2 | `/api/jira/labels` endpoint + tests | `jira_server.py`, `test_create_stories_alert.py` | ~60 |
 | 3 | `epicLabel` in team catalog + tests | `jira_server.py`, `test_create_stories_alert.py` | ~20 |
 | 4 | Label picker in settings UI | `dashboard.jsx` | ~50 |
-| 5 | Alert data collection memo | `dashboard.jsx` | ~80 |
-| 6 | Alert rendering JSX | `dashboard.jsx` | ~70 |
-| 7 | CSS + ALERT_RULES.md | `dashboard.css`, `ALERT_RULES.md` | ~25 |
-| 8 | Push | — | — |
-| **Total** | | **5 files** | **~320 lines** |
+| 5 | Missing Labels data collection | `dashboard.jsx` | ~60 |
+| 6 | Missing Labels alert rendering | `dashboard.jsx` | ~70 |
+| 7 | Create Stories data collection | `dashboard.jsx` | ~60 |
+| 8 | Create Stories alert rendering | `dashboard.jsx` | ~70 |
+| 9 | CSS + ALERT_RULES.md | `dashboard.css`, `ALERT_RULES.md` | ~35 |
+| 10 | Push | — | — |
+| **Total** | | **5 files** | **~440 lines** |
 
 ## Configuration Flow
 
@@ -653,8 +869,11 @@ git push -u origin feat/create-stories-alert
 
 1. Sprint "2026Q1" selected
 2. Epics loaded with `labels[]` field
-3. For each epic with `"2026Q1"` in labels:
-   - Check if any label matches a team's `epicLabel`
+3. **Missing Labels** (fires first): for each epic in scope (via Jira Team field):
+   - Check if `"2026Q1"` is in `epic.labels[]` — if not → missing sprint label
+   - Check if any configured `epicLabel` is in `epic.labels[]` — if not → missing team label
+   - Shows "Missing: sprint, team" pills per epic, grouped by Jira team
+4. **Create Stories** (fires for fully-labeled epics): for each epic with both sprint + team labels:
    - Check if epic has zero stories in the sprint
-   - If both → add to "Create Stories" alert for that team
-4. Alert renders per-team, same style as Missing Info
+   - If no stories → add to "Create Stories" alert for that team
+5. Both alerts render per-team, same style as Missing Info

@@ -538,10 +538,22 @@ def resolve_terminal_date_from_history(histories, terminal_status):
     return None
 
 
-def _build_epic_cohort_cache_key(start_quarter, team_ids, projects):
+def _build_epic_cohort_cache_key(start_quarter, team_ids, projects, components=None):
     normalized_teams = ','.join(normalize_team_ids(team_ids or []))
     normalized_projects = ','.join(sorted(str(project or '').strip() for project in (projects or []) if str(project or '').strip()))
-    return f'{str(start_quarter or "").strip().upper()}::{normalized_teams or "all"}::{normalized_projects or "none"}'
+    normalized_components = ','.join(
+        sorted(
+            str(component or '').strip()
+            for component in (components or [])
+            if str(component or '').strip()
+        )
+    )
+    return (
+        f'{str(start_quarter or "").strip().upper()}'
+        f'::{normalized_teams or "all"}'
+        f'::{normalized_projects or "none"}'
+        f'::{normalized_components or "no-components"}'
+    )
 
 
 TEAM_FIELD_CACHE = None
@@ -4036,7 +4048,7 @@ def _cohort_fetch_terminal_date_from_changelog(issue_key, target_status, headers
     return issue_key, resolved, None
 
 
-def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None):
+def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None, component_names=None):
     start_date, _ = quarter_dates_from_label(start_quarter)
     if not start_date:
         return {
@@ -4065,10 +4077,10 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None)
     jql = f'issuetype = Epic AND project in ({escaped_projects}) AND created >= "{start_date.isoformat()}"'
 
     scoped_team_ids = normalize_team_ids(team_ids or [])
-    if scoped_team_ids:
-        escaped_team_ids = ', '.join(f'"{_escape_jql_literal(team_id)}"' for team_id in scoped_team_ids)
-        team_clause_field = str(team_field_id or '').strip() or 'Team[Team]'
-        jql = add_clause_to_jql(jql, f'"{team_clause_field}" in ({escaped_team_ids})')
+    scoped_components = [str(name or '').strip() for name in (component_names or []) if str(name or '').strip()]
+    scope_clause = build_missing_info_scope_clause(scoped_team_ids, scoped_components, team_field_name='Team[Team]')
+    if scope_clause:
+        jql = add_clause_to_jql(jql, scope_clause)
 
     fields = ['summary', 'created', 'status', 'resolutiondate', 'assignee', 'project']
     if team_field_id and team_field_id not in fields:
@@ -4224,24 +4236,25 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None)
     return payload, None
 
 
-def build_missing_info_scope_clause(team_ids, component_names):
+def build_missing_info_scope_clause(team_ids, component_names, team_field_name='Team[Team]'):
     clauses = []
     if isinstance(component_names, str):
         component_names = [component_names] if component_names.strip() else []
-    component_names = [c.strip() for c in (component_names or []) if c and str(c).strip()]
-    team_ids = [t.strip() for t in (team_ids or []) if t and str(t).strip()]
+    component_names = [str(c).strip() for c in (component_names or []) if c and str(c).strip()]
+    team_ids = [str(t).strip() for t in (team_ids or []) if t and str(t).strip()]
+    team_field = str(team_field_name or '').strip() or 'Team[Team]'
 
     if len(component_names) == 1:
-        clauses.append(f'component = "{component_names[0]}"')
+        clauses.append(f'component = "{_escape_jql_literal(component_names[0])}"')
     elif len(component_names) > 1:
-        quoted = ', '.join(f'"{c}"' for c in component_names)
+        quoted = ', '.join(f'"{_escape_jql_literal(c)}"' for c in component_names)
         clauses.append(f'component in ({quoted})')
     if team_ids:
         if len(team_ids) == 1:
-            clauses.append(f'"Team[Team]" = "{team_ids[0]}"')
+            clauses.append(f'"{_escape_jql_literal(team_field)}" = "{_escape_jql_literal(team_ids[0])}"')
         else:
-            quoted = ', '.join(f'"{t}"' for t in team_ids)
-            clauses.append(f'"Team[Team]" in ({quoted})')
+            quoted = ', '.join(f'"{_escape_jql_literal(t)}"' for t in team_ids)
+            clauses.append(f'"{_escape_jql_literal(team_field)}" in ({quoted})')
 
     if not clauses:
         return ''
@@ -4920,9 +4933,11 @@ def get_epic_cohort_stats():
 
     raw_team_ids = payload.get('teamIds')
     team_ids = normalize_team_ids(raw_team_ids if isinstance(raw_team_ids, list) else [])
+    raw_components = payload.get('components')
+    component_names = [str(item or '').strip() for item in (raw_components if isinstance(raw_components, list) else []) if str(item or '').strip()]
     refresh = _cohort_parse_bool(payload.get('refresh'))
     scoped_projects = _cohort_project_scope()
-    cache_key = _build_epic_cohort_cache_key(start_quarter, team_ids, scoped_projects)
+    cache_key = _build_epic_cohort_cache_key(start_quarter, team_ids, scoped_projects, component_names)
 
     now_ts = time.time()
     with _cache_lock:
@@ -4948,7 +4963,8 @@ def get_epic_cohort_stats():
         start_quarter,
         headers,
         team_field_id,
-        team_ids=team_ids
+        team_ids=team_ids,
+        component_names=component_names
     )
     if error_response is not None:
         return jsonify({

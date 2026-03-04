@@ -1,10 +1,10 @@
-# Epic Lead Time Cohort Chart — Implementation Plan
+# Epic Lead Time Cohort Chart — Implementation Plan (v2)
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add a full-screen "Lead Times" panel showing epic delivery lead times in a retention-style cohort grid, powered by a dedicated backend endpoint.
+**Goal:** Add a full-screen "Lead Times" panel showing epic delivery throughput in a retention-style cohort grid with summary cards, status toggles, project/assignee filters, and an in-progress epics bar chart.
 
-**Architecture:** New `POST /api/stats/epic-cohort` backend endpoint fetches epics via JQL (2-phase: base fields + changelog for Done epics missing resolutiondate), returns cohorts grouped by creation period. Frontend adds a top-level toggle, state/fetch effect, and a `frontend/src/cohort/` module with pure grid-building utils and a presentational `CohortGrid` component.
+**Architecture:** New `POST /api/stats/epic-cohort` backend endpoint fetches ALL epics via JQL (2-phase: base fields + changelog for resolved epics missing resolutiondate), returns cohorts grouped by creation period with full status data. Frontend applies status/project/assignee filters client-side, builds grid model, summary cards, and open-epics bar chart. Module structure: `frontend/src/cohort/` with utils + two presentational components.
 
 **Tech Stack:** Python/Flask backend, React (via CDN) frontend, esbuild bundler, unittest for backend tests.
 
@@ -12,11 +12,11 @@
 
 ---
 
-## Task 1: Backend — `quarter_dates_from_label` extension and date helpers
+## Task 1: Backend — Period helper functions + tests
 
 **Files:**
-- Modify: `jira_server.py` (add `month_dates_from_label` helper near `quarter_dates_from_label` at line ~432)
-- Test: `tests/test_epic_cohort_api.py` (create)
+- Modify: `jira_server.py` (add helpers near `quarter_dates_from_label` at line ~432)
+- Create: `tests/test_epic_cohort_api.py`
 
 **Step 1: Write the failing test**
 
@@ -42,16 +42,14 @@ class TestEpicCohortHelpers(unittest.TestCase):
         self.assertEqual(start, date(2025, 1, 1))
         self.assertEqual(end, date(2025, 3, 31))
 
-    def test_month_dates_from_label(self):
-        start, end = jira_server.month_dates_from_label('2025Q1')
-        # Returns first month of Q1 → January 2025
-        self.assertEqual(start, date(2025, 1, 1))
-        self.assertEqual(end, date(2025, 1, 31))
-
-    def test_month_dates_from_iso_month(self):
+    def test_month_dates_from_iso(self):
         start, end = jira_server.month_dates_from_iso('2025-03')
         self.assertEqual(start, date(2025, 3, 1))
         self.assertEqual(end, date(2025, 3, 31))
+
+    def test_month_dates_from_iso_february_leap(self):
+        start, end = jira_server.month_dates_from_iso('2024-02')
+        self.assertEqual(end, date(2024, 2, 29))
 
     def test_generate_period_labels_quarters(self):
         labels = jira_server.generate_period_labels('2025Q1', '2026Q1', 'quarter')
@@ -60,12 +58,13 @@ class TestEpicCohortHelpers(unittest.TestCase):
     def test_generate_period_labels_months(self):
         labels = jira_server.generate_period_labels('2025Q1', '2025Q2', 'month')
         self.assertEqual(labels[:3], ['2025-01', '2025-02', '2025-03'])
+        self.assertEqual(len(labels), 6)  # Jan through Jun
 
-    def test_assign_epic_to_period_quarter(self):
+    def test_assign_to_period_quarter(self):
         period = jira_server.assign_to_period(date(2025, 2, 15), 'quarter')
         self.assertEqual(period, '2025Q1')
 
-    def test_assign_epic_to_period_month(self):
+    def test_assign_to_period_month(self):
         period = jira_server.assign_to_period(date(2025, 2, 15), 'month')
         self.assertEqual(period, '2025-02')
 ```
@@ -80,16 +79,6 @@ Expected: FAIL — `month_dates_from_iso`, `generate_period_labels`, `assign_to_
 Add to `jira_server.py` after `quarter_dates_from_label` (line ~432):
 
 ```python
-def month_dates_from_label(quarter_label):
-    """Return first month's start/end from a quarter label like '2025Q1'."""
-    start, _ = quarter_dates_from_label(quarter_label)
-    if not start:
-        return None, None
-    import calendar
-    _, last_day = calendar.monthrange(start.year, start.month)
-    return start, date(start.year, start.month, last_day)
-
-
 def month_dates_from_iso(iso_month):
     """Return start/end for an ISO month string like '2025-03'."""
     import calendar
@@ -102,15 +91,15 @@ def month_dates_from_iso(iso_month):
 
 
 def generate_period_labels(start_label, end_label, group_by):
-    """Generate ordered period labels from start to end (inclusive)."""
+    """Generate ordered period labels from start quarter to end quarter (inclusive)."""
+    start, _ = quarter_dates_from_label(start_label)
+    _, end_q_end = quarter_dates_from_label(end_label)
+    if not start or not end_q_end:
+        return []
     if group_by == 'quarter':
-        start, _ = quarter_dates_from_label(start_label)
-        end, _ = quarter_dates_from_label(end_label)
-        if not start or not end:
-            return []
         labels = []
         current = start
-        while current <= end:
+        while current <= end_q_end:
             q = (current.month - 1) // 3 + 1
             labels.append(f'{current.year}Q{q}')
             month = current.month + 3
@@ -120,11 +109,7 @@ def generate_period_labels(start_label, end_label, group_by):
                 year += 1
             current = date(year, month, 1)
         return labels
-    else:  # month
-        start, _ = quarter_dates_from_label(start_label)
-        end_q_start, end_q_end = quarter_dates_from_label(end_label)
-        if not start or not end_q_end:
-            return []
+    else:
         labels = []
         current = start
         while current <= end_q_end:
@@ -160,11 +145,11 @@ git commit -m "feat: add period helper functions for epic cohort"
 
 ---
 
-## Task 2: Backend — Epic cohort fetch function
+## Task 2: Backend — Epic cohort fetch function + tests
 
 **Files:**
-- Modify: `jira_server.py` (add `fetch_epic_cohort_data` function)
-- Test: `tests/test_epic_cohort_api.py` (add tests)
+- Modify: `jira_server.py` (add `fetch_epic_cohort_data`)
+- Modify: `tests/test_epic_cohort_api.py`
 
 **Step 1: Write the failing test**
 
@@ -181,148 +166,125 @@ class DummyResponse:
         return self._payload
 
 
+from unittest.mock import patch
+
+
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestEpicCohortFetch(unittest.TestCase):
 
-    @patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_30101')
+    def _make_epic(self, key, created, status, resolution=None, team_id='T1',
+                   team_name='Team Alpha', project='PROD', assignee_id='a1',
+                   assignee_name='Alice'):
+        return {
+            'key': key,
+            'fields': {
+                'summary': f'Epic {key}',
+                'created': f'{created}T10:00:00.000+0000',
+                'resolutiondate': f'{resolution}T10:00:00.000+0000' if resolution else None,
+                'duedate': None,
+                'status': {'name': status},
+                'project': {'key': project},
+                'assignee': {'accountId': assignee_id, 'displayName': assignee_name},
+                'customfield_30101': {'id': team_id, 'name': team_name}
+            }
+        }
+
     @patch.object(jira_server, 'load_dashboard_config', return_value={
         'projects': [{'key': 'PROD', 'bucket': 'product'}]
     })
-    @patch.object(jira_server, 'resilient_jira_get')
-    def test_fetch_groups_done_epics_into_cohorts(self, mock_get, mock_config, mock_team):
-        """Done epics with resolutiondate are grouped by creation quarter."""
-        mock_get.return_value = DummyResponse({
+    @patch.object(jira_server, 'jira_search_request')
+    def test_done_epics_grouped_into_cohorts(self, mock_search, mock_config):
+        mock_search.return_value = DummyResponse({
             'issues': [
-                {
-                    'key': 'PROD-10',
-                    'fields': {
-                        'summary': 'Epic A',
-                        'created': '2025-01-15T10:00:00.000+0000',
-                        'resolutiondate': '2025-04-20T10:00:00.000+0000',
-                        'duedate': None,
-                        'status': {'name': 'Done'},
-                        'customfield_30101': {'id': 'T1', 'name': 'Team Alpha'}
-                    }
-                },
-                {
-                    'key': 'PROD-20',
-                    'fields': {
-                        'summary': 'Epic B',
-                        'created': '2025-02-10T10:00:00.000+0000',
-                        'resolutiondate': '2025-02-28T10:00:00.000+0000',
-                        'duedate': None,
-                        'status': {'name': 'Done'},
-                        'customfield_30101': {'id': 'T1', 'name': 'Team Alpha'}
-                    }
-                }
+                self._make_epic('PROD-10', '2025-01-15', 'Done', '2025-04-20'),
+                self._make_epic('PROD-20', '2025-02-10', 'Done', '2025-02-28'),
             ],
-            'total': 2,
-            'startAt': 0,
-            'maxResults': 100
+            'total': 2, 'startAt': 0, 'maxResults': 100
         })
 
         result = jira_server.fetch_epic_cohort_data(
-            start_quarter='2025Q1',
-            group_by='quarter',
+            start_quarter='2025Q1', group_by='quarter',
             headers={'Authorization': 'Basic test'},
-            team_field_id='customfield_30101',
-            team_ids=[],
-            include_postponed=False
+            team_field_id='customfield_30101'
         )
 
-        self.assertIsNotNone(result)
-        cohorts = result['cohorts']
-        self.assertEqual(len(cohorts), 1)
-        self.assertEqual(cohorts[0]['label'], '2025Q1')
-        self.assertEqual(len(cohorts[0]['epics']), 2)
-        # PROD-10: created 2025-01-15, done 2025-04-20 → 95 days
-        epic_a = next(e for e in cohorts[0]['epics'] if e['key'] == 'PROD-10')
+        self.assertEqual(len(result['cohorts']), 1)
+        self.assertEqual(result['cohorts'][0]['label'], '2025Q1')
+        epics = result['cohorts'][0]['epics']
+        self.assertEqual(len(epics), 2)
+        epic_a = next(e for e in epics if e['key'] == 'PROD-10')
         self.assertEqual(epic_a['leadTimeDays'], 95)
         self.assertEqual(epic_a['status'], 'Done')
-        # PROD-20: created 2025-02-10, done 2025-02-28 → 18 days
-        epic_b = next(e for e in cohorts[0]['epics'] if e['key'] == 'PROD-20')
-        self.assertEqual(epic_b['leadTimeDays'], 18)
 
-    @patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_30101')
     @patch.object(jira_server, 'load_dashboard_config', return_value={
         'projects': [{'key': 'PROD', 'bucket': 'product'}]
     })
-    @patch.object(jira_server, 'resilient_jira_get')
-    def test_fetch_excludes_killed_epics(self, mock_get, mock_config, mock_team):
-        """Killed epics are excluded from the cohort."""
-        mock_get.return_value = DummyResponse({
+    @patch.object(jira_server, 'jira_search_request')
+    def test_open_epics_have_status_open(self, mock_search, mock_config):
+        mock_search.return_value = DummyResponse({
             'issues': [
-                {
-                    'key': 'PROD-30',
-                    'fields': {
-                        'summary': 'Epic Killed',
-                        'created': '2025-01-10T10:00:00.000+0000',
-                        'resolutiondate': None,
-                        'duedate': None,
-                        'status': {'name': 'Killed'},
-                        'customfield_30101': {'id': 'T1', 'name': 'Team Alpha'}
-                    }
-                }
+                self._make_epic('PROD-40', '2025-03-01', 'In Progress'),
             ],
-            'total': 1,
-            'startAt': 0,
-            'maxResults': 100
+            'total': 1, 'startAt': 0, 'maxResults': 100
         })
 
         result = jira_server.fetch_epic_cohort_data(
-            start_quarter='2025Q1',
-            group_by='quarter',
+            start_quarter='2025Q1', group_by='quarter',
             headers={'Authorization': 'Basic test'},
-            team_field_id='customfield_30101',
-            team_ids=[],
-            include_postponed=False
-        )
-
-        # Killed epics filtered out by JQL, so no cohorts
-        all_epics = [e for c in result['cohorts'] for e in c['epics']]
-        killed = [e for e in all_epics if e['status'] == 'Killed']
-        self.assertEqual(len(killed), 0)
-
-    @patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_30101')
-    @patch.object(jira_server, 'load_dashboard_config', return_value={
-        'projects': [{'key': 'PROD', 'bucket': 'product'}]
-    })
-    @patch.object(jira_server, 'resilient_jira_get')
-    def test_open_epics_have_null_lead_time(self, mock_get, mock_config, mock_team):
-        """Open (non-Done) epics have null doneDate and leadTimeDays."""
-        mock_get.return_value = DummyResponse({
-            'issues': [
-                {
-                    'key': 'PROD-40',
-                    'fields': {
-                        'summary': 'Epic Open',
-                        'created': '2025-03-01T10:00:00.000+0000',
-                        'resolutiondate': None,
-                        'duedate': None,
-                        'status': {'name': 'In Progress'},
-                        'customfield_30101': {'id': 'T1', 'name': 'Team Alpha'}
-                    }
-                }
-            ],
-            'total': 1,
-            'startAt': 0,
-            'maxResults': 100
-        })
-
-        result = jira_server.fetch_epic_cohort_data(
-            start_quarter='2025Q1',
-            group_by='quarter',
-            headers={'Authorization': 'Basic test'},
-            team_field_id='customfield_30101',
-            team_ids=[],
-            include_postponed=False
+            team_field_id='customfield_30101'
         )
 
         epics = result['cohorts'][0]['epics']
-        self.assertEqual(len(epics), 1)
-        self.assertIsNone(epics[0]['doneDate'])
-        self.assertIsNone(epics[0]['leadTimeDays'])
         self.assertEqual(epics[0]['status'], 'open')
+        self.assertIsNone(epics[0]['resolvedDate'])
+        self.assertIsNotNone(epics[0]['leadTimeDays'])  # days open so far
+
+    @patch.object(jira_server, 'load_dashboard_config', return_value={
+        'projects': [{'key': 'PROD', 'bucket': 'product'}]
+    })
+    @patch.object(jira_server, 'jira_search_request')
+    def test_killed_and_incomplete_included_with_status(self, mock_search, mock_config):
+        mock_search.return_value = DummyResponse({
+            'issues': [
+                self._make_epic('PROD-50', '2025-01-05', 'Killed', '2025-03-10'),
+                self._make_epic('PROD-60', '2025-01-20', 'Incomplete', '2025-04-15'),
+            ],
+            'total': 2, 'startAt': 0, 'maxResults': 100
+        })
+
+        result = jira_server.fetch_epic_cohort_data(
+            start_quarter='2025Q1', group_by='quarter',
+            headers={'Authorization': 'Basic test'},
+            team_field_id='customfield_30101'
+        )
+
+        epics = result['cohorts'][0]['epics']
+        statuses = {e['key']: e['status'] for e in epics}
+        self.assertEqual(statuses['PROD-50'], 'Killed')
+        self.assertEqual(statuses['PROD-60'], 'Incomplete')
+
+    @patch.object(jira_server, 'load_dashboard_config', return_value={
+        'projects': [{'key': 'PROD', 'bucket': 'product'}]
+    })
+    @patch.object(jira_server, 'jira_search_request')
+    def test_response_includes_project_and_assignee(self, mock_search, mock_config):
+        mock_search.return_value = DummyResponse({
+            'issues': [
+                self._make_epic('PROD-70', '2025-02-01', 'Done', '2025-05-01',
+                                project='TECH', assignee_id='bob', assignee_name='Bob'),
+            ],
+            'total': 1, 'startAt': 0, 'maxResults': 100
+        })
+
+        result = jira_server.fetch_epic_cohort_data(
+            start_quarter='2025Q1', group_by='quarter',
+            headers={'Authorization': 'Basic test'},
+            team_field_id='customfield_30101'
+        )
+
+        epic = result['cohorts'][0]['epics'][0]
+        self.assertEqual(epic['project'], 'TECH')
+        self.assertEqual(epic['assignee']['name'], 'Bob')
 ```
 
 **Step 2: Run test to verify it fails**
@@ -330,63 +292,61 @@ class TestEpicCohortFetch(unittest.TestCase):
 Run: `python -m pytest tests/test_epic_cohort_api.py::TestEpicCohortFetch -v`
 Expected: FAIL — `fetch_epic_cohort_data` not defined.
 
-**Step 3: Write minimal implementation**
+**Step 3: Write implementation**
 
-Add to `jira_server.py` after the period helper functions:
+Add to `jira_server.py` after the period helpers:
 
 ```python
 def fetch_epic_cohort_data(start_quarter, group_by, headers, team_field_id,
-                           team_ids=None, include_postponed=False):
+                           team_ids=None, project_keys=None, assignee=None):
     """Fetch epics and group into cohorts by creation period.
 
-    Phase 1: Base fields via JQL (fast).
-    Phase 2: Changelog for Done epics missing resolutiondate.
+    Returns ALL epics (Done, Killed, Incomplete, open) so the frontend
+    can toggle status filters client-side without re-fetching.
+
+    Phase 1: Base fields via JQL.
+    Phase 2: Changelog for resolved epics missing resolutiondate.
     """
     start_date, _ = quarter_dates_from_label(start_quarter)
     if not start_date:
         return {'cohorts': [], 'periods': [], 'range': {}}
 
-    # Determine current quarter label for range end
     today = date.today()
     current_q = (today.month - 1) // 3 + 1
     end_label = f'{today.year}Q{current_q}'
 
-    # Build project list from config
     config = load_dashboard_config() or {}
     projects = config.get('projects', [])
-    project_keys = [p['key'] for p in projects if p.get('key')]
-    if not project_keys:
+    all_project_keys = [p['key'] for p in projects if p.get('key')]
+    effective_projects = project_keys if project_keys else all_project_keys
+    if not effective_projects:
         return {'cohorts': [], 'periods': [], 'range': {}}
 
-    # Phase 1: Fetch base fields
     jql_parts = [
         'issuetype = Epic',
-        f'project IN ({",".join(project_keys)})',
-        f'created >= "{start_date.isoformat()}"',
-        'status != Killed'
+        f'project IN ({",".join(effective_projects)})',
+        f'created >= "{start_date.isoformat()}"'
     ]
-    if not include_postponed:
-        jql_parts.append('status != Incomplete')
     if team_ids:
         team_clause = ','.join(f'"{tid}"' for tid in team_ids)
         if team_field_id:
             jql_parts.append(f'"{team_field_id}" IN ({team_clause})')
+    if assignee:
+        jql_parts.append(f'assignee = "{assignee}"')
 
     jql = ' AND '.join(jql_parts)
-    fields = ['summary', 'created', 'duedate', 'status', 'resolutiondate']
+    fields = ['summary', 'created', 'duedate', 'status', 'resolutiondate', 'assignee', 'project']
     if team_field_id:
         fields.append(team_field_id)
 
+    # Phase 1: paginated fetch
     all_issues = []
     start_at = 0
     max_results = 100
     while True:
         resp = jira_search_request(headers, {
-            'jql': jql,
-            'fields': fields,
-            'maxResults': max_results,
-            'startAt': start_at,
-            'expand': ''
+            'jql': jql, 'fields': fields,
+            'maxResults': max_results, 'startAt': start_at, 'expand': ''
         })
         if resp.status_code != 200:
             log_warning(f'Epic cohort JQL failed ({resp.status_code}): {resp.text[:200]}')
@@ -394,15 +354,15 @@ def fetch_epic_cohort_data(start_quarter, group_by, headers, team_field_id,
         data = resp.json()
         issues = data.get('issues', [])
         all_issues.extend(issues)
-        total = data.get('total', 0)
-        if start_at + len(issues) >= total:
+        if start_at + len(issues) >= data.get('total', 0):
             break
         start_at += len(issues)
 
-    # Phase 2: Changelog for Done epics missing resolutiondate
+    # Phase 2: changelog for resolved epics missing resolutiondate
+    resolved_statuses = {'done', 'killed', 'incomplete'}
     needs_changelog = [
         iss for iss in all_issues
-        if str((iss.get('fields') or {}).get('status', {}).get('name', '')).strip().lower() == 'done'
+        if str((iss.get('fields') or {}).get('status', {}).get('name', '')).strip().lower() in resolved_statuses
         and not (iss.get('fields') or {}).get('resolutiondate')
     ]
     if needs_changelog:
@@ -412,79 +372,90 @@ def fetch_epic_cohort_data(start_quarter, group_by, headers, team_field_id,
                 resp = resilient_jira_get(
                     f'{JIRA_URL}/rest/api/3/issue/{key}',
                     params={'fields': 'status', 'expand': 'changelog'},
-                    headers=headers,
-                    timeout=20,
-                    session=HTTP_SESSION,
-                    breaker=JIRA_SEARCH_CIRCUIT_BREAKER
+                    headers=headers, timeout=20,
+                    session=HTTP_SESSION, breaker=JIRA_SEARCH_CIRCUIT_BREAKER
                 )
                 if resp.status_code == 200:
-                    changelog = resp.json().get('changelog', {})
-                    issue['changelog'] = changelog
+                    issue['changelog'] = resp.json().get('changelog', {})
             except Exception as e:
                 log_warning(f'Failed to fetch changelog for {key}: {e}')
 
         with ThreadPoolExecutor(max_workers=4) as pool:
             pool.map(fetch_changelog, needs_changelog)
 
-    # Build epic records and group into cohorts
+    # Build epic records
     period_labels = generate_period_labels(start_quarter, end_label, group_by)
     cohort_map = {}
 
     for iss in all_issues:
-        fields_data = iss.get('fields') or {}
-        created_dt = parse_jira_datetime(fields_data.get('created'))
+        f = iss.get('fields') or {}
+        created_dt = parse_jira_datetime(f.get('created'))
         if not created_dt:
             continue
-        created_date = created_dt.date() if hasattr(created_dt, 'date') else created_dt
+        created_d = created_dt.date() if hasattr(created_dt, 'date') else created_dt
 
-        status_name = str((fields_data.get('status') or {}).get('name', '')).strip()
-        is_done = status_name.lower() == 'done'
-        is_incomplete = status_name.lower() == 'incomplete'
+        status_name = str((f.get('status') or {}).get('name', '')).strip()
+        status_lower = status_name.lower()
+        is_resolved = status_lower in resolved_statuses
 
-        # Resolve done date
-        done_date = None
-        if is_done:
-            resolution_raw = fields_data.get('resolutiondate')
-            if resolution_raw:
-                resolution_dt = parse_jira_datetime(resolution_raw)
-                done_date = resolution_dt.date() if resolution_dt else None
+        resolved_date = None
+        if is_resolved:
+            res_raw = f.get('resolutiondate')
+            if res_raw:
+                res_dt = parse_jira_datetime(res_raw)
+                resolved_date = res_dt.date() if res_dt and hasattr(res_dt, 'date') else res_dt
             else:
-                # Fall back to changelog
+                target_status = status_lower
                 histories = (iss.get('changelog') or {}).get('histories', [])
-                for history in sorted(histories, key=lambda h: h.get('created', ''), reverse=True):
-                    for item in (history.get('items') or []):
+                for h in sorted(histories, key=lambda x: x.get('created', ''), reverse=True):
+                    for item in (h.get('items') or []):
                         if str(item.get('field', '')).strip().lower() == 'status' \
-                                and str(item.get('toString', '')).strip().lower() == 'done':
-                            evt_dt = parse_jira_datetime(history.get('created'))
+                                and str(item.get('toString', '')).strip().lower() == target_status:
+                            evt_dt = parse_jira_datetime(h.get('created'))
                             if evt_dt:
-                                done_date = evt_dt.date() if hasattr(evt_dt, 'date') else evt_dt
+                                resolved_date = evt_dt.date() if hasattr(evt_dt, 'date') else evt_dt
                                 break
-                    if done_date:
+                    if resolved_date:
                         break
 
-        lead_time = (done_date - created_date).days if done_date else None
+        if is_resolved and resolved_date:
+            lead_time = (resolved_date - created_d).days
+        elif is_resolved:
+            lead_time = None  # resolved but couldn't determine date
+        else:
+            lead_time = (today - created_d).days  # open: days since creation
 
-        # Team
-        team_raw = fields_data.get(team_field_id) if team_field_id else None
+        # Normalize status
+        if status_lower == 'done':
+            status_out = 'Done'
+        elif status_lower == 'killed':
+            status_out = 'Killed'
+        elif status_lower == 'incomplete':
+            status_out = 'Incomplete'
+        else:
+            status_out = 'open'
+
+        team_raw = f.get(team_field_id) if team_field_id else None
         team_info = normalize_team_value_for_burnout(team_raw)
+        assignee_info = normalize_assignee_value(f.get('assignee'))
+        project_key = (f.get('project') or {}).get('key', '')
 
-        cohort_label = assign_to_period(created_date, group_by)
+        cohort_label = assign_to_period(created_d, group_by)
         epic_record = {
             'key': iss.get('key'),
-            'summary': fields_data.get('summary', ''),
+            'summary': f.get('summary', ''),
+            'project': project_key,
             'team': team_info,
-            'createdDate': created_date.isoformat(),
-            'doneDate': done_date.isoformat() if done_date else None,
+            'assignee': assignee_info,
+            'createdDate': created_d.isoformat(),
+            'resolvedDate': resolved_date.isoformat() if resolved_date else None,
             'leadTimeDays': lead_time,
-            'status': 'Done' if is_done else ('Incomplete' if is_incomplete else 'open'),
-            'isPostponed': is_incomplete
+            'status': status_out
         }
 
-        if cohort_label not in cohort_map:
-            cohort_map[cohort_label] = []
-        cohort_map[cohort_label].append(epic_record)
+        cohort_map.setdefault(cohort_label, []).append(epic_record)
 
-    # Build ordered cohorts
+    # Ordered cohorts
     cohorts = []
     for label in period_labels:
         epics = cohort_map.get(label, [])
@@ -502,14 +473,8 @@ def fetch_epic_cohort_data(start_quarter, group_by, headers, team_field_id,
             'epics': epics
         })
 
-    # Build elapsed period labels
-    if group_by == 'quarter':
-        max_elapsed = len(period_labels)
-        elapsed = [f'Q+{i}' for i in range(max_elapsed)]
-    else:
-        max_elapsed = len(period_labels)
-        elapsed = [f'M+{i}' for i in range(max_elapsed)]
-
+    prefix = 'Q' if group_by == 'quarter' else 'M'
+    elapsed = [f'{prefix}+{i}' for i in range(len(period_labels))]
     _, range_end = quarter_dates_from_label(end_label)
 
     return {
@@ -523,7 +488,7 @@ def fetch_epic_cohort_data(start_quarter, group_by, headers, team_field_id,
     }
 ```
 
-**Step 4: Run test to verify it passes**
+**Step 4: Run tests**
 
 Run: `python -m pytest tests/test_epic_cohort_api.py -v`
 Expected: All tests PASS.
@@ -532,20 +497,18 @@ Expected: All tests PASS.
 
 ```bash
 git add jira_server.py tests/test_epic_cohort_api.py
-git commit -m "feat: add fetch_epic_cohort_data with 2-phase fetch"
+git commit -m "feat: add fetch_epic_cohort_data with 2-phase fetch and all statuses"
 ```
 
 ---
 
-## Task 3: Backend — `/api/stats/epic-cohort` endpoint
+## Task 3: Backend — `/api/stats/epic-cohort` endpoint + tests
 
 **Files:**
-- Modify: `jira_server.py` (add route handler, following burnout endpoint pattern at line ~4537)
-- Test: `tests/test_epic_cohort_api.py` (add endpoint integration test)
+- Modify: `jira_server.py` (add route after burnout endpoint ~line 4537)
+- Modify: `tests/test_epic_cohort_api.py`
 
 **Step 1: Write the failing test**
-
-Add to `tests/test_epic_cohort_api.py`:
 
 ```python
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
@@ -556,37 +519,25 @@ class TestEpicCohortEndpoint(unittest.TestCase):
         self.client = app.test_client()
 
     @patch.object(jira_server, 'fetch_epic_cohort_data')
-    @patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_30101')
-    def test_post_returns_cohort_data(self, mock_team, mock_fetch):
+    @patch.object(jira_server, 'resolve_team_field_id', return_value='cf_team')
+    def test_post_returns_data(self, mock_team, mock_fetch):
         mock_fetch.return_value = {
-            'groupBy': 'quarter',
-            'cohorts': [{'label': '2025Q1', 'epicCount': 2, 'epics': []}],
-            'periods': ['Q+0'],
-            'range': {'startDate': '2025-01-01', 'endDate': '2026-03-31'}
+            'groupBy': 'quarter', 'cohorts': [], 'periods': [], 'range': {}
         }
         resp = self.client.post('/api/stats/epic-cohort',
-            json={'startQuarter': '2025Q1', 'groupBy': 'quarter'},
-            content_type='application/json')
+            json={'startQuarter': '2025Q1'}, content_type='application/json')
         self.assertEqual(resp.status_code, 200)
-        data = resp.get_json()
-        self.assertIn('data', data)
-        self.assertEqual(data['data']['groupBy'], 'quarter')
+        self.assertIn('data', resp.get_json())
 
-    def test_post_missing_start_quarter_returns_400(self):
+    def test_missing_start_quarter_returns_400(self):
         resp = self.client.post('/api/stats/epic-cohort',
-            json={'groupBy': 'quarter'},
-            content_type='application/json')
+            json={}, content_type='application/json')
         self.assertEqual(resp.status_code, 400)
 ```
 
-**Step 2: Run test to verify it fails**
+**Step 2: Run test, verify fail (404)**
 
-Run: `python -m pytest tests/test_epic_cohort_api.py::TestEpicCohortEndpoint -v`
-Expected: FAIL — 404 (route not registered).
-
-**Step 3: Write minimal implementation**
-
-Add to `jira_server.py` after the burnout endpoint (line ~4537):
+**Step 3: Write endpoint**
 
 ```python
 @app.route('/api/stats/epic-cohort', methods=['POST'])
@@ -603,7 +554,9 @@ def get_epic_cohort_stats():
 
     raw_team_ids = payload.get('teamIds', [])
     team_ids = normalize_team_ids(raw_team_ids) if isinstance(raw_team_ids, list) else []
-    include_postponed = bool(payload.get('includePostponed', False))
+    raw_project_keys = payload.get('projectKeys', [])
+    project_keys = [str(k).strip() for k in raw_project_keys if str(k).strip()] if isinstance(raw_project_keys, list) else []
+    assignee_filter = str(payload.get('assignee', '')).strip() or None
 
     auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
     auth_bytes = auth_string.encode('ascii')
@@ -618,34 +571,21 @@ def get_epic_cohort_stats():
 
     try:
         result = fetch_epic_cohort_data(
-            start_quarter=start_quarter,
-            group_by=group_by,
-            headers=headers,
-            team_field_id=team_field_id,
-            team_ids=team_ids,
-            include_postponed=include_postponed
+            start_quarter=start_quarter, group_by=group_by,
+            headers=headers, team_field_id=team_field_id,
+            team_ids=team_ids, project_keys=project_keys,
+            assignee=assignee_filter
         )
     except Exception as e:
         log_warning(f'Epic cohort fetch failed: {e}')
         return jsonify({'error': str(e)}), 500
 
-    return jsonify({
-        'generatedAt': datetime.now().isoformat(),
-        'data': result
-    })
+    return jsonify({'generatedAt': datetime.now().isoformat(), 'data': result})
 ```
 
-**Step 4: Run test to verify it passes**
+**Step 4: Run tests, verify pass. Run full suite: `python -m pytest tests/ -v`**
 
-Run: `python -m pytest tests/test_epic_cohort_api.py -v`
-Expected: All tests PASS.
-
-**Step 5: Run full test suite**
-
-Run: `python -m pytest tests/ -v`
-Expected: All existing tests still pass (no regressions).
-
-**Step 6: Commit**
+**Step 5: Commit**
 
 ```bash
 git add jira_server.py tests/test_epic_cohort_api.py
@@ -659,301 +599,218 @@ git commit -m "feat: add /api/stats/epic-cohort endpoint"
 **Files:**
 - Create: `frontend/src/cohort/cohortUtils.js`
 
-**Step 1: Write the utility module**
-
-Create `frontend/src/cohort/cohortUtils.js`:
+**Key changes from v1:** Grid model builds **epic counts** per cell (not avg days). Separate functions for status filtering, summary computation, and open-epics bar data.
 
 ```js
 /**
- * Pure functions for building the cohort grid model from API data.
- * Zero closure dependencies — all inputs via parameters.
+ * Pure functions for the epic lead time cohort panel.
+ * Zero closure dependencies.
  */
 
 /**
- * Compute elapsed period index for an epic's done date relative to its cohort.
- * @param {string} createdDate - ISO date string (e.g. '2025-01-15')
- * @param {string} doneDate - ISO date string (e.g. '2025-06-20')
- * @param {string} groupBy - 'quarter' or 'month'
- * @returns {number} Elapsed period index (0 = same period as creation)
+ * Compute elapsed period index for a date relative to a cohort start.
  */
-export function computeElapsedPeriod(createdDate, doneDate, groupBy) {
+export function computeElapsedPeriod(createdDate, resolvedDate, groupBy) {
     const created = new Date(`${createdDate}T00:00:00`);
-    const done = new Date(`${doneDate}T00:00:00`);
-    if (Number.isNaN(created.getTime()) || Number.isNaN(done.getTime())) return 0;
-
+    const resolved = new Date(`${resolvedDate}T00:00:00`);
+    if (Number.isNaN(created.getTime()) || Number.isNaN(resolved.getTime())) return 0;
     if (groupBy === 'quarter') {
-        const createdQ = Math.floor(created.getMonth() / 3);
-        const doneQ = Math.floor(done.getMonth() / 3);
-        return (done.getFullYear() - created.getFullYear()) * 4 + (doneQ - createdQ);
+        const cQ = Math.floor(created.getMonth() / 3);
+        const rQ = Math.floor(resolved.getMonth() / 3);
+        return (resolved.getFullYear() - created.getFullYear()) * 4 + (rQ - cQ);
     }
-    // month
-    return (done.getFullYear() - created.getFullYear()) * 12
-        + (done.getMonth() - created.getMonth());
+    return (resolved.getFullYear() - created.getFullYear()) * 12
+        + (resolved.getMonth() - created.getMonth());
 }
 
 /**
- * Build the cohort grid model from API response.
- * @param {Object} apiData - The 'data' field from /api/stats/epic-cohort response
- * @returns {Object} { rows, maxPeriod, heatmap, summary }
+ * Filter epics by active status toggles.
+ * By default only Done + open are shown.
  */
-export function buildCohortGridModel(apiData) {
-    if (!apiData || !apiData.cohorts) {
-        return { rows: [], maxPeriod: 0, heatmap: { p25: 0, p75: 0 }, summary: null };
+export function filterEpicsByStatus(epics, { includeKilled, includeIncomplete, includePostponed }) {
+    return (epics || []).filter(e => {
+        if (e.status === 'Done' || e.status === 'open') return true;
+        if (e.status === 'Killed') return includeKilled;
+        if (e.status === 'Incomplete') return includeIncomplete || includePostponed;
+        return false;
+    });
+}
+
+/**
+ * Filter epics by project and assignee.
+ */
+export function filterEpicsByScope(epics, { project, assignee }) {
+    return (epics || []).filter(e => {
+        if (project && e.project !== project) return false;
+        if (assignee && (e.assignee?.id || e.assignee?.name) !== assignee) return false;
+        return true;
+    });
+}
+
+/**
+ * Build the cohort grid model: rows with cells containing epic COUNTS.
+ */
+export function buildCohortGridModel(cohorts, groupBy, statusFilters, scopeFilters) {
+    if (!cohorts || !cohorts.length) {
+        return { rows: [], maxPeriod: 0, heatmapMax: 0 };
     }
 
-    const { cohorts, groupBy, periods } = apiData;
-    const allLeadTimes = [];
     const rows = [];
+    let heatmapMax = 0;
 
-    cohorts.forEach((cohort) => {
+    cohorts.forEach(cohort => {
+        let filtered = filterEpicsByStatus(cohort.epics, statusFilters);
+        filtered = filterEpicsByScope(filtered, scopeFilters);
+
         const cells = {};
         let openCount = 0;
-        const doneEpics = [];
 
-        (cohort.epics || []).forEach((epic) => {
-            if (epic.status === 'Done' && epic.doneDate && epic.leadTimeDays != null) {
-                const elapsed = computeElapsedPeriod(epic.createdDate, epic.doneDate, groupBy);
-                if (!cells[elapsed]) {
-                    cells[elapsed] = { totalDays: 0, count: 0, epics: [] };
-                }
-                cells[elapsed].totalDays += epic.leadTimeDays;
-                cells[elapsed].count += 1;
-                cells[elapsed].epics.push(epic);
-                allLeadTimes.push(epic.leadTimeDays);
-                doneEpics.push(epic);
-            } else {
+        filtered.forEach(epic => {
+            if (epic.status === 'open') {
                 openCount += 1;
+                return;
             }
+            if (!epic.resolvedDate) return;
+            const elapsed = computeElapsedPeriod(epic.createdDate, epic.resolvedDate, groupBy);
+            if (!cells[elapsed]) cells[elapsed] = { count: 0, epics: [] };
+            cells[elapsed].count += 1;
+            cells[elapsed].epics.push(epic);
         });
 
-        // Compute averages per cell
-        const cellArray = Object.entries(cells).map(([periodIdx, data]) => ({
-            periodIndex: Number(periodIdx),
-            avgDays: Math.round(data.totalDays / data.count),
+        const cellArray = Object.entries(cells).map(([idx, data]) => ({
+            periodIndex: Number(idx),
             count: data.count,
             epics: data.epics
         }));
+        cellArray.forEach(c => { if (c.count > heatmapMax) heatmapMax = c.count; });
 
         rows.push({
             label: cohort.label,
-            epicCount: cohort.epicCount,
+            epicCount: filtered.length,
             cells: cellArray,
             openCount
         });
     });
 
-    // Compute heatmap thresholds from all lead times
-    const sorted = [...allLeadTimes].sort((a, b) => a - b);
-    const p25 = sorted.length > 0 ? sorted[Math.floor(sorted.length * 0.25)] : 0;
-    const p75 = sorted.length > 0 ? sorted[Math.floor(sorted.length * 0.75)] : 0;
-
-    // Summary
-    const totalCompleted = allLeadTimes.length;
-    const avgLeadTime = totalCompleted > 0
-        ? Math.round(allLeadTimes.reduce((a, b) => a + b, 0) / totalCompleted)
-        : 0;
-    const medianLeadTime = totalCompleted > 0
-        ? sorted[Math.floor(sorted.length / 2)]
-        : 0;
-    const totalOpen = rows.reduce((sum, r) => sum + r.openCount, 0);
-
     const maxPeriod = Math.max(0, ...rows.flatMap(r => r.cells.map(c => c.periodIndex)));
 
+    return { rows, maxPeriod, heatmapMax };
+}
+
+/**
+ * Compute summary card data from filtered cohorts.
+ */
+export function computeSummaryCards(cohorts, groupBy, statusFilters, scopeFilters, selectedCohortLabel) {
+    let allEpics = [];
+    (cohorts || []).forEach(cohort => {
+        if (selectedCohortLabel && cohort.label !== selectedCohortLabel) return;
+        let filtered = filterEpicsByStatus(cohort.epics, statusFilters);
+        filtered = filterEpicsByScope(filtered, scopeFilters);
+        allEpics = allEpics.concat(filtered);
+    });
+
+    const done = allEpics.filter(e => e.status === 'Done');
+    const killed = allEpics.filter(e => e.status === 'Killed');
+    const incomplete = allEpics.filter(e => e.status === 'Incomplete');
+    const open = allEpics.filter(e => e.status === 'open');
+
+    const avg = (arr) => {
+        const valid = arr.filter(e => e.leadTimeDays != null);
+        return valid.length ? Math.round(valid.reduce((s, e) => s + e.leadTimeDays, 0) / valid.length) : null;
+    };
+
     return {
-        rows,
-        maxPeriod,
-        heatmap: { p25, p75 },
-        summary: {
-            avgLeadTime,
-            medianLeadTime,
-            totalCompleted,
-            totalOpen
-        }
+        total: allEpics.length,
+        done: { count: done.length, avgDays: avg(done) },
+        killed: { count: killed.length, avgDays: avg(killed) },
+        incomplete: { count: incomplete.length, avgDays: avg(incomplete) },
+        open: { count: open.length, avgDays: avg(open) }
     };
 }
 
 /**
- * Return CSS class for heatmap coloring.
- * @param {number} avgDays - Average lead time in days
- * @param {Object} heatmap - { p25, p75 } thresholds
- * @returns {string} 'cohort-cell-fast' | 'cohort-cell-mid' | 'cohort-cell-slow'
+ * Build data for the open-epics horizontal bar chart.
+ * Sorted longest-first.
  */
-export function getHeatmapClass(avgDays, heatmap) {
-    if (avgDays <= heatmap.p25) return 'cohort-cell-fast';
-    if (avgDays >= heatmap.p75) return 'cohort-cell-slow';
-    return 'cohort-cell-mid';
+export function buildOpenEpicsBars(cohorts, statusFilters, scopeFilters, selectedCohortLabel) {
+    let openEpics = [];
+    (cohorts || []).forEach(cohort => {
+        if (selectedCohortLabel && cohort.label !== selectedCohortLabel) return;
+        let filtered = filterEpicsByStatus(cohort.epics, statusFilters);
+        filtered = filterEpicsByScope(filtered, scopeFilters);
+        filtered.forEach(e => {
+            if (e.status === 'open' && e.leadTimeDays != null) {
+                openEpics.push({ ...e, cohortLabel: cohort.label });
+            }
+        });
+    });
+    openEpics.sort((a, b) => b.leadTimeDays - a.leadTimeDays);
+    const maxDays = openEpics.length > 0 ? openEpics[0].leadTimeDays : 0;
+    return { epics: openEpics, maxDays };
+}
+
+/**
+ * Return heatmap opacity for a cell count (0.0 to 1.0).
+ */
+export function heatmapOpacity(count, maxCount) {
+    if (maxCount <= 0) return 0.1;
+    return 0.15 + 0.85 * (count / maxCount);
 }
 ```
 
-**Step 2: Build to verify no syntax errors**
+**Build:** `npm run build` → verify success.
 
-Run: `npm run build`
-Expected: Build succeeds (new file is not imported yet, but syntax is valid).
-
-**Step 3: Commit**
-
+**Commit:**
 ```bash
 git add frontend/src/cohort/cohortUtils.js
-git commit -m "feat: add cohortUtils.js with grid model builder"
+git commit -m "feat: add cohortUtils.js with grid model, summary, and bar chart builders"
 ```
 
 ---
 
-## Task 5: Frontend — `CohortGrid.jsx` presentational component
+## Task 5: Frontend — `CohortGrid.jsx` + `OpenEpicsChart.jsx` components
 
 **Files:**
 - Create: `frontend/src/cohort/CohortGrid.jsx`
+- Create: `frontend/src/cohort/OpenEpicsChart.jsx`
 
-**Step 1: Write the component**
+### CohortGrid.jsx
 
-Create `frontend/src/cohort/CohortGrid.jsx`:
+Presentational grid component. Parent passes `gridModel`, `groupBy`, `selectedRow`, `onRowClick`. Internal `hoverCell` state for tooltip.
 
-```jsx
-import * as React from 'react';
-import { getHeatmapClass } from './cohortUtils.js';
+Key rendering:
+- CSS Grid with `gridTemplateColumns: 180px repeat(N+1, minmax(64px, 1fr)) 80px`
+- Header row: period labels + "Open" column
+- Data rows: cohort label (clickable), cells with count + heatmap opacity, open count
+- Hover tooltip: status breakdown + epic list
+- Selected row: highlighted border
 
-const { useState } = React;
+### OpenEpicsChart.jsx
 
-function CohortGrid({ gridModel, groupBy }) {
-    const [hoverCell, setHoverCell] = useState(null);
+Horizontal bar chart component. Parent passes `barsData` (from `buildOpenEpicsBars`). Internal hover state.
 
-    if (!gridModel || !gridModel.rows.length) {
-        return <div className="cohort-empty">No epic data available for the selected range.</div>;
-    }
+Key rendering:
+- Each bar: `<div>` with width proportional to `leadTimeDays / maxDays`
+- Color by project (hash-based from `resolveTeamColor`)
+- Labels: epic key, days, assignee name
+- Hover: full summary tooltip
 
-    const { rows, maxPeriod, heatmap, summary } = gridModel;
-    const prefix = groupBy === 'quarter' ? 'Q' : 'M';
-    const periodHeaders = Array.from({ length: maxPeriod + 1 }, (_, i) => `${prefix}+${i}`);
+**Build:** `npm run build` → verify success.
 
-    return (
-        <div className="cohort-grid-container">
-            <div className="cohort-grid" style={{
-                gridTemplateColumns: `180px repeat(${maxPeriod + 2}, minmax(64px, 1fr))`
-            }}>
-                {/* Header row */}
-                <div className="cohort-header cohort-label-col">Cohort</div>
-                {periodHeaders.map((h) => (
-                    <div key={h} className="cohort-header">{h}</div>
-                ))}
-                <div className="cohort-header cohort-open-col">Open</div>
-
-                {/* Data rows */}
-                {rows.map((row) => {
-                    const cellMap = {};
-                    row.cells.forEach((c) => { cellMap[c.periodIndex] = c; });
-
-                    return (
-                        <React.Fragment key={row.label}>
-                            <div className="cohort-row-label">
-                                {row.label}
-                                <span className="cohort-row-count">({row.epicCount})</span>
-                            </div>
-                            {periodHeaders.map((_, idx) => {
-                                const cell = cellMap[idx];
-                                if (!cell) {
-                                    return <div key={idx} className="cohort-cell cohort-cell-empty">--</div>;
-                                }
-                                const cls = getHeatmapClass(cell.avgDays, heatmap);
-                                return (
-                                    <div
-                                        key={idx}
-                                        className={`cohort-cell ${cls}`}
-                                        onMouseEnter={() => setHoverCell({ row: row.label, period: idx, cell })}
-                                        onMouseLeave={() => setHoverCell(null)}
-                                    >
-                                        {cell.avgDays}d
-                                    </div>
-                                );
-                            })}
-                            <div className="cohort-cell cohort-cell-open">
-                                {row.openCount > 0 ? `◊ ${row.openCount}` : ''}
-                            </div>
-                        </React.Fragment>
-                    );
-                })}
-            </div>
-
-            {/* Hover tooltip */}
-            {hoverCell && (
-                <div className="cohort-tooltip">
-                    <div className="cohort-tooltip-title">
-                        {hoverCell.row} → {prefix}+{hoverCell.period}
-                    </div>
-                    <div className="cohort-tooltip-avg">
-                        Avg: {hoverCell.cell.avgDays}d ({hoverCell.cell.count} epics)
-                    </div>
-                    <div className="cohort-tooltip-list">
-                        {hoverCell.cell.epics.slice(0, 10).map((epic) => (
-                            <div key={epic.key} className="cohort-tooltip-epic">
-                                <span className="cohort-tooltip-key">{epic.key}</span>
-                                <span className="cohort-tooltip-days">{epic.leadTimeDays}d</span>
-                                <span className="cohort-tooltip-summary">{epic.summary}</span>
-                            </div>
-                        ))}
-                        {hoverCell.cell.epics.length > 10 && (
-                            <div className="cohort-tooltip-more">
-                                +{hoverCell.cell.epics.length - 10} more
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* Summary bar */}
-            {summary && (
-                <div className="cohort-summary">
-                    <span>Avg lead time <strong>{summary.avgLeadTime}d</strong></span>
-                    <span>Median <strong>{summary.medianLeadTime}d</strong></span>
-                    <span>Completed <strong>{summary.totalCompleted}</strong></span>
-                    <span>Open <strong>{summary.totalOpen}</strong></span>
-                    <span className="cohort-legend">
-                        <i className="cohort-swatch cohort-cell-fast" /> ≤{heatmap.p25}d
-                        <i className="cohort-swatch cohort-cell-mid" /> {heatmap.p25}-{heatmap.p75}d
-                        <i className="cohort-swatch cohort-cell-slow" /> ≥{heatmap.p75}d
-                    </span>
-                </div>
-            )}
-        </div>
-    );
-}
-
-export default React.memo(CohortGrid);
-```
-
-**Step 2: Build to verify**
-
-Run: `npm run build`
-Expected: Build succeeds.
-
-**Step 3: Commit**
-
+**Commit:**
 ```bash
-git add frontend/src/cohort/CohortGrid.jsx
-git commit -m "feat: add CohortGrid presentational component"
+git add frontend/src/cohort/CohortGrid.jsx frontend/src/cohort/OpenEpicsChart.jsx
+git commit -m "feat: add CohortGrid and OpenEpicsChart components"
 ```
 
 ---
 
-## Task 6: Frontend — Dashboard state, fetch effect, panel toggle
+## Task 6: Frontend — Dashboard integration (state, fetch, panel)
 
 **Files:**
 - Modify: `frontend/src/dashboard.jsx`
 
-This is the integration step. Add in this order:
-
-**Step 1: Add imports**
-
-At the import section (near existing scenario imports), add:
-
-```js
-import { buildCohortGridModel } from './cohort/cohortUtils.js';
-import CohortGrid from './cohort/CohortGrid.jsx';
-```
-
-**Step 2: Add state variables**
-
-Near the other panel state variables (around line 281, after `showScenario`):
-
+### State additions (near line 281):
 ```js
 const [showLeadTimes, setShowLeadTimes] = useState(false);
 const [cohortData, setCohortData] = useState(null);
@@ -961,117 +818,54 @@ const [cohortLoading, setCohortLoading] = useState(false);
 const [cohortError, setCohortError] = useState('');
 const [cohortGroupBy, setCohortGroupBy] = useState('quarter');
 const [cohortStartQuarter, setCohortStartQuarter] = useState('');
+const [cohortIncludeKilled, setCohortIncludeKilled] = useState(false);
+const [cohortIncludeIncomplete, setCohortIncludeIncomplete] = useState(false);
 const [cohortIncludePostponed, setCohortIncludePostponed] = useState(false);
+const [cohortProjectFilter, setCohortProjectFilter] = useState('');
+const [cohortAssigneeFilter, setCohortAssigneeFilter] = useState('');
+const [cohortSelectedRow, setCohortSelectedRow] = useState(null);
 const cohortCacheRef = useRef({});
 ```
 
-**Step 3: Add mutual exclusivity effect**
+### Mutual exclusivity (near line 2864):
+- Add `setShowLeadTimes(false)` to showPlanning/showStats/showScenario effects
+- Add new effect: `if (showLeadTimes) { setShowPlanning(false); setShowStats(false); setShowScenario(false); }`
 
-Near the existing mutual exclusivity effects (around line 2864-2876):
+### Fetch effect:
+- Triggers on: `showLeadTimes`, `cohortStartQuarter`, `selectedTeams`
+- Does NOT refetch on status toggle / project / assignee / groupBy changes (client-side filtering)
+- Follows burnout fetch pattern: AbortController, 120ms debounce, cache by query key
 
+### Memos:
 ```js
-useEffect(() => {
-    if (showLeadTimes) {
-        setShowPlanning(false);
-        setShowStats(false);
-        setShowScenario(false);
-    }
-}, [showLeadTimes]);
-```
+const cohortStatusFilters = React.useMemo(() => ({
+    includeKilled: cohortIncludeKilled,
+    includeIncomplete: cohortIncludeIncomplete,
+    includePostponed: cohortIncludePostponed
+}), [cohortIncludeKilled, cohortIncludeIncomplete, cohortIncludePostponed]);
 
-Also update the existing effects for showPlanning, showStats, showScenario to close showLeadTimes:
+const cohortScopeFilters = React.useMemo(() => ({
+    project: cohortProjectFilter || null,
+    assignee: cohortAssigneeFilter || null
+}), [cohortProjectFilter, cohortAssigneeFilter]);
 
-```js
-// In the showPlanning effect, add: setShowLeadTimes(false);
-// In the showStats effect, add: setShowLeadTimes(false);
-// In the showScenario effect, add: setShowLeadTimes(false);
-```
-
-**Step 4: Add fetch effect**
-
-After the burnout fetch effect (around line 4249):
-
-```js
-useEffect(() => {
-    if (!showLeadTimes) return;
-    const startQ = cohortStartQuarter || (() => {
-        const now = new Date();
-        const q = Math.floor(now.getMonth() / 3) + 1;
-        const yearOffset = q <= 2 ? -1 : 0;
-        return `${now.getFullYear() + yearOffset}Q1`;
-    })();
-
-    const cacheKey = `${startQ}::${cohortGroupBy}::${selectedTeams.join(',')}::${cohortIncludePostponed}`;
-    const cached = cohortCacheRef.current[cacheKey];
-    if (cached) {
-        setCohortData(cached);
-        setCohortError('');
-        setCohortLoading(false);
-        return;
-    }
-
-    const controller = new AbortController();
-    let cancelled = false;
-    setCohortLoading(true);
-    setCohortError('');
-
-    const doFetch = async () => {
-        try {
-            const teamIds = isAllTeamsSelected ? [] : Array.from(selectedTeamSet);
-            const resp = await fetch(`${BACKEND_URL}/api/stats/epic-cohort`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                signal: controller.signal,
-                body: JSON.stringify({
-                    startQuarter: startQ,
-                    groupBy: cohortGroupBy,
-                    teamIds,
-                    includePostponed: cohortIncludePostponed
-                })
-            });
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({}));
-                throw new Error(err.error || `Cohort fetch failed (${resp.status})`);
-            }
-            const payload = await resp.json();
-            if (cancelled) return;
-            const data = payload?.data || null;
-            cohortCacheRef.current[cacheKey] = data;
-            setCohortData(data);
-        } catch (err) {
-            if (cancelled) return;
-            if (err.name === 'AbortError') return;
-            setCohortError(String(err.message || err));
-            setCohortData(null);
-        } finally {
-            if (!cancelled) setCohortLoading(false);
-        }
-    };
-
-    const debounceId = window.setTimeout(doFetch, 120);
-    return () => {
-        cancelled = true;
-        window.clearTimeout(debounceId);
-        try { controller.abort(); } catch (_) {}
-    };
-}, [showLeadTimes, cohortStartQuarter, cohortGroupBy, selectedTeams.join(','), cohortIncludePostponed, isAllTeamsSelected]);
-```
-
-**Step 5: Add grid model memo**
-
-After the fetch effect:
-
-```js
 const cohortGridModel = React.useMemo(
-    () => buildCohortGridModel(cohortData),
-    [cohortData]
+    () => buildCohortGridModel(cohortData?.cohorts, cohortGroupBy, cohortStatusFilters, cohortScopeFilters),
+    [cohortData, cohortGroupBy, cohortStatusFilters, cohortScopeFilters]
+);
+
+const cohortSummary = React.useMemo(
+    () => computeSummaryCards(cohortData?.cohorts, cohortGroupBy, cohortStatusFilters, cohortScopeFilters, cohortSelectedRow),
+    [cohortData, cohortGroupBy, cohortStatusFilters, cohortScopeFilters, cohortSelectedRow]
+);
+
+const cohortOpenBars = React.useMemo(
+    () => buildOpenEpicsBars(cohortData?.cohorts, cohortStatusFilters, cohortScopeFilters, cohortSelectedRow),
+    [cohortData, cohortStatusFilters, cohortScopeFilters, cohortSelectedRow]
 );
 ```
 
-**Step 6: Add toggle button to header**
-
-In the header bar (around line 8542, after the Scenario button):
-
+### Header toggle button (after Scenario):
 ```jsx
 <button
     className={`mode-switch-button ${showLeadTimes ? 'active' : ''}`}
@@ -1082,215 +876,81 @@ In the header bar (around line 8542, after the Scenario button):
 </button>
 ```
 
-Also update the "Catch Up" button onClick to include `setShowLeadTimes(false)`.
+### Panel JSX:
+Full-bleed panel with: controls bar (groupBy toggle, start selector, project/assignee dropdowns, 3 status toggles), summary cards, CohortGrid, OpenEpicsChart.
 
-**Step 7: Add panel JSX**
+### Persist in savedPrefsRef:
+Add `showLeadTimes` (forced false on load), `cohortGroupBy`, `cohortStartQuarter`.
 
-After the scenario panel section (around line 9750+), add:
+**Build:** `npm run build` → verify success.
 
-```jsx
-{showLeadTimes && (
-    <div className="cohort-fullbleed">
-        <div className="cohort-panel open">
-            <div className="cohort-inner">
-                <div className="cohort-panel-header">
-                    <div>
-                        <div className="cohort-title">
-                            Epic Lead Times
-                            <span className="scenario-beta">Beta</span>
-                        </div>
-                        <div className="cohort-subtitle">
-                            Average epic delivery time by creation cohort.
-                        </div>
-                    </div>
-                    <div className="cohort-controls">
-                        <div className="scenario-toggle-group">
-                            <button
-                                className={`scenario-toggle ${cohortGroupBy === 'quarter' ? 'active' : ''}`}
-                                onClick={() => setCohortGroupBy('quarter')}
-                            >
-                                Quarter
-                            </button>
-                            <button
-                                className={`scenario-toggle ${cohortGroupBy === 'month' ? 'active' : ''}`}
-                                onClick={() => setCohortGroupBy('month')}
-                            >
-                                Month
-                            </button>
-                        </div>
-                        <label className="cohort-start-label">
-                            Start
-                            <select
-                                className="cohort-start-select"
-                                value={cohortStartQuarter}
-                                onChange={(e) => setCohortStartQuarter(e.target.value)}
-                            >
-                                <option value="">Auto</option>
-                                {(availableSprints || [])
-                                    .filter(s => /^\d{4}Q[1-4]$/.test(s.name))
-                                    .map(s => (
-                                        <option key={s.name} value={s.name}>{s.name}</option>
-                                    ))
-                                }
-                            </select>
-                        </label>
-                        <button
-                            className={`scenario-toggle ${cohortIncludePostponed ? 'active' : ''}`}
-                            onClick={() => setCohortIncludePostponed(prev => !prev)}
-                        >
-                            Include Postponed
-                        </button>
-                    </div>
-                </div>
-
-                {cohortLoading && (
-                    <div className="cohort-loading">Loading epic data...</div>
-                )}
-                {cohortError && (
-                    <div className="cohort-error">{cohortError}</div>
-                )}
-                {!cohortLoading && !cohortError && cohortGridModel && (
-                    <CohortGrid
-                        gridModel={cohortGridModel}
-                        groupBy={cohortGroupBy}
-                    />
-                )}
-            </div>
-        </div>
-    </div>
-)}
-```
-
-**Step 8: Add `showLeadTimes` to savedPrefsRef persistence**
-
-In the `saveUiPrefs` effect (around line 2999-3054), add `showLeadTimes` to the object and dependency array. In `loadUiPrefs`, force `showLeadTimes: false` on load (same as scenario).
-
-**Step 9: Build and verify**
-
-Run: `npm run build`
-Expected: Build succeeds.
-
-**Step 10: Commit**
-
+**Commit:**
 ```bash
 git add frontend/src/dashboard.jsx
-git commit -m "feat: add Lead Times panel toggle, state, fetch, and grid rendering"
+git commit -m "feat: integrate Lead Times panel with state, fetch, and rendering"
 ```
 
 ---
 
-## Task 7: CSS — Cohort grid styles
+## Task 7: CSS — Cohort panel styles
 
 **Files:**
 - Modify: `frontend/dist/dashboard.css`
 
-**Step 1: Add cohort CSS**
+Add styles for:
+- `.cohort-fullbleed`, `.cohort-panel`, `.cohort-inner`, `.cohort-panel-header`
+- `.cohort-title`, `.cohort-subtitle`, `.cohort-controls`
+- `.cohort-grid-container`, `.cohort-grid` (CSS Grid)
+- `.cohort-header`, `.cohort-row-label` (clickable, selected state)
+- `.cohort-cell` (with heatmap opacity via inline style)
+- `.cohort-cell-open` (amber)
+- `.cohort-tooltip` (positioned, dark background)
+- `.cohort-summary` (flex row of cards)
+- `.cohort-summary-card` (with `.active` state for drill-down)
+- `.cohort-open-chart` (bar chart container)
+- `.cohort-bar` (horizontal bar with project color)
+- `.cohort-bar-label` (key + days + assignee)
+- Hover highlight styles (row + column crosshair)
+- Loading/error/empty states
 
-Add at the end of `frontend/dist/dashboard.css`:
+Follow existing dark theme (`#1e293b`, `#0f172a`, `#e2e8f0`, `#94a3b8` palette).
 
-```css
-/* ── Cohort Lead Times Panel ────────────────────────────── */
-.cohort-fullbleed { width: 100%; margin: 0 -20px; padding: 0 20px; }
-.cohort-panel { background: #1e293b; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
-.cohort-inner { display: flex; flex-direction: column; gap: 16px; }
-.cohort-panel-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
-.cohort-title { font-size: 1.1rem; font-weight: 700; color: #e2e8f0; display: flex; align-items: center; gap: 8px; }
-.cohort-subtitle { font-size: 0.78rem; color: #94a3b8; margin-top: 2px; }
-.cohort-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.cohort-start-label { font-size: 0.78rem; color: #94a3b8; display: flex; align-items: center; gap: 6px; }
-.cohort-start-select { background: #334155; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 2px 6px; font-size: 0.78rem; }
+**Build:** `npm run build` → verify.
 
-/* Grid */
-.cohort-grid-container { position: relative; }
-.cohort-grid { display: grid; gap: 1px; background: #334155; border-radius: 6px; overflow: hidden; }
-.cohort-header { background: #1e293b; color: #94a3b8; font-size: 0.72rem; font-weight: 600; text-align: center; padding: 6px 4px; text-transform: uppercase; }
-.cohort-label-col { text-align: left; padding-left: 10px; }
-.cohort-open-col { color: #f59e0b; }
-.cohort-row-label { background: #1e293b; color: #e2e8f0; font-size: 0.78rem; font-weight: 600; padding: 8px 10px; display: flex; align-items: center; gap: 6px; }
-.cohort-row-count { color: #64748b; font-weight: 400; font-size: 0.72rem; }
-
-/* Cells */
-.cohort-cell { background: #1e293b; color: #e2e8f0; font-size: 0.78rem; font-weight: 600; text-align: center; padding: 8px 4px; cursor: default; transition: opacity 0.15s; }
-.cohort-cell:hover { opacity: 0.85; }
-.cohort-cell-empty { color: #475569; font-weight: 400; }
-.cohort-cell-fast { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
-.cohort-cell-mid { background: rgba(234, 179, 8, 0.2); color: #facc15; }
-.cohort-cell-slow { background: rgba(239, 68, 68, 0.2); color: #f87171; }
-.cohort-cell-open { background: #1e293b; color: #f59e0b; font-weight: 400; font-size: 0.75rem; }
-.cohort-empty { color: #94a3b8; text-align: center; padding: 40px 20px; font-size: 0.85rem; }
-.cohort-loading { color: #94a3b8; text-align: center; padding: 40px 20px; }
-.cohort-error { color: #f87171; text-align: center; padding: 20px; font-size: 0.85rem; }
-
-/* Tooltip */
-.cohort-tooltip { position: absolute; z-index: 100; background: #0f172a; border: 1px solid #475569; border-radius: 6px; padding: 10px 12px; min-width: 220px; max-width: 360px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none; right: 20px; top: 60px; }
-.cohort-tooltip-title { font-size: 0.78rem; font-weight: 700; color: #e2e8f0; margin-bottom: 4px; }
-.cohort-tooltip-avg { font-size: 0.75rem; color: #94a3b8; margin-bottom: 6px; }
-.cohort-tooltip-list { display: flex; flex-direction: column; gap: 2px; }
-.cohort-tooltip-epic { display: flex; gap: 6px; font-size: 0.72rem; color: #cbd5e1; }
-.cohort-tooltip-key { font-weight: 600; color: #60a5fa; min-width: 80px; }
-.cohort-tooltip-days { color: #94a3b8; min-width: 36px; text-align: right; }
-.cohort-tooltip-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cohort-tooltip-more { font-size: 0.7rem; color: #64748b; font-style: italic; }
-
-/* Summary */
-.cohort-summary { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 10px 0 0; font-size: 0.78rem; color: #94a3b8; }
-.cohort-summary strong { color: #e2e8f0; }
-.cohort-legend { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.cohort-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 2px; }
-```
-
-**Step 2: Build**
-
-Run: `npm run build`
-Expected: Build succeeds.
-
-**Step 3: Commit**
-
+**Commit:**
 ```bash
 git add frontend/dist/dashboard.css
-git commit -m "feat: add cohort grid CSS styles"
+git commit -m "feat: add cohort panel CSS styles"
 ```
 
 ---
 
-## Task 8: Build, verify, and final commit
+## Task 8: Build, full test suite, push
 
-**Step 1: Run full backend test suite**
-
-Run: `python -m pytest tests/ -v`
-Expected: All tests PASS (including new epic cohort tests).
-
-**Step 2: Build frontend**
-
-Run: `npm run build`
-Expected: Build succeeds, no errors.
-
-**Step 3: Verify file structure**
-
-```
-frontend/src/cohort/
-├── cohortUtils.js
-└── CohortGrid.jsx
-```
-
-**Step 4: Push branch**
-
-```bash
-git push -u origin plan/epic-lead-time-cohort
-```
+**Step 1:** `python -m pytest tests/ -v` → all pass
+**Step 2:** `npm run build` → succeeds
+**Step 3:** `git push -u origin plan/epic-lead-time-cohort`
 
 ---
 
 ## Execution Summary
 
-| Task | What | Files | Est. Lines |
-|------|------|-------|-----------|
-| 1 | Period helper functions + tests | `jira_server.py`, `tests/test_epic_cohort_api.py` | ~80 |
-| 2 | Epic cohort fetch function + tests | `jira_server.py`, `tests/test_epic_cohort_api.py` | ~180 |
-| 3 | `/api/stats/epic-cohort` endpoint + tests | `jira_server.py`, `tests/test_epic_cohort_api.py` | ~50 |
-| 4 | `cohortUtils.js` pure functions | `frontend/src/cohort/cohortUtils.js` | ~110 |
-| 5 | `CohortGrid.jsx` component | `frontend/src/cohort/CohortGrid.jsx` | ~120 |
-| 6 | Dashboard integration (state, fetch, panel) | `frontend/src/dashboard.jsx` | ~150 |
-| 7 | CSS styles | `frontend/dist/dashboard.css` | ~80 |
-| 8 | Final verification | — | — |
-| **Total** | | **6 files** | **~770 lines** |
+| Task | What | Files | ~Lines |
+|------|------|-------|--------|
+| 1 | Period helpers + tests | `jira_server.py`, `test_epic_cohort_api.py` | ~80 |
+| 2 | Cohort fetch function + tests | `jira_server.py`, `test_epic_cohort_api.py` | ~200 |
+| 3 | API endpoint + tests | `jira_server.py`, `test_epic_cohort_api.py` | ~50 |
+| 4 | `cohortUtils.js` (6 pure functions) | `frontend/src/cohort/cohortUtils.js` | ~160 |
+| 5 | `CohortGrid.jsx` + `OpenEpicsChart.jsx` | `frontend/src/cohort/` | ~200 |
+| 6 | Dashboard integration | `frontend/src/dashboard.jsx` | ~180 |
+| 7 | CSS styles | `frontend/dist/dashboard.css` | ~100 |
+| 8 | Verification | — | — |
+| **Total** | | **7 files** | **~970 lines** |
+
+### Key v2 changes from v1:
+- Cells show **epic counts** (not avg days)
+- **All statuses** fetched; 3 client-side toggles (Killed/Incomplete/Postponed, all OFF by default)
+- **Project + Assignee** client-side filters
+- **Summary cards** with drill-down on cohort row click
+- **Open-epics horizontal bar chart** sorted longest-first
+- Backend returns richer data (project, assignee, all statuses)

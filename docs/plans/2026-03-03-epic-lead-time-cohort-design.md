@@ -1,282 +1,142 @@
-# Epic Lead Time Cohort Chart — Design (v2)
+# Epic Lead Time Cohort Chart — Design (v3)
 
 ## Overview
+A full-screen analytics panel (like Scenario/Statistics) showing epic lead-time throughput in a cohort grid:
+- Rows: cohort by epic creation period (quarter or month)
+- Columns: elapsed periods (`Q+N` or `M+N`)
+- Cells: resolved epic count (heatmap intensity)
+- Summary cards: totals by status
+- Open epics chart: horizontal bars sorted by age
 
-A full-screen panel (like Scenario Planner) showing epic delivery lead times through a retention-style cohort grid. Rows are cohorts grouped by epic creation period (quarter or month). Columns are elapsed time periods. Cells show **epic count** with heatmap coloring. Summary cards break down totals by status. A horizontal bar chart visualizes in-progress epics sorted by age.
+The panel is optimized for fast interaction after first load: regrouping and filters happen client-side without extra Jira requests.
 
-Inspired by [Observable's user retention chart](https://observablehq.com/@observablehq/user-retention), adapted for delivery throughput rather than retention percentage.
-
-## Decisions
-
+## Key Decisions
 | Decision | Choice |
-|----------|--------|
-| Panel type | Full-screen top-level toggle (like Scenario) |
-| Data source | Dedicated `POST /api/stats/epic-cohort` endpoint |
-| Backend pattern | 2-phase fetch following burnout API pattern |
-| Cell content | **Epic count** + heatmap color (intensity by count) |
-| Status filters | Three toggles (Killed / Incomplete / Postponed) — all OFF by default. Only Done + In Progress shown initially. |
-| Cohort granularity | Quarter or month (user toggle) |
-| Segmentation | By Jira project and epic assignee |
-| Drill-down | Click a cohort row to filter summary cards + open-epics chart |
-| Open-epics chart | Horizontal bar chart sorted longest-first |
+|---|---|
+| Endpoint | `POST /api/stats/epic-cohort` |
+| Jira pagination | `nextPageToken` + `isLast` only (no `startAt/total`) |
+| Fetch strategy | One scoped backend fetch, then client-side regroup/filter |
+| Refetch triggers | Only scope changes: `startQuarter`, `teamIds`, explicit refresh |
+| Grouping toggle | Quarter/Month regrouped in UI (no API refetch) |
+| Status filters | Done + In Progress default; Killed/Incomplete/Postponed optional |
+| Postponed semantics | `status == "Postponed"`; not treated as In Progress |
+| Performance guard | bounded changelog enrichment + caching + timeout budget |
 
----
-
-## 1. API: `POST /api/stats/epic-cohort`
-
+## API Contract
 ### Request
-
 ```json
 {
   "startQuarter": "2025Q1",
-  "groupBy": "quarter",
-  "teamIds": [],
-  "projectKeys": [],
-  "assignee": ""
+  "teamIds": ["team-id-1", "team-id-2"],
+  "refresh": false
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `startQuarter` | string | Earliest cohort period (format: `YYYYQN`). Cohorts span from this quarter to now. |
-| `groupBy` | `"quarter"` \| `"month"` | Cohort and elapsed-time granularity. |
-| `teamIds` | string[] | Optional team filter. Empty = all teams. |
-| `projectKeys` | string[] | Optional project filter. Empty = all projects. |
-| `assignee` | string | Optional assignee account ID filter. Empty = all. |
-
-### Backend Logic
-
-**Phase 1 — Base fields (fast):**
-```
-JQL: issuetype = Epic
-     AND project IN ({configured_projects or projectKeys filter})
-     AND created >= "{startQuarter start date}"
-
-Fields: created, duedate, status, resolutiondate, summary, assignee, {team_field}, project
-```
-
-The backend fetches ALL epics (including Killed/Incomplete) and tags each with its status. Filtering by status is done client-side via the three toggles, so the user can toggle without re-fetching.
-
-**Phase 2 — Changelog for Done epics missing `resolutiondate`:**
-- For each Done epic where `resolutiondate` is null, fetch changelog
-- Find first `status → Done` transition date
-- For Killed/Incomplete epics missing resolution: same changelog lookup for their terminal transition date
-
-**Lead time calculation:**
-- Done: `leadTimeDays = (doneDate - createdDate).days`
-- Killed: `leadTimeDays = (killedDate - createdDate).days`
-- Incomplete: `leadTimeDays = (incompleteDate - createdDate).days`
-- In Progress (open): `leadTimeDays = (today - createdDate).days`, `status = "open"`
+### Notes
+- `startQuarter` is required.
+- `teamIds` is optional; empty means all teams in current dashboard scope.
+- `refresh=true` bypasses backend/session cache.
+- `groupBy`, project filter, assignee filter, and status toggles are UI-only and do not belong to request payload.
 
 ### Response
-
 ```json
 {
+  "generatedAt": "2026-03-04T12:30:00",
   "data": {
-    "groupBy": "quarter",
-    "cohorts": [
-      {
-        "label": "2025Q1",
-        "startDate": "2025-01-01",
-        "endDate": "2025-03-31",
-        "epicCount": 12,
-        "epics": [
-          {
-            "key": "PROD-100",
-            "summary": "User onboarding flow",
-            "project": "PROD",
-            "team": { "id": "T1", "name": "Team Alpha" },
-            "assignee": { "id": "alice-id", "name": "Alice" },
-            "createdDate": "2025-01-15",
-            "resolvedDate": "2025-06-20",
-            "leadTimeDays": 156,
-            "status": "Done"
-          }
-        ]
-      }
-    ],
-    "periods": ["Q+0", "Q+1", "Q+2", "Q+3", "Q+4", "Q+5"],
     "range": {
       "startDate": "2025-01-01",
       "endDate": "2026-03-31"
+    },
+    "issues": [
+      {
+        "key": "PRODUCT-12345",
+        "summary": "Epic summary",
+        "projectKey": "PRODUCT",
+        "team": { "id": "team-id-1", "name": "R&D Distribution" },
+        "assignee": { "id": "abc", "name": "User Name" },
+        "createdDate": "2025-02-10",
+        "terminalDate": "2025-05-21",
+        "status": "Done",
+        "leadTimeDays": 100,
+        "terminalDateSource": "resolutiondate"
+      }
+    ],
+    "meta": {
+      "truncated": false,
+      "warnings": [],
+      "paginationMode": "nextPageToken/isLast"
     }
   }
 }
 ```
 
-Status values: `"Done"`, `"Killed"`, `"Incomplete"`, `"open"`.
+Status values:
+- `Done`
+- `Killed`
+- `Incomplete`
+- `Postponed`
+- `open` (non-terminal)
 
----
+## Backend Data Strategy
+### Phase 1: Base epic fetch (mandatory)
+- JQL scoped by `startQuarter`, selected team scope, configured projects.
+- Uses Jira pagination contract: `nextPageToken` + `isLast`.
+- Required fields only: `created`, `status`, `resolutiondate`, `summary`, `assignee`, `project`, team field.
 
-## 2. Panel Layout
+### Phase 2: Targeted enrichment (bounded)
+Only for terminal statuses missing terminal date:
+- `Done`, `Killed`, `Incomplete`, `Postponed`
+- Changelog lookup bounded by:
+  - max parallel workers: 4
+  - max enrichment targets per request: 200
+  - per-request enrichment timeout budget: 10s
+- Items not enriched within budget remain with `terminalDate = null` and warning metadata.
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│ Epic Lead Times                                              [Beta] │
-│                                                                      │
-│ [Quarter ▾ Month]  Start: [2025Q1 ▾]                               │
-│ Project: [All ▾]   Assignee: [All ▾]                                │
-│ [Killed] [Incomplete] [Postponed]         ← toggles, all OFF        │
-│                                                                      │
-│ ┌─ Summary Cards ──────────────────────────────────────────────────┐ │
-│ │  Total    │  Done      │  Killed  │  Incomplete │  In Progress   │ │
-│ │  52       │  31        │  4       │  3          │  14            │ │
-│ │           │  avg 38d   │  avg 12d │  avg 45d    │  avg 142d      │ │
-│ └──────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-│ ┌─ Cohort Grid ───────────────────────────────────────────────────┐  │
-│ │              Q+0    Q+1    Q+2    Q+3    Q+4    Open            │  │
-│ │ 2025Q1 (12)   3      4      2      1      --     2             │  │
-│ │ 2025Q2 (8)    2      3      1      --     --     2             │  │
-│ │ 2025Q3 (15)   5      3      --     --     --     7  ← selected │  │
-│ │ 2025Q4 (6)    1      --     --     --     --     5             │  │
-│ │ 2026Q1 (9)    --     --     --     --     --     9             │  │
-│ └─────────────────────────────────────────────────────────────────┘  │
-│                                                                      │
-│ ┌─ In-Progress Epics (2025Q3 cohort: 7 open) ────────────────────┐  │
-│ │ PROD-100  ████████████████████████████  312d  @Alice            │  │
-│ │ PROD-205  ██████████████████████         245d  @Bob             │  │
-│ │ TECH-88   ████████████████               198d  @Charlie         │  │
-│ │ PROD-310  ██████████                     142d  @Alice           │  │
-│ │ TECH-120  ████████                       118d  @Dave            │  │
-│ │ PROD-415  ██████                          87d  @Bob             │  │
-│ │ TECH-200  ████                            52d  @Eve             │  │
-│ └─────────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────┘
-```
+### Lead-time rules
+- `Done/Killed/Incomplete/Postponed`: `leadTimeDays = terminalDate - createdDate` when terminal date exists
+- `open`: `leadTimeDays = today - createdDate`
+- Terminal statuses without terminal date:
+  - included in status counters
+  - excluded from elapsed-period cell placement until terminal date known
 
----
+## Frontend Behavior
+## Grouping (Quarter/Month)
+- Done entirely in UI from `createdDate` + `terminalDate`.
+- Switching group mode recalculates grid and cards client-side.
+- No network request for group change.
 
-## 3. Cohort Grid
+## Filters
+- Client-side filters:
+  - project
+  - assignee
+  - status toggles (`Killed`, `Incomplete`, `Postponed`)
+- Toggle defaults:
+  - ON by default: `Done`, `In Progress`
+  - OFF by default: `Killed`, `Incomplete`, `Postponed`
 
-### Grid Structure
+## Postponed semantics
+- `Postponed` is a first-class status (`status == "Postponed"`).
+- It is never counted as `open`.
+- Included only when Postponed toggle is enabled.
 
-- **Rows** = cohorts: epics grouped by creation period. Epic count in parentheses.
-- **Columns** = elapsed time since cohort start. Q+0 = resolved within the creation quarter; Q+1 = next quarter; etc.
-- **Cells** = number of epics from that cohort resolved during that elapsed period. Heatmap color encodes count intensity (higher = darker/more saturated).
-- **Open column** = count of still-open (in-progress) epics per cohort.
-- **Empty cells** (--) = no epics resolved in that period.
-- **Row click** = selects cohort, filters summary cards and open-epics chart to that cohort. Click again to deselect.
+## Performance + Safety Constraints
+- Expected load scope: up to ~398 epics for 2 years.
+- Backend cache key: `startQuarter + teamScope + configuredProjectsVersion`.
+- Cache TTL target: session/local (or 5 min server cache, configurable).
+- Single backend request per scope load; no request storms on UI toggles.
+- Response includes `meta.warnings` for partial enrichment/truncation.
+- If epic count exceeds safe limit, return partial result with explicit warning instead of uncontrolled fan-out.
 
-### Month Mode
+## UI Layout
+- Top controls: Start Quarter, Team scope badge, Group By (Quarter/Month), Project filter, Assignee filter, status toggles.
+- Summary cards: Total, Done, Killed, Incomplete, Postponed, In Progress.
+- Cohort grid with heatmap counts and row selection drill-down.
+- Open epics horizontal bar chart scoped by selected row.
 
-Same layout but rows are months (`2025-01`, `2025-02`, ...) and columns are `M+0`, `M+1`, etc.
-
-### Heatmap Scale
-
-- Computed dynamically from all cell counts in the current view
-- Lighter = fewer epics, darker/more saturated = more epics
-- Color palette: blue-based intensity (not red/green, since this is count not good/bad)
-- Open column: amber/gold color (distinct from resolved cells)
-
-### Hover Tooltip
-
-Hovering a cell shows:
-- Breakdown by status: Done: N, Killed: N, Incomplete: N (if those toggles are on)
-- List of epics: key, summary, lead time, assignee
-- Grouped by project if multiple projects contribute
-
----
-
-## 4. Summary Cards
-
-Five cards across the top:
-
-| Card | Content |
-|------|---------|
-| **Total** | Total epic count (in current scope) |
-| **Done** | Count + average lead time in days |
-| **Killed** | Count + average lead time (hidden when toggle off) |
-| **Incomplete** | Count + average lead time (hidden when toggle off) |
-| **In Progress** | Count + average days open so far |
-
-Cards update when:
-- A cohort row is clicked (filter to that cohort)
-- Status toggles change
-- Project/assignee filters change
-
----
-
-## 5. In-Progress Epics Chart
-
-Horizontal bar chart below the cohort grid:
-
-- One bar per open epic, sorted **longest-first** (most days open at top)
-- Bar length proportional to days open
-- Bar color by project (reuse `resolveTeamColor` or project-based palette)
-- Label: epic key, days open, assignee name
-- Hover: full epic summary, team, creation date
-- Scope: all open epics by default; filtered to selected cohort row when clicked
-
----
-
-## 6. Controls
-
-| Control | Behavior |
-|---------|----------|
-| Quarter / Month toggle | Switches cohort granularity; re-groups data client-side (no refetch) |
-| Start quarter selector | Sets earliest cohort row; triggers API refetch |
-| Project filter | Dropdown of configured projects; client-side filter (no refetch) |
-| Assignee filter | Dropdown built from epic assignees in response; client-side filter |
-| Killed toggle | OFF by default. When ON, includes Killed epics in grid/cards. Client-side filter. |
-| Incomplete toggle | OFF by default. When ON, includes Incomplete epics. Client-side. |
-| Postponed toggle | OFF by default. When ON, includes Postponed (status=Incomplete with sprint change). Client-side. |
-
-**Client-side vs server-side:** Backend always returns all epics (except optionally filtered by project/assignee at JQL level). Status toggles, project, and assignee filters are all applied client-side for instant interaction.
-
----
-
-## 7. Data Flow
-
-```
-User opens Lead Times panel
-  → fetchEpicCohort(startQuarter, groupBy, teamIds)
-  → POST /api/stats/epic-cohort
-  → Backend: JQL fetch → changelog enrichment → group into cohorts
-  → Response: cohorts[] with all epics[] (Done + Killed + Incomplete + open)
-  → Frontend state: cohortData
-  → Client-side filtering: project, assignee, status toggles
-  → Frontend memo: buildCohortGridModel(filteredData)
-  → Render: summary cards, cohort grid, open-epics bar chart
-  → User clicks cohort row: selectedCohort state → filters cards + bar chart
-  → User changes groupBy: re-compute grid client-side (no refetch)
-  → User changes start quarter: refetch from API
-```
-
----
-
-## 8. Interaction Details
-
-### Hover behavior (like burnout chart)
-- Grid cells: highlight row + column on hover (crosshair effect)
-- Bar chart bars: highlight bar, show tooltip with full epic details
-- Summary cards: subtle hover lift effect
-
-### Drill-down
-- Click a cohort row label → row gets "selected" styling (brighter border/background)
-- Summary cards update to show only that cohort's numbers
-- Bar chart filters to only that cohort's open epics
-- Click again (or click another row) to deselect
-
-### Transitions
-- Grid cells and bar chart bars animate on filter changes (opacity fade)
-- Summary card numbers animate (count-up effect like burnout cards)
-
----
-
-## 9. File Structure
-
-```
-frontend/src/
-├── dashboard.jsx              # State, fetch effect, panel toggle
-├── cohort/                    # New module
-│   ├── cohortUtils.js         # Pure functions: buildCohortGridModel,
-│   │                          #   filterEpicsByStatus, computeSummaryCards,
-│   │                          #   buildOpenEpicsBars, computeHeatmapScale
-│   ├── CohortGrid.jsx         # Grid table + hover tooltip
-│   └── OpenEpicsChart.jsx     # Horizontal bar chart for in-progress epics
-│
-jira_server.py                 # New endpoint: /api/stats/epic-cohort
-tests/
-└── test_epic_cohort_api.py    # Backend tests
-```
+## Verification Checklist
+1. API returns data using `nextPageToken/isLast` flow (no `startAt/total`).
+2. GroupBy switch recalculates UI instantly with zero network calls.
+3. Project/assignee/status toggles update UI without refetch.
+4. Postponed status is not included in open counts.
+5. Large scope (near 398 epics) stays within enrichment/time budgets and surfaces warnings when partial.
+6. Drill-down row selection updates cards and open-epics chart correctly.

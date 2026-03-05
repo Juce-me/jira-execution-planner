@@ -1127,6 +1127,18 @@ def normalize_team_ids(team_ids):
     return normalized
 
 
+def normalize_epic_keys(epic_keys):
+    seen = set()
+    normalized = []
+    for epic_key in epic_keys or []:
+        value = str(epic_key or '').strip().upper()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    return normalized
+
+
 def resolve_groups_config_path():
     return GROUPS_CONFIG_PATH or './team-groups.json'
 
@@ -1624,11 +1636,19 @@ def validate_groups_config(payload, allow_empty=False):
             # Backwards compat: accept old singular field
             old_single = str(group.get('missingInfoComponent') or '').strip()
             missing_info_components = [old_single] if old_single else []
+        raw_excluded_epics = group.get('excludedCapacityEpics')
+        if isinstance(raw_excluded_epics, list):
+            excluded_capacity_epics = normalize_epic_keys(raw_excluded_epics)
+        elif isinstance(raw_excluded_epics, str) and raw_excluded_epics.strip():
+            excluded_capacity_epics = normalize_epic_keys([raw_excluded_epics.strip()])
+        else:
+            excluded_capacity_epics = []
         normalized_groups.append({
             'id': group_id,
             'name': name,
             'teamIds': team_ids,
-            'missingInfoComponents': missing_info_components
+            'missingInfoComponents': missing_info_components,
+            'excludedCapacityEpics': excluded_capacity_epics
         })
 
     default_group_id = str(payload.get('defaultGroupId') or '').strip()
@@ -1661,7 +1681,8 @@ def build_default_groups_config():
             'id': 'default',
             'name': 'Default',
             'teamIds': team_ids,
-            'missingInfoComponents': [MISSING_INFO_COMPONENT] if MISSING_INFO_COMPONENT else []
+            'missingInfoComponents': [MISSING_INFO_COMPONENT] if MISSING_INFO_COMPONENT else [],
+            'excludedCapacityEpics': []
         }],
         'defaultGroupId': 'default',
         'teamCatalog': {},
@@ -5323,6 +5344,9 @@ PROJECTS_CACHE_TTL = 60 * 60  # 1 hour
 COMPONENTS_CACHE = {'data': None, 'timestamp': 0}
 COMPONENTS_CACHE_TTL = 60 * 60  # 1 hour
 
+EPICS_SEARCH_CACHE = {}
+EPICS_SEARCH_CACHE_TTL = 60 * 5  # 5 minutes
+
 @app.route('/api/projects', methods=['GET'])
 def get_jira_projects():
     """Fetch available Jira projects via project search API with caching."""
@@ -5503,6 +5527,108 @@ def get_jira_components():
         return jsonify({'components': all_components[:limit]})
     except Exception as e:
         return jsonify({'error': 'Failed to fetch components', 'details': str(e)}), 500
+
+
+@app.route('/api/epics/search', methods=['GET'])
+def search_epics():
+    """Search epics by key or summary across selected projects."""
+    try:
+        query = str(request.args.get('query') or '').strip()
+        if not query:
+            return jsonify({'epics': []})
+
+        limit_raw = str(request.args.get('limit') or '').strip()
+        limit = 15
+        if limit_raw:
+            try:
+                limit = max(1, min(int(limit_raw), 100))
+            except ValueError:
+                return jsonify({'error': 'limit must be an integer'}), 400
+
+        projects = get_selected_projects()
+        if not projects:
+            return jsonify({'epics': []})
+
+        normalized_projects = sorted({str(project or '').strip() for project in projects if str(project or '').strip()})
+        cache_key = f'{"|".join(normalized_projects)}::{query.lower()}::{limit}'
+        now_ts = time.time()
+        with _cache_lock:
+            cached = EPICS_SEARCH_CACHE.get(cache_key)
+            if cached and (now_ts - float(cached.get('timestamp') or 0)) < EPICS_SEARCH_CACHE_TTL:
+                return jsonify({'epics': cached.get('data') or []})
+
+        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+        auth_bytes = auth_string.encode('ascii')
+        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+        headers = {
+            'Authorization': f'Basic {auth_base64}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+
+        escaped_projects = ', '.join(f'"{_escape_jql_literal(project)}"' for project in normalized_projects)
+        escaped_query = _escape_jql_literal(query)
+        escaped_key = _escape_jql_literal(query.upper())
+        key_like = re.match(r'^[A-Za-z][A-Za-z0-9_]+-\d+$', query) is not None
+
+        if key_like:
+            query_clause = f'key = "{escaped_key}"'
+        else:
+            query_clause = f'(summary ~ "\\"{escaped_query}\\"" OR key ~ "{escaped_key}*")'
+
+        jql = (
+            f'issuetype = Epic AND project in ({escaped_projects}) '
+            f'AND {query_clause} ORDER BY updated DESC'
+        )
+
+        response = jira_search_request(headers, {
+            'jql': jql,
+            'maxResults': limit,
+            'fields': ['summary', 'status', 'project', 'issuetype']
+        })
+        if response.status_code != 200:
+            return jsonify({
+                'error': f'Jira API error: {response.status_code}',
+                'details': response.text
+            }), response.status_code
+
+        issues = (response.json() or {}).get('issues') or []
+        selected_project_set = set(normalized_projects)
+        epics = []
+        for issue in issues:
+            key = str(issue.get('key') or '').strip().upper()
+            fields = issue.get('fields') or {}
+            summary = str(fields.get('summary') or '').strip()
+            project_key = str((fields.get('project') or {}).get('key') or '').strip()
+            issue_type = fields.get('issuetype') or {}
+            issue_type_name = str(issue_type.get('name') or '').strip().lower()
+            hierarchy_level = issue_type.get('hierarchyLevel')
+            is_epic_type = issue_type_name == 'epic' or str(hierarchy_level) == '1'
+            if not key:
+                continue
+            # Defensive filtering: keep only selected projects + actual epic type.
+            # Jira search should already enforce this via JQL, but we re-check to
+            # avoid leaking stories/tasks if Jira returns mixed issue types.
+            if project_key and project_key not in selected_project_set:
+                continue
+            if not is_epic_type:
+                continue
+            epics.append({
+                'key': key,
+                'summary': summary,
+                'status': ((fields.get('status') or {}).get('name') or ''),
+                'projectKey': project_key
+            })
+
+        with _cache_lock:
+            EPICS_SEARCH_CACHE[cache_key] = {
+                'timestamp': now_ts,
+                'data': epics
+            }
+
+        return jsonify({'epics': epics})
+    except Exception as e:
+        return jsonify({'error': 'Failed to search epics', 'details': str(e)}), 500
 
 
 @app.route('/api/projects/selected', methods=['GET'])

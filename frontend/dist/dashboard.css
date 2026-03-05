@@ -1657,6 +1657,10 @@
             border-bottom: none;
         }
 
+        .component-result-meta {
+            color: var(--text-secondary);
+        }
+
 
         .group-modal-actions {
             display: flex;

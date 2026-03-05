@@ -210,6 +210,13 @@ import {
             const [componentSearchOpen, setComponentSearchOpen] = useState(false);
             const [componentSearchIndex, setComponentSearchIndex] = useState(0);
             const [componentSearchLoading, setComponentSearchLoading] = useState(false);
+            const [excludedEpicSearchQuery, setExcludedEpicSearchQuery] = useState('');
+            const [excludedEpicSearchResults, setExcludedEpicSearchResults] = useState([]);
+            const [excludedEpicSearchOpen, setExcludedEpicSearchOpen] = useState(false);
+            const [excludedEpicSearchIndex, setExcludedEpicSearchIndex] = useState(0);
+            const [excludedEpicSearchLoading, setExcludedEpicSearchLoading] = useState(false);
+            const excludedEpicSearchInputRef = useRef(null);
+            const excludedEpicChipLastRef = useRef(null);
             const [missingInfoEpics, setMissingInfoEpics] = useState([]);
             const techProjectKeys = React.useMemo(() => {
                 const keys = new Set();
@@ -704,6 +711,10 @@ import {
             const normalizeStatus = (status) => {
                 return (status || '').toLowerCase().replace(/\s+/g, ' ').trim();
             };
+            const normalizeEpicKey = (value) => {
+                const normalized = String(value || '').trim().toUpperCase();
+                return normalized || 'NO_EPIC';
+            };
             const isBurnoutClosedStatus = (status) => {
                 const normalized = normalizeStatus(status);
                 return normalized === 'done' || normalized === 'killed' || normalized === 'incomplete';
@@ -721,7 +732,10 @@ import {
                             : [],
                         missingInfoComponents: Array.isArray(group?.missingInfoComponents)
                             ? group.missingInfoComponents.map(c => String(c || '').trim()).filter(Boolean)
-                            : (group?.missingInfoComponent ? [String(group.missingInfoComponent).trim()] : [])
+                            : (group?.missingInfoComponent ? [String(group.missingInfoComponent).trim()] : []),
+                        excludedCapacityEpics: Array.isArray(group?.excludedCapacityEpics)
+                            ? group.excludedCapacityEpics.map(key => String(key || '').trim().toUpperCase()).filter(Boolean)
+                            : []
                     }))
                     .filter(group => group.id && group.name);
                 const rawCatalog = config?.teamCatalog || {};
@@ -966,6 +980,12 @@ import {
                 setBoardSearchQuery('');
                 setBoardSearchOpen(false);
                 setBoardSearchIndex(0);
+                setComponentSearchQuery('');
+                setComponentSearchOpen(false);
+                setComponentSearchIndex(0);
+                setExcludedEpicSearchQuery('');
+                setExcludedEpicSearchOpen(false);
+                setExcludedEpicSearchIndex(0);
                 setGroupTesting(false);
                 setGroupTestMessage('');
                 setCapacityProjectSearchQuery('');
@@ -1182,7 +1202,13 @@ import {
                 handleGroupDraftChange(prev => {
                     const existingIds = new Set((prev.groups || []).map(group => group.id));
                     nextId = buildGroupId('New Group', existingIds);
-                    const nextGroup = { id: nextId, name: 'New Group', teamIds: [] };
+                    const nextGroup = {
+                        id: nextId,
+                        name: 'New Group',
+                        teamIds: [],
+                        missingInfoComponents: [],
+                        excludedCapacityEpics: []
+                    };
                     return {
                         ...prev,
                         groups: [...(prev.groups || []), nextGroup]
@@ -1731,6 +1757,49 @@ import {
                 };
             }, [showGroupManage, groupManageTab, componentSearchQuery]);
 
+            // Excluded epic search debounced fetch
+            useEffect(() => {
+                const query = excludedEpicSearchQuery.trim();
+                if (!showGroupManage || groupManageTab !== 'teams' || !query) {
+                    setExcludedEpicSearchResults([]);
+                    setExcludedEpicSearchLoading(false);
+                    return undefined;
+                }
+
+                const controller = new AbortController();
+                const timeoutId = window.setTimeout(async () => {
+                    setExcludedEpicSearchLoading(true);
+                    try {
+                        const params = new URLSearchParams();
+                        params.set('query', query);
+                        params.set('limit', '15');
+                        const response = await fetch(`${BACKEND_URL}/api/epics/search?${params.toString()}`, {
+                            method: 'GET',
+                            headers: { 'Content-Type': 'application/json' },
+                            cache: 'no-cache',
+                            signal: controller.signal
+                        });
+                        if (!response.ok) throw new Error(`Excluded epics search error ${response.status}`);
+                        const data = await response.json();
+                        setExcludedEpicSearchResults(data.epics || []);
+                    } catch (err) {
+                        if (err.name !== 'AbortError') {
+                            console.error('Failed to search excluded epics:', err);
+                            setExcludedEpicSearchResults([]);
+                        }
+                    } finally {
+                        if (!controller.signal.aborted) {
+                            setExcludedEpicSearchLoading(false);
+                        }
+                    }
+                }, 220);
+
+                return () => {
+                    window.clearTimeout(timeoutId);
+                    controller.abort();
+                };
+            }, [showGroupManage, groupManageTab, excludedEpicSearchQuery]);
+
             const filteredComponentSearchResults = React.useMemo(() => {
                 const group = activeGroupDraftId
                     ? (groupDraft?.groups || []).find(g => g.id === activeGroupDraftId)
@@ -1739,10 +1808,26 @@ import {
                 return componentSearchResults.filter(c => !selected.has(c.name.toLowerCase()));
             }, [componentSearchResults, groupDraft, activeGroupDraftId]);
 
+            const filteredExcludedEpicSearchResults = React.useMemo(() => {
+                const group = activeGroupDraftId
+                    ? (groupDraft?.groups || []).find(g => g.id === activeGroupDraftId)
+                    : null;
+                const selected = new Set((group?.excludedCapacityEpics || []).map(key => String(key || '').trim().toUpperCase()));
+                return excludedEpicSearchResults.filter((epic) => {
+                    const key = String(epic?.key || '').trim().toUpperCase();
+                    return key && !selected.has(key);
+                });
+            }, [excludedEpicSearchResults, groupDraft, activeGroupDraftId]);
+
             React.useEffect(() => {
                 const maxIndex = filteredComponentSearchResults.length - 1;
                 if (componentSearchIndex > maxIndex) setComponentSearchIndex(0);
             }, [filteredComponentSearchResults.length]);
+
+            React.useEffect(() => {
+                const maxIndex = filteredExcludedEpicSearchResults.length - 1;
+                if (excludedEpicSearchIndex > maxIndex) setExcludedEpicSearchIndex(0);
+            }, [filteredExcludedEpicSearchResults.length]);
 
             const handleComponentSearchKeyDown = (event) => {
                 if (event.key === 'ArrowDown') {
@@ -1791,6 +1876,96 @@ import {
                     });
                     return { ...prev, groups };
                 });
+            };
+
+            const addGroupExcludedCapacityEpic = (groupId, epicKey) => {
+                const normalizedKey = String(epicKey || '').trim().toUpperCase();
+                if (!normalizedKey) return;
+                let added = false;
+                setGroupDraft(prev => {
+                    if (!prev) return prev;
+                    const groups = (prev.groups || []).map(g => {
+                        if (g.id !== groupId) return g;
+                        const existing = (g.excludedCapacityEpics || []).map(key => String(key || '').trim().toUpperCase());
+                        if (existing.includes(normalizedKey)) return g;
+                        added = true;
+                        return { ...g, excludedCapacityEpics: [...existing, normalizedKey] };
+                    });
+                    return { ...prev, groups };
+                });
+                if (added) {
+                    setExcludedEpicSearchOpen(true);
+                    focusExcludedEpicSearchInput();
+                }
+            };
+
+            const removeGroupExcludedCapacityEpic = (groupId, epicKey) => {
+                const normalizedKey = String(epicKey || '').trim().toUpperCase();
+                setGroupDraft(prev => {
+                    if (!prev) return prev;
+                    const groups = (prev.groups || []).map(g => {
+                        if (g.id !== groupId) return g;
+                        return {
+                            ...g,
+                            excludedCapacityEpics: (g.excludedCapacityEpics || [])
+                                .map(key => String(key || '').trim().toUpperCase())
+                                .filter(key => key !== normalizedKey)
+                        };
+                    });
+                    return { ...prev, groups };
+                });
+            };
+
+            const handleExcludedEpicSearchKeyDown = (event) => {
+                const value = excludedEpicSearchQuery || '';
+                if (event.key === 'ArrowDown') {
+                    if (!filteredExcludedEpicSearchResults.length) return;
+                    event.preventDefault();
+                    setExcludedEpicSearchIndex(prev => Math.min(prev + 1, filteredExcludedEpicSearchResults.length - 1));
+                } else if (event.key === 'ArrowUp') {
+                    if (!filteredExcludedEpicSearchResults.length) return;
+                    event.preventDefault();
+                    setExcludedEpicSearchIndex(prev => Math.max(prev - 1, 0));
+                } else if (event.key === 'Enter') {
+                    if (!filteredExcludedEpicSearchResults.length) return;
+                    event.preventDefault();
+                    const epic = filteredExcludedEpicSearchResults[excludedEpicSearchIndex] || filteredExcludedEpicSearchResults[0];
+                    if (epic && activeGroupDraft) addGroupExcludedCapacityEpic(activeGroupDraft.id, epic.key);
+                } else if (event.key === 'Escape') {
+                    if (excludedEpicSearchOpen) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setExcludedEpicSearchOpen(false);
+                    }
+                } else if (event.key === 'Backspace' && !value) {
+                    const node = excludedEpicChipLastRef.current;
+                    if (node && typeof node.focus === 'function') {
+                        node.focus();
+                    }
+                }
+            };
+
+            const focusExcludedEpicSearchInput = () => {
+                const node = excludedEpicSearchInputRef.current;
+                if (node && typeof node.focus === 'function') {
+                    node.focus();
+                }
+            };
+
+            const handleExcludedEpicSearchChange = (value) => {
+                setExcludedEpicSearchQuery(value);
+                setExcludedEpicSearchOpen(true);
+                setExcludedEpicSearchIndex(0);
+            };
+
+            const handleExcludedEpicSearchFocus = () => {
+                setExcludedEpicSearchOpen(true);
+            };
+
+            const handleExcludedEpicSearchBlur = () => {
+                window.setTimeout(() => {
+                    setExcludedEpicSearchOpen(false);
+                }, 120);
             };
 
             const loadSelectedProjects = async () => {
@@ -2503,6 +2678,17 @@ import {
                 });
                 return names;
             }, [activeGroup]);
+            const activeGroupExcludedCapacityEpics = React.useMemo(() => {
+                const seen = new Set();
+                const keys = [];
+                (activeGroup?.excludedCapacityEpics || []).forEach((epicKey) => {
+                    const value = String(epicKey || '').trim().toUpperCase();
+                    if (!value || seen.has(value)) return;
+                    seen.add(value);
+                    keys.push(value);
+                });
+                return keys;
+            }, [activeGroup]);
 
             const activeGroupTeamSet = React.useMemo(() => new Set(activeGroupTeamIds), [activeGroupTeamIds]);
 
@@ -2910,6 +3096,12 @@ import {
                     setShowScenario(false);
                 }
             }, [showPlanning]);
+
+            useEffect(() => {
+                if (showPlanning && isCompletedSprintSelected) {
+                    setShowPlanning(false);
+                }
+            }, [showPlanning, isCompletedSprintSelected]);
 
             useEffect(() => {
                 if (showPlanning && !isCompletedSprintSelected) {
@@ -4191,11 +4383,22 @@ import {
                 });
             };
 
-            const excludedEpicSet = React.useMemo(() => new Set(excludedStatsEpics || []), [excludedStatsEpics]);
+            const excludedEpicSet = React.useMemo(() => {
+                const set = new Set();
+                (activeGroupExcludedCapacityEpics || []).forEach((key) => {
+                    const normalized = String(key || '').trim().toUpperCase();
+                    if (normalized) set.add(normalized);
+                });
+                (excludedStatsEpics || []).forEach((key) => {
+                    const normalized = String(key || '').trim().toUpperCase();
+                    if (normalized) set.add(normalized);
+                });
+                return set;
+            }, [excludedStatsEpics, activeGroupExcludedCapacityEpics]);
             const statsTaskList = React.useMemo(() => {
                 if (!capacityTasks.length) return [];
                 return capacityTasks.filter(task => {
-                    const epicKey = task.fields?.epicKey || 'NO_EPIC';
+                    const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
                     return !excludedEpicSet.has(epicKey);
                 });
             }, [capacityTasks, excludedEpicSet]);
@@ -4680,7 +4883,7 @@ import {
                 const keys = new Set();
                 if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return keys;
                 scenarioEffectiveIssues.forEach(issue => {
-                    if (excludedEpicSet.has(issue?.epicKey || '')) {
+                    if (excludedEpicSet.has(normalizeEpicKey(issue?.epicKey || ''))) {
                         keys.add(issue.key);
                     }
                 });
@@ -4790,7 +4993,7 @@ import {
                     if (!issue.start || !issue.end) return;
 
                     // Skip excluded tasks - they're just noise and shouldn't create conflicts
-                    const isExcluded = excludedEpicSet.has(issue.epicKey || '');
+                    const isExcluded = excludedEpicSet.has(normalizeEpicKey(issue.epicKey || ''));
                     if (isExcluded) return;
 
                     // Skip done tasks - they're complete and can't create real conflicts
@@ -5271,7 +5474,7 @@ import {
                     issues.forEach((issue) => {
                         if (!issue?.key) return;
                         const issueKeyForExclude = issue.originalKey || issue.key;
-                        if (scenarioExcludedIssueKeys.has(issueKeyForExclude) || excludedEpicSet.has(issue.epicKey || '')) {
+                        if (scenarioExcludedIssueKeys.has(issueKeyForExclude) || excludedEpicSet.has(normalizeEpicKey(issue.epicKey || ''))) {
                             excludedIssues.push(issue);
                         } else {
                             regularIssues.push(issue);
@@ -5640,7 +5843,7 @@ import {
                             xEnd,
                             y: laneMeta.offset + 3,
                             height: laneMeta.height - 6,
-                            isExcluded: excludedEpicSet.has(epicKey)
+                            isExcluded: excludedEpicSet.has(normalizeEpicKey(epicKey))
                         });
                     });
                 });
@@ -7524,7 +7727,7 @@ import {
             const selectedPlanningTasksList = React.useMemo(() => {
                 if (!showPlanning) return [];
                 return selectedTasksList.filter(task => {
-                    const epicKey = task.fields?.epicKey || 'NO_EPIC';
+                    const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
                     return !excludedEpicSet.has(epicKey);
                 });
             }, [showPlanning, selectedTasksList, excludedEpicSet]);
@@ -7631,7 +7834,7 @@ import {
             const excludedProjectStats = React.useMemo(() => {
                 if (!showPlanning) return {};
                 return selectedTasksList.reduce((acc, task) => {
-                    const epicKey = task.fields?.epicKey || 'NO_EPIC';
+                    const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
                     if (!excludedEpicSet.has(epicKey)) return acc;
                     const pk = task.fields?.projectKey || task.key.split('-')[0];
                     const projectKey = techProjectKeys.has(pk) ? 'TECH' : 'PRODUCT';
@@ -7761,7 +7964,7 @@ import {
             const excludedCapacityByTeamId = React.useMemo(() => {
                 if (!capacityEnabled || !showPlanning) return {};
                 return capacityTasks.reduce((acc, task) => {
-                    const epicKey = task.fields?.epicKey || 'NO_EPIC';
+                    const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
                     if (!excludedEpicSet.has(epicKey)) return acc;
                     const teamInfo = getTeamInfo(task);
                     const sp = parseFloat(task.fields.customfield_10004 || 0);
@@ -7804,7 +8007,7 @@ import {
             const capacitySummary = getCapacityStatus(selectedSP, totalCapacityAdjusted);
             const scrollToFirstExcludedEpic = (projectType = 'any') => {
                 const firstExcluded = epicGroups.find((epic) => {
-                    if (!excludedEpicSet.has(epic.key)) return false;
+                    if (!excludedEpicSet.has(normalizeEpicKey(epic.key))) return false;
                     if (projectType === 'any') return true;
                     const hasTech = (epic.tasks || []).some(task => techProjectKeys.has(task.fields?.projectKey || String(task.key || '').split('-')[0]));
                     const hasProduct = (epic.tasks || []).some(task => !techProjectKeys.has(task.fields?.projectKey || String(task.key || '').split('-')[0]));
@@ -8916,6 +9119,7 @@ import {
                                         className={`mode-switch-button ${showPlanning ? 'active' : ''}`}
                                         onClick={() => setShowPlanning(!showPlanning)}
                                         title="Toggle sprint planning panel"
+                                        disabled={!selectedSprint || isCompletedSprintSelected}
                                     >
                                         Planning
                                     </button>
@@ -10757,7 +10961,7 @@ import {
                                                                     const displayKey = issue.originalKey || issue.key;
                                                                     const issueUrl = scenarioBaseUrl ? `${scenarioBaseUrl}/browse/${displayKey}` : '';
                                                                     const issueSummary = normalizeScenarioSummary(issue.summary) || displayKey;
-                                                                    const isExcluded = excludedEpicSet.has(issue.epicKey || '');
+                                                                    const isExcluded = excludedEpicSet.has(normalizeEpicKey(issue.epicKey || ''));
                                                                     const hasAssigneeConflict = scenarioAssigneeConflicts.conflicts.has(displayKey);
                                                                     const conflictingKeys = scenarioAssigneeConflicts.conflictDetails.get(displayKey) || [];
                                                                     const issueEndDate = issue.end ? parseScenarioDate(issue.end) : null;
@@ -12069,7 +12273,7 @@ import {
                                         return (
                                             <div
                                                 key={epicGroup.key}
-                                                className={`epic-block ${excludedEpicSet.has(epicGroup.key) ? 'epic-excluded' : ''} ${stickyEpicFocusKey === epicGroup.key ? 'epic-block-sticky-focus' : ''}`}
+                                                className={`epic-block ${excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? 'epic-excluded' : ''} ${stickyEpicFocusKey === epicGroup.key ? 'epic-block-sticky-focus' : ''}`}
                                                 ref={(node) => {
                                                     if (!node) {
                                                         epicRefMap.current.delete(epicGroup.key);
@@ -12105,9 +12309,9 @@ import {
                                                             )}
                                                             {(showStats || showPlanning) && (
                                                                 <button
-                                                                    className={`epic-stat-toggle ${excludedEpicSet.has(epicGroup.key) ? '' : 'active'}`}
+                                                                    className={`epic-stat-toggle ${excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? '' : 'active'}`}
                                                                     onClick={() => {
-                                                                        const epicKey = epicGroup.key || 'NO_EPIC';
+                                                                        const epicKey = String(epicGroup.key || 'NO_EPIC').trim().toUpperCase();
                                                                         setExcludedStatsEpics((prev) => {
                                                                             const set = new Set(prev || []);
                                                                             if (set.has(epicKey)) {
@@ -12124,7 +12328,7 @@ import {
                                                                         <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
                                                                         <path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                                                                     </svg>
-                                                                    {excludedEpicSet.has(epicGroup.key) ? 'Excluded' : 'Included'}
+                                                                    {excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? 'Excluded' : 'Included'}
                                                                 </button>
                                                             )}
                                                         </div>
@@ -13409,6 +13613,59 @@ import {
                                                                         }}
                                                                     >
                                                                         {comp.name}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="component-selector">
+                                                    <label className="component-selector-label">Epics for excluded capacity</label>
+                                                    {(activeGroupDraft?.excludedCapacityEpics || []).length > 0 && (
+                                                        <div className="selected-components-list">
+                                                            {(activeGroupDraft.excludedCapacityEpics || []).map((epicKey, index) => (
+                                                                <div key={epicKey} className="component-chip">
+                                                                    <span className="component-name">{epicKey}</span>
+                                                                    <button
+                                                                        className="remove-btn"
+                                                                        onClick={() => removeGroupExcludedCapacityEpic(activeGroupDraft.id, epicKey)}
+                                                                        title={`Remove ${epicKey}`}
+                                                                        type="button"
+                                                                        ref={index === (activeGroupDraft.excludedCapacityEpics || []).length - 1 ? excludedEpicChipLastRef : null}
+                                                                    >×</button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    <div className="component-search-wrapper">
+                                                        <input
+                                                            type="text"
+                                                            className="component-search-input"
+                                                            placeholder="Search epics by key or summary..."
+                                                            value={excludedEpicSearchQuery}
+                                                            onChange={(e) => handleExcludedEpicSearchChange(e.target.value)}
+                                                            onFocus={handleExcludedEpicSearchFocus}
+                                                            onBlur={handleExcludedEpicSearchBlur}
+                                                            onKeyDown={handleExcludedEpicSearchKeyDown}
+                                                            ref={excludedEpicSearchInputRef}
+                                                        />
+                                                        {excludedEpicSearchOpen && excludedEpicSearchQuery.trim() && (
+                                                            <div className="component-search-results">
+                                                                {excludedEpicSearchLoading ? (
+                                                                    <div className="component-search-result-item is-empty">Searching...</div>
+                                                                ) : filteredExcludedEpicSearchResults.length === 0 ? (
+                                                                    <div className="component-search-result-item is-empty">No epics found</div>
+                                                                ) : filteredExcludedEpicSearchResults.map((epic, index) => (
+                                                                    <div
+                                                                        key={epic.key}
+                                                                        className={`component-search-result-item ${index === excludedEpicSearchIndex ? 'active' : ''}`}
+                                                                        onMouseDown={(e) => {
+                                                                            e.preventDefault();
+                                                                            addGroupExcludedCapacityEpic(activeGroupDraft.id, epic.key);
+                                                                        }}
+                                                                    >
+                                                                        <span>{epic.key}</span>
+                                                                        {epic.summary ? <span className="component-result-meta"> · {epic.summary}</span> : null}
                                                                     </div>
                                                                 ))}
                                                             </div>

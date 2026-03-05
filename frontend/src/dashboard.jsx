@@ -2,6 +2,19 @@ import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, createUndoStack, validateDependencies, splitAtSprintBoundaries, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
 import ScenarioBar from './scenario/ScenarioBar.jsx';
+import CohortGrid from './cohort/CohortGrid.jsx';
+import OpenEpicsChart from './cohort/OpenEpicsChart.jsx';
+import {
+    aggregateCohortSummary,
+    buildCohortGridModel,
+    buildOpenEpicsBars,
+    buildQuarterOptions,
+    deriveAssigneeOptions,
+    deriveProjectOptions,
+    filterCohortIssues,
+    getCurrentQuarterLabel,
+    normalizeCohortStatus
+} from './cohort/cohortUtils.js';
 
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
@@ -298,9 +311,10 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const [planningOffset, setPlanningOffset] = useState(0);
             const [isPlanningStuck, setIsPlanningStuck] = useState(false);
             const planningPanelRef = useRef(null);
-            const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout') ? value : 'teams';
+            const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout' || value === 'cohort') ? value : 'teams';
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
             const resolveBurndownMetric = (value) => (value === 'issueCount' || value === 'storyPoints') ? value : 'storyPoints';
+            const resolveCohortGroupBy = (value) => (value === 'month' || value === 'quarter') ? value : 'quarter';
             const [statsView, setStatsView] = useState(resolveStatsView(savedPrefsRef.current.statsView));
             const [statsGraphMode, setStatsGraphMode] = useState(resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode));
             const [priorityHoverIndex, setPriorityHoverIndex] = useState(null);
@@ -309,10 +323,28 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const [burnoutError, setBurnoutError] = useState('');
             const [burnoutAssigneeFilter, setBurnoutAssigneeFilter] = useState(savedPrefsRef.current.burnoutAssigneeFilter || 'all');
             const [burndownMetric, setBurndownMetric] = useState(resolveBurndownMetric(savedPrefsRef.current.burndownMetric));
+            const [cohortData, setCohortData] = useState(null);
+            const [cohortLoading, setCohortLoading] = useState(false);
+            const [cohortError, setCohortError] = useState('');
+            const [cohortStartQuarter, setCohortStartQuarter] = useState(savedPrefsRef.current.cohortStartQuarter || getCurrentQuarterLabel());
+            const [cohortGroupBy, setCohortGroupBy] = useState(resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy));
+            const [cohortProjectFilter, setCohortProjectFilter] = useState(savedPrefsRef.current.cohortProjectFilter || 'all');
+            const [cohortAssigneeFilter, setCohortAssigneeFilter] = useState(savedPrefsRef.current.cohortAssigneeFilter || 'all');
+            const [cohortExcludeCapacity, setCohortExcludeCapacity] = useState(savedPrefsRef.current.cohortExcludeCapacity ?? true);
+            const [cohortStatusToggles, setCohortStatusToggles] = useState(() => ({
+                done: true,
+                open: true,
+                killed: false,
+                incomplete: false,
+                postponed: false,
+                ...(savedPrefsRef.current.cohortStatusToggles || {})
+            }));
+            const [cohortSelectedRow, setCohortSelectedRow] = useState(null);
             const [burnoutHoverPoint, setBurnoutHoverPoint] = useState(null);
             const [burnoutHoverTeamKey, setBurnoutHoverTeamKey] = useState(null);
             const [burnoutTaskFilter, setBurnoutTaskFilter] = useState(null);
             const burnoutCacheRef = useRef({});
+            const cohortCacheRef = useRef({});
             const burnoutChartRef = useRef(null);
             const [showTeamDropdown, setShowTeamDropdown] = useState(false);
             const teamDropdownRef = useRef(null);
@@ -2460,6 +2492,17 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 });
                 return ids;
             }, [activeGroup]);
+            const activeGroupMissingComponents = React.useMemo(() => {
+                const seen = new Set();
+                const names = [];
+                (activeGroup?.missingInfoComponents || []).forEach((componentName) => {
+                    const value = String(componentName || '').trim();
+                    if (!value || seen.has(value)) return;
+                    seen.add(value);
+                    names.push(value);
+                });
+                return names;
+            }, [activeGroup]);
 
             const activeGroupTeamSet = React.useMemo(() => new Set(activeGroupTeamIds), [activeGroupTeamIds]);
 
@@ -2503,6 +2546,23 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     burnoutError: '',
                     burnoutAssigneeFilter: savedPrefsRef.current.burnoutAssigneeFilter || 'all',
                     burndownMetric: resolveBurndownMetric(savedPrefsRef.current.burndownMetric),
+                    cohortData: null,
+                    cohortLoading: false,
+                    cohortError: '',
+                    cohortStartQuarter: savedPrefsRef.current.cohortStartQuarter || getCurrentQuarterLabel(),
+                    cohortGroupBy: resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy),
+                    cohortProjectFilter: savedPrefsRef.current.cohortProjectFilter || 'all',
+                    cohortAssigneeFilter: savedPrefsRef.current.cohortAssigneeFilter || 'all',
+                    cohortExcludeCapacity: savedPrefsRef.current.cohortExcludeCapacity ?? true,
+                    cohortStatusToggles: {
+                        done: true,
+                        open: true,
+                        killed: false,
+                        incomplete: false,
+                        postponed: false,
+                        ...(savedPrefsRef.current.cohortStatusToggles || {})
+                    },
+                    cohortSelectedRow: null,
                     scenarioData: null,
                     scenarioError: '',
                     scenarioLaneMode: savedPrefsRef.current.scenarioLaneMode ?? 'team',
@@ -2581,6 +2641,16 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 burnoutError,
                 burnoutAssigneeFilter,
                 burndownMetric,
+                cohortData,
+                cohortLoading,
+                cohortError,
+                cohortStartQuarter,
+                cohortGroupBy,
+                cohortProjectFilter,
+                cohortAssigneeFilter,
+                cohortExcludeCapacity,
+                cohortStatusToggles,
+                cohortSelectedRow,
                 scenarioData,
                 scenarioError,
                 scenarioLaneMode,
@@ -2668,6 +2738,23 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 setBurnoutError(nextState.burnoutError || '');
                 setBurnoutAssigneeFilter(nextState.burnoutAssigneeFilter || 'all');
                 setBurndownMetric(resolveBurndownMetric(nextState.burndownMetric));
+                setCohortData(nextState.cohortData || null);
+                setCohortLoading(false);
+                setCohortError(nextState.cohortError || '');
+                setCohortStartQuarter(nextState.cohortStartQuarter || getCurrentQuarterLabel());
+                setCohortGroupBy(resolveCohortGroupBy(nextState.cohortGroupBy));
+                setCohortProjectFilter(nextState.cohortProjectFilter || 'all');
+                setCohortAssigneeFilter(nextState.cohortAssigneeFilter || 'all');
+                setCohortExcludeCapacity(nextState.cohortExcludeCapacity ?? true);
+                setCohortStatusToggles({
+                    done: true,
+                    open: true,
+                    killed: false,
+                    incomplete: false,
+                    postponed: false,
+                    ...(nextState.cohortStatusToggles || {})
+                });
+                setCohortSelectedRow(nextState.cohortSelectedRow || null);
                 setScenarioData(nextState.scenarioData || null);
                 setScenarioError(nextState.scenarioError || '');
                 setScenarioLaneMode(nextState.scenarioLaneMode || 'team');
@@ -2750,6 +2837,16 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 burnoutError,
                 burnoutAssigneeFilter,
                 burndownMetric,
+                cohortData,
+                cohortLoading,
+                cohortError,
+                cohortStartQuarter,
+                cohortGroupBy,
+                cohortProjectFilter,
+                cohortAssigneeFilter,
+                cohortExcludeCapacity,
+                cohortStatusToggles,
+                cohortSelectedRow,
                 scenarioData,
                 scenarioError,
                 scenarioLaneMode,
@@ -3026,6 +3123,12 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     statsGraphMode,
                     burnoutAssigneeFilter,
                     burndownMetric,
+                    cohortStartQuarter,
+                    cohortGroupBy,
+                    cohortProjectFilter,
+                    cohortAssigneeFilter,
+                    cohortExcludeCapacity,
+                    cohortStatusToggles,
                     scenarioLaneMode,
                     excludedStatsEpics,
                     hideExcludedStats,
@@ -3055,6 +3158,12 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 statsGraphMode,
                 burnoutAssigneeFilter,
                 burndownMetric,
+                cohortStartQuarter,
+                cohortGroupBy,
+                cohortProjectFilter,
+                cohortAssigneeFilter,
+                cohortExcludeCapacity,
+                cohortStatusToggles,
                 scenarioLaneMode,
                 excludedStatsEpics,
                 hideExcludedStats,
@@ -4150,11 +4259,13 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 const seen = new Set();
                 (statsTaskList || []).forEach((task) => {
                     if (!task?.key) return;
-                    if (!isAllTeamsSelected) {
-                        const teamInfo = getTeamInfo(task);
-                        if (!selectedTeamSet.has(teamInfo.id)) {
+                    const teamInfo = getTeamInfo(task);
+                    if (isAllTeamsSelected) {
+                        if (activeGroupTeamIds.length && !activeGroupTeamSet.has(teamInfo.id)) {
                             return;
                         }
+                    } else if (!selectedTeamSet.has(teamInfo.id)) {
+                        return;
                     }
                     const key = String(task.key || '').trim().toUpperCase();
                     if (!key || seen.has(key)) return;
@@ -4162,33 +4273,29 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     keys.push(key);
                 });
                 return keys;
-            }, [statsTaskList, isAllTeamsSelected, selectedTeamSet]);
-            const burnoutAllIssueKeys = React.useMemo(() => {
-                const keys = [];
-                const seen = new Set();
-                (statsTaskList || []).forEach((task) => {
-                    const key = String(task?.key || '').trim().toUpperCase();
-                    if (!key || seen.has(key)) return;
-                    seen.add(key);
-                    keys.push(key);
-                });
-                return keys;
-            }, [statsTaskList]);
+            }, [statsTaskList, isAllTeamsSelected, selectedTeamSet, activeGroupTeamIds, activeGroupTeamSet, getTeamInfo]);
             const burnoutScopedTeamIds = React.useMemo(() => {
-                if (isAllTeamsSelected) return [];
+                if (isAllTeamsSelected) {
+                    return Array.from(new Set((activeGroupTeamIds || []).map((id) => String(id || '').trim()).filter(Boolean))).sort();
+                }
                 return Array.from(selectedTeamSet).filter(Boolean).sort();
-            }, [isAllTeamsSelected, selectedTeamSet]);
+            }, [isAllTeamsSelected, selectedTeamSet, activeGroupTeamIds]);
             const burnoutScopedTeamSignature = React.useMemo(
                 () => burnoutScopedTeamIds.join(','),
                 [burnoutScopedTeamIds]
             );
+            const cohortScopedComponentsSignature = React.useMemo(
+                () => activeGroupMissingComponents.slice().sort((a, b) => a.localeCompare(b)).join(','),
+                [activeGroupMissingComponents]
+            );
+            const cohortScopedTeamSignature = React.useMemo(() => {
+                const teamPart = burnoutScopedTeamSignature || 'group-empty';
+                const componentPart = cohortScopedComponentsSignature || 'no-components';
+                return `${teamPart}::${componentPart}`;
+            }, [burnoutScopedTeamSignature, cohortScopedComponentsSignature]);
             const burnoutIssueKeysSignature = React.useMemo(
                 () => burnoutIssueKeys.join(','),
                 [burnoutIssueKeys]
-            );
-            const burnoutAllIssueKeysSignature = React.useMemo(
-                () => burnoutAllIssueKeys.join(','),
-                [burnoutAllIssueKeys]
             );
             const burnoutClosureScopeKey = isCompletedSprintSelected ? 'post' : 'inSprint';
             const burnoutQueryKey = React.useMemo(() => {
@@ -4196,63 +4303,15 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 if (!sprintLabel) return '';
                 return `${sprintLabel}::${burnoutClosureScopeKey}::${burnoutScopedTeamSignature || 'all'}::${burnoutIssueKeysSignature}`;
             }, [selectedSprintInfo?.name, burnoutClosureScopeKey, burnoutScopedTeamSignature, burnoutIssueKeysSignature]);
-            const burnoutAllTeamsQueryKey = React.useMemo(() => {
-                const sprintLabel = selectedSprintInfo?.name || '';
-                if (!sprintLabel) return '';
-                return `${sprintLabel}::${burnoutClosureScopeKey}::all::${burnoutAllIssueKeysSignature}`;
-            }, [selectedSprintInfo?.name, burnoutClosureScopeKey, burnoutAllIssueKeysSignature]);
+            const cohortQueryKey = React.useMemo(() => {
+                const startQuarter = String(cohortStartQuarter || '').trim();
+                if (!startQuarter) return '';
+                return `${startQuarter}::${cohortScopedTeamSignature}`;
+            }, [cohortStartQuarter, cohortScopedTeamSignature]);
 
             useEffect(() => {
                 if (!showStats || statsView !== 'burnout') return;
                 const sprintLabel = selectedSprintInfo?.name || '';
-                const buildBurnoutSubsetFromSource = (sourceData) => {
-                    if (!sourceData || !Array.isArray(sourceData.issuesMeta)) return null;
-                    const requestedIssueSet = new Set(
-                        (burnoutIssueKeys || []).map((key) => String(key || '').trim().toUpperCase()).filter(Boolean)
-                    );
-                    if (!requestedIssueSet.size) return null;
-                    const scopedTeamIdSet = burnoutScopedTeamIds.length
-                        ? new Set(burnoutScopedTeamIds.map((value) => String(value || '').trim()).filter(Boolean))
-                        : null;
-                    const issuesMeta = (sourceData.issuesMeta || []).filter((issue) => {
-                        const key = String(issue?.issueKey || '').trim().toUpperCase();
-                        return requestedIssueSet.has(key);
-                    });
-                    const events = (sourceData.events || []).filter((event) => {
-                        const key = String(event?.issueKey || '').trim().toUpperCase();
-                        if (!requestedIssueSet.has(key)) return false;
-                        if (!scopedTeamIdSet) return true;
-                        return scopedTeamIdSet.has(String(event?.teamId || '').trim());
-                    });
-                    const assigneeCounts = {};
-                    issuesMeta.forEach((issue) => {
-                        const assignee = issue?.assignee || {};
-                        const key = assignee.id || assignee.name || 'unassigned';
-                        if (!assigneeCounts[key]) {
-                            assigneeCounts[key] = {
-                                id: assignee.id,
-                                name: assignee.name || 'Unassigned',
-                                events: 0
-                            };
-                        }
-                        assigneeCounts[key].events += 1;
-                    });
-                    const assignees = Object.values(assigneeCounts).sort((a, b) => {
-                        const nameA = String(a?.name || '').toLowerCase();
-                        const nameB = String(b?.name || '').toLowerCase();
-                        if (nameA !== nameB) return nameA.localeCompare(nameB);
-                        return String(a?.id || '').localeCompare(String(b?.id || ''));
-                    });
-                    return {
-                        sprint: sourceData.sprint,
-                        timezone: sourceData.timezone,
-                        range: sourceData.range || { startDate: null, endDate: null },
-                        issues: issuesMeta.length,
-                        events,
-                        issuesMeta,
-                        assignees
-                    };
-                };
                 if (!sprintLabel) {
                     setBurnoutData(null);
                     setBurnoutError('');
@@ -4276,28 +4335,6 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     setBurnoutError('');
                     setBurnoutLoading(false);
                     return;
-                }
-                if (!isAllTeamsSelected && burnoutAllTeamsQueryKey) {
-                    const fullScopeCached = burnoutCacheRef.current[burnoutAllTeamsQueryKey];
-                    if (fullScopeCached) {
-                        const allIssueSet = new Set(
-                            (burnoutAllIssueKeys || []).map((key) => String(key || '').trim().toUpperCase()).filter(Boolean)
-                        );
-                        const canReuseAllScope = (burnoutIssueKeys || []).every((key) => {
-                            const issueKey = String(key || '').trim().toUpperCase();
-                            return issueKey && allIssueSet.has(issueKey);
-                        });
-                        if (canReuseAllScope) {
-                            const subset = buildBurnoutSubsetFromSource(fullScopeCached);
-                            if (subset) {
-                                burnoutCacheRef.current[burnoutQueryKey] = subset;
-                                setBurnoutData(subset);
-                                setBurnoutError('');
-                                setBurnoutLoading(false);
-                                return;
-                            }
-                        }
-                    }
                 }
 
                 const controller = new AbortController();
@@ -4333,9 +4370,6 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                         if (cancelled) return;
                         const data = payload?.data || null;
                         burnoutCacheRef.current[burnoutQueryKey] = data;
-                        if (isAllTeamsSelected && burnoutAllTeamsQueryKey) {
-                            burnoutCacheRef.current[burnoutAllTeamsQueryKey] = data;
-                        }
                         setBurnoutData(data);
                     } catch (err) {
                         if (cancelled) return;
@@ -4374,8 +4408,6 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 burnoutQueryKey,
                 burnoutScopedTeamSignature,
                 burnoutIssueKeysSignature,
-                burnoutAllIssueKeysSignature,
-                burnoutAllTeamsQueryKey,
                 isCompletedSprintSelected
             ]);
 
@@ -4410,6 +4442,173 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             useEffect(() => {
                 setBurnoutTaskFilter(null);
             }, [selectedSprintInfo?.name, burnoutAssigneeFilter, burnoutQueryKey]);
+
+            useEffect(() => {
+                if (!showStats || statsView !== 'cohort') return;
+                const startQuarter = String(cohortStartQuarter || '').trim();
+                if (!startQuarter) {
+                    setCohortData(null);
+                    setCohortError('Start quarter is required.');
+                    setCohortLoading(false);
+                    return;
+                }
+                const cached = cohortCacheRef.current[cohortQueryKey];
+                if (cached) {
+                    setCohortData(cached);
+                    setCohortError('');
+                    setCohortLoading(false);
+                    return;
+                }
+
+                const controller = new AbortController();
+                const timeoutId = window.setTimeout(() => {
+                    try {
+                        controller.abort();
+                    } catch (err) {
+                        // ignore abort errors
+                    }
+                }, 30000);
+                let cancelled = false;
+                const fetchCohort = async () => {
+                    setCohortLoading(true);
+                    setCohortError('');
+                    try {
+                        const response = await fetch(`${BACKEND_URL}/api/stats/epic-cohort`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            cache: 'no-cache',
+                            signal: controller.signal,
+                            body: JSON.stringify({
+                                startQuarter: startQuarter,
+                                teamIds: burnoutScopedTeamIds,
+                                components: activeGroupMissingComponents,
+                                refresh: false
+                            })
+                        });
+                        if (!response.ok) {
+                            const err = await response.json().catch(() => ({}));
+                            throw new Error(err.error || err.message || `Lead times fetch failed (${response.status})`);
+                        }
+                        const payload = await response.json();
+                        if (cancelled) return;
+                        const data = payload?.data || null;
+                        cohortCacheRef.current[cohortQueryKey] = data;
+                        setCohortData(data);
+                        setCohortError('');
+                    } catch (err) {
+                        if (cancelled) return;
+                        if (err?.name === 'AbortError') {
+                            setCohortError('Lead times request timed out (30s). Narrow scope with team filters.');
+                        } else {
+                            setCohortError(String(err?.message || err || 'Failed to load lead times data.'));
+                        }
+                        setCohortData(null);
+                    } finally {
+                        window.clearTimeout(timeoutId);
+                        if (!cancelled) setCohortLoading(false);
+                    }
+                };
+
+                const debounceId = window.setTimeout(fetchCohort, 120);
+                return () => {
+                    cancelled = true;
+                    window.clearTimeout(debounceId);
+                    window.clearTimeout(timeoutId);
+                    try {
+                        controller.abort();
+                    } catch (err) {
+                        // ignore abort errors
+                    }
+                };
+            }, [showStats, statsView, cohortStartQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents]);
+
+            const cohortQuarterOptions = React.useMemo(() => {
+                return buildQuarterOptions(getCurrentQuarterLabel(), 16);
+            }, []);
+            const cohortIssues = React.useMemo(() => {
+                return Array.isArray(cohortData?.issues) ? cohortData.issues : [];
+            }, [cohortData]);
+            const cohortProjectOptions = React.useMemo(() => deriveProjectOptions(cohortIssues), [cohortIssues]);
+            const cohortAssigneeOptions = React.useMemo(() => deriveAssigneeOptions(cohortIssues), [cohortIssues]);
+            const cohortFilteredIssues = React.useMemo(() => {
+                return filterCohortIssues(cohortIssues, {
+                    projectKey: cohortProjectFilter,
+                    assigneeKey: cohortAssigneeFilter,
+                    excludeEpicKeys: cohortExcludeCapacity ? excludedEpicSet : EMPTY_ARRAY,
+                    statusToggles: cohortStatusToggles
+                });
+            }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
+            const cohortSummary = React.useMemo(() => aggregateCohortSummary(cohortFilteredIssues), [cohortFilteredIssues]);
+            const cohortGridModel = React.useMemo(() => buildCohortGridModel(cohortFilteredIssues, {
+                groupBy: cohortGroupBy,
+                maxColumns: cohortGroupBy === 'month' ? 24 : 12,
+                rangeStartDate: cohortData?.range?.startDate,
+                rangeEndDate: cohortData?.range?.endDate
+            }), [cohortFilteredIssues, cohortGroupBy, cohortData?.range?.startDate, cohortData?.range?.endDate]);
+            const cohortOpenBars = React.useMemo(() => buildOpenEpicsBars(cohortFilteredIssues, {
+                groupBy: cohortGroupBy,
+                rowKey: cohortSelectedRow
+            }), [cohortFilteredIssues, cohortGroupBy, cohortSelectedRow]);
+            const cohortAverageLeadDays = React.useMemo(() => {
+                const resolved = cohortFilteredIssues.filter((issue) => {
+                    const statusKey = normalizeCohortStatus(issue?.status);
+                    if (statusKey === 'open') return false;
+                    return Number.isFinite(Number(issue?.leadTimeDays));
+                });
+                if (!resolved.length) return null;
+                const total = resolved.reduce((sum, issue) => sum + Number(issue?.leadTimeDays || 0), 0);
+                return total / resolved.length;
+            }, [cohortFilteredIssues]);
+            const cohortMedianLeadDays = React.useMemo(() => {
+                const values = cohortFilteredIssues
+                    .filter((issue) => {
+                        const statusKey = normalizeCohortStatus(issue?.status);
+                        if (statusKey === 'open') return false;
+                        return Number.isFinite(Number(issue?.leadTimeDays));
+                    })
+                    .map((issue) => Number(issue?.leadTimeDays || 0))
+                    .sort((a, b) => a - b);
+                if (!values.length) return null;
+                const middle = Math.floor(values.length / 2);
+                if (values.length % 2 === 1) return values[middle];
+                return (values[middle - 1] + values[middle]) / 2;
+            }, [cohortFilteredIssues]);
+            const cohortWarnings = React.useMemo(() => {
+                const warnings = cohortData?.meta?.warnings;
+                return Array.isArray(warnings) ? warnings : [];
+            }, [cohortData]);
+            const cohortStatusControls = React.useMemo(() => ([
+                { key: 'done', label: 'Done' },
+                { key: 'open', label: 'In Progress' },
+                { key: 'killed', label: 'Killed' },
+                { key: 'incomplete', label: 'Incomplete' },
+                { key: 'postponed', label: 'Postponed' }
+            ]), []);
+            const cohortSelectedRowLabel = React.useMemo(() => {
+                if (!cohortSelectedRow) return '';
+                const row = (cohortGridModel?.rows || []).find((item) => item.key === cohortSelectedRow);
+                return row?.label || cohortSelectedRow;
+            }, [cohortGridModel, cohortSelectedRow]);
+
+            useEffect(() => {
+                if (cohortProjectFilter === 'all') return;
+                const exists = cohortProjectOptions.some((item) => item.value === cohortProjectFilter);
+                if (!exists) setCohortProjectFilter('all');
+            }, [cohortProjectFilter, cohortProjectOptions]);
+
+            useEffect(() => {
+                if (cohortAssigneeFilter === 'all') return;
+                const exists = cohortAssigneeOptions.some((item) => item.value === cohortAssigneeFilter);
+                if (!exists) setCohortAssigneeFilter('all');
+            }, [cohortAssigneeFilter, cohortAssigneeOptions]);
+
+            useEffect(() => {
+                if (!cohortSelectedRow) return;
+                const exists = (cohortGridModel?.rows || []).some((row) => row.key === cohortSelectedRow);
+                if (!exists) {
+                    setCohortSelectedRow(null);
+                }
+            }, [cohortGridModel, cohortSelectedRow]);
 
             const scenarioRawIssues = scenarioData?.issues || EMPTY_ARRAY;
             const scenarioConfig = scenarioData?.config || EMPTY_OBJECT;
@@ -6013,12 +6212,6 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             }, [scenarioEpicFocus]);
 
             useEffect(() => {
-                if (isCompletedSprintSelected && showPlanning) {
-                    setShowPlanning(false);
-                }
-            }, [isCompletedSprintSelected, showPlanning]);
-
-            useEffect(() => {
                 if (isFutureSprintSelected && showStats) {
                     setShowStats(false);
                 }
@@ -6794,7 +6987,8 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 const target = Math.max(0, todayX - (chart.clientWidth * 0.6));
                 chart.scrollLeft = target;
             }, [burnoutChartModel, statsView]);
-            const canRenderStatsPanel = Boolean(effectiveStatsData) || statsView === 'burnout';
+            const canRenderStatsPanel = Boolean(effectiveStatsData) || statsView === 'burnout' || statsView === 'cohort';
+            const isLeadTimesFocusMode = showStats && statsView === 'cohort';
             const groupTasksByEpic = (taskList) => {
                 const grouped = {};
                 taskList.forEach(task => {
@@ -8721,7 +8915,6 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                     <button
                                         className={`mode-switch-button ${showPlanning ? 'active' : ''}`}
                                         onClick={() => setShowPlanning(!showPlanning)}
-                                        disabled={isCompletedSprintSelected}
                                         title="Toggle sprint planning panel"
                                     >
                                         Planning
@@ -9157,15 +9350,13 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     )}
 
                     <div className={`stats-panel ${showStats ? 'open' : ''}`}>
-                        <div className="stats-note">
-                            Selected sprint: {selectedSprintInfo?.name || 'Sprint'}
-                        </div>
                         {showStats && !canRenderStatsPanel && (
                             <div className="stats-note">Load stats for the selected sprint.</div>
                         )}
 
                         {canRenderStatsPanel && (
                             <>
+                                {statsView !== 'cohort' && (
                                 <div className="stats-summary">
                                     <div
                                         className={`stats-card selectable ${statsGraphMode === 'absolute' ? 'active' : ''}`}
@@ -9218,6 +9409,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                         <div className="stats-note">Derived from the loaded sprint list</div>
                                     </div>
                                 </div>
+                                )}
 
                                 <div className="stats-view-toggle">
                                     <button
@@ -9237,6 +9429,12 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                         onClick={() => setStatsView('burnout')}
                                     >
                                         Burndown
+                                    </button>
+                                    <button
+                                        className={`stats-toggle ${statsView === 'cohort' ? 'active' : ''}`}
+                                        onClick={() => setStatsView('cohort')}
+                                    >
+                                        Lead Times
                                     </button>
                                 </div>
 
@@ -9967,6 +10165,178 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                         </>
                                     )}
                                 </div>
+
+                                <div className={`stats-view ${statsView === 'cohort' ? 'open' : ''}`}>
+                                    <div className="stats-controls cohort-controls">
+                                        <div className="stats-control-group">
+                                            <label>Start Quarter</label>
+                                            <select
+                                                className="scenario-input"
+                                                value={cohortStartQuarter}
+                                                onChange={(event) => {
+                                                    setCohortStartQuarter(event.target.value);
+                                                    setCohortSelectedRow(null);
+                                                }}
+                                            >
+                                                {cohortQuarterOptions.map((quarterLabel) => (
+                                                    <option key={quarterLabel} value={quarterLabel}>{quarterLabel}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="stats-control-group">
+                                            <label>Group By</label>
+                                            <select
+                                                className="scenario-input"
+                                                value={cohortGroupBy}
+                                                onChange={(event) => {
+                                                    setCohortGroupBy(event.target.value === 'month' ? 'month' : 'quarter');
+                                                    setCohortSelectedRow(null);
+                                                }}
+                                            >
+                                                <option value="quarter">Quarter</option>
+                                                <option value="month">Month</option>
+                                            </select>
+                                        </div>
+                                        <div className="stats-control-group">
+                                            <label>Project</label>
+                                            <select
+                                                className="scenario-input"
+                                                value={cohortProjectFilter}
+                                                onChange={(event) => {
+                                                    setCohortProjectFilter(event.target.value);
+                                                    setCohortSelectedRow(null);
+                                                }}
+                                            >
+                                                {cohortProjectOptions.map((item) => (
+                                                    <option key={item.value} value={item.value}>{item.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="stats-control-group">
+                                            <label>Assignee</label>
+                                            <select
+                                                className="scenario-input"
+                                                value={cohortAssigneeFilter}
+                                                onChange={(event) => {
+                                                    setCohortAssigneeFilter(event.target.value);
+                                                    setCohortSelectedRow(null);
+                                                }}
+                                            >
+                                                {cohortAssigneeOptions.map((item) => (
+                                                    <option key={item.value} value={item.value}>
+                                                        {item.label}{item.value !== 'all' ? ` (${item.count})` : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="stats-actions cohort-status-actions">
+                                        <button
+                                            className={`stats-toggle ${cohortExcludeCapacity ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setCohortExcludeCapacity((prev) => !prev);
+                                                setCohortSelectedRow(null);
+                                            }}
+                                            type="button"
+                                        >
+                                            Excluded Capacity
+                                        </button>
+                                        {cohortStatusControls.map((item) => (
+                                            <button
+                                                key={item.key}
+                                                className={`stats-toggle ${cohortStatusToggles[item.key] ? 'active' : ''}`}
+                                                onClick={() => {
+                                                    setCohortStatusToggles((prev) => ({
+                                                        ...prev,
+                                                        [item.key]: !prev[item.key]
+                                                    }));
+                                                    setCohortSelectedRow(null);
+                                                }}
+                                                type="button"
+                                            >
+                                                {item.label}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    <div className="stats-summary cohort-summary">
+                                        <div className="stats-card">
+                                            <h4>Epics Overview</h4>
+                                            <div className="stat-value">{cohortSummary.total}</div>
+                                            <div className="stats-note">
+                                                {cohortSummary.done} done · {cohortSummary.killed} killed · {cohortSummary.incomplete} incomplete
+                                            </div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>In Progress / Postponed</h4>
+                                            <div className="stat-value">{cohortSummary.open}</div>
+                                            <div className="stats-note">{cohortSummary.postponed} postponed</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Avg Lead Time</h4>
+                                            <div className="stat-value">
+                                                {cohortAverageLeadDays === null ? '—' : `${cohortAverageLeadDays.toFixed(1)}d`}
+                                            </div>
+                                            <div className="stats-note">Terminal epics with lead time</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Median Lead Time</h4>
+                                            <div className="stat-value">
+                                                {cohortMedianLeadDays === null ? '—' : `${cohortMedianLeadDays.toFixed(1)}d`}
+                                            </div>
+                                            <div className="stats-note">Middle terminal lead time</div>
+                                        </div>
+                                    </div>
+
+                                    {cohortLoading && <div className="stats-note">Loading lead time cohorts…</div>}
+                                    {!cohortLoading && cohortError && <div className="stats-note cohort-error">{cohortError}</div>}
+                                    {!cohortLoading && !cohortError && cohortWarnings.length > 0 && (
+                                        <div className="cohort-warnings">
+                                            {cohortWarnings.map((warning, index) => (
+                                                <div key={`${warning}-${index}`}>• {warning}</div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {!cohortLoading && !cohortError && (
+                                        <div className="cohort-panel">
+                                            <div className="cohort-section cohort-section-fullbleed">
+                                                <div className="cohort-section-title">
+                                                    Cohort Heatmap
+                                                    {cohortSelectedRowLabel && (
+                                                        <span className="cohort-selected-chip">
+                                                            Row: {cohortSelectedRowLabel}
+                                                            <button
+                                                                type="button"
+                                                                className="cohort-clear-row"
+                                                                onClick={() => setCohortSelectedRow(null)}
+                                                            >
+                                                                Clear
+                                                            </button>
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <CohortGrid
+                                                    model={cohortGridModel}
+                                                    selectedRowKey={cohortSelectedRow}
+                                                    onSelectRow={(rowKey) => {
+                                                        setCohortSelectedRow((prev) => (prev === rowKey ? null : rowKey));
+                                                    }}
+                                                />
+                                            </div>
+                                            <div className="cohort-section">
+                                                <OpenEpicsChart
+                                                    title={cohortSelectedRowLabel
+                                                        ? `Open Epics (${cohortSelectedRowLabel})`
+                                                        : 'Open Epics (All Cohorts)'}
+                                                    items={cohortOpenBars}
+                                                    jiraBaseUrl={jiraUrl}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </>
                         )}
                     </div>
@@ -10548,7 +10918,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                         </div>
                     )}
 
-                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning && !isCompletedSprintSelected ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`}>
+                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`}>
                         {/* --- Planning Actions (top of panel) --- */}
                         <div className="planning-actions">
                             <button
@@ -10787,38 +11157,40 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                             );
                         })()}
                     </div>
-                    {showBackToTop && (
-                        <button className="back-to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-                            Back to top
-                        </button>
-                    )}
-
-                    {(productTasksLoading || techTasksLoading) && (
-                        <div className="loading-status" style={{
-                            padding: '0.5rem 1rem',
-                            background: 'rgba(59, 130, 246, 0.08)',
-                            border: '1px solid rgba(59, 130, 246, 0.3)',
-                            borderRadius: '0.5rem',
-                            marginBottom: '1rem',
-                            fontSize: '0.85rem',
-                            color: 'var(--text-secondary)'
-                        }}>
-                            {productTasksLoading && <div>⏳ Loading product tasks...</div>}
-                            {techTasksLoading && <div>⏳ Loading tech tasks...</div>}
-                        </div>
-                    )}
-
-                    {loading ? (
-                        <div className="loading">Loading tasks...</div>
-                    ) : error ? (
-                        <div className="error">
-                            {error}
-                            <div style={{ marginTop: '1rem' }}>
-                                <button onClick={fetchTasks}>Retry</button>
-                            </div>
-                        </div>
-                    ) : (
+                    {!isLeadTimesFocusMode && (
                         <>
+                            {showBackToTop && (
+                                <button className="back-to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+                                    Back to top
+                                </button>
+                            )}
+
+                            {(productTasksLoading || techTasksLoading) && (
+                                <div className="loading-status" style={{
+                                    padding: '0.5rem 1rem',
+                                    background: 'rgba(59, 130, 246, 0.08)',
+                                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                                    borderRadius: '0.5rem',
+                                    marginBottom: '1rem',
+                                    fontSize: '0.85rem',
+                                    color: 'var(--text-secondary)'
+                                }}>
+                                    {productTasksLoading && <div>⏳ Loading product tasks...</div>}
+                                    {techTasksLoading && <div>⏳ Loading tech tasks...</div>}
+                                </div>
+                            )}
+
+                            {loading ? (
+                                <div className="loading">Loading tasks...</div>
+                            ) : error ? (
+                                <div className="error">
+                                    {error}
+                                    <div style={{ marginTop: '1rem' }}>
+                                        <button onClick={fetchTasks}>Retry</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
                                 {alertCelebrationPieces.length > 0 && (
                                     <div className="alert-celebration" aria-hidden="true">
                                         {alertCelebrationPieces.map(piece => (
@@ -12095,6 +12467,8 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                     Refresh
                                 </button>
                             </div>
+                                </>
+                            )}
                         </>
                     )}
 

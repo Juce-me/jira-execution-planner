@@ -280,6 +280,11 @@ The Statistics panel focuses on active or completed (closed) quarter sprints:
   - Added = stories created after sprint start
   - Closed = transitions to Done/Killed/Incomplete on their event day
   - Remaining = open stories at sprint end
+- Lead Times view shows epic cohorts from a selected start quarter:
+  - Cohort heatmap: rows by created period, columns by elapsed period (`Q+N` / `M+N`)
+  - Open epics chart: longest-open epics (current filter scope)
+  - Filters: group mode (quarter/month), project, assignee, status toggles
+  - `Postponed` is treated as terminal (not open)
 - Burnout chart supports:
   - assignee filter (`All Assignees` or a specific assignee)
   - weekly vertical split lines
@@ -454,6 +459,8 @@ The application uses intelligent caching to minimize Jira API load:
 - **Stats**:
   - Teams/Priority are derived from loaded sprint tasks
   - Burnout uses an on-demand changelog fetch (`/api/stats/burnout`) with client-side in-session reuse per scope
+  - Lead Times uses on-demand cohort fetch (`/api/stats/epic-cohort`) and refetches only when start quarter or team scope changes
+  - Lead Times does not refetch on UI-only controls (group by, project filter, assignee filter, status toggles, cohort row selection)
 - **Reduced API calls**: Jira queries are capped (200 for sprint discovery, 250 for task fetches)
 - **Timeout protection**: Jira requests use 20–30 second timeouts
 

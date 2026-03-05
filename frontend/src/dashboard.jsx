@@ -330,6 +330,7 @@ import {
             const [cohortGroupBy, setCohortGroupBy] = useState(resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy));
             const [cohortProjectFilter, setCohortProjectFilter] = useState(savedPrefsRef.current.cohortProjectFilter || 'all');
             const [cohortAssigneeFilter, setCohortAssigneeFilter] = useState(savedPrefsRef.current.cohortAssigneeFilter || 'all');
+            const [cohortExcludeCapacity, setCohortExcludeCapacity] = useState(savedPrefsRef.current.cohortExcludeCapacity ?? true);
             const [cohortStatusToggles, setCohortStatusToggles] = useState(() => ({
                 done: true,
                 open: true,
@@ -2552,6 +2553,7 @@ import {
                     cohortGroupBy: resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy),
                     cohortProjectFilter: savedPrefsRef.current.cohortProjectFilter || 'all',
                     cohortAssigneeFilter: savedPrefsRef.current.cohortAssigneeFilter || 'all',
+                    cohortExcludeCapacity: savedPrefsRef.current.cohortExcludeCapacity ?? true,
                     cohortStatusToggles: {
                         done: true,
                         open: true,
@@ -2646,6 +2648,7 @@ import {
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
+                cohortExcludeCapacity,
                 cohortStatusToggles,
                 cohortSelectedRow,
                 scenarioData,
@@ -2742,6 +2745,7 @@ import {
                 setCohortGroupBy(resolveCohortGroupBy(nextState.cohortGroupBy));
                 setCohortProjectFilter(nextState.cohortProjectFilter || 'all');
                 setCohortAssigneeFilter(nextState.cohortAssigneeFilter || 'all');
+                setCohortExcludeCapacity(nextState.cohortExcludeCapacity ?? true);
                 setCohortStatusToggles({
                     done: true,
                     open: true,
@@ -2840,6 +2844,7 @@ import {
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
+                cohortExcludeCapacity,
                 cohortStatusToggles,
                 cohortSelectedRow,
                 scenarioData,
@@ -3122,6 +3127,7 @@ import {
                     cohortGroupBy,
                     cohortProjectFilter,
                     cohortAssigneeFilter,
+                    cohortExcludeCapacity,
                     cohortStatusToggles,
                     scenarioLaneMode,
                     excludedStatsEpics,
@@ -3156,6 +3162,7 @@ import {
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
+                cohortExcludeCapacity,
                 cohortStatusToggles,
                 scenarioLaneMode,
                 excludedStatsEpics,
@@ -4527,9 +4534,10 @@ import {
                 return filterCohortIssues(cohortIssues, {
                     projectKey: cohortProjectFilter,
                     assigneeKey: cohortAssigneeFilter,
+                    excludeEpicKeys: cohortExcludeCapacity ? excludedEpicSet : EMPTY_ARRAY,
                     statusToggles: cohortStatusToggles
                 });
-            }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortStatusToggles]);
+            }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
             const cohortSummary = React.useMemo(() => aggregateCohortSummary(cohortFilteredIssues), [cohortFilteredIssues]);
             const cohortGridModel = React.useMemo(() => buildCohortGridModel(cohortFilteredIssues, {
                 groupBy: cohortGroupBy,
@@ -4550,6 +4558,20 @@ import {
                 if (!resolved.length) return null;
                 const total = resolved.reduce((sum, issue) => sum + Number(issue?.leadTimeDays || 0), 0);
                 return total / resolved.length;
+            }, [cohortFilteredIssues]);
+            const cohortMedianLeadDays = React.useMemo(() => {
+                const values = cohortFilteredIssues
+                    .filter((issue) => {
+                        const statusKey = normalizeCohortStatus(issue?.status);
+                        if (statusKey === 'open') return false;
+                        return Number.isFinite(Number(issue?.leadTimeDays));
+                    })
+                    .map((issue) => Number(issue?.leadTimeDays || 0))
+                    .sort((a, b) => a - b);
+                if (!values.length) return null;
+                const middle = Math.floor(values.length / 2);
+                if (values.length % 2 === 1) return values[middle];
+                return (values[middle - 1] + values[middle]) / 2;
             }, [cohortFilteredIssues]);
             const cohortWarnings = React.useMemo(() => {
                 const warnings = cohortData?.meta?.warnings;
@@ -6188,12 +6210,6 @@ import {
                     window.removeEventListener('keydown', handleKey);
                 };
             }, [scenarioEpicFocus]);
-
-            useEffect(() => {
-                if (isCompletedSprintSelected && showPlanning) {
-                    setShowPlanning(false);
-                }
-            }, [isCompletedSprintSelected, showPlanning]);
 
             useEffect(() => {
                 if (isFutureSprintSelected && showStats) {
@@ -8899,7 +8915,6 @@ import {
                                     <button
                                         className={`mode-switch-button ${showPlanning ? 'active' : ''}`}
                                         onClick={() => setShowPlanning(!showPlanning)}
-                                        disabled={isCompletedSprintSelected}
                                         title="Toggle sprint planning panel"
                                     >
                                         Planning
@@ -10217,6 +10232,16 @@ import {
                                     </div>
 
                                     <div className="stats-actions cohort-status-actions">
+                                        <button
+                                            className={`stats-toggle ${cohortExcludeCapacity ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setCohortExcludeCapacity((prev) => !prev);
+                                                setCohortSelectedRow(null);
+                                            }}
+                                            type="button"
+                                        >
+                                            Excluded Capacity
+                                        </button>
                                         {cohortStatusControls.map((item) => (
                                             <button
                                                 key={item.key}
@@ -10237,21 +10262,16 @@ import {
 
                                     <div className="stats-summary cohort-summary">
                                         <div className="stats-card">
-                                            <h4>Total Epics</h4>
+                                            <h4>Epics Overview</h4>
                                             <div className="stat-value">{cohortSummary.total}</div>
-                                            <div className="stats-note">After filters</div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>In Progress</h4>
-                                            <div className="stat-value">{cohortSummary.open}</div>
-                                            <div className="stats-note">Not terminal</div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Done</h4>
-                                            <div className="stat-value">{cohortSummary.done}</div>
                                             <div className="stats-note">
-                                                {cohortSummary.killed} killed · {cohortSummary.incomplete} incomplete · {cohortSummary.postponed} postponed
+                                                {cohortSummary.done} done · {cohortSummary.killed} killed · {cohortSummary.incomplete} incomplete
                                             </div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>In Progress / Postponed</h4>
+                                            <div className="stat-value">{cohortSummary.open}</div>
+                                            <div className="stats-note">{cohortSummary.postponed} postponed</div>
                                         </div>
                                         <div className="stats-card">
                                             <h4>Avg Lead Time</h4>
@@ -10259,6 +10279,13 @@ import {
                                                 {cohortAverageLeadDays === null ? '—' : `${cohortAverageLeadDays.toFixed(1)}d`}
                                             </div>
                                             <div className="stats-note">Terminal epics with lead time</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Median Lead Time</h4>
+                                            <div className="stat-value">
+                                                {cohortMedianLeadDays === null ? '—' : `${cohortMedianLeadDays.toFixed(1)}d`}
+                                            </div>
+                                            <div className="stats-note">Middle terminal lead time</div>
                                         </div>
                                     </div>
 
@@ -10274,7 +10301,7 @@ import {
 
                                     {!cohortLoading && !cohortError && (
                                         <div className="cohort-panel">
-                                            <div className="cohort-section">
+                                            <div className="cohort-section cohort-section-fullbleed">
                                                 <div className="cohort-section-title">
                                                     Cohort Heatmap
                                                     {cohortSelectedRowLabel && (
@@ -10891,7 +10918,7 @@ import {
                         </div>
                     )}
 
-                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning && !isCompletedSprintSelected ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`}>
+                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`}>
                         {/* --- Planning Actions (top of panel) --- */}
                         <div className="planning-actions">
                             <button

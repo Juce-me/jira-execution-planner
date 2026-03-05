@@ -4887,6 +4887,15 @@
             box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
         }
 
+        .cohort-section-fullbleed {
+            width: 100%;
+            margin-left: 0;
+            margin-right: 0;
+            max-width: 100%;
+            box-sizing: border-box;
+            transform: none;
+        }
+
         .cohort-section-title {
             display: flex;
             justify-content: space-between;
@@ -4937,11 +4946,25 @@
 
         .cohort-grid-wrap {
             position: relative;
-            overflow-x: auto;
+            overflow: hidden;
+        }
+
+        .cohort-grid-scale-frame {
+            width: 100%;
+            max-width: 100%;
+            overflow: hidden;
+        }
+
+        .cohort-grid-scale {
+            transform-origin: top left;
+            will-change: transform;
+            display: inline-block;
+            min-width: 100%;
         }
 
         .cohort-grid {
-            width: 100%;
+            width: max-content;
+            min-width: 100%;
             border-collapse: collapse;
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.62rem;
@@ -5046,10 +5069,11 @@
         .cohort-grid-tooltip-item {
             font-size: 0.6rem;
             display: flex;
-            flex-direction: column;
-            gap: 0.05rem;
+            align-items: center;
+            justify-content: space-between;
             margin-top: 0.2rem;
             color: var(--text-secondary);
+            gap: 0.4rem;
         }
 
         .cohort-grid-tooltip-item strong {

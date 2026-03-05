@@ -107,7 +107,14 @@ export function filterCohortIssues(issues, filters = {}) {
     const projectFilter = String(filters.projectKey || 'all');
     const assigneeFilter = String(filters.assigneeKey || 'all');
     const statusToggles = filters.statusToggles || {};
+    const excludedKeys = filters.excludeEpicKeys instanceof Set
+        ? filters.excludeEpicKeys
+        : new Set(Array.isArray(filters.excludeEpicKeys) ? filters.excludeEpicKeys : []);
     return source.filter((issue) => {
+        const issueKey = String(issue?.key || '').trim();
+        if (issueKey && excludedKeys.has(issueKey)) {
+            return false;
+        }
         if (projectFilter !== 'all' && String(issue?.projectKey || '') !== projectFilter) {
             return false;
         }
@@ -192,7 +199,8 @@ export function buildCohortGridModel(issues, options = {}) {
             totalCreated: 0,
             openCount: 0,
             cells: new Map(),
-            sampleByCell: new Map()
+            sampleByCell: new Map(),
+            statusByCell: new Map()
         };
         row.totalCreated += 1;
         if (createdDate < row.startDate) {
@@ -208,6 +216,14 @@ export function buildCohortGridModel(issues, options = {}) {
             if (elapsed !== null && elapsed <= maxColumnsBudget) {
                 maxElapsed = Math.max(maxElapsed, elapsed);
                 row.cells.set(elapsed, (row.cells.get(elapsed) || 0) + 1);
+                const statusCounts = row.statusByCell.get(elapsed) || {
+                    done: 0,
+                    killed: 0,
+                    incomplete: 0,
+                    postponed: 0
+                };
+                statusCounts[status] = (statusCounts[status] || 0) + 1;
+                row.statusByCell.set(elapsed, statusCounts);
                 const sampleList = row.sampleByCell.get(elapsed) || [];
                 if (sampleList.length < 5) {
                     sampleList.push({
@@ -238,7 +254,8 @@ export function buildCohortGridModel(issues, options = {}) {
                     totalCreated: 0,
                     openCount: 0,
                     cells: new Map(),
-                    sampleByCell: new Map()
+                    sampleByCell: new Map(),
+                    statusByCell: new Map()
                 });
             }
             const next = nextPeriodStart(cursor, groupBy);
@@ -262,7 +279,13 @@ export function buildCohortGridModel(issues, options = {}) {
             return {
                 index: column.index,
                 count,
-                samples: row.sampleByCell.get(column.index) || []
+                samples: row.sampleByCell.get(column.index) || [],
+                statusCounts: row.statusByCell.get(column.index) || {
+                    done: 0,
+                    killed: 0,
+                    incomplete: 0,
+                    postponed: 0
+                }
             };
         });
         return {

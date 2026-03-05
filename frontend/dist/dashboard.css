@@ -5150,6 +5150,15 @@
             text-overflow: ellipsis;
         }
 
+        .cohort-open-status {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.58rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #64748b;
+            flex-shrink: 0;
+        }
+
         .cohort-open-track {
             position: relative;
             height: 10px;

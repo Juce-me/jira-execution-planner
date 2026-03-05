@@ -36,11 +36,13 @@ function OpenEpicsChart({ title, items, jiraBaseUrl }) {
                                     >
                                         <span className="cohort-open-key">{issueKey || 'Epic'}</span>
                                         <span className="cohort-open-summary">{item.summary || 'No summary'}</span>
+                                        <span className="cohort-open-status">{item.status || 'Open'}</span>
                                     </a>
                                 ) : (
                                     <>
                                         <span className="cohort-open-key">{item.key || 'Epic'}</span>
                                         <span className="cohort-open-summary">{item.summary || 'No summary'}</span>
+                                        <span className="cohort-open-status">{item.status || 'Open'}</span>
                                     </>
                                 )}
                                 <div className="cohort-open-meta">

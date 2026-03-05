@@ -4144,7 +4144,8 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
     terminal_candidates = []
     for issue in all_issues:
         fields_data = issue.get('fields') or {}
-        status_name = normalize_epic_status((fields_data.get('status') or {}).get('name'))
+        raw_status_name = str((fields_data.get('status') or {}).get('name') or '').strip()
+        status_name = normalize_epic_status(raw_status_name)
         if not is_terminal_epic_status(status_name):
             continue
         if fields_data.get('resolutiondate'):
@@ -4233,6 +4234,7 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
             'createdDate': created_date.isoformat(),
             'terminalDate': terminal_date.isoformat() if terminal_date else None,
             'status': status_name,
+            'jiraStatus': raw_status_name or status_name,
             'leadTimeDays': lead_time_days,
             'createdQuarter': assign_to_period(created_date, 'quarter'),
             'createdMonth': assign_to_period(created_date, 'month'),

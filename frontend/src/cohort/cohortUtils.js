@@ -337,6 +337,7 @@ export function buildOpenEpicsBars(issues, options = {}) {
             return {
                 key: issue?.key || '',
                 summary: issue?.summary || '',
+                status: issue?.jiraStatus || issue?.status || 'Open',
                 projectKey: issue?.projectKey || '',
                 teamName: issue?.team?.name || 'Unknown Team',
                 assigneeName: issue?.assignee?.name || 'Unassigned',

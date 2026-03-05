@@ -4732,7 +4732,11 @@ import {
                 return Array.isArray(cohortData?.issues) ? cohortData.issues : [];
             }, [cohortData]);
             const cohortProjectOptions = React.useMemo(() => deriveProjectOptions(cohortIssues), [cohortIssues]);
-            const cohortAssigneeOptions = React.useMemo(() => deriveAssigneeOptions(cohortIssues), [cohortIssues]);
+            const cohortAssigneeSourceIssues = React.useMemo(() => {
+                if (cohortProjectFilter === 'all') return cohortIssues;
+                return cohortIssues.filter((issue) => String(issue?.projectKey || '') === cohortProjectFilter);
+            }, [cohortIssues, cohortProjectFilter]);
+            const cohortAssigneeOptions = React.useMemo(() => deriveAssigneeOptions(cohortAssigneeSourceIssues), [cohortAssigneeSourceIssues]);
             const cohortFilteredIssues = React.useMemo(() => {
                 return filterCohortIssues(cohortIssues, {
                     projectKey: cohortProjectFilter,

@@ -17,6 +17,26 @@
 
 ---
 
+## Current Baseline (2026-03-06)
+
+Before implementing this plan, the active alert stack is:
+
+- `🧾 Missing Info`
+- `⛔️ Blocked`
+- `⏭️ Postponed Work`
+- `⏳ Waiting for Stories`
+- `🧺 Empty Epic`
+- `✅ Epic Ready to Close`
+
+And the planned label-based pieces are **not implemented yet**:
+
+- No `epicLabel` in group/team catalog model
+- No `/api/jira/labels` endpoint
+- No `labels` in empty-epic epic payload path
+- No `👥 Missing Team`, `🏷️ Missing Labels`, `📝 Create Stories` alert cards
+
+---
+
 ## Postmortem Compliance Notes
 
 These rules from past postmortems apply to every task in this plan:
@@ -27,6 +47,25 @@ These rules from past postmortems apply to every task in this plan:
 - **MRT001**: Teams come from config, not from returned issues. `teamEpicLabelMap` uses config-derived team catalog — correct.
 
 ---
+
+## Conflict / Precedence Matrix (Required)
+
+To prevent duplicate epic alerts across panels, route each epic through this order and stop on first match:
+
+1. **Postponed Work**
+2. **Missing Team**
+3. **Missing Labels**
+4. **Create Stories**
+5. **Waiting for Stories** (analysis-only path)
+6. **Empty Epic** (fallback)
+
+### Suppression rules against existing panels
+
+- `Missing Team` epics must be excluded from `Missing Labels`, `Create Stories`, `Waiting for Stories`, and `Empty Epic`.
+- `Missing Labels` epics must be excluded from `Create Stories`, `Waiting for Stories`, and `Empty Epic`.
+- `Create Stories` epics must be excluded from `Waiting for Stories` and `Empty Epic`.
+- Existing `Postponed Work` routing keeps priority over all of the above.
+- `Waiting for Stories` should remain analysis-focused; do not use it as a second bucket for label-driven “no stories yet” epics once Create Stories is enabled.
 
 ## How It Works
 
@@ -1043,6 +1082,47 @@ git commit -m "feat: render Create Stories alert panel with per-team groups"
 
 ---
 
+## Task 10.5: Frontend — Conflict suppression wiring with existing alerts
+
+**Files:**
+- Modify: `frontend/src/dashboard.jsx`
+
+**Goal:** enforce one-home-per-epic routing for label-driven alerts vs existing `Waiting for Stories` / `Empty Epic` / `Postponed Work`.
+
+**Implementation:**
+
+1. Build key sets:
+   - `missingTeamEpicKeySet`
+   - `missingLabelsEpicKeySet`
+   - `createStoriesEpicKeySet`
+
+2. Apply suppression in downstream memo filters:
+   - `waitingForStoriesEpics`: exclude keys in the three sets above
+   - `emptyEpicsForAlert`: exclude keys in the three sets above
+
+3. Keep postponed routing first:
+   - If epic is routed by postponed logic (`status = postponed` or `futureOpenStories` rule), it must not appear in label-driven alerts.
+
+4. Add one test/memo assertion path (frontend unit or integration-style smoke check) that a sample epic can appear in only one of these panels.
+
+**Build + verify**
+
+Run:
+
+```bash
+npm run build
+python -m pytest tests/ -v
+```
+
+**Commit**
+
+```bash
+git add frontend/src/dashboard.jsx
+git commit -m "feat: enforce precedence between label-driven and existing epic alerts"
+```
+
+---
+
 ## Task 11: CSS + ALERT_RULES.md
 
 **Files:**
@@ -1176,4 +1256,5 @@ git push origin feat/create-stories-alert
 5. **Create Stories** (fires for fully-labeled epics): for each epic with both sprint + team labels:
    - Check if epic has zero stories in the sprint
    - If no stories → add to "Create Stories" alert for that team
-6. All alerts render per-team (except Missing Team which is flat), same style as Missing Info
+6. **Suppression pass:** remove routed epics from `Waiting for Stories` and `Empty Epic` (and from lower-priority label buckets) using the precedence matrix above.
+7. All alerts render per-team (except Missing Team which is flat), same style as Missing Info

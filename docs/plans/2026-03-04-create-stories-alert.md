@@ -2,161 +2,116 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add the new epic planning alerts (`Backlog`, `Missing Team`, `Missing Labels`, `Create Stories`) without duplicating items across the existing alert stack.
+**Goal:** Add future-planning epic alerts for `Backlog`, `Missing Team`, `Missing Labels`, and `Create Stories`, backed by per-group team label mappings and a dedicated labels-management UI, without duplicating epics across the current alert stack.
 
-**Architecture:** Reuse the current alert pipeline in `frontend/src/dashboard.jsx`, but keep all new planning alerts in the epic lane. `Missing Team`, `Missing Labels`, and `Create Stories` continue to come from `epicsInScope` plus epic labels from `jira_server.py`. `Backlog` also becomes an epic alert, but it needs a separate backend fetch because the primary condition is on the epic itself: Team exists, Component exists, Assignee exists, and epic Sprint is empty. Child stories are only used to compute a cleanup count and remediation note for the alert row. Every new selector must follow a single precedence order so an issue only appears in one alert card.
+**Architecture:** Keep alert classification in `frontend/src/dashboard.jsx` and add only the backend payloads needed to support it. The selected sprint name acts as the required planning label, each saved group stores per-team Jira label mappings, and a dedicated backlog-epics fetch handles sprint-empty epics whose membership is determined by epic fields rather than story fields. Future-planning mode uses a dedicated precedence order and hides `Empty Epic`.
 
 **Tech Stack:** Python/Flask backend, React frontend, esbuild build, `unittest` test suite.
 
 ---
 
-## Current Baseline (2026-03-06)
+## Approved Design Inputs
 
-The current alert cards in [frontend/src/dashboard.jsx](/Users/juce/Documents/codex/jira-planning/frontend/src/dashboard.jsx) are:
+- Future planning uses the selected sprint name as the planning label.
+- Group config stores `teamLabels` per group, keyed by team id.
+- The group settings modal gets a new `Labels` tab.
+- The `Labels` tab unlocks after at least one group has been saved.
+- The tab layout is:
+  - left panel: saved groups
+  - right panel: one team-label selector row per selected team in the active group
+- `Empty Epic` does not render in future-planning mode.
 
-1. `🧾 Missing Info`
-2. `⛔️ Blocked`
-3. `⏭️ Postponed Work`
-4. `⏳ Waiting for Stories`
-5. `🧺 Empty Epic`
-6. `✅ Epic Ready to Close`
+## Alert Model
 
-Relevant current behavior:
-
-- `futureRoutedEpics` already route empty epics with only future stories into `Postponed Work`.
-- `Waiting for Stories` is intentionally restricted to epics that match the selected sprint.
-- `Missing Info` only keeps stories that are already in the selected sprint, so it is the wrong source for a backlog rule whose main condition lives on sprint-empty epics.
-- `fetch_epics_for_empty_alert()` does not currently return the label data needed for label-driven epic alerts.
-- The current task response does not include a dedicated dataset for sprint-empty backlog epics, so the frontend has no clean source for this alert today.
-
-## Root Changes This Plan Must Address
-
-1. The plan must treat `Backlog` as an epic alert whose main condition is evaluated on epic fields, not on story fields.
-2. The backend must return enough metadata to evaluate the new rules directly:
-   - Epic lane: `labels`
-   - Backlog lane: epic `components`, `assignee`, `team`, `Sprint`, plus child-story cleanup counts
-3. The frontend must use a shared alert precedence model so the new cards do not leak duplicate items into `Missing Info`, `Waiting for Stories`, or `Empty Epic`.
-4. The test commands in the old plan were written for `pytest`; this repo uses `python3 -m unittest`.
-
-## Desired Alert Model
-
-### Alert ordering
-
-Keep the existing visual structure, but insert the new cards in this order:
+### Future-planning alert order
 
 1. `🧾 Missing Info`
 2. `⛔️ Blocked`
 3. `⏭️ Postponed Work`
-4. `📥 Backlog` (future sprint only)
+4. `📥 Backlog`
 5. `👥 Missing Team`
 6. `🏷️ Missing Labels`
 7. `📝 Create Stories`
 8. `⏳ Waiting for Stories`
-9. `🧺 Empty Epic`
-10. `✅ Epic Ready to Close`
+9. `✅ Epic Ready to Close`
 
-### Precedence rules
+### Non-future alert order
+
+Keep the existing stack, including `🧺 Empty Epic`.
+
+### Epic precedence rules
 
 Apply these rules in order and stop on first match:
 
 1. `Postponed Work`
-2. `Backlog` (epics with empty epic sprint, future sprint mode only)
+2. `Backlog`
 3. `Missing Team`
 4. `Missing Labels`
 5. `Create Stories`
 6. `Waiting for Stories`
-7. `Empty Epic`
-8. `Epic Ready to Close`
+7. `Epic Ready to Close`
 
-### Suppression rules
+Outside future-planning mode, keep the current `Empty Epic` behavior.
 
-- An epic shown in `Missing Team` must be excluded from `Missing Labels`, `Create Stories`, `Waiting for Stories`, and `Empty Epic`.
-- An epic shown in `Missing Labels` must be excluded from `Create Stories`, `Waiting for Stories`, and `Empty Epic`.
-- An epic shown in `Create Stories` must be excluded from `Waiting for Stories` and `Empty Epic`.
-- `futureRoutedEpics` stay in `Postponed Work`; the new `Backlog` card is not a replacement for that behavior.
-- `Backlog` should not be computed from `Missing Info`; it is a separate epic dataset.
+### Matching rules
 
-## Matching Rules
+#### `📥 Backlog`
 
-### `📥 Backlog`
+Future-sprint only. Match open epics where:
 
-This is an epic-level alert and only renders when `selectedSprintState === 'future'`.
-
-An epic belongs in `Backlog` when all of the following are true on the epic itself:
-
+- epic team exists
+- epic assignee exists
+- epic has at least one component
+- epic sprint is empty
 - epic status is not `Done`, `Killed`, or `Incomplete`
-- epic `teamId` or `teamName` exists
-- epic `assignee.displayName` exists
-- epic `components` contains at least one value
-- epic Sprint is empty
-- epic is not dismissed
 
-Grouping: by epic team, using the same team-group pattern as the other epic alerts.
+Child stories are only used to compute `cleanupStoryCount`.
 
-Subtitle: `These epics are still backlog work. Keep child stories unsprinted unless they are already closed out.`
+#### `👥 Missing Team`
 
-Epic row note: if the epic has open child stories still assigned to a sprint, show a note like `3 child stories still sprinted`.
+Match open epics whose Jira team is missing or resolves to `Unknown Team`.
 
-CTA: `Clean backlog stories ->`
+#### `🏷️ Missing Labels`
 
-Remediation note: if an epic is in `Backlog`, child stories should not remain actively sprinted. The allowed actions are:
+Match open epics with a valid Jira team when either required label is missing from `epic.labels`:
 
-- remove Sprint from stories under that epic
-- or move those stories to `Done`, `Killed`, or `Incomplete`
+- the selected sprint name
+- the configured team label for that epic's team in the active group
 
-### `👥 Missing Team`
+If the active group has no configured label for that team, the epic stays in `Missing Labels`.
 
-Epic-level alert.
+#### `📝 Create Stories`
 
-Match when:
+Future-sprint only. Match open epics that already have both required labels and have no usable child stories for the selected future sprint because:
 
-- epic is open
-- epic is in scope
-- Jira Team field is empty or resolves to `Unknown Team`
+- the epic has no child stories, or
+- all child stories are `Done`, `Killed`, or `Incomplete`
 
-Grouping: flat list or `Unknown Team` bucket.
+#### `⏳ Waiting for Stories`
 
-### `🏷️ Missing Labels`
+Future-sprint only review state. Match open epics that already have child stories, but none are actionable in the selected future sprint.
 
-Epic-level alert.
+If at least one actionable child story is already in the selected future sprint, no `Create Stories` or `Waiting for Stories` alert is shown.
 
-Match when:
-
-- epic has a valid Jira Team
-- epic is open
-- selected sprint label is missing from `epic.labels`
-  or
-- the configured team `epicLabel` is missing from `epic.labels`
-
-Grouping: by Jira Team.
-
-### `📝 Create Stories`
-
-Epic-level alert.
-
-Match when:
-
-- epic has a valid Jira Team
-- sprint label exists
-- team label exists
-- epic has zero actionable stories in the selected sprint
-- epic is open
-
-Grouping: by Jira Team.
-
----
-
-## Task 1: Backend tests for epic labels and backlog-epic payload
+## Task 1: Backend tests for config and payload support
 
 **Files:**
 - Create: `tests/test_create_stories_alert.py`
 - Modify: `jira_server.py`
 
-**Step 1: Write failing tests for epic labels**
+**Step 1: Write failing config tests**
+
+Add tests for group-config normalization and validation that assert:
+
+- `teamLabels` is preserved per group
+- mappings are keyed by team id
+- labels for teams outside `teamIds` are ignored or rejected consistently
+
+**Step 2: Write failing tests for epic labels**
 
 Add tests for `fetch_epics_for_empty_alert()` that assert the returned epic dict includes `labels`.
 
-**Step 2: Write failing tests for backlog epic fetch**
+**Step 3: Write failing tests for backlog epic fetch**
 
 Add tests for a dedicated backlog epic fetch path, for example `fetch_backlog_epics_for_alert()` or `/api/backlog-epics`, that assert:
 
@@ -168,7 +123,7 @@ Add tests for a dedicated backlog epic fetch path, for example `fetch_backlog_ep
 
 The backlog-specific assertion should prove that the epic enters the alert because of epic fields, while child stories are only used for the cleanup count.
 
-**Step 3: Run targeted tests**
+**Step 4: Run targeted tests**
 
 Run:
 
@@ -176,23 +131,31 @@ Run:
 python3 -m unittest tests.test_create_stories_alert
 ```
 
-Expected: failure because labels are not returned yet and the backlog epic fetch does not exist yet.
+Expected: failure because `teamLabels`, epic `labels`, and the backlog epic fetch are not implemented yet.
 
-**Step 4: Commit after green**
+**Step 5: Commit after green**
 
 ```bash
 git add jira_server.py tests/test_create_stories_alert.py
-git commit -m "test: cover create stories and backlog alert payloads"
+git commit -m "test: cover create stories alert config and payloads"
 ```
 
 ---
 
-## Task 2: Backend payload changes for alert classification
+## Task 2: Backend payload and config changes
 
 **Files:**
 - Modify: `jira_server.py`
 
-**Step 1: Extend `fetch_epics_for_empty_alert()`**
+**Step 1: Extend groups config validation**
+
+Persist `teamLabels` on each normalized group and keep backwards compatibility for groups that do not have any saved mappings yet.
+
+**Step 2: Add `/api/jira/labels` endpoint**
+
+Return Jira labels for autocomplete in the team-group settings modal.
+
+**Step 3: Extend `fetch_epics_for_empty_alert()`**
 
 Return the fields required for label-driven epic alerts:
 
@@ -201,11 +164,11 @@ Return the fields required for label-driven epic alerts:
 
 Use additive fields only; do not change the current story-count flow.
 
-**Step 2: Extend `fetch_epic_details_bulk()` if needed**
+**Step 4: Extend `fetch_epic_details_bulk()` if needed**
 
 If the frontend selector depends on `epics` as well as `epicsInScope`, make sure `labels` are available in both payloads.
 
-**Step 3: Add a dedicated backlog epic fetch**
+**Step 5: Add a dedicated backlog epic fetch**
 
 Implement a dedicated helper or endpoint for backlog epics because sprint-empty epics will not appear in the selected-sprint epic dataset.
 
@@ -220,7 +183,7 @@ The query should enforce the epic-level condition:
 
 Scope it with the same team/component filters used by the planning alerts.
 
-**Step 4: Add child-story cleanup counts**
+**Step 6: Add child-story cleanup counts**
 
 For each backlog epic, compute `cleanupStoryCount` from child stories where:
 
@@ -229,11 +192,11 @@ For each backlog epic, compute `cleanupStoryCount` from child stories where:
 
 This count is for the row note only; it is not the primary membership test for the alert.
 
-**Step 5: Preserve current missing-info behavior**
+**Step 7: Preserve current missing-info behavior**
 
 Do not repurpose `/api/missing-info` for `Backlog`. Keep its existing contract stable for current callers.
 
-**Step 6: Run targeted tests**
+**Step 8: Run targeted tests**
 
 ```bash
 python3 -m unittest tests.test_create_stories_alert
@@ -241,34 +204,39 @@ python3 -m unittest tests.test_create_stories_alert
 
 Expected: pass.
 
-**Step 7: Commit**
+**Step 9: Commit**
 
 ```bash
 git add jira_server.py tests/test_create_stories_alert.py
-git commit -m "feat: return metadata for create stories and backlog alerts"
+git commit -m "feat: return config and payloads for planning epic alerts"
 ```
 
 ---
 
-## Task 3: Backend and settings support for epic labels
+## Task 3: Settings UI for per-group team labels
 
 **Files:**
-- Modify: `jira_server.py`
 - Modify: `frontend/src/dashboard.jsx`
 - Modify: `frontend/dist/dashboard.js`
 - Modify: `frontend/dist/dashboard.js.map`
 
-**Step 1: Add `/api/jira/labels` endpoint**
+**Step 1: Add draft state for group label editing**
 
-Return Jira labels for autocomplete in the team-group settings modal.
+Add draft helpers for per-group `teamLabels` and label-search state.
 
-**Step 2: Extend normalized team catalog entries with `epicLabel`**
+**Step 2: Add `Labels` tab unlock logic**
 
-Preserve `epicLabel` in both list-shaped and dict-shaped catalog inputs.
+Enable the new tab only when at least one group has been saved.
 
-**Step 3: Add settings UI for `epicLabel`**
+**Step 3: Build the `Labels` tab layout**
 
-In the existing team-groups settings flow, add a label input that uses the same selected-chip pattern already used by the modal. Do not introduce a separate interaction model.
+Implement the approved UI:
+
+- left panel with saved groups
+- right panel with one row per selected team in the active group
+- each row uses the existing chip/search interaction to assign one Jira label
+
+Do not move quarter-label logic into config; the selected sprint name remains the planning label.
 
 **Step 4: Build frontend bundle**
 
@@ -286,7 +254,7 @@ python3 -m unittest tests.test_create_stories_alert
 
 ```bash
 git add jira_server.py frontend/src/dashboard.jsx frontend/dist/dashboard.js frontend/dist/dashboard.js.map tests/test_create_stories_alert.py
-git commit -m "feat: add epic label configuration for alert routing"
+git commit -m "feat: add group label mapping UI for epic alerts"
 ```
 
 ---
@@ -320,6 +288,14 @@ Create memoized helpers for:
 - `missingLabelEpics`
 - `createStoriesEpics`
 - `backlogEpics`
+- `waitingForStoriesEpics`
+
+The selector inputs must use:
+
+- active group `teamLabels`
+- selected sprint name as the planning label
+- epic `labels`
+- story status and sprint state
 
 The backlog selector must come from the dedicated backlog epic dataset, not from `missingPlanningInfoTasks`.
 
@@ -331,6 +307,12 @@ Do not fold `Backlog` into `Missing Info`. `Backlog` is an epic selector and `Mi
 
 Filter `waitingForStoriesEpics` and `emptyEpicsForAlert` using the new epic alert key sets so the precedence rules are enforced.
 
+In future-planning mode:
+
+- hide `Empty Epic`
+- route no-child and closed-child epics to `Create Stories`
+- route story-exists-but-not-actionable epics to `Waiting for Stories`
+
 **Step 6: Build frontend bundle**
 
 ```bash
@@ -341,7 +323,7 @@ npm run build
 
 ```bash
 git add frontend/src/dashboard.jsx frontend/dist/dashboard.js frontend/dist/dashboard.js.map
-git commit -m "feat: add selector pipeline for backlog and epic planning alerts"
+git commit -m "feat: add future planning selectors for epic alerts"
 ```
 
 ---
@@ -396,6 +378,7 @@ Add `📥 Backlog`, `👥 Missing Team`, `🏷️ Missing Labels`, and `📝 Cre
 - exclusions and precedence notes
 - grouping behavior
 - future-sprint-only note for `Backlog`
+- note that `Empty Epic` is hidden in future-planning mode
 
 **Step 5: Build frontend bundle**
 
@@ -417,13 +400,15 @@ Validate:
 - `Backlog` is hidden outside future sprint mode
 - `Backlog` is populated from the dedicated backlog epic dataset, not from `Missing Info`
 - `futureRoutedEpics` still appear under `Postponed Work`
-- `Missing Team`, `Missing Labels`, and `Create Stories` suppress `Waiting for Stories` and `Empty Epic` as planned
+- `Missing Team`, `Missing Labels`, and `Create Stories` suppress `Waiting for Stories` as planned
+- `Empty Epic` does not render in future-planning mode
+- groups can be edited in the `Labels` tab and each selected team can be assigned one Jira label
 
 **Step 7: Commit**
 
 ```bash
 git add frontend/src/dashboard.jsx frontend/dist/dashboard.js frontend/dist/dashboard.js.map ALERT_RULES.md
-git commit -m "feat: render backlog and epic planning alert cards"
+git commit -m "feat: render future planning epic alerts"
 ```
 
 ---
@@ -467,18 +452,23 @@ Per repo workflow, stop after showing the commit list and wait for explicit user
 - Treat `Backlog` as an epic alert with epic-field membership and child-story cleanup notes.
 - Do not move `Backlog` items into `Postponed Work`; those are separate concepts with separate existing selectors.
 - Do not render `Backlog` as a flat story list; the card should surface epics and explain the child-story cleanup required.
+- The selected sprint name is the planning label; do not store quarter labels in config.
+- Store team label mappings on the group, not on the shared team catalog.
+- In future-planning mode, `Empty Epic` should be suppressed rather than reclassified.
 - Do not reuse `Waiting for Stories` for epics that belong in `Create Stories`.
 - Do not claim any performance improvement without before/after timing evidence.
 
 ## Acceptance Checklist
 
 - [ ] Epic payloads expose `labels`
-- [ ] Team settings support `epicLabel`
+- [ ] Group config supports per-team `teamLabels`
+- [ ] Group settings modal has a `Labels` tab with saved groups on the left and selected-team label mapping on the right
 - [ ] `📥 Backlog` appears only in future sprint mode
 - [ ] `📥 Backlog` only includes epics where Team, Component, and Assignee exist and epic Sprint is empty
 - [ ] `📥 Backlog` shows a cleanup count for child stories that are still sprinted and still open
 - [ ] `📥 Backlog` tells the user to clear Sprint from those stories or move them to `Done`, `Killed`, or `Incomplete`
 - [ ] `👥 Missing Team` works for epics with missing Jira Team
-- [ ] `🏷️ Missing Labels` shows missing sprint and/or team labels
-- [ ] `📝 Create Stories` shows fully labeled epics with no actionable stories
-- [ ] `⏳ Waiting for Stories` and `🧺 Empty Epic` no longer duplicate epics claimed by the new alert cards
+- [ ] `🏷️ Missing Labels` shows epics missing the selected sprint label and/or the configured team label
+- [ ] `📝 Create Stories` shows fully labeled epics with no child stories or only closed child stories
+- [ ] `⏳ Waiting for Stories` shows epics that have child stories but none actionable in the selected future sprint
+- [ ] `🧺 Empty Epic` is hidden in future-planning mode

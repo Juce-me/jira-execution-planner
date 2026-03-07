@@ -168,6 +168,10 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const teamSearchInputRefs = useRef({});
             const teamSearchFeedbackTimersRef = useRef({});
             const teamChipLastRef = useRef({});
+            const [jiraLabels, setJiraLabels] = useState([]);
+            const [loadingLabels, setLoadingLabels] = useState(false);
+            const [labelSearchQuery, setLabelSearchQuery] = useState({});
+            const [labelSearchOpen, setLabelSearchOpen] = useState({});
             const [groupSearchQuery, setGroupSearchQuery] = useState('');
             const [activeGroupDraftId, setActiveGroupDraftId] = useState(null);
             const [showGroupListMobile, setShowGroupListMobile] = useState(false);
@@ -198,6 +202,8 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const [componentSearchIndex, setComponentSearchIndex] = useState(0);
             const [componentSearchLoading, setComponentSearchLoading] = useState(false);
             const [missingInfoEpics, setMissingInfoEpics] = useState([]);
+            const [backlogProductEpics, setBacklogProductEpics] = useState([]);
+            const [backlogTechEpics, setBacklogTechEpics] = useState([]);
             const techProjectKeys = React.useMemo(() => {
                 const keys = new Set();
                 for (const p of savedSelectedProjects) {
@@ -383,6 +389,10 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const [showMissingAlert, setShowMissingAlert] = useState(savedPrefsRef.current.showMissingAlert ?? true);
             const [showBlockedAlert, setShowBlockedAlert] = useState(savedPrefsRef.current.showBlockedAlert ?? true);
             const [showPostponedAlert, setShowPostponedAlert] = useState(savedPrefsRef.current.showPostponedAlert ?? true);
+            const [showBacklogAlert, setShowBacklogAlert] = useState(savedPrefsRef.current.showBacklogAlert ?? true);
+            const [showMissingTeamAlert, setShowMissingTeamAlert] = useState(savedPrefsRef.current.showMissingTeamAlert ?? true);
+            const [showMissingLabelsAlert, setShowMissingLabelsAlert] = useState(savedPrefsRef.current.showMissingLabelsAlert ?? true);
+            const [showCreateStoriesAlert, setShowCreateStoriesAlert] = useState(savedPrefsRef.current.showCreateStoriesAlert ?? true);
             const [showWaitingAlert, setShowWaitingAlert] = useState(savedPrefsRef.current.showWaitingAlert ?? true);
             const [showEmptyEpicAlert, setShowEmptyEpicAlert] = useState(savedPrefsRef.current.showEmptyEpicAlert ?? true);
             const [showDoneEpicAlert, setShowDoneEpicAlert] = useState(savedPrefsRef.current.showDoneEpicAlert ?? true);
@@ -689,7 +699,12 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                             : [],
                         missingInfoComponents: Array.isArray(group?.missingInfoComponents)
                             ? group.missingInfoComponents.map(c => String(c || '').trim()).filter(Boolean)
-                            : (group?.missingInfoComponent ? [String(group.missingInfoComponent).trim()] : [])
+                            : (group?.missingInfoComponent ? [String(group.missingInfoComponent).trim()] : []),
+                        teamLabels: Object.fromEntries(
+                            Object.entries(group?.teamLabels || {})
+                                .map(([teamId, label]) => [String(teamId || '').trim(), String(label || '').trim()])
+                                .filter(([teamId, label]) => teamId && label)
+                        )
                     }))
                     .filter(group => group.id && group.name);
                 const rawCatalog = config?.teamCatalog || {};
@@ -1260,7 +1275,11 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                             return group;
                         }
                         added = true;
-                        return { ...group, teamIds: [...currentTeams, teamId] };
+                        return {
+                            ...group,
+                            teamIds: [...currentTeams, teamId],
+                            teamLabels: { ...(group.teamLabels || {}) }
+                        };
                     })
                 }));
                 if (alreadyAdded) {
@@ -1280,7 +1299,30 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     ...prev,
                     groups: (prev.groups || []).map(group => {
                         if (group.id !== groupId) return group;
-                        return { ...group, teamIds: (group.teamIds || []).filter(id => id !== teamId) };
+                        const nextTeamLabels = { ...(group.teamLabels || {}) };
+                        delete nextTeamLabels[teamId];
+                        return {
+                            ...group,
+                            teamIds: (group.teamIds || []).filter(id => id !== teamId),
+                            teamLabels: nextTeamLabels
+                        };
+                    })
+                }));
+            };
+
+            const setTeamLabelForGroup = (groupId, teamId, label) => {
+                const nextLabel = String(label || '').trim();
+                handleGroupDraftChange(prev => ({
+                    ...prev,
+                    groups: (prev.groups || []).map(group => {
+                        if (group.id !== groupId) return group;
+                        const nextTeamLabels = { ...(group.teamLabels || {}) };
+                        if (nextLabel) {
+                            nextTeamLabels[teamId] = nextLabel;
+                        } else {
+                            delete nextTeamLabels[teamId];
+                        }
+                        return { ...group, teamLabels: nextTeamLabels };
                     })
                 }));
             };
@@ -2397,6 +2439,38 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             }, [activeGroupDraft, activeTeamQuery, availableTeams, groupDraft]);
             const activeTeamResultsLimited = activeTeamResults.slice(0, 10);
             const activeTeamIndex = activeGroupDraft ? (teamSearchIndex[activeGroupDraft.id] || 0) : 0;
+            const labelsTabEnabled = (groupsConfig.groups || []).length > 0;
+            const getLabelRowKey = (groupId, teamId) => `${groupId || 'group'}::${teamId || 'team'}`;
+            const getLabelSearchResults = (groupId, teamId) => {
+                const key = getLabelRowKey(groupId, teamId);
+                const query = String(labelSearchQuery[key] || '').trim().toLowerCase();
+                if (!query) return jiraLabels.slice(0, 10);
+                return jiraLabels.filter(label => String(label || '').toLowerCase().includes(query)).slice(0, 10);
+            };
+            const loadJiraLabels = React.useCallback(async () => {
+                if (loadingLabels) return;
+                setLoadingLabels(true);
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/jira/labels`, { cache: 'no-cache' });
+                    if (!response.ok) {
+                        throw new Error(`Labels error ${response.status}`);
+                    }
+                    const payload = await response.json();
+                    setJiraLabels(Array.isArray(payload.labels) ? payload.labels : []);
+                } catch (error) {
+                    setJiraLabels([]);
+                } finally {
+                    setLoadingLabels(false);
+                }
+            }, [loadingLabels]);
+
+            useEffect(() => {
+                if (!showGroupManage) return;
+                if (groupManageTab !== 'labels') return;
+                if (!labelsTabEnabled) return;
+                if (jiraLabels.length > 0) return;
+                loadJiraLabels();
+            }, [showGroupManage, groupManageTab, labelsTabEnabled, jiraLabels.length, loadJiraLabels]);
 
             useEffect(() => {
                 if (!activeGroupDraft) return;
@@ -2448,6 +2522,9 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const activeGroup = React.useMemo(() => {
                 return (groupsConfig.groups || []).find(group => group.id === activeGroupId) || null;
             }, [groupsConfig, activeGroupId]);
+            const activeGroupTeamLabels = React.useMemo(() => {
+                return activeGroup?.teamLabels || {};
+            }, [activeGroup]);
 
             const activeGroupTeamIds = React.useMemo(() => {
                 const seen = new Set();
@@ -2532,6 +2609,10 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     showMissingAlert: savedPrefsRef.current.showMissingAlert ?? true,
                     showBlockedAlert: savedPrefsRef.current.showBlockedAlert ?? true,
                     showPostponedAlert: savedPrefsRef.current.showPostponedAlert ?? true,
+                    showBacklogAlert: savedPrefsRef.current.showBacklogAlert ?? true,
+                    showMissingTeamAlert: savedPrefsRef.current.showMissingTeamAlert ?? true,
+                    showMissingLabelsAlert: savedPrefsRef.current.showMissingLabelsAlert ?? true,
+                    showCreateStoriesAlert: savedPrefsRef.current.showCreateStoriesAlert ?? true,
                     showWaitingAlert: savedPrefsRef.current.showWaitingAlert ?? true,
                     showEmptyEpicAlert: savedPrefsRef.current.showEmptyEpicAlert ?? true,
                     showDoneEpicAlert: savedPrefsRef.current.showDoneEpicAlert ?? true,
@@ -2600,6 +2681,10 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 showMissingAlert,
                 showBlockedAlert,
                 showPostponedAlert,
+                showBacklogAlert,
+                showMissingTeamAlert,
+                showMissingLabelsAlert,
+                showCreateStoriesAlert,
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
@@ -2697,6 +2782,10 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 setShowMissingAlert(nextState.showMissingAlert ?? true);
                 setShowBlockedAlert(nextState.showBlockedAlert ?? true);
                 setShowPostponedAlert(nextState.showPostponedAlert ?? true);
+                setShowBacklogAlert(nextState.showBacklogAlert ?? true);
+                setShowMissingTeamAlert(nextState.showMissingTeamAlert ?? true);
+                setShowMissingLabelsAlert(nextState.showMissingLabelsAlert ?? true);
+                setShowCreateStoriesAlert(nextState.showCreateStoriesAlert ?? true);
                 setShowWaitingAlert(nextState.showWaitingAlert ?? true);
                 setShowEmptyEpicAlert(nextState.showEmptyEpicAlert ?? true);
                 setShowDoneEpicAlert(nextState.showDoneEpicAlert ?? true);
@@ -2769,6 +2858,10 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 showMissingAlert,
                 showBlockedAlert,
                 showPostponedAlert,
+                showBacklogAlert,
+                showMissingTeamAlert,
+                showMissingLabelsAlert,
+                showCreateStoriesAlert,
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
@@ -2837,6 +2930,8 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 setDependencyLookupCache({});
                 setDependencyLookupLoading(false);
                 setMissingPlanningInfoTasks([]);
+                setBacklogProductEpics([]);
+                setBacklogTechEpics([]);
                 setScenarioData(null);
                 setScenarioError('');
                 setScenarioRangeOverride(null);
@@ -3032,6 +3127,10 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     showMissingAlert,
                     showBlockedAlert,
                     showPostponedAlert,
+                    showBacklogAlert,
+                    showMissingTeamAlert,
+                    showMissingLabelsAlert,
+                    showCreateStoriesAlert,
                     showWaitingAlert,
                     showEmptyEpicAlert,
                     showDoneEpicAlert,
@@ -3061,6 +3160,11 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 showMissingAlert,
                 showBlockedAlert,
                 showPostponedAlert,
+                showBacklogAlert,
+                showMissingTeamAlert,
+                showMissingLabelsAlert,
+                showCreateStoriesAlert,
+                showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
                 updateDismissedHash
@@ -3417,7 +3521,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
 
                     const filteredTasks = filterTasksForActiveGroup(sortedTasks);
                     const filteredEpicsInScope = activeGroupTeamIds.length
-                        ? (data.epicsInScope || []).filter(epic => epic?.teamId && activeGroupTeamSet.has(epic.teamId))
+                        ? (data.epicsInScope || []).filter(epic => !epic?.teamId || activeGroupTeamSet.has(epic.teamId))
                         : [];
                     const epicKeys = new Set(
                         filteredTasks
@@ -3459,6 +3563,28 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                         setLoading(false);
                     }
                 }
+            };
+
+            const fetchBacklogEpics = async (project) => {
+                if (!isFutureSprintSelected) return [];
+                if (activeGroupId && activeGroupTeamIds.length === 0) return [];
+                const params = new URLSearchParams({
+                    t: Date.now().toString(),
+                    project: project || 'all'
+                });
+                if (activeGroupTeamIds.length > 0) {
+                    params.set('teamIds', activeGroupTeamIds.join(','));
+                }
+                const response = await fetch(`${BACKEND_URL}/api/backlog-epics?${params.toString()}`, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' },
+                    cache: 'no-cache'
+                });
+                if (!response.ok) {
+                    throw new Error(`Backlog epics error ${response.status}`);
+                }
+                const payload = await response.json();
+                return Array.isArray(payload.epics) ? payload.epics : [];
             };
 
             const loadProductTasks = async () => {
@@ -3757,6 +3883,40 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 loadReadyToCloseProductTasks();
                 loadReadyToCloseTechTasks();
             }, [activeGroupId, activeGroupTeamIds.join('|'), selectedSprint, groupsLoading, tasksFetched, productTasksLoading, techTasksLoading]);
+
+            useEffect(() => {
+                let cancelled = false;
+                if (!isFutureSprintSelected) {
+                    setBacklogProductEpics([]);
+                    setBacklogTechEpics([]);
+                    return;
+                }
+                if (groupsLoading) return;
+                if (activeGroupId && activeGroupTeamIds.length === 0) {
+                    setBacklogProductEpics([]);
+                    setBacklogTechEpics([]);
+                    return;
+                }
+                const loadBacklog = async () => {
+                    try {
+                        const [product, tech] = await Promise.all([
+                            fetchBacklogEpics('product'),
+                            fetchBacklogEpics('tech')
+                        ]);
+                        if (cancelled) return;
+                        setBacklogProductEpics(product);
+                        setBacklogTechEpics(tech);
+                    } catch (err) {
+                        if (cancelled) return;
+                        setBacklogProductEpics([]);
+                        setBacklogTechEpics([]);
+                    }
+                };
+                loadBacklog();
+                return () => {
+                    cancelled = true;
+                };
+            }, [isFutureSprintSelected, groupsLoading, activeGroupId, activeGroupTeamIds.join('|'), selectedSprint]);
 
 
             const formatPercent = (value) => `${(value * 100).toFixed(2)}%`;
@@ -8098,6 +8258,109 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 selectedSprintInfo?.name
             ]);
 
+            const planningSprintLabel = React.useMemo(
+                () => String(selectedSprintInfo?.name || '').trim(),
+                [selectedSprintInfo?.name]
+            );
+            const normalizedPlanningSprintLabel = React.useMemo(
+                () => planningSprintLabel.toLowerCase(),
+                [planningSprintLabel]
+            );
+            const normalizedActiveGroupTeamLabels = React.useMemo(() => {
+                const entries = Object.entries(activeGroupTeamLabels || {})
+                    .map(([teamId, label]) => [String(teamId || '').trim(), String(label || '').trim()])
+                    .filter(([teamId, label]) => teamId && label);
+                return Object.fromEntries(entries);
+            }, [activeGroupTeamLabels]);
+            const storiesByEpicKey = React.useMemo(() => {
+                const map = new Map();
+                tasks.forEach((task) => {
+                    const epicKey = task.fields?.epicKey;
+                    if (!epicKey) return;
+                    if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return;
+                    const list = map.get(epicKey) || [];
+                    list.push(task);
+                    map.set(epicKey, list);
+                });
+                return map;
+            }, [tasks, isAllTeamsSelected, selectedTeamSet]);
+            const epicHasLabel = React.useCallback((epic, label) => {
+                const target = String(label || '').trim().toLowerCase();
+                if (!target) return false;
+                return (epic?.labels || []).some((item) => String(item || '').trim().toLowerCase() === target);
+            }, []);
+            const planningCandidateEpics = React.useMemo(() => {
+                return epicsInScope.filter((epic) => {
+                    if (!epic?.key) return false;
+                    if (dismissedAlertSet.has(epic.key)) return false;
+                    const status = normalizeStatus(epic.status?.name);
+                    if (!status || status === 'done' || status === 'killed' || status === 'incomplete') return false;
+                    if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
+                    return true;
+                });
+            }, [epicsInScope, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet]);
+            const backlogEpics = React.useMemo(() => {
+                if (!isFutureSprintSelected) return [];
+                const seen = new Set();
+                return [...backlogProductEpics, ...backlogTechEpics].filter((epic) => {
+                    if (!epic?.key || seen.has(epic.key)) return false;
+                    seen.add(epic.key);
+                    if (dismissedAlertSet.has(epic.key)) return false;
+                    if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
+                    const status = normalizeStatus(epic.status?.name);
+                    if (!status || status === 'done' || status === 'killed' || status === 'incomplete') return false;
+                    return true;
+                });
+            }, [isFutureSprintSelected, backlogProductEpics, backlogTechEpics, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet]);
+            const backlogEpicKeySet = React.useMemo(
+                () => new Set(backlogEpics.map(epic => epic.key).filter(Boolean)),
+                [backlogEpics]
+            );
+            const missingTeamEpics = React.useMemo(() => {
+                if (!isFutureSprintSelected) return [];
+                return planningCandidateEpics.filter((epic) => {
+                    if (backlogEpicKeySet.has(epic.key)) return false;
+                    const teamId = String(epic.teamId || '').trim();
+                    const teamName = String(epic.teamName || '').trim().toLowerCase();
+                    return !teamId || !teamName || teamName === 'unknown team';
+                });
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet]);
+            const missingTeamEpicKeySet = React.useMemo(
+                () => new Set(missingTeamEpics.map(epic => epic.key).filter(Boolean)),
+                [missingTeamEpics]
+            );
+            const missingLabelEpics = React.useMemo(() => {
+                if (!isFutureSprintSelected) return [];
+                return planningCandidateEpics.filter((epic) => {
+                    if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key)) return false;
+                    const teamLabel = normalizedActiveGroupTeamLabels[epic.teamId] || '';
+                    if (!normalizedPlanningSprintLabel) return false;
+                    return !teamLabel || !epicHasLabel(epic, normalizedPlanningSprintLabel) || !epicHasLabel(epic, teamLabel);
+                });
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, normalizedActiveGroupTeamLabels, normalizedPlanningSprintLabel, epicHasLabel]);
+            const missingLabelEpicKeySet = React.useMemo(
+                () => new Set(missingLabelEpics.map(epic => epic.key).filter(Boolean)),
+                [missingLabelEpics]
+            );
+            const createStoriesEpics = React.useMemo(() => {
+                if (!isFutureSprintSelected) return [];
+                return planningCandidateEpics.filter((epic) => {
+                    if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key) || missingLabelEpicKeySet.has(epic.key)) return false;
+                    const teamLabel = normalizedActiveGroupTeamLabels[epic.teamId] || '';
+                    if (!teamLabel || !epicHasLabel(epic, normalizedPlanningSprintLabel) || !epicHasLabel(epic, teamLabel)) return false;
+                    const epicStories = storiesByEpicKey.get(epic.key) || [];
+                    if (epicStories.length === 0) return true;
+                    return epicStories.every((task) => {
+                        const status = normalizeStatus(task.fields?.status?.name);
+                        return status === 'done' || status === 'killed' || status === 'incomplete';
+                    });
+                });
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, normalizedActiveGroupTeamLabels, normalizedPlanningSprintLabel, epicHasLabel, storiesByEpicKey]);
+            const createStoriesEpicKeySet = React.useMemo(
+                () => new Set(createStoriesEpics.map(epic => epic.key).filter(Boolean)),
+                [createStoriesEpics]
+            );
+
             const emptyEpics = epicsInScope
                 .filter(epic => {
                     const status = normalizeStatus(epic.status?.name);
@@ -8290,6 +8553,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             }, [selectionTasks, emptyEpics, selectedSprint, selectedSprintInfo?.name]);
 
             const emptyEpicsForAlert = React.useMemo(() => {
+                if (isFutureSprintSelected) return [];
                 const futureRoutedEpicKeys = new Set(futureRoutedEpics.map(epic => epic.key).filter(Boolean));
                 return emptyEpics.filter(epic => {
                     if (!epic?.key) return false;
@@ -8298,10 +8562,35 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     if (futureRoutedEpicKeys.has(epic.key)) return false;
                     return true;
                 });
-            }, [emptyEpics, epicsWithActionableStoriesInSelectedSprint, futureRoutedEpics]);
+            }, [isFutureSprintSelected, emptyEpics, epicsWithActionableStoriesInSelectedSprint, futureRoutedEpics]);
             const emptyEpicTeams = groupAlertsByTeam(emptyEpicsForAlert, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
 
+            const waitingForStoriesFutureEpics = React.useMemo(() => {
+                if (!isFutureSprintSelected) return [];
+                return planningCandidateEpics.filter((epic) => {
+                    if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key) || missingLabelEpicKeySet.has(epic.key) || createStoriesEpicKeySet.has(epic.key)) {
+                        return false;
+                    }
+                    const teamLabel = normalizedActiveGroupTeamLabels[epic.teamId] || '';
+                    if (!teamLabel || !epicHasLabel(epic, normalizedPlanningSprintLabel) || !epicHasLabel(epic, teamLabel)) return false;
+                    const epicStories = storiesByEpicKey.get(epic.key) || [];
+                    if (epicStories.length === 0) return false;
+                    const allClosed = epicStories.every((task) => {
+                        const status = normalizeStatus(task.fields?.status?.name);
+                        return status === 'done' || status === 'killed' || status === 'incomplete';
+                    });
+                    if (allClosed) return false;
+                    return !epicStories.some((task) => {
+                        const status = normalizeStatus(task.fields?.status?.name);
+                        if (status === 'done' || status === 'killed' || status === 'incomplete') return false;
+                        return isTaskInSelectedSprint(task);
+                    });
+                });
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, createStoriesEpicKeySet, normalizedActiveGroupTeamLabels, normalizedPlanningSprintLabel, epicHasLabel, storiesByEpicKey]);
             const waitingForStoriesEpics = React.useMemo(() => {
+                if (isFutureSprintSelected) {
+                    return waitingForStoriesFutureEpics;
+                }
                 const seen = new Set();
                 const merged = [...analysisWaitingEpics, ...postponedEmptyEpics].filter(epic => {
                     if (!epic?.key) return false;
@@ -8310,9 +8599,13 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     return true;
                 });
                 return merged;
-            }, [analysisWaitingEpics, postponedEmptyEpics]);
+            }, [isFutureSprintSelected, waitingForStoriesFutureEpics, analysisWaitingEpics, postponedEmptyEpics]);
 
             const analysisEpicTeams = groupAlertsByTeam(waitingForStoriesEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const backlogEpicTeams = groupAlertsByTeam(backlogEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const missingTeamEpicTeams = groupAlertsByTeam(missingTeamEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const missingLabelEpicTeams = groupAlertsByTeam(missingLabelEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const createStoriesEpicTeams = groupAlertsByTeam(createStoriesEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
 
             const missingAlertKeySet = React.useMemo(
                 () => new Set(consolidatedMissingStories.map(item => item.task?.key).filter(Boolean)),
@@ -8325,6 +8618,10 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const postponedAlertKeySet = React.useMemo(
                 () => new Set([...postponedTasks.map(task => task.key), ...futureRoutedEpics.map(epic => epic.key)].filter(Boolean)),
                 [postponedTasks, futureRoutedEpics]
+            );
+            const backlogAlertKeySet = React.useMemo(
+                () => new Set(backlogEpics.map(epic => epic.key).filter(Boolean)),
+                [backlogEpics]
             );
             const waitingAlertKeySet = React.useMemo(
                 () => new Set(waitingForStoriesEpics.map(epic => epic.key).filter(Boolean)),
@@ -8343,11 +8640,15 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 missing: consolidatedMissingStories.length,
                 blocked: blockedTasks.length,
                 followup: postponedTasks.length + futureRoutedEpics.length,
+                backlog: backlogEpics.length,
+                missingTeam: missingTeamEpics.length,
+                missingLabels: missingLabelEpics.length,
+                createStories: createStoriesEpics.length,
                 waiting: waitingForStoriesEpics.length,
                 empty: emptyEpicsForAlert.length,
                 done: doneStoryEpics.length
             };
-            const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.followup + alertCounts.waiting + alertCounts.empty + alertCounts.done;
+            const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.followup + alertCounts.backlog + alertCounts.missingTeam + alertCounts.missingLabels + alertCounts.createStories + alertCounts.waiting + alertCounts.empty + alertCounts.done;
 
             const triggerAlertCelebration = React.useCallback((options = {}) => {
                 if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -10842,7 +11143,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                     </div>
                                 )}
 		                            {alertItemCount > 0 && (
-		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert) ? 'collapsed' : ''}`}>
+		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showCreateStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert) ? 'collapsed' : ''}`}>
 		                                    {consolidatedMissingStories.length > 0 && (
 		                                        <div className={`alert-card missing ${showMissingAlert ? '' : 'collapsed'}`}>
 	                                            <div className="alert-card-header">
@@ -11227,6 +11528,161 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                             ))}
                                                         </>
                                                     )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {backlogEpics.length > 0 && (
+                                            <div className={`alert-card following ${showBacklogAlert ? '' : 'collapsed'}`}>
+                                                <div className="alert-card-header">
+                                                    <button className="alert-toggle" onClick={() => setShowBacklogAlert(prev => !prev)} title={showBacklogAlert ? 'Collapse backlog panel' : 'Expand backlog panel'}>
+                                                        <span className="alert-toggle-icon" aria-hidden="true">
+                                                            <svg className={`alert-toggle-chevron ${showBacklogAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
+                                                                <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                            </svg>
+                                                        </span>
+                                                        <span className="alert-toggle-label">{showBacklogAlert ? 'Hide' : 'Show'}</span>
+                                                    </button>
+                                                    <div className="alert-title">📥 Backlog</div>
+                                                    <div className="alert-subtitle">These epics are still backlog work. Keep child stories unsprinted unless they are already closed out.</div>
+                                                    <div className="alert-chip">{backlogEpics.length} {backlogEpics.length === 1 ? 'epic' : 'epics'}</div>
+                                                </div>
+                                                <div className={`alert-card-body ${showBacklogAlert ? '' : 'collapsed'}`}>
+                                                    {backlogEpicTeams.map(group => (
+                                                        <div key={`backlog-${group.id}`} className="alert-team-group">
+                                                            <div className="alert-team-header">
+                                                                <div className="alert-team-title">
+                                                                    <span className="alert-pill team">{group.name}</span>
+                                                                    <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="alert-stories">
+                                                                {group.items.map(epic => (
+                                                                    <div key={epic.key} className="alert-story">
+                                                                        <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
+                                                                            <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>
+                                                                                {epic.key} · {epic.summary}
+                                                                            </a>
+                                                                            <div className="alert-story-note">
+                                                                                {epic.cleanupStoryCount > 0 ? `${epic.cleanupStoryCount} child stor${epic.cleanupStoryCount === 1 ? 'y is' : 'ies are'} still sprinted.` : 'No sprinted child stories to clean up.'}
+                                                                            </div>
+                                                                        </div>
+                                                                        <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer">Clean backlog stories →</a>
+                                                                        <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {missingTeamEpics.length > 0 && (
+                                            <div className={`alert-card following ${showMissingTeamAlert ? '' : 'collapsed'}`}>
+                                                <div className="alert-card-header">
+                                                    <button className="alert-toggle" onClick={() => setShowMissingTeamAlert(prev => !prev)} title={showMissingTeamAlert ? 'Collapse missing team panel' : 'Expand missing team panel'}>
+                                                        <span className="alert-toggle-icon" aria-hidden="true">
+                                                            <svg className={`alert-toggle-chevron ${showMissingTeamAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
+                                                                <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                            </svg>
+                                                        </span>
+                                                        <span className="alert-toggle-label">{showMissingTeamAlert ? 'Hide' : 'Show'}</span>
+                                                    </button>
+                                                    <div className="alert-title">👥 Missing Team</div>
+                                                    <div className="alert-subtitle">Open epics that still need a Jira Team before planning labels can be evaluated.</div>
+                                                    <div className="alert-chip">{missingTeamEpics.length} {missingTeamEpics.length === 1 ? 'epic' : 'epics'}</div>
+                                                </div>
+                                                <div className={`alert-card-body ${showMissingTeamAlert ? '' : 'collapsed'}`}>
+                                                    {missingTeamEpicTeams.map(group => (
+                                                        <div key={`missing-team-${group.id}`} className="alert-team-group">
+                                                            <div className="alert-team-header"><div className="alert-team-title"><span className="alert-pill team">{group.name}</span><span>{group.items.length} epics</span></div></div>
+                                                            <div className="alert-stories">
+                                                                {group.items.map(epic => (
+                                                                    <div key={epic.key} className="alert-story">
+                                                                        <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
+                                                                            <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
+                                                                            <div className="alert-story-note">Add the Jira Team field before planning labels can be applied.</div>
+                                                                        </div>
+                                                                        <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {missingLabelEpics.length > 0 && (
+                                            <div className={`alert-card following ${showMissingLabelsAlert ? '' : 'collapsed'}`}>
+                                                <div className="alert-card-header">
+                                                    <button className="alert-toggle" onClick={() => setShowMissingLabelsAlert(prev => !prev)} title={showMissingLabelsAlert ? 'Collapse missing labels panel' : 'Expand missing labels panel'}>
+                                                        <span className="alert-toggle-icon" aria-hidden="true">
+                                                            <svg className={`alert-toggle-chevron ${showMissingLabelsAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
+                                                                <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                            </svg>
+                                                        </span>
+                                                        <span className="alert-toggle-label">{showMissingLabelsAlert ? 'Hide' : 'Show'}</span>
+                                                    </button>
+                                                    <div className="alert-title">🏷️ Missing Labels</div>
+                                                    <div className="alert-subtitle">These epics need both the selected sprint label and the mapped team label.</div>
+                                                    <div className="alert-chip">{missingLabelEpics.length} {missingLabelEpics.length === 1 ? 'epic' : 'epics'}</div>
+                                                </div>
+                                                <div className={`alert-card-body ${showMissingLabelsAlert ? '' : 'collapsed'}`}>
+                                                    {missingLabelEpicTeams.map(group => (
+                                                        <div key={`missing-labels-${group.id}`} className="alert-team-group">
+                                                            <div className="alert-team-header"><div className="alert-team-title"><span className="alert-pill team">{group.name}</span><span>{group.items.length} epics</span></div></div>
+                                                            <div className="alert-stories">
+                                                                {group.items.map(epic => (
+                                                                    <div key={epic.key} className="alert-story">
+                                                                        <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
+                                                                            <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
+                                                                            <div className="alert-story-note">Add the selected sprint label and the mapped team label on the epic.</div>
+                                                                        </div>
+                                                                        <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {createStoriesEpics.length > 0 && (
+                                            <div className={`alert-card following ${showCreateStoriesAlert ? '' : 'collapsed'}`}>
+                                                <div className="alert-card-header">
+                                                    <button className="alert-toggle" onClick={() => setShowCreateStoriesAlert(prev => !prev)} title={showCreateStoriesAlert ? 'Collapse create stories panel' : 'Expand create stories panel'}>
+                                                        <span className="alert-toggle-icon" aria-hidden="true">
+                                                            <svg className={`alert-toggle-chevron ${showCreateStoriesAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
+                                                                <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                            </svg>
+                                                        </span>
+                                                        <span className="alert-toggle-label">{showCreateStoriesAlert ? 'Hide' : 'Show'}</span>
+                                                    </button>
+                                                    <div className="alert-title">📝 Create Stories</div>
+                                                    <div className="alert-subtitle">These epics are labeled correctly but still need future-sprint stories created.</div>
+                                                    <div className="alert-chip">{createStoriesEpics.length} {createStoriesEpics.length === 1 ? 'epic' : 'epics'}</div>
+                                                </div>
+                                                <div className={`alert-card-body ${showCreateStoriesAlert ? '' : 'collapsed'}`}>
+                                                    {createStoriesEpicTeams.map(group => (
+                                                        <div key={`create-stories-${group.id}`} className="alert-team-group">
+                                                            <div className="alert-team-header"><div className="alert-team-title"><span className="alert-pill team">{group.name}</span><span>{group.items.length} epics</span></div></div>
+                                                            <div className="alert-stories">
+                                                                {group.items.map(epic => (
+                                                                    <div key={epic.key} className="alert-story">
+                                                                        <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
+                                                                            <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
+                                                                            <div className="alert-story-note">Create the planned stories for the selected future sprint.</div>
+                                                                        </div>
+                                                                        <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer">Open epic →</a>
+                                                                        <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             </div>
                                         )}
@@ -12145,6 +12601,13 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                         disabled={savedSelectedProjects.length === 0}
                                         title={savedSelectedProjects.length === 0 ? 'Configure data sources first' : ''}
                                     >Team groups</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'labels' ? 'active' : ''}`}
+                                        onClick={() => labelsTabEnabled && setGroupManageTab('labels')}
+                                        type="button"
+                                        disabled={!labelsTabEnabled}
+                                        title={labelsTabEnabled ? '' : 'Save at least one group first'}
+                                    >Group labels</button>
                                     <button
                                         className={`group-modal-tab ${groupManageTab === 'priorityWeights' ? 'active' : ''}`}
                                         onClick={() => setGroupManageTab('priorityWeights')}
@@ -13102,6 +13565,119 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                             </div>
                                         ) : (
                                             <div className="group-pane-empty">Select a group to edit, or add a new one.</div>
+                                        )}
+                                    </div>
+                                </div>
+                                )}
+                                {groupManageTab === 'labels' && (
+                                <div className="group-modal-body group-modal-split">
+                                    <div className="group-pane group-list-pane">
+                                        <div className="group-pane-header">
+                                            <div className="group-pane-title">Saved groups</div>
+                                            <div className="group-pane-subtitle">Choose a saved team group to map one Jira label per team.</div>
+                                        </div>
+                                        <div className="group-pane-list">
+                                            {(filteredGroupDrafts || []).map((group) => {
+                                                const isActive = activeGroupDraft?.id === group.id;
+                                                const teamCount = (group.teamIds || []).length;
+                                                return (
+                                                    <button
+                                                        key={`label-group-${group.id}`}
+                                                        className={`group-list-item ${isActive ? 'active' : ''}`}
+                                                        onClick={() => {
+                                                            setActiveGroupDraftId(group.id);
+                                                            setShowGroupListMobile(false);
+                                                        }}
+                                                        type="button"
+                                                    >
+                                                        <div className="group-list-line">
+                                                            <span className="group-list-name">{group.name || 'Untitled group'}</span>
+                                                            <span className="group-list-dot">·</span>
+                                                            <span className="group-list-meta">{teamCount} team{teamCount !== 1 ? 's' : ''}</span>
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    <div className="group-pane group-editor-pane">
+                                        <div className="group-pane-header">
+                                            <div className="group-pane-title">Team labels</div>
+                                            <div className="group-pane-subtitle">Use the selected sprint name as the planning label and map the team-specific epic label here.</div>
+                                        </div>
+                                        {!activeGroupDraft ? (
+                                            <div className="group-pane-empty">Select a saved group to edit its team label mappings.</div>
+                                        ) : (activeGroupDraft.teamIds || []).length === 0 ? (
+                                            <div className="group-pane-empty">Add teams in Team groups first, then return here to map labels.</div>
+                                        ) : (
+                                            <div className="group-pane-list">
+                                                {(activeGroupDraft.teamIds || []).map((teamId) => {
+                                                    const rowKey = getLabelRowKey(activeGroupDraft.id, teamId);
+                                                    const currentLabel = activeGroupDraft?.teamLabels?.[teamId] || '';
+                                                    const results = getLabelSearchResults(activeGroupDraft.id, teamId);
+                                                    return (
+                                                        <div key={rowKey} className="group-projects-subsection" style={{ marginTop: 0, paddingBottom: '1rem', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
+                                                            <div className="team-selector-label">{resolveTeamName(teamId)}</div>
+                                                            <div className="group-field-helper">Assign the team-specific epic label used with the selected sprint label.</div>
+                                                            {currentLabel ? (
+                                                                <div className="selected-teams-list" style={{ marginTop: '0.45rem' }}>
+                                                                    <div className="selected-team-chip">
+                                                                        <span className="team-name">{currentLabel}</span>
+                                                                        <button
+                                                                            className="remove-btn"
+                                                                            onClick={() => setTeamLabelForGroup(activeGroupDraft.id, teamId, '')}
+                                                                            type="button"
+                                                                            title="Remove label"
+                                                                        >
+                                                                            ×
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="team-search-wrapper" style={{ marginTop: '0.45rem' }}>
+                                                                    <input
+                                                                        type="text"
+                                                                        className="team-search-input"
+                                                                        placeholder={loadingLabels ? 'Loading labels...' : 'Search Jira labels...'}
+                                                                        value={labelSearchQuery[rowKey] || ''}
+                                                                        onChange={(event) => {
+                                                                            const value = event.target.value;
+                                                                            setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
+                                                                            setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                        }}
+                                                                        onFocus={() => {
+                                                                            setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                            if (!jiraLabels.length) {
+                                                                                loadJiraLabels();
+                                                                            }
+                                                                        }}
+                                                                        onBlur={() => window.setTimeout(() => setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false })), 120)}
+                                                                    />
+                                                                    {labelSearchOpen[rowKey] && (
+                                                                        <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
+                                                                            {results.length === 0 ? (
+                                                                                <div className="team-search-result-item is-empty">{loadingLabels ? 'Loading labels...' : 'No labels found'}</div>
+                                                                            ) : results.map((label) => (
+                                                                                <div
+                                                                                    key={`${rowKey}-${label}`}
+                                                                                    className="team-search-result-item"
+                                                                                    onClick={() => {
+                                                                                        setTeamLabelForGroup(activeGroupDraft.id, teamId, label);
+                                                                                        setLabelSearchQuery(prev => ({ ...prev, [rowKey]: '' }));
+                                                                                        setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false }));
+                                                                                    }}
+                                                                                >
+                                                                                    {label}
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         )}
                                     </div>
                                 </div>

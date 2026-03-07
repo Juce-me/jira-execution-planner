@@ -153,9 +153,8 @@ import {
                 version: 1,
                 groups: [],
                 defaultGroupId: '',
-                teamCatalog: {},
-                teamCatalogMeta: {}
             });
+            const [teamCatalogState, setTeamCatalogState] = useState({ catalog: {}, meta: {} });
             const [groupsLoading, setGroupsLoading] = useState(true);
             const [groupsError, setGroupsError] = useState('');
             const [groupWarnings, setGroupWarnings] = useState([]);
@@ -546,8 +545,6 @@ import {
                     version: normalized.version || 1,
                     groups: normalized.groups || [],
                     defaultGroupId: normalized.defaultGroupId || '',
-                    teamCatalog: normalized.teamCatalog || {},
-                    teamCatalogMeta: normalized.teamCatalogMeta || {}
                 });
                 setGroupDraftError('');
                 setGroupImportText('');
@@ -574,24 +571,9 @@ import {
                 loadIssueTypesConfig();
                 fetchAvailableIssueTypes();
                 if (!jiraProjects.length) fetchJiraProjects();
-                const catalogTeams = buildTeamCatalogList(normalized.teamCatalog);
-                if (catalogTeams.length) {
-                    setAvailableTeams(catalogTeams);
-                } else {
-                    setAvailableTeams(loadTeamsFromCurrentView());
-                }
+                setAvailableTeams(loadTeamsFromCurrentView());
                 setLoadingTeams(false);
-                const missingIds = new Set();
-                (normalized.groups || []).forEach(group => {
-                    (group.teamIds || []).forEach(teamId => {
-                        if (!normalized.teamCatalog?.[teamId]) {
-                            missingIds.add(teamId);
-                        }
-                    });
-                });
-                if (missingIds.size) {
-                    resolveMissingTeamNames(Array.from(missingIds));
-                }
+                loadTeamCatalog();
             }, [showGroupManage, groupsConfig]);
 
             useEffect(() => {
@@ -738,49 +720,10 @@ import {
                             : []
                     }))
                     .filter(group => group.id && group.name);
-                const rawCatalog = config?.teamCatalog || {};
-                const teamCatalog = {};
-                if (Array.isArray(rawCatalog)) {
-                    rawCatalog.forEach(entry => {
-                        if (!entry) return;
-                        const id = String(entry.id || '').trim();
-                        const name = String(entry.name || '').trim();
-                        if (id && name) {
-                            teamCatalog[id] = { id, name };
-                        }
-                    });
-                } else if (rawCatalog && typeof rawCatalog === 'object') {
-                    Object.entries(rawCatalog).forEach(([key, value]) => {
-                        if (value && typeof value === 'object') {
-                            const id = String(value.id || key || '').trim();
-                            const name = String(value.name || '').trim();
-                            if (id && name) {
-                                teamCatalog[id] = { id, name };
-                            }
-                            return;
-                        }
-                        const id = String(key || '').trim();
-                        const name = String(value || '').trim();
-                        if (id && name) {
-                            teamCatalog[id] = { id, name };
-                        }
-                    });
-                }
-                const meta = config?.teamCatalogMeta && typeof config.teamCatalogMeta === 'object'
-                    ? config.teamCatalogMeta
-                    : {};
                 return {
                     version: Number(config?.version) || 1,
                     groups,
                     defaultGroupId: String(config?.defaultGroupId || '').trim(),
-                    teamCatalog,
-                    teamCatalogMeta: {
-                        updatedAt: meta.updatedAt ? String(meta.updatedAt) : '',
-                        sprintId: meta.sprintId ? String(meta.sprintId) : '',
-                        sprintName: meta.sprintName ? String(meta.sprintName) : '',
-                        source: meta.source ? String(meta.source) : '',
-                        resolvedAt: meta.resolvedAt ? String(meta.resolvedAt) : ''
-                    }
                 };
             };
 
@@ -865,6 +808,43 @@ import {
                 return next;
             };
 
+            const loadTeamCatalog = async () => {
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/team-catalog?t=${Date.now()}`);
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    setTeamCatalogState({
+                        catalog: data.catalog || {},
+                        meta: data.meta || {}
+                    });
+                    const catalogTeams = buildTeamCatalogList(data.catalog || {});
+                    if (catalogTeams.length) {
+                        setAvailableTeams(catalogTeams);
+                    }
+                } catch (err) {
+                    console.warn('Failed to load team catalog:', err);
+                }
+            };
+
+            const saveTeamCatalog = async (catalog, meta, merge = false) => {
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/team-catalog`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ catalog, meta, merge })
+                    });
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    setTeamCatalogState({
+                        catalog: data.catalog || {},
+                        meta: data.meta || {}
+                    });
+                    return data;
+                } catch (err) {
+                    console.warn('Failed to save team catalog:', err);
+                }
+            };
+
             const handleGroupDraftChange = (updater) => {
                 setGroupDraft(prev => {
                     if (!prev) return prev;
@@ -912,16 +892,13 @@ import {
                         console.log(`Loaded ${fetchedTeams.length} teams from Jira (${newTeams.length} new)`);
                         return merged;
                     });
-                    handleGroupDraftChange(prev => ({
-                        ...prev,
-                        teamCatalog: mergeTeamCatalog(prev.teamCatalog, fetchedTeams),
-                        teamCatalogMeta: {
-                            updatedAt: new Date().toISOString(),
-                            sprintId: String(selectedSprint || ''),
-                            sprintName: selectedSprintInfo?.name ? String(selectedSprintInfo.name) : '',
-                            source: 'sprint'
-                        }
-                    }));
+                    const mergedCatalog = mergeTeamCatalog(teamCatalogState.catalog, fetchedTeams);
+                    saveTeamCatalog(mergedCatalog, {
+                        updatedAt: new Date().toISOString(),
+                        sprintId: String(selectedSprint || ''),
+                        sprintName: selectedSprintInfo?.name ? String(selectedSprintInfo.name) : '',
+                        source: 'sprint'
+                    });
                 } catch (err) {
                     console.error('Error fetching teams from Jira:', err);
                     setGroupDraftError(`Failed to fetch teams: ${err.message}`);
@@ -948,14 +925,11 @@ import {
                         const merged = [...prevTeams, ...newTeams].sort((a, b) => a.name.localeCompare(b.name));
                         return merged;
                     });
-                    handleGroupDraftChange(prev => ({
-                        ...prev,
-                        teamCatalog: mergeTeamCatalog(prev.teamCatalog, resolvedTeams),
-                        teamCatalogMeta: {
-                            ...(prev.teamCatalogMeta || {}),
-                            resolvedAt: new Date().toISOString()
-                        }
-                    }));
+                    const mergedCatalog = mergeTeamCatalog(teamCatalogState.catalog, resolvedTeams);
+                    saveTeamCatalog(mergedCatalog, {
+                        ...teamCatalogState.meta,
+                        resolvedAt: new Date().toISOString()
+                    }, false);
                 } catch (err) {
                     console.warn('Failed to resolve team names:', err);
                 }
@@ -1000,8 +974,6 @@ import {
                     version: groupDraft.version || 1,
                     groups: groupDraft.groups || [],
                     defaultGroupId: groupDraft.defaultGroupId || '',
-                    teamCatalog: groupDraft.teamCatalog || {},
-                    teamCatalogMeta: groupDraft.teamCatalogMeta || {}
                 });
             }, [groupDraft]);
 
@@ -1533,8 +1505,6 @@ import {
                             version: groupDraft.version || 1,
                             groups: groupDraft.groups || [],
                             defaultGroupId: groupDraft.defaultGroupId || '',
-                            teamCatalog: groupDraft.teamCatalog || {},
-                            teamCatalogMeta: groupDraft.teamCatalogMeta || {}
                         })
                     });
                     if (!response.ok) {
@@ -2508,8 +2478,6 @@ import {
                     version: source.version || 1,
                     groups: source.groups || [],
                     defaultGroupId: source.defaultGroupId || '',
-                    teamCatalog: source.teamCatalog || {},
-                    teamCatalogMeta: source.teamCatalogMeta || {}
                 };
                 const json = JSON.stringify(payload, null, 2);
                 if (navigator.clipboard && window.isSecureContext) {
@@ -2536,6 +2504,19 @@ import {
                     if (!normalized.groups.length) {
                         throw new Error('Imported config has no groups.');
                     }
+                    // If imported JSON contains a teamCatalog, save it separately
+                    const rawCatalog = parsed?.teamCatalog;
+                    if (rawCatalog && typeof rawCatalog === 'object' && Object.keys(rawCatalog).length) {
+                        const catalogEntries = {};
+                        Object.entries(rawCatalog).forEach(([key, value]) => {
+                            if (value && typeof value === 'object' && value.id && value.name) {
+                                catalogEntries[String(value.id)] = { id: String(value.id), name: String(value.name) };
+                            }
+                        });
+                        if (Object.keys(catalogEntries).length) {
+                            saveTeamCatalog(catalogEntries, parsed?.teamCatalogMeta || {}, false);
+                        }
+                    }
                     setGroupDraft(normalized);
                     setGroupDraftError('');
                     setGroupImportText('');
@@ -2552,14 +2533,14 @@ import {
                         map[team.id] = team.name || team.id;
                     }
                 });
-                const catalog = groupDraft?.teamCatalog || {};
-                Object.keys(catalog).forEach(teamId => {
-                    if (!map[teamId]) {
-                        map[teamId] = catalog[teamId];
+                const catalog = teamCatalogState?.catalog || {};
+                Object.entries(catalog).forEach(([teamId, entry]) => {
+                    if (!map[teamId] && entry?.name) {
+                        map[teamId] = entry.name;
                     }
                 });
                 return map;
-            }, [availableTeams, groupDraft]);
+            }, [availableTeams, teamCatalogState]);
 
             const resolveTeamName = (teamId) => {
                 return teamNameLookup[teamId] || teamId;
@@ -2585,8 +2566,8 @@ import {
             }, [groupDraft, groupSearchQuery, teamNameLookup]);
 
             const teamCacheMeta = React.useMemo(() => {
-                return groupDraft?.teamCatalogMeta || groupsConfig.teamCatalogMeta || {};
-            }, [groupDraft, groupsConfig]);
+                return teamCatalogState?.meta || {};
+            }, [teamCatalogState]);
 
             const teamCacheLabel = React.useMemo(() => {
                 const stamp = teamCacheMeta?.updatedAt ? new Date(teamCacheMeta.updatedAt) : null;

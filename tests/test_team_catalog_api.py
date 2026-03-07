@@ -172,3 +172,25 @@ class TestTeamCatalogMigration(unittest.TestCase):
 
         jira_server.migrate_team_catalog_from_config()
         self.assertFalse(os.path.exists(self._catalog_path))
+
+
+@unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
+class TestGroupsConfigNoCatalog(unittest.TestCase):
+    def test_validate_groups_config_excludes_catalog(self):
+        payload = {
+            'version': 1,
+            'groups': [{'id': 'g1', 'name': 'G1', 'teamIds': ['t1']}],
+            'defaultGroupId': 'g1',
+            'teamCatalog': {'t1': {'id': 't1', 'name': 'Team'}},
+            'teamCatalogMeta': {'updatedAt': '2026-03-06'}
+        }
+        normalized, errors, _warnings = jira_server.validate_groups_config(payload, allow_empty=False)
+        self.assertEqual(errors, [])
+        self.assertNotIn('teamCatalog', normalized)
+        self.assertNotIn('teamCatalogMeta', normalized)
+
+    def test_build_default_groups_config_excludes_catalog(self):
+        with patch.object(jira_server, 'build_base_jql', return_value=''):
+            config, _warnings = jira_server.build_default_groups_config()
+        self.assertNotIn('teamCatalog', config)
+        self.assertNotIn('teamCatalogMeta', config)

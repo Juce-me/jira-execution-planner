@@ -1721,8 +1721,6 @@ def validate_groups_config(payload, allow_empty=False):
         'version': payload.get('version') or GROUPS_CONFIG_VERSION,
         'groups': normalized_groups,
         'defaultGroupId': default_group_id,
-        'teamCatalog': normalize_team_catalog(payload.get('teamCatalog') or {}),
-        'teamCatalogMeta': normalize_team_catalog_meta(payload.get('teamCatalogMeta') or {})
     }
     return normalized, errors, warnings
 
@@ -1746,8 +1744,6 @@ def build_default_groups_config():
             'excludedCapacityEpics': []
         }],
         'defaultGroupId': 'default',
-        'teamCatalog': {},
-        'teamCatalogMeta': {}
     }
     return config, warnings
 

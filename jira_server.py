@@ -5401,6 +5401,31 @@ def save_groups_config():
     return jsonify(normalized)
 
 
+@app.route('/api/team-catalog', methods=['GET'])
+def get_team_catalog():
+    """Return the team name catalog."""
+    migrate_team_catalog_from_config()
+    data = load_team_catalog()
+    return jsonify(data)
+
+
+@app.route('/api/team-catalog', methods=['POST'])
+def post_team_catalog():
+    """Save the team name catalog."""
+    payload = request.get_json(silent=True) or {}
+    merge = payload.get('merge', False)
+    incoming = {
+        'catalog': normalize_team_catalog(payload.get('catalog') or {}),
+        'meta': normalize_team_catalog_meta(payload.get('meta') or {})
+    }
+    if merge:
+        existing = load_team_catalog()
+        merged_catalog = {**existing['catalog'], **incoming['catalog']}
+        incoming['catalog'] = merged_catalog
+    saved = save_team_catalog_file(incoming)
+    return jsonify(saved)
+
+
 PROJECTS_CACHE = {'data': None, 'timestamp': 0}
 PROJECTS_CACHE_TTL = 60 * 60  # 1 hour
 

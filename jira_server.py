@@ -1450,6 +1450,20 @@ def normalize_team_catalog_meta(raw):
     return meta
 
 
+def normalize_group_team_labels(raw, team_ids):
+    if not isinstance(raw, dict):
+        return {}
+    allowed_ids = set(normalize_team_ids(team_ids or []))
+    labels = {}
+    for raw_team_id, raw_label in raw.items():
+        team_id = str(raw_team_id or '').strip()
+        label = str(raw_label or '').strip()
+        if not team_id or not label or team_id not in allowed_ids:
+            continue
+        labels[team_id] = label
+    return labels
+
+
 def validate_groups_config(payload, allow_empty=False):
     errors = []
     warnings = []
@@ -1500,11 +1514,13 @@ def validate_groups_config(payload, allow_empty=False):
             # Backwards compat: accept old singular field
             old_single = str(group.get('missingInfoComponent') or '').strip()
             missing_info_components = [old_single] if old_single else []
+        team_labels = normalize_group_team_labels(group.get('teamLabels') or {}, team_ids)
         normalized_groups.append({
             'id': group_id,
             'name': name,
             'teamIds': team_ids,
-            'missingInfoComponents': missing_info_components
+            'missingInfoComponents': missing_info_components,
+            'teamLabels': team_labels
         })
 
     default_group_id = str(payload.get('defaultGroupId') or '').strip()
@@ -1793,12 +1809,24 @@ def derive_epic_jql(base_jql: str, team_ids=None) -> str:
     return jql
 
 
+def issue_has_sprint(value):
+    if value is None:
+        return False
+    if isinstance(value, list):
+        return any(issue_has_sprint(item) for item in value)
+    if isinstance(value, dict):
+        return any(value.get(key) for key in ('id', 'name', 'state'))
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+
 def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field):
     """Fetch epics matching the current sprint/team filters so UI can flag epics with 0 stories."""
     epic_jql = derive_epic_jql(jql, EPIC_EMPTY_TEAM_IDS)
     epic_field = epic_name_field or PARENT_NAME_FIELD_DEFAULT
 
-    fields_list = ['summary', 'status', 'assignee', epic_field]
+    fields_list = ['summary', 'status', 'assignee', 'labels', epic_field]
     if team_field_id and team_field_id not in fields_list:
         fields_list.append(team_field_id)
 
@@ -1833,10 +1861,96 @@ def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field):
             'summary': fields.get('summary'),
             'status': {'name': status.get('name')} if status else None,
             'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
+            'labels': fields.get('labels') or [],
             'team': team_value,
             'teamName': team_name,
             'teamId': team_value.get('id') if isinstance(team_value, dict) else None,
         })
+    return epics
+
+
+def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, epic_link_field):
+    """Fetch backlog epics and count open child stories that are still sprinted."""
+    epic_jql = derive_epic_jql(jql, EPIC_EMPTY_TEAM_IDS)
+    epic_jql = add_clause_to_jql(epic_jql, 'assignee is not EMPTY')
+    epic_jql = add_clause_to_jql(epic_jql, 'component is not EMPTY')
+    if sprint_field_id:
+        epic_jql = add_clause_to_jql(epic_jql, f'"{sprint_field_id}" is EMPTY')
+
+    epic_fields = ['summary', 'status', 'assignee', 'components']
+    if team_field_id and team_field_id not in epic_fields:
+        epic_fields.append(team_field_id)
+    if sprint_field_id and sprint_field_id not in epic_fields:
+        epic_fields.append(sprint_field_id)
+
+    payload = {
+        'jql': epic_jql,
+        'startAt': 0,
+        'maxResults': 250,
+        'fields': epic_fields
+    }
+    resp = jira_search_request(headers, payload)
+    if resp.status_code != 200:
+        log_warning(f'Backlog epic fetch failed: status={resp.status_code}')
+        return []
+
+    issues = (resp.json() or {}).get('issues', []) or []
+    epics = []
+    epic_keys = []
+    for issue in issues:
+        fields = issue.get('fields', {}) or {}
+        raw_team = fields.get(team_field_id) if team_field_id else None
+        team_value = build_team_value(raw_team) if raw_team is not None else None
+        team_name = extract_team_name(raw_team) if raw_team is not None else None
+        assignee = fields.get('assignee') or {}
+        status = fields.get('status') or {}
+        epics.append({
+            'key': issue.get('key'),
+            'summary': fields.get('summary'),
+            'status': {'name': status.get('name')} if status else None,
+            'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
+            'components': [c.get('name') for c in (fields.get('components') or []) if c.get('name')],
+            'team': team_value,
+            'teamName': team_name,
+            'teamId': team_value.get('id') if isinstance(team_value, dict) else None,
+            'cleanupStoryCount': 0,
+        })
+        if issue.get('key'):
+            epic_keys.append(issue.get('key'))
+
+    if not epics or not sprint_field_id:
+        return epics
+
+    quoted_keys = ', '.join(epic_keys)
+    children_jql = f'("Epic Link" in ({quoted_keys}) OR parent in ({quoted_keys})) AND issuetype != Epic'
+    child_payload = {
+        'jql': children_jql,
+        'startAt': 0,
+        'maxResults': 250,
+        'fields': [epic_link_field, 'parent', 'status', sprint_field_id]
+    }
+    child_resp = jira_search_request(headers, child_payload)
+    if child_resp.status_code != 200:
+        log_warning(f'Backlog child fetch failed: status={child_resp.status_code}')
+        return epics
+
+    cleanup_counts = {}
+    for issue in (child_resp.json() or {}).get('issues', []) or []:
+        fields = issue.get('fields', {}) or {}
+        epic_key = fields.get(epic_link_field) if epic_link_field else None
+        if not epic_key:
+            epic_key = (fields.get('parent') or {}).get('key')
+        if not epic_key:
+            continue
+        status_name = str((fields.get('status') or {}).get('name') or '').strip().lower()
+        if status_name in {'done', 'killed', 'incomplete'}:
+            continue
+        if not issue_has_sprint(fields.get(sprint_field_id)):
+            continue
+        cleanup_counts[epic_key] = cleanup_counts.get(epic_key, 0) + 1
+
+    for epic in epics:
+        epic['cleanupStoryCount'] = cleanup_counts.get(epic.get('key'), 0)
     return epics
 
 
@@ -4904,6 +5018,9 @@ PROJECTS_CACHE_TTL = 60 * 60  # 1 hour
 COMPONENTS_CACHE = {'data': None, 'timestamp': 0}
 COMPONENTS_CACHE_TTL = 60 * 60  # 1 hour
 
+LABELS_CACHE = {'data': None, 'timestamp': 0}
+LABELS_CACHE_TTL = 15 * 60  # 15 minutes
+
 @app.route('/api/projects', methods=['GET'])
 def get_jira_projects():
     """Fetch available Jira projects via project search API with caching."""
@@ -5084,6 +5201,120 @@ def get_jira_components():
         return jsonify({'components': all_components[:limit]})
     except Exception as e:
         return jsonify({'error': 'Failed to fetch components', 'details': str(e)}), 500
+
+
+@app.route('/api/jira/labels', methods=['GET'])
+def get_jira_labels():
+    """Fetch Jira labels for autocomplete."""
+    try:
+        query = request.args.get('query', '').strip().lower()
+        limit_raw = request.args.get('limit', '').strip()
+        refresh = request.args.get('refresh', '').strip().lower() in ('1', 'true', 'yes')
+
+        limit = 50
+        if limit_raw.isdigit():
+            limit = max(1, min(int(limit_raw), 200))
+
+        with _cache_lock:
+            cached_labels = LABELS_CACHE.get('data')
+            cached_ts = LABELS_CACHE.get('timestamp', 0)
+
+        if cached_labels and not refresh and (time.time() - cached_ts) < LABELS_CACHE_TTL:
+            labels = cached_labels
+        else:
+            auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+            auth_bytes = auth_string.encode('ascii')
+            auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+            headers = {
+                'Authorization': f'Basic {auth_base64}',
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+            response = requests.get(
+                f'{JIRA_URL}/rest/api/3/label',
+                headers=headers,
+                params={'maxResults': 1000},
+                timeout=30
+            )
+            if response.status_code != 200:
+                return jsonify({'error': 'Failed to fetch labels from Jira'}), response.status_code
+            payload = response.json() or {}
+            labels = [str(label).strip() for label in (payload.get('values') or []) if str(label).strip()]
+            labels = sorted(dict.fromkeys(labels), key=str.lower)
+            with _cache_lock:
+                LABELS_CACHE['data'] = labels
+                LABELS_CACHE['timestamp'] = time.time()
+
+        if query:
+            labels = [label for label in labels if query in label.lower()]
+
+        return jsonify({'labels': labels[:limit]})
+    except Exception as e:
+        return jsonify({'error': 'Failed to fetch labels', 'details': str(e)}), 500
+
+
+@app.route('/api/backlog-epics', methods=['GET'])
+def get_backlog_epics():
+    """Fetch backlog epics for future-planning alerts."""
+    try:
+        project_filter = request.args.get('project', '').strip().lower()
+        team_ids_param = request.args.get('teamIds', '').strip()
+        team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
+
+        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+        auth_bytes = auth_string.encode('ascii')
+        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+        headers = {
+            'Authorization': f'Basic {auth_base64}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+
+        if team_ids and JQL_QUERY_TEMPLATE:
+            jql = apply_team_ids_to_template(team_ids) or build_base_jql()
+        elif team_ids:
+            jql = remove_team_filter_from_jql(build_base_jql())
+            if len(team_ids) == 1:
+                jql = add_clause_to_jql(jql, f'"Team[Team]" = "{team_ids[0]}"')
+            else:
+                quoted_teams = ', '.join(f'"{tid}"' for tid in team_ids)
+                jql = add_clause_to_jql(jql, f'"Team[Team]" in ({quoted_teams})')
+        else:
+            jql = build_base_jql()
+
+        if project_filter in ('product', 'tech'):
+            typed = get_selected_projects_typed()
+            if typed:
+                matching_keys = [item['key'] for item in typed if item['type'] == project_filter]
+                if matching_keys:
+                    jql = remove_project_filter_from_jql(jql)
+                    if len(matching_keys) == 1:
+                        jql = add_clause_to_jql(jql, f'project = "{matching_keys[0]}"')
+                    else:
+                        quoted = ', '.join(f'"{key}"' for key in matching_keys)
+                        jql = add_clause_to_jql(jql, f'project in ({quoted})')
+
+        issue_types = get_configured_issue_types()
+        if issue_types:
+            if len(issue_types) == 1:
+                jql = add_clause_to_jql(jql, f'type = "{issue_types[0]}"')
+            else:
+                quoted_types = ', '.join(f'"{issue_type}"' for issue_type in issue_types)
+                jql = add_clause_to_jql(jql, f'type in ({quoted_types})')
+
+        team_field_id = resolve_team_field_id(headers)
+        epic_link_field_id = resolve_epic_link_field_id(headers)
+        sprint_field_id = get_sprint_field_id()
+        epics = fetch_backlog_epics_for_alert(
+            jql,
+            headers=headers,
+            team_field_id=team_field_id,
+            sprint_field_id=sprint_field_id,
+            epic_link_field=epic_link_field_id
+        )
+        return jsonify({'epics': epics})
+    except Exception as e:
+        return jsonify({'error': 'Failed to fetch backlog epics', 'details': str(e)}), 500
 
 
 @app.route('/api/projects/selected', methods=['GET'])

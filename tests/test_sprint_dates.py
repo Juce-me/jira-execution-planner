@@ -51,10 +51,11 @@ class TestSprintDatesInFetch(unittest.TestCase):
             result = jira_server.fetch_sprints_from_jira()
 
         self.assertEqual(len(result), 2)
-        self.assertEqual(result[0]['startDate'], '2026-01-01T00:00:00.000Z')
-        self.assertEqual(result[0]['endDate'], '2026-03-31T23:59:59.999Z')
-        self.assertEqual(result[1]['startDate'], '2026-04-01T00:00:00.000Z')
-        self.assertEqual(result[1]['endDate'], '2026-06-30T23:59:59.999Z')
+        by_name = {item['name']: item for item in result}
+        self.assertEqual(by_name['2026Q1']['startDate'], '2026-01-01T00:00:00.000Z')
+        self.assertEqual(by_name['2026Q1']['endDate'], '2026-03-31T23:59:59.999Z')
+        self.assertEqual(by_name['2026Q2']['startDate'], '2026-04-01T00:00:00.000Z')
+        self.assertEqual(by_name['2026Q2']['endDate'], '2026-06-30T23:59:59.999Z')
 
     def test_board_api_handles_missing_dates(self):
         """Sprints without startDate/endDate should have None values."""

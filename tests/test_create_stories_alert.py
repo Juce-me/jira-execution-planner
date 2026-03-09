@@ -128,6 +128,10 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestCreateStoriesAlertApi(unittest.TestCase):
+    def setUp(self):
+        jira_server.LABELS_CACHE['data'] = None
+        jira_server.LABELS_CACHE['timestamp'] = 0
+
     def test_jira_labels_endpoint_returns_label_results(self):
         app = jira_server.app
         app.testing = True
@@ -144,6 +148,35 @@ class TestCreateStoriesAlertApi(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         payload = response.get_json() or {}
         self.assertEqual(payload.get('labels'), ['rnd_bsw_bswui', 'rnd_bsw_perimeter'])
+
+    def test_jira_labels_endpoint_fetches_all_pages_before_filtering(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+
+        first_page = {
+            'values': ['alpha_label'],
+            'isLast': False,
+            'startAt': 0,
+            'maxResults': 1
+        }
+        second_page = {
+            'values': ['rnd_bsw_perimeter'],
+            'isLast': True,
+            'startAt': 1,
+            'maxResults': 1
+        }
+
+        with patch(
+            'jira_server.requests.get',
+            side_effect=[_mock_response(200, first_page), _mock_response(200, second_page)]
+        ) as mock_get:
+            response = client.get('/api/jira/labels?query=bsw')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = response.get_json() or {}
+        self.assertEqual(payload.get('labels'), ['rnd_bsw_perimeter'])
+        self.assertEqual(mock_get.call_count, 2)
 
     def test_backlog_epics_endpoint_returns_epics(self):
         app = jira_server.app

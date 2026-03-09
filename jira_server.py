@@ -5230,16 +5230,28 @@ def get_jira_labels():
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
             }
-            response = requests.get(
-                f'{JIRA_URL}/rest/api/3/label',
-                headers=headers,
-                params={'maxResults': 1000},
-                timeout=30
-            )
-            if response.status_code != 200:
-                return jsonify({'error': 'Failed to fetch labels from Jira'}), response.status_code
-            payload = response.json() or {}
-            labels = [str(label).strip() for label in (payload.get('values') or []) if str(label).strip()]
+            labels = []
+            start_at = 0
+            max_results = 1000
+            while True:
+                response = requests.get(
+                    f'{JIRA_URL}/rest/api/3/label',
+                    headers=headers,
+                    params={'maxResults': max_results, 'startAt': start_at},
+                    timeout=30
+                )
+                if response.status_code != 200:
+                    return jsonify({'error': 'Failed to fetch labels from Jira'}), response.status_code
+                payload = response.json() or {}
+                values = [str(label).strip() for label in (payload.get('values') or []) if str(label).strip()]
+                labels.extend(values)
+                if payload.get('isLast', True) or not values:
+                    break
+                next_start = payload.get('startAt')
+                if isinstance(next_start, int):
+                    start_at = next_start + len(values)
+                else:
+                    start_at += len(values)
             labels = sorted(dict.fromkeys(labels), key=str.lower)
             with _cache_lock:
                 LABELS_CACHE['data'] = labels

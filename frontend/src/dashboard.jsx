@@ -168,10 +168,12 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const teamSearchInputRefs = useRef({});
             const teamSearchFeedbackTimersRef = useRef({});
             const teamChipLastRef = useRef({});
-            const [jiraLabels, setJiraLabels] = useState([]);
-            const [loadingLabels, setLoadingLabels] = useState(false);
             const [labelSearchQuery, setLabelSearchQuery] = useState({});
             const [labelSearchOpen, setLabelSearchOpen] = useState({});
+            const [labelSearchResults, setLabelSearchResults] = useState({});
+            const [labelSearchLoading, setLabelSearchLoading] = useState({});
+            const labelSearchCacheRef = useRef({});
+            const labelSearchRequestIdRef = useRef({});
             const [groupSearchQuery, setGroupSearchQuery] = useState('');
             const [activeGroupDraftId, setActiveGroupDraftId] = useState(null);
             const [showGroupListMobile, setShowGroupListMobile] = useState(false);
@@ -2443,34 +2445,48 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const getLabelRowKey = (groupId, teamId) => `${groupId || 'group'}::${teamId || 'team'}`;
             const getLabelSearchResults = (groupId, teamId) => {
                 const key = getLabelRowKey(groupId, teamId);
-                const query = String(labelSearchQuery[key] || '').trim().toLowerCase();
-                if (!query) return jiraLabels.slice(0, 10);
-                return jiraLabels.filter(label => String(label || '').toLowerCase().includes(query)).slice(0, 10);
+                const query = String(labelSearchQuery[key] || '').trim();
+                if (query.length < 3) return [];
+                return labelSearchResults[key] || [];
             };
-            const loadJiraLabels = React.useCallback(async () => {
-                if (loadingLabels) return;
-                setLoadingLabels(true);
+            const loadJiraLabels = React.useCallback(async (groupId, teamId, rawQuery) => {
+                const query = String(rawQuery || '').trim();
+                const key = getLabelRowKey(groupId, teamId);
+                if (query.length < 3) {
+                    setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
+                    setLabelSearchLoading(prev => ({ ...prev, [key]: false }));
+                    return;
+                }
+                const cacheKey = query.toLowerCase();
+                if (labelSearchCacheRef.current[cacheKey]) {
+                    setLabelSearchResults(prev => ({ ...prev, [key]: labelSearchCacheRef.current[cacheKey] }));
+                    setLabelSearchLoading(prev => ({ ...prev, [key]: false }));
+                    return;
+                }
+                const requestId = (labelSearchRequestIdRef.current[key] || 0) + 1;
+                labelSearchRequestIdRef.current[key] = requestId;
+                setLabelSearchLoading(prev => ({ ...prev, [key]: true }));
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/jira/labels`, { cache: 'no-cache' });
+                    const response = await fetch(`${BACKEND_URL}/api/jira/labels?query=${encodeURIComponent(query)}&limit=20`, { cache: 'no-cache' });
                     if (!response.ok) {
                         throw new Error(`Labels error ${response.status}`);
                     }
                     const payload = await response.json();
-                    setJiraLabels(Array.isArray(payload.labels) ? payload.labels : []);
+                    const nextResults = Array.isArray(payload.labels) ? payload.labels : [];
+                    labelSearchCacheRef.current[cacheKey] = nextResults;
+                    if (labelSearchRequestIdRef.current[key] === requestId) {
+                        setLabelSearchResults(prev => ({ ...prev, [key]: nextResults }));
+                    }
                 } catch (error) {
-                    setJiraLabels([]);
+                    if (labelSearchRequestIdRef.current[key] === requestId) {
+                        setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
+                    }
                 } finally {
-                    setLoadingLabels(false);
+                    if (labelSearchRequestIdRef.current[key] === requestId) {
+                        setLabelSearchLoading(prev => ({ ...prev, [key]: false }));
+                    }
                 }
-            }, [loadingLabels]);
-
-            useEffect(() => {
-                if (!showGroupManage) return;
-                if (groupManageTab !== 'labels') return;
-                if (!labelsTabEnabled) return;
-                if (jiraLabels.length > 0) return;
-                loadJiraLabels();
-            }, [showGroupManage, groupManageTab, labelsTabEnabled, jiraLabels.length, loadJiraLabels]);
+            }, []);
 
             useEffect(() => {
                 if (!activeGroupDraft) return;
@@ -13615,6 +13631,8 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                     const rowKey = getLabelRowKey(activeGroupDraft.id, teamId);
                                                     const currentLabel = activeGroupDraft?.teamLabels?.[teamId] || '';
                                                     const results = getLabelSearchResults(activeGroupDraft.id, teamId);
+                                                    const query = String(labelSearchQuery[rowKey] || '').trim();
+                                                    const isSearching = Boolean(labelSearchLoading[rowKey]);
                                                     return (
                                                         <div key={rowKey} className="group-projects-subsection" style={{ marginTop: 0, paddingBottom: '1rem', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
                                                             <div className="team-selector-label">{resolveTeamName(teamId)}</div>
@@ -13638,25 +13656,25 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                                     <input
                                                                         type="text"
                                                                         className="team-search-input"
-                                                                        placeholder={loadingLabels ? 'Loading labels...' : 'Search Jira labels...'}
+                                                                        placeholder="Type at least 3 characters..."
                                                                         value={labelSearchQuery[rowKey] || ''}
                                                                         onChange={(event) => {
                                                                             const value = event.target.value;
                                                                             setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
                                                                             setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                            loadJiraLabels(activeGroupDraft.id, teamId, value);
                                                                         }}
                                                                         onFocus={() => {
                                                                             setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                            if (!jiraLabels.length) {
-                                                                                loadJiraLabels();
-                                                                            }
                                                                         }}
                                                                         onBlur={() => window.setTimeout(() => setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false })), 120)}
                                                                     />
                                                                     {labelSearchOpen[rowKey] && (
                                                                         <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
-                                                                            {results.length === 0 ? (
-                                                                                <div className="team-search-result-item is-empty">{loadingLabels ? 'Loading labels...' : 'No labels found'}</div>
+                                                                            {query.length < 3 ? (
+                                                                                <div className="team-search-result-item is-empty">Type at least 3 characters</div>
+                                                                            ) : results.length === 0 ? (
+                                                                                <div className="team-search-result-item is-empty">{isSearching ? 'Searching labels...' : 'No labels found'}</div>
                                                                             ) : results.map((label) => (
                                                                                 <div
                                                                                     key={`${rowKey}-${label}`}

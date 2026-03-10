@@ -66,6 +66,7 @@ class TestBurnoutStatsApi(unittest.TestCase):
             return DummyResponse({'issues': [issue], 'total': 1})
 
         with patch.object(jira_server, 'jira_search_request', side_effect=fake_search), \
+             patch.object(jira_server, 'load_sprints_cache', return_value=None), \
              patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_30101'):
             response = self.client.get('/api/stats/burnout?sprint=2026Q1')
 
@@ -109,6 +110,7 @@ class TestBurnoutStatsApi(unittest.TestCase):
             return DummyResponse({'issues': [issue], 'total': 1})
 
         with patch.object(jira_server, 'jira_search_request', side_effect=fake_search), \
+             patch.object(jira_server, 'load_sprints_cache', return_value=None), \
              patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_30101'):
             response = self.client.get('/api/stats/burnout?sprint=2026Q1&teamIds=T1')
 
@@ -127,6 +129,7 @@ class TestBurnoutStatsApi(unittest.TestCase):
             return DummyResponse({'issues': [], 'total': 0})
 
         with patch.object(jira_server, 'jira_search_request', side_effect=fake_search), \
+             patch.object(jira_server, 'load_sprints_cache', return_value=None), \
              patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_30101'):
             response = self.client.post('/api/stats/burnout', json={
                 'sprint': '2026Q1',
@@ -165,6 +168,7 @@ class TestBurnoutStatsApi(unittest.TestCase):
             return DummyResponse({'issues': [issue], 'total': 1})
 
         with patch.object(jira_server, 'jira_search_request', side_effect=fake_search), \
+             patch.object(jira_server, 'load_sprints_cache', return_value=None), \
              patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_30101'):
             response = self.client.post('/api/stats/burnout', json={
                 'sprint': '2026Q1',

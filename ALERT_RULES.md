@@ -9,6 +9,30 @@ This doc describes the dashboard alert panels and the rules that trigger them. I
 - Postponed items are shown in the Postponed Work panel.
 - Each panel can be collapsed; collapse state is remembered in the browser.
 
+## Planned (Not Active Yet): Label-Driven Epic Alerts
+
+This section aligns with `docs/plans/2026-03-04-create-stories-alert.md`. The following alerts are planned but not currently live:
+
+- `👥 Missing Team`
+- `🏷️ Missing Labels`
+- `📝 Create Stories`
+
+When implemented, epic routing must follow this precedence (first match wins):
+
+1. `⏭️ Postponed Work`
+2. `👥 Missing Team`
+3. `🏷️ Missing Labels`
+4. `📝 Create Stories`
+5. `⏳ Waiting for Stories` (analysis-focused)
+6. `🧺 Empty Epic` (fallback)
+
+Suppression policy (required to avoid duplicates):
+
+- `Missing Team` excludes the epic from `Missing Labels`, `Create Stories`, `Waiting for Stories`, and `Empty Epic`.
+- `Missing Labels` excludes the epic from `Create Stories`, `Waiting for Stories`, and `Empty Epic`.
+- `Create Stories` excludes the epic from `Waiting for Stories` and `Empty Epic`.
+- Existing postponed routing remains highest-priority and excludes all downstream buckets for that epic.
+
 ## 📄 Missing Story Points
 
 **Shows:** Stories that need a story point estimate.

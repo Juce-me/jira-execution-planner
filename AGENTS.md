@@ -60,7 +60,7 @@ python3 -m unittest discover -s tests
 
 ## Security & Configuration Tips
 - Store Jira credentials in `.env`; never commit secrets.
-- `team-groups.json` and `sprints_cache.json` are local data caches—treat them as generated artifacts.
+- `team-groups.json`, `team-catalog.json`, and `sprints_cache.json` are local data caches—treat them as generated artifacts.
 - **Test Data Security**: Test fixtures in `tests/fixtures/` may contain real Jira data (issue keys, summaries, API responses). Keep these files LOCAL ONLY:
   - Never commit fixture files containing actual Jira data to the repository
   - `tests/fixtures/.gitignore` blocks all JSON/CSV/XML by default

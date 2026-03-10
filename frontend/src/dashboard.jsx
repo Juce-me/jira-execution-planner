@@ -172,8 +172,10 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
             const [labelSearchOpen, setLabelSearchOpen] = useState({});
             const [labelSearchResults, setLabelSearchResults] = useState({});
             const [labelSearchLoading, setLabelSearchLoading] = useState({});
+            const [labelSearchIndex, setLabelSearchIndex] = useState({});
             const labelSearchCacheRef = useRef({});
             const labelSearchRequestIdRef = useRef({});
+            const labelSearchDebounceRef = useRef({});
             const [groupSearchQuery, setGroupSearchQuery] = useState('');
             const [activeGroupDraftId, setActiveGroupDraftId] = useState(null);
             const [showGroupListMobile, setShowGroupListMobile] = useState(false);
@@ -2449,18 +2451,66 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                 if (query.length < 3) return [];
                 return labelSearchResults[key] || [];
             };
+            const selectTeamLabel = React.useCallback((groupId, teamId, label) => {
+                const key = getLabelRowKey(groupId, teamId);
+                setTeamLabelForGroup(groupId, teamId, label);
+                setLabelSearchQuery(prev => ({ ...prev, [key]: '' }));
+                setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
+                setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
+                setLabelSearchOpen(prev => ({ ...prev, [key]: false }));
+            }, [setTeamLabelForGroup]);
+            const handleLabelSearchKeyDown = React.useCallback((groupId, teamId, event, results) => {
+                const key = getLabelRowKey(groupId, teamId);
+                if (event.key === 'ArrowDown') {
+                    if (!results.length) return;
+                    event.preventDefault();
+                    setLabelSearchOpen(prev => ({ ...prev, [key]: true }));
+                    setLabelSearchIndex(prev => ({
+                        ...prev,
+                        [key]: Math.min((prev[key] || 0) + 1, results.length - 1)
+                    }));
+                    return;
+                }
+                if (event.key === 'ArrowUp') {
+                    if (!results.length) return;
+                    event.preventDefault();
+                    setLabelSearchOpen(prev => ({ ...prev, [key]: true }));
+                    setLabelSearchIndex(prev => ({
+                        ...prev,
+                        [key]: Math.max((prev[key] || 0) - 1, 0)
+                    }));
+                    return;
+                }
+                if (event.key === 'Enter') {
+                    if (!results.length) return;
+                    event.preventDefault();
+                    const index = labelSearchIndex[key] || 0;
+                    const label = results[index] || results[0];
+                    if (label) {
+                        selectTeamLabel(groupId, teamId, label);
+                    }
+                    return;
+                }
+                if (event.key === 'Escape' && labelSearchOpen[key]) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setLabelSearchOpen(prev => ({ ...prev, [key]: false }));
+                }
+            }, [labelSearchIndex, labelSearchOpen, selectTeamLabel]);
             const loadJiraLabels = React.useCallback(async (groupId, teamId, rawQuery) => {
                 const query = String(rawQuery || '').trim();
                 const key = getLabelRowKey(groupId, teamId);
                 if (query.length < 3) {
                     setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
                     setLabelSearchLoading(prev => ({ ...prev, [key]: false }));
+                    setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
                     return;
                 }
                 const cacheKey = query.toLowerCase();
                 if (labelSearchCacheRef.current[cacheKey]) {
                     setLabelSearchResults(prev => ({ ...prev, [key]: labelSearchCacheRef.current[cacheKey] }));
                     setLabelSearchLoading(prev => ({ ...prev, [key]: false }));
+                    setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
                     return;
                 }
                 const requestId = (labelSearchRequestIdRef.current[key] || 0) + 1;
@@ -2476,16 +2526,44 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                     labelSearchCacheRef.current[cacheKey] = nextResults;
                     if (labelSearchRequestIdRef.current[key] === requestId) {
                         setLabelSearchResults(prev => ({ ...prev, [key]: nextResults }));
+                        setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
                     }
                 } catch (error) {
                     if (labelSearchRequestIdRef.current[key] === requestId) {
                         setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
+                        setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
                     }
                 } finally {
                     if (labelSearchRequestIdRef.current[key] === requestId) {
                         setLabelSearchLoading(prev => ({ ...prev, [key]: false }));
                     }
                 }
+            }, []);
+            const scheduleJiraLabelSearch = React.useCallback((groupId, teamId, rawQuery) => {
+                const query = String(rawQuery || '').trim();
+                const key = getLabelRowKey(groupId, teamId);
+                const existingTimer = labelSearchDebounceRef.current[key];
+                if (existingTimer) {
+                    window.clearTimeout(existingTimer);
+                    delete labelSearchDebounceRef.current[key];
+                }
+                if (query.length < 3) {
+                    loadJiraLabels(groupId, teamId, query);
+                    return;
+                }
+                labelSearchDebounceRef.current[key] = window.setTimeout(() => {
+                    delete labelSearchDebounceRef.current[key];
+                    loadJiraLabels(groupId, teamId, query);
+                }, 250);
+            }, [loadJiraLabels]);
+
+            useEffect(() => {
+                return () => {
+                    Object.values(labelSearchDebounceRef.current).forEach((timerId) => {
+                        window.clearTimeout(timerId);
+                    });
+                    labelSearchDebounceRef.current = {};
+                };
             }, []);
 
             useEffect(() => {
@@ -13619,7 +13697,7 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                     <div className="group-pane group-editor-pane">
                                         <div className="group-pane-header">
                                             <div className="group-pane-title">Team labels</div>
-                                            <div className="group-pane-subtitle">Use the selected sprint name as the planning label and map the team-specific epic label here.</div>
+                                            <div className="group-pane-subtitle">Assign the team-specific epic label used with the selected sprint label.</div>
                                         </div>
                                         {!activeGroupDraft ? (
                                             <div className="group-pane-empty">Select a saved group to edit its team label mappings.</div>
@@ -13633,12 +13711,12 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                     const results = getLabelSearchResults(activeGroupDraft.id, teamId);
                                                     const query = String(labelSearchQuery[rowKey] || '').trim();
                                                     const isSearching = Boolean(labelSearchLoading[rowKey]);
+                                                    const activeIndex = Math.min(labelSearchIndex[rowKey] || 0, Math.max(results.length - 1, 0));
                                                     return (
                                                         <div key={rowKey} className="group-projects-subsection" style={{ marginTop: 0, paddingBottom: '1rem', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
-                                                            <div className="team-selector-label">{resolveTeamName(teamId)}</div>
-                                                            <div className="group-field-helper">Assign the team-specific epic label used with the selected sprint label.</div>
-                                                            {currentLabel ? (
-                                                                <div className="selected-teams-list" style={{ marginTop: '0.45rem' }}>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(10rem, 13rem) minmax(0, 1fr)', alignItems: 'center', gap: '0.75rem' }}>
+                                                                <div className="team-selector-label" style={{ margin: 0 }}>{resolveTeamName(teamId)}</div>
+                                                                {currentLabel ? (
                                                                     <div className="selected-team-chip">
                                                                         <span className="team-name">{currentLabel}</span>
                                                                         <button
@@ -13650,48 +13728,47 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
                                                                             ×
                                                                         </button>
                                                                     </div>
-                                                                </div>
-                                                            ) : (
-                                                                <div className="team-search-wrapper" style={{ marginTop: '0.45rem' }}>
-                                                                    <input
-                                                                        type="text"
-                                                                        className="team-search-input"
-                                                                        placeholder="Type at least 3 characters..."
-                                                                        value={labelSearchQuery[rowKey] || ''}
-                                                                        onChange={(event) => {
+                                                                ) : (
+                                                                    <div className="team-search-wrapper" style={{ minWidth: 0 }}>
+                                                                        <input
+                                                                            type="text"
+                                                                            className="team-search-input"
+                                                                            placeholder="Type at least 3 characters..."
+                                                                            value={labelSearchQuery[rowKey] || ''}
+                                                                            onChange={(event) => {
                                                                             const value = event.target.value;
                                                                             setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
                                                                             setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                            loadJiraLabels(activeGroupDraft.id, teamId, value);
+                                                                            setLabelSearchIndex(prev => ({ ...prev, [rowKey]: 0 }));
+                                                                            scheduleJiraLabelSearch(activeGroupDraft.id, teamId, value);
                                                                         }}
-                                                                        onFocus={() => {
-                                                                            setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                        }}
-                                                                        onBlur={() => window.setTimeout(() => setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false })), 120)}
-                                                                    />
-                                                                    {labelSearchOpen[rowKey] && (
-                                                                        <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
-                                                                            {query.length < 3 ? (
-                                                                                <div className="team-search-result-item is-empty">Type at least 3 characters</div>
-                                                                            ) : results.length === 0 ? (
-                                                                                <div className="team-search-result-item is-empty">{isSearching ? 'Searching labels...' : 'No labels found'}</div>
-                                                                            ) : results.map((label) => (
-                                                                                <div
-                                                                                    key={`${rowKey}-${label}`}
-                                                                                    className="team-search-result-item"
-                                                                                    onClick={() => {
-                                                                                        setTeamLabelForGroup(activeGroupDraft.id, teamId, label);
-                                                                                        setLabelSearchQuery(prev => ({ ...prev, [rowKey]: '' }));
-                                                                                        setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false }));
-                                                                                    }}
-                                                                                >
-                                                                                    {label}
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            )}
+                                                                            onFocus={() => {
+                                                                                setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                            }}
+                                                                            onBlur={() => window.setTimeout(() => setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false })), 120)}
+                                                                            onKeyDown={(event) => handleLabelSearchKeyDown(activeGroupDraft.id, teamId, event, results)}
+                                                                        />
+                                                                        {labelSearchOpen[rowKey] && (
+                                                                            <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
+                                                                                {query.length < 3 ? (
+                                                                                    <div className="team-search-result-item is-empty">Type at least 3 characters</div>
+                                                                                ) : results.length === 0 ? (
+                                                                                    <div className="team-search-result-item is-empty">{isSearching ? 'Searching labels...' : 'No labels found'}</div>
+                                                                                ) : results.map((label, index) => (
+                                                                                    <div
+                                                                                        key={`${rowKey}-${label}`}
+                                                                                        className={`team-search-result-item ${activeIndex === index ? 'active' : ''}`}
+                                                                                        onMouseEnter={() => setLabelSearchIndex(prev => ({ ...prev, [rowKey]: index }))}
+                                                                                        onClick={() => selectTeamLabel(activeGroupDraft.id, teamId, label)}
+                                                                                    >
+                                                                                        {label}
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     );
                                                 })}

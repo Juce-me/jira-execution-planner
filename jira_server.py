@@ -63,6 +63,7 @@ CAPACITY_FIELD_ID = os.getenv('CAPACITY_FIELD_ID', '').strip()
 CAPACITY_FIELD_NAME = os.getenv('CAPACITY_FIELD_NAME', '').strip()
 GROUPS_CONFIG_PATH = os.getenv('GROUPS_CONFIG_PATH', '').strip()
 DASHBOARD_CONFIG_PATH = os.getenv('DASHBOARD_CONFIG_PATH', '').strip()
+TEAM_CATALOG_PATH = os.getenv('TEAM_CATALOG_PATH', '').strip()
 SCENARIO_OVERRIDES_PATH = os.getenv('SCENARIO_OVERRIDES_PATH', '').strip()
 TEAM_GROUPS_JSON = os.getenv('TEAM_GROUPS_JSON', '').strip()
 JQL_QUERY_TEMPLATE = os.getenv('JQL_QUERY_TEMPLATE', '').strip()
@@ -1191,6 +1192,62 @@ def save_dashboard_config(config):
         json.dump(config, handle, indent=2)
 
 
+def resolve_team_catalog_path():
+    return TEAM_CATALOG_PATH or './team-catalog.json'
+
+
+def load_team_catalog():
+    path = resolve_team_catalog_path()
+    if not os.path.exists(path):
+        return {'catalog': {}, 'meta': {}}
+    try:
+        with open(path, 'r') as handle:
+            data = json.load(handle)
+        if not isinstance(data, dict):
+            return {'catalog': {}, 'meta': {}}
+        return {
+            'catalog': normalize_team_catalog(data.get('catalog') or {}),
+            'meta': normalize_team_catalog_meta(data.get('meta') or {})
+        }
+    except Exception as e:
+        log_warning(f'Failed to read team catalog: {e}')
+        return {'catalog': {}, 'meta': {}}
+
+
+def save_team_catalog_file(catalog_data):
+    path = resolve_team_catalog_path()
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    normalized = {
+        'catalog': normalize_team_catalog(catalog_data.get('catalog') or {}),
+        'meta': normalize_team_catalog_meta(catalog_data.get('meta') or {})
+    }
+    with open(path, 'w') as handle:
+        json.dump(normalized, handle, indent=2)
+    return normalized
+
+
+def migrate_team_catalog_from_config():
+    """One-time migration: extract teamCatalog from dashboard-config.json into team-catalog.json."""
+    catalog_path = resolve_team_catalog_path()
+    if os.path.exists(catalog_path):
+        return  # Already migrated or manually created
+    dashboard_config = load_dashboard_config()
+    if not dashboard_config:
+        return
+    team_groups = dashboard_config.get('teamGroups')
+    if not isinstance(team_groups, dict):
+        return
+    raw_catalog = team_groups.get('teamCatalog') or {}
+    raw_meta = team_groups.get('teamCatalogMeta') or {}
+    catalog = normalize_team_catalog(raw_catalog)
+    if not catalog:
+        return  # Nothing to migrate
+    save_team_catalog_file({'catalog': catalog, 'meta': raw_meta})
+    log_info('Migrated teamCatalog from dashboard-config.json to team-catalog.json')
+
+
 def resolve_scenario_overrides_path():
     return SCENARIO_OVERRIDES_PATH or './scenario-overrides.json'
 
@@ -1676,8 +1733,6 @@ def validate_groups_config(payload, allow_empty=False):
         'version': payload.get('version') or GROUPS_CONFIG_VERSION,
         'groups': normalized_groups,
         'defaultGroupId': default_group_id,
-        'teamCatalog': normalize_team_catalog(payload.get('teamCatalog') or {}),
-        'teamCatalogMeta': normalize_team_catalog_meta(payload.get('teamCatalogMeta') or {})
     }
     return normalized, errors, warnings
 
@@ -1701,8 +1756,6 @@ def build_default_groups_config():
             'excludedCapacityEpics': []
         }],
         'defaultGroupId': 'default',
-        'teamCatalog': {},
-        'teamCatalogMeta': {}
     }
     return config, warnings
 
@@ -5452,6 +5505,31 @@ def save_groups_config():
         normalized['warnings'] = warnings
     normalized['source'] = 'file'
     return jsonify(normalized)
+
+
+@app.route('/api/team-catalog', methods=['GET'])
+def get_team_catalog():
+    """Return the team name catalog."""
+    migrate_team_catalog_from_config()
+    data = load_team_catalog()
+    return jsonify(data)
+
+
+@app.route('/api/team-catalog', methods=['POST'])
+def post_team_catalog():
+    """Save the team name catalog."""
+    payload = request.get_json(silent=True) or {}
+    merge = payload.get('merge', False)
+    incoming = {
+        'catalog': normalize_team_catalog(payload.get('catalog') or {}),
+        'meta': normalize_team_catalog_meta(payload.get('meta') or {})
+    }
+    if merge:
+        existing = load_team_catalog()
+        merged_catalog = {**existing['catalog'], **incoming['catalog']}
+        incoming['catalog'] = merged_catalog
+    saved = save_team_catalog_file(incoming)
+    return jsonify(saved)
 
 
 PROJECTS_CACHE = {'data': None, 'timestamp': 0}

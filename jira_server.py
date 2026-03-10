@@ -1245,10 +1245,6 @@ def migrate_team_catalog_from_config():
     if not catalog:
         return  # Nothing to migrate
     save_team_catalog_file({'catalog': catalog, 'meta': raw_meta})
-    # Clean up: remove from dashboard config
-    team_groups.pop('teamCatalog', None)
-    team_groups.pop('teamCatalogMeta', None)
-    save_dashboard_config(dashboard_config)
     log_info('Migrated teamCatalog from dashboard-config.json to team-catalog.json')
 
 

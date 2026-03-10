@@ -135,11 +135,10 @@ class TestTeamCatalogMigration(unittest.TestCase):
             catalog = json.load(f)
         self.assertEqual(catalog['catalog']['t1']['name'], 'Team One')
 
-        # Dashboard config cleaned up
+        # Dashboard config left intact (rollback-safe)
         with open(self._dashboard_path) as f:
             config = json.load(f)
-        self.assertNotIn('teamCatalog', config['teamGroups'])
-        self.assertNotIn('teamCatalogMeta', config['teamGroups'])
+        self.assertIn('teamCatalog', config['teamGroups'])
 
     def test_migration_skips_if_catalog_exists(self):
         with open(self._catalog_path, 'w') as f:

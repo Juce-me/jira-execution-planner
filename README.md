@@ -155,7 +155,6 @@ python3 jira_server.py \
   --jira_url https://your-company.atlassian.net \
   --jira_email your-email@company.com \
   --jira_token your-api-token-here \
-  --jira_query 'project IN (PROJECT1, PROJECT2) AND issuetype = Story'
 ```
 
 ## 🧱 Frontend build (contributors)
@@ -363,7 +362,7 @@ See the full guide:
 ## 🔄 Updating data
 
 - **Tasks**: Click "Refresh Page" in the header (also refreshes ready-to-close data)
-- **Sprints**: Click "Refresh Sprints" button next to sprint dropdown
+- **Sprints**: CMD+R/CTRL+R
 - **Auto-reload**: Tasks reload automatically when you change sprint selection
 - **Stats**: Teams/Priority update from loaded tasks; Burnout refreshes when sprint/team scope changes and when opening Burnout
 
@@ -396,19 +395,18 @@ jira-dashboard/
 
 ## 🚀 Performance & Caching
 
-The application uses intelligent caching to minimize Jira API load:
+The dashboard uses a few different cache layers to keep Jira traffic reasonable:
 
-- **Sprint list cached for 24 hours** - After first load, sprints load instantly
-- **Cache file**: `sprints_cache.json` (auto-generated, not committed to git)
-- **Manual refresh**: Use "Refresh Sprints" button or `?refresh=true` parameter
-- **Live task data**: Stories/epics are fetched fresh on each refresh (no cache)
-- **Stats**:
-  - Teams/Priority are derived from loaded sprint tasks
-  - Burnout uses an on-demand changelog fetch (`/api/stats/burnout`) with client-side in-session reuse per scope
-  - Lead Times uses on-demand cohort fetch (`/api/stats/epic-cohort`) and refetches only when start quarter or team scope changes
-  - Lead Times does not refetch on UI-only controls (group by, project filter, assignee filter, status toggles, cohort row selection)
-- **Reduced API calls**: Jira queries are capped (200 for sprint discovery, 250 for task fetches)
-- **Timeout protection**: Jira requests use 20–30 second timeouts
+- **Sprint list**: cached on disk in `sprints_cache.json` for 24 hours. Use **Refresh Sprints** or `?refresh=true` to force a reload from Jira.
+- **Tasks and epics**: cached in server memory for repeated requests with the same sprint/group/project scope, and the UI also reuses the already loaded group state when possible.
+- **Statistics**:
+  - Teams and Priority views are computed from the currently loaded sprint tasks in the browser.
+  - Burnout loads on demand from `/api/stats/burnout` and is reused in the browser for the same sprint/team/task scope during the session.
+  - Lead Times loads on demand from `/api/stats/epic-cohort` and is cached both in the browser and on the server for repeated scope requests.
+  - Completed-sprint delivery stats from `/api/stats` are persisted in `stats_cache.json`.
+- **Reference data**: Jira projects, components, epic search results, labels, and update-check results use short-lived caches to avoid repeated lookup calls while editing settings.
+- **Request shaping**: heavy Jira fetches are paginated and capped per endpoint instead of trying to pull everything in one call.
+- **Timeout protection**: Jira requests use bounded timeouts, typically between 10 and 30 seconds depending on the endpoint.
 
 ## 📚 Documentation & Postmortems
 

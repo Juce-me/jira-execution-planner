@@ -19,15 +19,23 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Dependency focus** - Click Depends On/Dependents to highlight related tasks and show missing deps inline
 - ✅ **Planning rollups** - Selected story points summarized per team, project, and overall
 - ✅ **Capacity planning** - Team capacity vs planning capacity (exclusions via epic toggle)
-- ✅ **Scenario planner** - Timeline scheduling with capacity, WIP limits, dependencies, critical path, slack, and interactive editing (drag-to-reschedule, undo/redo, save/load drafts)
-- ✅ **Alerts** - Panels for Missing Story Points, Blocked, Missing Epic, Empty Epic, and “Epic Ready to Close” (rules: `ALERT_RULES.md`, ready-to-close uses all-time data)
-- ✅ **Sprint statistics** - Teams/Priority views with product/tech split, derived from loaded sprint tasks (with epic include/exclude toggle)
+- ✅ **Scenario planner** - [Feature guide](docs/features/scenario-planner.md)
+- ✅ **Alerts** - [Feature guide](docs/features/alerts.md)
+- ✅ **Sprint statistics** - [Feature guide](docs/features/statistics.md)
+
+## 📚 Feature Guides
+
+- [Feature docs index](docs/features/README.md)
+- [Alerts](docs/features/alerts.md)
+- [Statistics](docs/features/statistics.md)
+- [Scenario Planner](docs/features/scenario-planner.md)
 
 ## 📋 Files
 
 - `jira_server.py` - Python Flask backend server
 - `jira-dashboard.html` - Frontend dashboard page
 - `frontend/` - Frontend source (`src/`) and compiled bundle (`dist/`)
+- `docs/features/` - User-facing feature guides for alerts, statistics, and scenario planning
 - `.env.example` - Template for environment variables
 - `.gitignore` - Git ignore file (keeps secrets safe)
 - `requirements.txt` - Python dependencies
@@ -268,31 +276,10 @@ The dashboard supports dynamic sprint selection:
 
 ## 📊 Sprint Statistics
 
-The Statistics panel focuses on active or completed (closed) quarter sprints:
+The Statistics panel covers sprint execution and lead-time views for active or completed sprints.
 
-- Teams/Priority views use the same loaded sprint tasks as the list below (no separate stats fetch).
-- Burnout view fetches changelog history on demand from `/api/stats/burnout` only when Burnout is opened.
-- Stats are available for active and completed sprints; future sprints disable the panel.
-- Teams view shows product/tech split and delivery rates by team.
-- Priority view aggregates Done vs Incomplete by priority (no team dimension).
-- Burnout view is a team-stacked area chart of open stories per day in the selected sprint:
-  - Start = stories present on sprint start day
-  - Added = stories created after sprint start
-  - Closed = transitions to Done/Killed/Incomplete on their event day
-  - Remaining = open stories at sprint end
-- Lead Times view shows epic cohorts from a selected start quarter:
-  - Cohort heatmap: rows by created period, columns by elapsed period (`Q+N` / `M+N`)
-  - Open epics chart: longest-open epics (current filter scope)
-  - Filters: group mode (quarter/month), project, assignee, status toggles
-  - `Postponed` is treated as terminal (not open)
-- Burnout chart supports:
-  - assignee filter (`All Assignees` or a specific assignee)
-  - weekly vertical split lines
-  - today marker
-  - shaded future region after today
-  - hover details (daily totals and closed story list with team/assignee)
-- Incomplete = any status except `Done` or `Killed` (killed is excluded from rate calculations).
-- Epic include/exclude toggle appears under each epic while Stats is open (selection persists locally).
+See the full guide:
+- [docs/features/statistics.md](docs/features/statistics.md)
 
 ## 🧮 Capacity Planning
 
@@ -312,50 +299,8 @@ Priority weights used for weighted delivery:
 
 ## 🗓️ Scenario Planner
 
-The Scenario tab builds a quarter timeline from Jira data:
-
-- **Capacity source**: team capacity comes from the Capacity Estimation project (watchers per team issue).
-- **Controls**: lane mode switching (Team / Epic / Assignee), hide summary, show conflicts only.
-- **Scheduling**: topological dependency ordering, then priority (highest -> lowest) and larger SP first when ready.
-- **Blocked links**: blocks/is blocked by are treated as prerequisites, so blocked work does not run in parallel with blockers.
-- **Assignee lanes**: single-threaded (WIP=1) so one assignee only runs one item at a time.
-- **Outputs**: per-issue start/end dates, critical path, slack, bottleneck lanes, and late items.
-- **Missing data**: issues with missing SP or missing dependencies are marked unschedulable.
-- **Context**: dependency neighbors (1 hop) are included as context/ghost nodes so cross-epic deps stay visible.
-- **UI**: quarter start markers are shown in the timeline; panel starts collapsed and unloads when closed to keep it fast.
-- **Dependency edges**: always visible in the timeline; violations highlighted in red when editing.
-
-Assumption: **1 SP = 2 working weeks** (fixed in the planner).
-
-### Edit Mode
-
-Enter Edit mode to interactively reschedule issues:
-
-- **Drag-to-move**: grab any bar with story points and drag to a new date range (snaps to day boundaries).
-- **Date-source badges**: bars show a small badge indicating their date source — "jira" (green) for Jira-sourced dates, "override" (blue) for manually moved bars.
-- **Undo/redo**: Ctrl+Z / Cmd+Z to undo, Ctrl+Shift+Z / Cmd+Shift+Z to redo.
-- **Dependency validation**: moving a bar so a dependent starts before its prerequisite ends highlights the edge in red and adds a red glow to affected bars.
-- **Capacity validation**: assignee overlap conflicts update in real time as bars are moved.
-- **Save/load drafts**: save overrides to the server (persisted in `scenario-overrides.json`); overrides auto-load when the scenario runs.
-- **Discard**: reset all overrides and return bars to their computed positions.
-- **Lane lock**: edit mode forces Assignee lane view and disables lane mode switching.
-
-### Excluded-Issue Splitting
-
-Excluded (capacity noise) issues that span sprint boundaries are automatically split into separate visual segments at each boundary, keeping the timeline clean.
-
-Scenario API response (used by the UI):
-- `jira_base_url`
-- `issues[]`: `key`, `summary`, `type`, `team`, `epicKey`, `epicSummary`, `sp`, `status`, `priority`, `start`, `end`, `url`, `isContext`
-- `dependencies[]`: `{ from, to, type }` edges (dependency/block)
-- `capacity_by_team`: `{ teamName: { size, capacityIssueKey, watchersCount } }`
-- `focus_set`: `focused_issue_keys`, `context_issue_keys`
-- `summary`: `critical_path`, `bottleneck_lanes`, `late_items`, `unschedulable`, `deadline_met`
-
-### Scenario Overrides API
-
-- `GET /api/scenario/overrides?scope_key=<sprint_id>:<group_id>` — returns saved overrides for the given scope.
-- `POST /api/scenario/overrides` — body `{ scope_key, name, overrides }` — saves overrides to `scenario-overrides.json`.
+See the full guide:
+- [docs/features/scenario-planner.md](docs/features/scenario-planner.md)
 
 ## 🔒 Security Notes
 
@@ -432,6 +377,7 @@ jira-dashboard/
 ├── frontend/               # Frontend source + compiled bundle
 │   ├── src/                # JSX source (dashboard.jsx + scenario/)
 │   └── dist/               # Compiled JS + CSS output (committed)
+├── docs/features/          # User-facing feature guides
 ├── planning/               # Scenario planner core logic
 ├── tests/                  # Unit tests
 ├── postmortem/             # Postmortems and incident learnings

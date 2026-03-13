@@ -324,6 +324,10 @@ import {
                 normalizeSelectedTeams(savedPrefsRef.current.selectedTeams ?? savedPrefsRef.current.selectedTeam ?? 'all')
             );
             const [epicDetails, setEpicDetails] = useState({});
+            const headerRef = useRef(null);
+            const compactHeaderRef = useRef(null);
+            const [compactHeaderOffset, setCompactHeaderOffset] = useState(0);
+            const [compactStickyVisible, setCompactStickyVisible] = useState(false);
             const [planningOffset, setPlanningOffset] = useState(0);
             const [isPlanningStuck, setIsPlanningStuck] = useState(false);
             const planningPanelRef = useRef(null);
@@ -7468,7 +7472,7 @@ import {
             useEffect(() => {
                 const computeStickyEpicFocus = () => {
                     stickyEpicFrameRef.current = null;
-                    const stickyTop = Math.max(0, Number(planningOffset) || 0);
+                    const stickyTop = Math.max(0, Number((compactStickyVisible ? compactHeaderOffset : 0) + planningOffset) || 0);
                     let nextStickyKey = null;
                     let closestTop = -Infinity;
                     epicRefMap.current.forEach((node, epicKey) => {
@@ -7505,7 +7509,7 @@ import {
                         stickyEpicFrameRef.current = null;
                     }
                 };
-            }, [epicGroups, planningOffset]);
+            }, [compactHeaderOffset, compactStickyVisible, epicGroups, planningOffset]);
 
             const dependencyTasks = React.useMemo(
                 () => [...loadedProductTasks, ...loadedTechTasks],
@@ -9191,6 +9195,66 @@ import {
 
 
             useEffect(() => {
+                const node = headerRef.current;
+                if (!node) return;
+                const updateVisibility = (rect) => {
+                    if (!rect) return;
+                    setCompactStickyVisible(rect.bottom <= 0);
+                };
+                const syncFromNode = () => updateVisibility(node.getBoundingClientRect());
+                syncFromNode();
+                if (typeof IntersectionObserver !== 'undefined') {
+                    const observer = new IntersectionObserver((entries) => {
+                        updateVisibility(entries[0]?.boundingClientRect);
+                    }, {
+                        threshold: [0, 1]
+                    });
+                    observer.observe(node);
+                    window.addEventListener('resize', syncFromNode);
+                    return () => {
+                        observer.disconnect();
+                        window.removeEventListener('resize', syncFromNode);
+                    };
+                }
+                window.addEventListener('scroll', syncFromNode, { passive: true });
+                window.addEventListener('resize', syncFromNode);
+                return () => {
+                    window.removeEventListener('scroll', syncFromNode);
+                    window.removeEventListener('resize', syncFromNode);
+                };
+            }, []);
+
+            useEffect(() => {
+                if (!compactStickyVisible) {
+                    setCompactHeaderOffset(0);
+                    return;
+                }
+                const node = compactHeaderRef.current;
+                if (!node) return;
+                const updateOffset = () => {
+                    const height = node.getBoundingClientRect().height || 0;
+                    setCompactHeaderOffset(height);
+                };
+                updateOffset();
+                let ro;
+                if (typeof ResizeObserver !== 'undefined') {
+                    ro = new ResizeObserver(updateOffset);
+                    ro.observe(node);
+                }
+                window.addEventListener('resize', updateOffset);
+                return () => {
+                    window.removeEventListener('resize', updateOffset);
+                    if (ro) ro.disconnect();
+                };
+            }, [compactStickyVisible]);
+
+            useEffect(() => {
+                setShowTeamDropdown(false);
+                setShowSprintDropdown(false);
+                setShowGroupDropdown(false);
+            }, [compactStickyVisible]);
+
+            useEffect(() => {
                 if (!showPlanning) {
                     setPlanningOffset(0);
                     return;
@@ -9222,12 +9286,13 @@ import {
                 if (!node) return;
                 const check = () => {
                     const rect = node.getBoundingClientRect();
-                    setIsPlanningStuck(rect.top <= 0);
+                    const stickyTop = compactStickyVisible ? compactHeaderOffset : 0;
+                    setIsPlanningStuck(rect.top <= stickyTop);
                 };
                 check();
                 window.addEventListener('scroll', check, { passive: true });
                 return () => window.removeEventListener('scroll', check);
-            }, [showPlanning]);
+            }, [compactHeaderOffset, compactStickyVisible, showPlanning]);
 
             const openSelectedInJira = () => {
                 if (!jiraUrl) return;
@@ -9240,9 +9305,228 @@ import {
                 window.open(`${jiraUrl}/issues/?jql=${jql}`, '_blank', 'noopener,noreferrer');
             };
 
+            const activeControlSurface = compactStickyVisible ? 'compact' : 'main';
+            const compactStickyTop = compactStickyVisible ? compactHeaderOffset : 0;
+            const epicStickyTop = compactStickyTop + planningOffset;
+            const containerStyle = {
+                '--compact-header-offset': `${compactStickyTop}px`,
+                '--planning-offset': `${planningOffset}px`,
+                '--planning-sticky-top': `${compactStickyTop}px`,
+                '--epic-sticky-top': `${epicStickyTop}px`,
+                '--scenario-sticky-top': `${epicStickyTop}px`
+            };
+            const showGroupControl = (groupsConfig.groups || []).length > 1;
+
+            const renderSearchControl = (surface, extraClassName = '') => (
+                <div className={`control-field control-search ${extraClassName}`.trim()} data-label="Search">
+                    <span className="control-label">Search</span>
+                    <div className="search-wrap">
+                        <input
+                            type="text"
+                            className="search-input"
+                            placeholder="Search tickets..."
+                            value={searchInput}
+                            onChange={(e) => setSearchInput(e.target.value)}
+                            ref={searchInputRef}
+                        />
+                        {searchInput && (
+                            <button
+                                className="search-clear"
+                                onClick={() => setSearchInput('')}
+                                title="Clear search"
+                                aria-label="Clear search"
+                                type="button"
+                            >
+                                ×
+                            </button>
+                        )}
+                    </div>
+                </div>
+            );
+
+            const renderSprintControl = (surface) => (
+                <div className="control-field" data-label="Sprint">
+                    <span className="control-label">Sprint</span>
+                    <div className="sprint-dropdown" ref={sprintDropdownRef}>
+                        <div
+                            className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
+                            role="button"
+                            aria-label="Select sprint"
+                            tabIndex={sprintsLoading || availableSprints.length === 0 ? -1 : 0}
+                            onClick={() => {
+                                if (sprintsLoading || availableSprints.length === 0) return;
+                                setShowSprintDropdown(!showSprintDropdown);
+                            }}
+                            onKeyDown={(event) => {
+                                if (sprintsLoading || availableSprints.length === 0) return;
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
+                                    setShowSprintDropdown(!showSprintDropdown);
+                                }
+                            }}
+                            aria-disabled={sprintsLoading || availableSprints.length === 0}
+                        >
+                            <span>{sprintName || 'Sprint'}</span>
+                            <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                                <path d="M6 9L1 4h10z"/>
+                            </svg>
+                        </div>
+                        {showSprintDropdown && surface === activeControlSurface && (
+                            <div className="sprint-dropdown-panel">
+                                <input
+                                    type="text"
+                                    className="sprint-dropdown-search"
+                                    placeholder="Filter..."
+                                    value={sprintSearch}
+                                    onChange={(e) => setSprintSearch(e.target.value)}
+                                    aria-label="Filter sprints"
+                                />
+                                <div className="sprint-dropdown-list">
+                                    {sprintsLoading ? (
+                                        <div className="sprint-dropdown-option">Loading sprints...</div>
+                                    ) : filteredSprints.length === 0 ? (
+                                        <div className="sprint-dropdown-option">No sprints available</div>
+                                    ) : (
+                                        filteredSprints.map(sprint => {
+                                            const state = (sprint.state || '').toLowerCase();
+                                            const marker = state === 'closed' ? '[C]' : state === 'active' ? '[A]' : '[F]';
+                                            return (
+                                                <div
+                                                    key={sprint.id}
+                                                    className="sprint-dropdown-option"
+                                                    data-sprint-id={sprint.id}
+                                                    onClick={() => {
+                                                        setSelectedSprint(sprint.id);
+                                                        setSprintName(sprint.name);
+                                                        setShowSprintDropdown(false);
+                                                    }}
+                                                >
+                                                    {marker} {sprint.name}
+                                                </div>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+
+            const renderGroupControl = (surface) => {
+                if (!showGroupControl) return null;
+                return (
+                    <div className="group-control">
+                        <div className="control-field" data-label="Group">
+                            <span className="control-label">Group</span>
+                            <div className="group-dropdown" ref={groupDropdownRef}>
+                                <div
+                                    className={`group-dropdown-toggle ${showGroupDropdown ? 'open' : ''}`}
+                                    role="button"
+                                    aria-label="Select group"
+                                    tabIndex={groupsLoading ? -1 : 0}
+                                    onClick={() => {
+                                        if (groupsLoading) return;
+                                        setShowGroupDropdown(!showGroupDropdown);
+                                    }}
+                                    onKeyDown={(event) => {
+                                        if (groupsLoading) return;
+                                        if (event.key === 'Enter' || event.key === ' ') {
+                                            event.preventDefault();
+                                            setShowGroupDropdown(!showGroupDropdown);
+                                        }
+                                    }}
+                                    aria-disabled={groupsLoading}
+                                >
+                                    <span>{activeGroup?.name || (groupsLoading ? 'Loading...' : 'Group')}</span>
+                                    <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                                        <path d="M6 9L1 4h10z"/>
+                                    </svg>
+                                </div>
+                                {showGroupDropdown && surface === activeControlSurface && (
+                                    <div className="group-dropdown-panel">
+                                        {groupsLoading ? (
+                                            <div className="group-dropdown-option">Loading groups...</div>
+                                        ) : (groupsConfig.groups || []).length === 0 ? (
+                                            <div className="group-dropdown-option">No groups yet</div>
+                                        ) : (
+                                            (groupsConfig.groups || []).map(group => (
+                                                <div
+                                                    key={group.id}
+                                                    className="group-dropdown-option"
+                                                    onClick={() => {
+                                                        setActiveGroupId(group.id);
+                                                        setShowGroupDropdown(false);
+                                                    }}
+                                                >
+                                                    <span>{group.name}</span>
+                                                    <div className="group-option-tags">
+                                                        {groupsConfig.defaultGroupId === group.id && (
+                                                            <span className="group-option-default" title="Default group">★</span>
+                                                        )}
+                                                        <span className="group-option-meta">
+                                                            {group.teamIds?.length || 0} teams
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderTeamControl = (surface) => (
+                <div className="control-field" data-label="Teams">
+                    <span className="control-label">Teams</span>
+                    <div className="team-dropdown" ref={teamDropdownRef}>
+                        <div
+                            className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''}`}
+                            role="button"
+                            aria-label="Filter teams"
+                            tabIndex={tasks.length === 0 && loading ? -1 : 0}
+                            onClick={() => {
+                                if (tasks.length === 0 && loading) return;
+                                setShowTeamDropdown(!showTeamDropdown);
+                            }}
+                            onKeyDown={(event) => {
+                                if (tasks.length === 0 && loading) return;
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
+                                    setShowTeamDropdown(!showTeamDropdown);
+                                }
+                            }}
+                            aria-disabled={tasks.length === 0 && loading}
+                        >
+                            <span>{selectedTeamsLabel}</span>
+                            <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                                <path d="M6 9L1 4h10z"/>
+                            </svg>
+                        </div>
+                        {showTeamDropdown && surface === activeControlSurface && (
+                            <div className="team-dropdown-panel">
+                                {teamOptions.map(team => (
+                                    <label key={team.id} className="team-dropdown-option">
+                                        <input
+                                            type="checkbox"
+                                            checked={team.id === 'all' ? isAllTeamsSelected : selectedTeamSet.has(team.id)}
+                                            onChange={() => toggleTeamSelection(team.id)}
+                                        />
+                                        <span>{team.name}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+
             return (
-                <div className="container" style={{ '--planning-offset': `${planningOffset}px` }}>
-                    <header>
+                <div className="container" style={containerStyle}>
+                    <header ref={headerRef}>
                         <div className="subtitle">
                             <span className="subtitle-main">
                                 <img src="epm-burst.svg" alt="" className="subtitle-logo" aria-hidden="true" />
@@ -9261,29 +9545,7 @@ import {
                             </span>
                             <div className="header-actions">
                                 <div className="header-actions-row">
-                                    <div className="control-field control-search" data-label="Search">
-                                        <span className="control-label">Search</span>
-                                        <div className="search-wrap">
-                                            <input
-                                                type="text"
-                                                className="search-input"
-                                                placeholder="Search tickets..."
-                                                value={searchInput}
-                                                onChange={(e) => setSearchInput(e.target.value)}
-                                                ref={searchInputRef}
-                                            />
-                                            {searchInput && (
-                                                <button
-                                                    className="search-clear"
-                                                    onClick={() => setSearchInput('')}
-                                                    title="Clear search"
-                                                    aria-label="Clear search"
-                                                >
-                                                    ×
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
+                                    {renderSearchControl('main')}
                                     <button
                                         className="secondary compact refresh-icon"
                                         onClick={() => {
@@ -9308,176 +9570,9 @@ import {
                         <div className="view-selector">
                             <div className="controls-label">Controls</div>
                             <div className="view-filters">
-                                <div className="control-field" data-label="Sprint">
-                                    <span className="control-label">Sprint</span>
-                                    <div className="sprint-dropdown" ref={sprintDropdownRef}>
-                                        <div
-                                            className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
-                                            role="button"
-                                            aria-label="Select sprint"
-                                            tabIndex={sprintsLoading || availableSprints.length === 0 ? -1 : 0}
-                                        onClick={() => {
-                                            if (sprintsLoading || availableSprints.length === 0) return;
-                                            setShowSprintDropdown(!showSprintDropdown);
-                                        }}
-                                        onKeyDown={(event) => {
-                                            if (sprintsLoading || availableSprints.length === 0) return;
-                                            if (event.key === 'Enter' || event.key === ' ') {
-                                                event.preventDefault();
-                                                setShowSprintDropdown(!showSprintDropdown);
-                                            }
-                                        }}
-                                        aria-disabled={sprintsLoading || availableSprints.length === 0}
-                                    >
-                                        <span>{sprintName || 'Sprint'}</span>
-                                        <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                            <path d="M6 9L1 4h10z"/>
-                                        </svg>
-                                    </div>
-                                    {showSprintDropdown && (
-                                        <div className="sprint-dropdown-panel">
-                                            <input
-                                                type="text"
-                                                className="sprint-dropdown-search"
-                                                placeholder="Filter..."
-                                                value={sprintSearch}
-                                                onChange={(e) => setSprintSearch(e.target.value)}
-                                                aria-label="Filter sprints"
-                                            />
-                                            <div className="sprint-dropdown-list">
-                                                {sprintsLoading ? (
-                                                    <div className="sprint-dropdown-option">Loading sprints...</div>
-                                                ) : filteredSprints.length === 0 ? (
-                                                    <div className="sprint-dropdown-option">No sprints available</div>
-                                                ) : (
-                                                    filteredSprints.map(sprint => {
-                                                        const state = (sprint.state || '').toLowerCase();
-                                                        const marker = state === 'closed' ? '[C]' : state === 'active' ? '[A]' : '[F]';
-                                                        return (
-                                                            <div
-                                                                key={sprint.id}
-                                                                className="sprint-dropdown-option"
-                                                                data-sprint-id={sprint.id}
-                                                                onClick={() => {
-                                                                    setSelectedSprint(sprint.id);
-                                                                    setSprintName(sprint.name);
-                                                                    setShowSprintDropdown(false);
-                                                                }}
-                                                            >
-                                                                {marker} {sprint.name}
-                                                            </div>
-                                                        );
-                                                    })
-                                                )}
-                                            </div>
-                                        </div>
-                                            )}
-                                    </div>
-                                </div>
-                                {((groupsConfig.groups || []).length > 1) && (
-                                    <div className="group-control">
-                                        <div className="control-field" data-label="Group">
-                                            <span className="control-label">Group</span>
-                                            <div className="group-dropdown" ref={groupDropdownRef}>
-                                            <div
-                                                className={`group-dropdown-toggle ${showGroupDropdown ? 'open' : ''}`}
-                                                role="button"
-                                                aria-label="Select group"
-                                                tabIndex={groupsLoading ? -1 : 0}
-                                                onClick={() => {
-                                                    if (groupsLoading) return;
-                                                    setShowGroupDropdown(!showGroupDropdown);
-                                                }}
-                                                onKeyDown={(event) => {
-                                                    if (groupsLoading) return;
-                                                    if (event.key === 'Enter' || event.key === ' ') {
-                                                        event.preventDefault();
-                                                        setShowGroupDropdown(!showGroupDropdown);
-                                                    }
-                                                }}
-                                                aria-disabled={groupsLoading}
-                                            >
-                                                <span>{activeGroup?.name || (groupsLoading ? 'Loading...' : 'Group')}</span>
-                                                <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                                    <path d="M6 9L1 4h10z"/>
-                                                </svg>
-                                            </div>
-                                            {showGroupDropdown && (
-                                                <div className="group-dropdown-panel">
-                                                    {groupsLoading ? (
-                                                        <div className="group-dropdown-option">Loading groups...</div>
-                                                    ) : (groupsConfig.groups || []).length === 0 ? (
-                                                        <div className="group-dropdown-option">No groups yet</div>
-                                                    ) : (
-                                                        (groupsConfig.groups || []).map(group => (
-                                                            <div
-                                                                key={group.id}
-                                                                className="group-dropdown-option"
-                                                                onClick={() => {
-                                                                    setActiveGroupId(group.id);
-                                                                    setShowGroupDropdown(false);
-                                                                }}
-                                                            >
-                                                                <span>{group.name}</span>
-                                                                <div className="group-option-tags">
-                                                                    {groupsConfig.defaultGroupId === group.id && (
-                                                                        <span className="group-option-default" title="Default group">★</span>
-                                                                    )}
-                                                                    <span className="group-option-meta">
-                                                                        {group.teamIds?.length || 0} teams
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                        ))
-                                                    )}
-                                                </div>
-                                            )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                                <div className="control-field" data-label="Teams">
-                                    <span className="control-label">Teams</span>
-                                    <div className="team-dropdown" ref={teamDropdownRef}>
-                                    <div
-                                        className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''}`}
-                                        role="button"
-                                        aria-label="Filter teams"
-                                        tabIndex={tasks.length === 0 && loading ? -1 : 0}
-                                        onClick={() => {
-                                            if (tasks.length === 0 && loading) return;
-                                            setShowTeamDropdown(!showTeamDropdown);
-                                        }}
-                                        onKeyDown={(event) => {
-                                            if (tasks.length === 0 && loading) return;
-                                            if (event.key === 'Enter' || event.key === ' ') {
-                                                event.preventDefault();
-                                                setShowTeamDropdown(!showTeamDropdown);
-                                            }
-                                        }}
-                                        aria-disabled={tasks.length === 0 && loading}
-                                    >
-                                        <span>{selectedTeamsLabel}</span>
-                                        <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                            <path d="M6 9L1 4h10z"/>
-                                        </svg>
-                                    </div>
-                                    {showTeamDropdown && (
-                                        <div className="team-dropdown-panel">
-                                            {teamOptions.map(team => (
-                                                <label key={team.id} className="team-dropdown-option">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={team.id === 'all' ? isAllTeamsSelected : selectedTeamSet.has(team.id)}
-                                                        onChange={() => toggleTeamSelection(team.id)}
-                                                    />
-                                                    <span>{team.name}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    )}
-                                    </div>
-                                </div>
+                                {renderSprintControl('main')}
+                                {renderGroupControl('main')}
+                                {renderTeamControl('main')}
                                 <div className="mode-switch">
                                     <button
                                         className={`mode-switch-button ${(!showPlanning && !showStats && !showScenario) ? 'active' : ''}`}
@@ -9535,6 +9630,25 @@ import {
                             </div>
                         </div>
                     </header>
+
+                    <div
+                        ref={compactHeaderRef}
+                        className={`compact-sticky-header ${compactStickyVisible ? 'is-visible' : ''}`}
+                        aria-hidden={!compactStickyVisible}
+                    >
+                        {compactStickyVisible && (
+                            <>
+                                <div className="compact-sticky-header-controls">
+                                    {renderSprintControl('compact')}
+                                    {renderGroupControl('compact')}
+                                    {renderTeamControl('compact')}
+                                </div>
+                                <div className="compact-sticky-header-search">
+                                    {renderSearchControl('compact', 'compact-sticky-header-search-field')}
+                                </div>
+                            </>
+                        )}
+                    </div>
 
                     {!isCompletedSprintSelected && (
                         <div className={`capacity-panel ${showPlanning ? 'open' : ''}`}>

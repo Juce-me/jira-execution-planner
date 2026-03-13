@@ -112,3 +112,7 @@ Follow this checklist for ALL work in this repo. No exceptions.
 7. Run the full test suite (`python3 -m unittest discover -s tests`) before final push
 8. Run `git log --oneline -5` and show the user the commits for review
 9. Only push after the user explicitly confirms
+
+## Skill Overrides
+- Do not use the `using-git-worktrees` skill in this repository unless the user explicitly asks for a worktree.
+- Default to the current workspace for feature development.

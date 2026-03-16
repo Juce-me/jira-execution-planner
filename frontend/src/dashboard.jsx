@@ -11820,7 +11820,7 @@ import {
                                         {/* Product fill */}
                                         <div
                                             className="project-bar-fill product"
-                                            style={{ width: `${productPct}%` }}
+                                            style={{ width: `${productPct}%`, borderRadius: techPct > 0 ? '6px 0 0 6px' : '6px' }}
                                             data-tooltip={`Product: ${productSP.toFixed(1)} SP (${productPct.toFixed(0)}% of selected).${excludedProduct > 0 ? ` Excluded: ${excludedProduct.toFixed(1)} SP.` : ''}`}
                                         >
                                             {productPct > 15 && (
@@ -11828,6 +11828,7 @@ import {
                                             )}
                                         </div>
                                         {/* Tech fill */}
+                                        {techPct > 0 && (
                                         <div
                                             className="project-bar-fill tech"
                                             style={{ left: `${productPct}%`, width: `${techPct}%` }}
@@ -11837,6 +11838,7 @@ import {
                                                 <span className="capacity-bar-fill-label">Tech {techPct.toFixed(0)}% · {techSP.toFixed(1)} SP</span>
                                             )}
                                         </div>
+                                        )}
                                         {/* 70% target marker */}
                                         <div className="capacity-bar-marker" style={{ left: `${targetPct}%` }}>
                                             <div className="capacity-bar-marker-line dashed" />

@@ -26,7 +26,7 @@ class TestCreateStoriesAlertConfig(unittest.TestCase):
                 'name': 'Group 1',
                 'teamIds': ['team-a', 'team-b'],
                 'teamLabels': {
-                    'team-a': 'rnd_bsw_bswui',
+                    'team-a': 'team_alpha_label',
                     'team-c': 'ignored-label'
                 }
             }],
@@ -37,7 +37,7 @@ class TestCreateStoriesAlertConfig(unittest.TestCase):
         self.assertEqual(warnings, [])
         self.assertEqual(
             normalized['groups'][0].get('teamLabels'),
-            {'team-a': 'rnd_bsw_bswui'}
+            {'team-a': 'team_alpha_label'}
         )
 
 
@@ -51,8 +51,8 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
                     'summary': 'Epic one',
                     'status': {'name': 'To Do'},
                     'assignee': {'displayName': 'Alice'},
-                    'labels': ['2026Q2', 'rnd_bsw_bswui'],
-                    'customfield_team': {'id': 'team-a', 'name': 'BSW UI'}
+                    'labels': ['2026Q2', 'team_alpha_label'],
+                    'customfield_team': {'id': 'team-a', 'name': 'Example Team Alpha'}
                 }
             }]
         }
@@ -66,7 +66,35 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
             )
 
         self.assertEqual(len(epics), 1)
-        self.assertEqual(epics[0].get('labels'), ['2026Q2', 'rnd_bsw_bswui'])
+        self.assertEqual(epics[0].get('labels'), ['2026Q2', 'team_alpha_label'])
+
+    def test_fetch_epics_for_empty_alert_preserves_sprint_field_for_future_planning_match(self):
+        sprint_value = [{'id': 123, 'name': '2026Q2'}]
+        payload = {
+            'issues': [{
+                'key': 'EPIC-2',
+                'fields': {
+                    'summary': 'Epic two',
+                    'status': {'name': 'To Do'},
+                    'assignee': {'displayName': 'Alice'},
+                    'labels': ['2026Q2', 'team_beta_label'],
+                    'customfield_team': {'id': 'team-a', 'name': 'Example Team Beta'},
+                    'customfield_sprint': sprint_value
+                }
+            }]
+        }
+
+        with patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, payload)):
+            epics = jira_server.fetch_epics_for_empty_alert(
+                'project = TEST',
+                headers={'Authorization': 'Bearer test'},
+                team_field_id='customfield_team',
+                epic_name_field='customfield_epic_name',
+                sprint_field_id='customfield_sprint'
+            )
+
+        self.assertEqual(len(epics), 1)
+        self.assertEqual(epics[0].get('fields', {}).get('customfield_10101'), sprint_value)
 
     def test_fetch_backlog_epics_for_alert_returns_cleanup_story_count(self):
         fetcher = getattr(jira_server, 'fetch_backlog_epics_for_alert', None)
@@ -80,7 +108,7 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
                     'status': {'name': 'To Do'},
                     'assignee': {'displayName': 'Alice'},
                     'components': [{'name': 'BidSwitch'}],
-                    'customfield_team': {'id': 'team-a', 'name': 'BSW UI'},
+                    'customfield_team': {'id': 'team-a', 'name': 'Example Team Alpha'},
                     'customfield_sprint': None
                 }
             }]
@@ -138,7 +166,7 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
                     'status': {'name': 'To Do'},
                     'assignee': {'displayName': 'Alice'},
                     'components': [{'name': 'BidSwitch'}],
-                    'customfield_team': {'id': 'team-a', 'name': 'BSW UI'},
+                    'customfield_team': {'id': 'team-a', 'name': 'Example Team Alpha'},
                     'customfield_sprint': sprint_value
                 }
             }]
@@ -173,16 +201,16 @@ class TestCreateStoriesAlertApi(unittest.TestCase):
         client = app.test_client()
 
         jira_payload = {
-            'values': ['rnd_bsw_bswui', 'rnd_bsw_perimeter'],
+            'values': ['team_alpha_label', 'team_beta_label'],
             'isLast': True
         }
 
         with patch('jira_server.requests.get', return_value=_mock_response(200, jira_payload)):
-            response = client.get('/api/jira/labels?query=bsw')
+            response = client.get('/api/jira/labels?query=team_')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         payload = response.get_json() or {}
-        self.assertEqual(payload.get('labels'), ['rnd_bsw_bswui', 'rnd_bsw_perimeter'])
+        self.assertEqual(payload.get('labels'), ['team_alpha_label', 'team_beta_label'])
 
     def test_jira_labels_endpoint_fetches_all_pages_before_filtering(self):
         app = jira_server.app
@@ -196,7 +224,7 @@ class TestCreateStoriesAlertApi(unittest.TestCase):
             'maxResults': 1
         }
         second_page = {
-            'values': ['rnd_bsw_perimeter'],
+            'values': ['team_beta_label'],
             'isLast': True,
             'startAt': 1,
             'maxResults': 1
@@ -206,11 +234,11 @@ class TestCreateStoriesAlertApi(unittest.TestCase):
             'jira_server.requests.get',
             side_effect=[_mock_response(200, first_page), _mock_response(200, second_page)]
         ) as mock_get:
-            response = client.get('/api/jira/labels?query=bsw')
+            response = client.get('/api/jira/labels?query=team_')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         payload = response.get_json() or {}
-        self.assertEqual(payload.get('labels'), ['rnd_bsw_perimeter'])
+        self.assertEqual(payload.get('labels'), ['team_beta_label'])
         self.assertEqual(mock_get.call_count, 2)
 
     def test_backlog_epics_endpoint_returns_epics(self):

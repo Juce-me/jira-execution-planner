@@ -68,6 +68,9 @@ python3 -m unittest discover -s tests
   - Use sanitized or synthetic data for committed examples (suffix: `-template.json` or `-example-sanitized.json`)
   - Tests that use real data must include warnings and be kept in local branches only
   - API keys, issue keys, team names, and project-specific information must remain local
+  - Never copy labels, team names, component names, issue keys, or other identifiable values from local configuration files such as `dashboard-config.json`, `team-groups.json`, `team-catalog.json`, or `sprints_cache.json` into committed tests
+  - When tests need representative configuration values, replace them with clearly synthetic placeholders before committing
+  - Do not push commits containing real configuration-derived test data to GitLab or any other remote; sanitize the data first or keep the change local only
 
 ## Debugging & Bug Fixes
 - Before implementing any fix, confirm you understand the ROOT CAUSE by stating it back to the user. Do not fix surface-level symptoms. If a bug involves data fetching or configuration, check whether the issue is in user-configured settings vs hardcoded defaults before writing code.

@@ -2019,7 +2019,7 @@ def issue_has_sprint(value):
     return True
 
 
-def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field):
+def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id=None):
     """Fetch epics matching the current sprint/team filters so UI can flag epics with 0 stories."""
     epic_jql = derive_epic_jql(jql, EPIC_EMPTY_TEAM_IDS)
     epic_field = epic_name_field or PARENT_NAME_FIELD_DEFAULT
@@ -2027,6 +2027,8 @@ def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field):
     fields_list = ['summary', 'status', 'assignee', 'labels', epic_field]
     if team_field_id and team_field_id not in fields_list:
         fields_list.append(team_field_id)
+    if sprint_field_id and sprint_field_id not in fields_list:
+        fields_list.append(sprint_field_id)
 
     payload = {
         'jql': epic_jql,
@@ -2063,6 +2065,9 @@ def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field):
             'team': team_value,
             'teamName': team_name,
             'teamId': team_value.get('id') if isinstance(team_value, dict) else None,
+            'fields': {
+                'customfield_10101': fields.get(sprint_field_id) if sprint_field_id else None
+            },
         })
     return epics
 
@@ -2576,6 +2581,7 @@ def fetch_tasks(include_team_name=False):
             team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
         epic_link_field = epic_link_field_id or resolve_epic_link_field_id(headers, names_map)
         epic_name_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic name'), None)
+        sprint_field_id = get_sprint_field_id()
 
         epic_keys = set()
         normalize_started = time.perf_counter()
@@ -2611,11 +2617,24 @@ def fetch_tasks(include_team_name=False):
         enrich_epics_started = time.perf_counter()
         if lightweight_ready_to_close:
             epic_details = {}
-            epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field)
+            epics_in_scope = fetch_epics_for_empty_alert(
+                jql,
+                headers,
+                team_field_id,
+                epic_name_field,
+                sprint_field_id=sprint_field_id
+            )
         else:
             with ThreadPoolExecutor(max_workers=2) as pool:
                 future_epic_details = pool.submit(fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
-                future_epics_in_scope = pool.submit(fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field)
+                future_epics_in_scope = pool.submit(
+                    fetch_epics_for_empty_alert,
+                    jql,
+                    headers,
+                    team_field_id,
+                    epic_name_field,
+                    sprint_field_id
+                )
                 epic_details = future_epic_details.result()
                 epics_in_scope = future_epics_in_scope.result()
         record_timing('epic_enrichment', enrich_epics_started)

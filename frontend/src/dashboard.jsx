@@ -8795,6 +8795,9 @@ import {
                 const seen = new Set();
                 const remoteBacklog = [...backlogProductEpics, ...backlogTechEpics];
                 const sprintValueBacklog = planningCandidateEpics.filter((epic) => {
+                    const epicSprintId = epic?.sprintId || epic?.sprint?.id || epic?.fields?.sprint?.id || '';
+                    const epicSprintName = epic?.sprintName || epic?.sprint?.name || epic?.fields?.sprint?.name || '';
+                    if (epicSprintId || epicSprintName) return false;
                     return !epicMatchesPlanningSprintValue(epic);
                 });
                 return [...remoteBacklog, ...sprintValueBacklog].filter((epic) => {

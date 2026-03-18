@@ -125,6 +125,41 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
         self.assertEqual(epics[0].get('teamId'), 'team-a')
         self.assertEqual(epics[0].get('cleanupStoryCount'), 1)
 
+    def test_fetch_backlog_epics_for_alert_preserves_explicit_sprint_field_for_client_recheck(self):
+        fetcher = getattr(jira_server, 'fetch_backlog_epics_for_alert', None)
+        self.assertTrue(callable(fetcher), 'fetch_backlog_epics_for_alert should exist')
+
+        sprint_value = [{'id': 456, 'name': 'Sprint 46'}]
+        epic_payload = {
+            'issues': [{
+                'key': 'EPIC-99',
+                'fields': {
+                    'summary': 'Should not survive client backlog filter',
+                    'status': {'name': 'To Do'},
+                    'assignee': {'displayName': 'Alice'},
+                    'components': [{'name': 'BidSwitch'}],
+                    'customfield_team': {'id': 'team-a', 'name': 'BSW UI'},
+                    'customfield_sprint': sprint_value
+                }
+            }]
+        }
+        child_payload = {'issues': []}
+
+        with patch.object(
+            jira_server,
+            'jira_search_request',
+            side_effect=[_mock_response(200, epic_payload), _mock_response(200, child_payload)]
+        ):
+            epics = fetcher(
+                'project = TEST',
+                headers={'Authorization': 'Bearer test'},
+                team_field_id='customfield_team',
+                sprint_field_id='customfield_sprint',
+                epic_link_field='customfield_epic_link'
+            )
+
+        self.assertEqual(epics[0].get('fields', {}).get('customfield_10101'), sprint_value)
+
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestCreateStoriesAlertApi(unittest.TestCase):

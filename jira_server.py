@@ -2111,6 +2111,9 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
             'team': team_value,
             'teamName': team_name,
             'teamId': team_value.get('id') if isinstance(team_value, dict) else None,
+            'fields': {
+                'customfield_10101': fields.get(sprint_field_id) if sprint_field_id else None
+            },
             'cleanupStoryCount': 0,
         })
         if issue.get('key'):

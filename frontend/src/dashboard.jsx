@@ -15,6 +15,7 @@ import {
     getCurrentQuarterLabel,
     normalizeCohortStatus
 } from './cohort/cohortUtils.js';
+import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics } from './backlogAlertSprintUtils.mjs';
 
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
@@ -8762,23 +8763,10 @@ import {
                 return (epic?.labels || []).some((item) => String(item || '').trim().toLowerCase() === target);
             }, []);
             const epicMatchesPlanningSprintValue = React.useCallback((epic) => {
-                const epicSprintId = epic?.sprintId || epic?.sprint?.id || epic?.fields?.sprint?.id || '';
-                const epicSprintName = epic?.sprintName || epic?.sprint?.name || epic?.fields?.sprint?.name || '';
-                if (epicSprintId) {
-                    return String(epicSprintId) === String(selectedSprint || '');
-                }
-                if (epicSprintName) {
-                    const selectedName = selectedSprintInfo?.name || '';
-                    const normalizedEpic = String(epicSprintName).trim().toLowerCase();
-                    const normalizedSelected = String(selectedName).trim().toLowerCase();
-                    if (normalizedEpic && normalizedSelected) {
-                        if (normalizedEpic === normalizedSelected) return true;
-                        if (normalizedEpic.includes(normalizedSelected)) return true;
-                        if (normalizedSelected.includes(normalizedEpic)) return true;
-                    }
-                    return epicSprintName === selectedSprintInfo?.name;
-                }
-                return false;
+                return epicMatchesSelectedSprint(epic, {
+                    selectedSprint,
+                    selectedSprintName: selectedSprintInfo?.name || ''
+                });
             }, [selectedSprint, selectedSprintInfo?.name]);
             const planningCandidateEpics = React.useMemo(() => {
                 return epicsInScope.filter((epic) => {
@@ -8793,13 +8781,8 @@ import {
             const backlogEpics = React.useMemo(() => {
                 if (!isFutureSprintSelected) return [];
                 const seen = new Set();
-                const remoteBacklog = [...backlogProductEpics, ...backlogTechEpics];
-                const sprintValueBacklog = planningCandidateEpics.filter((epic) => {
-                    const epicSprintId = epic?.sprintId || epic?.sprint?.id || epic?.fields?.sprint?.id || '';
-                    const epicSprintName = epic?.sprintName || epic?.sprint?.name || epic?.fields?.sprint?.name || '';
-                    if (epicSprintId || epicSprintName) return false;
-                    return !epicMatchesPlanningSprintValue(epic);
-                });
+                const remoteBacklog = filterExplicitBacklogEpics([...backlogProductEpics, ...backlogTechEpics]);
+                const sprintValueBacklog = filterExplicitBacklogEpics(planningCandidateEpics);
                 return [...remoteBacklog, ...sprintValueBacklog].filter((epic) => {
                     if (!epic?.key || seen.has(epic.key)) return false;
                     seen.add(epic.key);
@@ -8809,7 +8792,7 @@ import {
                     if (!status || status === 'done' || status === 'killed' || status === 'incomplete') return false;
                     return true;
                 });
-            }, [isFutureSprintSelected, backlogProductEpics, backlogTechEpics, planningCandidateEpics, epicMatchesPlanningSprintValue, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet]);
+            }, [isFutureSprintSelected, backlogProductEpics, backlogTechEpics, planningCandidateEpics, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet]);
             const backlogEpicKeySet = React.useMemo(
                 () => new Set(backlogEpics.map(epic => epic.key).filter(Boolean)),
                 [backlogEpics]
@@ -8831,10 +8814,11 @@ import {
                 if (!isFutureSprintSelected) return [];
                 return planningCandidateEpics.filter((epic) => {
                     if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key)) return false;
+                    if (!epicMatchesPlanningSprintValue(epic)) return false;
                     const teamLabel = normalizedActiveGroupTeamLabels[epic.teamId] || '';
                     return !teamLabel || !epicHasLabel(epic, teamLabel);
                 });
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, normalizedActiveGroupTeamLabels, epicHasLabel]);
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, normalizedActiveGroupTeamLabels, epicMatchesPlanningSprintValue, epicHasLabel]);
             const missingLabelEpicKeySet = React.useMemo(
                 () => new Set(missingLabelEpics.map(epic => epic.key).filter(Boolean)),
                 [missingLabelEpics]
@@ -8882,7 +8866,7 @@ import {
                 if (!epicStories || epicStories.length === 0) return false;
                 return epicStories.some(task => isTaskInSelectedSprint(task));
             };
-            const epicMatchesSelectedSprint = (epic, epicStories) => {
+            const epicOrStoriesMatchSelectedSprint = (epic, epicStories) => {
                 if (matchesSelectedSprint(epic)) return true;
                 return epicHasStoryInSelectedSprint(epicStories);
             };
@@ -8902,7 +8886,7 @@ import {
                         return true;
                     });
                     if (epicStories.length === 0) return false;
-                    if (!epicMatchesSelectedSprint(epic, epicStories)) return false;
+                    if (!epicOrStoriesMatchSelectedSprint(epic, epicStories)) return false;
                     return epicStories.every(task => readyToCloseStoryStatuses.has(normalizeStatus(task.fields.status?.name)));
                 })
                 .filter(epic => !dismissedAlertSet.has(epic.key));

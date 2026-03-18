@@ -61,11 +61,12 @@ When a future sprint is selected, the dashboard also uses epic-level planning al
 
 ### Backlog
 
-Shows epics that are not yet assigned to the selected future sprint as an actual sprint value.
+Shows epics whose epic-level sprint field is explicitly empty.
 
 Important:
 - this is based on the epic sprint assignment, not on a Jira label
-- if the epic is missing the selected sprint value, it routes to backlog first
+- an epic with a concrete sprint value must not appear here, even if that sprint is not the selected future sprint
+- backlog is reserved for true unsprinted epic backlog, not for “wrong sprint” or “needs story follow-up” cases
 
 ### Missing Team
 
@@ -94,6 +95,7 @@ Shows epics that are already configured for the selected future sprint but whose
 Typical cases:
 - child stories exist, but none are actionable in the selected future sprint
 - stories need to be moved or completed before planning can continue
+- team, label, and epic sprint are already set, so the epic has passed the earlier planning checks
 
 ## Alert Precedence
 
@@ -106,4 +108,4 @@ An epic is routed to the first matching planning alert:
 5. Create Stories
 6. Waiting for Stories
 
-This avoids the same epic showing up in multiple planning panels at once.
+This avoids the same epic showing up in multiple planning panels at once. In practice, an epic with a filled sprint should bypass Backlog and continue into the later planning checks.

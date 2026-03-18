@@ -16,6 +16,8 @@ import {
     normalizeCohortStatus
 } from './cohort/cohortUtils.js';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics } from './backlogAlertSprintUtils.mjs';
+import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
+import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
@@ -162,7 +164,7 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
             const [groupConfigSource, setGroupConfigSource] = useState('');
             const [activeGroupId, setActiveGroupId] = useState(savedPrefsRef.current.activeGroupId ?? null);
             const [showGroupDropdown, setShowGroupDropdown] = useState(false);
-            const groupDropdownRef = useRef(null);
+            const groupDropdownRefs = useRef({ main: null, compact: null });
             const [showGroupManage, setShowGroupManage] = useState(false);
             const [groupDraft, setGroupDraft] = useState(null);
             const [groupDraftError, setGroupDraftError] = useState('');
@@ -368,10 +370,10 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
             const cohortCacheRef = useRef({});
             const burnoutChartRef = useRef(null);
             const [showTeamDropdown, setShowTeamDropdown] = useState(false);
-            const teamDropdownRef = useRef(null);
+            const teamDropdownRefs = useRef({ main: null, compact: null });
             const [sprintSearch, setSprintSearch] = useState('');
             const [showSprintDropdown, setShowSprintDropdown] = useState(false);
-            const sprintDropdownRef = useRef(null);
+            const sprintDropdownRefs = useRef({ main: null, compact: null });
             const [capacityEnabled, setCapacityEnabled] = useState(false);
             const [capacityByTeam, setCapacityByTeam] = useState({});
             const [capacityLoading, setCapacityLoading] = useState(false);
@@ -445,6 +447,7 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
             const [showDoneEpicAlert, setShowDoneEpicAlert] = useState(savedPrefsRef.current.showDoneEpicAlert ?? true);
             const [dismissedAlertKeys, setDismissedAlertKeys] = useState([]);
             const [alertCelebrationPieces, setAlertCelebrationPieces] = useState([]);
+            const [configRefreshNonce, setConfigRefreshNonce] = useState(0);
             const alertDismissedRef = useRef(false);
             const alertCelebrationTimeoutRef = useRef(null);
             const alertStabilizeFrameRef = useRef(null);
@@ -466,6 +469,9 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
             const lastLoadedSprintRef = useRef(null);
             const sprintLoadRef = useRef({ sprintId: null, product: false, tech: false });
             const readyToCloseLoadRef = useRef('');
+            const pendingConfigRefreshRef = useRef(0);
+            const configRefreshTargetRef = useRef('none');
+            const scenarioRefreshNonceRef = useRef(0);
             const abortSprintFetches = React.useCallback(() => {
                 sprintFetchControllersRef.current.forEach(controller => {
                     try {
@@ -490,6 +496,72 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
                     return nameMatch || stateLabel === query;
                 });
             }, [availableSprints, sprintSearch]);
+
+            const getActiveControlSurfaceName = () => (compactStickyVisible ? 'compact' : 'main');
+
+            const getActiveDropdownNode = (dropdownRefs) => {
+                const surface = getActiveControlSurfaceName();
+                return dropdownRefs.current[surface] || null;
+            };
+
+            const applyExclusiveDropdownState = (kind, isOpen) => {
+                const next = getNextExclusiveDropdownState(kind, isOpen);
+                setShowSprintDropdown(next.sprint);
+                setShowGroupDropdown(next.group);
+                setShowTeamDropdown(next.team);
+            };
+
+            const invalidateSprintDataForConfigSave = (refreshTarget) => {
+                if (!selectedSprint) return;
+                abortSprintFetches();
+                if (activeGroupId) {
+                    groupStateRef.current.delete(activeGroupId);
+                }
+                setTasksFetched(false);
+                setProductTasks([]);
+                setTechTasks([]);
+                setLoadedProductTasks([]);
+                setLoadedTechTasks([]);
+                setTechLoaded(false);
+                setEpicDetails({});
+                setProductEpicsInScope([]);
+                setTechEpicsInScope([]);
+                setReadyToCloseProductTasks([]);
+                setReadyToCloseTechTasks([]);
+                setReadyToCloseProductEpicsInScope([]);
+                setReadyToCloseTechEpicsInScope([]);
+                setMissingPlanningInfoTasks([]);
+                setMissingInfoEpics([]);
+                setBacklogProductEpics([]);
+                setBacklogTechEpics([]);
+                burnoutCacheRef.current = {};
+                cohortCacheRef.current = {};
+                setBurnoutData(null);
+                setBurnoutError('');
+                setBurnoutLoading(false);
+                setBurnoutTaskFilter(null);
+                setCohortData(null);
+                setCohortError('');
+                setCohortLoading(false);
+                setCohortSelectedRow(null);
+                if (refreshTarget === 'scenario') {
+                    setScenarioData(null);
+                    setScenarioError('');
+                }
+                sprintLoadRef.current = { sprintId: selectedSprint, product: false, tech: false };
+                lastLoadedSprintRef.current = null;
+                readyToCloseLoadRef.current = '';
+            };
+
+            const queueConfigSaveRefresh = (refreshTarget) => {
+                if (!selectedSprint) return;
+                configRefreshTargetRef.current = refreshTarget;
+                setConfigRefreshNonce((prev) => {
+                    const next = prev + 1;
+                    pendingConfigRefreshRef.current = next;
+                    return next;
+                });
+            };
             const firstFutureSprintId = React.useMemo(() => {
                 const future = (availableSprints || []).filter(sprint => (sprint.state || '').toLowerCase() === 'future');
                 if (!future.length) return null;
@@ -1565,6 +1637,10 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
                     }
                     const payload = await response.json();
                     const normalized = normalizeGroupsConfig(payload);
+                    const refreshTarget = getConfigSaveRefreshTarget({
+                        selectedSprint,
+                        showScenario
+                    });
 
                     // Check if the active group's team IDs changed
                     if (activeGroupId && currentTeamSignature !== null) {
@@ -1602,6 +1678,9 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
                             setUserCanEditSettings(cfg.userCanEditSettings !== false);
                         }
                     } catch (_) { /* best-effort */ }
+
+                    invalidateSprintDataForConfigSave(refreshTarget);
+                    queueConfigSaveRefresh(refreshTarget);
 
                     if (boardChanged) {
                         loadSprints(true);
@@ -3285,12 +3364,12 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
             useEffect(() => {
                 if (!selectedSprint) return;
                 if (!showSprintDropdown) return;
-                const optionEl = sprintDropdownRef.current?.querySelector(`[data-sprint-id="${selectedSprint}"]`);
+                const optionEl = getActiveDropdownNode(sprintDropdownRefs)?.querySelector(`[data-sprint-id="${selectedSprint}"]`);
                 if (!optionEl) return;
                 if (optionEl.scrollIntoView) {
                     optionEl.scrollIntoView({ block: 'center' });
                 }
-            }, [showSprintDropdown, selectedSprint, filteredSprints?.length]);
+            }, [showSprintDropdown, selectedSprint, filteredSprints?.length, compactStickyVisible]);
 
             const resetSprintScopedState = React.useCallback(() => {
                 abortSprintFetches();
@@ -3395,36 +3474,39 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
 
             useEffect(() => {
                 const handleClickOutside = (event) => {
-                    if (!teamDropdownRef.current) return;
-                    if (!teamDropdownRef.current.contains(event.target)) {
+                    const node = getActiveDropdownNode(teamDropdownRefs);
+                    if (!node) return;
+                    if (!node.contains(event.target)) {
                         setShowTeamDropdown(false);
                     }
                 };
                 document.addEventListener('mousedown', handleClickOutside);
                 return () => document.removeEventListener('mousedown', handleClickOutside);
-            }, []);
+            }, [compactStickyVisible]);
 
             useEffect(() => {
                 const handleClickOutside = (event) => {
-                    if (!sprintDropdownRef.current) return;
-                    if (!sprintDropdownRef.current.contains(event.target)) {
+                    const node = getActiveDropdownNode(sprintDropdownRefs);
+                    if (!node) return;
+                    if (!node.contains(event.target)) {
                         setShowSprintDropdown(false);
                     }
                 };
                 document.addEventListener('mousedown', handleClickOutside);
                 return () => document.removeEventListener('mousedown', handleClickOutside);
-            }, []);
+            }, [compactStickyVisible]);
 
             useEffect(() => {
                 const handleClickOutside = (event) => {
-                    if (!groupDropdownRef.current) return;
-                    if (!groupDropdownRef.current.contains(event.target)) {
+                    const node = getActiveDropdownNode(groupDropdownRefs);
+                    if (!node) return;
+                    if (!node.contains(event.target)) {
                         setShowGroupDropdown(false);
                     }
                 };
                 document.addEventListener('mousedown', handleClickOutside);
                 return () => document.removeEventListener('mousedown', handleClickOutside);
-            }, []);
+            }, [compactStickyVisible]);
 
             useEffect(() => {
                 const handle = window.setTimeout(() => {
@@ -3578,8 +3660,12 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
                     return;
                 }
 
+                const forceConfigRefresh =
+                    configRefreshNonce !== 0 &&
+                    pendingConfigRefreshRef.current === configRefreshNonce;
+
                 // Only skip loading if we have actual cached data
-                const shouldSkipLoad = activeGroupId && (() => {
+                const shouldSkipLoad = !forceConfigRefresh && activeGroupId && (() => {
                     const cached = groupStateRef.current.get(activeGroupId);
                     return cached &&
                         cached.sprintId === selectedSprint &&
@@ -3593,6 +3679,10 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
                     return;
                 }
 
+                if (forceConfigRefresh) {
+                    pendingConfigRefreshRef.current = 0;
+                }
+
                 setEpicDetails({});
                 setProductEpicsInScope([]);
                 setTechEpicsInScope([]);
@@ -3601,7 +3691,7 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
                 loadProductTasks();
                 loadTechTasks();
                 fetchMissingPlanningInfo(selectedSprint);
-            }, [selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, (activeGroup?.missingInfoComponents || []).join(',')]);
+            }, [selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, (activeGroup?.missingInfoComponents || []).join(','), configRefreshNonce]);
 
             const fetchMissingPlanningInfo = async (sprintId) => {
                 const controller = registerSprintFetch();
@@ -4297,7 +4387,29 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
                 return () => {
                     cancelled = true;
                 };
-            }, [isFutureSprintSelected, groupsLoading, activeGroupId, activeGroupTeamIds.join('|'), selectedSprint]);
+            }, [isFutureSprintSelected, groupsLoading, activeGroupId, activeGroupTeamIds.join('|'), selectedSprint, configRefreshNonce]);
+
+            useEffect(() => {
+                if (!showScenario) return;
+                if (!selectedSprint) return;
+                if (groupsLoading) return;
+                if (configRefreshTargetRef.current !== 'scenario') return;
+                if (scenarioRefreshNonceRef.current === configRefreshNonce) return;
+                if (configRefreshNonce === 0) return;
+                if (!tasksFetched || productTasksLoading || techTasksLoading) return;
+                scenarioRefreshNonceRef.current = configRefreshNonce;
+                runScenario();
+            }, [
+                showScenario,
+                selectedSprint,
+                groupsLoading,
+                configRefreshNonce,
+                tasksFetched,
+                productTasksLoading,
+                techTasksLoading,
+                activeGroupId,
+                activeGroupTeamIds.join('|')
+            ]);
 
 
             const formatPercent = (value) => `${(value * 100).toFixed(2)}%`;
@@ -9334,7 +9446,7 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
             const renderSprintControl = (surface) => (
                 <div className="control-field" data-label="Sprint">
                     <span className="control-label">Sprint</span>
-                    <div className="sprint-dropdown" ref={sprintDropdownRef}>
+                    <div className="sprint-dropdown" ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
                         <div
                             className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
                             role="button"
@@ -9342,13 +9454,13 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
                             tabIndex={sprintsLoading || availableSprints.length === 0 ? -1 : 0}
                             onClick={() => {
                                 if (sprintsLoading || availableSprints.length === 0) return;
-                                setShowSprintDropdown(!showSprintDropdown);
+                                applyExclusiveDropdownState('sprint', showSprintDropdown);
                             }}
                             onKeyDown={(event) => {
                                 if (sprintsLoading || availableSprints.length === 0) return;
                                 if (event.key === 'Enter' || event.key === ' ') {
                                     event.preventDefault();
-                                    setShowSprintDropdown(!showSprintDropdown);
+                                    applyExclusiveDropdownState('sprint', showSprintDropdown);
                                 }
                             }}
                             aria-disabled={sprintsLoading || availableSprints.length === 0}
@@ -9406,7 +9518,7 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
                     <div className="group-control">
                         <div className="control-field" data-label="Group">
                             <span className="control-label">Group</span>
-                            <div className="group-dropdown" ref={groupDropdownRef}>
+                            <div className="group-dropdown" ref={(node) => { groupDropdownRefs.current[surface] = node; }}>
                                 <div
                                     className={`group-dropdown-toggle ${showGroupDropdown ? 'open' : ''}`}
                                     role="button"
@@ -9414,13 +9526,13 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
                                     tabIndex={groupsLoading ? -1 : 0}
                                     onClick={() => {
                                         if (groupsLoading) return;
-                                        setShowGroupDropdown(!showGroupDropdown);
+                                        applyExclusiveDropdownState('group', showGroupDropdown);
                                     }}
                                     onKeyDown={(event) => {
                                         if (groupsLoading) return;
                                         if (event.key === 'Enter' || event.key === ' ') {
                                             event.preventDefault();
-                                            setShowGroupDropdown(!showGroupDropdown);
+                                            applyExclusiveDropdownState('group', showGroupDropdown);
                                         }
                                     }}
                                     aria-disabled={groupsLoading}
@@ -9469,7 +9581,7 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
             const renderTeamControl = (surface) => (
                 <div className="control-field" data-label="Teams">
                     <span className="control-label">Teams</span>
-                    <div className="team-dropdown" ref={teamDropdownRef}>
+                    <div className="team-dropdown" ref={(node) => { teamDropdownRefs.current[surface] = node; }}>
                         <div
                             className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''}`}
                             role="button"
@@ -9477,13 +9589,13 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
                             tabIndex={tasks.length === 0 && loading ? -1 : 0}
                             onClick={() => {
                                 if (tasks.length === 0 && loading) return;
-                                setShowTeamDropdown(!showTeamDropdown);
+                                applyExclusiveDropdownState('team', showTeamDropdown);
                             }}
                             onKeyDown={(event) => {
                                 if (tasks.length === 0 && loading) return;
                                 if (event.key === 'Enter' || event.key === ' ') {
                                     event.preventDefault();
-                                    setShowTeamDropdown(!showTeamDropdown);
+                                    applyExclusiveDropdownState('team', showTeamDropdown);
                                 }
                             }}
                             aria-disabled={tasks.length === 0 && loading}

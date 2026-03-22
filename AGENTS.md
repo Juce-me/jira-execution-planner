@@ -8,7 +8,7 @@
 - `tests/` holds Python unit tests.
 - `postmortem/` captures retrospectives, incidents, and misses; add learnings and follow-ups there.
 - Postmortems use `MRTXXX-short-title.md` names, numbered by creation order (oldest first) and indexed in `postmortem/README.md`.
-- Config and reference files: `requirements.txt`, `install.sh`, `.env.example`, `docs/scenario-planner-rules.md`.
+- Config and reference files: `requirements.txt`, `install.sh`, `.env.example`, `docs/features/scenario-planner.md`.
 - Keep `AGENTS.md`, `README.md`, and other contributor docs aligned with structural or workflow changes so this stays a universal development guide.
 
 ## Build, Test, and Development Commands

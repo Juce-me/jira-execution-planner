@@ -32,7 +32,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 
 ## 📖 Technical Docs
 
-- [Scenario Planner Rules](docs/scenario-planner-rules.md)
+- Scenario Planner technical rules are included in [Scenario Planner](docs/features/scenario-planner.md)
 
 ## 📋 Files
 
@@ -40,7 +40,6 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - `jira-dashboard.html` - Frontend dashboard page
 - `frontend/` - Frontend source (`src/`) and compiled bundle (`dist/`)
 - `docs/features/` - User-facing feature guides for alerts, statistics, and scenario planning
-- `docs/scenario-planner-rules.md` - Technical scenario-planner invariants and scheduling rules
 - `.env.example` - Template for environment variables
 - `.gitignore` - Git ignore file (keeps secrets safe)
 - `requirements.txt` - Python dependencies

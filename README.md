@@ -30,12 +30,17 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - [Statistics](docs/features/statistics.md)
 - [Scenario Planner](docs/features/scenario-planner.md)
 
+## 📖 Technical Docs
+
+- [Scenario Planner Rules](docs/scenario-planner-rules.md)
+
 ## 📋 Files
 
 - `jira_server.py` - Python Flask backend server
 - `jira-dashboard.html` - Frontend dashboard page
 - `frontend/` - Frontend source (`src/`) and compiled bundle (`dist/`)
 - `docs/features/` - User-facing feature guides for alerts, statistics, and scenario planning
+- `docs/scenario-planner-rules.md` - Technical scenario-planner invariants and scheduling rules
 - `.env.example` - Template for environment variables
 - `.gitignore` - Git ignore file (keeps secrets safe)
 - `requirements.txt` - Python dependencies

@@ -1,11 +1,7 @@
 # TODO
 
-## Active Development Branch
-- Scenario planner improvement planning branch: `plan/scenario-planner-improvements`
-
-## Functional Priorities (Next)
+## Now
 - Scenario planner: implement editable timeline with Jira date sync + rollback history
-  - Detailed plan: `scenario_planner_improvement_plan.md`
   - Include saved scenarios per sprint + team/group so users can return later.
   - Prioritize scenario history + rollback before any Jira write-back.
   - Excluded-capacity visualization rule:
@@ -25,16 +21,11 @@
 - Statistics feature: sprint burnout rate by team
   - Add per-sprint burnout chart showing how tasks are closed during the sprint for each team.
   - Visualization requirement: stacked segments by status (`Killed`, `Done`, `Incomplete`) from top to bottom for each team over sprint time.
+
+## Later
 - Bulk actions UI for planning workflows
 - Dependency graph visualization
 - Notifications / changelog for users
-
-## Tool-for-all Phase (Multi-user / SSO)
-- Azure AD (Microsoft SSO) OIDC login + authenticated API sessions
-- Per-user config storage (DB-backed) with company defaults
-- Jira user OAuth (3LO) or explicit admin-service-account fallback policy
-- Multi-tenant caching + rate limits
-- Hosted deployment plan (Docker/VM/PaaS) with HTTPS, secrets, audit logging
 
 ## Config Migration (Env -> UI/Admin)
 - Alerts configuration in UI/admin settings
@@ -43,14 +34,14 @@
   - Access model: config tabs/settings admin-only; group config remains editable for non-admin users
 - Keep per-user panel show/hide toggles in local UI prefs
 
-## Recently Completed (Keep for traceability)
-- ✅ Replace `print()` with structured logging
-- ✅ Add retry + circuit breaker for Jira requests
-- ✅ Extract CSS from HTML shell
-- ✅ `JIRA_BOARD_ID` config moved into UI/admin flow with API support
-- ✅ `STATS_PRIORITY_WEIGHTS` settings tab implemented
+## Multi-user / SSO
+- Azure AD (Microsoft SSO) OIDC login + authenticated API sessions
+- Per-user config storage (DB-backed) with company defaults
+- Jira user OAuth (3LO) or explicit admin-service-account fallback policy
+- Multi-tenant caching + rate limits
+- Hosted deployment plan (Docker/VM/PaaS) with HTTPS, secrets, audit logging
 
-## RICE Backlog (Active)
+## Backlog Candidates
 
 RICE = (Reach x Impact x Confidence) / Effort
 - Reach: % of user sessions affected (1-10)
@@ -82,6 +73,6 @@ RICE = (Reach x Impact x Confidence) / Effort
 Quick wins (RICE > 4, effort <= 1 week): #7, #8, #11, #12
 High-value features (RICE > 4, effort > 1 week): #5, #6
 
-## Low Priority / Low Value / Low Impact
+## Deferred
 - Export improvements (CSV/PDF) — defer until core planning workflows are stable.
 - Scenario planner `Publish to Jira` (write start/end dates back to Jira) — parked until draft/history/rollback flow is stable.

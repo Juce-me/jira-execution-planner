@@ -197,38 +197,38 @@ const scenarioTimelineIssues = scenarioIssues.filter(issue =>
 ## Test Coverage
 
 See `tests/test_scheduler_product_33712_active_sprint.py`:
-- ✅ Non-done tasks anchor to TODAY
-- ✅ Done tasks stay at sprint start
-- ✅ All scheduled issues have valid dates (no None)
-- ✅ Dependencies are respected
-- ✅ "Accepted" status treated as TODO
+- Non-done tasks anchor to TODAY
+- Done tasks stay at sprint start
+- All scheduled issues have valid dates (no None)
+- Dependencies are respected
+- "Accepted" status treated as TODO
 
 See `tests/test_date_parsing.py`:
-- ✅ YYYY-MM-DD parsing without timezone shift
+- YYYY-MM-DD parsing without timezone shift
 
 ---
 
 ## Common Pitfalls
 
-### ❌ DON'T: Use raw Jira dates for bar positioning
+### Don't: Use raw Jira dates for bar positioning
 ```javascript
 // WRONG: Raw Jira dates ignore scheduler logic
 const start = new Date(issue.fields.created);
 ```
 
-### ✅ DO: Use scheduled dates from API
+### Do: Use scheduled dates from API
 ```javascript
 // CORRECT: Use scheduled dates from /api/scenario
 const start = parseScenarioDate(issue.start);
 ```
 
-### ❌ DON'T: Assume all issues have start/end dates
+### Don't: Assume all issues have start/end dates
 ```javascript
 // WRONG: Unscheduled issues have null dates
 const xStart = (issue.start - viewStart) / totalMs * width;  // Error if issue.start is null
 ```
 
-### ✅ DO: Check for null dates and handle unscheduled issues
+### Do: Check for null dates and handle unscheduled issues
 ```javascript
 // CORRECT: Check and handle unscheduled
 if (!issue.start || !issue.end) {
@@ -238,7 +238,7 @@ if (!issue.start || !issue.end) {
 const start = parseScenarioDate(issue.start);
 ```
 
-### ❌ DON'T: Render edges when endpoints are missing
+### Don't: Render edges when endpoints are missing
 ```javascript
 // WRONG: May point to wrong coordinates
 const fromRect = visibleRects.get(edge.from);
@@ -246,7 +246,7 @@ const toRect = visibleRects.get(edge.to);
 const path = `M ${fromRect.x} ${fromRect.y} L ${toRect.x} ${toRect.y}`;  // Crash if null
 ```
 
-### ✅ DO: Skip edges when endpoints are missing
+### Do: Skip edges when endpoints are missing
 ```javascript
 // CORRECT: Guard against missing rects
 const fromRect = visibleRects.get(edge.from) || getFallbackRect(edge.from);
@@ -257,39 +257,3 @@ if (!fromRect || !toRect) return;  // Skip edge
 ---
 
 ## Debugging Tips
-
-### Check if backend is anchoring correctly
-```bash
-# Run backend tests
-python3 -m unittest tests.test_scheduler_product_33712_active_sprint -v
-
-# Expected: All non-done tasks have start_date >= TODAY
-```
-
-### Check if frontend is using scheduled dates
-```javascript
-// In browser console, inspect API response
-const response = await fetch('/api/scenario', {method: 'POST', ...});
-const data = await response.json();
-console.log(data.issues.filter(i => i.status === 'Accepted'));
-// Expected: All Accepted issues have start >= config.start_date (or TODAY if Active Sprint)
-```
-
-### Check if edges are rendering correctly
-```javascript
-// In browser console, check edge paths
-const edges = scenarioEdgeRender.paths;
-console.log(edges.filter(e => !e.d || e.d.includes('NaN')));
-// Expected: Empty array (no invalid paths)
-```
-
----
-
-## Related Files
-
-- `planning/scheduler.py` - Backend scheduling logic
-- `planning/models.py` - Data models (ScheduledIssue, ScenarioConfig)
-- `jira_server.py` - /api/scenario endpoint
-- `frontend/src/dashboard.jsx` - Timeline rendering + edges
-- `tests/test_scheduler_product_33712_active_sprint.py` - Scheduler tests
-- `tests/test_date_parsing.py` - Date parsing tests

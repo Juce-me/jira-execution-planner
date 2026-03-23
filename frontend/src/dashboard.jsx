@@ -18,6 +18,7 @@ import {
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics } from './backlogAlertSprintUtils.mjs';
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
+import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
 
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
@@ -8857,6 +8858,23 @@ import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
                     .filter(([teamId, label]) => teamId && label);
                 return Object.fromEntries(entries);
             }, [activeGroupTeamLabels]);
+            const getFuturePlanningTeamInfo = React.useCallback((epic) => {
+                const fallbackSelectedTeamName = selectedTeamSet.size === 1
+                    ? (teamNameById.get(Array.from(selectedTeamSet)[0]) || '')
+                    : '';
+                return getFuturePlanningEpicTeamInfo(epic, {
+                    selectedTeamSet,
+                    teamLabels: normalizedActiveGroupTeamLabels,
+                    resolveTeamName,
+                    fallbackSelectedTeamName
+                });
+            }, [selectedTeamSet, normalizedActiveGroupTeamLabels, resolveTeamName, teamNameById]);
+            const getFuturePlanningTeamLabel = React.useCallback((epic) => {
+                return getFuturePlanningExpectedTeamLabel(epic, {
+                    selectedTeamSet,
+                    teamLabels: normalizedActiveGroupTeamLabels
+                });
+            }, [selectedTeamSet, normalizedActiveGroupTeamLabels]);
             const storiesByEpicKey = React.useMemo(() => {
                 const map = new Map();
                 tasks.forEach((task) => {
@@ -8886,10 +8904,14 @@ import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
                     if (dismissedAlertSet.has(epic.key)) return false;
                     const status = normalizeStatus(epic.status?.name);
                     if (!status || status === 'done' || status === 'killed' || status === 'incomplete') return false;
-                    if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
+                    if (!epicMatchesFuturePlanningTeamSelection(epic, {
+                        isAllTeamsSelected,
+                        selectedTeamSet,
+                        teamLabels: normalizedActiveGroupTeamLabels
+                    })) return false;
                     return true;
                 });
-            }, [epicsInScope, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet]);
+            }, [epicsInScope, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, normalizedActiveGroupTeamLabels]);
             const backlogEpics = React.useMemo(() => {
                 if (!isFutureSprintSelected) return [];
                 const seen = new Set();
@@ -8899,12 +8921,16 @@ import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
                     if (!epic?.key || seen.has(epic.key)) return false;
                     seen.add(epic.key);
                     if (dismissedAlertSet.has(epic.key)) return false;
-                    if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
+                    if (!epicMatchesFuturePlanningTeamSelection(epic, {
+                        isAllTeamsSelected,
+                        selectedTeamSet,
+                        teamLabels: normalizedActiveGroupTeamLabels
+                    })) return false;
                     const status = normalizeStatus(epic.status?.name);
                     if (!status || status === 'done' || status === 'killed' || status === 'incomplete') return false;
                     return true;
                 });
-            }, [isFutureSprintSelected, backlogProductEpics, backlogTechEpics, planningCandidateEpics, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet]);
+            }, [isFutureSprintSelected, backlogProductEpics, backlogTechEpics, planningCandidateEpics, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, normalizedActiveGroupTeamLabels]);
             const backlogEpicKeySet = React.useMemo(
                 () => new Set(backlogEpics.map(epic => epic.key).filter(Boolean)),
                 [backlogEpics]
@@ -8927,10 +8953,10 @@ import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
                 return planningCandidateEpics.filter((epic) => {
                     if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key)) return false;
                     if (!epicMatchesPlanningSprintValue(epic)) return false;
-                    const teamLabel = normalizedActiveGroupTeamLabels[epic.teamId] || '';
+                    const teamLabel = getFuturePlanningTeamLabel(epic);
                     return !teamLabel || !epicHasLabel(epic, teamLabel);
                 });
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, normalizedActiveGroupTeamLabels, epicMatchesPlanningSprintValue, epicHasLabel]);
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, getFuturePlanningTeamLabel, epicMatchesPlanningSprintValue, epicHasLabel]);
             const missingLabelEpicKeySet = React.useMemo(
                 () => new Set(missingLabelEpics.map(epic => epic.key).filter(Boolean)),
                 [missingLabelEpics]
@@ -8939,7 +8965,7 @@ import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
                 if (!isFutureSprintSelected) return [];
                 return planningCandidateEpics.filter((epic) => {
                     if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key) || missingLabelEpicKeySet.has(epic.key)) return false;
-                    const teamLabel = normalizedActiveGroupTeamLabels[epic.teamId] || '';
+                    const teamLabel = getFuturePlanningTeamLabel(epic);
                     if (!teamLabel || !epicMatchesPlanningSprintValue(epic) || !epicHasLabel(epic, teamLabel)) return false;
                     const epicStories = storiesByEpicKey.get(epic.key) || [];
                     if (epicStories.length === 0) return true;
@@ -8948,7 +8974,7 @@ import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
                         return status === 'done' || status === 'killed' || status === 'incomplete';
                     });
                 });
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, normalizedActiveGroupTeamLabels, epicMatchesPlanningSprintValue, epicHasLabel, storiesByEpicKey]);
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, getFuturePlanningTeamLabel, epicMatchesPlanningSprintValue, epicHasLabel, storiesByEpicKey]);
             const createStoriesEpicKeySet = React.useMemo(
                 () => new Set(createStoriesEpics.map(epic => epic.key).filter(Boolean)),
                 [createStoriesEpics]
@@ -9146,7 +9172,7 @@ import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
                     if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key) || missingLabelEpicKeySet.has(epic.key) || createStoriesEpicKeySet.has(epic.key)) {
                         return false;
                     }
-                    const teamLabel = normalizedActiveGroupTeamLabels[epic.teamId] || '';
+                    const teamLabel = getFuturePlanningTeamLabel(epic);
                     if (!teamLabel || !epicMatchesPlanningSprintValue(epic) || !epicHasLabel(epic, teamLabel)) return false;
                     const epicStories = storiesByEpicKey.get(epic.key) || [];
                     if (epicStories.length === 0) return false;
@@ -9161,7 +9187,7 @@ import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
                         return isTaskInSelectedSprint(task);
                     });
                 });
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, createStoriesEpicKeySet, normalizedActiveGroupTeamLabels, epicMatchesPlanningSprintValue, epicHasLabel, storiesByEpicKey]);
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, createStoriesEpicKeySet, getFuturePlanningTeamLabel, epicMatchesPlanningSprintValue, epicHasLabel, storiesByEpicKey]);
             const waitingForStoriesEpics = React.useMemo(() => {
                 if (isFutureSprintSelected) {
                     return waitingForStoriesFutureEpics;
@@ -9176,11 +9202,11 @@ import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
                 return merged;
             }, [isFutureSprintSelected, waitingForStoriesFutureEpics, analysisWaitingEpics, postponedEmptyEpics]);
 
-            const analysisEpicTeams = groupAlertsByTeam(waitingForStoriesEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const backlogEpicTeams = groupAlertsByTeam(backlogEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const analysisEpicTeams = groupAlertsByTeam(waitingForStoriesEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfo(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const backlogEpicTeams = groupAlertsByTeam(backlogEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfo(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const missingTeamEpicTeams = groupAlertsByTeam(missingTeamEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const missingLabelEpicTeams = groupAlertsByTeam(missingLabelEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const createStoriesEpicTeams = groupAlertsByTeam(createStoriesEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const missingLabelEpicTeams = groupAlertsByTeam(missingLabelEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfo(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const createStoriesEpicTeams = groupAlertsByTeam(createStoriesEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfo(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
 
             const missingAlertKeySet = React.useMemo(
                 () => new Set(consolidatedMissingStories.map(item => item.task?.key).filter(Boolean)),

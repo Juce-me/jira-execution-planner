@@ -110,11 +110,12 @@ Follow this checklist for ALL work in this repo. No exceptions.
 4. Make atomic commits with honest messages describing ONLY what actually changed
 5. Never claim a performance improvement without showing before/after measurements
 6. After every 2-3 commits, run `git pull --rebase` to stay synced
+7. Run `git add` and `git commit` sequentially, never in parallel. Verify staged files with `git status --short` before committing.
 
 ### POST-WORK
-7. Run the full test suite (`python3 -m unittest discover -s tests`) before final push
-8. Run `git log --oneline -5` and show the user the commits for review
-9. Only push after the user explicitly confirms
+8. Run the full test suite (`python3 -m unittest discover -s tests`) before final push
+9. Run `git log --oneline -5` and show the user the commits for review
+10. Only push after the user explicitly confirms
 
 ## Skill Overrides
 - Do not use the `using-git-worktrees` skill in this repository unless the user explicitly asks for a worktree.

@@ -19,6 +19,7 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
+import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
@@ -4685,23 +4686,20 @@ import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, 
             useEffect(() => {
                 if (!activeGroupId) return;
                 if (groupsLoading) return;
-                if (!activeGroupTeamIds.length) {
-                    if (!selectedTeams.includes('all')) {
-                        setSelectedTeams(['all']);
-                    }
-                    return;
-                }
                 setSelectedTeams(prev => {
-                    const normalized = normalizeSelectedTeams(prev);
-                    if (normalized.includes('all')) return ['all'];
-                    const filtered = normalized.filter(id => activeGroupTeamSet.has(id));
-                    if (!filtered.length) return ['all'];
-                    if (filtered.length === normalized.length && filtered.every((id, idx) => id === normalized[idx])) {
+                    const next = sanitizeSelectedTeamsForScope(prev, {
+                        activeGroupTeamIds,
+                        availableTeamIds: teamOptions
+                            .map(team => team.id)
+                            .filter(id => id && id !== 'all')
+                    });
+                    const normalizedPrev = normalizeSelectedTeams(prev);
+                    if (next.length === normalizedPrev.length && next.every((id, idx) => id === normalizedPrev[idx])) {
                         return prev;
                     }
-                    return filtered;
+                    return next;
                 });
-            }, [activeGroupId, activeGroupTeamIds.join('|'), groupsLoading]);
+            }, [activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, teamOptions]);
 
             const selectedTeamsLabel = React.useMemo(() => {
                 if (isAllTeamsSelected) return 'All Teams';

@@ -8864,7 +8864,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     selectedTeamSet,
                     teamLabels: normalizedActiveGroupTeamLabels,
                     resolveTeamName,
-                    fallbackSelectedTeamName
+                    fallbackSelectedTeamName,
+                    teamNameById
                 });
             }, [selectedTeamSet, normalizedActiveGroupTeamLabels, resolveTeamName, teamNameById]);
             const getFuturePlanningTeamLabel = React.useCallback((epic) => {

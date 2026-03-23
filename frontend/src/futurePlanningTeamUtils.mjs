@@ -27,15 +27,27 @@ function getMatchedPlanningTeamIds(epic, teamLabels) {
         .filter(Boolean);
 }
 
-export function getFuturePlanningEpicTeamInfo(epic, { selectedTeamSet, teamLabels = {}, resolveTeamName, fallbackSelectedTeamName = '' } = {}) {
+export function getFuturePlanningEpicTeamInfo(epic, { selectedTeamSet, teamLabels = {}, resolveTeamName, fallbackSelectedTeamName = '', teamNameById } = {}) {
     const rawTeam = getRawEpicTeamInfo(epic);
     const matchedTeamIds = getMatchedPlanningTeamIds(epic, teamLabels);
     const selectedTeamId = getSingleSelectedTeamId(selectedTeamSet);
+    const lookupTeamName = (teamId) => {
+        const normalized = String(teamId || '').trim();
+        if (!normalized) return '';
+        if (teamNameById instanceof Map && teamNameById.has(normalized)) {
+            return String(teamNameById.get(normalized) || '').trim();
+        }
+        if (teamNameById && typeof teamNameById === 'object' && teamNameById[normalized]) {
+            return String(teamNameById[normalized] || '').trim();
+        }
+        if (typeof resolveTeamName === 'function') {
+            return String(resolveTeamName(normalized) || '').trim();
+        }
+        return normalized;
+    };
 
     if (selectedTeamId) {
-        const selectedTeamName = typeof resolveTeamName === 'function'
-            ? resolveTeamName(selectedTeamId)
-            : selectedTeamId;
+        const selectedTeamName = lookupTeamName(selectedTeamId);
         return {
             id: selectedTeamId,
             name: (selectedTeamName && selectedTeamName !== selectedTeamId)
@@ -50,9 +62,7 @@ export function getFuturePlanningEpicTeamInfo(epic, { selectedTeamSet, teamLabel
 
     if (matchedTeamIds.length === 1) {
         const matchedTeamId = matchedTeamIds[0];
-        const matchedTeamName = typeof resolveTeamName === 'function'
-            ? resolveTeamName(matchedTeamId)
-            : matchedTeamId;
+        const matchedTeamName = lookupTeamName(matchedTeamId);
         return {
             id: matchedTeamId,
             name: matchedTeamName || matchedTeamId

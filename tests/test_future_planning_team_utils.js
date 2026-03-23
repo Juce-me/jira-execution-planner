@@ -133,3 +133,30 @@ test('future planning team info uses fallback selected team name when lookup mis
         );
     });
 });
+
+test('future planning team info uses provided team name map for matched team ids', () => {
+    return import('../frontend/src/futurePlanningTeamUtils.mjs').then(({
+        getFuturePlanningEpicTeamInfo
+    }) => {
+        const epic = {
+            key: 'PRODUCT-103',
+            teamId: 'product-team',
+            teamName: 'Product - BidSwitch',
+            labels: ['2026Q2', 'rnd_bsw_adlightning']
+        };
+
+        assert.deepEqual(
+            getFuturePlanningEpicTeamInfo(epic, {
+                selectedTeamSet: new Set(['product-team', 'adlightning-team']),
+                teamLabels: {
+                    'adlightning-team': 'rnd_bsw_adlightning'
+                },
+                resolveTeamName: (teamId) => teamId,
+                teamNameById: new Map([
+                    ['adlightning-team', 'AdLightning']
+                ])
+            }),
+            { id: 'adlightning-team', name: 'AdLightning' }
+        );
+    });
+});

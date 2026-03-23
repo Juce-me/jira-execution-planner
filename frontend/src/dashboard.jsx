@@ -12439,32 +12439,43 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     <div className="alert-chip">{backlogEpics.length} {backlogEpics.length === 1 ? 'epic' : 'epics'}</div>
                                                 </div>
                                                 <div className={`alert-card-body ${showBacklogAlert ? '' : 'collapsed'}`}>
-                                                    {backlogEpicTeams.map(group => (
-                                                        <div key={`backlog-${group.id}`} className="alert-team-group">
-                                                            <div className="alert-team-header">
-                                                                <div className="alert-team-title">
-                                                                    <span className="alert-pill team">{group.name}</span>
-                                                                    <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                    {backlogEpicTeams.map(group => {
+                                                        const keys = group.items.map(item => item.key);
+                                                        const teamLink = buildKeyListLink(keys);
+                                                        return (
+                                                            <div key={`backlog-${group.id}`} className="alert-team-group">
+                                                                <div className="alert-team-header">
+                                                                    {teamLink ? (
+                                                                        <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                        </a>
+                                                                    ) : (
+                                                                        <div className="alert-team-title">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <div className="alert-stories">
+                                                                    {group.items.map(epic => (
+                                                                        <div key={epic.key} className="alert-story">
+                                                                            <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
+                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>
+                                                                                    {epic.key} · {epic.summary}
+                                                                                </a>
+                                                                                <div className="alert-story-note">
+                                                                                    {epic.cleanupStoryCount > 0 ? `${epic.cleanupStoryCount} child stor${epic.cleanupStoryCount === 1 ? 'y is' : 'ies are'} still sprinted.` : 'No sprinted child stories to clean up.'}
+                                                                                </div>
+                                                                            </div>
+                                                                            <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer">Clean backlog stories →</a>
+                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
+                                                                        </div>
+                                                                    ))}
                                                                 </div>
                                                             </div>
-                                                            <div className="alert-stories">
-                                                                {group.items.map(epic => (
-                                                                    <div key={epic.key} className="alert-story">
-                                                                        <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
-                                                                            <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>
-                                                                                {epic.key} · {epic.summary}
-                                                                            </a>
-                                                                            <div className="alert-story-note">
-                                                                                {epic.cleanupStoryCount > 0 ? `${epic.cleanupStoryCount} child stor${epic.cleanupStoryCount === 1 ? 'y is' : 'ies are'} still sprinted.` : 'No sprinted child stories to clean up.'}
-                                                                            </div>
-                                                                        </div>
-                                                                        <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer">Clean backlog stories →</a>
-                                                                        <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         )}
@@ -12485,22 +12496,38 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     <div className="alert-chip">{missingTeamEpics.length} {missingTeamEpics.length === 1 ? 'epic' : 'epics'}</div>
                                                 </div>
                                                 <div className={`alert-card-body ${showMissingTeamAlert ? '' : 'collapsed'}`}>
-                                                    {missingTeamEpicTeams.map(group => (
-                                                        <div key={`missing-team-${group.id}`} className="alert-team-group">
-                                                            <div className="alert-team-header"><div className="alert-team-title"><span className="alert-pill team">{group.name}</span><span>{group.items.length} epics</span></div></div>
-                                                            <div className="alert-stories">
-                                                                {group.items.map(epic => (
-                                                                    <div key={epic.key} className="alert-story">
-                                                                        <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
-                                                                            <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
-                                                                            <div className="alert-story-note">Add the Jira Team field before planning labels can be applied.</div>
+                                                    {missingTeamEpicTeams.map(group => {
+                                                        const keys = group.items.map(item => item.key);
+                                                        const teamLink = buildKeyListLink(keys);
+                                                        return (
+                                                            <div key={`missing-team-${group.id}`} className="alert-team-group">
+                                                                <div className="alert-team-header">
+                                                                    {teamLink ? (
+                                                                        <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                        </a>
+                                                                    ) : (
+                                                                        <div className="alert-team-title">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
                                                                         </div>
-                                                                        <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
-                                                                    </div>
-                                                                ))}
+                                                                    )}
+                                                                </div>
+                                                                <div className="alert-stories">
+                                                                    {group.items.map(epic => (
+                                                                        <div key={epic.key} className="alert-story">
+                                                                            <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
+                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
+                                                                                <div className="alert-story-note">Add the Jira Team field before planning labels can be applied.</div>
+                                                                            </div>
+                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         )}
@@ -12521,22 +12548,38 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     <div className="alert-chip">{missingLabelEpics.length} {missingLabelEpics.length === 1 ? 'epic' : 'epics'}</div>
                                                 </div>
                                                 <div className={`alert-card-body ${showMissingLabelsAlert ? '' : 'collapsed'}`}>
-                                                    {missingLabelEpicTeams.map(group => (
-                                                        <div key={`missing-labels-${group.id}`} className="alert-team-group">
-                                                            <div className="alert-team-header"><div className="alert-team-title"><span className="alert-pill team">{group.name}</span><span>{group.items.length} epics</span></div></div>
-                                                            <div className="alert-stories">
-                                                                {group.items.map(epic => (
-                                                                    <div key={epic.key} className="alert-story">
-                                                                        <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
-                                                                            <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
-                                                                            <div className="alert-story-note">Add the selected sprint label and the mapped team label on the epic.</div>
+                                                    {missingLabelEpicTeams.map(group => {
+                                                        const keys = group.items.map(item => item.key);
+                                                        const teamLink = buildKeyListLink(keys);
+                                                        return (
+                                                            <div key={`missing-labels-${group.id}`} className="alert-team-group">
+                                                                <div className="alert-team-header">
+                                                                    {teamLink ? (
+                                                                        <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                        </a>
+                                                                    ) : (
+                                                                        <div className="alert-team-title">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
                                                                         </div>
-                                                                        <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
-                                                                    </div>
-                                                                ))}
+                                                                    )}
+                                                                </div>
+                                                                <div className="alert-stories">
+                                                                    {group.items.map(epic => (
+                                                                        <div key={epic.key} className="alert-story">
+                                                                            <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
+                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
+                                                                                <div className="alert-story-note">Add the selected sprint label and the mapped team label on the epic.</div>
+                                                                            </div>
+                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         )}
@@ -12557,23 +12600,39 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     <div className="alert-chip">{createStoriesEpics.length} {createStoriesEpics.length === 1 ? 'epic' : 'epics'}</div>
                                                 </div>
                                                 <div className={`alert-card-body ${showCreateStoriesAlert ? '' : 'collapsed'}`}>
-                                                    {createStoriesEpicTeams.map(group => (
-                                                        <div key={`create-stories-${group.id}`} className="alert-team-group">
-                                                            <div className="alert-team-header"><div className="alert-team-title"><span className="alert-pill team">{group.name}</span><span>{group.items.length} epics</span></div></div>
-                                                            <div className="alert-stories">
-                                                                {group.items.map(epic => (
-                                                                    <div key={epic.key} className="alert-story">
-                                                                        <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
-                                                                            <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
-                                                                            <div className="alert-story-note">Create the planned stories for the selected future sprint.</div>
+                                                    {createStoriesEpicTeams.map(group => {
+                                                        const keys = group.items.map(item => item.key);
+                                                        const teamLink = buildKeyListLink(keys);
+                                                        return (
+                                                            <div key={`create-stories-${group.id}`} className="alert-team-group">
+                                                                <div className="alert-team-header">
+                                                                    {teamLink ? (
+                                                                        <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
+                                                                        </a>
+                                                                    ) : (
+                                                                        <div className="alert-team-title">
+                                                                            <span className="alert-pill team">{group.name}</span>
+                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
                                                                         </div>
-                                                                        <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer">Open epic →</a>
-                                                                        <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
-                                                                    </div>
-                                                                ))}
+                                                                    )}
+                                                                </div>
+                                                                <div className="alert-stories">
+                                                                    {group.items.map(epic => (
+                                                                        <div key={epic.key} className="alert-story">
+                                                                            <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
+                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
+                                                                                <div className="alert-story-note">Create the planned stories for the selected future sprint.</div>
+                                                                            </div>
+                                                                            <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer">Open epic →</a>
+                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         )}

@@ -101,21 +101,27 @@ python3 -m unittest discover -s tests
 ## Git Workflow Protocol
 Follow this checklist for ALL work in this repo. No exceptions.
 
+- Never implement bugfixes, improvements, or feature work directly on `main`.
+- Every bugfix or improvement must start on its own dedicated branch. Do not reuse `main` for active development.
+- If you are currently on `main`, create and switch to a new branch before making any code or documentation changes.
+- Use the `codex/` branch prefix by default unless the user explicitly requests a different naming convention.
+
 ### PRE-FLIGHT (before any code changes)
 1. Run `git status` and `git branch` — confirm clean working tree and correct branch
 2. Run `git pull origin $(git branch --show-current)` — always sync first
-3. Test SSH connectivity: `ssh -T git@github.com` — if it fails, STOP and give the user the fix command to paste. Do NOT attempt to fix SSH yourself.
+3. If `git branch --show-current` returns `main`, STOP and create/switch to a dedicated working branch before changing files
+4. Test SSH connectivity: `ssh -T git@github.com` — if it fails, STOP and give the user the fix command to paste. Do NOT attempt to fix SSH yourself.
 
 ### DURING WORK
-4. Make atomic commits with honest messages describing ONLY what actually changed
-5. Never claim a performance improvement without showing before/after measurements
-6. After every 2-3 commits, run `git pull --rebase` to stay synced
-7. Run `git add` and `git commit` sequentially, never in parallel. Verify staged files with `git status --short` before committing.
+5. Make atomic commits with honest messages describing ONLY what actually changed
+6. Never claim a performance improvement without showing before/after measurements
+7. After every 2-3 commits, run `git pull --rebase` to stay synced
+8. Run `git add` and `git commit` sequentially, never in parallel. Verify staged files with `git status --short` before committing.
 
 ### POST-WORK
-8. Run the full test suite (`python3 -m unittest discover -s tests`) before final push
-9. Run `git log --oneline -5` and show the user the commits for review
-10. Only push after the user explicitly confirms
+9. Run the full test suite (`python3 -m unittest discover -s tests`) before final push
+10. Run `git log --oneline -5` and show the user the commits for review
+11. Only push after the user explicitly confirms
 
 ## Skill Overrides
 - Do not use the `using-git-worktrees` skill in this repository unless the user explicitly asks for a worktree.

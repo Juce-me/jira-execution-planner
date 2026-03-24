@@ -7,14 +7,14 @@ test('future planning team selection can match by configured team label', () => 
         getFuturePlanningEpicTeamInfo
     }) => {
         const epic = {
-            key: 'PRODUCT-34931',
-            teamId: 'product-team',
-            teamName: 'Product - BidSwitch',
-            labels: ['2026Q2', 'rnd_bsw_perimeter']
+            key: 'EPIC-201',
+            teamId: 'jira-team-alpha',
+            teamName: 'Synthetic Jira Team Alpha',
+            labels: ['FUTURE_SPRINT_1', 'team_alpha_label']
         };
-        const selectedTeamSet = new Set(['perimeter-team']);
+        const selectedTeamSet = new Set(['planning-team-alpha']);
         const teamLabels = {
-            'perimeter-team': 'rnd_bsw_perimeter'
+            'planning-team-alpha': 'team_alpha_label'
         };
 
         assert.equal(
@@ -30,10 +30,10 @@ test('future planning team selection can match by configured team label', () => 
             getFuturePlanningEpicTeamInfo(epic, {
                 teamLabels,
                 resolveTeamName: (teamId) => ({
-                    'perimeter-team': 'R&D Perimeter'
+                    'planning-team-alpha': 'Planning Team Alpha'
                 }[teamId] || teamId)
             }),
-            { id: 'perimeter-team', name: 'R&D Perimeter' }
+            { id: 'planning-team-alpha', name: 'Planning Team Alpha' }
         );
     });
 });
@@ -45,14 +45,14 @@ test('future planning team info falls back to jira team when no label mapping ma
         getFuturePlanningExpectedTeamLabel
     }) => {
         const epic = {
-            key: 'PRODUCT-100',
-            teamId: 'product-team',
-            teamName: 'Product - BidSwitch',
-            labels: ['2026Q2']
+            key: 'EPIC-202',
+            teamId: 'jira-team-beta',
+            teamName: 'Synthetic Jira Team Beta',
+            labels: ['FUTURE_SPRINT_1']
         };
-        const selectedTeamSet = new Set(['perimeter-team']);
+        const selectedTeamSet = new Set(['planning-team-alpha']);
         const teamLabels = {
-            'perimeter-team': 'rnd_bsw_perimeter'
+            'planning-team-alpha': 'team_alpha_label'
         };
 
         assert.equal(
@@ -69,7 +69,7 @@ test('future planning team info falls back to jira team when no label mapping ma
                 teamLabels,
                 resolveTeamName: (teamId) => teamId
             }),
-            { id: 'product-team', name: 'Product - BidSwitch' }
+            { id: 'jira-team-beta', name: 'Synthetic Jira Team Beta' }
         );
 
         assert.equal(
@@ -77,7 +77,7 @@ test('future planning team info falls back to jira team when no label mapping ma
                 selectedTeamSet,
                 teamLabels
             }),
-            'rnd_bsw_perimeter'
+            'team_alpha_label'
         );
     });
 });
@@ -87,14 +87,14 @@ test('future planning team info follows the single selected planning team', () =
         getFuturePlanningEpicTeamInfo
     }) => {
         const epic = {
-            key: 'PRODUCT-101',
-            teamId: 'product-team',
-            teamName: 'Product - BidSwitch',
-            labels: ['2026Q2']
+            key: 'EPIC-203',
+            teamId: 'jira-team-beta',
+            teamName: 'Synthetic Jira Team Beta',
+            labels: ['FUTURE_SPRINT_1']
         };
-        const selectedTeamSet = new Set(['perimeter-team']);
+        const selectedTeamSet = new Set(['planning-team-alpha']);
         const teamLabels = {
-            'perimeter-team': 'rnd_bsw_perimeter'
+            'planning-team-alpha': 'team_alpha_label'
         };
 
         assert.deepEqual(
@@ -102,10 +102,10 @@ test('future planning team info follows the single selected planning team', () =
                 selectedTeamSet,
                 teamLabels,
                 resolveTeamName: (teamId) => ({
-                    'perimeter-team': 'R&D Perimeter'
+                    'planning-team-alpha': 'Planning Team Alpha'
                 }[teamId] || teamId)
             }),
-            { id: 'perimeter-team', name: 'R&D Perimeter' }
+            { id: 'planning-team-alpha', name: 'Planning Team Alpha' }
         );
     });
 });
@@ -115,21 +115,21 @@ test('future planning team info uses fallback selected team name when lookup mis
         getFuturePlanningEpicTeamInfo
     }) => {
         const epic = {
-            key: 'PRODUCT-102',
-            teamId: 'product-team',
-            teamName: 'Product - BidSwitch',
-            labels: ['2026Q2']
+            key: 'EPIC-204',
+            teamId: 'jira-team-beta',
+            teamName: 'Synthetic Jira Team Beta',
+            labels: ['FUTURE_SPRINT_1']
         };
-        const selectedTeamSet = new Set(['perimeter-team']);
+        const selectedTeamSet = new Set(['planning-team-alpha']);
 
         assert.deepEqual(
             getFuturePlanningEpicTeamInfo(epic, {
                 selectedTeamSet,
                 teamLabels: {},
                 resolveTeamName: (teamId) => teamId,
-                fallbackSelectedTeamName: 'R&D Perimeter'
+                fallbackSelectedTeamName: 'Planning Team Alpha'
             }),
-            { id: 'perimeter-team', name: 'R&D Perimeter' }
+            { id: 'planning-team-alpha', name: 'Planning Team Alpha' }
         );
     });
 });
@@ -139,24 +139,24 @@ test('future planning team info uses provided team name map for matched team ids
         getFuturePlanningEpicTeamInfo
     }) => {
         const epic = {
-            key: 'PRODUCT-103',
-            teamId: 'product-team',
-            teamName: 'Product - BidSwitch',
-            labels: ['2026Q2', 'rnd_bsw_adlightning']
+            key: 'EPIC-205',
+            teamId: 'jira-team-beta',
+            teamName: 'Synthetic Jira Team Beta',
+            labels: ['FUTURE_SPRINT_1', 'team_gamma_label']
         };
 
         assert.deepEqual(
             getFuturePlanningEpicTeamInfo(epic, {
-                selectedTeamSet: new Set(['product-team', 'adlightning-team']),
+                selectedTeamSet: new Set(['jira-team-beta', 'planning-team-gamma']),
                 teamLabels: {
-                    'adlightning-team': 'rnd_bsw_adlightning'
+                    'planning-team-gamma': 'team_gamma_label'
                 },
                 resolveTeamName: (teamId) => teamId,
                 teamNameById: new Map([
-                    ['adlightning-team', 'AdLightning']
+                    ['planning-team-gamma', 'Planning Team Gamma']
                 ])
             }),
-            { id: 'adlightning-team', name: 'AdLightning' }
+            { id: 'planning-team-gamma', name: 'Planning Team Gamma' }
         );
     });
 });

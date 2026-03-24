@@ -13066,9 +13066,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                         <div className="epic-title">
 	                                                        <div className="epic-title-row">
                                                             <span className="epic-icon" aria-hidden="true" title="EPIC">
-                                                                <svg viewBox="0 0 24 24" fill="none">
-                                                                    <rect x="3" y="3" width="18" height="18" rx="3" stroke="#1D7AFC" strokeWidth="2"/>
-                                                                    <path d="M7.5 12.5l3 3 6-6" stroke="#1D7AFC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                                                <svg viewBox="0 0 16 16" fill="none">
+                                                                    <path
+                                                                        clipRule="evenodd"
+                                                                        d="m10.271.050656c.2887.111871.479.38969.479.699344v4.63515l3.1471.62941c.2652.05303.4812.24469.5655.50161s.0238.53933-.1584.73914l-7.74997 8.49999c-.20863.2288-.53644.3059-.82517.194-.28874-.1118-.47905-.3896-.47905-.6993v-4.6351l-3.14708-.62947c-.26515-.05303-.48123-.24468-.56553-.5016-.08431-.25692-.02379-.53933.1584-.73915l7.75-8.499996c.20863-.2288201.53643-.305899.8252-.194028zm-6.57276 8.724134 3.05177.61036v3.92915l5.55179-6.08909-3.05179-.61036v-3.9291z"
+                                                                        fill="#bf63f3"
+                                                                        fillRule="evenodd"
+                                                                    />
                                                                 </svg>
                                                             </span>
                                                             {epicGroup.key !== 'NO_EPIC' ? (
@@ -13756,11 +13760,15 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                     <div className="epic-title">
                                                                         <div className="epic-title-row">
                                                                             <span className="epic-icon" aria-hidden="true" title="EPIC">
-                                                                                <svg viewBox="0 0 24 24" fill="none">
-                                                                                <rect x="3" y="3" width="18" height="18" rx="3" stroke="#1D7AFC" strokeWidth="2"/>
-                                                                                <path d="M7.5 12.5l3 3 6-6" stroke="#1D7AFC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                                                            </svg>
-                                                                        </span>
+                                                                                <svg viewBox="0 0 16 16" fill="none">
+                                                                                    <path
+                                                                                        clipRule="evenodd"
+                                                                                        d="m10.271.050656c.2887.111871.479.38969.479.699344v4.63515l3.1471.62941c.2652.05303.4812.24469.5655.50161s.0238.53933-.1584.73914l-7.74997 8.49999c-.20863.2288-.53644.3059-.82517.194-.28874-.1118-.47905-.3896-.47905-.6993v-4.6351l-3.14708-.62947c-.26515-.05303-.48123-.24468-.56553-.5016-.08431-.25692-.02379-.53933.1584-.73915l7.75-8.499996c.20863-.2288201.53643-.305899.8252-.194028zm-6.57276 8.724134 3.05177.61036v3.92915l5.55179-6.08909-3.05179-.61036v-3.9291z"
+                                                                                        fill="#bf63f3"
+                                                                                        fillRule="evenodd"
+                                                                                    />
+                                                                                </svg>
+                                                                            </span>
                                                                         <a
                                                                             className={`epic-link mapping-preview-dimmable mapping-preview-linkable mapping-preview-link-parent ${mappingHoverKey === 'parent' ? 'is-linked-hover' : ''}`}
                                                                             href="#"

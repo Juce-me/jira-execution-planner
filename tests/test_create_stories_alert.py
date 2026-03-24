@@ -43,6 +43,58 @@ class TestCreateStoriesAlertConfig(unittest.TestCase):
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestCreateStoriesAlertPayloads(unittest.TestCase):
+    def test_fetch_tasks_preserves_sprint_fields_for_story_matching(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+
+        jira_payload = {
+            'issues': [{
+                'id': '10001',
+                'key': 'STORY-1',
+                'fields': {
+                    'summary': 'Story one',
+                    'status': {'name': 'To Do'},
+                    'priority': {'name': 'Critical'},
+                    'issuetype': {'name': 'Story'},
+                    'assignee': {'displayName': 'Alice'},
+                    'updated': '2026-03-24T12:00:00.000+0000',
+                    'project': {'key': 'PRODUCT', 'name': 'Product'},
+                    'customfield_story_points': 1,
+                    'customfield_team': {'id': 'team-a', 'name': 'Example Team Alpha'},
+                    'customfield_epic_link': 'EPIC-1',
+                    'customfield_sprint': [
+                        'com.atlassian.greenhopper.service.sprint.Sprint@123[id=456,rapidViewId=12,state=FUTURE,name=2026Q2]'
+                    ]
+                }
+            }],
+            'names': {
+                'customfield_team': 'Team[Team]',
+                'customfield_epic_link': 'Epic Link'
+            },
+            'total': 1
+        }
+
+        with patch.object(jira_server, 'build_base_jql', return_value='project = TEST'), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
+             patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_story_points'), \
+             patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
+             patch.object(jira_server, 'fetch_epic_details_bulk', return_value={'EPIC-1': {'key': 'EPIC-1', 'summary': 'Epic one'}}), \
+             patch.object(jira_server, 'fetch_epics_for_empty_alert', return_value=[]), \
+             patch.object(jira_server, 'fetch_story_counts_for_epics', return_value={}), \
+             patch.object(jira_server, 'fetch_story_distribution_for_epics', return_value={}), \
+             patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, jira_payload)):
+            response = client.get('/api/tasks-with-team-name?sprint=456&team=all')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = response.get_json() or {}
+        issues = payload.get('issues') or []
+        self.assertEqual(len(issues), 1)
+        fields = issues[0].get('fields', {})
+        self.assertEqual(fields.get('epicKey'), 'EPIC-1')
+        self.assertEqual(fields.get('customfield_10101'), jira_payload['issues'][0]['fields']['customfield_sprint'])
+
     def test_fetch_epics_for_empty_alert_returns_labels(self):
         payload = {
             'issues': [{

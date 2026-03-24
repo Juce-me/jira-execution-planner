@@ -15,9 +15,10 @@ import {
     getCurrentQuarterLabel,
     normalizeCohortStatus
 } from './cohort/cohortUtils.js';
-import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics } from './backlogAlertSprintUtils.mjs';
+import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
+import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
 import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
@@ -443,7 +444,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [showBacklogAlert, setShowBacklogAlert] = useState(savedPrefsRef.current.showBacklogAlert ?? true);
             const [showMissingTeamAlert, setShowMissingTeamAlert] = useState(savedPrefsRef.current.showMissingTeamAlert ?? true);
             const [showMissingLabelsAlert, setShowMissingLabelsAlert] = useState(savedPrefsRef.current.showMissingLabelsAlert ?? true);
-            const [showCreateStoriesAlert, setShowCreateStoriesAlert] = useState(savedPrefsRef.current.showCreateStoriesAlert ?? true);
+            const [showNeedsStoriesAlert, setShowNeedsStoriesAlert] = useState(savedPrefsRef.current.showNeedsStoriesAlert ?? savedPrefsRef.current.showCreateStoriesAlert ?? savedPrefsRef.current.showWaitingAlert ?? true);
             const [showWaitingAlert, setShowWaitingAlert] = useState(savedPrefsRef.current.showWaitingAlert ?? true);
             const [showEmptyEpicAlert, setShowEmptyEpicAlert] = useState(savedPrefsRef.current.showEmptyEpicAlert ?? true);
             const [showDoneEpicAlert, setShowDoneEpicAlert] = useState(savedPrefsRef.current.showDoneEpicAlert ?? true);
@@ -3019,7 +3020,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     showBacklogAlert: savedPrefsRef.current.showBacklogAlert ?? true,
                     showMissingTeamAlert: savedPrefsRef.current.showMissingTeamAlert ?? true,
                     showMissingLabelsAlert: savedPrefsRef.current.showMissingLabelsAlert ?? true,
-                    showCreateStoriesAlert: savedPrefsRef.current.showCreateStoriesAlert ?? true,
+                    showNeedsStoriesAlert: savedPrefsRef.current.showNeedsStoriesAlert ?? savedPrefsRef.current.showCreateStoriesAlert ?? savedPrefsRef.current.showWaitingAlert ?? true,
                     showWaitingAlert: savedPrefsRef.current.showWaitingAlert ?? true,
                     showEmptyEpicAlert: savedPrefsRef.current.showEmptyEpicAlert ?? true,
                     showDoneEpicAlert: savedPrefsRef.current.showDoneEpicAlert ?? true,
@@ -3101,7 +3102,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 showBacklogAlert,
                 showMissingTeamAlert,
                 showMissingLabelsAlert,
-                showCreateStoriesAlert,
+                showNeedsStoriesAlert,
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
@@ -3219,7 +3220,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setShowBacklogAlert(nextState.showBacklogAlert ?? true);
                 setShowMissingTeamAlert(nextState.showMissingTeamAlert ?? true);
                 setShowMissingLabelsAlert(nextState.showMissingLabelsAlert ?? true);
-                setShowCreateStoriesAlert(nextState.showCreateStoriesAlert ?? true);
+                setShowNeedsStoriesAlert(nextState.showNeedsStoriesAlert ?? nextState.showCreateStoriesAlert ?? nextState.showWaitingAlert ?? true);
                 setShowWaitingAlert(nextState.showWaitingAlert ?? true);
                 setShowEmptyEpicAlert(nextState.showEmptyEpicAlert ?? true);
                 setShowDoneEpicAlert(nextState.showDoneEpicAlert ?? true);
@@ -3305,7 +3306,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 showBacklogAlert,
                 showMissingTeamAlert,
                 showMissingLabelsAlert,
-                showCreateStoriesAlert,
+                showNeedsStoriesAlert,
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
@@ -3589,7 +3590,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     showBacklogAlert,
                     showMissingTeamAlert,
                     showMissingLabelsAlert,
-                    showCreateStoriesAlert,
+                    showNeedsStoriesAlert,
                     showWaitingAlert,
                     showEmptyEpicAlert,
                     showDoneEpicAlert,
@@ -3628,7 +3629,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 showBacklogAlert,
                 showMissingTeamAlert,
                 showMissingLabelsAlert,
-                showCreateStoriesAlert,
+                showNeedsStoriesAlert,
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
@@ -7788,6 +7789,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 if (missingAlertKeySet.has(taskKey) && missingAlertKeySet.size === 1) resolvedTypes.push('missing');
                 if (blockedAlertKeySet.has(taskKey) && blockedAlertKeySet.size === 1) resolvedTypes.push('blocked');
                 if (postponedAlertKeySet.has(taskKey) && postponedAlertKeySet.size === 1) resolvedTypes.push('followup');
+                if (needsStoriesAlertKeySet.has(taskKey) && needsStoriesAlertKeySet.size === 1) resolvedTypes.push('waiting');
                 if (waitingAlertKeySet.has(taskKey) && waitingAlertKeySet.size === 1) resolvedTypes.push('waiting');
                 if (emptyAlertKeySet.has(taskKey) && emptyAlertKeySet.size === 1) resolvedTypes.push('empty');
                 if (doneAlertKeySet.has(taskKey) && doneAlertKeySet.size === 1) resolvedTypes.push('done');
@@ -8697,56 +8699,12 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             };
 
             const isExcludedStatus = (status) => status === 'killed' || status === 'postponed' || status === 'done';
-            const getTaskSprintTokens = (task) => {
-                const tokens = [];
-                const pushToken = (value) => {
-                    if (value === null || value === undefined) return;
-                    const str = String(value).trim();
-                    if (!str) return;
-                    tokens.push(str);
-                };
-                pushToken(task?.sprintId);
-                pushToken(task?.sprintName);
-                pushToken(task?.fields?.sprintId);
-                pushToken(task?.fields?.sprintName);
-                if (task?.fields?.sprint && typeof task.fields.sprint === 'object') {
-                    pushToken(task.fields.sprint.id);
-                    pushToken(task.fields.sprint.name);
-                }
-                const sprintField = task?.fields?.customfield_10101;
-                if (!sprintField) return tokens;
-                if (Array.isArray(sprintField)) {
-                    sprintField.forEach((entry) => {
-                        if (entry && typeof entry === 'object') {
-                            pushToken(entry.id);
-                            pushToken(entry.name);
-                        } else {
-                            pushToken(entry);
-                        }
-                    });
-                } else if (typeof sprintField === 'object') {
-                    pushToken(sprintField.id);
-                    pushToken(sprintField.name);
-                } else if (typeof sprintField === 'string') {
-                    pushToken(sprintField);
-                    const match = sprintField.match(/id=([0-9]+)/);
-                    if (match) {
-                        pushToken(match[1]);
-                    }
-                } else {
-                    pushToken(sprintField);
-                }
-                return tokens;
-            };
             const isTaskInSelectedSprint = (task) => {
                 if (!selectedSprint) return false;
-                const tokens = getTaskSprintTokens(task);
-                if (!tokens.length) return false;
-                const selectedId = String(selectedSprint);
-                const selectedName = selectedSprintInfo?.name ? String(selectedSprintInfo.name) : '';
-                if (tokens.includes(selectedId)) return true;
-                if (selectedName && tokens.includes(selectedName)) return true;
-                return false;
+                return issueMatchesSelectedSprint(task, {
+                    selectedSprint,
+                    selectedSprintName: selectedSprintInfo?.name || ''
+                });
             };
             const resolveDependencyStatus = (dep) => {
                 if (!dep?.key) return '';
@@ -8960,23 +8918,31 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 () => new Set(missingLabelEpics.map(epic => epic.key).filter(Boolean)),
                 [missingLabelEpics]
             );
-            const createStoriesEpics = React.useMemo(() => {
+            const needsStoriesEntries = React.useMemo(() => {
                 if (!isFutureSprintSelected) return [];
-                return planningCandidateEpics.filter((epic) => {
-                    if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key) || missingLabelEpicKeySet.has(epic.key)) return false;
+                return planningCandidateEpics.reduce((entries, epic) => {
+                    if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key) || missingLabelEpicKeySet.has(epic.key)) {
+                        return entries;
+                    }
                     const teamLabel = getFuturePlanningTeamLabel(epic);
-                    if (!teamLabel || !epicMatchesPlanningSprintValue(epic) || !epicHasLabel(epic, teamLabel)) return false;
-                    const epicStories = storiesByEpicKey.get(epic.key) || [];
-                    if (epicStories.length === 0) return true;
-                    return epicStories.every((task) => {
-                        const status = normalizeStatus(task.fields?.status?.name);
-                        return status === 'done' || status === 'killed' || status === 'incomplete';
+                    if (!teamLabel || !epicMatchesPlanningSprintValue(epic) || !epicHasLabel(epic, teamLabel)) {
+                        return entries;
+                    }
+                    const entry = classifyFuturePlanningNeedsStories({
+                        epic,
+                        epicStories: storiesByEpicKey.get(epic.key) || [],
+                        normalizeStatus: (value) => normalizeStatus(value),
+                        isTaskInSelectedSprint
                     });
-                });
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, getFuturePlanningTeamLabel, epicMatchesPlanningSprintValue, epicHasLabel, storiesByEpicKey]);
-            const createStoriesEpicKeySet = React.useMemo(
-                () => new Set(createStoriesEpics.map(epic => epic.key).filter(Boolean)),
-                [createStoriesEpics]
+                    if (entry) {
+                        entries.push(entry);
+                    }
+                    return entries;
+                }, []);
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, getFuturePlanningTeamLabel, epicMatchesPlanningSprintValue, epicHasLabel, storiesByEpicKey, isTaskInSelectedSprint]);
+            const needsStoriesEpics = React.useMemo(
+                () => needsStoriesEntries.map((entry) => entry.epic),
+                [needsStoriesEntries]
             );
 
             const emptyEpics = epicsInScope
@@ -9165,31 +9131,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             }, [isFutureSprintSelected, emptyEpics, epicsWithActionableStoriesInSelectedSprint, futureRoutedEpics]);
             const emptyEpicTeams = groupAlertsByTeam(emptyEpicsForAlert, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
 
-            const waitingForStoriesFutureEpics = React.useMemo(() => {
-                if (!isFutureSprintSelected) return [];
-                return planningCandidateEpics.filter((epic) => {
-                    if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key) || missingLabelEpicKeySet.has(epic.key) || createStoriesEpicKeySet.has(epic.key)) {
-                        return false;
-                    }
-                    const teamLabel = getFuturePlanningTeamLabel(epic);
-                    if (!teamLabel || !epicMatchesPlanningSprintValue(epic) || !epicHasLabel(epic, teamLabel)) return false;
-                    const epicStories = storiesByEpicKey.get(epic.key) || [];
-                    if (epicStories.length === 0) return false;
-                    const allClosed = epicStories.every((task) => {
-                        const status = normalizeStatus(task.fields?.status?.name);
-                        return status === 'done' || status === 'killed' || status === 'incomplete';
-                    });
-                    if (allClosed) return false;
-                    return !epicStories.some((task) => {
-                        const status = normalizeStatus(task.fields?.status?.name);
-                        if (status === 'done' || status === 'killed' || status === 'incomplete') return false;
-                        return isTaskInSelectedSprint(task);
-                    });
-                });
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, createStoriesEpicKeySet, getFuturePlanningTeamLabel, epicMatchesPlanningSprintValue, epicHasLabel, storiesByEpicKey]);
             const waitingForStoriesEpics = React.useMemo(() => {
                 if (isFutureSprintSelected) {
-                    return waitingForStoriesFutureEpics;
+                    return [];
                 }
                 const seen = new Set();
                 const merged = [...analysisWaitingEpics, ...postponedEmptyEpics].filter(epic => {
@@ -9199,13 +9143,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     return true;
                 });
                 return merged;
-            }, [isFutureSprintSelected, waitingForStoriesFutureEpics, analysisWaitingEpics, postponedEmptyEpics]);
+            }, [isFutureSprintSelected, analysisWaitingEpics, postponedEmptyEpics]);
 
-            const analysisEpicTeams = groupAlertsByTeam(waitingForStoriesEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfo(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const analysisEpicTeams = groupAlertsByTeam(waitingForStoriesEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const backlogEpicTeams = groupAlertsByTeam(backlogEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfo(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const missingTeamEpicTeams = groupAlertsByTeam(missingTeamEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const missingLabelEpicTeams = groupAlertsByTeam(missingLabelEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfo(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const createStoriesEpicTeams = groupAlertsByTeam(createStoriesEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfo(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const needsStoriesTeams = groupAlertsByTeam(needsStoriesEntries, (entry) => getFuturePlanningTeamInfo(entry.epic), (a, b) => (a.epic.summary || '').localeCompare(b.epic.summary || ''));
 
             const missingAlertKeySet = React.useMemo(
                 () => new Set(consolidatedMissingStories.map(item => item.task?.key).filter(Boolean)),
@@ -9222,6 +9166,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const backlogAlertKeySet = React.useMemo(
                 () => new Set(backlogEpics.map(epic => epic.key).filter(Boolean)),
                 [backlogEpics]
+            );
+            const needsStoriesAlertKeySet = React.useMemo(
+                () => new Set(needsStoriesEpics.map(epic => epic.key).filter(Boolean)),
+                [needsStoriesEpics]
             );
             const waitingAlertKeySet = React.useMemo(
                 () => new Set(waitingForStoriesEpics.map(epic => epic.key).filter(Boolean)),
@@ -9243,12 +9191,12 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 backlog: backlogEpics.length,
                 missingTeam: missingTeamEpics.length,
                 missingLabels: missingLabelEpics.length,
-                createStories: createStoriesEpics.length,
+                needsStories: needsStoriesEpics.length,
                 waiting: waitingForStoriesEpics.length,
                 empty: emptyEpicsForAlert.length,
                 done: doneStoryEpics.length
             };
-            const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.followup + alertCounts.backlog + alertCounts.missingTeam + alertCounts.missingLabels + alertCounts.createStories + alertCounts.waiting + alertCounts.empty + alertCounts.done;
+            const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.followup + alertCounts.backlog + alertCounts.missingTeam + alertCounts.missingLabels + alertCounts.needsStories + alertCounts.waiting + alertCounts.empty + alertCounts.done;
 
             const triggerAlertCelebration = React.useCallback((options = {}) => {
                 if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -12034,7 +11982,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     </div>
                                 )}
 		                            {alertItemCount > 0 && (
-		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showCreateStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert) ? 'collapsed' : ''}`}>
+		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert) ? 'collapsed' : ''}`}>
 		                                    {consolidatedMissingStories.length > 0 && (
 		                                        <div className={`alert-card missing ${showMissingAlert ? '' : 'collapsed'}`}>
 	                                            <div className="alert-card-header">
@@ -12584,27 +12532,27 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             </div>
                                         )}
 
-                                        {createStoriesEpics.length > 0 && (
-                                            <div className={`alert-card following ${showCreateStoriesAlert ? '' : 'collapsed'}`}>
+                                        {isFutureSprintSelected && needsStoriesEntries.length > 0 && (
+                                            <div className={`alert-card following ${showNeedsStoriesAlert ? '' : 'collapsed'}`}>
                                                 <div className="alert-card-header">
-                                                    <button className="alert-toggle" onClick={() => setShowCreateStoriesAlert(prev => !prev)} title={showCreateStoriesAlert ? 'Collapse create stories panel' : 'Expand create stories panel'}>
+                                                    <button className="alert-toggle" onClick={() => setShowNeedsStoriesAlert(prev => !prev)} title={showNeedsStoriesAlert ? 'Collapse needs stories panel' : 'Expand needs stories panel'}>
                                                         <span className="alert-toggle-icon" aria-hidden="true">
-                                                            <svg className={`alert-toggle-chevron ${showCreateStoriesAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
+                                                            <svg className={`alert-toggle-chevron ${showNeedsStoriesAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
                                                                 <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                                                             </svg>
                                                         </span>
-                                                        <span className="alert-toggle-label">{showCreateStoriesAlert ? 'Hide' : 'Show'}</span>
+                                                        <span className="alert-toggle-label">{showNeedsStoriesAlert ? 'Hide' : 'Show'}</span>
                                                     </button>
-                                                    <div className="alert-title">📝 Create Stories</div>
-                                                    <div className="alert-subtitle">These epics are labeled correctly but still need future-sprint stories created.</div>
-                                                    <div className="alert-chip">{createStoriesEpics.length} {createStoriesEpics.length === 1 ? 'epic' : 'epics'}</div>
+                                                    <div className="alert-title">📝 Needs Stories</div>
+                                                    <div className="alert-subtitle">These epics are labeled correctly but still are not sprint-ready for the selected future sprint.</div>
+                                                    <div className="alert-chip">{needsStoriesEntries.length} {needsStoriesEntries.length === 1 ? 'epic' : 'epics'}</div>
                                                 </div>
-                                                <div className={`alert-card-body ${showCreateStoriesAlert ? '' : 'collapsed'}`}>
-                                                    {createStoriesEpicTeams.map(group => {
-                                                        const keys = group.items.map(item => item.key);
+                                                <div className={`alert-card-body ${showNeedsStoriesAlert ? '' : 'collapsed'}`}>
+                                                    {needsStoriesTeams.map(group => {
+                                                        const keys = group.items.map(item => item.epic.key);
                                                         const teamLink = buildKeyListLink(keys);
                                                         return (
-                                                            <div key={`create-stories-${group.id}`} className="alert-team-group">
+                                                            <div key={`needs-stories-${group.id}`} className="alert-team-group">
                                                                 <div className="alert-team-header">
                                                                     {teamLink ? (
                                                                         <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
@@ -12619,16 +12567,18 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                     )}
                                                                 </div>
                                                                 <div className="alert-stories">
-                                                                    {group.items.map(epic => (
+                                                                    {group.items.map(entry => {
+                                                                        const epic = entry.epic;
+                                                                        return (
                                                                         <div key={epic.key} className="alert-story">
                                                                             <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
                                                                                 <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
-                                                                                <div className="alert-story-note">Create the planned stories for the selected future sprint.</div>
+                                                                                <div className="alert-story-note">{getFuturePlanningNeedsStoriesReasonText(entry.reason)}</div>
                                                                             </div>
                                                                             <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer">Open epic →</a>
                                                                             <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
                                                                         </div>
-                                                                    ))}
+                                                                    )})}
                                                                 </div>
                                                             </div>
                                                         );
@@ -12637,7 +12587,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             </div>
                                         )}
 
-                                        {waitingForStoriesEpics.length > 0 && (
+                                        {!isFutureSprintSelected && waitingForStoriesEpics.length > 0 && (
                                             <div className={`alert-card following ${showWaitingAlert ? '' : 'collapsed'}`}>
                                                 <div className="alert-card-header">
                                                     <button

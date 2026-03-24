@@ -47,6 +47,25 @@ export function getIssueSprintTokens(issue) {
     return [...new Set(tokens)];
 }
 
+export function issueMatchesSelectedSprint(issue, { selectedSprint, selectedSprintName } = {}) {
+    const tokens = getIssueSprintTokens(issue);
+    if (!tokens.length) return false;
+
+    const selectedId = String(selectedSprint || '').trim();
+    if (selectedId && tokens.includes(selectedId)) return true;
+
+    const normalizedSelectedName = String(selectedSprintName || '').trim().toLowerCase();
+    if (!normalizedSelectedName) return false;
+
+    return tokens.some((token) => {
+        const normalizedToken = String(token || '').trim().toLowerCase();
+        if (!normalizedToken) return false;
+        return normalizedToken === normalizedSelectedName ||
+            normalizedToken.includes(normalizedSelectedName) ||
+            normalizedSelectedName.includes(normalizedToken);
+    });
+}
+
 export function epicHasExplicitlyEmptySprintValue(epic) {
     const fields = epic?.fields || {};
     const hasExplicitSprintField =
@@ -67,20 +86,5 @@ export function filterExplicitBacklogEpics(epics) {
 }
 
 export function epicMatchesSelectedSprint(epic, { selectedSprint, selectedSprintName } = {}) {
-    const tokens = getIssueSprintTokens(epic);
-    if (!tokens.length) return false;
-
-    const selectedId = String(selectedSprint || '').trim();
-    if (selectedId && tokens.includes(selectedId)) return true;
-
-    const normalizedSelectedName = String(selectedSprintName || '').trim().toLowerCase();
-    if (!normalizedSelectedName) return false;
-
-    return tokens.some((token) => {
-        const normalizedToken = String(token || '').trim().toLowerCase();
-        if (!normalizedToken) return false;
-        return normalizedToken === normalizedSelectedName ||
-            normalizedToken.includes(normalizedSelectedName) ||
-            normalizedSelectedName.includes(normalizedToken);
-    });
+    return issueMatchesSelectedSprint(epic, { selectedSprint, selectedSprintName });
 }

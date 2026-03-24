@@ -80,22 +80,14 @@ Shows epics that are already in the selected future sprint but are still missing
 
 This also covers the case where the active group has no label mapping configured for that team yet.
 
-### Create Stories
+### Needs Stories
 
-Shows epics that are in the selected future sprint, have the expected team-specific epic label, but still do not have usable child stories for planning that sprint.
+Shows epics that are already configured for the selected future sprint but still are not sprint-ready because they do not yet have an actionable child story in that sprint.
 
-Typical cases:
-- no child stories yet
-- only terminal child stories exist
-
-### Waiting for Stories
-
-Shows epics that are already configured for the selected future sprint but whose stories are not yet usable in that sprint.
-
-Typical cases:
-- child stories exist, but none are actionable in the selected future sprint
-- stories need to be moved or completed before planning can continue
-- team, label, and epic sprint are already set, so the epic has passed the earlier planning checks
+Each epic row shows the specific reason:
+- `No stories yet for this sprint.` when the epic has no child stories
+- `Only closed stories exist for this epic.` when all child stories are terminal
+- `Open stories exist, but not in the selected sprint.` when stories exist, but none are actionable in the selected future sprint
 
 ## Alert Precedence
 
@@ -105,7 +97,6 @@ An epic is routed to the first matching planning alert:
 2. Backlog
 3. Missing Team
 4. Missing Labels
-5. Create Stories
-6. Waiting for Stories
+5. Needs Stories
 
 This avoids the same epic showing up in multiple planning panels at once. In practice, an epic with a filled sprint should bypass Backlog and continue into the later planning checks.

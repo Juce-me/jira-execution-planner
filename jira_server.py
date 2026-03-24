@@ -2238,7 +2238,8 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
         key: {
             'selectedStories': 0,
             'selectedActionableStories': 0,
-            'futureOpenStories': 0
+            'futureOpenStories': 0,
+            'openStoriesOutsideSelected': 0
         } for key in epic_keys
     }
     batch_size = 40
@@ -2346,12 +2347,18 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
     if selected_sprint:
         selected_clause = f'Sprint = {selected_sprint} AND issuetype != Epic'
     future_clause = 'Sprint in futureSprints() AND issuetype != Epic AND status not in ("Done","Killed","Incomplete")'
+    outside_selected_clause = (
+        f'issuetype != Epic AND status not in ("Done","Killed","Incomplete") AND (Sprint != {selected_sprint} OR Sprint is EMPTY)'
+        if selected_sprint else
+        'issuetype != Epic AND status not in ("Done","Killed","Incomplete")'
+    )
 
     for start in range(0, len(epic_keys), batch_size):
         batch = epic_keys[start:start + batch_size]
         if selected_clause:
             count_selected_for_batch(batch)
         count_for_batch(batch, future_clause, 'futureOpenStories')
+        count_for_batch(batch, outside_selected_clause, 'openStoriesOutsideSelected')
 
     return distribution
 
@@ -2472,6 +2479,8 @@ def fetch_tasks(include_team_name=False):
         team_field_id = resolve_team_field_id(headers)
         epic_link_field_id = resolve_epic_link_field_id(headers)
 
+        sprint_field_id = get_sprint_field_id()
+
         # Prepare request parameters for search endpoint
         if lightweight_ready_to_close:
             fields_list = [
@@ -2490,6 +2499,8 @@ def fetch_tasks(include_team_name=False):
                 'parent',
                 'project'
             ]
+        if sprint_field_id and sprint_field_id not in fields_list:
+            fields_list.append(sprint_field_id)
         if epic_link_field_id and epic_link_field_id not in fields_list:
             fields_list.append(epic_link_field_id)
         if team_field_id:
@@ -2581,8 +2592,6 @@ def fetch_tasks(include_team_name=False):
             team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
         epic_link_field = epic_link_field_id or resolve_epic_link_field_id(headers, names_map)
         epic_name_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic name'), None)
-        sprint_field_id = get_sprint_field_id()
-
         epic_keys = set()
         normalize_started = time.perf_counter()
         for issue in collected_issues:
@@ -2684,7 +2693,8 @@ def fetch_tasks(include_team_name=False):
                         'team': fields.get('team'),
                         'teamName': fields.get('teamName'),
                         'teamId': fields.get('teamId'),
-                        'epicKey': fields.get('epicKey')
+                        'epicKey': fields.get('epicKey'),
+                        'customfield_10101': fields.get(sprint_field_id) if sprint_field_id else None
                     }
                 })
             else:
@@ -2703,6 +2713,7 @@ def fetch_tasks(include_team_name=False):
                         'teamName': fields.get('teamName'),
                         'teamId': fields.get('teamId'),
                         'epicKey': fields.get('epicKey'),
+                        'customfield_10101': fields.get(sprint_field_id) if sprint_field_id else None,
                         'parentSummary': fields.get('parentSummary'),
                         'projectKey': project_field.get('key', ''),
                         'projectName': project_field.get('name', '')

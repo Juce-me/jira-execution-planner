@@ -61,3 +61,26 @@ test('remote backlog candidates are filtered to explicit empty sprint values onl
         );
     });
 });
+
+test('selected sprint matching accepts raw Jira sprint strings on child stories', () => {
+    return import('../frontend/src/backlogAlertSprintUtils.mjs').then(({
+        issueMatchesSelectedSprint
+    }) => {
+        const story = {
+            key: 'STORY-1',
+            fields: {
+                customfield_10101: [
+                    'com.atlassian.greenhopper.service.sprint.Sprint@123[id=456,rapidViewId=12,state=FUTURE,name=2026Q2,startDate=2026-04-01T00:00:00.000Z,endDate=2026-06-30T00:00:00.000Z]'
+                ]
+            }
+        };
+
+        assert.equal(
+            issueMatchesSelectedSprint(story, {
+                selectedSprint: '456',
+                selectedSprintName: '2026Q2'
+            }),
+            true
+        );
+    });
+});

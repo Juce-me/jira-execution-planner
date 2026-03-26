@@ -8990,7 +8990,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     });
                     if (epicStories.length === 0) return false;
                     if (!epicOrStoriesMatchSelectedSprint(epic, epicStories)) return false;
-                    return epicStories.every(task => readyToCloseStoryStatuses.has(normalizeStatus(task.fields.status?.name)));
+                    const allEpicStories = readyToCloseTasks.filter(task => {
+                        if (!task.fields?.epicKey) return false;
+                        if (task.fields.epicKey !== epic.key) return false;
+                        if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return false;
+                        return true;
+                    });
+                    const storiesToCheck = allEpicStories.length > 0 ? allEpicStories : epicStories;
+                    return storiesToCheck.every(task => readyToCloseStoryStatuses.has(normalizeStatus(task.fields.status?.name)));
                 })
                 .filter(epic => !dismissedAlertSet.has(epic.key));
 

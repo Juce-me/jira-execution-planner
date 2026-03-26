@@ -42,9 +42,9 @@ This is a hygiene alert, not a future-planning alert. In future-planning mode, o
 
 ### Epic Ready to Close
 
-Shows epics that are still open even though all loaded child stories are terminal.
+Shows epics that are still open even though all child stories are terminal.
 
-In practice, this means the epic looks administratively open but the work underneath it is already done, killed, or incomplete.
+In practice, this means the epic looks administratively open but the work underneath it is already done, killed, or incomplete. Stories in future quarters are included in this check — an epic with open work planned for a future sprint will not appear here.
 
 ### Postponed Work
 

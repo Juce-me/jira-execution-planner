@@ -3598,61 +3598,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             }, []);
 
             useEffect(() => {
-                if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
-                if (!tasksFetched || productTasksLoading || techTasksLoading) return;
-
-                const validTaskKeySet = new Set(
-                    (selectionTasks || [])
-                        .map(task => String(task?.key || '').trim())
-                        .filter(Boolean)
-                );
-                const validTeamIds = teamOptions
-                    .map(team => String(team?.id || '').trim())
-                    .filter(id => id && id !== 'all');
-
-                const nextSelectedTaskKeys = Object.keys(selectedTasks || {})
-                    .filter(key => selectedTasks[key] && validTaskKeySet.has(key))
-                    .sort();
-                const nextSelectedTeams = sanitizeSelectedTeamsForScope(selectedTeams, {
-                    activeGroupTeamIds,
-                    availableTeamIds: validTeamIds
-                });
-
-                setSelectedTasks(prev => {
-                    const prevKeys = Object.keys(prev || {})
-                        .filter(key => prev[key] && validTaskKeySet.has(key))
-                        .sort();
-                    const sameLength = prevKeys.length === nextSelectedTaskKeys.length;
-                    const sameKeys = sameLength && prevKeys.every((key, index) => key === nextSelectedTaskKeys[index]);
-                    return sameKeys ? prev : selectedTaskMapFromKeys(nextSelectedTaskKeys);
-                });
-
-                setSelectedTeams(prev => {
-                    const normalizedPrev = normalizeSelectedTeams(prev);
-                    const sameLength = normalizedPrev.length === nextSelectedTeams.length;
-                    const sameTeams = sameLength && normalizedPrev.every((id, index) => id === nextSelectedTeams[index]);
-                    return sameTeams ? prev : nextSelectedTeams;
-                });
-
-                savePlanningState(window.localStorage, planningScopeKey, {
-                    selectedTaskKeys: nextSelectedTaskKeys,
-                    selectedTeams: nextSelectedTeams
-                });
-            }, [
-                planningScopeKey,
-                activeGroupId,
-                selectedSprint,
-                tasksFetched,
-                productTasksLoading,
-                techTasksLoading,
-                selectionTasks,
-                teamOptions,
-                selectedTasks,
-                selectedTeams,
-                activeGroupTeamIds.join('|')
-            ]);
-
-            useEffect(() => {
                 saveUiPrefs({
                     selectedSprint,
                     selectedTeams,
@@ -6931,6 +6876,61 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             ]);
 
             const selectionTasks = baseFilteredTasks;
+
+            useEffect(() => {
+                if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
+                if (!tasksFetched || productTasksLoading || techTasksLoading) return;
+
+                const validTaskKeySet = new Set(
+                    (selectionTasks || [])
+                        .map(task => String(task?.key || '').trim())
+                        .filter(Boolean)
+                );
+                const validTeamIds = teamOptions
+                    .map(team => String(team?.id || '').trim())
+                    .filter(id => id && id !== 'all');
+
+                const nextSelectedTaskKeys = Object.keys(selectedTasks || {})
+                    .filter(key => selectedTasks[key] && validTaskKeySet.has(key))
+                    .sort();
+                const nextSelectedTeams = sanitizeSelectedTeamsForScope(selectedTeams, {
+                    activeGroupTeamIds,
+                    availableTeamIds: validTeamIds
+                });
+
+                setSelectedTasks(prev => {
+                    const prevKeys = Object.keys(prev || {})
+                        .filter(key => prev[key] && validTaskKeySet.has(key))
+                        .sort();
+                    const sameLength = prevKeys.length === nextSelectedTaskKeys.length;
+                    const sameKeys = sameLength && prevKeys.every((key, index) => key === nextSelectedTaskKeys[index]);
+                    return sameKeys ? prev : selectedTaskMapFromKeys(nextSelectedTaskKeys);
+                });
+
+                setSelectedTeams(prev => {
+                    const normalizedPrev = normalizeSelectedTeams(prev);
+                    const sameLength = normalizedPrev.length === nextSelectedTeams.length;
+                    const sameTeams = sameLength && normalizedPrev.every((id, index) => id === nextSelectedTeams[index]);
+                    return sameTeams ? prev : nextSelectedTeams;
+                });
+
+                savePlanningState(window.localStorage, planningScopeKey, {
+                    selectedTaskKeys: nextSelectedTaskKeys,
+                    selectedTeams: nextSelectedTeams
+                });
+            }, [
+                planningScopeKey,
+                activeGroupId,
+                selectedSprint,
+                tasksFetched,
+                productTasksLoading,
+                techTasksLoading,
+                selectionTasks,
+                teamOptions,
+                selectedTasks,
+                selectedTeams,
+                activeGroupTeamIds.join('|')
+            ]);
 
             const visibleTasks = React.useMemo(() => {
                 return baseFilteredTasks.filter(task => {
@@ -11814,7 +11814,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 disabled={visibleTasks.length === 0}
                                 title="Include all Accepted and In Progress stories for the current view"
                             >
-                                Include Accepted
+                                Accepted
                             </button>
                             <button
                                 className={`planning-action-button ${isTodoIncluded ? 'active' : ''}`}
@@ -11822,7 +11822,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 disabled={visibleTasks.length === 0}
                                 title="Include all To Do / Pending stories for the current view"
                             >
-                                Include To Do
+                                To Do
                             </button>
                             <button
                                 className={`planning-action-button ${isPostponedIncluded ? 'active' : ''}`}
@@ -11830,7 +11830,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 disabled={planningPostponedTasks.length === 0}
                                 title="Include all Postponed stories for the current view"
                             >
-                                Include Postponed
+                                Postponed
                             </button>
                             <button
                                 className={`planning-action-button ${isAwaitingValidationIncluded ? 'active' : ''}`}
@@ -11838,7 +11838,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 disabled={planningAwaitingValidationTasks.length === 0}
                                 title="Include all Awaiting Validation stories for the current view"
                             >
-                                Include Awaiting Validation
+                                Awaiting Val.
                             </button>
                             <button
                                 className="uncheck-button"
@@ -11846,7 +11846,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 disabled={selectedCount === 0}
                                 title="Clear all selected tasks"
                             >
-                                Uncheck Selected
+                                Clear Selected
                             </button>
                             <button
                                 className="planning-action-button planning-icon-button"
@@ -11904,27 +11904,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             <div className="capacity-bar-marker-label">Team Cap<br/>{totalCapacityAdjusted.toFixed(1)}</div>
                                         </div>
                                     </div>
-                                    <div className="capacity-bar-footer">
-                                        <span
-                                            className={`capacity-bar-variance ${capacitySummary.status}`}
-                                            data-tooltip={`Selected effort (${selectedSP.toFixed(1)} SP) vs Team capacity (${totalCapacityAdjusted.toFixed(1)} SP). ${capacitySummary.title || ''}`}
-                                            onMouseEnter={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.add('highlight-variance')}
-                                            onMouseLeave={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.remove('highlight-variance')}
-                                        >
-                                            {capacitySummary.label || '0%'} variance
-                                        </span>
-                                        {excludedCapacityAdjusted > 0 && (
-                                            <span
-                                                className="capacity-bar-excluded-note clickable-number"
-                                                data-tooltip={`Capacity reserved for excluded mandatory epics (${excludedCapacityAdjusted.toFixed(1)} SP). Click to scroll to first excluded epic.`}
-                                                onClick={() => scrollToFirstExcludedEpic('any')}
-                                                onMouseEnter={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.add('highlight-excluded')}
-                                                onMouseLeave={(e) => e.currentTarget.closest('.capacity-bar-graph').classList.remove('highlight-excluded')}
-                                            >
-                                                {excludedCapacityAdjusted.toFixed(1)} SP excluded
-                                            </span>
-                                        )}
-                                    </div>
                                 </div>
                             );
                         })() : (
@@ -11961,8 +11940,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         {sortedTeams.map((info) => {
                                             const capMeta = capacityEnabled && info.teamCapacity > 0 ? getTeamCapacityMeta(info.storyPoints, info.teamCapacity) : null;
                                             const teamColor = resolveTeamColor(info.id);
-                                            const barW = 120;
-                                            const barH = 22;
+                                            const barW = 116;
+                                            const barH = 14;
                                             const hasCap = capacityEnabled && info.teamCapacity > 0;
                                             const scale = hasCap ? info.teamCapacity * 1.3 : info.storyPoints * 1.3;
                                             const valW = scale > 0 ? Math.min(barW, (info.storyPoints / scale) * barW) : 0;
@@ -11984,7 +11963,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                         <rect x="0" y="0" width={valW} height={barH} rx="4" fill={teamColor} />
                                                         <text x="4" y={barH / 2} dominantBaseline="central" className="microbar-label">{spLabel}</text>
                                                         {markerX !== null && (
-                                                            <line x1={markerX} y1="0" x2={markerX} y2={barH} stroke="var(--text-primary)" strokeWidth="1.5" strokeDasharray="3 2" />
+                                                            <line x1={markerX} y1="0" x2={markerX} y2={barH} stroke="var(--text-primary)" strokeWidth="1.25" strokeDasharray="3 2" />
                                                         )}
                                                     </svg>
                                                     {deltaLabel && (
@@ -12053,10 +12032,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             <div className="capacity-bar-marker-line dashed" />
                                             <div className="capacity-bar-marker-label">Target<br/>{targetPct}% / {100 - targetPct}%</div>
                                         </div>
-                                    </div>
-                                    <div className="capacity-bar-footer">
-                                        {productPct <= 15 && <span style={{ color: '#3d1ef8' }}>Product {productPct.toFixed(0)}% · {productSP.toFixed(1)} SP</span>}
-                                        {techPct <= 15 && <span style={{ color: '#FE5000' }}>Tech {techPct.toFixed(0)}% · {techSP.toFixed(1)} SP</span>}
                                     </div>
                                 </div>
                             );

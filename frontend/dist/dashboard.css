@@ -87,7 +87,7 @@
             flex: 1 1 auto;
             flex-wrap: nowrap;
             min-width: 0;
-            overflow: hidden;
+            overflow: visible;
         }
 
         .compact-sticky-header-search {
@@ -3507,7 +3507,7 @@
             border-color: var(--border);
             border-radius: 10px;
             max-height: 1600px;
-            padding: 0.75rem;
+            padding: 0.55rem;
             margin-top: 1rem;
             margin-bottom: 1rem;
             opacity: 1;
@@ -5699,14 +5699,14 @@
 
         /* Capacity bar graph (full-width KPI) */
         .capacity-bar-graph {
-            margin-bottom: 0.4rem;
+            margin-bottom: 0.3rem;
         }
 
         .capacity-bar-track {
             position: relative;
-            height: 32px;
+            height: 18px;
             background: #eae8e4;
-            border-radius: 6px;
+            border-radius: 5px;
             overflow: visible;
         }
 
@@ -5720,7 +5720,7 @@
             display: flex;
             align-items: center;
             justify-content: flex-end;
-            padding: 0 10px;
+            padding: 0 8px;
             min-width: 0;
             transition: width 0.3s ease;
         }
@@ -5739,7 +5739,7 @@
 
         .capacity-bar-fill-label {
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.75rem;
+            font-size: 0.66rem;
             font-weight: 600;
             color: var(--text-primary);
             white-space: nowrap;
@@ -5767,10 +5767,17 @@
             transform: translateX(-50%);
             pointer-events: auto;
             cursor: help;
+            z-index: 1;
         }
 
         .capacity-bar-fill[data-tooltip] {
             cursor: help;
+            z-index: 1;
+        }
+
+        .capacity-bar-marker:hover,
+        .capacity-bar-fill:hover {
+            z-index: 40;
         }
 
         .capacity-bar-marker[data-tooltip]:hover::after,
@@ -5790,7 +5797,7 @@
             white-space: normal;
             width: max-content;
             max-width: 240px;
-            z-index: 25;
+            z-index: 50;
             text-transform: none;
             letter-spacing: normal;
             pointer-events: none;
@@ -5827,7 +5834,7 @@
             top: 0;
             left: 50%;
             width: 2px;
-            height: calc(100% + 4px);
+            height: calc(100% + 3px);
             background: var(--text-primary);
             transform: translateX(-50%);
         }
@@ -5844,24 +5851,15 @@
 
         .capacity-bar-marker-label {
             position: absolute;
-            top: calc(100% + 6px);
+            top: calc(100% + 4px);
             left: 50%;
             transform: translateX(-50%);
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.58rem;
+            font-size: 0.54rem;
             color: var(--text-secondary);
             white-space: nowrap;
             text-align: center;
             line-height: 1.3;
-        }
-
-        .capacity-bar-footer {
-            display: flex;
-            align-items: baseline;
-            gap: 1rem;
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.62rem;
-            margin-top: 1.8rem;
         }
 
         .capacity-bar-variance {
@@ -5968,7 +5966,7 @@
 
         .planning-stats {
             display: flex;
-            gap: 0.85rem;
+            gap: 0.7rem;
             align-items: center;
             justify-content: flex-start;
             font-family: 'IBM Plex Mono', monospace;
@@ -5977,18 +5975,18 @@
         }
 
         .planning-stats.compact {
-            gap: 0.6rem;
-            font-size: 0.65rem;
+            gap: 0.45rem;
+            font-size: 0.6rem;
             justify-content: flex-start;
         }
 
         .planning-stats.compact .planning-stat-label {
-            font-size: 0.62rem;
+            font-size: 0.58rem;
             letter-spacing: 0.04em;
         }
 
         .planning-stats.compact .planning-stat-value {
-            font-size: 0.62rem;
+            font-size: 0.58rem;
         }
 
         .planning-stat-separator {
@@ -5999,8 +5997,8 @@
         .team-stats-grid {
             display: grid;
             grid-template-columns: repeat(6, 1fr);
-            gap: 0.75rem;
-            margin-top: 0.5rem;
+            gap: 0.55rem;
+            margin-top: 0.35rem;
         }
 
         @media (max-width: 768px) {
@@ -6061,12 +6059,12 @@
             width: 100%;
             height: auto;
             display: block;
-            margin: 0.25rem 0 0;
+            margin: 0.18rem 0 0;
         }
 
         .microbar-label {
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 10px;
+            font-size: 8px;
             fill: #fff;
             font-weight: 500;
             pointer-events: none;
@@ -6074,10 +6072,10 @@
 
         .microbar-meta {
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.6rem;
+            font-size: 0.54rem;
             color: var(--text-secondary);
-            margin-top: 0.15rem;
-            line-height: 1;
+            margin-top: 0.08rem;
+            line-height: 1.05;
         }
 
         .microbar-meta.over {
@@ -6118,7 +6116,7 @@
         /* Project split bar */
         .project-bar-graph {
             margin-top: 0.3rem;
-            margin-bottom: 0.2rem;
+            margin-bottom: 1.45rem;
         }
 
         .project-bar-fill {
@@ -6127,7 +6125,7 @@
             height: 100%;
             display: flex;
             align-items: center;
-            padding: 0 10px;
+            padding: 0 8px;
             cursor: help;
             transition: filter 0.15s;
         }
@@ -6188,10 +6186,10 @@
         .team-stat-card {
             background: #fff;
             border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 0.5rem 0.6rem;
+            border-radius: 8px;
+            padding: 0.38rem 0.45rem;
             text-align: left;
-            box-shadow: 0 6px 16px var(--shadow);
+            box-shadow: 0 4px 12px var(--shadow);
         }
 
         .team-stat-value {
@@ -6202,8 +6200,8 @@
         }
 
         .team-stat-label {
-            margin-bottom: 0.2rem;
-            font-size: 0.65rem;
+            margin-bottom: 0.15rem;
+            font-size: 0.58rem;
             text-transform: uppercase;
             letter-spacing: 0.08em;
             color: var(--text-secondary);
@@ -6249,8 +6247,8 @@
             background: transparent;
             color: var(--text-secondary);
             border: 1px solid var(--border);
-            padding: 0.4rem 1rem;
-            font-size: 0.7rem;
+            padding: 0.34rem 0.8rem;
+            font-size: 0.66rem;
             margin: 0;
             cursor: pointer;
             transition: all 0.2s;
@@ -6279,8 +6277,8 @@
             background: transparent;
             color: var(--text-secondary);
             border: 1px solid var(--border);
-            padding: 0.4rem 1rem;
-            font-size: 0.7rem;
+            padding: 0.34rem 0.8rem;
+            font-size: 0.66rem;
             margin: 0;
             cursor: pointer;
             transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
@@ -6328,7 +6326,7 @@
         .planning-icon-button {
             width: auto;
             height: auto;
-            padding: 0.4rem 0.65rem;
+            padding: 0.34rem 0.55rem;
             border-radius: 999px;
             justify-content: center;
             gap: 0;
@@ -6337,11 +6335,11 @@
         .planning-actions {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
+            gap: 0.5rem;
             flex-wrap: nowrap;
             white-space: nowrap;
             margin-top: 0.15rem;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.35rem;
         }
 
         .planning-stat {
@@ -6351,7 +6349,7 @@
         }
 
         .planning-stat-label {
-            font-size: 0.62rem;
+            font-size: 0.58rem;
             color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -6385,12 +6383,12 @@
 
         .planning-stat-note {
             margin-top: 0.2rem;
-            font-size: 0.6rem;
+            font-size: 0.56rem;
             color: var(--text-secondary);
         }
 
         .planning-stat-value {
-            font-size: 0.65rem;
+            font-size: 0.62rem;
             font-weight: 500;
             color: var(--text-primary);
             line-height: 1;

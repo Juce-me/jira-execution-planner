@@ -49,6 +49,8 @@ class TestDashboardCssFileContract(unittest.TestCase):
         css = css_path.read_text(encoding='utf-8')
         self.assertIn('.compact-sticky-header', css)
         self.assertIn('.compact-sticky-header.is-visible', css)
+        self.assertIn('.compact-sticky-header-controls', css)
+        self.assertIn('overflow: visible;', css)
         self.assertIn('--compact-header-offset', css)
         self.assertIn('--sticky-control-overlay-z', css)
         self.assertIn('--planning-sticky-top', css)

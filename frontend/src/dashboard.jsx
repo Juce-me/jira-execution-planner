@@ -8172,10 +8172,28 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     return status === 'to do' || status === 'pending';
                 });
             }, [showPlanning, selectionTasks]);
+            const planningPostponedTasks = React.useMemo(() => {
+                if (!showPlanning) return [];
+                return selectionTasks.filter(task => {
+                    const status = normalizeStatus(task.fields.status?.name);
+                    return status === 'postponed';
+                });
+            }, [showPlanning, selectionTasks]);
+            const planningAwaitingValidationTasks = React.useMemo(() => {
+                if (!showPlanning) return [];
+                return selectionTasks.filter(task => {
+                    const status = normalizeStatus(task.fields.status?.name);
+                    return status === 'awaiting validation';
+                });
+            }, [showPlanning, selectionTasks]);
             const isAcceptedIncluded = acceptedTasks.length > 0 &&
                 acceptedTasks.every(task => selectedTasks[task.key]);
             const isTodoIncluded = todoPendingTasks.length > 0 &&
                 todoPendingTasks.every(task => selectedTasks[task.key]);
+            const isPostponedIncluded = planningPostponedTasks.length > 0 &&
+                planningPostponedTasks.every(task => selectedTasks[task.key]);
+            const isAwaitingValidationIncluded = planningAwaitingValidationTasks.length > 0 &&
+                planningAwaitingValidationTasks.every(task => selectedTasks[task.key]);
 
             const selectedPlanningTasksList = React.useMemo(() => {
                 if (!showPlanning) return [];
@@ -11805,6 +11823,22 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 title="Include all To Do / Pending stories for the current view"
                             >
                                 Include To Do
+                            </button>
+                            <button
+                                className={`planning-action-button ${isPostponedIncluded ? 'active' : ''}`}
+                                onClick={() => toggleIncludeByStatus(['Postponed'])}
+                                disabled={planningPostponedTasks.length === 0}
+                                title="Include all Postponed stories for the current view"
+                            >
+                                Include Postponed
+                            </button>
+                            <button
+                                className={`planning-action-button ${isAwaitingValidationIncluded ? 'active' : ''}`}
+                                onClick={() => toggleIncludeByStatus(['Awaiting Validation'])}
+                                disabled={planningAwaitingValidationTasks.length === 0}
+                                title="Include all Awaiting Validation stories for the current view"
+                            >
+                                Include Awaiting Validation
                             </button>
                             <button
                                 className="uncheck-button"

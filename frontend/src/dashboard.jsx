@@ -20,6 +20,7 @@ import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
+import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
 import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
         const { useState, useEffect, useRef } = React;
@@ -337,6 +338,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [planningOffset, setPlanningOffset] = useState(0);
             const [isPlanningStuck, setIsPlanningStuck] = useState(false);
             const planningPanelRef = useRef(null);
+            const planningHydratedScopeRef = useRef('');
             const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout' || value === 'cohort') ? value : 'teams';
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
             const resolveBurndownMetric = (value) => (value === 'issueCount' || value === 'storyPoints') ? value : 'storyPoints';
@@ -2930,9 +2932,37 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             }, [activeGroup]);
 
             const activeGroupTeamSet = React.useMemo(() => new Set(activeGroupTeamIds), [activeGroupTeamIds]);
+            const planningScopeKey = React.useMemo(() => {
+                if (selectedSprint === null || !activeGroupId) return '';
+                return buildPlanningScopeKey({ sprintId: selectedSprint, groupId: activeGroupId });
+            }, [selectedSprint, activeGroupId]);
+            const selectedTaskMapFromKeys = (keys) => {
+                const next = {};
+                (keys || []).forEach((key) => {
+                    const normalizedKey = String(key || '').trim();
+                    if (normalizedKey) {
+                        next[normalizedKey] = true;
+                    }
+                });
+                return next;
+            };
 
             const buildDefaultGroupState = (groupId) => {
-                const selectedTasksCookie = groupId ? (getCookie(`selectedTasks_${groupId}`) || {}) : {};
+                const hasStoredPlanningState = planningScopeKey
+                    ? hasPlanningState(window.localStorage, planningScopeKey)
+                    : false;
+                const planningState = planningScopeKey
+                    ? loadPlanningState(window.localStorage, planningScopeKey)
+                    : null;
+                const selectedTeamsFromPlanning = resolvePlanningTeamSelection({
+                    scopedState: hasStoredPlanningState ? planningState : null,
+                    liveSelectedTeams: selectedTeams,
+                    savedPrefsSelectedTeams: savedPrefsRef.current.selectedTeams,
+                    savedPrefsSelectedTeam: savedPrefsRef.current.selectedTeam
+                });
+                const selectedTasksFromPlanning = hasStoredPlanningState
+                    ? selectedTaskMapFromKeys(planningState?.selectedTaskKeys || [])
+                    : {};
                 return {
                     sprintId: selectedSprint,
                     teamIdsSignature: activeGroupTeamIds.join('|'),
@@ -2957,8 +2987,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     showProduct: savedPrefsRef.current.showProduct ?? true,
                     statusFilter: savedPrefsRef.current.statusFilter ?? null,
                     searchQuery: savedPrefsRef.current.searchQuery ?? '',
-                    selectedTeams: normalizeSelectedTeams(savedPrefsRef.current.selectedTeams ?? savedPrefsRef.current.selectedTeam ?? 'all'),
-                    selectedTasks: selectedTasksCookie,
+                    selectedTeams: selectedTeamsFromPlanning,
+                    selectedTasks: selectedTasksFromPlanning,
                     showPlanning: savedPrefsRef.current.showPlanning ?? false,
                     showStats: savedPrefsRef.current.showStats ?? false,
                     showScenario: false,
@@ -3328,7 +3358,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 if (activeGroupRef.current === activeGroupId) return;
                 activeGroupRef.current = activeGroupId;
                 const cached = groupStateRef.current.get(activeGroupId);
-                if (cached) {
+                const matchesScope = cached &&
+                    cached.sprintId === selectedSprint &&
+                    cached.teamIdsSignature === activeGroupTeamIds.join('|');
+                if (matchesScope) {
                     applyGroupState(cached);
                 } else {
                     const fallback = buildDefaultGroupState(activeGroupId);
@@ -3337,6 +3370,20 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 setShowGroupDropdown(false);
             }, [activeGroupId]);
+
+            useEffect(() => {
+                if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
+                if (planningHydratedScopeRef.current === planningScopeKey) return;
+                const cached = activeGroupId ? groupStateRef.current.get(activeGroupId) : null;
+                if (cached && cached.sprintId === selectedSprint && cached.teamIdsSignature === activeGroupTeamIds.join('|')) {
+                    planningHydratedScopeRef.current = planningScopeKey;
+                    return;
+                }
+                const fallback = buildDefaultGroupState(activeGroupId);
+                groupStateRef.current.set(activeGroupId, fallback);
+                applyGroupState(fallback);
+                planningHydratedScopeRef.current = planningScopeKey;
+            }, [planningScopeKey, activeGroupId, selectedSprint, activeGroupTeamIds.join('|')]);
 
 
             useEffect(() => {
@@ -3551,10 +3598,59 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             }, []);
 
             useEffect(() => {
-                // Save selected tasks to cookie whenever they change
-                if (!activeGroupId) return;
-                setCookie(`selectedTasks_${activeGroupId}`, selectedTasks);
-            }, [selectedTasks, activeGroupId]);
+                if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
+                if (!tasksFetched || productTasksLoading || techTasksLoading) return;
+
+                const validTaskKeySet = new Set(
+                    (selectionTasks || [])
+                        .map(task => String(task?.key || '').trim())
+                        .filter(Boolean)
+                );
+                const validTeamIds = teamOptions
+                    .map(team => String(team?.id || '').trim())
+                    .filter(id => id && id !== 'all');
+
+                const nextSelectedTaskKeys = Object.keys(selectedTasks || {})
+                    .filter(key => selectedTasks[key] && validTaskKeySet.has(key))
+                    .sort();
+                const nextSelectedTeams = sanitizeSelectedTeamsForScope(selectedTeams, {
+                    activeGroupTeamIds,
+                    availableTeamIds: validTeamIds
+                });
+
+                setSelectedTasks(prev => {
+                    const prevKeys = Object.keys(prev || {})
+                        .filter(key => prev[key] && validTaskKeySet.has(key))
+                        .sort();
+                    const sameLength = prevKeys.length === nextSelectedTaskKeys.length;
+                    const sameKeys = sameLength && prevKeys.every((key, index) => key === nextSelectedTaskKeys[index]);
+                    return sameKeys ? prev : selectedTaskMapFromKeys(nextSelectedTaskKeys);
+                });
+
+                setSelectedTeams(prev => {
+                    const normalizedPrev = normalizeSelectedTeams(prev);
+                    const sameLength = normalizedPrev.length === nextSelectedTeams.length;
+                    const sameTeams = sameLength && normalizedPrev.every((id, index) => id === nextSelectedTeams[index]);
+                    return sameTeams ? prev : nextSelectedTeams;
+                });
+
+                savePlanningState(window.localStorage, planningScopeKey, {
+                    selectedTaskKeys: nextSelectedTaskKeys,
+                    selectedTeams: nextSelectedTeams
+                });
+            }, [
+                planningScopeKey,
+                activeGroupId,
+                selectedSprint,
+                tasksFetched,
+                productTasksLoading,
+                techTasksLoading,
+                selectionTasks,
+                teamOptions,
+                selectedTasks,
+                selectedTeams,
+                activeGroupTeamIds.join('|')
+            ]);
 
             useEffect(() => {
                 saveUiPrefs({

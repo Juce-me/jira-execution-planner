@@ -23,6 +23,7 @@
             --sticky-planning-z: 60;
             --sticky-epic-z: 50;
             --sticky-scenario-z: 60;
+            --sticky-control-overlay-z: 80;
             --sticky-gap: 0px;
             --compact-header-offset: 0px;
             --planning-sticky-top: 0px;
@@ -494,7 +495,7 @@
             border: 1px solid var(--border);
             box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
             padding: 0.5rem;
-            z-index: 20;
+            z-index: var(--sticky-control-overlay-z);
         }
 
         .sprint-dropdown-search {
@@ -599,7 +600,7 @@
             border: 1px solid var(--border);
             box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
             padding: 0.5rem;
-            z-index: 22;
+            z-index: var(--sticky-control-overlay-z);
         }
 
         .group-dropdown-option {
@@ -2038,7 +2039,7 @@
             border: 1px solid var(--border);
             box-shadow: 0 12px 28px rgba(22, 22, 22, 0.12);
             padding: 0.5rem 0.6rem;
-            z-index: 20;
+            z-index: var(--sticky-control-overlay-z);
             text-align: left;
             box-sizing: border-box;
         }

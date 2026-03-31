@@ -2,6 +2,7 @@ import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, createUndoStack, validateDependencies, splitAtSprintBoundaries, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
 import ScenarioBar from './scenario/ScenarioBar.jsx';
+import { buildLaneIssues, buildCapacityPlaceholderRows } from './scenario/scenarioLaneUtils.js';
 import CohortGrid from './cohort/CohortGrid.jsx';
 import OpenEpicsChart from './cohort/OpenEpicsChart.jsx';
 import {
@@ -5759,19 +5760,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return lanes.sort((a, b) => a.localeCompare(b));
             }, [scenarioLaneInfo]);
             const scenarioIssuesByLane = React.useMemo(() => {
-                const groups = new Map();
-                if (!scenarioTimelineWithSegments || scenarioTimelineWithSegments.length === 0) return groups;
-                scenarioTimelineWithSegments.forEach(issue => {
-                    const lane = scenarioLaneForIssue(issue);
-                    if (!groups.has(lane)) {
-                        groups.set(lane, []);
-                    }
-                    groups.get(lane).push(issue);
-                });
-                groups.forEach(list => {
-                    list.sort((a, b) => (a.start || '').localeCompare(b.start || ''));
-                });
-                return groups;
+                return buildLaneIssues(scenarioTimelineWithSegments, scenarioLaneMode, scenarioLaneForIssue);
             }, [scenarioTimelineWithSegments, scenarioLaneMode, scenarioEpicFocus]);
             const scenarioHasAssignees = React.useMemo(() => {
                 if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return false;

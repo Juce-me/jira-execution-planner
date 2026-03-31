@@ -7,7 +7,11 @@ This file provides Claude-specific guidance for this repository.
 ## Working Rules
 
 - Do not develop directly on `main`.
-- Use the repo default branch prefix from `AGENTS.md`: `codex/`.
+- Use the repo semantic branch prefixes from `AGENTS.md`:
+  - `feature/` for new functionality
+  - `bugfix/` for fixes
+  - `improvement/` for refinements or refactors
+  - `docs/` for documentation-only work
 - Follow the full pre-flight, during-work, and post-work git checklist in `AGENTS.md`.
 - Do not use the `using-git-worktrees` skill in this repository unless the user explicitly asks for a worktree.
 - Keep `README.md`, `AGENTS.md`, and `CLAUDE.md` aligned when workflow or structure changes.

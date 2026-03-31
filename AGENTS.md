@@ -104,7 +104,11 @@ Follow this checklist for ALL work in this repo. No exceptions.
 - Never implement bugfixes, improvements, or feature work directly on `main`.
 - Every bugfix or improvement must start on its own dedicated branch. Do not reuse `main` for active development.
 - If you are currently on `main`, create and switch to a new branch before making any code or documentation changes.
-- Use the `codex/` branch prefix by default unless the user explicitly requests a different naming convention.
+- Use a semantic branch prefix by default unless the user explicitly requests a different naming convention:
+  - `feature/` for new functionality
+  - `bugfix/` for fixes
+  - `improvement/` for refinements or refactors
+  - `docs/` for documentation-only work
 
 ### PRE-FLIGHT (before any code changes)
 1. Run `git status` and `git branch` — confirm clean working tree and correct branch

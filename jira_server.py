@@ -3349,9 +3349,6 @@ def scenario_planner():
             adjacency.setdefault(edge['from'], set()).add(edge['to'])
             adjacency.setdefault(edge['to'], set()).add(edge['from'])
 
-        if len(team_filter_ids) == 1:
-            focus_keys = [key for key in focus_keys if adjacency.get(key)]
-
         focus_set = set(focus_keys)
         context_keys = set()
         for key in focus_set:

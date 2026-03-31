@@ -61,3 +61,38 @@ test('buildLaneIssues sorts non-team lanes by start date only', () => {
         assert.deepEqual(keys, ['T-2', 'T-1']); // start-date order, not assignee order
     });
 });
+
+test('buildCapacityPlaceholderRows returns only excluded issues', () => {
+    return import('../frontend/src/scenario/scenarioLaneUtils.js').then(({ buildCapacityPlaceholderRows }) => {
+        const issues = [
+            { key: 'T-1', team: 'Alpha', start: '2026-01-01', end: '2026-06-30' },
+            { key: 'T-2', team: 'Alpha', start: '2026-01-01', end: '2026-03-31' },
+        ];
+        const excludedKeys = new Set(['T-1']);
+        const result = buildCapacityPlaceholderRows(issues, excludedKeys, '2026-01-01', '2026-03-31');
+        assert.equal(result.length, 1);
+        assert.equal(result[0].key, 'T-1');
+    });
+});
+
+test('buildCapacityPlaceholderRows clips end date to sprint end', () => {
+    return import('../frontend/src/scenario/scenarioLaneUtils.js').then(({ buildCapacityPlaceholderRows }) => {
+        const issues = [
+            { key: 'T-1', team: 'Alpha', start: '2025-10-01', end: '2026-12-31' },
+        ];
+        const excludedKeys = new Set(['T-1']);
+        const result = buildCapacityPlaceholderRows(issues, excludedKeys, '2026-01-01', '2026-03-31');
+        assert.equal(result[0].start, '2026-01-01');
+        assert.equal(result[0].end, '2026-03-31');
+    });
+});
+
+test('buildCapacityPlaceholderRows does not mutate original issues', () => {
+    return import('../frontend/src/scenario/scenarioLaneUtils.js').then(({ buildCapacityPlaceholderRows }) => {
+        const issue = { key: 'T-1', team: 'Alpha', start: '2025-10-01', end: '2026-12-31' };
+        const excludedKeys = new Set(['T-1']);
+        buildCapacityPlaceholderRows([issue], excludedKeys, '2026-01-01', '2026-03-31');
+        assert.equal(issue.start, '2025-10-01'); // original unchanged
+        assert.equal(issue.end, '2026-12-31');
+    });
+});

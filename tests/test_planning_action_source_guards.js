@@ -42,3 +42,12 @@ test('sprint dropdown keeps selected option visible without using document scrol
     assert.match(source, /listEl\.scrollTop = Math\.max\(0, optionTop - padding\)/);
     assert.doesNotMatch(source, /scrollIntoView\(\{ block: 'center' \}\)/);
 });
+
+test('planned teams effort jira links are scoped to stories', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /statuses: \['Postponed'\], issueType: 'Story'/);
+    assert.match(source, /statuses: \['To Do', 'Pending'\], issueType: 'Story'/);
+    assert.match(source, /statuses: \['Accepted'\], issueType: 'Story'/);
+});

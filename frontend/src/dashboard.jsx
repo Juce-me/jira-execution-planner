@@ -8792,15 +8792,15 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             };
 
             const buildPostponedLink = ({ teamId, teamIds, projectName, projectNames }) => {
-                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['Postponed'] });
+                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['Postponed'], issueType: 'Story' });
             };
 
             const buildTodoPendingLink = ({ teamId, teamIds, projectName, projectNames }) => {
-                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['To Do', 'Pending'] });
+                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['To Do', 'Pending'], issueType: 'Story' });
             };
 
             const buildAcceptedLink = ({ teamId, teamIds, projectName, projectNames }) => {
-                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['Accepted'] });
+                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['Accepted'], issueType: 'Story' });
             };
 
             const buildKeyListLink = (keys, { addSprint } = {}) => {

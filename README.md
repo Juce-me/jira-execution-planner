@@ -19,6 +19,9 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Dependency focus** - Click Depends On/Dependents to highlight related tasks and show missing deps inline
 - ✅ **Planning rollups** - Selected story points summarized per team, project, and overall
 - ✅ **Capacity planning** - Team capacity vs planning capacity (exclusions via epic toggle)
+- ✅ **Scoped planning persistence** - Planning selections persist locally per sprint and team group, then reconcile on refresh
+- ✅ **Planning bulk actions** - Quickly include Accepted, To Do, Postponed, and Awaiting Validation stories
+- ✅ **Compact sticky controls** - Sticky Sprint/Group/Teams controls keep the same dropdown behavior while using a smaller compact layout
 - ✅ **Scenario planner** - [Feature guide](docs/features/scenario-planner.md)
 - ✅ **Alerts** - [Feature guide](docs/features/alerts.md)
 - ✅ **Sprint statistics** - [Feature guide](docs/features/statistics.md)
@@ -249,11 +252,14 @@ The app now relies on Dashboard Settings for supported runtime configuration. Ke
 2. **Frontend** (`jira-dashboard.html`):
    - Displays tasks in a clean, animated interface
    - **Sprint Selector** - Dropdown to choose sprint (2025Q1, 2025Q2, etc.)
+   - **Team Groups + Sticky Controls** - Group, Sprint, and Teams controls stay available in a compact sticky header while scrolling
    - Auto-selects current quarter on first load
    - Sorted by priority (Highest → Lowest)
    - Filter toggles for Done/Killed/Tech/Product tasks
    - Dependency focus mode (chips highlight related tasks, missing deps shown inline)
    - Click stat cards to filter by status
+   - Planning selections persist locally per `sprint + group` and prune stories that move out of scope on refresh
+   - Planning module includes bulk actions for Accepted, To Do, Postponed, and Awaiting Validation
    - Refresh buttons for tasks and sprints
    - Ready-to-close alert uses all-time story data (no sprint filter)
    - Statistics panel for active/closed sprints (derived from loaded sprint tasks)

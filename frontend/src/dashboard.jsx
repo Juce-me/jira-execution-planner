@@ -4234,7 +4234,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return {
                     config: {
                         lane_mode: scenarioLaneMode,
-                        anchor_date: anchorDate
+                        anchor_date: anchorDate,
+                        excluded_capacity_epics: activeGroupExcludedCapacityEpics || []
                     },
                     filters: {
                         sprint: selectedSprint || null,

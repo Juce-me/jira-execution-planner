@@ -27,7 +27,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 import io
 from requests import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
-from planning import Issue, ScenarioConfig, compute_slack, schedule_issues
+from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
 
 # Load environment variables from .env file
 load_dotenv()
@@ -3423,10 +3423,21 @@ def scenario_planner():
                     'devLead': detail.get('reporter') if detail else None
                 }
 
+        # Separate excluded-capacity issues (Ad Hoc, Interrupt, DevLead, etc.)
+        # from the scheduling pipeline.  They get fixed sprint-window dates
+        # instead of consuming assignee time slots.
+        excluded_capacity_epics_raw = config_payload.get('excluded_capacity_epics') or []
+        excluded_epic_set = {str(k).strip().upper() for k in excluded_capacity_epics_raw if k}
+
         issue_objs = []
+        excluded_issue_entries = []
         for key in included_keys:
             entry = issue_by_key.get(key)
             if not entry:
+                continue
+            epic = (entry.get('epicKey') or '').strip().upper()
+            if excluded_epic_set and epic in excluded_epic_set:
+                excluded_issue_entries.append(entry)
                 continue
             issue_objs.append(Issue(
                 key=entry.get('key'),
@@ -3442,6 +3453,22 @@ def scenario_planner():
             ))
 
         scheduled_list, scheduled_map = schedule_issues(issue_objs, dependency_edges, scenario_config)
+
+        # Give excluded-capacity issues fixed sprint dates (start → end)
+        for entry in excluded_issue_entries:
+            item = ScheduledIssue(
+                key=entry.get('key'),
+                summary=entry.get('summary') or '',
+                lane=entry.get('team') or 'Unassigned',
+                start_date=start_date,
+                end_date=quarter_end_date,
+                blocked_by=[],
+                scheduled_reason='excluded_capacity',
+                duration_weeks=None,
+                assignee=entry.get('assignee'),
+            )
+            scheduled_list.append(item)
+            scheduled_map[entry.get('key')] = item
         scheduled_by_key = {item.key: item for item in scheduled_list}
         slack, critical = compute_slack(scheduled_map, dependency_edges, scenario_config.quarter_end_date)
         if app.debug:

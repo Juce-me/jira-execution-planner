@@ -2,7 +2,7 @@ import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, createUndoStack, validateDependencies, splitAtSprintBoundaries, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
 import ScenarioBar from './scenario/ScenarioBar.jsx';
-import { buildLaneIssues, buildCapacityPlaceholderRows } from './scenario/scenarioLaneUtils.js';
+import { buildLaneIssues } from './scenario/scenarioLaneUtils.js';
 import CohortGrid from './cohort/CohortGrid.jsx';
 import OpenEpicsChart from './cohort/OpenEpicsChart.jsx';
 import {
@@ -5417,17 +5417,31 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const scenarioTimelineWithSegments = React.useMemo(() => {
                 if (!scenarioTimelineIssues || scenarioTimelineIssues.length === 0) return scenarioTimelineIssues;
                 if (!scenarioSprintBounds || scenarioSprintBounds.length < 2) return scenarioTimelineIssues;
+                // Clip excluded capacity issues to the selected sprint window so
+                // they never extend beyond the sprint they belong to.
+                const sprintStartISO = scenarioViewStart ? dateToISODate(scenarioViewStart) : null;
+                const sprintEndISO   = scenarioDeadline  ? dateToISODate(scenarioDeadline)  : null;
                 const result = [];
                 scenarioTimelineIssues.forEach(issue => {
                     if (scenarioExcludedIssueKeys.has(issue.key)) {
                         const segments = splitAtSprintBoundaries(issue, scenarioSprintBounds);
-                        result.push(...segments);
+                        segments.forEach(seg => {
+                            if (sprintStartISO && sprintEndISO) {
+                                const clippedStart = !seg.start || seg.start < sprintStartISO ? sprintStartISO : seg.start;
+                                const clippedEnd   = !seg.end   || seg.end   > sprintEndISO   ? sprintEndISO   : seg.end;
+                                if (clippedStart <= clippedEnd) {
+                                    result.push({ ...seg, start: clippedStart, end: clippedEnd });
+                                }
+                            } else {
+                                result.push(seg);
+                            }
+                        });
                     } else {
                         result.push(issue);
                     }
                 });
                 return result;
-            }, [scenarioTimelineIssues, scenarioExcludedIssueKeys, scenarioSprintBounds]);
+            }, [scenarioTimelineIssues, scenarioExcludedIssueKeys, scenarioSprintBounds, scenarioViewStart, scenarioDeadline]);
             const scenarioTimelineIssueKeys = React.useMemo(() => {
                 return new Set(scenarioTimelineWithSegments.map(issue => issue.key));
             }, [scenarioTimelineWithSegments]);
@@ -5923,27 +5937,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             regularIssues.push(issue);
                         }
                     });
-                    if (scenarioLaneMode === 'team' && rawCapacityIssues.length > 0) {
-                        // Pin capacity placeholders to row 0 (dedicated team-cap row).
-                        // Clip their dates so the row end blocks regular tasks within the sprint only.
-                        const sprintStartISO = scenarioViewStart ? dateToISODate(scenarioViewStart) : null;
-                        const sprintEndISO   = scenarioDeadline  ? dateToISODate(scenarioDeadline)  : null;
-                        const clipped = sprintStartISO && sprintEndISO
-                            ? buildCapacityPlaceholderRows(rawCapacityIssues, scenarioExcludedIssueKeys, sprintStartISO, sprintEndISO)
-                            : rawCapacityIssues;
-                        // Seed row 0: block it from regular-issue packing by setting its end to sprint end
-                        const latestCapEnd = clipped.reduce((max, issue) => {
-                            const d = parseScenarioDate(issue.end);
-                            return d && d > max ? d : max;
-                        }, new Date(0));
-                        rowEnds[0] = latestCapEnd.getTime() > 0 ? latestCapEnd : new Date(8640000000000000);
-                        rowAssignees[0] = '__team_capacity__';
-                        clipped.forEach(issue => rowIndexByKey.set(issue.key, 0));
-                        assignRows(regularIssues, rowEnds, 0, rowAssignees);
-                    } else {
-                        assignRows(regularIssues, rowEnds, 0, rowAssignees);
-                        assignRows(rawCapacityIssues, rowEnds, 0, rowAssignees);
-                    }
+                    // Excluded capacity issues are already clipped to the sprint
+                    // in scenarioTimelineWithSegments — stack them normally after
+                    // regular issues so they sit in their own rows within the lane.
+                    assignRows(regularIssues, rowEnds, 0, rowAssignees);
+                    assignRows(rawCapacityIssues, rowEnds, 0, rowAssignees);
                     laneRowAssignees.set(lane, [...rowAssignees]);
                     const totalRows = Math.max(1, rowEnds.length, capacityRows || 0);
                     const isCollapsed = scenarioEpicFocus ? false : Boolean(scenarioCollapsedLanes[lane]);
@@ -5981,7 +5979,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 scenarioExcludedIssueKeys,
                 isAllTeamsSelected,
                 scenarioEpicFocus,
-                scenarioDeadline,
                 perfEnabled
             ]);
             const scenarioLaneMeta = React.useMemo(() => {
@@ -11633,19 +11630,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                             {scenarioLaneMode === 'team' && (() => {
                                                                 const groups = scenarioLaneAssigneeGroups.get(lane) || [];
                                                                 return groups.map((group, idx) => {
-                                                                    const isTeamCap = group.assignee === '__team_capacity__';
-                                                                    const displayName = isTeamCap
-                                                                        ? 'Team cap.'
-                                                                        : group.assignee
-                                                                        ? (() => { const parts = group.assignee.split(' '); return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0]; })()
-                                                                        : 'Unassigned';
+                                                                    const displayName = group.assignee ? (() => { const parts = group.assignee.split(' '); return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0]; })() : 'Unassigned';
                                                                     const top = scenarioBarGap + group.startRow * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
                                                                     const height = group.rowCount * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
                                                                     return (
-                                                                        <div key={`al-${idx}`}
-                                                                             className={`scenario-assignee-label${isTeamCap ? ' scenario-assignee-label--team-cap' : ''}`}
+                                                                        <div key={`al-${idx}`} className="scenario-assignee-label"
                                                                              style={{ top: `${top}px`, height: `${height}px` }}
-                                                                             title={isTeamCap ? 'Reserved team capacity' : (group.assignee || 'Unassigned')}>
+                                                                             title={group.assignee || 'Unassigned'}>
                                                                             {displayName}
                                                                         </div>
                                                                     );

@@ -64,7 +64,7 @@
         .compact-sticky-header {
             display: none;
             align-items: flex-end;
-            gap: 0.9rem;
+            gap: 0.65rem;
             flex-wrap: nowrap;
             min-width: 0;
             padding: 0 0 0.45rem;
@@ -83,7 +83,7 @@
         .compact-sticky-header-controls {
             display: flex;
             align-items: flex-end;
-            gap: 0.5rem;
+            gap: 0.35rem;
             flex: 1 1 auto;
             flex-wrap: nowrap;
             min-width: 0;
@@ -91,9 +91,9 @@
         }
 
         .compact-sticky-header-search {
-            flex: 0 1 240px;
-            min-width: 180px;
-            max-width: 260px;
+            flex: 0 1 190px;
+            min-width: 150px;
+            max-width: 210px;
             margin-left: auto;
         }
 
@@ -117,13 +117,16 @@
         .compact-sticky-header .group-dropdown,
         .compact-sticky-header .team-dropdown {
             min-width: 0;
+            width: 100%;
+            max-width: 170px;
         }
 
         .compact-sticky-header .sprint-dropdown-toggle,
         .compact-sticky-header .group-dropdown-toggle,
         .compact-sticky-header .team-dropdown-toggle {
             min-width: 0;
-            max-width: 220px;
+            width: 100%;
+            max-width: none;
         }
 
         .compact-sticky-header .sprint-dropdown-toggle span,
@@ -437,11 +440,13 @@
 
         .sprint-dropdown {
             position: relative;
-            min-width: 130px;
+            width: 200px;
+            min-width: 200px;
         }
 
         .sprint-dropdown-toggle {
-            width: 125px;
+            width: 100%;
+            min-width: 0;
             padding: 0.5rem 0.7rem 0.4rem;
             border: 1px solid var(--border);
             background: var(--bg-secondary);
@@ -460,6 +465,14 @@
             box-shadow: none;
             border-radius: 10px;
             height: var(--control-height);
+        }
+
+        .sprint-dropdown-toggle span {
+            flex: 1;
+            text-align: left;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
         }
 
         .sprint-dropdown-toggle svg {
@@ -488,23 +501,31 @@
 
         .sprint-dropdown-panel {
             position: absolute;
-            top: calc(100% + 0.4rem);
-            right: 0;
-            width: 160px;
+            top: calc(100% + 0.35rem);
+            left: 0;
+            right: auto;
+            width: 100%;
+            min-width: 100%;
+            max-width: none;
             background: #fff;
             border: 1px solid var(--border);
-            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
-            padding: 0.5rem;
+            box-shadow: 0 12px 28px rgba(22, 22, 22, 0.12);
+            padding: 0.5rem 0.6rem;
             z-index: var(--sticky-control-overlay-z);
+            text-align: left;
+            box-sizing: border-box;
         }
 
         .sprint-dropdown-search {
             width: 100%;
-            padding: 0.4rem 0.5rem;
+            padding: 0.45rem 0.55rem;
             border: 1px solid var(--border);
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.75rem;
+            font-size: 0.65rem;
             margin-bottom: 0.4rem;
+            border-radius: 8px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
         }
 
         .sprint-dropdown-list {
@@ -516,20 +537,30 @@
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            padding: 0.35rem 0.4rem;
+            padding: 0.3rem 0.2rem;
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.75rem;
+            font-size: 0.55rem;
+            color: var(--text-primary);
+            text-align: left;
+            text-transform: none;
+            letter-spacing: normal;
+            line-height: 1.2;
             cursor: pointer;
         }
 
         .sprint-dropdown-option:hover {
-            background: #f5f5f5;
-            box-shadow: inset 0 0 0 1px #e6e1da;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .sprint-dropdown-option + .sprint-dropdown-option {
+            border-top: 1px dashed var(--border);
         }
 
         .group-dropdown {
             position: relative;
-            min-width: 150px;
+            width: 200px;
+            min-width: 200px;
         }
 
         .group-control {
@@ -539,8 +570,8 @@
         }
 
         .group-dropdown-toggle {
-            width: auto;
-            min-width: 200px;
+            width: 100%;
+            min-width: 0;
             padding: 0.5rem 0.7rem 0.4rem;
             border: 1px solid var(--border);
             background: var(--bg-secondary);
@@ -593,14 +624,21 @@
 
         .group-dropdown-panel {
             position: absolute;
-            top: calc(100% + 0.4rem);
-            right: 0;
-            width: 180px;
+            top: calc(100% + 0.35rem);
+            left: 0;
+            right: auto;
+            width: 100%;
+            min-width: 100%;
+            max-width: none;
+            max-height: 220px;
+            overflow-y: auto;
             background: #fff;
             border: 1px solid var(--border);
-            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
-            padding: 0.5rem;
+            box-shadow: 0 12px 28px rgba(22, 22, 22, 0.12);
+            padding: 0.5rem 0.6rem;
             z-index: var(--sticky-control-overlay-z);
+            text-align: left;
+            box-sizing: border-box;
         }
 
         .group-dropdown-option {
@@ -608,15 +646,24 @@
             align-items: center;
             justify-content: flex-start;
             gap: 0.5rem;
-            padding: 0.35rem 0.4rem;
+            padding: 0.3rem 0.2rem;
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.75rem;
+            font-size: 0.55rem;
+            color: var(--text-primary);
+            text-align: left;
+            text-transform: none;
+            letter-spacing: normal;
+            line-height: 1.2;
             cursor: pointer;
         }
 
         .group-dropdown-option:hover {
-            background: #f5f5f5;
-            box-shadow: inset 0 0 0 1px #e6e1da;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .group-dropdown-option + .group-dropdown-option {
+            border-top: 1px dashed var(--border);
         }
 
         .group-option-meta {
@@ -1962,8 +2009,10 @@
 
         .team-dropdown {
             position: relative;
-            display: inline-block;
+            display: block;
             align-items: center;
+            width: 200px;
+            min-width: 200px;
         }
 
         .team-dropdown-toggle {
@@ -1973,8 +2022,8 @@
             font-size: 0.7rem;
             color: var(--text-primary);
             padding: 0.5rem 0.7rem 0.4rem;
-            width: auto;
-            min-width: 200px;
+            width: 100%;
+            min-width: 0;
             display: inline-flex;
             align-items: center;
             justify-content: space-between;
@@ -2029,10 +2078,11 @@
         .team-dropdown-panel {
             position: absolute;
             top: calc(100% + 0.35rem);
-            right: 0;
-            width: max-content;
-            min-width: 240px;
-            max-width: 320px;
+            left: 0;
+            right: auto;
+            width: 100%;
+            min-width: 100%;
+            max-width: none;
             max-height: 220px;
             overflow-y: auto;
             background: #fff;
@@ -2044,7 +2094,7 @@
             box-sizing: border-box;
         }
 
-        .view-selector .team-dropdown-panel label.team-dropdown-option {
+        .team-dropdown-panel label.team-dropdown-option {
             display: grid;
             grid-template-columns: 14px 1fr;
             align-items: center;
@@ -2063,16 +2113,16 @@
             margin: 0;
         }
 
-        .view-selector .team-dropdown-panel label.team-dropdown-option:hover {
+        .team-dropdown-panel label.team-dropdown-option:hover {
             background: var(--bg-primary);
             color: var(--text-primary);
         }
 
-        .view-selector .team-dropdown-panel label.team-dropdown-option input {
+        .team-dropdown-panel label.team-dropdown-option input {
             margin: 0;
         }
 
-        .view-selector .team-dropdown-panel label.team-dropdown-option span {
+        .team-dropdown-panel label.team-dropdown-option span {
             text-align: left;
         }
 

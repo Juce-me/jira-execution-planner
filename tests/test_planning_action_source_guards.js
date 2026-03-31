@@ -33,3 +33,12 @@ test('planning selection persistence effect is declared after selectionTasks', (
         'savePlanningState effect should appear after selectionTasks is declared'
     );
 });
+
+test('sprint dropdown keeps selected option visible without using document scrollIntoView', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /querySelector\('\.sprint-dropdown-list'\)/);
+    assert.match(source, /listEl\.scrollTop = Math\.max\(0, optionTop - padding\)/);
+    assert.doesNotMatch(source, /scrollIntoView\(\{ block: 'center' \}\)/);
+});

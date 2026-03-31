@@ -3414,10 +3414,22 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             useEffect(() => {
                 if (!selectedSprint) return;
                 if (!showSprintDropdown) return;
-                const optionEl = getActiveDropdownNode(sprintDropdownRefs)?.querySelector(`[data-sprint-id="${selectedSprint}"]`);
+                const dropdownNode = getActiveDropdownNode(sprintDropdownRefs);
+                const optionEl = dropdownNode?.querySelector(`[data-sprint-id="${selectedSprint}"]`);
+                const listEl = dropdownNode?.querySelector('.sprint-dropdown-list');
                 if (!optionEl) return;
-                if (optionEl.scrollIntoView) {
-                    optionEl.scrollIntoView({ block: 'center' });
+                if (!listEl) return;
+
+                const optionTop = optionEl.offsetTop;
+                const optionBottom = optionTop + optionEl.offsetHeight;
+                const viewportTop = listEl.scrollTop;
+                const viewportBottom = viewportTop + listEl.clientHeight;
+                const padding = 8;
+
+                if (optionTop < viewportTop) {
+                    listEl.scrollTop = Math.max(0, optionTop - padding);
+                } else if (optionBottom > viewportBottom) {
+                    listEl.scrollTop = Math.max(0, optionBottom - listEl.clientHeight + padding);
                 }
             }, [showSprintDropdown, selectedSprint, filteredSprints?.length, compactStickyVisible]);
 

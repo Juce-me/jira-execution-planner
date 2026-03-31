@@ -61,3 +61,17 @@ test('dashboard hydrates scoped team selection from group and sprint storage', (
     assert.match(source, /reconcileTeamSelectionState\(/);
     assert.match(source, /saveTeamSelectionState\(window\.localStorage, teamSelectionScopeKey,/);
 });
+
+test('selected sp by team forces six teams onto multiple rows', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /const rows = teamCount === 6 \? 2 : Math\.ceil\(teamCount \/ maxPerRow\);/);
+});
+
+test('selected sp by team cards still render for a single team entry', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /\{selectedTeamEntries\.length > 0 && \(\(\) => \{/);
+});

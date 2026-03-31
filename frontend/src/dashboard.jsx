@@ -11967,7 +11967,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         )}
 
                         {/* --- Team MicroBar tiles --- */}
-                        {selectedTeamEntries.length > 1 && (() => {
+                        {selectedTeamEntries.length > 0 && (() => {
                             const sortedTeams = [...selectedTeamEntries].sort((a, b) => {
                                 if (capacityEnabled) {
                                     const da = a.storyPoints - (a.teamCapacity || 0);
@@ -11978,7 +11978,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             });
                             const teamCount = sortedTeams.length;
                             const maxPerRow = 6;
-                            const rows = Math.ceil(teamCount / maxPerRow);
+                            const rows = teamCount === 6 ? 2 : Math.ceil(teamCount / maxPerRow);
                             const cols = Math.ceil(teamCount / rows);
                             return (
                                 <>

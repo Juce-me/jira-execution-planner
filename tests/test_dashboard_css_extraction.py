@@ -64,6 +64,8 @@ class TestDashboardCssFileContract(unittest.TestCase):
         self.assertIn('min-width: 100%;', css)
         self.assertIn('.project-bar-fill:hover', css)
         self.assertIn('z-index: 50;', css)
+        self.assertIn('.microbar', css)
+        self.assertIn('height: 14px;', css)
         self.assertIn('--compact-header-offset', css)
         self.assertIn('--sticky-control-overlay-z', css)
         self.assertIn('--planning-sticky-top', css)

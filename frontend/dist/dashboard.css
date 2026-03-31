@@ -6107,7 +6107,7 @@
         /* MicroBar tiles */
         .microbar {
             width: 100%;
-            height: auto;
+            height: 14px;
             display: block;
             margin: 0.18rem 0 0;
         }

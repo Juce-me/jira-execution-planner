@@ -409,7 +409,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const scenarioTeamCollapseInitRef = useRef(false);
             const [scenarioOverrides, setScenarioOverrides] = useState({});
             const [scenarioEditMode, setScenarioEditMode] = useState(false);
-            const scenarioPreEditLaneModeRef = useRef(null);
+
             const scenarioUndoStackRef = useRef(createUndoStack());
             const [scenarioUndoVersion, setScenarioUndoVersion] = useState(0);
             const [scenarioDragState, setScenarioDragState] = useState(null);
@@ -4291,16 +4291,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const toggleScenarioEditMode = () => {
                 setScenarioEditMode(prev => {
                     if (!prev) {
-                        // Entering edit mode — save current lane mode, force assignee, clear epic focus
-                        scenarioPreEditLaneModeRef.current = scenarioLaneMode;
+                        // Entering edit mode — clear epic focus (edit operates on flat bars)
                         setScenarioEpicFocus(null);
-                        setScenarioLaneMode('assignee');
                     } else {
-                        // Exiting edit mode — restore lane mode, clear undo stack
-                        if (scenarioPreEditLaneModeRef.current) {
-                            setScenarioLaneMode(scenarioPreEditLaneModeRef.current);
-                            scenarioPreEditLaneModeRef.current = null;
-                        }
+                        // Exiting edit mode — clear undo stack
                         scenarioUndoStackRef.current.clear();
                         setScenarioUndoVersion(0);
                     }
@@ -11321,7 +11315,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                 <div className="scenario-toggle-group">
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'team' ? 'active' : ''}`}
-                                                        disabled={scenarioEditMode}
                                                         onClick={() => {
                                                             if (scenarioEpicFocus) clearScenarioEpicFocus();
                                                             setScenarioLaneMode('team');
@@ -11331,7 +11324,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     </button>
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'epic' ? 'active' : ''}`}
-                                                        disabled={scenarioEditMode}
                                                         onClick={() => {
                                                             if (scenarioEpicFocus) clearScenarioEpicFocus();
                                                             setScenarioLaneMode('epic');
@@ -11341,7 +11333,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     </button>
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'assignee' ? 'active' : ''}`}
-                                                        disabled={scenarioEditMode}
                                                         onClick={() => {
                                                             if (scenarioEpicFocus) clearScenarioEpicFocus();
                                                             setScenarioLaneMode('assignee');

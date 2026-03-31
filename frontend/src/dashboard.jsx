@@ -5937,11 +5937,19 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             regularIssues.push(issue);
                         }
                     });
-                    // Excluded capacity issues are already clipped to the sprint
-                    // in scenarioTimelineWithSegments — stack them normally after
-                    // regular issues so they sit in their own rows within the lane.
+                    // Regular tasks fill top rows; excluded capacity always goes
+                    // below all regular rows (never shares a row with regular tasks).
+                    // Excluded dates are already clipped to the sprint in
+                    // scenarioTimelineWithSegments.
                     assignRows(regularIssues, rowEnds, 0, rowAssignees);
-                    assignRows(rawCapacityIssues, rowEnds, 0, rowAssignees);
+                    if (rawCapacityIssues.length > 0) {
+                        const excludedRowStart = Math.max(1, rowEnds.length);
+                        const excludedRowEnds = [];
+                        const excludedRowAssignees = [];
+                        assignRows(rawCapacityIssues, excludedRowEnds, excludedRowStart, excludedRowAssignees, { allowAssigneeMix: true });
+                        excludedRowEnds.forEach(end => rowEnds.push(end));
+                        excludedRowAssignees.forEach(a => rowAssignees.push(a));
+                    }
                     laneRowAssignees.set(lane, [...rowAssignees]);
                     const totalRows = Math.max(1, rowEnds.length, capacityRows || 0);
                     const isCollapsed = scenarioEpicFocus ? false : Boolean(scenarioCollapsedLanes[lane]);

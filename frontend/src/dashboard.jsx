@@ -4752,7 +4752,15 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     .map(team => String(team?.id || '').trim())
                     .filter(id => id && id !== 'all');
                 const storedState = loadTeamSelectionState(window.localStorage, teamSelectionScopeKey);
-                const baseState = storedState || { selectedTeams };
+                // savedPrefsRef is a ref — always reflects the most-recently-persisted value,
+                // free from stale closure issues. If the user's last saved selection was
+                // 'all', honour it instead of letting a stale scope-store specific-team
+                // entry override it (the reported refresh bug).
+                const latestSavedTeams = normalizeSelectedTeams(
+                    savedPrefsRef.current.selectedTeams ?? savedPrefsRef.current.selectedTeam ?? 'all'
+                );
+                const savedIsAll = latestSavedTeams.includes('all');
+                const baseState = (storedState && !savedIsAll) ? storedState : { selectedTeams: latestSavedTeams };
                 const reconciled = reconcileTeamSelectionState(baseState, {
                     validTeamIds: new Set(validTeamIds)
                 });
@@ -4802,6 +4810,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 return `${selectedTeamSet.size} Teams`;
             }, [isAllTeamsSelected, selectedTeamSet, teamNameById]);
+
+            const longestTeamOptionLabel = React.useMemo(() => {
+                return teamOptions.reduce((longest, t) => t.name.length > longest.length ? t.name : longest, 'All Teams');
+            }, [teamOptions]);
 
             const scenarioTeamIds = React.useMemo(() => {
                 if (isAllTeamsSelected) {
@@ -9745,7 +9757,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             }}
                             aria-disabled={tasks.length === 0 && loading}
                         >
-                            <span>{selectedTeamsLabel}</span>
+                            <span style={{flex: 1, display: 'grid', textAlign: 'left', minWidth: 0}}>
+                                <span style={{gridArea: '1/1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{selectedTeamsLabel}</span>
+                                <span style={{gridArea: '1/1', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap'}} aria-hidden="true">{longestTeamOptionLabel}</span>
+                            </span>
                             <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
                                 <path d="M6 9L1 4h10z"/>
                             </svg>
@@ -11967,7 +11982,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         )}
 
                         {/* --- Team MicroBar tiles --- */}
-                        {selectedTeamEntries.length > 0 && (() => {
+                        {selectedTeamEntries.length > 1 && (() => {
                             const sortedTeams = [...selectedTeamEntries].sort((a, b) => {
                                 if (capacityEnabled) {
                                     const da = a.storyPoints - (a.teamCapacity || 0);
@@ -12009,14 +12024,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             return (
                                                 <div key={info.id} className="team-stat-card team-card" data-tooltip={tooltipText}>
                                                     <div className="team-stat-label">{info.name}</div>
-                                                    <svg className="microbar" viewBox={`0 0 ${barW} ${barH}`}>
-                                                        <rect x="0" y="0" width={barW} height={barH} rx="4" fill="#e0ddd7" />
-                                                        <rect x="0" y="0" width={valW} height={barH} rx="4" fill={teamColor} />
-                                                        <text x="4" y={barH / 2} dominantBaseline="central" className="microbar-label">{spLabel}</text>
+                                                    <div className="microbar">
+                                                        <div className="microbar-fill" style={{width: `${scale > 0 ? Math.min(100, (valW / barW) * 100) : 0}%`, background: teamColor}} />
                                                         {markerX !== null && (
-                                                            <line x1={markerX} y1="0" x2={markerX} y2={barH} stroke="var(--text-primary)" strokeWidth="1.25" strokeDasharray="3 2" />
+                                                            <div className="microbar-marker" style={{left: `${(markerX / barW) * 100}%`}} />
                                                         )}
-                                                    </svg>
+                                                        <span className="microbar-label">{spLabel}</span>
+                                                    </div>
                                                     {deltaLabel && (
                                                         <div className={`microbar-meta ${capMeta && capMeta.status ? capMeta.status : ''}`}>{deltaLabel}</div>
                                                     )}

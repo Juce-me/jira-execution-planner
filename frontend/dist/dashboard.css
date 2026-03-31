@@ -6110,14 +6110,38 @@
             height: 14px;
             display: block;
             margin: 0.18rem 0 0;
+            position: relative;
+            border-radius: 4px;
+            background: #e0ddd7;
+        }
+
+        .microbar-fill {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            border-radius: 4px;
+        }
+
+        .microbar-marker {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 0;
+            border-left: 1.25px dashed var(--text-primary);
         }
 
         .microbar-label {
             font-family: 'IBM Plex Mono', monospace;
             font-size: 8px;
-            fill: #fff;
+            color: #fff;
             font-weight: 500;
             pointer-events: none;
+            position: absolute;
+            left: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            line-height: 1;
         }
 
         .microbar-meta {

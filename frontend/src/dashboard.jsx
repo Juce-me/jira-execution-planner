@@ -5919,18 +5919,37 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         ? Math.max(1, Math.round(capacitySize) + SCENARIO_TEAM_LEAD_ROWS)
                         : null;
                     const regularIssues = [];
-                    const excludedIssues = [];
+                    const rawCapacityIssues = [];
                     issues.forEach((issue) => {
                         if (!issue?.key) return;
                         const issueKeyForExclude = issue.originalKey || issue.key;
                         if (scenarioExcludedIssueKeys.has(issueKeyForExclude) || excludedEpicSet.has(normalizeEpicKey(issue.epicKey || ''))) {
-                            excludedIssues.push(issue);
+                            rawCapacityIssues.push(issue);
                         } else {
                             regularIssues.push(issue);
                         }
                     });
-                    assignRows(regularIssues, rowEnds, 0, rowAssignees);
-                    assignRows(excludedIssues, rowEnds, 0, rowAssignees);
+                    if (scenarioLaneMode === 'team' && rawCapacityIssues.length > 0) {
+                        // Pin capacity placeholders to row 0 (dedicated team-cap row).
+                        // Clip their dates so the row end blocks regular tasks within the sprint only.
+                        const sprintStartISO = scenarioViewStart ? dateToISODate(scenarioViewStart) : null;
+                        const sprintEndISO   = scenarioDeadline  ? dateToISODate(scenarioDeadline)  : null;
+                        const clipped = sprintStartISO && sprintEndISO
+                            ? buildCapacityPlaceholderRows(rawCapacityIssues, scenarioExcludedIssueKeys, sprintStartISO, sprintEndISO)
+                            : rawCapacityIssues;
+                        // Seed row 0: block it from regular-issue packing by setting its end to sprint end
+                        const latestCapEnd = clipped.reduce((max, issue) => {
+                            const d = parseScenarioDate(issue.end);
+                            return d && d > max ? d : max;
+                        }, new Date(0));
+                        rowEnds[0] = latestCapEnd.getTime() > 0 ? latestCapEnd : new Date(8640000000000000);
+                        rowAssignees[0] = '__team_capacity__';
+                        clipped.forEach(issue => rowIndexByKey.set(issue.key, 0));
+                        assignRows(regularIssues, rowEnds, 0, rowAssignees);
+                    } else {
+                        assignRows(regularIssues, rowEnds, 0, rowAssignees);
+                        assignRows(rawCapacityIssues, rowEnds, 0, rowAssignees);
+                    }
                     laneRowAssignees.set(lane, [...rowAssignees]);
                     const totalRows = Math.max(1, rowEnds.length, capacityRows || 0);
                     const isCollapsed = scenarioEpicFocus ? false : Boolean(scenarioCollapsedLanes[lane]);
@@ -5968,6 +5987,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 scenarioExcludedIssueKeys,
                 isAllTeamsSelected,
                 scenarioEpicFocus,
+                scenarioDeadline,
                 perfEnabled
             ]);
             const scenarioLaneMeta = React.useMemo(() => {

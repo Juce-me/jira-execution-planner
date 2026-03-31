@@ -17,11 +17,24 @@
 | Create | `frontend/src/scenario/scenarioLaneUtils.js` | Pure lane-grouping utilities: killed filter, assignee sort, capacity placeholder |
 | Create | `tests/test_scenario_lane_utils.js` | Node.js tests for the new module |
 | Modify | `jira_server.py` lines 3352–3353 | Remove single-team dependency filter |
-| Modify | `frontend/src/dashboard.jsx` line 5721 | Replace `scenarioIssuesByLane` sort with `buildLaneIssues` call |
-| Modify | `frontend/src/dashboard.jsx` lines 5881–5893 | Update `scenarioLaneStacking` to pin capacity placeholder to row 0 |
-| Modify | `frontend/src/dashboard.jsx` line 11582 | Add `Team cap.` display name for `__team_capacity__` assignee sentinel |
-| Modify | `frontend/src/dashboard.jsx` line 11586 | Add `scenario-assignee-label--team-cap` CSS class |
+| Modify | `frontend/src/dashboard.jsx` line 5772 | Replace `scenarioIssuesByLane` sort with `buildLaneIssues` call |
+| Modify | `frontend/src/dashboard.jsx` lines 5932–5944 | Update `scenarioLaneStacking` to pin capacity placeholder to row 0 |
+| Modify | `frontend/src/dashboard.jsx` line 11636 | Add `Team cap.` display name for `__team_capacity__` assignee sentinel |
+| Modify | `frontend/src/dashboard.jsx` line 11640 | Add `scenario-assignee-label--team-cap` CSS class |
 | Modify | `jira-dashboard.html` (inline `<style>`) | Add `.scenario-assignee-label--team-cap` CSS rule |
+
+---
+
+## Task 0: Create feature branch
+
+- [ ] **Step 0.1: Create and switch to the working branch**
+
+```bash
+git checkout main && git pull origin main
+git checkout -b improvement/scenario-planner-fixes
+```
+
+All subsequent commits land on this branch. Merge to `main` via PR after Task 7.
 
 ---
 
@@ -378,7 +391,7 @@ git commit -m "feat: add buildCapacityPlaceholderRows with sprint-window clippin
 ## Task 4: Wire `buildLaneIssues` into `dashboard.jsx`
 
 **Files:**
-- Modify: `frontend/src/dashboard.jsx` (line ~5710, the `scenarioIssuesByLane` useMemo)
+- Modify: `frontend/src/dashboard.jsx` (line ~5761, the `scenarioIssuesByLane` useMemo)
 
 - [ ] **Step 4.1: Add the import at the top of `dashboard.jsx`**
 
@@ -390,9 +403,9 @@ import { buildLaneIssues } from './scenario/scenarioLaneUtils.js';
 
 - [ ] **Step 4.2: Replace the `scenarioIssuesByLane` useMemo**
 
-Find `const scenarioIssuesByLane = React.useMemo(() => {` at line ~5710.
+Find `const scenarioIssuesByLane = React.useMemo(() => {` at line ~5761.
 
-Replace the entire useMemo (lines 5710–5724) with:
+Replace the entire useMemo (lines 5761–5775) with:
 
 ```js
 const scenarioIssuesByLane = React.useMemo(() => {
@@ -420,8 +433,8 @@ git commit -m "refactor: replace scenarioIssuesByLane with buildLaneIssues (kill
 ## Task 5: Pin capacity placeholder to row 0 in stacking
 
 **Files:**
-- Modify: `frontend/src/dashboard.jsx` (lines ~5878–5893 in `scenarioLaneStacking`)
-- Modify: `frontend/src/dashboard.jsx` (line ~5710, add `buildCapacityPlaceholderRows` to import)
+- Modify: `frontend/src/dashboard.jsx` (lines ~5932–5944 in `scenarioLaneStacking`)
+- Modify: `frontend/src/dashboard.jsx` (line 5, add `buildCapacityPlaceholderRows` to import)
 
 - [ ] **Step 5.1: Add `buildCapacityPlaceholderRows` to the import**
 
@@ -433,7 +446,7 @@ import { buildLaneIssues, buildCapacityPlaceholderRows } from './scenario/scenar
 
 - [ ] **Step 5.2: Update the stacking loop to pin capacity issues to row 0**
 
-Find the block in `scenarioLaneStacking` (lines ~5881–5893):
+Find the block in `scenarioLaneStacking` (lines ~5932–5944):
 
 ```js
                     const regularIssues = [];
@@ -491,7 +504,7 @@ Replace with:
 
 - [ ] **Step 5.2b: Add `scenarioDeadline` to the `scenarioLaneStacking` dependency array**
 
-Find the closing `}, [` of the `scenarioLaneStacking` useMemo (currently ends at line ~5932 with `perfEnabled`). Add `scenarioDeadline` to the array:
+Find the closing `}, [` of the `scenarioLaneStacking` useMemo (currently ends at line ~5982 with `perfEnabled`). Add `scenarioDeadline` to the array:
 
 ```js
             }, [
@@ -529,12 +542,12 @@ git commit -m "feat: pin excluded capacity placeholder to row 0 in team lane sta
 ## Task 6: Render the team-cap row label and add CSS
 
 **Files:**
-- Modify: `frontend/src/dashboard.jsx` (line ~11582, assignee label rendering)
+- Modify: `frontend/src/dashboard.jsx` (line ~11636, assignee label rendering)
 - Modify: `jira-dashboard.html` (inline `<style>` block)
 
 - [ ] **Step 6.1: Update assignee label display name**
 
-Find line ~11582 in `dashboard.jsx`:
+Find line ~11636 in `dashboard.jsx`:
 
 ```js
                                                                     const displayName = group.assignee ? (() => { const parts = group.assignee.split(' '); return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0]; })() : 'Unassigned';
@@ -553,7 +566,7 @@ Replace with:
 
 - [ ] **Step 6.2: Add CSS class to the team-cap assignee label div**
 
-Find line ~11586:
+Find line ~11640:
 
 ```js
                                                                         <div key={`al-${idx}`} className="scenario-assignee-label"

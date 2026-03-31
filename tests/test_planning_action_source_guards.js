@@ -51,3 +51,13 @@ test('planned teams effort jira links are scoped to stories', () => {
     assert.match(source, /statuses: \['To Do', 'Pending'\], issueType: 'Story'/);
     assert.match(source, /statuses: \['Accepted'\], issueType: 'Story'/);
 });
+
+test('dashboard hydrates scoped team selection from group and sprint storage', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /buildTeamSelectionScopeKey/);
+    assert.match(source, /loadTeamSelectionState\(window\.localStorage, teamSelectionScopeKey\)/);
+    assert.match(source, /reconcileTeamSelectionState\(/);
+    assert.match(source, /saveTeamSelectionState\(window\.localStorage, teamSelectionScopeKey,/);
+});

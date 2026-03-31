@@ -21,6 +21,7 @@ import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
 import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
+import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
 import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
         const { useState, useEffect, useRef } = React;
@@ -339,6 +340,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [isPlanningStuck, setIsPlanningStuck] = useState(false);
             const planningPanelRef = useRef(null);
             const planningHydratedScopeRef = useRef('');
+            const teamSelectionHydratedScopeRef = useRef('');
+            const teamSelectionSkipPersistScopeRef = useRef('');
             const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout' || value === 'cohort') ? value : 'teams';
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
             const resolveBurndownMetric = (value) => (value === 'issueCount' || value === 'storyPoints') ? value : 'storyPoints';
@@ -2936,6 +2939,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 if (selectedSprint === null || !activeGroupId) return '';
                 return buildPlanningScopeKey({ sprintId: selectedSprint, groupId: activeGroupId });
             }, [selectedSprint, activeGroupId]);
+            const teamSelectionScopeKey = React.useMemo(() => {
+                if (selectedSprint === null || !activeGroupId) return '';
+                return buildTeamSelectionScopeKey({ sprintId: selectedSprint, groupId: activeGroupId });
+            }, [selectedSprint, activeGroupId]);
             const selectedTaskMapFromKeys = (keys) => {
                 const next = {};
                 (keys || []).forEach((key) => {
@@ -4738,22 +4745,54 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const isAllTeamsSelected = selectedTeams.includes('all') || selectedTeamSet.size === 0;
 
             useEffect(() => {
-                if (!activeGroupId) return;
-                if (groupsLoading) return;
-                setSelectedTeams(prev => {
-                    const next = sanitizeSelectedTeamsForScope(prev, {
-                        activeGroupTeamIds,
-                        availableTeamIds: teamOptions
-                            .map(team => team.id)
-                            .filter(id => id && id !== 'all')
-                    });
-                    const normalizedPrev = normalizeSelectedTeams(prev);
-                    if (next.length === normalizedPrev.length && next.every((id, idx) => id === normalizedPrev[idx])) {
-                        return prev;
-                    }
-                    return next;
+                if (!teamSelectionScopeKey || !activeGroupId || selectedSprint === null) return;
+                if (groupsLoading || !tasksFetched) return;
+
+                const validTeamIds = teamOptions
+                    .map(team => String(team?.id || '').trim())
+                    .filter(id => id && id !== 'all');
+                const storedState = loadTeamSelectionState(window.localStorage, teamSelectionScopeKey);
+                const baseState = storedState || { selectedTeams };
+                const reconciled = reconcileTeamSelectionState(baseState, {
+                    validTeamIds: new Set(validTeamIds)
                 });
-            }, [activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, teamOptions]);
+                const nextSelectedTeams = sanitizeSelectedTeamsForScope(reconciled.selectedTeams, {
+                    activeGroupTeamIds,
+                    availableTeamIds: validTeamIds
+                });
+
+                teamSelectionHydratedScopeRef.current = teamSelectionScopeKey;
+                teamSelectionSkipPersistScopeRef.current = teamSelectionScopeKey;
+                setSelectedTeams(prev => {
+                    const normalizedPrev = normalizeSelectedTeams(prev);
+                    const sameLength = normalizedPrev.length === nextSelectedTeams.length;
+                    const sameTeams = sameLength && normalizedPrev.every((id, index) => id === nextSelectedTeams[index]);
+                    return sameTeams ? prev : nextSelectedTeams;
+                });
+                saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, {
+                    selectedTeams: nextSelectedTeams
+                });
+            }, [
+                teamSelectionScopeKey,
+                activeGroupId,
+                selectedSprint,
+                groupsLoading,
+                tasksFetched,
+                teamOptions,
+                activeGroupTeamIds.join('|')
+            ]);
+
+            useEffect(() => {
+                if (!teamSelectionScopeKey) return;
+                if (teamSelectionHydratedScopeRef.current !== teamSelectionScopeKey) return;
+                if (teamSelectionSkipPersistScopeRef.current === teamSelectionScopeKey) {
+                    teamSelectionSkipPersistScopeRef.current = '';
+                    return;
+                }
+                saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, {
+                    selectedTeams
+                });
+            }, [teamSelectionScopeKey, selectedTeams]);
 
             const selectedTeamsLabel = React.useMemo(() => {
                 if (isAllTeamsSelected) return 'All Teams';

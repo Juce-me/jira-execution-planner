@@ -11642,13 +11642,19 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                             {scenarioLaneMode === 'team' && (() => {
                                                                 const groups = scenarioLaneAssigneeGroups.get(lane) || [];
                                                                 return groups.map((group, idx) => {
-                                                                    const displayName = group.assignee ? (() => { const parts = group.assignee.split(' '); return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0]; })() : 'Unassigned';
+                                                                    const isTeamCap = group.assignee === '__team_capacity__';
+                                                                    const displayName = isTeamCap
+                                                                        ? 'Team cap.'
+                                                                        : group.assignee
+                                                                        ? (() => { const parts = group.assignee.split(' '); return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0]; })()
+                                                                        : 'Unassigned';
                                                                     const top = scenarioBarGap + group.startRow * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
                                                                     const height = group.rowCount * (SCENARIO_BAR_HEIGHT + scenarioBarGap);
                                                                     return (
-                                                                        <div key={`al-${idx}`} className="scenario-assignee-label"
+                                                                        <div key={`al-${idx}`}
+                                                                             className={`scenario-assignee-label${isTeamCap ? ' scenario-assignee-label--team-cap' : ''}`}
                                                                              style={{ top: `${top}px`, height: `${height}px` }}
-                                                                             title={group.assignee || 'Unassigned'}>
+                                                                             title={isTeamCap ? 'Reserved team capacity' : (group.assignee || 'Unassigned')}>
                                                                             {displayName}
                                                                         </div>
                                                                     );

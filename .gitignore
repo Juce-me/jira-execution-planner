@@ -67,3 +67,4 @@ jira-dashboard-backup.html
 dashboard-compiled.js
 node_modules/
 .worktrees/
+.superpowers/

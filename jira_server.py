@@ -3428,6 +3428,8 @@ def scenario_planner():
         # instead of consuming assignee time slots.
         excluded_capacity_epics_raw = config_payload.get('excluded_capacity_epics') or []
         excluded_epic_set = {str(k).strip().upper() for k in excluded_capacity_epics_raw if k}
+        log_info(f'[Scenario] excluded_capacity_epics from config: {excluded_capacity_epics_raw}')
+        log_info(f'[Scenario] excluded_epic_set (normalized): {excluded_epic_set}')
 
         issue_objs = []
         excluded_issue_entries = []
@@ -3451,6 +3453,10 @@ def scenario_planner():
                 epic_key=entry.get('epicKey'),
                 team_id=entry.get('team_id'),
             ))
+
+        log_info(f'[Scenario] excluded {len(excluded_issue_entries)} issues, scheduling {len(issue_objs)} regular issues')
+        if excluded_issue_entries:
+            log_info(f'[Scenario] excluded issue keys: {[e.get("key") for e in excluded_issue_entries]}')
 
         scheduled_list, scheduled_map = schedule_issues(issue_objs, dependency_edges, scenario_config)
 

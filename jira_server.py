@@ -3460,17 +3460,27 @@ def scenario_planner():
 
         scheduled_list, scheduled_map = schedule_issues(issue_objs, dependency_edges, scenario_config)
 
-        # Give excluded-capacity issues fixed sprint dates (start → end)
+        # Give excluded-capacity issues SP-proportional durations within the sprint.
+        # Each starts at sprint start with width reflecting its SP — they run in
+        # parallel (background capacity), not sequentially.
+        total_weeks = max(1.0, (quarter_end_date - start_date).days / 7.0)
         for entry in excluded_issue_entries:
+            sp = entry.get('sp')
+            sp_val = float(sp) if sp is not None else 0.0
+            duration_weeks = max(0.5, sp_val * scenario_config.sp_to_weeks) if sp_val > 0 else total_weeks
+            exc_start = start_date
+            exc_end = start_date + timedelta(weeks=duration_weeks)
+            if exc_end > quarter_end_date:
+                exc_end = quarter_end_date
             item = ScheduledIssue(
                 key=entry.get('key'),
                 summary=entry.get('summary') or '',
                 lane=entry.get('team') or 'Unassigned',
-                start_date=start_date,
-                end_date=quarter_end_date,
+                start_date=exc_start,
+                end_date=exc_end,
                 blocked_by=[],
                 scheduled_reason='excluded_capacity',
-                duration_weeks=None,
+                duration_weeks=duration_weeks,
                 assignee=entry.get('assignee'),
             )
             scheduled_list.append(item)

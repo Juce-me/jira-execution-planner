@@ -4269,6 +4269,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     }
                     const data = await response.json();
                     setScenarioData(data);
+                    // Reset scroll so stale content height doesn't leave empty space
+                    if (scenarioTimelineRef.current) {
+                        scenarioTimelineRef.current.scrollTop = 0;
+                    }
                     // Load saved overrides for this scope
                     if (scenarioScopeKey) {
                         try {

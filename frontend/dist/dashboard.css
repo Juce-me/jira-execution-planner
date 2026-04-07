@@ -4071,6 +4071,12 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
+        .scenario-assignee-label--team-cap {
+            color: #b07d2a;
+            font-style: italic;
+            background: rgba(253, 245, 228, 0.5);
+            border-radius: 0.3rem;
+        }
 
         .scenario-assignee-divider {
             position: absolute;

@@ -68,3 +68,4 @@ dashboard-compiled.js
 node_modules/
 .worktrees/
 .superpowers/
+tests/debug_scenario_aleksandr.py

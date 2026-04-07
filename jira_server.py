@@ -27,7 +27,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 import io
 from requests import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
-from planning import Issue, ScenarioConfig, compute_slack, schedule_issues
+from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
 
 # Load environment variables from .env file
 load_dotenv()
@@ -3349,9 +3349,6 @@ def scenario_planner():
             adjacency.setdefault(edge['from'], set()).add(edge['to'])
             adjacency.setdefault(edge['to'], set()).add(edge['from'])
 
-        if len(team_filter_ids) == 1:
-            focus_keys = [key for key in focus_keys if adjacency.get(key)]
-
         focus_set = set(focus_keys)
         context_keys = set()
         for key in focus_set:
@@ -3426,10 +3423,23 @@ def scenario_planner():
                     'devLead': detail.get('reporter') if detail else None
                 }
 
+        # Separate excluded-capacity issues (Ad Hoc, Interrupt, DevLead, etc.)
+        # from the scheduling pipeline.  They get fixed sprint-window dates
+        # instead of consuming assignee time slots.
+        excluded_capacity_epics_raw = config_payload.get('excluded_capacity_epics') or []
+        excluded_epic_set = {str(k).strip().upper() for k in excluded_capacity_epics_raw if k}
+        log_info(f'[Scenario] excluded_capacity_epics from config: {excluded_capacity_epics_raw}')
+        log_info(f'[Scenario] excluded_epic_set (normalized): {excluded_epic_set}')
+
         issue_objs = []
+        excluded_issue_entries = []
         for key in included_keys:
             entry = issue_by_key.get(key)
             if not entry:
+                continue
+            epic = (entry.get('epicKey') or '').strip().upper()
+            if excluded_epic_set and epic in excluded_epic_set:
+                excluded_issue_entries.append(entry)
                 continue
             issue_objs.append(Issue(
                 key=entry.get('key'),
@@ -3444,7 +3454,37 @@ def scenario_planner():
                 team_id=entry.get('team_id'),
             ))
 
+        log_info(f'[Scenario] excluded {len(excluded_issue_entries)} issues, scheduling {len(issue_objs)} regular issues')
+        if excluded_issue_entries:
+            log_info(f'[Scenario] excluded issue keys: {[e.get("key") for e in excluded_issue_entries]}')
+
         scheduled_list, scheduled_map = schedule_issues(issue_objs, dependency_edges, scenario_config)
+
+        # Give excluded-capacity issues SP-proportional durations within the sprint.
+        # Each starts at sprint start with width reflecting its SP — they run in
+        # parallel (background capacity), not sequentially.
+        total_weeks = max(1.0, (quarter_end_date - start_date).days / 7.0)
+        for entry in excluded_issue_entries:
+            sp = entry.get('sp')
+            sp_val = float(sp) if sp is not None else 0.0
+            duration_weeks = max(0.5, sp_val * scenario_config.sp_to_weeks) if sp_val > 0 else total_weeks
+            exc_start = start_date
+            exc_end = start_date + timedelta(weeks=duration_weeks)
+            if exc_end > quarter_end_date:
+                exc_end = quarter_end_date
+            item = ScheduledIssue(
+                key=entry.get('key'),
+                summary=entry.get('summary') or '',
+                lane=entry.get('team') or 'Unassigned',
+                start_date=exc_start,
+                end_date=exc_end,
+                blocked_by=[],
+                scheduled_reason='excluded_capacity',
+                duration_weeks=duration_weeks,
+                assignee=entry.get('assignee'),
+            )
+            scheduled_list.append(item)
+            scheduled_map[entry.get('key')] = item
         scheduled_by_key = {item.key: item for item in scheduled_list}
         slack, critical = compute_slack(scheduled_map, dependency_edges, scenario_config.quarter_end_date)
         if app.debug:

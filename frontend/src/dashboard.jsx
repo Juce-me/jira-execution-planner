@@ -2,6 +2,7 @@ import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, createUndoStack, validateDependencies, splitAtSprintBoundaries, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
 import ScenarioBar from './scenario/ScenarioBar.jsx';
+import { buildLaneIssues } from './scenario/scenarioLaneUtils.js';
 import CohortGrid from './cohort/CohortGrid.jsx';
 import OpenEpicsChart from './cohort/OpenEpicsChart.jsx';
 import {
@@ -408,7 +409,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const scenarioTeamCollapseInitRef = useRef(false);
             const [scenarioOverrides, setScenarioOverrides] = useState({});
             const [scenarioEditMode, setScenarioEditMode] = useState(false);
-            const scenarioPreEditLaneModeRef = useRef(null);
+
             const scenarioUndoStackRef = useRef(createUndoStack());
             const [scenarioUndoVersion, setScenarioUndoVersion] = useState(0);
             const [scenarioDragState, setScenarioDragState] = useState(null);
@@ -4233,7 +4234,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return {
                     config: {
                         lane_mode: scenarioLaneMode,
-                        anchor_date: anchorDate
+                        anchor_date: anchorDate,
+                        excluded_capacity_epics: Array.from(excludedEpicSet)
                     },
                     filters: {
                         sprint: selectedSprint || null,
@@ -4267,6 +4269,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     }
                     const data = await response.json();
                     setScenarioData(data);
+                    // Reset scroll so stale content height doesn't leave empty space
+                    if (scenarioTimelineRef.current) {
+                        scenarioTimelineRef.current.scrollTop = 0;
+                    }
                     // Load saved overrides for this scope
                     if (scenarioScopeKey) {
                         try {
@@ -4290,16 +4296,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const toggleScenarioEditMode = () => {
                 setScenarioEditMode(prev => {
                     if (!prev) {
-                        // Entering edit mode — save current lane mode, force assignee, clear epic focus
-                        scenarioPreEditLaneModeRef.current = scenarioLaneMode;
+                        // Entering edit mode — clear epic focus (edit operates on flat bars)
                         setScenarioEpicFocus(null);
-                        setScenarioLaneMode('assignee');
                     } else {
-                        // Exiting edit mode — restore lane mode, clear undo stack
-                        if (scenarioPreEditLaneModeRef.current) {
-                            setScenarioLaneMode(scenarioPreEditLaneModeRef.current);
-                            scenarioPreEditLaneModeRef.current = null;
-                        }
+                        // Exiting edit mode — clear undo stack
                         scenarioUndoStackRef.current.clear();
                         setScenarioUndoVersion(0);
                     }
@@ -5422,17 +5422,31 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const scenarioTimelineWithSegments = React.useMemo(() => {
                 if (!scenarioTimelineIssues || scenarioTimelineIssues.length === 0) return scenarioTimelineIssues;
                 if (!scenarioSprintBounds || scenarioSprintBounds.length < 2) return scenarioTimelineIssues;
+                // Clip excluded capacity issues to the selected sprint window so
+                // they never extend beyond the sprint they belong to.
+                const sprintStartISO = scenarioViewStart ? dateToISODate(scenarioViewStart) : null;
+                const sprintEndISO   = scenarioDeadline  ? dateToISODate(scenarioDeadline)  : null;
                 const result = [];
                 scenarioTimelineIssues.forEach(issue => {
                     if (scenarioExcludedIssueKeys.has(issue.key)) {
                         const segments = splitAtSprintBoundaries(issue, scenarioSprintBounds);
-                        result.push(...segments);
+                        segments.forEach(seg => {
+                            if (sprintStartISO && sprintEndISO) {
+                                const clippedStart = !seg.start || seg.start < sprintStartISO ? sprintStartISO : seg.start;
+                                const clippedEnd   = !seg.end   || seg.end   > sprintEndISO   ? sprintEndISO   : seg.end;
+                                if (clippedStart <= clippedEnd) {
+                                    result.push({ ...seg, start: clippedStart, end: clippedEnd });
+                                }
+                            } else {
+                                result.push(seg);
+                            }
+                        });
                     } else {
                         result.push(issue);
                     }
                 });
                 return result;
-            }, [scenarioTimelineIssues, scenarioExcludedIssueKeys, scenarioSprintBounds]);
+            }, [scenarioTimelineIssues, scenarioExcludedIssueKeys, scenarioSprintBounds, scenarioViewStart, scenarioDeadline]);
             const scenarioTimelineIssueKeys = React.useMemo(() => {
                 return new Set(scenarioTimelineWithSegments.map(issue => issue.key));
             }, [scenarioTimelineWithSegments]);
@@ -5759,19 +5773,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return lanes.sort((a, b) => a.localeCompare(b));
             }, [scenarioLaneInfo]);
             const scenarioIssuesByLane = React.useMemo(() => {
-                const groups = new Map();
-                if (!scenarioTimelineWithSegments || scenarioTimelineWithSegments.length === 0) return groups;
-                scenarioTimelineWithSegments.forEach(issue => {
-                    const lane = scenarioLaneForIssue(issue);
-                    if (!groups.has(lane)) {
-                        groups.set(lane, []);
-                    }
-                    groups.get(lane).push(issue);
-                });
-                groups.forEach(list => {
-                    list.sort((a, b) => (a.start || '').localeCompare(b.start || ''));
-                });
-                return groups;
+                return buildLaneIssues(scenarioTimelineWithSegments, scenarioLaneMode, scenarioLaneForIssue);
             }, [scenarioTimelineWithSegments, scenarioLaneMode, scenarioEpicFocus]);
             const scenarioHasAssignees = React.useMemo(() => {
                 if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return false;
@@ -5930,18 +5932,29 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         ? Math.max(1, Math.round(capacitySize) + SCENARIO_TEAM_LEAD_ROWS)
                         : null;
                     const regularIssues = [];
-                    const excludedIssues = [];
+                    const rawCapacityIssues = [];
                     issues.forEach((issue) => {
                         if (!issue?.key) return;
                         const issueKeyForExclude = issue.originalKey || issue.key;
                         if (scenarioExcludedIssueKeys.has(issueKeyForExclude) || excludedEpicSet.has(normalizeEpicKey(issue.epicKey || ''))) {
-                            excludedIssues.push(issue);
+                            rawCapacityIssues.push(issue);
                         } else {
                             regularIssues.push(issue);
                         }
                     });
+                    // Regular tasks fill top rows; excluded capacity always goes
+                    // below all regular rows (never shares a row with regular tasks).
+                    // Excluded dates are already clipped to the sprint in
+                    // scenarioTimelineWithSegments.
                     assignRows(regularIssues, rowEnds, 0, rowAssignees);
-                    assignRows(excludedIssues, rowEnds, 0, rowAssignees);
+                    if (rawCapacityIssues.length > 0) {
+                        const excludedRowStart = Math.max(1, rowEnds.length);
+                        const excludedRowEnds = [];
+                        const excludedRowAssignees = [];
+                        assignRows(rawCapacityIssues, excludedRowEnds, excludedRowStart, excludedRowAssignees, { allowAssigneeMix: true });
+                        excludedRowEnds.forEach(end => rowEnds.push(end));
+                        excludedRowAssignees.forEach(a => rowAssignees.push(a));
+                    }
                     laneRowAssignees.set(lane, [...rowAssignees]);
                     const totalRows = Math.max(1, rowEnds.length, capacityRows || 0);
                     const isCollapsed = scenarioEpicFocus ? false : Boolean(scenarioCollapsedLanes[lane]);
@@ -11312,7 +11325,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                 <div className="scenario-toggle-group">
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'team' ? 'active' : ''}`}
-                                                        disabled={scenarioEditMode}
                                                         onClick={() => {
                                                             if (scenarioEpicFocus) clearScenarioEpicFocus();
                                                             setScenarioLaneMode('team');
@@ -11322,7 +11334,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     </button>
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'epic' ? 'active' : ''}`}
-                                                        disabled={scenarioEditMode}
                                                         onClick={() => {
                                                             if (scenarioEpicFocus) clearScenarioEpicFocus();
                                                             setScenarioLaneMode('epic');
@@ -11332,7 +11343,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     </button>
                                                     <button
                                                         className={`scenario-toggle ${scenarioLaneMode === 'assignee' ? 'active' : ''}`}
-                                                        disabled={scenarioEditMode}
                                                         onClick={() => {
                                                             if (scenarioEpicFocus) clearScenarioEpicFocus();
                                                             setScenarioLaneMode('assignee');

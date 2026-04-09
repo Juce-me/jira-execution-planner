@@ -4716,6 +4716,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 () => tasks.filter(t => t.fields.status?.name === 'Done'),
                 [tasks]
             );
+            const incompleteTasks = React.useMemo(
+                () => tasks.filter(t => normalizeStatus(t.fields.status?.name) === 'incomplete'),
+                [tasks]
+            );
             const techTasksCount = techTasks.length;
             const productTasksCount = productTasks.length;
 
@@ -6924,8 +6928,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         return false;
                     }
 
-                    // Filter by Done status
-                    if (!showDone && task.fields.status?.name === 'Done') {
+                    // Filter by Done/Incomplete status
+                    if (!showDone && (task.fields.status?.name === 'Done' || normalizeStatus(task.fields.status?.name) === 'incomplete')) {
                         return false;
                     }
 
@@ -11735,11 +11739,25 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                     const isFocusContext = scenarioEpicFocus && scenarioFocusContextKeys.has(issue.key) && !scenarioFocusIssueKeys.has(issue.key);
                                                                     const isSearchMatch = scenarioSearchQuery && scenarioSearchMatchSet.has(issue.key);
                                                                     const isDone = issue.scheduledReason === 'already_done';
+                                                                    const isIncomplete = issue.scheduledReason === 'incomplete';
+                                                                    const incompleteProgress = isIncomplete ? (() => {
+                                                                        const timeSpent = issue.timeSpentSeconds || 0;
+                                                                        const sp = Number(issue.sp) || 0;
+                                                                        if (timeSpent > 0 && sp > 0) {
+                                                                            const spWeeks = sp * 2; // sp_to_weeks = 2.0
+                                                                            const spSeconds = spWeeks * 5 * 8 * 3600; // weeks * days/week * hours/day * seconds/hour
+                                                                            const ratio = Math.min(0.95, Math.max(0.05, timeSpent / spSeconds));
+                                                                            return `${(ratio * 100).toFixed(0)}%`;
+                                                                        }
+                                                                        return '50%'; // fallback
+                                                                    })() : null;
                                                                     const isEditable = scenarioEditMode && !isExcluded && Number(issue.sp) > 0 && !isUnscheduled;
                                                                     const isDragging = scenarioDragState?.issueKey === issue.key;
                                                                     const hasDepViolation = scenarioDepViolatedKeys.has(issue.key);
-                                                                    const barClassName = `scenario-bar ${isDone ? 'done' : ''} ${issue.isCritical ? 'critical' : ''} ${issue.isLate ? 'late' : ''} ${((issue.blockedBy || []).length > 0 || scenarioBlockedSet.has(issue.key)) ? 'blocked' : ''} ${(issue.isContext || isFocusContext) ? 'context' : ''} ${isUnscheduled ? 'unscheduled' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''} ${isDimmed ? 'dimmed' : ''} ${scenarioFlashKey === issue.key ? 'flash' : ''} ${isExcluded ? 'excluded' : ''} ${isSearchMatch ? 'search-match' : ''} ${hasAssigneeConflict ? 'assignee-conflict' : ''} ${isOutOfSprint ? 'out-of-sprint' : ''} ${isInProgress ? 'in-progress' : ''} ${isEditable ? 'editable' : ''} ${isDragging ? 'dragging' : ''} ${hasDepViolation ? 'dep-violated' : ''}`;
-                                                                    const barStyle = { left, width, height: `${SCENARIO_BAR_HEIGHT}px`, top };
+                                                                    const barClassName = `scenario-bar ${isDone ? 'done' : ''} ${isIncomplete ? 'incomplete' : ''} ${issue.isCritical ? 'critical' : ''} ${issue.isLate ? 'late' : ''} ${((issue.blockedBy || []).length > 0 || scenarioBlockedSet.has(issue.key)) ? 'blocked' : ''} ${(issue.isContext || isFocusContext) ? 'context' : ''} ${isUnscheduled ? 'unscheduled' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''} ${isDimmed ? 'dimmed' : ''} ${scenarioFlashKey === issue.key ? 'flash' : ''} ${isExcluded ? 'excluded' : ''} ${isSearchMatch ? 'search-match' : ''} ${hasAssigneeConflict ? 'assignee-conflict' : ''} ${isOutOfSprint ? 'out-of-sprint' : ''} ${isInProgress ? 'in-progress' : ''} ${isEditable ? 'editable' : ''} ${isDragging ? 'dragging' : ''} ${hasDepViolation ? 'dep-violated' : ''}`;
+                                                                    const barStyle = isIncomplete && incompleteProgress
+                                                                        ? { left, width, height: `${SCENARIO_BAR_HEIGHT}px`, top, '--incomplete-progress': incompleteProgress }
+                                                                        : { left, width, height: `${SCENARIO_BAR_HEIGHT}px`, top };
                                                                     return (
                                                                         <ScenarioBar
                                                                             key={issue.key}
@@ -13202,12 +13220,12 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         >
                                             {showProduct ? `Hide Product Tasks (${productTasksCount})` : `Show Product Tasks (${productTasksCount})`}
                                         </button>
-                                        {doneTasks.length > 0 && (
+                                        {(doneTasks.length > 0 || incompleteTasks.length > 0) && (
                                             <button
                                                 className={`toggle ${showDone ? 'active' : ''}`}
                                                 onClick={() => setShowDone(!showDone)}
                                             >
-                                                {showDone ? `Hide Done Tasks (${doneTasks.length})` : `Show Done Tasks (${doneTasks.length})`}
+                                                {showDone ? `Hide Done/Incomplete (${doneTasks.length + incompleteTasks.length})` : `Show Done/Incomplete (${doneTasks.length + incompleteTasks.length})`}
                                             </button>
                                         )}
                                         {killedTasks.length > 0 && (
@@ -13322,6 +13340,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                 {epicGroup.tasks.map(task => {
                                                     const isKilled = task.fields.status?.name === 'Killed';
                                                     const isDone = task.fields.status?.name === 'Done';
+                                                    const isIncomplete = normalizeStatus(task.fields.status?.name) === 'incomplete';
                                                     const teamInfo = getTeamInfo(task);
                                                     const rawDeps = showDependencies
                                                         ? (dependencyData[task.key] || []).filter(dep => dep.key && dep.category === 'dependency')
@@ -13419,7 +13438,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     return (
                                                         <div
                                                             key={task.key}
-                                                            className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isFocusActive && !isRelated ? 'is-dimmed' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''}`}
+                                                            className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isIncomplete ? 'status-incomplete' : ''} ${isFocusActive && !isRelated ? 'is-dimmed' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''}`}
                                                             data-task-key={task.key}
                                                             data-task-id={task.id || task.key}
                                                             data-issue-key={task.key}
@@ -13440,6 +13459,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                 </span>
                                                                 {renderPriorityIcon(task.fields.priority?.name, task.key)}
                                                                 <h3 className="task-title">
+                                                                    {isIncomplete && <span className="task-incomplete-icon" title="Incomplete — work started but not finished this sprint">◐</span>}
                                                                     <a href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'} target="_blank" rel="noopener noreferrer">
                                                                         {task.fields.summary}
                                                                     </a>

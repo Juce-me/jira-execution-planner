@@ -3226,6 +3226,7 @@ def scenario_planner():
             'parent',
             'startDate',
             'duedate',
+            'timetracking',
         ]
         if epic_link_field_id and epic_link_field_id not in fields_list:
             fields_list.append(epic_link_field_id)
@@ -3268,6 +3269,8 @@ def scenario_planner():
             status = (fields.get('status') or {}).get('name')
             jira_start_date = fields.get('startDate')   # ISO string or None
             jira_due_date = fields.get('duedate')       # ISO string or None
+            time_tracking = fields.get('timetracking') or {}
+            time_spent_seconds = time_tracking.get('timeSpentSeconds')
             issue_obj = Issue(
                 key=issue.get('key'),
                 summary=fields.get('summary') or '',
@@ -3300,6 +3303,7 @@ def scenario_planner():
                     'epicKey': epic_key,
                     'jiraStartDate': jira_start_date,
                     'jiraDueDate': jira_due_date,
+                    'timeSpentSeconds': time_spent_seconds,
                 }
 
         dependencies = collect_dependencies(issue_keys, headers)
@@ -3564,6 +3568,7 @@ def scenario_planner():
                 'url': f'{jira_base_url}/browse/{key}' if jira_base_url else None,
                 'jiraStartDate': entry.get('jiraStartDate'),
                 'jiraDueDate': entry.get('jiraDueDate'),
+                'timeSpentSeconds': entry.get('timeSpentSeconds'),
             })
 
         result = {

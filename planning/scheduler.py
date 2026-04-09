@@ -31,7 +31,8 @@ def normalize_status(status: str) -> str:
     return (status or "").strip().lower()
 
 
-DONE_STATUSES = {"done", "killed", "incomplete"}
+DONE_STATUSES = {"done", "killed"}
+INCOMPLETE_STATUS = "incomplete"
 IN_PROGRESS_STATUSES = {"in progress", "in review", "in dev"}
 
 
@@ -366,6 +367,64 @@ def schedule_issues(
         )
         scheduled[key] = scheduled_issue
         all_scheduled[key] = scheduled_issue  # Also track in iteration map
+
+    # Post-pass: schedule incomplete tasks after all regular work.
+    # They consume assignee time slots (the work happened) and are placed
+    # sequentially after the assignee's last scheduled task, extending past
+    # sprint end to show the sprint overflowed.
+    incomplete_issues = [
+        issue for issue in issues
+        if normalize_status(issue.status) == INCOMPLETE_STATUS
+        and issue.key not in scheduled
+        and issue.key not in unschedulable
+    ]
+    for issue in incomplete_issues:
+        lane = issue.team or "Unassigned"
+        if config.lane_mode == "assignee":
+            lane = issue.assignee or issue.team or "Unassigned"
+        lane_capacity = capacities.get(lane)
+        if not lane_capacity:
+            continue
+        duration_weeks = compute_duration_weeks(
+            issue.story_points,
+            config.sp_to_weeks,
+            lane_capacity.capacity_factor,
+        )
+        if duration_weeks is None:
+            unschedulable[issue.key] = ScheduledIssue(
+                key=issue.key,
+                summary=issue.summary,
+                lane=lane,
+                start_date=None,
+                end_date=None,
+                blocked_by=dependencies.get(issue.key, []),
+                scheduled_reason="missing_story_points",
+                assignee=issue.assignee,
+            )
+            continue
+        issue_assignee = issue.assignee
+        if issue_assignee and issue_assignee in lane_capacity.assignee_available_at:
+            start_week = lane_capacity.assignee_available_at[issue_assignee]
+        else:
+            # No prior work for this assignee — start at anchor
+            anchor = config.anchor_date or config.start_date
+            start_week = max(0.0, (anchor - config.start_date).days / 7.0)
+        end_week = start_week + duration_weeks
+        start_date = config.start_date + timedelta(weeks=start_week)
+        end_date = config.start_date + timedelta(weeks=end_week)
+        if issue_assignee:
+            lane_capacity.assignee_available_at[issue_assignee] = end_week
+        scheduled[issue.key] = ScheduledIssue(
+            key=issue.key,
+            summary=issue.summary,
+            lane=lane,
+            start_date=start_date,
+            end_date=end_date,
+            blocked_by=dependencies.get(issue.key, []),
+            scheduled_reason="incomplete",
+            duration_weeks=duration_weeks,
+            assignee=issue.assignee,
+        )
 
     all_results = {**scheduled, **unschedulable}
     return list(all_results.values()), scheduled

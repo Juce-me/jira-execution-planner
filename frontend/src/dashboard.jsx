@@ -333,6 +333,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 normalizeSelectedTeams(savedPrefsRef.current.selectedTeams ?? savedPrefsRef.current.selectedTeam ?? 'all')
             );
             const [epicDetails, setEpicDetails] = useState({});
+            const [groupByInitiative, setGroupByInitiative] = useState(false);
             const headerRef = useRef(null);
             const compactHeaderRef = useRef(null);
             const [compactHeaderOffset, setCompactHeaderOffset] = useState(0);
@@ -7753,10 +7754,51 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return grouped;
             };
 
+            const groupEpicsByInitiative = (epicGroupsArray) => {
+                const initiativeMap = {};
+                const noInitiative = [];
+
+                epicGroupsArray.forEach(eg => {
+                    const initiative = epicDetails[eg.key]?.initiative;
+                    if (initiative && initiative.key) {
+                        if (!initiativeMap[initiative.key]) {
+                            initiativeMap[initiative.key] = {
+                                initiative,
+                                epicGroups: [],
+                            };
+                        }
+                        initiativeMap[initiative.key].epicGroups.push(eg);
+                    } else {
+                        noInitiative.push(eg);
+                    }
+                });
+
+                const result = Object.values(initiativeMap);
+                if (noInitiative.length > 0) {
+                    result.push({ initiative: null, epicGroups: noInitiative });
+                }
+                return result;
+            };
+
             const epicGroups = React.useMemo(() => {
                 return Object.values(groupTasksByEpic(visibleTasksForList))
                     .sort((a, b) => (epicOrderRef.current[a.key] ?? 999999) - (epicOrderRef.current[b.key] ?? 999999));
             }, [visibleTasksForList, epicDetails]);
+
+            const hasInitiativeData = React.useMemo(() => {
+                return epicGroups.some(eg => epicDetails[eg.key]?.initiative);
+            }, [epicGroups, epicDetails]);
+
+            useEffect(() => {
+                if (hasInitiativeData) {
+                    setGroupByInitiative(true);
+                }
+            }, [hasInitiativeData]);
+
+            const initiativeGroups = React.useMemo(() => {
+                if (!groupByInitiative) return null;
+                return groupEpicsByInitiative(epicGroups);
+            }, [groupByInitiative, epicGroups, epicDetails]);
 
             useEffect(() => {
                 const computeStickyEpicFocus = () => {

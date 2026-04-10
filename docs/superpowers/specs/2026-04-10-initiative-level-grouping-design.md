@@ -14,7 +14,6 @@ Objective
   Initiative          <-- NEW: surface this level
     Epic
       Story
-        Sub-Task
 ```
 
 In the user's Jira instance, the Initiative is the `parent` field of the Epic (next-gen / team-managed project hierarchy). No custom fields needed.

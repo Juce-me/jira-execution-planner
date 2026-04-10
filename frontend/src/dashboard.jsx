@@ -7790,9 +7790,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             }, [epicGroups, epicDetails]);
 
             useEffect(() => {
-                if (hasInitiativeData) {
-                    setGroupByInitiative(true);
-                }
+                setGroupByInitiative(hasInitiativeData);
             }, [hasInitiativeData]);
 
             const initiativeGroups = React.useMemo(() => {
@@ -13277,6 +13275,24 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             >
                                                 {showKilled ? `Hide Killed Tasks (${killedTasks.length})` : `Show Killed Tasks (${killedTasks.length})`}
                                             </button>
+                                        )}
+                                        {hasInitiativeData && (
+                                            <>
+                                                <span className="initiative-toggle-separator" />
+                                                <button
+                                                    className={`toggle initiative-toggle ${groupByInitiative ? 'active' : ''}`}
+                                                    onClick={() => setGroupByInitiative(prev => !prev)}
+                                                    title={groupByInitiative ? 'Switch to flat epic view' : 'Group epics by initiative'}
+                                                    type="button"
+                                                >
+                                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{flexShrink: 0, marginRight: '4px'}}>
+                                                        <rect x="1" y="1" width="14" height="4" rx="1.5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+                                                        <rect x="3" y="7" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.6"/>
+                                                        <rect x="3" y="12" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.6"/>
+                                                    </svg>
+                                                    Initiatives
+                                                </button>
+                                            </>
                                         )}
                                     </div>
                                 </div>

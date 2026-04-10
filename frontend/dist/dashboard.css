@@ -3310,6 +3310,90 @@
 	            letter-spacing: 0;
 	        }
 
+        /* ── Initiative grouping ── */
+
+        .initiative-group {
+            border-left: 2px solid #c4b5fd;
+            padding-left: 12px;
+            margin-bottom: 1.2rem;
+        }
+
+        .initiative-group.initiative-single {
+            border-left: none;
+            padding-left: 0;
+        }
+
+        .initiative-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 8px;
+            padding-top: 4px;
+        }
+
+        .initiative-label-name {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: #7c3aed;
+            font-weight: 600;
+        }
+
+        .initiative-label-only .initiative-label-name {
+            color: #64748b;
+        }
+
+        .initiative-label-key {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            color: #a78bfa;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .initiative-label-key:hover {
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .initiative-label-only .initiative-label-key {
+            color: #94a3b8;
+        }
+
+        .initiative-divider {
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(to right, #c4b5fd, transparent);
+        }
+
+        .initiative-label-only .initiative-divider {
+            background: linear-gradient(to right, #cbd5e1, transparent);
+        }
+
+        /* Toggle button overrides */
+
+        .initiative-toggle-separator {
+            display: inline-block;
+            width: 1px;
+            height: 18px;
+            background: var(--border);
+            margin: 0 4px;
+            vertical-align: middle;
+        }
+
+        button.toggle.initiative-toggle {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        button.toggle.initiative-toggle.active {
+            background: #f5f3ff;
+            color: #7c3aed;
+            border-color: #c4b5fd;
+            font-weight: 500;
+        }
+
         .team-group {
             margin-bottom: 1rem;
         }

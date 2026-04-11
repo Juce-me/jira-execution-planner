@@ -13,6 +13,18 @@ test('planning action row includes postponed and awaiting validation bulk action
     assert.match(source, /status === 'awaiting validation'/);
 });
 
+test('planning action row includes select all for currently visible planning tasks', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /const selectAllVisiblePlanningTasks = \(\) => \{/);
+    assert.match(source, /visibleTasksForList\.forEach\(task => \{/);
+    assert.match(source, /next\[task\.key\] = true;/);
+    assert.match(source, /onClick=\{selectAllVisiblePlanningTasks\}/);
+    assert.match(source, /disabled=\{visibleTasksForList\.length === 0\}/);
+    assert.match(source, />\s*Select All\s*</);
+});
+
 test('planning panel no longer renders capacity bar footer rows', () => {
     const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
     const source = fs.readFileSync(sourcePath, 'utf8');

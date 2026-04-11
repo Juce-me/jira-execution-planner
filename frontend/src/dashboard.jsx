@@ -8213,6 +8213,18 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setSelectedTasks({});
             };
 
+            const selectAllVisiblePlanningTasks = () => {
+                setSelectedTasks(() => {
+                    const next = {};
+                    visibleTasksForList.forEach(task => {
+                        if (task?.key) {
+                            next[task.key] = true;
+                        }
+                    });
+                    return next;
+                });
+            };
+
             const selectPlanningTasksByStatus = (statuses) => {
                 const allowed = new Set((statuses || []).map(normalizeStatus));
                 setSelectedTasks(() => {
@@ -8314,6 +8326,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 planningPostponedTasks.every(task => selectedTasks[task.key]);
             const isAwaitingValidationIncluded = planningAwaitingValidationTasks.length > 0 &&
                 planningAwaitingValidationTasks.every(task => selectedTasks[task.key]);
+            const areAllVisiblePlanningTasksSelected = showPlanning &&
+                visibleTasksForList.length > 0 &&
+                visibleTasksForList.every(task => selectedTasks[task.key]);
 
             const selectedPlanningTasksList = React.useMemo(() => {
                 if (!showPlanning) return [];
@@ -12378,6 +12393,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 title="Include all Awaiting Validation stories for the current view"
                             >
                                 Awaiting Val.
+                            </button>
+                            <button
+                                className={`planning-action-button ${areAllVisiblePlanningTasksSelected ? 'active' : ''}`}
+                                onClick={selectAllVisiblePlanningTasks}
+                                disabled={visibleTasksForList.length === 0}
+                                title="Select every task currently visible in the planning list"
+                            >
+                                Select All
                             </button>
                             <button
                                 className="uncheck-button"

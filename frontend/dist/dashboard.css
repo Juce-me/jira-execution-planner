@@ -2229,9 +2229,9 @@
             background: transparent;
             color: var(--text-secondary);
             border: 1px solid var(--border);
-            padding: 0.5rem 1rem;
-            font-size: 0.75rem;
-            margin: 0 0.5rem;
+            padding: 0.45rem 0.9rem;
+            font-size: 0.72rem;
+            margin: 0;
         }
 
         button.toggle:hover {
@@ -2250,22 +2250,22 @@
             display: flex;
             justify-content: flex-start;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.4rem;
             margin-bottom: 0;
             flex-wrap: wrap;
         }
 
         .filters-strip {
-            margin: 0.6rem 0 1rem;
+            margin: 0.45rem 0 0.85rem;
             display: flex;
             flex-direction: column;
-            gap: 0.6rem;
+            gap: 0.5rem;
         }
 
         .filters-group {
             display: flex;
             flex-direction: column;
-            gap: 0.4rem;
+            gap: 0.3rem;
         }
 
         .filters-label {
@@ -3372,15 +3372,6 @@
         }
 
         /* Toggle button overrides */
-
-        .initiative-toggle-separator {
-            display: inline-block;
-            width: 1px;
-            height: 18px;
-            background: var(--border);
-            margin: 0 4px;
-            vertical-align: middle;
-        }
 
         button.toggle.initiative-toggle {
             display: inline-flex;

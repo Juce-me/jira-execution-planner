@@ -13647,7 +13647,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     </div>
                                 </div>
                                 <div className="filters-group">
-                                    <div className="filters-label">Hide</div>
+                                    <div className="filters-label">Display</div>
                                     <div className="toggle-container">
                                         <button
                                             className={`toggle ${showTech ? 'active' : ''}`}
@@ -13655,22 +13655,20 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                 setShowTech(!showTech);
                                             }}
                                         >
-                                            {showTech
-                                                ? `Hide Tech Tasks (${techTasksCount})`
-                                                : `Show Tech Tasks (${techTasksCount})`}
+                                            {`Tech (${techTasksCount})`}
                                         </button>
                                         <button
                                             className={`toggle ${showProduct ? 'active' : ''}`}
                                             onClick={() => setShowProduct(!showProduct)}
                                         >
-                                            {showProduct ? `Hide Product Tasks (${productTasksCount})` : `Show Product Tasks (${productTasksCount})`}
+                                            {`Product (${productTasksCount})`}
                                         </button>
                                         {(doneTasks.length > 0 || incompleteTasks.length > 0) && (
                                             <button
                                                 className={`toggle ${showDone ? 'active' : ''}`}
                                                 onClick={() => setShowDone(!showDone)}
                                             >
-                                                {showDone ? `Hide Done/Incomplete (${doneTasks.length + incompleteTasks.length})` : `Show Done/Incomplete (${doneTasks.length + incompleteTasks.length})`}
+                                                {`Done / Incomplete (${doneTasks.length + incompleteTasks.length})`}
                                             </button>
                                         )}
                                         {killedTasks.length > 0 && (
@@ -13678,26 +13676,23 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                 className={`toggle ${showKilled ? 'active' : ''}`}
                                                 onClick={() => setShowKilled(!showKilled)}
                                             >
-                                                {showKilled ? `Hide Killed Tasks (${killedTasks.length})` : `Show Killed Tasks (${killedTasks.length})`}
+                                                {`Killed (${killedTasks.length})`}
                                             </button>
                                         )}
                                         {hasInitiativeData && (
-                                            <>
-                                                <span className="initiative-toggle-separator" />
-                                                <button
-                                                    className={`toggle initiative-toggle ${groupByInitiative ? 'active' : ''}`}
-                                                    onClick={() => setGroupByInitiative(prev => !prev)}
-                                                    title={groupByInitiative ? 'Switch to flat epic view' : 'Group epics by initiative'}
-                                                    type="button"
-                                                >
-                                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{flexShrink: 0, marginRight: '4px'}}>
-                                                        <rect x="1" y="1" width="14" height="4" rx="1.5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-                                                        <rect x="3" y="7" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.6"/>
-                                                        <rect x="3" y="12" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.6"/>
-                                                    </svg>
-                                                    Initiatives
-                                                </button>
-                                            </>
+                                            <button
+                                                className={`toggle initiative-toggle ${groupByInitiative ? 'active' : ''}`}
+                                                onClick={() => setGroupByInitiative(prev => !prev)}
+                                                title={groupByInitiative ? 'Switch to flat epic view' : 'Group epics by initiative'}
+                                                type="button"
+                                            >
+                                                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{flexShrink: 0, marginRight: '3px'}}>
+                                                    <rect x="1" y="1" width="14" height="4" rx="1.5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+                                                    <rect x="3" y="7" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.6"/>
+                                                    <rect x="3" y="12" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.6"/>
+                                                </svg>
+                                                Initiatives
+                                            </button>
                                         )}
                                     </div>
                                 </div>

@@ -13057,7 +13057,19 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     </button>
                                                     <div className="alert-title">📥 Backlog</div>
                                                     <div className="alert-subtitle">These epics are still backlog work. Keep child stories unsprinted unless they are already closed out.</div>
-                                                    <div className="alert-chip">{backlogEpics.length} {backlogEpics.length === 1 ? 'epic' : 'epics'}</div>
+                                                    {buildKeyListLink(backlogEpics.map(e => e.key)) ? (
+                                                        <a
+                                                            className="alert-chip"
+                                                            href={buildKeyListLink(backlogEpics.map(e => e.key))}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            title="Open these backlog epics in Jira"
+                                                        >
+                                                            {backlogEpics.length} {backlogEpics.length === 1 ? 'epic' : 'epics'}
+                                                        </a>
+                                                    ) : (
+                                                        <div className="alert-chip">{backlogEpics.length} {backlogEpics.length === 1 ? 'epic' : 'epics'}</div>
+                                                    )}
                                                 </div>
                                                 <div className={`alert-card-body ${showBacklogAlert ? '' : 'collapsed'}`}>
                                                     {backlogEpicTeams.map(group => {

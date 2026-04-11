@@ -1943,7 +1943,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
         payload = {
             'jql': jql,
             'maxResults': len(batch_keys),
-            'fields': ['summary', 'reporter', 'assignee', epic_field]
+            'fields': ['summary', 'reporter', 'assignee', 'parent', epic_field]
         }
 
         try:
@@ -1962,6 +1962,18 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
                     'reporter': (fields.get('reporter') or {}).get('displayName'),
                     'assignee': {'displayName': (fields.get('assignee') or {}).get('displayName')} if fields.get('assignee') else None,
                 }
+                # Extract initiative from parent if present
+                parent = fields.get('parent')
+                if parent and parent.get('key'):
+                    parent_fields = parent.get('fields') or {}
+                    parent_type = parent_fields.get('issuetype') or {}
+                    type_name = (parent_type.get('name') or '').lower()
+                    hierarchy_level = parent_type.get('hierarchyLevel')
+                    if type_name == 'initiative' or hierarchy_level == 0:
+                        epic_details[key]['initiative'] = {
+                            'key': parent['key'],
+                            'summary': parent_fields.get('summary'),
+                        }
         except Exception as exc:
             log_warning(f'Epic batch fetch error: {exc}')
 

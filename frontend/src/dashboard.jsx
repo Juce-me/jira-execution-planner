@@ -455,6 +455,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [showWaitingAlert, setShowWaitingAlert] = useState(savedPrefsRef.current.showWaitingAlert ?? true);
             const [showEmptyEpicAlert, setShowEmptyEpicAlert] = useState(savedPrefsRef.current.showEmptyEpicAlert ?? true);
             const [showDoneEpicAlert, setShowDoneEpicAlert] = useState(savedPrefsRef.current.showDoneEpicAlert ?? true);
+            const [showAlertsPanel, setShowAlertsPanel] = useState(savedPrefsRef.current.showAlertsPanel ?? true);
             const [dismissedAlertKeys, setDismissedAlertKeys] = useState([]);
             const [alertCelebrationPieces, setAlertCelebrationPieces] = useState([]);
             const [configRefreshNonce, setConfigRefreshNonce] = useState(0);
@@ -3063,6 +3064,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     showWaitingAlert: savedPrefsRef.current.showWaitingAlert ?? true,
                     showEmptyEpicAlert: savedPrefsRef.current.showEmptyEpicAlert ?? true,
                     showDoneEpicAlert: savedPrefsRef.current.showDoneEpicAlert ?? true,
+                    showAlertsPanel: savedPrefsRef.current.showAlertsPanel ?? true,
                     dismissedAlertKeys: [],
                     dependencyData: {},
                     dependencyFocus: null,
@@ -3145,6 +3147,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
+                showAlertsPanel,
                 dismissedAlertKeys,
                 dependencyData,
                 dependencyFocus,
@@ -3263,6 +3266,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setShowWaitingAlert(nextState.showWaitingAlert ?? true);
                 setShowEmptyEpicAlert(nextState.showEmptyEpicAlert ?? true);
                 setShowDoneEpicAlert(nextState.showDoneEpicAlert ?? true);
+                setShowAlertsPanel(nextState.showAlertsPanel ?? true);
                 setDismissedAlertKeys(nextState.dismissedAlertKeys || []);
                 setAlertCelebrationPieces([]);
                 setDependencyData(nextState.dependencyData || {});
@@ -3656,6 +3660,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     showWaitingAlert,
                     showEmptyEpicAlert,
                     showDoneEpicAlert,
+                    showAlertsPanel,
                     updateDismissedHash
                 });
             }, [
@@ -3695,6 +3700,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
+                showAlertsPanel,
                 updateDismissedHash
             ]);
 
@@ -8213,6 +8219,18 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setSelectedTasks({});
             };
 
+            const selectAllVisiblePlanningTasks = () => {
+                setSelectedTasks(() => {
+                    const next = {};
+                    visibleTasksForList.forEach(task => {
+                        if (task?.key) {
+                            next[task.key] = true;
+                        }
+                    });
+                    return next;
+                });
+            };
+
             const selectPlanningTasksByStatus = (statuses) => {
                 const allowed = new Set((statuses || []).map(normalizeStatus));
                 setSelectedTasks(() => {
@@ -8314,6 +8332,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 planningPostponedTasks.every(task => selectedTasks[task.key]);
             const isAwaitingValidationIncluded = planningAwaitingValidationTasks.length > 0 &&
                 planningAwaitingValidationTasks.every(task => selectedTasks[task.key]);
+            const areAllVisiblePlanningTasksSelected = showPlanning &&
+                visibleTasksForList.length > 0 &&
+                visibleTasksForList.every(task => selectedTasks[task.key]);
 
             const selectedPlanningTasksList = React.useMemo(() => {
                 if (!showPlanning) return [];
@@ -12380,6 +12401,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 Awaiting Val.
                             </button>
                             <button
+                                className={`planning-action-button ${areAllVisiblePlanningTasksSelected ? 'active' : ''}`}
+                                onClick={selectAllVisiblePlanningTasks}
+                                disabled={visibleTasksForList.length === 0}
+                                title="Select every task currently visible in the planning list"
+                            >
+                                Select All
+                            </button>
+                            <button
                                 className="uncheck-button"
                                 onClick={clearSelectedTasks}
                                 disabled={selectedCount === 0}
@@ -12632,6 +12661,25 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     </div>
                                 )}
 		                            {alertItemCount > 0 && (
+                                                <div className="alerts-panel-shell">
+                                                    <div className="alerts-panel-toolbar">
+                                                        <button
+                                                            className="alerts-panel-toggle"
+                                                            onClick={() => setShowAlertsPanel(prev => !prev)}
+                                                            title={showAlertsPanel ? 'Hide the alerts section' : 'Show the alerts section'}
+                                                            type="button"
+                                                        >
+                                                            <span className="alerts-panel-toggle-icon" aria-hidden="true">
+                                                                <svg className={`alerts-panel-toggle-chevron ${showAlertsPanel ? '' : 'collapsed'}`} viewBox="0 0 12 12">
+                                                                    <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                                </svg>
+                                                            </span>
+                                                            <span className="alerts-panel-toggle-label">
+                                                                {showAlertsPanel ? 'Hide Alerts' : 'Show Alerts'}
+                                                            </span>
+                                                        </button>
+                                                    </div>
+                                                    {showAlertsPanel && (
 		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert) ? 'collapsed' : ''}`}>
 		                                    {consolidatedMissingStories.length > 0 && (
 		                                        <div className={`alert-card missing ${showMissingAlert ? '' : 'collapsed'}`}>
@@ -13034,7 +13082,19 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     </button>
                                                     <div className="alert-title">📥 Backlog</div>
                                                     <div className="alert-subtitle">These epics are still backlog work. Keep child stories unsprinted unless they are already closed out.</div>
-                                                    <div className="alert-chip">{backlogEpics.length} {backlogEpics.length === 1 ? 'epic' : 'epics'}</div>
+                                                    {buildKeyListLink(backlogEpics.map(e => e.key)) ? (
+                                                        <a
+                                                            className="alert-chip"
+                                                            href={buildKeyListLink(backlogEpics.map(e => e.key))}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            title="Open these backlog epics in Jira"
+                                                        >
+                                                            {backlogEpics.length} {backlogEpics.length === 1 ? 'epic' : 'epics'}
+                                                        </a>
+                                                    ) : (
+                                                        <div className="alert-chip">{backlogEpics.length} {backlogEpics.length === 1 ? 'epic' : 'epics'}</div>
+                                                    )}
                                                 </div>
                                                 <div className={`alert-card-body ${showBacklogAlert ? '' : 'collapsed'}`}>
                                                     {backlogEpicTeams.map(group => {
@@ -13569,10 +13629,12 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                         );
                                                     })}
                                             </div>
-	                                        </div>
-	                                    )}
+		                                        </div>
+		                                    )}
 
 	                                </div>
+                                                    )}
+                                                </div>
 	                            )}
                             <div className="filters-strip">
                                 <div className="filters-group">
@@ -13647,7 +13709,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     </div>
                                 </div>
                                 <div className="filters-group">
-                                    <div className="filters-label">Hide</div>
+                                    <div className="filters-label">Display</div>
                                     <div className="toggle-container">
                                         <button
                                             className={`toggle ${showTech ? 'active' : ''}`}
@@ -13655,22 +13717,20 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                 setShowTech(!showTech);
                                             }}
                                         >
-                                            {showTech
-                                                ? `Hide Tech Tasks (${techTasksCount})`
-                                                : `Show Tech Tasks (${techTasksCount})`}
+                                            {`Tech (${techTasksCount})`}
                                         </button>
                                         <button
                                             className={`toggle ${showProduct ? 'active' : ''}`}
                                             onClick={() => setShowProduct(!showProduct)}
                                         >
-                                            {showProduct ? `Hide Product Tasks (${productTasksCount})` : `Show Product Tasks (${productTasksCount})`}
+                                            {`Product (${productTasksCount})`}
                                         </button>
                                         {(doneTasks.length > 0 || incompleteTasks.length > 0) && (
                                             <button
                                                 className={`toggle ${showDone ? 'active' : ''}`}
                                                 onClick={() => setShowDone(!showDone)}
                                             >
-                                                {showDone ? `Hide Done/Incomplete (${doneTasks.length + incompleteTasks.length})` : `Show Done/Incomplete (${doneTasks.length + incompleteTasks.length})`}
+                                                {`Done / Incomplete (${doneTasks.length + incompleteTasks.length})`}
                                             </button>
                                         )}
                                         {killedTasks.length > 0 && (
@@ -13678,26 +13738,23 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                 className={`toggle ${showKilled ? 'active' : ''}`}
                                                 onClick={() => setShowKilled(!showKilled)}
                                             >
-                                                {showKilled ? `Hide Killed Tasks (${killedTasks.length})` : `Show Killed Tasks (${killedTasks.length})`}
+                                                {`Killed (${killedTasks.length})`}
                                             </button>
                                         )}
                                         {hasInitiativeData && (
-                                            <>
-                                                <span className="initiative-toggle-separator" />
-                                                <button
-                                                    className={`toggle initiative-toggle ${groupByInitiative ? 'active' : ''}`}
-                                                    onClick={() => setGroupByInitiative(prev => !prev)}
-                                                    title={groupByInitiative ? 'Switch to flat epic view' : 'Group epics by initiative'}
-                                                    type="button"
-                                                >
-                                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{flexShrink: 0, marginRight: '4px'}}>
-                                                        <rect x="1" y="1" width="14" height="4" rx="1.5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-                                                        <rect x="3" y="7" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.6"/>
-                                                        <rect x="3" y="12" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.6"/>
-                                                    </svg>
-                                                    Initiatives
-                                                </button>
-                                            </>
+                                            <button
+                                                className={`toggle initiative-toggle ${groupByInitiative ? 'active' : ''}`}
+                                                onClick={() => setGroupByInitiative(prev => !prev)}
+                                                title={groupByInitiative ? 'Switch to flat epic view' : 'Group epics by initiative'}
+                                                type="button"
+                                            >
+                                                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{flexShrink: 0, marginRight: '3px'}}>
+                                                    <rect x="1" y="1" width="14" height="4" rx="1.5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+                                                    <rect x="3" y="7" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.6"/>
+                                                    <rect x="3" y="12" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.6"/>
+                                                </svg>
+                                                Initiatives
+                                            </button>
                                         )}
                                     </div>
                                 </div>

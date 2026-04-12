@@ -455,6 +455,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [showWaitingAlert, setShowWaitingAlert] = useState(savedPrefsRef.current.showWaitingAlert ?? true);
             const [showEmptyEpicAlert, setShowEmptyEpicAlert] = useState(savedPrefsRef.current.showEmptyEpicAlert ?? true);
             const [showDoneEpicAlert, setShowDoneEpicAlert] = useState(savedPrefsRef.current.showDoneEpicAlert ?? true);
+            const [showAlertsPanel, setShowAlertsPanel] = useState(savedPrefsRef.current.showAlertsPanel ?? true);
             const [dismissedAlertKeys, setDismissedAlertKeys] = useState([]);
             const [alertCelebrationPieces, setAlertCelebrationPieces] = useState([]);
             const [configRefreshNonce, setConfigRefreshNonce] = useState(0);
@@ -3063,6 +3064,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     showWaitingAlert: savedPrefsRef.current.showWaitingAlert ?? true,
                     showEmptyEpicAlert: savedPrefsRef.current.showEmptyEpicAlert ?? true,
                     showDoneEpicAlert: savedPrefsRef.current.showDoneEpicAlert ?? true,
+                    showAlertsPanel: savedPrefsRef.current.showAlertsPanel ?? true,
                     dismissedAlertKeys: [],
                     dependencyData: {},
                     dependencyFocus: null,
@@ -3145,6 +3147,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
+                showAlertsPanel,
                 dismissedAlertKeys,
                 dependencyData,
                 dependencyFocus,
@@ -3263,6 +3266,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setShowWaitingAlert(nextState.showWaitingAlert ?? true);
                 setShowEmptyEpicAlert(nextState.showEmptyEpicAlert ?? true);
                 setShowDoneEpicAlert(nextState.showDoneEpicAlert ?? true);
+                setShowAlertsPanel(nextState.showAlertsPanel ?? true);
                 setDismissedAlertKeys(nextState.dismissedAlertKeys || []);
                 setAlertCelebrationPieces([]);
                 setDependencyData(nextState.dependencyData || {});
@@ -3656,6 +3660,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     showWaitingAlert,
                     showEmptyEpicAlert,
                     showDoneEpicAlert,
+                    showAlertsPanel,
                     updateDismissedHash
                 });
             }, [
@@ -3695,6 +3700,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
+                showAlertsPanel,
                 updateDismissedHash
             ]);
 
@@ -12655,6 +12661,25 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     </div>
                                 )}
 		                            {alertItemCount > 0 && (
+                                                <div className="alerts-panel-shell">
+                                                    <div className="alerts-panel-toolbar">
+                                                        <button
+                                                            className="alerts-panel-toggle"
+                                                            onClick={() => setShowAlertsPanel(prev => !prev)}
+                                                            title={showAlertsPanel ? 'Hide the alerts section' : 'Show the alerts section'}
+                                                            type="button"
+                                                        >
+                                                            <span className="alerts-panel-toggle-icon" aria-hidden="true">
+                                                                <svg className={`alerts-panel-toggle-chevron ${showAlertsPanel ? '' : 'collapsed'}`} viewBox="0 0 12 12">
+                                                                    <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                                </svg>
+                                                            </span>
+                                                            <span className="alerts-panel-toggle-label">
+                                                                {showAlertsPanel ? 'Hide Alerts' : 'Show Alerts'}
+                                                            </span>
+                                                        </button>
+                                                    </div>
+                                                    {showAlertsPanel && (
 		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert) ? 'collapsed' : ''}`}>
 		                                    {consolidatedMissingStories.length > 0 && (
 		                                        <div className={`alert-card missing ${showMissingAlert ? '' : 'collapsed'}`}>
@@ -13604,10 +13629,12 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                         );
                                                     })}
                                             </div>
-	                                        </div>
-	                                    )}
+		                                        </div>
+		                                    )}
 
 	                                </div>
+                                                    )}
+                                                </div>
 	                            )}
                             <div className="filters-strip">
                                 <div className="filters-group">

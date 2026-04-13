@@ -985,6 +985,7 @@ def save_sprints_cache(sprints):
     try:
         cache_data = {
             'timestamp': datetime.now().isoformat(),
+            'boardId': get_effective_board_id(),
             'sprints': sprints
         }
         with open(SPRINTS_CACHE_FILE, 'w') as f:
@@ -997,12 +998,19 @@ def save_sprints_cache(sprints):
 
 
 def is_cache_valid():
-    """Check if cache exists and is not expired"""
+    """Check if cache exists, is not expired, and matches the current board config"""
     cache_data = load_sprints_cache()
     if not cache_data or 'timestamp' not in cache_data:
         return False
 
     try:
+        # Invalidate if board config changed since cache was built
+        cached_board = str(cache_data.get('boardId') or '').strip()
+        current_board = get_effective_board_id()
+        if cached_board != current_board:
+            log_info(f'Cache invalidated: board changed ({cached_board!r} → {current_board!r})')
+            return False
+
         cache_time = datetime.fromisoformat(cache_data['timestamp'])
         expiry_time = cache_time + timedelta(hours=CACHE_EXPIRY_HOURS)
         is_valid = datetime.now() < expiry_time
@@ -1795,6 +1803,65 @@ def classify_project(project_name, project_key=None):
     return 'other'
 
 
+def fetch_board_sprint_ids(board_id, headers):
+    """Fetch the set of sprint IDs that originated on a specific board.
+    Uses originBoardId to exclude cross-board sprints that Jira includes
+    in the board API response."""
+    sprint_ids = set()
+    start_at = 0
+    try:
+        while True:
+            response = requests.get(
+                f'{JIRA_URL}/rest/agile/1.0/board/{board_id}/sprint',
+                headers=headers,
+                params={'maxResults': 100, 'startAt': start_at, 'state': 'active,future,closed'},
+                timeout=30
+            )
+            if response.status_code != 200:
+                break
+            data = response.json()
+            for sprint in data.get('values', []):
+                sid = sprint.get('id')
+                origin = sprint.get('originBoardId')
+                # Only include sprints that originated on this board
+                if sid and (origin is None or str(origin) == str(board_id)):
+                    sprint_ids.add(sid)
+            if data.get('isLast', False) or not data.get('values'):
+                break
+            start_at += len(data['values'])
+    except Exception as e:
+        log_warning(f'Failed to fetch board sprint IDs for board {board_id}: {e}')
+    return sprint_ids
+
+
+def deduplicate_sprints_by_name(sprints, board_sprint_ids=None):
+    """When multiple sprints share a name, keep the one on the configured board.
+    If neither or both are on the board, prefer active > closed > future."""
+    STATE_PRIORITY = {'active': 0, 'closed': 1, 'future': 2}
+    by_name = {}
+    for sprint in sprints:
+        name = sprint.get('name', '')
+        prev = by_name.get(name)
+        if prev is None:
+            by_name[name] = sprint
+            continue
+        # Prefer the sprint that belongs to the configured board
+        if board_sprint_ids:
+            prev_on_board = prev['id'] in board_sprint_ids
+            curr_on_board = sprint['id'] in board_sprint_ids
+            if curr_on_board and not prev_on_board:
+                by_name[name] = sprint
+                continue
+            if prev_on_board and not curr_on_board:
+                continue
+        # Tie-break by state priority
+        prev_prio = STATE_PRIORITY.get((prev.get('state') or '').lower(), 9)
+        curr_prio = STATE_PRIORITY.get((sprint.get('state') or '').lower(), 9)
+        if curr_prio < prev_prio:
+            by_name[name] = sprint
+    return list(by_name.values())
+
+
 def fetch_sprints_from_jira():
     """Fetch sprints from Jira (not from cache)"""
     auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
@@ -1809,6 +1876,7 @@ def fetch_sprints_from_jira():
 
     formatted_sprints = []
     effective_board_id = get_effective_board_id()
+    board_sprint_ids = None  # lazily fetched when needed for dedup/filtering
 
     # Method 1: Try to get sprints from board (if JIRA_BOARD_ID is set)
     if effective_board_id:
@@ -1834,6 +1902,11 @@ def fetch_sprints_from_jira():
                     name = sprint.get('name', '')
                     sprint_id = sprint.get('id')
                     state = sprint.get('state', '')
+                    origin = sprint.get('originBoardId')
+
+                    # Skip sprints that originated on a different board
+                    if origin is not None and str(origin) != str(effective_board_id):
+                        continue
 
                     if re.match(r'^\d{4}Q[1-4]$', name):
                         formatted_sprints.append({
@@ -1850,6 +1923,8 @@ def fetch_sprints_from_jira():
                 start_at += len(sprints)
 
             if formatted_sprints:
+                # All sprints from Method 1 belong to this board by definition
+                board_sprint_ids = {s['id'] for s in formatted_sprints}
                 log_info(f'Found {len(formatted_sprints)} sprints from board')
             else:
                 log_warning(f'Board API returned {response.status_code}, trying alternative method')
@@ -1920,6 +1995,25 @@ def fetch_sprints_from_jira():
 
         formatted_sprints = list(sprints_dict.values())
         log_info(f'Found {len(formatted_sprints)} unique sprints from {issues_count} issues')
+
+        # Board-scope: filter out cross-board sprints when a board is configured
+        if effective_board_id:
+            board_sprint_ids = fetch_board_sprint_ids(effective_board_id, headers)
+            if board_sprint_ids:
+                before_count = len(formatted_sprints)
+                formatted_sprints = [s for s in formatted_sprints if s['id'] in board_sprint_ids]
+                filtered_count = before_count - len(formatted_sprints)
+                if filtered_count:
+                    log_info(f'Filtered out {filtered_count} cross-board sprints (board {effective_board_id})')
+
+    # Deduplicate sprints that share a name (e.g. same quarter on different boards)
+    if effective_board_id and board_sprint_ids is None:
+        board_sprint_ids = fetch_board_sprint_ids(effective_board_id, headers)
+    before_dedup = len(formatted_sprints)
+    formatted_sprints = deduplicate_sprints_by_name(formatted_sprints, board_sprint_ids)
+    dedup_removed = before_dedup - len(formatted_sprints)
+    if dedup_removed:
+        log_info(f'Deduplicated {dedup_removed} sprints with duplicate names')
 
     # Sort sprints by name (latest first)
     formatted_sprints.sort(key=lambda x: x['name'], reverse=True)

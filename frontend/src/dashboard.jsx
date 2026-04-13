@@ -10291,14 +10291,15 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     <button
                                         className="secondary compact refresh-icon"
                                         onClick={() => {
+                                            loadSprints(true);
                                             loadProductTasks();
                                             loadTechTasks();
                                             loadReadyToCloseProductTasks();
                                             loadReadyToCloseTechTasks();
                                         }}
                                         disabled={loading || selectedSprint === null}
-                                        title="Refresh tasks from Jira"
-                                        aria-label="Refresh tasks from Jira"
+                                        title="Refresh tasks and sprints from Jira"
+                                        aria-label="Refresh tasks and sprints from Jira"
                                         type="button"
                                     >
                                         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">

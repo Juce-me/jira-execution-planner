@@ -11791,6 +11791,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     items={cohortCompletedBars}
                                                     jiraBaseUrl={jiraUrl}
                                                     emptyMessage="No completed epics in this scope."
+                                                    variant="completed"
                                                 />
                                             </div>
                                         </div>

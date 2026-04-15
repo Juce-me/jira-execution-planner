@@ -1,8 +1,9 @@
 import * as React from 'react';
 
-function OpenEpicsChart({ title, items, jiraBaseUrl, emptyMessage }) {
+function OpenEpicsChart({ title, items, jiraBaseUrl, emptyMessage, variant }) {
     const rows = Array.isArray(items) ? items : [];
     const fallbackEmpty = emptyMessage || 'No open epics in this scope.';
+    const fillClass = `cohort-open-fill${variant ? ` cohort-open-fill--${variant}` : ''}`;
 
     if (!rows.length) {
         return (
@@ -51,7 +52,7 @@ function OpenEpicsChart({ title, items, jiraBaseUrl, emptyMessage }) {
                                 </div>
                             </div>
                             <div className="cohort-open-track">
-                                <div className="cohort-open-fill" style={{ width: `${width}%` }} />
+                                <div className={fillClass} style={{ width: `${width}%` }} />
                                 <span className="cohort-open-value">{daysOpen}d</span>
                             </div>
                         </div>

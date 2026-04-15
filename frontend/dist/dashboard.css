@@ -5484,6 +5484,10 @@
             background: linear-gradient(90deg, #f59e0b, #f97316);
         }
 
+        .cohort-open-fill--completed {
+            background: linear-gradient(90deg, #34d399, #10b981);
+        }
+
         .cohort-open-value {
             position: absolute;
             right: 0.35rem;

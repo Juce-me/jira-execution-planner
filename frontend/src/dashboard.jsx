@@ -4013,8 +4013,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         project: project || 'all',
                         groupId: activeGroupId || ''
                     });
-                    // On page load, bypass server cache to get fresh Jira data
-                    if (pageLoadRefreshRef.current) {
+                    // Bypass server cache on page load or explicit refresh
+                    if (pageLoadRefreshRef.current || options.forceRefresh) {
                         params.set('refresh', 'true');
                         pageLoadRefreshRef.current = false;
                     }
@@ -4129,7 +4129,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return Array.isArray(payload.epics) ? payload.epics : [];
             };
 
-            const loadProductTasks = async () => {
+            const loadProductTasks = async ({ forceRefresh = false } = {}) => {
                 const sprintId = selectedSprint;
                 setProductTasksLoading(true);
                 try {
@@ -4148,7 +4148,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         }
                         return;
                     }
-                    const data = await fetchTasks('product');
+                    const data = await fetchTasks('product', { forceRefresh });
                     setProductTasks(data);
                     setLoadedProductTasks(data);
                     setTasksFetched(true);
@@ -4166,7 +4166,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
             };
 
-            const loadTechTasks = async () => {
+            const loadTechTasks = async ({ forceRefresh = false } = {}) => {
                 const sprintId = selectedSprint;
                 setTechTasksLoading(true);
                 try {
@@ -4186,7 +4186,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         }
                         return;
                     }
-                    const data = await fetchTasks('tech');
+                    const data = await fetchTasks('tech', { forceRefresh });
                     setTechTasks(data);
                     setLoadedTechTasks(data);
                     setTechLoaded(true);
@@ -4354,7 +4354,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setScenarioDragState(dragState);
             };
 
-            const loadReadyToCloseProductTasks = async () => {
+            const loadReadyToCloseProductTasks = async ({ forceRefresh = false } = {}) => {
                 if (activeGroupId && activeGroupTeamIds.length === 0) {
                     setReadyToCloseProductTasks([]);
                     setReadyToCloseProductEpicsInScope([]);
@@ -4377,12 +4377,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     updateEpics: false,
                     epicsInScopeSetter: setReadyToCloseProductEpicsInScope,
                     useLoading: false,
-                    setErrorOnFailure: false
+                    setErrorOnFailure: false,
+                    forceRefresh
                 });
                 setReadyToCloseProductTasks(data);
             };
 
-            const loadReadyToCloseTechTasks = async () => {
+            const loadReadyToCloseTechTasks = async ({ forceRefresh = false } = {}) => {
                 if (activeGroupId && activeGroupTeamIds.length === 0) {
                     setReadyToCloseTechTasks([]);
                     setReadyToCloseTechEpicsInScope([]);
@@ -4405,7 +4406,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     updateEpics: false,
                     epicsInScopeSetter: setReadyToCloseTechEpicsInScope,
                     useLoading: false,
-                    setErrorOnFailure: false
+                    setErrorOnFailure: false,
+                    forceRefresh
                 });
                 setReadyToCloseTechTasks(data);
             };
@@ -10291,11 +10293,16 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     <button
                                         className="secondary compact refresh-icon"
                                         onClick={() => {
+                                            if (activeGroupId) {
+                                                groupStateRef.current.delete(activeGroupId);
+                                            }
+                                            burnoutCacheRef.current = {};
+                                            cohortCacheRef.current = {};
                                             loadSprints(true);
-                                            loadProductTasks();
-                                            loadTechTasks();
-                                            loadReadyToCloseProductTasks();
-                                            loadReadyToCloseTechTasks();
+                                            loadProductTasks({ forceRefresh: true });
+                                            loadTechTasks({ forceRefresh: true });
+                                            loadReadyToCloseProductTasks({ forceRefresh: true });
+                                            loadReadyToCloseTechTasks({ forceRefresh: true });
                                         }}
                                         disabled={loading || selectedSprint === null}
                                         title="Refresh tasks and sprints from Jira"

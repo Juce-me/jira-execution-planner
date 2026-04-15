@@ -6,7 +6,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 
 - ✅ **Dynamic Sprint Selection** - Choose any sprint from dropdown (2025Q1, 2025Q2, etc.)
 - ✅ **Smart Sprint Detection** - Auto-selects current quarter on load
-- ✅ **Intelligent Caching** - Sprint list cached for 24 hours to reduce Jira API load
+- ✅ **Intelligent Caching** - Sprint list cached for 24 hours, task data for 5 minutes; manual refresh bypasses all caches
 - ✅ **Sort by Priority** - Tasks sorted Highest → Lowest
 - ✅ **Status filters** - Toggle Done/Killed and use stat cards (In Progress, To Do/Pending/Accepted, High Priority)
 - ✅ **Project Filtering** - Separate Tech and Product tasks
@@ -247,7 +247,8 @@ The app now relies on Dashboard Settings for supported runtime configuration. Ke
    - Runs on `localhost:5050` by default (overridable via `SERVER_PORT` or `--server_port`)
    - Reads credentials from `.env` file
    - Makes secure READ-ONLY API requests to Jira
-   - Caches sprint list for 24 hours (reduces API load)
+   - Caches sprint list for 24 hours, task data for 5 minutes (reduces API load)
+   - Refresh button bypasses all server caches for immediate Jira updates
    - Returns filtered data to frontend
 
 2. **Frontend** (`jira-dashboard.html`):
@@ -372,8 +373,8 @@ See the full guide:
 
 ## 🔄 Updating data
 
-- **Tasks**: Click "Refresh Page" in the header (also refreshes ready-to-close data)
-- **Sprints**: CMD+R/CTRL+R
+- **Tasks**: Click the refresh button in the header — bypasses server cache and fetches fresh data from Jira (also refreshes sprints and ready-to-close data)
+- **Sprints**: Also refreshed by the header refresh button, or CMD+R/CTRL+R (page reload uses server cache bypass on first load)
 - **Auto-reload**: Tasks reload automatically when you change sprint selection
 - **Stats**: Teams/Priority update from loaded tasks; Burnout refreshes when sprint/team scope changes and when opening Burnout
 
@@ -409,7 +410,7 @@ jira-dashboard/
 The dashboard uses a few different cache layers to keep Jira traffic reasonable:
 
 - **Sprint list**: cached on disk in `sprints_cache.json` for 24 hours. Use **Refresh Sprints** or `?refresh=true` to force a reload from Jira.
-- **Tasks and epics**: cached in server memory for repeated requests with the same sprint/group/project scope, and the UI also reuses the already loaded group state when possible.
+- **Tasks and epics**: cached in server memory for 5 minutes for repeated requests with the same sprint/group/project scope. The refresh button bypasses the server cache and also clears browser-side group state, so changes made in Jira appear immediately after clicking refresh.
 - **Statistics**:
   - Teams and Priority views are computed from the currently loaded sprint tasks in the browser.
   - Burnout loads on demand from `/api/stats/burnout` and is reused in the browser for the same sprint/team/task scope during the session.

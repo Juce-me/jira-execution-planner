@@ -1,13 +1,14 @@
 import * as React from 'react';
 
-function OpenEpicsChart({ title, items, jiraBaseUrl }) {
+function OpenEpicsChart({ title, items, jiraBaseUrl, emptyMessage }) {
     const rows = Array.isArray(items) ? items : [];
+    const fallbackEmpty = emptyMessage || 'No open epics in this scope.';
 
     if (!rows.length) {
         return (
             <div className="cohort-open-chart">
                 <div className="cohort-open-title">{title}</div>
-                <div className="cohort-empty">No open epics in this scope.</div>
+                <div className="cohort-empty">{fallbackEmpty}</div>
             </div>
         );
     }

@@ -347,3 +347,32 @@ export function buildOpenEpicsBars(issues, options = {}) {
         .sort((a, b) => b.daysOpen - a.daysOpen)
         .slice(0, limit);
 }
+
+export function buildCompletedEpicsBars(issues, options = {}) {
+    const source = Array.isArray(issues) ? issues : [];
+    const groupBy = options.groupBy === 'month' ? 'month' : 'quarter';
+    const rowKey = options.rowKey || null;
+    const limit = Math.max(1, Number(options.limit) || 30);
+
+    return source
+        .filter((issue) => {
+            const status = normalizeCohortStatus(issue?.status);
+            if (status === 'open') return false;
+            if (!Number.isFinite(Number(issue?.leadTimeDays))) return false;
+            const createdDate = parseIsoDate(issue?.createdDate);
+            if (!createdDate) return false;
+            if (!rowKey) return true;
+            return periodKeyFromDate(createdDate, groupBy) === rowKey;
+        })
+        .map((issue) => ({
+            key: issue?.key || '',
+            summary: issue?.summary || '',
+            status: issue?.jiraStatus || issue?.status || '',
+            projectKey: issue?.projectKey || '',
+            teamName: issue?.team?.name || 'Unknown Team',
+            assigneeName: issue?.assignee?.name || 'Unassigned',
+            daysOpen: Math.max(0, Number(issue?.leadTimeDays || 0))
+        }))
+        .sort((a, b) => b.daysOpen - a.daysOpen)
+        .slice(0, limit);
+}

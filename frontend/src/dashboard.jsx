@@ -8,6 +8,7 @@ import OpenEpicsChart from './cohort/OpenEpicsChart.jsx';
 import {
     aggregateCohortSummary,
     buildCohortGridModel,
+    buildCompletedEpicsBars,
     buildOpenEpicsBars,
     buildQuarterOptions,
     deriveAssigneeOptions,
@@ -5222,6 +5223,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 rangeEndDate: cohortData?.range?.endDate
             }), [cohortFilteredIssues, cohortGroupBy, cohortData?.range?.startDate, cohortData?.range?.endDate]);
             const cohortOpenBars = React.useMemo(() => buildOpenEpicsBars(cohortFilteredIssues, {
+                groupBy: cohortGroupBy,
+                rowKey: cohortSelectedRow
+            }), [cohortFilteredIssues, cohortGroupBy, cohortSelectedRow]);
+            const cohortCompletedBars = React.useMemo(() => buildCompletedEpicsBars(cohortFilteredIssues, {
                 groupBy: cohortGroupBy,
                 rowKey: cohortSelectedRow
             }), [cohortFilteredIssues, cohortGroupBy, cohortSelectedRow]);
@@ -11776,6 +11781,17 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                         : 'Open Epics (All Cohorts)'}
                                                     items={cohortOpenBars}
                                                     jiraBaseUrl={jiraUrl}
+                                                />
+                                            </div>
+                                            <div className="cohort-section">
+                                                <OpenEpicsChart
+                                                    title={cohortSelectedRowLabel
+                                                        ? `Completed Epics — Lead Time (${cohortSelectedRowLabel})`
+                                                        : 'Completed Epics — Lead Time (All Cohorts)'}
+                                                    items={cohortCompletedBars}
+                                                    jiraBaseUrl={jiraUrl}
+                                                    emptyMessage="No completed epics in this scope."
+                                                    variant="completed"
                                                 />
                                             </div>
                                         </div>

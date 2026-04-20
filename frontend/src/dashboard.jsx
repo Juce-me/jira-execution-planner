@@ -193,6 +193,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmProjects, setEpmProjects] = useState([]);
             const [epmProjectsLoading, setEpmProjectsLoading] = useState(false);
             const [epmSelectedProjectId, setEpmSelectedProjectId] = useState(savedPrefsRef.current.epmSelectedProjectId ?? '');
+            const [epmConfigDraft, setEpmConfigDraft] = useState({ version: 1, projects: {} });
+            const [epmConfigLoading, setEpmConfigLoading] = useState(false);
+            const [epmConfigSaving, setEpmConfigSaving] = useState(false);
+            const epmConfigBaselineRef = useRef(JSON.stringify({ version: 1, projects: {} }));
             const [epmIssues, setEpmIssues] = useState([]);
             const [epmIssueEpics, setEpmIssueEpics] = useState({});
             const [availableSprints, setAvailableSprints] = useState([]);
@@ -539,6 +543,57 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             // filterEpmProjectsForTab owns the `project.tabBucket === epmTab` check.
             const visibleEpmProjects = React.useMemo(() => filterEpmProjectsForTab(epmProjects, epmTab), [epmProjects, epmTab]);
             const selectedEpmProject = visibleEpmProjects.find((project) => project.homeProjectId === epmSelectedProjectId) || null;
+            const loadEpmConfig = async () => {
+                const response = await fetch(`${BACKEND_URL}/api/epm/config`, { cache: 'no-cache' });
+                if (!response.ok) {
+                    throw new Error(`EPM config error ${response.status}`);
+                }
+                return response.json();
+            };
+            const loadEpmProjects = async () => {
+                const response = await fetch(`${BACKEND_URL}/api/epm/projects`, { cache: 'no-cache' });
+                if (!response.ok) {
+                    throw new Error(`EPM projects error ${response.status}`);
+                }
+                return response.json();
+            };
+            const saveEpmConfig = async () => {
+                setEpmConfigSaving(true);
+                setGroupDraftError('');
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/epm/config`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(epmConfigDraft)
+                    });
+                    if (!response.ok) {
+                        throw new Error(`Failed to save EPM config: ${response.status}`);
+                    }
+                    const payload = await response.json();
+                    setEpmConfigDraft(payload);
+                    epmConfigBaselineRef.current = JSON.stringify(payload);
+                } catch (err) {
+                    const message = err?.message || 'Failed to save EPM settings.';
+                    setGroupDraftError(message);
+                    console.error('Failed to save EPM config:', err);
+                    throw err;
+                } finally {
+                    setEpmConfigSaving(false);
+                }
+            };
+            const updateEpmProjectDraft = (homeProjectId, field, value) => {
+                setEpmConfigDraft((prev) => {
+                    const prevProjects = prev.projects || {};
+                    const prevRow = prevProjects[homeProjectId] || { homeProjectId };
+                    return {
+                        ...prev,
+                        projects: {
+                            ...prevProjects,
+                            [homeProjectId]: { ...prevRow, homeProjectId, [field]: value },
+                        },
+                    };
+                });
+            };
             const filteredSprints = React.useMemo(() => {
                 if (!sprintSearch.trim()) return availableSprints;
                 const query = sprintSearch.trim().toLowerCase();
@@ -719,6 +774,50 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setLoadingTeams(false);
                 loadTeamCatalog();
             }, [showGroupManage, groupsConfig]);
+
+            useEffect(() => {
+                if (!showGroupManage || groupManageTab !== 'epm') return;
+                let cancelled = false;
+                const loadEpmSettings = async () => {
+                    setEpmConfigLoading(true);
+                    setEpmProjectsLoading(true);
+                    try {
+                        const config = await loadEpmConfig();
+                        if (!cancelled) {
+                            const nextConfig = {
+                                version: config?.version || 1,
+                                projects: config?.projects && typeof config.projects === 'object' ? config.projects : {}
+                            };
+                            setEpmConfigDraft(nextConfig);
+                            epmConfigBaselineRef.current = JSON.stringify(nextConfig);
+                        }
+                    } catch (err) {
+                        console.error('Failed to load EPM config:', err);
+                    } finally {
+                        if (!cancelled) {
+                            setEpmConfigLoading(false);
+                        }
+                    }
+                    try {
+                        const payload = await loadEpmProjects();
+                        if (!cancelled) {
+                            setEpmProjects(Array.isArray(payload.projects) ? payload.projects : []);
+                        }
+                    } catch (err) {
+                        console.error('Failed to load EPM projects:', err);
+                    } finally {
+                        if (!cancelled) {
+                            setEpmProjectsLoading(false);
+                        }
+                    }
+                };
+                loadEpmSettings();
+                return () => {
+                    cancelled = true;
+                    setEpmConfigLoading(false);
+                    setEpmProjectsLoading(false);
+                };
+            }, [showGroupManage, groupManageTab]);
 
             useEffect(() => {
                 if (!showGroupManage) return;
@@ -1162,6 +1261,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return JSON.stringify({ fieldId: teamFieldIdDraft, fieldName: teamFieldNameDraft }) !== teamFieldBaselineRef.current;
             }, [teamFieldIdDraft, teamFieldNameDraft]);
 
+            const isEpmConfigDirty = React.useMemo(() => {
+                return JSON.stringify(epmConfigDraft) !== epmConfigBaselineRef.current;
+            }, [epmConfigDraft]);
+
             const isGroupDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
                 if (isPriorityWeightsDirty) return true;
@@ -1172,9 +1275,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 if (isParentNameFieldDirty) return true;
                 if (isStoryPointsFieldDirty) return true;
                 if (isTeamFieldDirty) return true;
+                if (isEpmConfigDirty) return true;
                 if (!groupDraft) return false;
                 return groupDraftSignature !== groupDraftBaselineRef.current;
-            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty]);
+            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty]);
             const unsavedSectionsCount = React.useMemo(() => {
                 return [
                     isProjectsDraftDirty,
@@ -1186,9 +1290,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     isParentNameFieldDirty,
                     isStoryPointsFieldDirty,
                     isTeamFieldDirty,
+                    isEpmConfigDirty,
                     Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current)
                 ].filter(Boolean).length;
-            }, [isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, groupDraft, groupDraftSignature]);
+            }, [isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty, groupDraft, groupDraftSignature]);
             const priorityWeightsValidationError = React.useMemo(() => {
                 for (const row of (priorityWeightsDraft || [])) {
                     const label = String(row?.priority || '').trim() || 'Priority';
@@ -1293,7 +1398,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     const key = event.key;
                     if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 's') {
                         event.preventDefault();
-                        if (!groupSaving) {
+                        if (groupManageTab === 'epm') {
+                            if (!epmConfigSaving) {
+                                void saveEpmConfig().catch(() => {});
+                            }
+                        } else if (!groupSaving) {
                             saveGroupsConfig();
                         }
                         return;
@@ -1316,7 +1425,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 };
                 window.addEventListener('keydown', handleKey);
                 return () => window.removeEventListener('keydown', handleKey);
-            }, [showGroupManage, groupSaving, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage]);
+            }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveEpmConfig, saveGroupsConfig]);
 
             const addGroupDraftRow = () => {
                 let nextId = '';
@@ -1635,6 +1744,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setGroupSaving(true);
                 setGroupDraftError('');
                 try {
+                    if (isEpmConfigDirty) {
+                        await saveEpmConfig();
+                    }
+
                     // Save project selection if changed
                     const projectsChanged = isProjectsDraftDirty;
                     if (projectsChanged) {
@@ -14048,6 +14161,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         onClick={() => setGroupManageTab('priorityWeights')}
                                         type="button"
                                     >Priority weights</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'epm' ? 'active' : ''}`}
+                                        onClick={() => setGroupManageTab('epm')}
+                                        type="button"
+                                    >EPM</button>
                                 </div>
                                 {(groupManageTab === 'scope' || groupManageTab === 'source' || groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
                                     <div className="group-modal-body group-modal-split group-projects-layout">
@@ -14677,6 +14795,50 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         )}
                                     </div>
                                 )}
+                                {groupManageTab === 'epm' && (
+                                <div className="group-modal-body group-projects-layout">
+                                    <div className="group-pane group-single-pane">
+                                        <div className="group-pane-header">
+                                            <div className="group-pane-title">EPM projects</div>
+                                            <div className="group-pane-subtitle">Augment Jira Home projects with optional Jira label and Jira epic linkage.</div>
+                                        </div>
+                                        {epmConfigLoading || epmProjectsLoading ? (
+                                            <div className="group-pane-empty">Loading EPM settings...</div>
+                                        ) : epmProjects.length === 0 ? (
+                                            <div className="group-pane-empty">No EPM projects found.</div>
+                                        ) : (
+                                            <div className="group-pane-list">
+                                                {epmProjects.map((project) => {
+                                                    const draft = epmConfigDraft.projects?.[project.homeProjectId] || {};
+                                                    return (
+                                                        <div key={project.homeProjectId} className="group-config-card">
+                                                            <a href={project.homeUrl} target="_blank" rel="noopener noreferrer">
+                                                                {project.name || project.homeProjectId}
+                                                            </a>
+                                                            <div className="group-field-helper">
+                                                                {project.latestUpdateDate ? `${project.latestUpdateDate} · ` : ''}
+                                                                {project.latestUpdateSnippet || 'No updates yet'}
+                                                            </div>
+                                                            <input
+                                                                type="text"
+                                                                value={draft.jiraLabel || ''}
+                                                                onChange={(event) => updateEpmProjectDraft(project.homeProjectId, 'jiraLabel', event.target.value)}
+                                                                placeholder="Jira label"
+                                                            />
+                                                            <input
+                                                                type="text"
+                                                                value={draft.jiraEpicKey || ''}
+                                                                onChange={(event) => updateEpmProjectDraft(project.homeProjectId, 'jiraEpicKey', event.target.value)}
+                                                                placeholder="Jira epic"
+                                                            />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                )}
                                 {groupManageTab === 'teams' && (
                                 <div className="group-modal-body group-modal-split">
                                     <div className={`group-pane group-pane-left ${showGroupListMobile ? 'is-mobile-active' : ''}`}>
@@ -15202,8 +15364,18 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         </button>
                                     </div>
                                     <div className="group-modal-button-row">
-                                        <button className="compact" onClick={saveGroupsConfig} disabled={Boolean(saveBlockedReason)} title={saveBlockedReason || ''} type="button">
-                                            {groupSaving ? 'Saving...' : 'Save'}
+                                        <button
+                                            className="compact"
+                                            onClick={groupManageTab === 'epm'
+                                                ? () => { void saveEpmConfig().catch(() => {}); }
+                                                : saveGroupsConfig}
+                                            disabled={groupManageTab === 'epm' ? (epmConfigLoading || epmConfigSaving) : Boolean(saveBlockedReason)}
+                                            title={groupManageTab === 'epm' ? '' : (saveBlockedReason || '')}
+                                            type="button"
+                                        >
+                                            {groupManageTab === 'epm'
+                                                ? (epmConfigSaving ? 'Saving EPM...' : 'Save EPM settings')
+                                                : (groupSaving ? 'Saving...' : 'Save')}
                                         </button>
                                     </div>
                                 </div>

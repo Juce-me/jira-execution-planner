@@ -3,6 +3,7 @@
 User-facing behavior guides for the main dashboard modules.
 
 - [Alerts](alerts.md)
+- [EPM View](epm-view.md)
 - [Statistics](statistics.md)
 - [Scenario Planner](scenario-planner.md)
 

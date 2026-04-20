@@ -198,6 +198,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmConfigSaving, setEpmConfigSaving] = useState(false);
             const epmConfigBaselineRef = useRef(JSON.stringify({ version: 1, projects: {} }));
             const [epmIssues, setEpmIssues] = useState([]);
+            const [epmIssuesLoading, setEpmIssuesLoading] = useState(false);
             const [epmIssueEpics, setEpmIssueEpics] = useState({});
             const [availableSprints, setAvailableSprints] = useState([]);
             const [sprintsLoading, setSprintsLoading] = useState(true);
@@ -523,6 +524,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const lastLoadedSprintRef = useRef(null);
             const sprintLoadRef = useRef({ sprintId: null, product: false, tech: false });
             const readyToCloseLoadRef = useRef('');
+            const epmProjectsPendingSelectionRef = useRef(false);
+            const epmIssuesRequestIdRef = useRef(0);
             const pendingConfigRefreshRef = useRef(0);
             const configRefreshTargetRef = useRef('none');
             const scenarioRefreshNonceRef = useRef(0);
@@ -557,6 +560,23 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 return response.json();
             };
+            const refreshEpmProjects = async () => {
+                epmProjectsPendingSelectionRef.current = true;
+                setEpmProjectsLoading(true);
+                try {
+                    const payload = await loadEpmProjects();
+                    const nextProjects = Array.isArray(payload.projects) ? payload.projects : [];
+                    setEpmProjects(nextProjects);
+                    return nextProjects;
+                } catch (err) {
+                    console.error('Failed to fetch EPM projects:', err);
+                    setEpmProjects([]);
+                    return [];
+                } finally {
+                    epmProjectsPendingSelectionRef.current = false;
+                    setEpmProjectsLoading(false);
+                }
+            };
             const saveEpmConfig = async () => {
                 setEpmConfigSaving(true);
                 setGroupDraftError('');
@@ -572,6 +592,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     const payload = await response.json();
                     setEpmConfigDraft(payload);
                     epmConfigBaselineRef.current = JSON.stringify(payload);
+                    await refreshEpmProjects();
                 } catch (err) {
                     const message = err?.message || 'Failed to save EPM settings.';
                     setGroupDraftError(message);
@@ -593,6 +614,60 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         },
                     };
                 });
+            };
+            const refreshEpmIssues = async (projectOverride = selectedEpmProject, projectIdOverride = epmSelectedProjectId) => {
+                epmIssuesRequestIdRef.current += 1;
+                const requestId = epmIssuesRequestIdRef.current;
+                const currentProject = projectOverride || null;
+                const currentProjectId = projectIdOverride || '';
+                if (selectedView !== 'epm' || !currentProjectId || !currentProject) {
+                    setEpmIssues([]);
+                    setEpmIssueEpics({});
+                    setEpmIssuesLoading(false);
+                    return;
+                }
+                if (epmTab === 'active' && !selectedSprint) {
+                    setEpmIssues([]);
+                    setEpmIssueEpics({});
+                    setEpmIssuesLoading(false);
+                    return;
+                }
+                setEpmIssuesLoading(true);
+                setEpmIssues([]);
+                setEpmIssueEpics({});
+                const params = new URLSearchParams({ tab: epmTab });
+                if (epmTab === 'active' && selectedSprint) {
+                    params.set('sprint', String(selectedSprint));
+                }
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/epm/projects/${encodeURIComponent(currentProjectId)}/issues?${params.toString()}`, { cache: 'no-cache' });
+                    if (!response.ok) {
+                        throw new Error(`EPM issues error ${response.status}`);
+                    }
+                    const payload = await response.json();
+                    if (epmIssuesRequestIdRef.current !== requestId) {
+                        return;
+                    }
+                    setEpmIssues(Array.isArray(payload.issues) ? payload.issues : []);
+                    setEpmIssueEpics(payload.epics && typeof payload.epics === 'object' ? payload.epics : {});
+                } catch (err) {
+                    if (epmIssuesRequestIdRef.current !== requestId) {
+                        return;
+                    }
+                    console.error('Failed to fetch EPM issues:', err);
+                    setEpmIssues([]);
+                    setEpmIssueEpics({});
+                } finally {
+                    if (epmIssuesRequestIdRef.current === requestId) {
+                        setEpmIssuesLoading(false);
+                    }
+                }
+            };
+            const refreshEpmView = async () => {
+                const nextProjects = await refreshEpmProjects();
+                const nextVisibleProjects = filterEpmProjectsForTab(nextProjects, epmTab);
+                const nextSelectedProject = nextVisibleProjects.find((project) => project.homeProjectId === epmSelectedProjectId) || null;
+                await refreshEpmIssues(nextSelectedProject, epmSelectedProjectId);
             };
             const filteredSprints = React.useMemo(() => {
                 if (!sprintSearch.trim()) return availableSprints;
@@ -780,7 +855,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 let cancelled = false;
                 const loadEpmSettings = async () => {
                     setEpmConfigLoading(true);
-                    setEpmProjectsLoading(true);
                     try {
                         const config = await loadEpmConfig();
                         if (!cancelled) {
@@ -798,24 +872,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             setEpmConfigLoading(false);
                         }
                     }
-                    try {
-                        const payload = await loadEpmProjects();
-                        if (!cancelled) {
-                            setEpmProjects(Array.isArray(payload.projects) ? payload.projects : []);
-                        }
-                    } catch (err) {
-                        console.error('Failed to load EPM projects:', err);
-                    } finally {
-                        if (!cancelled) {
-                            setEpmProjectsLoading(false);
-                        }
+                    if (!cancelled) {
+                        await refreshEpmProjects();
                     }
                 };
                 loadEpmSettings();
                 return () => {
                     cancelled = true;
                     setEpmConfigLoading(false);
-                    setEpmProjectsLoading(false);
                 };
             }, [showGroupManage, groupManageTab]);
 
@@ -8052,11 +8116,21 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             useEffect(() => {
                 if (selectedView !== 'epm') return;
+                void refreshEpmProjects();
+            }, [selectedView]);
+
+            useEffect(() => {
+                if (selectedView !== 'epm') return;
                 if (!epmSelectedProjectId) return;
+                if (epmProjectsPendingSelectionRef.current) return;
                 if (!selectedEpmProject) {
                     setEpmSelectedProjectId('');
                 }
             }, [selectedView, epmSelectedProjectId, selectedEpmProject]);
+
+            useEffect(() => {
+                void refreshEpmIssues();
+            }, [selectedView, epmSelectedProjectId, selectedEpmProject, epmTab, selectedSprint]);
 
             const issueByKey = React.useMemo(() => {
                 const map = new Map();
@@ -8135,6 +8209,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const minorPriorityStoryPoints = summaryStats.points.minorPriority;
             const inProgressStoryPoints = summaryStats.points.inProgress;
             const todoAcceptedStoryPoints = summaryStats.points.todoAccepted;
+            const selectedEpmProjectUpdateLine = [selectedEpmProject?.latestUpdateDate, selectedEpmProject?.latestUpdateSnippet || 'No updates yet']
+                .filter(Boolean)
+                .join(' · ');
 
             const removeTask = (task) => {
                 const taskKey = task?.key;
@@ -10536,6 +10613,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     <button
                                         className="secondary compact refresh-icon"
                                         onClick={() => {
+                                            if (selectedView === 'epm') {
+                                                void refreshEpmView();
+                                                return;
+                                            }
                                             if (activeGroupId) {
                                                 groupStateRef.current.delete(activeGroupId);
                                             }
@@ -10547,9 +10628,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             loadReadyToCloseProductTasks({ forceRefresh: true });
                                             loadReadyToCloseTechTasks({ forceRefresh: true });
                                         }}
-                                        disabled={loading || selectedSprint === null}
-                                        title="Refresh tasks and sprints from Jira"
-                                        aria-label="Refresh tasks and sprints from Jira"
+                                        disabled={selectedView === 'eng' ? (loading || selectedSprint === null) : (epmProjectsLoading || epmIssuesLoading)}
+                                        title={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
+                                        aria-label={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
                                         type="button"
                                     >
                                         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -10651,18 +10732,29 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             <>
                                 <div className="compact-sticky-header-controls">
                                     {renderViewSwitch()}
-                                    {renderSprintControl('compact')}
-                                    {renderGroupControl('compact')}
-                                    {renderTeamControl('compact')}
+                                    {selectedView === 'eng' ? (
+                                        <>
+                                            {renderSprintControl('compact')}
+                                            {renderGroupControl('compact')}
+                                            {renderTeamControl('compact')}
+                                        </>
+                                    ) : (
+                                        <>
+                                            {renderEpmTabs()}
+                                            {renderEpmProjectPicker()}
+                                        </>
+                                    )}
                                 </div>
-                                <div className="compact-sticky-header-search">
-                                    {renderSearchControl('compact', 'compact-sticky-header-search-field')}
-                                </div>
+                                {selectedView === 'eng' && (
+                                    <div className="compact-sticky-header-search">
+                                        {renderSearchControl('compact', 'compact-sticky-header-search-field')}
+                                    </div>
+                                )}
                             </>
                         )}
                     </div>
 
-                    {!isCompletedSprintSelected && (
+                    {selectedView === 'eng' && !isCompletedSprintSelected && (
                         <div className={`capacity-panel ${showPlanning ? 'open' : ''}`}>
                             <div className="capacity-header">
                                 <div className="capacity-title">Planned Teams Effort (Story Points)</div>
@@ -13921,6 +14013,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     )}
                                                 </div>
 	                            )}
+                            {selectedView === 'eng' && (
                             <div className="filters-strip">
                                 <div className="filters-group">
                                     <div className="filters-label">Show only</div>
@@ -14040,63 +14133,196 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     </div>
                                 </div>
                             </div>
+                            )}
 
-                            {visibleTasksForList.length === 0 ? (
-                                <div className="empty-state">
-                                    <h2>No tasks found</h2>
-                                    <p>There are no tasks matching the current criteria</p>
-                                </div>
-                            ) : (
-                                <div
-                                    className={`task-list ${activeDependencyFocus ? 'focus-mode' : ''}`}
-                                    onClick={handleDependencyFocusClick}
-                                >
-                                    {initiativeGroups ? (
-                                        initiativeGroups.map(ig => {
-                                            const ini = ig.initiative;
-                                            const isMultiEpic = ini && ig.epicGroups.length > 1;
-                                            return (
-                                                <div
-                                                    key={ini ? ini.key : 'no-initiative'}
-                                                    className={ini ? (isMultiEpic ? 'initiative-group' : 'initiative-group initiative-single') : ''}
-                                                >
-                                                    {ini && (
-                                                        <>
-                                                            <div className="initiative-header">
-                                                                <InitiativeIcon className="initiative-header-icon" />
-                                                                <div className={`initiative-label ${isMultiEpic ? '' : 'initiative-label-only'}`}>
-                                                                    <span className="initiative-label-name">{ini.summary}</span>
+                            {selectedView === 'epm' && (
+                                <>
+                                    <div className="filters-strip">
+                                        <div className="filters-group">
+                                            <div className="filters-label">Project</div>
+                                            <div className="group-field-helper">
+                                                {selectedEpmProject
+                                                    ? (selectedEpmProjectUpdateLine || selectedEpmProject.stateLabel || selectedEpmProject.stateValue || 'No updates yet')
+                                                    : 'Pick an Atlassian Home project to inspect its Jira rollup.'}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {!epmSelectedProjectId && (
+                                        <div className="empty-state">
+                                            <h2>Select a project</h2>
+                                            <p>Choose an Atlassian Home project to load the EPM board.</p>
+                                        </div>
+                                    )}
+
+                                    {epmSelectedProjectId && epmProjectsLoading && (
+                                        <div className="empty-state">
+                                            <h2>Loading EPM projects</h2>
+                                            <p>Refreshing Atlassian Home project metadata.</p>
+                                        </div>
+                                    )}
+
+                                    {epmSelectedProjectId && !epmProjectsLoading && !selectedEpmProject && (
+                                        <div className="empty-state">
+                                            <h2>Project unavailable</h2>
+                                            <p>This project is not available in the current EPM tab.</p>
+                                        </div>
+                                    )}
+
+                                    {selectedEpmProject?.matchState === 'metadata-only' && (
+                                        <div className="group-config-card epm-home-card">
+                                            <div className="group-pane-title">{selectedEpmProject.name}</div>
+                                            <div className="group-pane-subtitle">
+                                                {selectedEpmProjectUpdateLine || 'No updates yet'}
+                                            </div>
+                                            <a href={selectedEpmProject.homeUrl} target="_blank" rel="noopener noreferrer">Open in Jira Home</a>
+                                            <div className="group-field-helper">Add a Jira label or Jira epic in Settings {'->'} EPM to pull Jira work into this view.</div>
+                                            <button
+                                                className="secondary compact"
+                                                onClick={() => {
+                                                    setShowGroupManage(true);
+                                                    setGroupManageTab('epm');
+                                                }}
+                                                type="button"
+                                            >
+                                                Open Settings
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {selectedEpmProject && selectedEpmProject.matchState !== 'metadata-only' && epmTab === 'active' && !selectedSprint && (
+                                        <div className="empty-state">
+                                            <h2>Select a sprint</h2>
+                                            <p>Select a sprint to see active work.</p>
+                                        </div>
+                                    )}
+
+                                    {selectedEpmProject && selectedEpmProject.matchState !== 'metadata-only' && epmIssuesLoading && (
+                                        <div className="empty-state">
+                                            <h2>Loading Jira issues</h2>
+                                            <p>Refreshing the selected EPM project board.</p>
+                                        </div>
+                                    )}
+
+                                    {selectedEpmProject && selectedEpmProject.matchState !== 'metadata-only' && !epmIssuesLoading && !(epmTab === 'active' && !selectedSprint) && epmIssues.length === 0 && (
+                                        <div className="empty-state">
+                                            <h2>No Jira work found</h2>
+                                            <p>There are no Jira issues in the selected project and tab.</p>
+                                        </div>
+                                    )}
+
+                                    {selectedEpmProject && selectedEpmProject.matchState !== 'metadata-only' && !epmIssuesLoading && epmIssues.length > 0 && (
+                                        <div className="task-list epm-issue-board">
+                                            {epmIssues.map((issue) => {
+                                                const epic = epmIssueEpics[issue.parentKey] || null;
+                                                const issueHref = jiraUrl ? `${jiraUrl}/browse/${issue.key}` : '#';
+                                                return (
+                                                    <div
+                                                        key={issue.key}
+                                                        className="task-item"
+                                                        data-task-key={issue.key}
+                                                        data-task-id={issue.key}
+                                                        data-issue-key={issue.key}
+                                                    >
+                                                        <div className="task-header">
+                                                            <div className="task-headline">
+                                                                <h3 className="task-title">
+                                                                    <a href={issueHref} target="_blank" rel="noopener noreferrer">
+                                                                        {issue.summary || issue.key}
+                                                                    </a>
+                                                                </h3>
+                                                                <span className="task-inline-meta">
                                                                     <a
-                                                                        className="initiative-label-key"
-                                                                        href={jiraUrl ? `${jiraUrl}/browse/${ini.key}` : '#'}
+                                                                        className="task-key-link"
+                                                                        href={issueHref}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
                                                                     >
-                                                                        {ini.key} ↗
+                                                                        {issue.key}
                                                                     </a>
-                                                                    <span className="initiative-divider" />
-                                                                </div>
+                                                                    {issue.issueType && (
+                                                                        <span className="task-inline-sp">{issue.issueType}</span>
+                                                                    )}
+                                                                </span>
                                                             </div>
-                                                            <div className="initiative-body">
-                                                                {ig.epicGroups.map(epicGroup => renderEpicBlock(epicGroup))}
-                                                            </div>
-                                                        </>
-                                                    )}
-                                                    {!ini && ig.epicGroups.map(epicGroup => renderEpicBlock(epicGroup))}
-                                                </div>
-                                            );
-                                        })
-                                    ) : (
-                                        epicGroups.map(epicGroup => renderEpicBlock(epicGroup))
+                                                        </div>
+                                                        <div className="task-meta">
+                                                            <span className={`task-status ${String(issue.status || 'unknown').toLowerCase().replace(/\s+/g, '-')}`}>
+                                                                {issue.status || 'Unknown'}
+                                                            </span>
+                                                            <span className="task-team">{issue.assignee || 'Unassigned'}</span>
+                                                            {epic && (
+                                                                <span className="task-assignee">
+                                                                    <span>{epic.summary || epic.key}</span>
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     )}
-                                </div>
+                                </>
                             )}
 
-                            <div style={{marginTop: '3rem', textAlign: 'center'}}>
-                                <button onClick={fetchTasks}>
-                                    Refresh
-                                </button>
-                            </div>
+                            {selectedView === 'eng' && (
+                                <>
+                                    {visibleTasksForList.length === 0 ? (
+                                        <div className="empty-state">
+                                            <h2>No tasks found</h2>
+                                            <p>There are no tasks matching the current criteria</p>
+                                        </div>
+                                    ) : (
+                                        <div
+                                            className={`task-list ${activeDependencyFocus ? 'focus-mode' : ''}`}
+                                            onClick={handleDependencyFocusClick}
+                                        >
+                                            {initiativeGroups ? (
+                                                initiativeGroups.map(ig => {
+                                                    const ini = ig.initiative;
+                                                    const isMultiEpic = ini && ig.epicGroups.length > 1;
+                                                    return (
+                                                        <div
+                                                            key={ini ? ini.key : 'no-initiative'}
+                                                            className={ini ? (isMultiEpic ? 'initiative-group' : 'initiative-group initiative-single') : ''}
+                                                        >
+                                                            {ini && (
+                                                                <>
+                                                                    <div className="initiative-header">
+                                                                        <InitiativeIcon className="initiative-header-icon" />
+                                                                        <div className={`initiative-label ${isMultiEpic ? '' : 'initiative-label-only'}`}>
+                                                                            <span className="initiative-label-name">{ini.summary}</span>
+                                                                            <a
+                                                                                className="initiative-label-key"
+                                                                                href={jiraUrl ? `${jiraUrl}/browse/${ini.key}` : '#'}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                            >
+                                                                                {ini.key} ↗
+                                                                            </a>
+                                                                            <span className="initiative-divider" />
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="initiative-body">
+                                                                        {ig.epicGroups.map(epicGroup => renderEpicBlock(epicGroup))}
+                                                                    </div>
+                                                                </>
+                                                            )}
+                                                            {!ini && ig.epicGroups.map(epicGroup => renderEpicBlock(epicGroup))}
+                                                        </div>
+                                                    );
+                                                })
+                                            ) : (
+                                                epicGroups.map(epicGroup => renderEpicBlock(epicGroup))
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div style={{marginTop: '3rem', textAlign: 'center'}}>
+                                        <button onClick={fetchTasks}>
+                                            Refresh
+                                        </button>
+                                    </div>
                                 </>
                             )}
                         </>
@@ -15423,6 +15649,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 </div>
                             </div>
                         </div>
+                    )}
+                    </>
                     )}
                 </div>
             );

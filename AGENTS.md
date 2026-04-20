@@ -164,6 +164,7 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 - Lint: `TODO`
 - Typecheck: `TODO`
 - Run locally: `TODO`
+- EPM env: set `ATLASSIAN_CLOUD_ID` and `ROOT_GOAL_KEY`; `ATLASSIAN_EMAIL` / `ATLASSIAN_API_TOKEN` can reuse `JIRA_EMAIL` / `JIRA_TOKEN` when left blank
 
 Prefer single-file or single-test runs during iteration. Full suites are for the final verification pass.
 
@@ -187,7 +188,7 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 - `AGENTS.md` is the single source of truth for agent instructions in this repo. If Claude Code, Codex, or Cursor workflow guidance changes, update `AGENTS.md` so all agent entrypoints stay consistent.
 - `jira_server.py` hosts the Flask API that talks to Jira and serves scenario planning data.
 - `jira-dashboard.html` is the single-file frontend UI (HTML/CSS/JS) for the dashboard.
-- `docs/features/` contains the living user-facing feature guides (alerts, statistics, scenario planner).
+- `docs/features/` contains the living user-facing feature guides (alerts, statistics, scenario planner, EPM view).
 - `planning/` contains core scheduling logic (`models.py`, `scheduler.py`, `capacity.py`, `analysis.py`).
 - `tests/` holds Python unit tests.
 - `postmortem/` captures retrospectives, incidents, and misses; add learnings and follow-ups there.
@@ -262,6 +263,7 @@ python3 -m unittest discover -s tests
 #### Project Architecture & API Notes
 - This project uses: Backend (Python), Frontend (JavaScript/HTML). The Jira API integration uses nextPageToken/isLast pagination (NOT startAt/total). Always verify API response shapes before assuming pagination patterns.
 - Any new API implementation plan in `docs/plans/` must use the same Jira pagination contract (`nextPageToken/isLast`). Do not include `startAt/total` examples in plans or code.
+- EPM view keeps Jira issue queries inside `dashboard-config.json -> projects.selected`; metadata-only Home projects must render the Home card plus the Settings -> EPM CTA instead of forcing an empty Jira board.
 
 #### API Performance & Request Efficiency
 - Initial page-load API requests are performance-critical. When changing frontend data loading or backend endpoints, treat load time as a first-class requirement.

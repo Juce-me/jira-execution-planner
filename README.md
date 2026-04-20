@@ -26,6 +26,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Scenario planner** - [Feature guide](docs/features/scenario-planner.md)
 - ✅ **Alerts** - [Feature guide](docs/features/alerts.md)
 - ✅ **Sprint statistics** - [Feature guide](docs/features/statistics.md)
+- ✅ **EPM view** - [Feature guide](docs/features/epm-view.md)
 
 ## 📚 Feature Guides
 
@@ -33,6 +34,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - [Alerts](docs/features/alerts.md)
 - [Statistics](docs/features/statistics.md)
 - [Scenario Planner](docs/features/scenario-planner.md)
+- [EPM View](docs/features/epm-view.md)
 
 ## 📖 Technical Docs
 
@@ -181,6 +183,10 @@ npm run watch
 ```
 
 CI will fail if `frontend/dist` is out of sync. We precompile JSX to avoid in-browser Babel in production.
+
+## EPM View
+
+Set the Atlassian Home credentials in `.env` (`ATLASSIAN_EMAIL`, `ATLASSIAN_API_TOKEN`, `ATLASSIAN_CLOUD_ID`, `ROOT_GOAL_KEY`). `ATLASSIAN_EMAIL` and `ATLASSIAN_API_TOKEN` fall back to `JIRA_EMAIL` and `JIRA_TOKEN` when left blank. Then use the `ENG | EPM` switch in the dashboard header to browse Atlassian Home projects and their Jira rollup. EPM Jira queries stay scoped to the Jira projects listed in `dashboard-config.json -> projects.selected`, so add the relevant Jira project there if an EPM project points outside the current dashboard set.
 
 You should see:
 ```

@@ -22,6 +22,7 @@ import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
+import { getEpmSprintHelper, shouldUseEpmSprint } from './epm/epmProjectUtils.mjs';
 import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
 import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
@@ -184,9 +185,16 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [showDone, setShowDone] = useState(savedPrefsRef.current.showDone ?? true);
             const [showTech, setShowTech] = useState(savedPrefsRef.current.showTech ?? true);
             const [showProduct, setShowProduct] = useState(savedPrefsRef.current.showProduct ?? true);
+            const [selectedView, setSelectedView] = useState(savedPrefsRef.current.selectedView ?? 'eng');
             const [sprintName, setSprintName] = useState('Sprint');
             const [statusFilter, setStatusFilter] = useState(savedPrefsRef.current.statusFilter ?? null); // null = show all, 'in-progress', 'todo-accepted', 'done', 'high-priority'
             const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
+            const [epmTab, setEpmTab] = useState(savedPrefsRef.current.epmTab ?? 'active');
+            const [epmProjects, setEpmProjects] = useState([]);
+            const [epmProjectsLoading, setEpmProjectsLoading] = useState(false);
+            const [epmSelectedProjectId, setEpmSelectedProjectId] = useState(savedPrefsRef.current.epmSelectedProjectId ?? '');
+            const [epmIssues, setEpmIssues] = useState([]);
+            const [epmIssueEpics, setEpmIssueEpics] = useState({});
             const [availableSprints, setAvailableSprints] = useState([]);
             const [sprintsLoading, setSprintsLoading] = useState(true);
             const [groupsConfig, setGroupsConfig] = useState({
@@ -3655,6 +3663,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             useEffect(() => {
                 saveUiPrefs({
+                    selectedView,
+                    epmTab,
+                    epmSelectedProjectId,
                     selectedSprint,
                     selectedTeams,
                     activeGroupId,
@@ -3695,6 +3706,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     updateDismissedHash
                 });
             }, [
+                selectedView,
+                epmTab,
+                epmSelectedProjectId,
                 selectedSprint,
                 selectedTeams,
                 activeGroupId,
@@ -9687,6 +9701,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 '--scenario-sticky-top': `${epicStickyTop}px`
             };
             const showGroupControl = (groupsConfig.groups || []).length > 1;
+            const epmTabOptions = [
+                { value: 'active', label: 'Active' },
+                { value: 'backlog', label: 'Backlog' },
+                { value: 'archived', label: 'Archived' }
+            ];
 
             const renderSearchControl = (surface, extraClassName = '') => (
                 <div className={`control-field control-search ${extraClassName}`.trim()} data-label="Search">
@@ -9714,6 +9733,48 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     </div>
                 </div>
             );
+
+            const renderViewSwitch = () => (
+                <div className="mode-switch">
+                    <button
+                        className={`mode-switch-button ${selectedView === 'eng' ? 'active' : ''}`}
+                        onClick={() => setSelectedView('eng')}
+                        type="button"
+                    >
+                        ENG
+                    </button>
+                    <button
+                        className={`mode-switch-button ${selectedView === 'epm' ? 'active' : ''}`}
+                        onClick={() => setSelectedView('epm')}
+                        type="button"
+                    >
+                        EPM
+                    </button>
+                </div>
+            );
+
+            const renderEpmTabs = () => {
+                if (selectedView !== 'epm') return null;
+                return (
+                    <>
+                        <div className="mode-switch">
+                            {epmTabOptions.map((tab) => (
+                                <button
+                                    key={tab.value}
+                                    className={`mode-switch-button ${epmTab === tab.value ? 'active' : ''}`}
+                                    onClick={() => setEpmTab(tab.value)}
+                                    type="button"
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+                        {!shouldUseEpmSprint(epmTab) && (
+                            <div className="controls-label">{getEpmSprintHelper(epmTab)}</div>
+                        )}
+                    </>
+                );
+            };
 
             const renderSprintControl = (surface) => (
                 <div className="control-field" data-label="Sprint">
@@ -10324,6 +10385,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             </span>
                             <div className="header-actions">
                                 <div className="header-actions-row">
+                                    {renderViewSwitch()}
                                     {renderSearchControl('main')}
                                     <button
                                         className="secondary compact refresh-icon"
@@ -10358,6 +10420,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 {renderSprintControl('main')}
                                 {renderGroupControl('main')}
                                 {renderTeamControl('main')}
+                                {renderEpmTabs()}
                                 <div className="mode-switch">
                                     <button
                                         className={`mode-switch-button ${(!showPlanning && !showStats && !showScenario) ? 'active' : ''}`}
@@ -10424,6 +10487,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         {compactStickyVisible && (
                             <>
                                 <div className="compact-sticky-header-controls">
+                                    {renderViewSwitch()}
                                     {renderSprintControl('compact')}
                                     {renderGroupControl('compact')}
                                     {renderTeamControl('compact')}

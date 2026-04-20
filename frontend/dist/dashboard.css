@@ -3373,25 +3373,78 @@
 	            letter-spacing: 0;
 	        }
 
+        :root {
+            --jira-initiative-accent: var(--ds-icon-warning, #ffab00);
+            --jira-initiative-accent-surface: rgba(255, 171, 0, 0.12);
+            --jira-initiative-accent-soft: rgba(255, 171, 0, 0.38);
+            --jira-initiative-accent-fade: rgba(255, 171, 0, 0.1);
+        }
+
         /* ── Initiative grouping ── */
 
         .initiative-group {
-            border-left: 2px solid #c4b5fd;
-            padding-left: 12px;
             margin-bottom: 1.2rem;
         }
 
         .initiative-group.initiative-single {
-            border-left: none;
-            padding-left: 0;
+            margin-bottom: 1.1rem;
+        }
+
+        .initiative-header {
+            display: grid;
+            grid-template-columns: 18px minmax(0, 1fr);
+            align-items: center;
+            column-gap: 12px;
+            margin-bottom: 10px;
+            min-height: 18px;
+        }
+
+        .initiative-header-icon {
+            justify-self: center;
+            align-self: start;
+            margin-top: 1px;
         }
 
         .initiative-label {
             display: flex;
             align-items: center;
-            gap: 6px;
-            margin-bottom: 8px;
-            padding-top: 4px;
+            gap: 7px;
+            min-width: 0;
+        }
+
+        .initiative-body {
+            position: relative;
+            padding-left: 28px;
+            padding-bottom: 10px;
+        }
+
+        .initiative-body::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            border-radius: 999px;
+            background: linear-gradient(
+                to bottom,
+                var(--jira-initiative-accent) 0%,
+                var(--jira-initiative-accent) 78%,
+                var(--jira-initiative-accent-soft) 92%,
+                var(--jira-initiative-accent-fade) 100%
+            );
+        }
+
+        .initiative-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            color: var(--jira-initiative-accent);
+        }
+
+        .initiative-icon svg {
+            display: block;
         }
 
         .initiative-label-name {
@@ -3399,18 +3452,18 @@
             font-size: 0.6rem;
             letter-spacing: 0.14em;
             text-transform: uppercase;
-            color: #7c3aed;
+            color: var(--jira-initiative-accent);
             font-weight: 600;
         }
 
         .initiative-label-only .initiative-label-name {
-            color: #64748b;
+            color: var(--jira-initiative-accent);
         }
 
         .initiative-label-key {
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.6rem;
-            color: #a78bfa;
+            color: var(--jira-initiative-accent);
             text-decoration: none;
             white-space: nowrap;
         }
@@ -3421,17 +3474,17 @@
         }
 
         .initiative-label-only .initiative-label-key {
-            color: #94a3b8;
+            color: var(--jira-initiative-accent);
         }
 
         .initiative-divider {
             flex: 1;
             height: 1px;
-            background: linear-gradient(to right, #c4b5fd, transparent);
+            background: linear-gradient(to right, var(--jira-initiative-accent), var(--jira-initiative-accent-fade));
         }
 
         .initiative-label-only .initiative-divider {
-            background: linear-gradient(to right, #cbd5e1, transparent);
+            background: linear-gradient(to right, var(--jira-initiative-accent), var(--jira-initiative-accent-fade));
         }
 
         /* Toggle button overrides */
@@ -3439,12 +3492,17 @@
         button.toggle.initiative-toggle {
             display: inline-flex;
             align-items: center;
+            gap: 6px;
+        }
+
+        button.toggle.initiative-toggle .initiative-toggle-icon {
+            color: var(--jira-initiative-accent);
         }
 
         button.toggle.initiative-toggle.active {
-            background: #f5f3ff;
-            color: #7c3aed;
-            border-color: #c4b5fd;
+            background: var(--jira-initiative-accent-surface);
+            color: var(--jira-initiative-accent);
+            border-color: var(--jira-initiative-accent);
             font-weight: 500;
         }
 

@@ -110,6 +110,36 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 	            }
 	        }
 
+        function InitiativeIcon({ className = '', size = 14 }) {
+            const classes = ['initiative-icon', className].filter(Boolean).join(' ');
+
+            return (
+                <span className={classes} aria-hidden="true" title="INITIATIVE">
+                    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+                        <path
+                            d="M8 1.75c-2.35 0-4.25 1.91-4.25 4.25 0 1.51.79 2.89 2.08 3.66.39.23.67.66.67 1.14v.45c0 .41.34.75.75.75h1.5c.41 0 .75-.34.75-.75v-.45c0-.48.28-.91.67-1.14A4.25 4.25 0 0 0 12.25 6c0-2.34-1.9-4.25-4.25-4.25Z"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        />
+                        <path
+                            d="M6.9 12.7h2.2"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                        />
+                        <path
+                            d="M7.2 14.25h1.6"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                        />
+                    </svg>
+                </span>
+            );
+        }
+
         function App() {
             const savedPrefsRef = useRef(loadUiPrefs() || {});
             const perfEnabled = React.useMemo(
@@ -13772,11 +13802,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                 title={groupByInitiative ? 'Switch to flat epic view' : 'Group epics by initiative'}
                                                 type="button"
                                             >
-                                                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{flexShrink: 0, marginRight: '3px'}}>
-                                                    <rect x="1" y="1" width="14" height="4" rx="1.5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-                                                    <rect x="3" y="7" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.6"/>
-                                                    <rect x="3" y="12" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.6"/>
-                                                </svg>
+                                                <InitiativeIcon className="initiative-toggle-icon" size={12} />
                                                 Initiatives
                                             </button>
                                         )}
@@ -13804,20 +13830,28 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     className={ini ? (isMultiEpic ? 'initiative-group' : 'initiative-group initiative-single') : ''}
                                                 >
                                                     {ini && (
-                                                        <div className={`initiative-label ${isMultiEpic ? '' : 'initiative-label-only'}`}>
-                                                            <span className="initiative-label-name">{ini.summary}</span>
-                                                            <a
-                                                                className="initiative-label-key"
-                                                                href={jiraUrl ? `${jiraUrl}/browse/${ini.key}` : '#'}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                            >
-                                                                {ini.key} ↗
-                                                            </a>
-                                                            <span className="initiative-divider" />
-                                                        </div>
+                                                        <>
+                                                            <div className="initiative-header">
+                                                                <InitiativeIcon className="initiative-header-icon" />
+                                                                <div className={`initiative-label ${isMultiEpic ? '' : 'initiative-label-only'}`}>
+                                                                    <span className="initiative-label-name">{ini.summary}</span>
+                                                                    <a
+                                                                        className="initiative-label-key"
+                                                                        href={jiraUrl ? `${jiraUrl}/browse/${ini.key}` : '#'}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                    >
+                                                                        {ini.key} ↗
+                                                                    </a>
+                                                                    <span className="initiative-divider" />
+                                                                </div>
+                                                            </div>
+                                                            <div className="initiative-body">
+                                                                {ig.epicGroups.map(epicGroup => renderEpicBlock(epicGroup))}
+                                                            </div>
+                                                        </>
                                                     )}
-                                                    {ig.epicGroups.map(epicGroup => renderEpicBlock(epicGroup))}
+                                                    {!ini && ig.epicGroups.map(epicGroup => renderEpicBlock(epicGroup))}
                                                 </div>
                                             );
                                         })

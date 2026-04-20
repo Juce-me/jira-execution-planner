@@ -22,7 +22,7 @@ import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
-import { getEpmSprintHelper, shouldUseEpmSprint } from './epm/epmProjectUtils.mjs';
+import { filterEpmProjectsForTab, getEpmSprintHelper, shouldUseEpmSprint } from './epm/epmProjectUtils.mjs';
 import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
 import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
@@ -536,6 +536,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 if (!selectedSprint) return null;
                 return (availableSprints || []).find(sprint => String(sprint.id) === String(selectedSprint)) || null;
             }, [availableSprints, selectedSprint]);
+            // filterEpmProjectsForTab owns the `project.tabBucket === epmTab` check.
+            const visibleEpmProjects = React.useMemo(() => filterEpmProjectsForTab(epmProjects, epmTab), [epmProjects, epmTab]);
+            const selectedEpmProject = visibleEpmProjects.find((project) => project.homeProjectId === epmSelectedProjectId) || null;
             const filteredSprints = React.useMemo(() => {
                 if (!sprintSearch.trim()) return availableSprints;
                 const query = sprintSearch.trim().toLowerCase();
@@ -7934,6 +7937,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
             }, [showDependencies]);
 
+            useEffect(() => {
+                if (selectedView !== 'epm') return;
+                if (!epmSelectedProjectId) return;
+                if (!selectedEpmProject) {
+                    setEpmSelectedProjectId('');
+                }
+            }, [selectedView, epmSelectedProjectId, selectedEpmProject]);
+
             const issueByKey = React.useMemo(() => {
                 const map = new Map();
                 dependencyTasks.forEach(task => {
@@ -9776,6 +9787,28 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 );
             };
 
+            const renderEpmProjectPicker = () => {
+                if (selectedView !== 'epm') return null;
+                return (
+                    <div className="control-field" data-label="Project">
+                        <span className="control-label">Project</span>
+                        <select
+                            className="control-select"
+                            value={epmSelectedProjectId}
+                            onChange={(event) => setEpmSelectedProjectId(event.target.value)}
+                            disabled={epmProjectsLoading || visibleEpmProjects.length === 0}
+                        >
+                            <option value="">Select project...</option>
+                            {visibleEpmProjects.map((project) => (
+                                <option key={project.homeProjectId} value={project.homeProjectId}>
+                                    {project.name || project.homeProjectId}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                );
+            };
+
             const renderSprintControl = (surface) => (
                 <div className="control-field" data-label="Sprint">
                     <span className="control-label">Sprint</span>
@@ -10199,7 +10232,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     )}
                                                 </div>
                                                 <div className="task-header-right">
-                                                    {showDependencies && hasDependencyLinks && (
+                                                    {selectedView === 'eng' && showDependencies && hasDependencyLinks && (
                                                         <div className="dependency-pill-stack">
                                                             {dependsOnIds.length > 0 && (
                                                                 <span className="dependency-pill blocked">← BLOCKED BY</span>
@@ -10233,7 +10266,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     </span>
                                                 )}
                                             </div>
-                                            {showDependencies && hasDeps && (
+                                            {selectedView === 'eng' && showDependencies && hasDeps && (
                                                 <div className="dependency-strip">
                                                     {blockedByIds.length > 0 && (
                                                         <button
@@ -10293,7 +10326,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     )}
                                                 </div>
                                             )}
-                                            {showDependencies && isFocused && (missingLines.length > 0 || hiddenLines.length > 0) && (
+                                            {selectedView === 'eng' && showDependencies && isFocused && (missingLines.length > 0 || hiddenLines.length > 0) && (
                                                 <div className="dependency-missing">
                                                     {hiddenLines.length > 0 && (
                                                         <>
@@ -10414,67 +10447,84 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 </div>
                             </div>
                         </div>
-                        <div className="view-selector">
-                            <div className="controls-label">Controls</div>
-                            <div className="view-filters">
-                                {renderSprintControl('main')}
-                                {renderGroupControl('main')}
-                                {renderTeamControl('main')}
-                                {renderEpmTabs()}
-                                <div className="mode-switch">
+                    <div className="view-selector">
+                        <div className="controls-label">Controls</div>
+                        <div className="view-filters">
+                                {selectedView === 'eng' && (
+                                    <>
+                                        {renderSprintControl('main')}
+                                        {renderGroupControl('main')}
+                                        {renderTeamControl('main')}
+                                        <div className="mode-switch">
+                                            <button
+                                                className={`mode-switch-button ${(!showPlanning && !showStats && !showScenario) ? 'active' : ''}`}
+                                                onClick={() => {
+                                                    setShowPlanning(false);
+                                                    setShowStats(false);
+                                                    setShowScenario(false);
+                                                }}
+                                                title="Return to default state"
+                                                type="button"
+                                            >
+                                                Catch Up
+                                            </button>
+                                            <button
+                                                className={`mode-switch-button ${showPlanning ? 'active' : ''}`}
+                                                onClick={() => setShowPlanning(!showPlanning)}
+                                                title="Toggle sprint planning panel"
+                                                disabled={!selectedSprint || isCompletedSprintSelected}
+                                            >
+                                                Planning
+                                            </button>
+                                            <button
+                                                className={`mode-switch-button ${showStats ? 'active' : ''}`}
+                                                onClick={() => setShowStats(!showStats)}
+                                                title="Toggle sprint statistics"
+                                                disabled={isFutureSprintSelected}
+                                            >
+                                                Statistics
+                                            </button>
+                                            <button
+                                                className={`mode-switch-button ${showScenario ? 'active' : ''}`}
+                                                onClick={() => setShowScenario(!showScenario)}
+                                                title="Toggle scenario planner"
+                                                disabled={!selectedSprint || isCompletedSprintSelected}
+                                            >
+                                                Scenario
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                                {selectedView === 'epm' && (
+                                    <>
+                                        {renderEpmTabs()}
+                                        {renderEpmProjectPicker()}
+                                        {selectedView === 'epm' && epmTab === 'active' && !selectedSprint && epmSelectedProjectId && (
+                                            <div className="empty-state epm-sprint-required">
+                                                <h2>Select a sprint</h2>
+                                                <p>The Active tab needs a sprint to scope Jira work.</p>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                                {selectedView === 'eng' && (
                                     <button
-                                        className={`mode-switch-button ${(!showPlanning && !showStats && !showScenario) ? 'active' : ''}`}
-                                        onClick={() => {
-                                            setShowPlanning(false);
-                                            setShowStats(false);
-                                            setShowScenario(false);
+                                        className="group-gear-button"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            openGroupManage();
                                         }}
-                                        title="Return to default state"
+                                        disabled={groupsLoading}
+                                        title="Manage team groups"
+                                        aria-label="Manage team groups"
                                         type="button"
                                     >
-                                        Catch Up
+                                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                            <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
+                                            <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                        </svg>
                                     </button>
-                                    <button
-                                        className={`mode-switch-button ${showPlanning ? 'active' : ''}`}
-                                        onClick={() => setShowPlanning(!showPlanning)}
-                                        title="Toggle sprint planning panel"
-                                        disabled={!selectedSprint || isCompletedSprintSelected}
-                                    >
-                                        Planning
-                                    </button>
-                                    <button
-                                        className={`mode-switch-button ${showStats ? 'active' : ''}`}
-                                        onClick={() => setShowStats(!showStats)}
-                                        title="Toggle sprint statistics"
-                                        disabled={isFutureSprintSelected}
-                                    >
-                                        Statistics
-                                    </button>
-                                    <button
-                                        className={`mode-switch-button ${showScenario ? 'active' : ''}`}
-                                        onClick={() => setShowScenario(!showScenario)}
-                                        title="Toggle scenario planner"
-                                        disabled={!selectedSprint || isCompletedSprintSelected}
-                                    >
-                                        Scenario
-                                    </button>
-                                </div>
-                                <button
-                                    className="group-gear-button"
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        openGroupManage();
-                                    }}
-                                    disabled={groupsLoading}
-                                    title="Manage team groups"
-                                    aria-label="Manage team groups"
-                                    type="button"
-                                >
-                                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                        <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
-                                        <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                                    </svg>
-                                </button>
+                                )}
                             </div>
                         </div>
                     </header>
@@ -10892,6 +10942,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         </div>
                     )}
 
+                    {selectedView === 'eng' && showStats && (
                     <div className={`stats-panel ${showStats ? 'open' : ''}`}>
                         {showStats && !canRenderStatsPanel && (
                             <div className="stats-note">Load stats for the selected sprint.</div>
@@ -11894,8 +11945,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             </>
                         )}
                     </div>
+                    )}
 
-                    {showScenario && (
+                    {selectedView === 'eng' && showScenario && (
                         <div className="scenario-fullbleed">
                             <div className="scenario-panel open">
                                 <div className="scenario-inner">
@@ -12483,6 +12535,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         </div>
                     )}
 
+                    {selectedView === 'eng' && showPlanning && (
                     <div ref={planningPanelRef} className={`planning-panel ${showPlanning ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`}>
                         {/* --- Planning Actions (top of panel) --- */}
                         <div className="planning-actions">
@@ -12722,6 +12775,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             );
                         })()}
                     </div>
+                    )}
                     {!isLeadTimesFocusMode && (
                         <>
                             {showBackToTop && (
@@ -12778,7 +12832,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         ))}
                                     </div>
                                 )}
-		                            {alertItemCount > 0 && (
+		                            {selectedView === 'eng' && alertItemCount > 0 && (
                                                 <div className="alerts-panel-shell">
                                                     <div className="alerts-panel-toolbar">
                                                         <button

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 import requests
 import argparse
@@ -28,6 +28,7 @@ import io
 from requests import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from epm_home import fetch_epm_home_projects, merge_epm_linkage
+from epm_scope import build_epm_scope_clause, should_apply_epm_sprint
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
 
 # Load environment variables from .env file
@@ -97,6 +98,7 @@ EPIC_COHORT_CACHE = {}
 EPM_PROJECTS_CACHE = {}
 EPM_ISSUES_CACHE = {}
 EPM_PROJECTS_CACHE_TTL_SECONDS = 300
+EPM_ISSUES_CACHE_TTL_SECONDS = 300
 _epm_cache_lock = threading.Lock()
 
 # Single lock for all global caches — kept simple since these are not hot paths.
@@ -1374,6 +1376,79 @@ def clear_epm_caches():
     with _epm_cache_lock:
         EPM_PROJECTS_CACHE.clear()
         EPM_ISSUES_CACHE.clear()
+
+
+def build_jira_headers():
+    credentials = base64.b64encode(f"{JIRA_EMAIL or ''}:{JIRA_TOKEN or ''}".encode()).decode()
+    return {
+        'Authorization': f'Basic {credentials}',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+    }
+
+
+def build_epm_fields_list():
+    fields_list = ['summary', 'status', 'assignee', 'priority', 'issuetype', 'parent', 'labels', 'created', 'updated']
+    story_points_field = get_story_points_field_id()
+    if story_points_field and story_points_field not in fields_list:
+        fields_list.append(story_points_field)
+    return fields_list
+
+
+def shape_epm_issue_payload(issues):
+    slim_issues = []
+    epic_details = {}
+    for issue in issues or []:
+        fields = issue.get('fields') or {}
+        parent = fields.get('parent') or {}
+        parent_key = parent.get('key') or ''
+        if parent_key and parent_key not in epic_details:
+            parent_fields = parent.get('fields') or {}
+            epic_details[parent_key] = {
+                'key': parent_key,
+                'summary': parent_fields.get('summary') or '',
+                'issueType': (parent_fields.get('issuetype') or {}).get('name') or '',
+            }
+        slim_issues.append({
+            'key': issue.get('key'),
+            'summary': fields.get('summary') or '',
+            'status': (fields.get('status') or {}).get('name') or '',
+            'assignee': (fields.get('assignee') or {}).get('displayName') or '',
+            'issueType': (fields.get('issuetype') or {}).get('name') or '',
+            'parentKey': parent_key,
+            'labels': list(fields.get('labels') or []),
+        })
+    return slim_issues, epic_details
+
+
+def dedupe_issues_by_key(issues):
+    seen = set()
+    deduped = []
+    for issue in issues or []:
+        key = issue.get('key')
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(issue)
+    return deduped
+
+
+def find_epm_project_or_404(home_project_id):
+    with _epm_cache_lock:
+        for entry in EPM_PROJECTS_CACHE.values():
+            for project in (entry.get('data') or {}).get('projects', []):
+                if project.get('homeProjectId') == home_project_id:
+                    return project
+
+    epm_config = get_epm_config()
+    for home_project in fetch_epm_home_projects():
+        config_row = epm_config['projects'].get(home_project['homeProjectId'])
+        linkage, match_state = merge_epm_linkage(home_project, config_row)
+        project = {**home_project, 'resolvedLinkage': linkage, 'matchState': match_state}
+        if project['homeProjectId'] == home_project_id:
+            return project
+
+    abort(404)
 
 
 def normalize_epm_config(payload):
@@ -6276,6 +6351,50 @@ def get_epm_projects_endpoint():
     with _epm_cache_lock:
         EPM_PROJECTS_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
     return jsonify(payload)
+
+
+@app.route('/api/epm/projects/<home_project_id>/issues', methods=['GET'])
+def get_epm_project_issues_endpoint(home_project_id):
+    tab = str(request.args.get('tab') or 'active').strip().lower()
+    sprint = str(request.args.get('sprint') or '').strip()
+    if should_apply_epm_sprint(tab):
+        if not sprint:
+            return jsonify({'error': 'sprint_required'}), 400
+        if not sprint.isdigit():
+            return jsonify({'error': 'sprint_not_numeric'}), 400
+
+    project = find_epm_project_or_404(home_project_id)
+    linkage = project['resolvedLinkage']
+    scope_clause = build_epm_scope_clause(linkage)
+    if not scope_clause:
+        return jsonify({'project': project, 'issues': [], 'epics': {}, 'metadataOnly': True})
+
+    base_jql = build_base_jql()
+    cache_key = f"{home_project_id}::{tab}::{sprint}::{base_jql}::{json.dumps(linkage, sort_keys=True)}"
+    with _epm_cache_lock:
+        cached = EPM_ISSUES_CACHE.get(cache_key)
+    if cached and (time.time() - cached['timestamp']) < EPM_ISSUES_CACHE_TTL_SECONDS:
+        response = jsonify(cached['data'])
+        response.headers['Server-Timing'] = 'cache;dur=1'
+        return response
+
+    started = time.perf_counter()
+    jql = add_clause_to_jql(base_jql, scope_clause)
+    if should_apply_epm_sprint(tab):
+        jql = add_clause_to_jql(jql, f'Sprint = {sprint}')
+    issues = fetch_issues_by_jql(jql, build_jira_headers(), build_epm_fields_list())
+    slim_issues, epic_details = shape_epm_issue_payload(issues)
+    payload = {
+        'project': project,
+        'issues': dedupe_issues_by_key(slim_issues),
+        'epics': epic_details,
+        'metadataOnly': False,
+    }
+    with _epm_cache_lock:
+        EPM_ISSUES_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
+    response = jsonify(payload)
+    response.headers['Server-Timing'] = f'jira-search;dur={round((time.perf_counter() - started) * 1000, 1)}'
+    return response
 
 
 @app.route('/api/epm/config', methods=['POST'])

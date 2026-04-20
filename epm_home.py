@@ -358,3 +358,50 @@ def fetch_latest_project_update(client: HomeGraphQLClient, project_id: str) -> l
 def extract_home_jira_linkage(_raw_project):
     """TownsquareProject has no Jira linkage fields in v1."""
     return {"labels": [], "epicKeys": []}
+
+
+def merge_epm_linkage(home_project, epm_config_row):
+    home_linkage = home_project.get("resolvedLinkage") or {}
+    home_labels = list(home_linkage.get("labels") or [])
+    home_epics = list(home_linkage.get("epicKeys") or [])
+    config_label = str((epm_config_row or {}).get("jiraLabel") or "").strip()
+    config_epic = str((epm_config_row or {}).get("jiraEpicKey") or "").strip().upper()
+    labels = sorted(set(home_labels + ([config_label] if config_label else [])))
+    epic_keys = sorted(set(home_epics + ([config_epic] if config_epic else [])))
+    if labels or epic_keys:
+        match_state = MATCH_STATE_HOME_LINKED if (home_labels or home_epics) else MATCH_STATE_JEP_FALLBACK
+    else:
+        match_state = MATCH_STATE_METADATA_ONLY
+    return {"labels": labels, "epicKeys": epic_keys}, match_state
+
+
+def fetch_epm_home_projects():
+    cloud_id = os.environ.get("ATLASSIAN_CLOUD_ID", "").strip()
+    root_goal_key = os.environ.get("ROOT_GOAL_KEY", "").strip()
+    if not cloud_id or not root_goal_key:
+        logger.warning("EPM home fetch skipped: ATLASSIAN_CLOUD_ID and ROOT_GOAL_KEY are required")
+        return []
+
+    try:
+        client = build_home_graphql_client()
+    except RuntimeError as exc:
+        logger.warning("EPM home fetch failed: %s", exc)
+        return []
+
+    container_id = _container_id_from_cloud(cloud_id)
+    root_goal = resolve_root_goal(client, root_goal_key, container_id)
+    if not root_goal:
+        return []
+
+    seen_project_ids: set[str] = set()
+    result: list[dict] = []
+    for sub_goal in fetch_sub_goals(client, root_goal["id"]):
+        for raw_project in fetch_projects_for_goal(client, sub_goal["id"]):
+            project_id = raw_project.get("id")
+            if not project_id or project_id in seen_project_ids:
+                continue
+            seen_project_ids.add(project_id)
+            linkage = extract_home_jira_linkage(raw_project)
+            updates = fetch_latest_project_update(client, project_id)
+            result.append(build_home_project_record(raw_project, updates, linkage))
+    return result

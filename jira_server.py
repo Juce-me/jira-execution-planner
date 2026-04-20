@@ -27,6 +27,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 import io
 from requests import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
+from epm_home import fetch_epm_home_projects, merge_epm_linkage
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
 
 # Load environment variables from .env file
@@ -95,6 +96,7 @@ UPDATE_CHECK_CACHE = {'ts': 0, 'data': None}
 EPIC_COHORT_CACHE = {}
 EPM_PROJECTS_CACHE = {}
 EPM_ISSUES_CACHE = {}
+EPM_PROJECTS_CACHE_TTL_SECONDS = 300
 _epm_cache_lock = threading.Lock()
 
 # Single lock for all global caches — kept simple since these are not hot paths.
@@ -6249,6 +6251,31 @@ def save_board_config_endpoint():
 @app.route('/api/epm/config', methods=['GET'])
 def get_epm_config_endpoint():
     return jsonify(get_epm_config())
+
+
+@app.route('/api/epm/projects', methods=['GET'])
+def get_epm_projects_endpoint():
+    epm_config = get_epm_config()
+    cache_key = json.dumps(epm_config, sort_keys=True)
+    with _epm_cache_lock:
+        cached = EPM_PROJECTS_CACHE.get(cache_key)
+        if cached and (time.time() - cached['timestamp']) < EPM_PROJECTS_CACHE_TTL_SECONDS:
+            return jsonify(cached['data'])
+
+    projects = []
+    for home_project in fetch_epm_home_projects():
+        project_id = home_project.get('homeProjectId')
+        config_row = epm_config['projects'].get(project_id) if project_id else None
+        linkage, match_state = merge_epm_linkage(home_project, config_row)
+        projects.append({
+            **home_project,
+            'resolvedLinkage': linkage,
+            'matchState': match_state,
+        })
+    payload = {'projects': projects}
+    with _epm_cache_lock:
+        EPM_PROJECTS_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
+    return jsonify(payload)
 
 
 @app.route('/api/epm/config', methods=['POST'])

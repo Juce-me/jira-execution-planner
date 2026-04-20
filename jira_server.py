@@ -93,6 +93,9 @@ TASKS_CACHE_TTL_SECONDS = 60 * 5
 TASKS_CACHE_SCHEMA_VERSION = 'v2-empty-epic-actionable'
 UPDATE_CHECK_CACHE = {'ts': 0, 'data': None}
 EPIC_COHORT_CACHE = {}
+EPM_PROJECTS_CACHE = {}
+EPM_ISSUES_CACHE = {}
+_epm_cache_lock = threading.Lock()
 
 # Single lock for all global caches — kept simple since these are not hot paths.
 _cache_lock = threading.RLock()
@@ -1363,6 +1366,33 @@ def get_board_config():
 
 def get_effective_board_id():
     return get_board_config().get('boardId', '').strip()
+
+
+def clear_epm_caches():
+    with _epm_cache_lock:
+        EPM_PROJECTS_CACHE.clear()
+        EPM_ISSUES_CACHE.clear()
+
+
+def normalize_epm_config(payload):
+    projects = payload.get('projects') if isinstance(payload, dict) else {}
+    normalized_projects = {}
+    if isinstance(projects, dict):
+        for project_id, row in projects.items():
+            normalized_project_id = str(project_id or '').strip()
+            if not normalized_project_id or not isinstance(row, dict):
+                continue
+            normalized_projects[normalized_project_id] = {
+                'homeProjectId': normalized_project_id,
+                'jiraLabel': str(row.get('jiraLabel', '') or '').strip(),
+                'jiraEpicKey': str(row.get('jiraEpicKey', '') or '').strip().upper(),
+            }
+    return {'version': 1, 'projects': normalized_projects}
+
+
+def get_epm_config():
+    config = load_dashboard_config() or {}
+    return normalize_epm_config(config.get('epm') or {})
 
 
 # --- Custom field config getters ---
@@ -6214,6 +6244,25 @@ def save_board_config_endpoint():
         return jsonify({'error': 'Failed to save board config', 'message': str(e)}), 500
 
     return jsonify({'boardId': board_id, 'boardName': board_name, 'source': 'config'})
+
+
+@app.route('/api/epm/config', methods=['GET'])
+def get_epm_config_endpoint():
+    return jsonify(get_epm_config())
+
+
+@app.route('/api/epm/config', methods=['POST'])
+# TODO(SETTINGS_ADMIN_ONLY): gate this route when the admin flag ships.
+def save_epm_config_endpoint():
+    payload = normalize_epm_config(request.get_json(silent=True) or {})
+    try:
+        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+        dashboard_config['epm'] = payload
+        save_dashboard_config(dashboard_config)
+        clear_epm_caches()
+    except Exception as e:
+        return jsonify({'error': 'Failed to save EPM config', 'message': str(e)}), 500
+    return jsonify(payload)
 
 
 @app.route('/api/capacity/config', methods=['POST'])

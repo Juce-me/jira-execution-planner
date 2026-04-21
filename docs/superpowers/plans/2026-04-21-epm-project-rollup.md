@@ -29,6 +29,7 @@ Walk the plan in this order and fail fast on any "no":
 5. Does the hierarchy response carry three mutually-exclusive buckets — `initiatives`, `rootEpics`, `orphanStories` — that can encode a labeled Epic with no labeled Initiative parent and a labeled Story with no labeled parent? (N3, Task 5 Step 3 case d, Task 7 Step 2.)
 6. Are the three rollup response states distinct and non-overlapping: `metadataOnly` (no label saved) vs `emptyRollup` (label saved but zero matches) vs normal render? (N3, N10, Task 5 Step 3 cases a–c, Task 7 Step 1 guards e–f.)
 7. Does Task 3b wire custom Projects into `/api/epm/projects`, `/api/epm/projects/preview`, and `find_epm_project_or_404` so a saved custom Project appears in the selector and its UUID resolves on `/rollup`? (N4a, Task 3b.)
+7a. Do custom Projects carry `tabBucket: 'all'` AND does `filterEpmProjectsForTab` treat `'all'` as visible on every tab, so custom Projects do not disappear on Backlog/Archived? (N4b, Task 3b guard e, Task 7 Step 1 guard g, Task 7 Step 2 filter change.)
 8. Does the config migration accept v1 without data loss and emit v2, and do custom Projects get a UUID `id` generated once and preserved across renames? (N4, N5, Task 3 Step 1 case c.)
 9. Does the `customName → name` rename propagate to Task 6 source guards? (Task 6 Step 1 guard d must say `name`, not `customName`.)
 10. Does Task 4 extend the existing `/api/jira/labels` with a `prefix=` param (respecting the endpoint's actual `startAt/maxResults/isLast` pagination), not invent a new `/api/epm/labels` route? (N8, Task 4.)
@@ -105,11 +106,11 @@ Placement rules (evaluate in order for each deduped issue):
 
 This shape handles the three real cases: labeled-Initiative hierarchies, labeled-Epic-only hierarchies (no Initiative), and directly-labeled Stories without any labeled parent. No issue is dropped; no issue is represented twice.
 
-**Three distinct response states — do not conflate:**
+**Three distinct response states — do not conflate.** All three share the same top-level keys so callers can render a single renderer branch; the `metadataOnly` and `emptyRollup` flags drive the UI state. The three hierarchy buckets (`initiatives`, `rootEpics`, `orphanStories`) are always present in the payload; empty for the non-render states.
 
-- Project has no `label` saved → `{ metadataOnly: true, issues: [], hierarchy: {} }`. UI shows OPEN SETTINGS CTA. Do not run any query.
-- Project has a `label` saved and Q1 returns zero matches → `{ emptyRollup: true, issues: [], hierarchy: {} }`. UI shows "No issues match this label in the current scope." Do not run Q2/Q3.
-- Otherwise → `{ metadataOnly: false, emptyRollup: false, issues, hierarchy }`.
+- Project has no `label` saved → `{ metadataOnly: true, emptyRollup: false, initiatives: {}, rootEpics: {}, orphanStories: [] }`. UI shows OPEN SETTINGS CTA. Do not run any query.
+- Project has a `label` saved and Q1 returns zero matches → `{ metadataOnly: false, emptyRollup: true, initiatives: {}, rootEpics: {}, orphanStories: [] }`. UI shows "No issues match this label in the current scope." Do not run Q2/Q3.
+- Otherwise → `{ metadataOnly: false, emptyRollup: false, initiatives: {...}, rootEpics: {...}, orphanStories: [...] }` populated per the placement rules above.
 
 ### N3a. Tab/sprint contract — validation preserved, filter applied differently.
 
@@ -183,7 +184,17 @@ Both project selectors (`/api/epm/projects`, `/api/epm/projects/preview`) and th
 - `build_epm_projects_payload(epm_config)` at `jira_server.py:1449-1457` must return `Home-derived projects ∪ custom Projects from config.projects[].filter(row.homeProjectId == null)`. Custom Projects render with `matchState: 'jep-fallback'` when `label` is set, `'metadata-only'` otherwise (per N10).
 - `find_epm_project_or_404(project_id)` at `jira_server.py:1460-1475` must resolve both Home `homeProjectId` strings and custom-Project UUIDs. Lookup order: config-by-id first (constant-time, covers custom + Home-linked), then fall back to the Home fetch path only if the id is not in config.
 - The rollup endpoint's `<id>` segment accepts either shape. No URL scheme change; the UUID format is opaque to the router.
-- A custom Project's `build_epm_project_payload` synthesizes the Home-shaped fields (`homeProjectId: null`, `homeUrl: ''`, `stateValue: ''`, `stateLabel: ''`, `tabBucket: 'active'`, `latestUpdateDate: ''`, `latestUpdateSnippet: ''`, `name: row.name`, `displayName: row.name`). No GraphQL calls.
+- A custom Project's `build_epm_project_payload` synthesizes the Home-shaped fields (`homeProjectId: null`, `homeUrl: ''`, `stateValue: ''`, `stateLabel: ''`, `tabBucket: 'all'`, `latestUpdateDate: ''`, `latestUpdateSnippet: ''`, `name: row.name`, `displayName: row.name`). No GraphQL calls.
+
+### N4b. Tab filter must accept the `all` bucket for custom Projects.
+
+Home-derived projects have a lifecycle bucket (`active` / `backlog` / `archived`) derived from their Atlassian Home state. Custom Projects have no Home state — they are config-only containers. Hardcoding `tabBucket: 'active'` would make them visible only on the Active tab and disappear from Backlog/Archived, which is wrong: the user created the container to slice Jira work, not to track a lifecycle.
+
+Resolution — custom Projects get `tabBucket: 'all'`, and the filter treats `'all'` as a wildcard:
+
+- Update `filterEpmProjectsForTab` at `frontend/src/epm/epmProjectUtils.mjs:9-14` so it matches when `project.tabBucket === 'all'` OR `project.tabBucket === normalizedTab`. Single-line change.
+- Regression test in `tests/test_epm_view_source_guards.js` (or a new `tests/test_epm_project_utils.test.js` exercising the pure function) that asserts a project with `tabBucket: 'all'` appears on every tab and a project with `tabBucket: 'backlog'` still appears only on Backlog.
+- Do NOT silently omit `tabBucket` on custom Projects — missing/empty string would also hide them (the existing filter uses `|| ''` fallback, which never matches a real tab). The explicit `'all'` sentinel is the contract.
 
 ### N5. Migration.
 
@@ -221,11 +232,12 @@ Extend it with one additional query param: `prefix=<str>`. When present, filter 
 
 Frontend behavior:
 
-- Default autocomplete call: `GET /api/jira/labels?prefix=<epm.labelPrefix>` (e.g. `prefix=rnd_project_`).
-- "Show all labels" toggle: call `GET /api/jira/labels` without the `prefix` param.
-- Typeahead substring match is done client-side against the returned list (labels per project are small; 1000-cap is plenty).
+- Default autocomplete call: `GET /api/jira/labels?prefix=<epm.labelPrefix>&limit=200` (e.g. `prefix=rnd_project_&limit=200`).
+- "Show all labels" toggle: `GET /api/jira/labels?limit=200` (no `prefix`).
+- Always pass `limit=200`. The server default is 50 (`jira_server.py:6204`), which truncates the returned slice and — combined with client-side substring filtering — silently drops valid prefixed labels from the typeahead. The endpoint caps at 200; do not request more.
+- Typeahead substring match is done client-side against the returned list (labels per project are small; 200-cap is plenty for the `rnd_project_*` convention).
 
-No new cache. No new endpoint. Three-line change on the backend.
+No new cache. No new endpoint. Three-line change on the backend (`prefix=` filter applied after the cache fill).
 
 ### N9. Cache isolation unchanged.
 
@@ -364,7 +376,7 @@ Without this task, custom Projects are savable but invisible — `/api/epm/proje
 
 - [ ] **Step 1: Write failing tests.**
 
-Cover: (a) saved config with 2 Home-linked Projects + 2 custom Projects → `GET /api/epm/projects` returns all 4, Home-derived first, custom Projects following, each with the correct `matchState`. (b) `POST /api/epm/projects/preview` with the same draft config returns the same union. (c) `find_epm_project_or_404('<custom-uuid>')` returns the custom row; `find_epm_project_or_404('<home-id>')` returns the Home row; `find_epm_project_or_404('unknown')` → 404. (d) A custom Project with empty `label` renders `matchState: 'metadata-only'`; non-empty → `'jep-fallback'`.
+Cover: (a) saved config with 2 Home-linked Projects + 2 custom Projects → `GET /api/epm/projects` returns all 4, Home-derived first, custom Projects following, each with the correct `matchState`. (b) `POST /api/epm/projects/preview` with the same draft config returns the same union. (c) `find_epm_project_or_404('<custom-uuid>')` returns the custom row; `find_epm_project_or_404('<home-id>')` returns the Home row; `find_epm_project_or_404('unknown')` → 404. (d) A custom Project with empty `label` renders `matchState: 'metadata-only'`; non-empty → `'jep-fallback'`. (e) Every custom Project has `tabBucket: 'all'` in the payload (per N4b).
 
 - [ ] **Step 2: Implement.**
 
@@ -479,11 +491,13 @@ node --test tests/test_epm_settings_source_guards.js
 
 - [ ] **Step 1: Write failing source guards for the rollup view.**
 
-Guards: (a) EPM board calls `/api/epm/projects/<id>/rollup` with the current `tab` and `sprint` URL params (preserving the legacy gating at `dashboard.jsx:907-921` — do not fetch when `tab=active && !selectedSprint`); (b) renderer groups issues by Initiative → Epic → Story hierarchy when `metadataOnly: false && emptyRollup: false`; (c) dedup by issue key (same story appearing in S1 and S3 renders once); (d) orphan stories (no labeled parent) render under the Project directly; (e) `metadataOnly: true` response shows OPEN SETTINGS CTA; (f) `emptyRollup: true` response shows a **different** empty-state message ("No issues match this label in the current scope") — this is the check Codex flagged, confirm the two states render distinct UI.
+Guards: (a) EPM board calls `/api/epm/projects/<id>/rollup` with the current `tab` and `sprint` URL params (preserving the legacy gating at `dashboard.jsx:907-921` — do not fetch when `tab=active && !selectedSprint`); (b) renderer groups issues by Initiative → Epic → Story hierarchy when `metadataOnly: false && emptyRollup: false`; (c) dedup by issue key (same story appearing in S1 and S3 renders once); (d) orphan stories (no labeled parent) render under the Project directly; (e) `metadataOnly: true` response shows OPEN SETTINGS CTA; (f) `emptyRollup: true` response shows a **different** empty-state message ("No issues match this label in the current scope") — this is the check Codex flagged, confirm the two states render distinct UI; (g) `filterEpmProjectsForTab` (at `frontend/src/epm/epmProjectUtils.mjs:9-14`) treats `tabBucket: 'all'` as visible on every tab, preserving exact-match behavior for lifecycle buckets (`'active'`/`'backlog'`/`'archived'`). Add a pure-function unit test that constructs projects with each bucket value and asserts visibility across all three tabs.
 
 - [ ] **Step 2: Implement the rollup renderer.**
 
 Add `buildRollupTree(payload)` in `epmProjectUtils.mjs` that consumes `{metadataOnly, emptyRollup, initiatives, rootEpics, orphanStories}` and returns either `{kind: 'metadataOnly'}`, `{kind: 'emptyRollup'}`, or `{kind: 'tree', initiatives: [...], rootEpics: [...], orphanStories: [...]}`. The renderer in `dashboard.jsx` branches on `kind`. Use existing sticky header classes (see AGENTS.md §"Sticky UI Layering" — do not introduce new z-index). Reuse existing issue-row components from ENG mode where possible.
+
+Also update `filterEpmProjectsForTab` at `frontend/src/epm/epmProjectUtils.mjs:9-14` to treat `tabBucket: 'all'` as a wildcard: `project.tabBucket === 'all' || normalizedBucket === normalizedTab`. Preserve the existing `|| ''` fallback so malformed payloads still hide safely (neither `''` nor any other value besides the four canonical ones matches any tab).
 
 - [ ] **Step 3: Rebuild, run the source guard, and visually verify against a real tenant.**
 

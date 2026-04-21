@@ -1451,20 +1451,50 @@ def find_epm_project_or_404(home_project_id):
     abort(404)
 
 
+def normalize_epm_text(value):
+    return str(value or '').strip()
+
+
+def normalize_epm_upper_text(value):
+    return normalize_epm_text(value).upper()
+
+
+def normalize_epm_scope(payload):
+    scope = payload.get('scope') if isinstance(payload, dict) else {}
+    if not isinstance(scope, dict):
+        scope = {}
+    return {
+        'cloudId': normalize_epm_text(scope.get('cloudId')),
+        'subGoalKey': normalize_epm_upper_text(scope.get('subGoalKey')),
+    }
+
+
+def normalize_epm_project_row(project_id, row):
+    normalized_project_id = normalize_epm_text(project_id)
+    if not isinstance(row, dict):
+        return None
+    custom_name = normalize_epm_text(row.get('customName'))
+    return {
+        'homeProjectId': normalized_project_id,
+        'customName': custom_name,
+        'jiraLabel': normalize_epm_text(row.get('jiraLabel')),
+        'jiraEpicKey': normalize_epm_upper_text(row.get('jiraEpicKey')),
+    }
+
+
 def normalize_epm_config(payload):
     projects = payload.get('projects') if isinstance(payload, dict) else {}
     normalized_projects = {}
     if isinstance(projects, dict):
         for project_id, row in projects.items():
-            normalized_project_id = str(project_id or '').strip()
-            if not normalized_project_id or not isinstance(row, dict):
+            normalized_project_id = normalize_epm_text(project_id)
+            if not normalized_project_id:
                 continue
-            normalized_projects[normalized_project_id] = {
-                'homeProjectId': normalized_project_id,
-                'jiraLabel': str(row.get('jiraLabel', '') or '').strip(),
-                'jiraEpicKey': str(row.get('jiraEpicKey', '') or '').strip().upper(),
-            }
-    return {'version': 1, 'projects': normalized_projects}
+            normalized_row = normalize_epm_project_row(normalized_project_id, row)
+            if normalized_row is None:
+                continue
+            normalized_projects[normalized_project_id] = normalized_row
+    return {'version': 1, 'scope': normalize_epm_scope(payload), 'projects': normalized_projects}
 
 
 def get_epm_config():

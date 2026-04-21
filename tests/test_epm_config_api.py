@@ -36,7 +36,56 @@ class TestEpmConfigApi(unittest.TestCase):
     def test_get_epm_config_returns_empty_default(self):
         response = self.client.get('/api/epm/config')
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {'version': 1, 'projects': {}})
+        self.assertEqual(
+            response.get_json(),
+            {'version': 1, 'scope': {'cloudId': '', 'subGoalKey': ''}, 'projects': {}},
+        )
+
+    def test_get_epm_config_normalizes_existing_saved_config(self):
+        with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
+            json.dump(
+                {
+                    'version': 1,
+                    'epm': {
+                        'version': 1,
+                        'scope': {
+                            'cloudId': ' d3e3d2dc-39c8-4f41-bcd9-cf86b46de13e ',
+                            'subGoalKey': ' crite-552 ',
+                        },
+                        'projects': {
+                            'tsq-1': {
+                                'homeProjectId': 'wrong-project-id',
+                                'customName': ' retail media ',
+                                'jiraLabel': ' rnd_project_retail_media ',
+                                'jiraEpicKey': 'rm-123',
+                            },
+                            'bad-row': 'skip-me',
+                        },
+                    },
+                },
+                handle,
+            )
+
+        response = self.client.get('/api/epm/config')
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(
+            response.get_json(),
+            {
+                'version': 1,
+                'scope': {
+                    'cloudId': 'd3e3d2dc-39c8-4f41-bcd9-cf86b46de13e',
+                    'subGoalKey': 'CRITE-552',
+                },
+                'projects': {
+                    'tsq-1': {
+                        'homeProjectId': 'tsq-1',
+                        'customName': 'retail media',
+                        'jiraLabel': 'rnd_project_retail_media',
+                        'jiraEpicKey': 'RM-123',
+                    }
+                },
+            },
+        )
 
     def test_post_epm_config_persists_projects_without_overwriting_team_groups(self):
         with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
@@ -55,10 +104,15 @@ class TestEpmConfigApi(unittest.TestCase):
             response = self.client.post(
                 '/api/epm/config',
                 json={
+                    'scope': {
+                        'cloudId': ' d3e3d2dc-39c8-4f41-bcd9-cf86b46de13e ',
+                        'subGoalKey': ' crite-552 ',
+                    },
                     'projects': {
                         'tsq-1': {
                             'homeProjectId': ' tsq-1 ',
-                            'jiraLabel': ' tsq ',
+                            'customName': ' Retail Media ',
+                            'jiraLabel': ' rnd_project_retail_media ',
                             'jiraEpicKey': 'rm-123',
                         }
                     }
@@ -67,6 +121,10 @@ class TestEpmConfigApi(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
             payload = response.get_json()
             self.assertEqual(payload['version'], 1)
+            self.assertEqual(payload['scope']['cloudId'], 'd3e3d2dc-39c8-4f41-bcd9-cf86b46de13e')
+            self.assertEqual(payload['scope']['subGoalKey'], 'CRITE-552')
+            self.assertEqual(payload['projects']['tsq-1']['customName'], 'Retail Media')
+            self.assertEqual(payload['projects']['tsq-1']['jiraLabel'], 'rnd_project_retail_media')
             self.assertEqual(payload['projects']['tsq-1']['jiraEpicKey'], 'RM-123')
 
             self.assertEqual(jira_server.EPM_PROJECTS_CACHE, {})
@@ -78,8 +136,11 @@ class TestEpmConfigApi(unittest.TestCase):
 
         self.assertIn('teamGroups', saved)
         self.assertEqual(saved['teamGroups']['version'], 1)
+        self.assertEqual(saved['epm']['scope']['cloudId'], 'd3e3d2dc-39c8-4f41-bcd9-cf86b46de13e')
+        self.assertEqual(saved['epm']['scope']['subGoalKey'], 'CRITE-552')
         self.assertEqual(saved['epm']['projects']['tsq-1']['jiraEpicKey'], 'RM-123')
-        self.assertEqual(saved['epm']['projects']['tsq-1']['jiraLabel'], 'tsq')
+        self.assertEqual(saved['epm']['projects']['tsq-1']['jiraLabel'], 'rnd_project_retail_media')
+        self.assertEqual(saved['epm']['projects']['tsq-1']['customName'], 'Retail Media')
 
 
 if __name__ == '__main__':

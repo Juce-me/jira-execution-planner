@@ -16,7 +16,7 @@ class TestEpmScopeApi(unittest.TestCase):
         mock_cloud_id.return_value = 'cloud-123'
         mock_get_epm_config.return_value = {
             'version': 1,
-            'scope': {'rootGoalKey': 'CRITE-223', 'subGoalKey': 'CRITE-93'},
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
             'projects': {},
         }
 
@@ -28,34 +28,34 @@ class TestEpmScopeApi(unittest.TestCase):
             {
                 'cloudId': 'cloud-123',
                 'error': '',
-                'scope': {'rootGoalKey': 'CRITE-223', 'subGoalKey': 'CRITE-93'},
+                'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
             },
         )
 
     @patch('jira_server.fetch_epm_goal_catalog')
     def test_goals_endpoint_returns_root_goal_catalog(self, mock_catalog):
         mock_catalog.return_value = [
-            {'id': 'goal-223', 'key': 'CRITE-223', 'name': 'Hierarchy', 'url': 'https://home/goal/223'}
+            {'id': 'goal-root', 'key': 'ROOT-100', 'name': 'Synthetic Root Goal', 'url': 'https://home/goal/root-100'}
         ]
 
         response = self.client.get('/api/epm/goals')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {'goals': [{'id': 'goal-223', 'key': 'CRITE-223', 'name': 'Hierarchy', 'url': 'https://home/goal/223'}], 'error': ''})
+        self.assertEqual(response.get_json(), {'goals': [{'id': 'goal-root', 'key': 'ROOT-100', 'name': 'Synthetic Root Goal', 'url': 'https://home/goal/root-100'}], 'error': ''})
 
     @patch('jira_server.fetch_epm_sub_goals')
     def test_goals_endpoint_returns_child_goals_for_selected_root(self, mock_sub_goals):
         mock_sub_goals.return_value = [
-            {'id': 'goal-93', 'key': 'CRITE-93', 'name': 'Retail Media', 'url': 'https://home/goal/93'}
+            {'id': 'goal-child', 'key': 'CHILD-200', 'name': 'Synthetic Child Goal', 'url': 'https://home/goal/child-200'}
         ]
 
-        response = self.client.get('/api/epm/goals?rootGoalKey=CRITE-223')
+        response = self.client.get('/api/epm/goals?rootGoalKey=ROOT-100')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(
             response.get_json(),
             {
-                'goals': [{'id': 'goal-93', 'key': 'CRITE-93', 'name': 'Retail Media', 'url': 'https://home/goal/93'}],
+                'goals': [{'id': 'goal-child', 'key': 'CHILD-200', 'name': 'Synthetic Child Goal', 'url': 'https://home/goal/child-200'}],
                 'error': '',
             },
         )
@@ -72,7 +72,7 @@ class TestEpmScopeApi(unittest.TestCase):
 
     @patch('jira_server.fetch_epm_sub_goals', side_effect=jira_server.epm_home.HomeAuthenticationError('Auth failed'))
     def test_goals_endpoint_returns_settings_safe_response_on_child_goal_auth_failure(self, mock_sub_goals):
-        response = self.client.get('/api/epm/goals?rootGoalKey=CRITE-223')
+        response = self.client.get('/api/epm/goals?rootGoalKey=ROOT-100')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(

@@ -36,14 +36,14 @@ class TestEpmHomeApi(unittest.TestCase):
         client = HomeGraphQLClient('user@example.com', 'token')
         client.execute_paginated = Mock(
             return_value=[
-                {'id': 'goal-1', 'key': '  crite-552 ', 'name': 'Retail Media'},
+                {'id': 'goal-1', 'key': '  child-200 ', 'name': 'Synthetic Child Goal'},
                 {'id': 'goal-2', 'key': 'OTHER-1', 'name': 'Other'},
             ]
         )
 
-        result = resolve_goal_by_key(client, 'crite-552', 'ati:cloud:townsquare::site/cloud-123')
+        result = resolve_goal_by_key(client, 'child-200', 'ati:cloud:townsquare::site/cloud-123')
 
-        self.assertEqual(result, {'id': 'goal-1', 'key': '  crite-552 ', 'name': 'Retail Media'})
+        self.assertEqual(result, {'id': 'goal-1', 'key': '  child-200 ', 'name': 'Synthetic Child Goal'})
 
     def test_container_id_uses_ari_prefix(self):
         self.assertEqual(
@@ -55,7 +55,7 @@ class TestEpmHomeApi(unittest.TestCase):
         project = build_home_project_record(
             {
                 'id': 'tsq-1',
-                'name': 'Retail Media Launch',
+                'name': 'Synthetic Launch',
                 'url': 'https://home.atlassian.com/projects/tsq-1',
                 'stateValue': 'PAUSED',
                 'stateLabel': 'Paused',
@@ -85,7 +85,7 @@ class TestEpmHomeApi(unittest.TestCase):
     @patch('epm_home.build_home_graphql_client')
     @patch('epm_home.logger.warning')
     def test_fetch_epm_home_projects_returns_empty_when_scope_values_are_non_string(self, mock_warning, mock_build_client):
-        scope = {'subGoalKey': ['CRITE-552']}
+        scope = {'subGoalKey': ['CHILD-200']}
 
         self.assertEqual(fetch_epm_home_projects(scope), [])
 
@@ -123,15 +123,61 @@ class TestEpmHomeApi(unittest.TestCase):
         client = HomeGraphQLClient('user@example.com', 'token')
         client.execute_paginated = Mock(
             return_value=[
-                {'id': 'goal-93', 'key': 'CRITE-93', 'name': 'Retail Media', 'url': 'https://home/goal/93', 'isArchived': False},
-                {'id': 'goal-old', 'key': 'CRITE-OLD', 'name': 'Old', 'url': 'https://home/goal/old', 'isArchived': True},
+                {'id': 'goal-child', 'key': 'CHILD-200', 'name': 'Synthetic Child Goal', 'url': 'https://home/goal/child-200', 'isArchived': False},
+                {'id': 'goal-old', 'key': 'ARCHIVE-999', 'name': 'Old', 'url': 'https://home/goal/archive-999', 'isArchived': True},
             ]
         )
-        mock_resolve_goal.return_value = {'id': 'goal-root', 'key': 'CRITE-223'}
+        mock_resolve_goal.return_value = {'id': 'goal-root', 'key': 'ROOT-100'}
 
-        result = fetch_sub_goals_for_root_key(client, 'CRITE-223', 'ari:cloud:townsquare::site/cloud-123')
+        result = fetch_sub_goals_for_root_key(client, 'ROOT-100', 'ari:cloud:townsquare::site/cloud-123')
 
-        self.assertEqual(result, [{'id': 'goal-93', 'key': 'CRITE-93', 'name': 'Retail Media', 'url': 'https://home/goal/93', 'isArchived': False}])
+        self.assertEqual(result, [{'id': 'goal-child', 'key': 'CHILD-200', 'name': 'Synthetic Child Goal', 'url': 'https://home/goal/child-200', 'isArchived': False}])
+
+    @patch('epm_home.extract_home_jira_linkage')
+    @patch('epm_home.fetch_latest_project_update')
+    @patch('epm_home.fetch_projects_for_goal')
+    @patch('epm_home.fetch_home_site_cloud_id')
+    @patch('epm_home.build_home_graphql_client')
+    def test_fetch_epm_home_projects_resolves_child_sub_goal_from_root_children(
+        self,
+        mock_build_client,
+        mock_fetch_cloud_id,
+        mock_fetch_projects,
+        mock_fetch_updates,
+        mock_extract_linkage,
+    ):
+        client = Mock()
+
+        def execute_paginated(_query, variables, path):
+            if path == 'goals_search':
+                return [{'id': 'goal-root', 'key': 'ROOT-100', 'name': 'Synthetic Root Goal'}]
+            if path == 'goals_byId.subGoals':
+                self.assertEqual(variables['goalId'], 'goal-root')
+                return [
+                    {'id': 'goal-child', 'key': ' CHILD-200 ', 'name': 'Synthetic Child Goal', 'url': 'https://home/goal/child-200', 'isArchived': False},
+                ]
+            raise AssertionError(f'unexpected path: {path}')
+
+        client.execute_paginated = Mock(side_effect=execute_paginated)
+        mock_build_client.return_value = client
+        mock_fetch_cloud_id.return_value = 'cloud-123'
+        mock_fetch_projects.return_value = [
+            {
+                'id': 'proj-1',
+                'key': 'TSQ-1',
+                'name': 'Synthetic Launch',
+                'url': 'https://home.atlassian.com/projects/proj-1',
+                'stateValue': 'ON_TRACK',
+                'stateLabel': 'On track',
+            }
+        ]
+        mock_fetch_updates.return_value = []
+        mock_extract_linkage.return_value = {'labels': [], 'epicKeys': []}
+
+        result = fetch_epm_home_projects({'rootGoalKey': 'root-100', 'subGoalKey': 'child-200'})
+
+        mock_fetch_projects.assert_called_once_with(client, 'goal-child')
+        self.assertEqual(result[0]['name'], 'Synthetic Launch')
 
     @patch('epm_home.extract_home_jira_linkage')
     @patch('epm_home.fetch_latest_project_update')
@@ -151,12 +197,12 @@ class TestEpmHomeApi(unittest.TestCase):
         client = Mock()
         mock_build_client.return_value = client
         mock_fetch_cloud_id.return_value = 'cloud-123'
-        mock_resolve_goal.return_value = {'id': 'goal-552', 'key': 'CRITE-552'}
+        mock_resolve_goal.return_value = {'id': 'goal-child', 'key': 'CHILD-200'}
         mock_fetch_projects.return_value = [
             {
                 'id': 'proj-1',
                 'key': 'TSQ-1',
-                'name': 'Retail Media Launch',
+                'name': 'Synthetic Launch',
                 'url': 'https://home.atlassian.com/projects/proj-1',
                 'stateValue': 'ON_TRACK',
                 'stateLabel': 'On track',
@@ -165,16 +211,16 @@ class TestEpmHomeApi(unittest.TestCase):
         mock_fetch_updates.return_value = []
         mock_extract_linkage.return_value = {'labels': [], 'epicKeys': []}
 
-        result = fetch_epm_home_projects({'subGoalKey': 'crite-552'})
+        result = fetch_epm_home_projects({'subGoalKey': 'child-200'})
 
-        mock_resolve_goal.assert_called_once_with(client, 'CRITE-552', 'ari:cloud:townsquare::site/cloud-123')
-        mock_fetch_projects.assert_called_once_with(client, 'goal-552')
+        mock_resolve_goal.assert_called_once_with(client, 'CHILD-200', 'ari:cloud:townsquare::site/cloud-123')
+        mock_fetch_projects.assert_called_once_with(client, 'goal-child')
         self.assertEqual(
             result,
             [
                 {
                     'homeProjectId': 'proj-1',
-                    'name': 'Retail Media Launch',
+                    'name': 'Synthetic Launch',
                     'homeUrl': 'https://home.atlassian.com/projects/proj-1',
                     'stateValue': 'ON_TRACK',
                     'stateLabel': 'On track',
@@ -190,7 +236,7 @@ class TestEpmHomeApi(unittest.TestCase):
     @patch('epm_home.fetch_home_site_cloud_id', side_effect=RuntimeError('Jira tenant_info did not return cloudId'))
     @patch('epm_home.logger.warning')
     def test_fetch_epm_home_projects_returns_empty_when_tenant_info_lookup_fails(self, mock_warning, mock_fetch_cloud_id):
-        self.assertEqual(fetch_epm_home_projects({'subGoalKey': 'crite-552'}), [])
+        self.assertEqual(fetch_epm_home_projects({'subGoalKey': 'child-200'}), [])
         mock_fetch_cloud_id.assert_called_once_with()
         mock_warning.assert_called_once()
         self.assertEqual(mock_warning.call_args[0][0], 'EPM home fetch failed: %s')

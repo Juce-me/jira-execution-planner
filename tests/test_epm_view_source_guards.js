@@ -40,6 +40,14 @@ test('dashboard source reuses renderViewSwitch in both header contexts', () => {
     );
 });
 
+test('dashboard source exposes EPM settings access in both header contexts', () => {
+    assert.ok(dashboardSource.includes('openEpmSettingsTab'), 'Expected openEpmSettingsTab in dashboard.jsx');
+    assert.ok(
+        countOccurrences(dashboardSource, 'Open EPM settings') >= 2,
+        'Expected Open EPM settings controls in both full and compact headers'
+    );
+});
+
 test('epm helper file exists and owns the Active only copy', () => {
     assert.ok(fs.existsSync(helperPath), 'Expected frontend/src/epm/epmProjectUtils.mjs to exist');
     assert.ok(helperSource.includes('shouldUseEpmSprint'), 'Expected shouldUseEpmSprint in epmProjectUtils.mjs');

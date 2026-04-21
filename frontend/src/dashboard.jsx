@@ -11150,6 +11150,20 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         </svg>
                                     </button>
                                 )}
+                                {selectedView === 'epm' && (
+                                    <button
+                                        className="group-gear-button"
+                                        onClick={openEpmSettingsTab}
+                                        title="Open EPM settings"
+                                        aria-label="Open EPM settings"
+                                        type="button"
+                                    >
+                                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                            <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
+                                            <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                        </svg>
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </header>
@@ -11173,6 +11187,18 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         <>
                                             {renderEpmTabs()}
                                             {renderEpmProjectPicker()}
+                                            <button
+                                                className="group-gear-button"
+                                                onClick={openEpmSettingsTab}
+                                                title="Open EPM settings"
+                                                aria-label="Open EPM settings"
+                                                type="button"
+                                            >
+                                                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                    <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
+                                                    <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                                </svg>
+                                            </button>
                                         </>
                                     )}
                                 </div>

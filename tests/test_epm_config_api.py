@@ -49,8 +49,8 @@ class TestEpmConfigApi(unittest.TestCase):
                     'epm': {
                         'version': 1,
                         'scope': {
-                            'cloudId': ' d3e3d2dc-39c8-4f41-bcd9-cf86b46de13e ',
-                            'subGoalKey': ' crite-93 ',
+                            'cloudId': ' legacy-cloud-123 ',
+                            'subGoalKey': ' child-200 ',
                         },
                         'projects': {},
                     },
@@ -66,7 +66,7 @@ class TestEpmConfigApi(unittest.TestCase):
                 'version': 1,
                 'scope': {
                     'rootGoalKey': '',
-                    'subGoalKey': 'CRITE-93',
+                    'subGoalKey': 'CHILD-200',
                 },
                 'projects': {},
             },
@@ -80,15 +80,15 @@ class TestEpmConfigApi(unittest.TestCase):
                     'epm': {
                         'version': 1,
                         'scope': {
-                            'rootGoalKey': ' crite-223 ',
-                            'subGoalKey': ' crite-93 ',
+                            'rootGoalKey': ' root-100 ',
+                            'subGoalKey': ' child-200 ',
                         },
                         'projects': {
                             'tsq-1': {
                                 'homeProjectId': 'wrong-project-id',
-                                'customName': ' retail media ',
-                                'jiraLabel': ' rnd_project_retail_media ',
-                                'jiraEpicKey': 'rm-123',
+                                'customName': ' synthetic launch ',
+                                'jiraLabel': ' synthetic_label_alpha ',
+                                'jiraEpicKey': 'syn-123',
                             },
                             'bad-row': 'skip-me',
                         },
@@ -104,15 +104,15 @@ class TestEpmConfigApi(unittest.TestCase):
             {
                 'version': 1,
                 'scope': {
-                    'rootGoalKey': 'CRITE-223',
-                    'subGoalKey': 'CRITE-93',
+                    'rootGoalKey': 'ROOT-100',
+                    'subGoalKey': 'CHILD-200',
                 },
                 'projects': {
                     'tsq-1': {
                         'homeProjectId': 'tsq-1',
-                        'customName': 'retail media',
-                        'jiraLabel': 'rnd_project_retail_media',
-                        'jiraEpicKey': 'RM-123',
+                        'customName': 'synthetic launch',
+                        'jiraLabel': 'synthetic_label_alpha',
+                        'jiraEpicKey': 'SYN-123',
                     }
                 },
             },
@@ -136,15 +136,15 @@ class TestEpmConfigApi(unittest.TestCase):
                 '/api/epm/config',
                 json={
                     'scope': {
-                        'rootGoalKey': ' crite-223 ',
-                        'subGoalKey': ' crite-93 ',
+                        'rootGoalKey': ' root-100 ',
+                        'subGoalKey': ' child-200 ',
                     },
                     'projects': {
                         'tsq-1': {
                             'homeProjectId': ' tsq-1 ',
-                            'customName': ' Retail Media ',
-                            'jiraLabel': ' rnd_project_retail_media ',
-                            'jiraEpicKey': 'rm-123',
+                            'customName': ' Synthetic Launch ',
+                            'jiraLabel': ' synthetic_label_alpha ',
+                            'jiraEpicKey': 'syn-123',
                         }
                     }
                 },
@@ -152,11 +152,11 @@ class TestEpmConfigApi(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
             payload = response.get_json()
             self.assertEqual(payload['version'], 1)
-            self.assertEqual(payload['scope']['rootGoalKey'], 'CRITE-223')
-            self.assertEqual(payload['scope']['subGoalKey'], 'CRITE-93')
-            self.assertEqual(payload['projects']['tsq-1']['customName'], 'Retail Media')
-            self.assertEqual(payload['projects']['tsq-1']['jiraLabel'], 'rnd_project_retail_media')
-            self.assertEqual(payload['projects']['tsq-1']['jiraEpicKey'], 'RM-123')
+            self.assertEqual(payload['scope']['rootGoalKey'], 'ROOT-100')
+            self.assertEqual(payload['scope']['subGoalKey'], 'CHILD-200')
+            self.assertEqual(payload['projects']['tsq-1']['customName'], 'Synthetic Launch')
+            self.assertEqual(payload['projects']['tsq-1']['jiraLabel'], 'synthetic_label_alpha')
+            self.assertEqual(payload['projects']['tsq-1']['jiraEpicKey'], 'SYN-123')
 
             self.assertEqual(jira_server.EPM_PROJECTS_CACHE, {})
             self.assertEqual(jira_server.EPM_ISSUES_CACHE, {})
@@ -167,11 +167,11 @@ class TestEpmConfigApi(unittest.TestCase):
 
         self.assertIn('teamGroups', saved)
         self.assertEqual(saved['teamGroups']['version'], 1)
-        self.assertEqual(saved['epm']['scope']['rootGoalKey'], 'CRITE-223')
-        self.assertEqual(saved['epm']['scope']['subGoalKey'], 'CRITE-93')
-        self.assertEqual(saved['epm']['projects']['tsq-1']['jiraEpicKey'], 'RM-123')
-        self.assertEqual(saved['epm']['projects']['tsq-1']['jiraLabel'], 'rnd_project_retail_media')
-        self.assertEqual(saved['epm']['projects']['tsq-1']['customName'], 'Retail Media')
+        self.assertEqual(saved['epm']['scope']['rootGoalKey'], 'ROOT-100')
+        self.assertEqual(saved['epm']['scope']['subGoalKey'], 'CHILD-200')
+        self.assertEqual(saved['epm']['projects']['tsq-1']['jiraEpicKey'], 'SYN-123')
+        self.assertEqual(saved['epm']['projects']['tsq-1']['jiraLabel'], 'synthetic_label_alpha')
+        self.assertEqual(saved['epm']['projects']['tsq-1']['customName'], 'Synthetic Launch')
 
 
 if __name__ == '__main__':

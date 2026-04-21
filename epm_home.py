@@ -344,6 +344,23 @@ def fetch_sub_goals_for_root_key(client: HomeGraphQLClient, root_goal_key: str, 
     return fetch_sub_goals(client, root_goal["id"])
 
 
+def resolve_sub_goal_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str) -> dict | None:
+    scope = epm_scope if isinstance(epm_scope, dict) else {}
+    raw_sub_goal_key = scope.get("subGoalKey")
+    sub_goal_key = raw_sub_goal_key.strip().upper() if isinstance(raw_sub_goal_key, str) else ""
+    if not sub_goal_key:
+        return None
+    raw_root_goal_key = scope.get("rootGoalKey")
+    root_goal_key = raw_root_goal_key.strip().upper() if isinstance(raw_root_goal_key, str) else ""
+    if root_goal_key:
+        for goal in fetch_sub_goals_for_root_key(client, root_goal_key, container_id):
+            if _normalize_goal_key(goal.get("key")) == sub_goal_key:
+                return goal
+        logger.warning("Sub-goal %s not found under root %s", sub_goal_key, root_goal_key)
+        return None
+    return resolve_goal_by_key(client, sub_goal_key, container_id)
+
+
 def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str) -> list[dict]:
     try:
         linked_projects = client.execute_paginated(
@@ -427,7 +444,7 @@ def fetch_epm_home_projects(epm_scope):
         return []
 
     container_id = _container_id_from_cloud(cloud_id)
-    sub_goal = resolve_goal_by_key(client, sub_goal_key, container_id)
+    sub_goal = resolve_sub_goal_for_scope(client, scope, container_id)
     if not sub_goal:
         return []
 

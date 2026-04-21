@@ -27,3 +27,15 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('Jira epic'), 'Expected Jira epic copy');
     assert.ok(!dashboardSource.includes('mock-input'), 'Did not expect mock-input class');
 });
+
+test('settings hotkey effect is declared after the save handlers it depends on', () => {
+    const hotkeyEffectIndex = dashboardSource.indexOf("window.addEventListener('keydown', handleKey);");
+    const saveEpmConfigIndex = dashboardSource.indexOf('const saveEpmConfig = async () => {');
+    const saveGroupsConfigIndex = dashboardSource.indexOf('const saveGroupsConfig = async () => {');
+
+    assert.ok(hotkeyEffectIndex !== -1, 'Expected settings hotkey effect in dashboard.jsx');
+    assert.ok(saveEpmConfigIndex !== -1, 'Expected saveEpmConfig in dashboard.jsx');
+    assert.ok(saveGroupsConfigIndex !== -1, 'Expected saveGroupsConfig in dashboard.jsx');
+    assert.ok(hotkeyEffectIndex > saveEpmConfigIndex, 'Expected settings hotkey effect after saveEpmConfig');
+    assert.ok(hotkeyEffectIndex > saveGroupsConfigIndex, 'Expected settings hotkey effect after saveGroupsConfig');
+});

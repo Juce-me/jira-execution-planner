@@ -1456,41 +1456,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }, 2200);
             };
 
-            useEffect(() => {
-                if (!showGroupManage) return;
-                const handleKey = (event) => {
-                    const key = event.key;
-                    if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 's') {
-                        event.preventDefault();
-                        if (groupManageTab === 'epm') {
-                            if (!epmConfigSaving) {
-                                void saveEpmConfig().catch(() => {});
-                            }
-                        } else if (!groupSaving) {
-                            saveGroupsConfig();
-                        }
-                        return;
-                    }
-                    if (key === 'Escape') {
-                        const hasOpenDropdown = Object.values(teamSearchOpen || {}).some(Boolean);
-                        if (hasOpenDropdown) {
-                            event.preventDefault();
-                            closeAllTeamSearchDropdowns();
-                            return;
-                        }
-                        if (showGroupDiscardConfirm) {
-                            event.preventDefault();
-                            setShowGroupDiscardConfirm(false);
-                            return;
-                        }
-                        event.preventDefault();
-                        requestCloseGroupManage();
-                    }
-                };
-                window.addEventListener('keydown', handleKey);
-                return () => window.removeEventListener('keydown', handleKey);
-            }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveEpmConfig, saveGroupsConfig]);
-
             const addGroupDraftRow = () => {
                 let nextId = '';
                 handleGroupDraftChange(prev => {
@@ -1923,6 +1888,41 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     setGroupSaving(false);
                 }
             };
+
+            useEffect(() => {
+                if (!showGroupManage) return;
+                const handleKey = (event) => {
+                    const key = event.key;
+                    if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 's') {
+                        event.preventDefault();
+                        if (groupManageTab === 'epm') {
+                            if (!epmConfigSaving) {
+                                void saveEpmConfig().catch(() => {});
+                            }
+                        } else if (!groupSaving) {
+                            saveGroupsConfig();
+                        }
+                        return;
+                    }
+                    if (key === 'Escape') {
+                        const hasOpenDropdown = Object.values(teamSearchOpen || {}).some(Boolean);
+                        if (hasOpenDropdown) {
+                            event.preventDefault();
+                            closeAllTeamSearchDropdowns();
+                            return;
+                        }
+                        if (showGroupDiscardConfirm) {
+                            event.preventDefault();
+                            setShowGroupDiscardConfirm(false);
+                            return;
+                        }
+                        event.preventDefault();
+                        requestCloseGroupManage();
+                    }
+                };
+                window.addEventListener('keydown', handleKey);
+                return () => window.removeEventListener('keydown', handleKey);
+            }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveEpmConfig, saveGroupsConfig]);
 
             const fetchJiraProjects = async () => {
                 setLoadingProjects(true);

@@ -45,7 +45,7 @@ class TestEpmProjectsApi(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'})
-        self.assertIs(mock_fetch_projects.call_args.args[0], mock_get_epm_config.return_value['scope'])
+        self.assertEqual(mock_fetch_projects.call_args.args[0], mock_get_epm_config.return_value['scope'])
         payload = response.get_json()
         project = payload['projects'][0]
         self.assertEqual(project['customName'], 'Synthetic Launch')
@@ -201,6 +201,55 @@ class TestEpmProjectsApi(unittest.TestCase):
         self.assertEqual(first_response.status_code, 200)
         self.assertEqual(second_response.status_code, 200)
         self.assertEqual(mock_fetch_projects.call_count, 1)
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_preview_endpoint_uses_draft_payload_without_saved_config_or_cache(self, mock_fetch_projects, mock_get_epm_config):
+        mock_fetch_projects.return_value = [
+            {
+                'homeProjectId': 'tsq-1',
+                'name': 'Synthetic Launch',
+                'homeUrl': 'https://home/project/1',
+                'stateValue': 'ON_TRACK',
+                'stateLabel': 'On Track',
+                'tabBucket': 'active',
+                'latestUpdateDate': '2026-04-19',
+                'latestUpdateSnippet': 'Ready for rollout',
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+                'matchState': 'metadata-only',
+            }
+        ]
+        mock_get_epm_config.return_value = {
+            'version': 1,
+            'scope': {'rootGoalKey': 'ROOT-SAVED', 'subGoalKey': 'CHILD-SAVED'},
+            'projects': {},
+        }
+        jira_server.EPM_PROJECTS_CACHE['saved-config'] = {'timestamp': 1, 'data': {'projects': [{'homeProjectId': 'cached-project'}]}}
+
+        response = self.client.post(
+            '/api/epm/projects/preview',
+            json={
+                'scope': {'rootGoalKey': ' root-100 ', 'subGoalKey': ' child-200 '},
+                'projects': {
+                    'tsq-1': {
+                        'homeProjectId': 'tsq-1',
+                        'customName': 'Preview Launch',
+                        'jiraLabel': 'synthetic_label_alpha',
+                        'jiraEpicKey': 'syn-123',
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        mock_get_epm_config.assert_not_called()
+        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'})
+        payload = response.get_json()
+        self.assertEqual(payload['projects'][0]['displayName'], 'Preview Launch')
+        self.assertEqual(payload['projects'][0]['resolvedLinkage']['labels'], ['synthetic_label_alpha'])
+        self.assertEqual(payload['projects'][0]['resolvedLinkage']['epicKeys'], ['SYN-123'])
+        self.assertIn('saved-config', jira_server.EPM_PROJECTS_CACHE)
+        self.assertEqual(jira_server.EPM_PROJECTS_CACHE['saved-config']['data']['projects'][0]['homeProjectId'], 'cached-project')
 
 
 if __name__ == '__main__':

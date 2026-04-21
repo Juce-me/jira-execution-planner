@@ -1446,6 +1446,17 @@ def build_epm_project_payload(home_project, config_row):
     }
 
 
+def build_epm_projects_payload(epm_config):
+    normalized_config = normalize_epm_config(epm_config or {})
+    projects = []
+    epm_scope = normalized_config.get('scope') or {}
+    for home_project in fetch_epm_home_projects(epm_scope):
+        project_id = home_project.get('homeProjectId')
+        config_row = normalized_config['projects'].get(project_id) if project_id else None
+        projects.append(build_epm_project_payload(home_project, config_row))
+    return {'projects': projects}
+
+
 def find_epm_project_or_404(home_project_id):
     with _epm_cache_lock:
         for entry in EPM_PROJECTS_CACHE.values():
@@ -6438,16 +6449,16 @@ def get_epm_projects_endpoint():
         if cached and (time.time() - cached['timestamp']) < EPM_PROJECTS_CACHE_TTL_SECONDS:
             return jsonify(cached['data'])
 
-    projects = []
-    epm_scope = epm_config.get('scope') or {}
-    for home_project in fetch_epm_home_projects(epm_scope):
-        project_id = home_project.get('homeProjectId')
-        config_row = epm_config['projects'].get(project_id) if project_id else None
-        projects.append(build_epm_project_payload(home_project, config_row))
-    payload = {'projects': projects}
+    payload = build_epm_projects_payload(epm_config)
     with _epm_cache_lock:
         EPM_PROJECTS_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
     return jsonify(payload)
+
+
+@app.route('/api/epm/projects/preview', methods=['POST'])
+def preview_epm_projects_endpoint():
+    payload = normalize_epm_config(request.get_json(silent=True) or {})
+    return jsonify(build_epm_projects_payload(payload))
 
 
 @app.route('/api/epm/projects/<home_project_id>/issues', methods=['GET'])

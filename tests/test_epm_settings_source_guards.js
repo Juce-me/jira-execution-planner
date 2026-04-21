@@ -18,6 +18,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const loadEpmScopeMeta = async () => {'), 'Expected EPM scope metadata loader');
     assert.ok(dashboardSource.includes('const loadEpmGoals = async (rootGoalKey = \'\') => {'), 'Expected EPM goals loader');
     assert.ok(dashboardSource.includes('const loadEpmProjects = async () => {'), 'Expected EPM projects loader');
+    assert.ok(dashboardSource.includes('const loadEpmProjectPreview = async (draftConfig) => {'), 'Expected EPM draft preview loader');
     assert.ok(dashboardSource.includes('const saveEpmConfig = async () => {'), 'Expected EPM config saver');
     assert.ok(dashboardSource.includes('const normalizeEpmConfigDraft = (config) => {'), 'Expected EPM config normalizer');
     assert.ok(dashboardSource.includes('const hasSavedEpmScopeConfig = (config) => {'), 'Expected saved-scope helper');
@@ -28,6 +29,10 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('fetch(`${BACKEND_URL}/api/epm/scope`'), 'Expected EPM scope fetch endpoint');
     assert.ok(dashboardSource.includes('fetch(`${BACKEND_URL}/api/epm/goals`'), 'Expected EPM goals fetch endpoint');
     assert.ok(dashboardSource.includes('fetch(`${BACKEND_URL}/api/epm/projects`'), 'Expected EPM projects fetch endpoint');
+    assert.ok(dashboardSource.includes('fetch(`${BACKEND_URL}/api/epm/projects/preview`'), 'Expected EPM project preview fetch endpoint');
+    assert.ok(dashboardSource.includes("const [epmSettingsProjects, setEpmSettingsProjects] = useState([]);"), 'Expected settings-scoped EPM project preview state');
+    assert.ok(dashboardSource.includes("const [epmSettingsProjectsLoading, setEpmSettingsProjectsLoading] = useState(false);"), 'Expected settings-scoped EPM project preview loading state');
+    assert.ok(dashboardSource.includes("const [epmSettingsProjectsError, setEpmSettingsProjectsError] = useState('');"), 'Expected settings-scoped EPM project preview error state');
     assert.ok(dashboardSource.includes("const [epmRootGoalsLoading, setEpmRootGoalsLoading] = useState(false);"), 'Expected root goal loading state');
     assert.ok(dashboardSource.includes("const [epmSubGoalsLoading, setEpmSubGoalsLoading] = useState(false);"), 'Expected sub-goal loading state');
     assert.ok(dashboardSource.includes("const [epmRootGoalsError, setEpmRootGoalsError] = useState('');"), 'Expected root goal error state');
@@ -63,15 +68,15 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('This sub-goal has no direct Jira Home projects. Choose a different child goal.'), 'Expected empty child-goal helper copy');
     assert.ok(dashboardSource.includes('Loading root goals...'), 'Expected root goal loading copy');
     assert.ok(dashboardSource.includes('Loading sub-goals...'), 'Expected sub-goal loading copy');
-    assert.ok(dashboardSource.includes('epmProjectsRequestIdRef.current += 1;') && dashboardSource.includes('setEpmProjects([]);') && dashboardSource.includes('setEpmConfigLoading(true);'), 'Expected EPM settings load to invalidate stale project responses and clear rows before bootstrapping');
-    assert.ok(dashboardSource.includes('setEpmProjects([]);') && dashboardSource.includes('setShowGroupManage(true);') && dashboardSource.includes('setGroupManageTab(\'epm\');'), 'Expected EPM settings open action to clear stale rows before switching tabs');
+    assert.ok(dashboardSource.includes('setShowGroupManage(true);') && dashboardSource.includes('setGroupManageTab(\'epm\');'), 'Expected EPM settings open action to switch tabs without mutating main EPM project state');
     assert.ok(dashboardSource.includes("setEpmProjectsError(err?.message || 'Failed to load EPM projects.');"), 'Expected EPM project refresh failures to surface distinct settings-state copy');
     assert.ok(dashboardSource.includes('setEpmRootGoalsError(String(rootGoalsPayload?.error || \'\').trim());'), 'Expected handled root-goal discovery errors to surface in picker state');
     assert.ok(dashboardSource.includes('const lookupError = String(payload?.error || \'\').trim();') && dashboardSource.includes('setEpmSubGoalsError(lookupError);'), 'Expected handled sub-goal discovery errors to surface in picker state');
     assert.ok(dashboardSource.includes("setGroupDraftError('Failed to load EPM settings.');"), 'Expected config-load failures to clear stale EPM draft state and surface an error');
     assert.ok(dashboardSource.includes('if (hasSavedEpmScopeConfig(nextConfig)) {') && dashboardSource.includes('await refreshEpmProjects();') && dashboardSource.includes('setEpmProjects([]);'), 'Expected save path to refresh only when saved scope exists');
-    assert.ok(dashboardSource.includes('if (!cancelled && shouldLoadProjects) {'), 'Expected EPM project fetch gating after config load');
-    assert.ok(dashboardSource.includes(') : !hasDraftEpmScope ? ('), 'Expected draft-scope helper branch before empty project state');
+    assert.ok(dashboardSource.includes('Run Test Configuration to preview projects for the selected draft scope.'), 'Expected explicit preview helper copy before settings preview runs');
+    assert.ok(dashboardSource.includes('void previewEpmProjectSettings().catch(() => {});'), 'Expected EPM Test Configuration button to drive draft preview');
+    assert.ok(dashboardSource.includes('setEpmSettingsProjects([]);') && dashboardSource.includes('setEpmSettingsProjectsError(\'\');'), 'Expected scope changes and settings load to clear stale preview rows');
     assert.ok(dashboardSource.includes('if (!hasSavedEpmScope) {') && dashboardSource.includes('void refreshEpmProjects();'), 'Expected main EPM view fetch gating on saved scope');
     assert.ok(dashboardSource.includes('const refreshEpmView = async () => {') && dashboardSource.includes('if (!hasSavedEpmScope) {') && dashboardSource.includes('setEpmIssues([]);') && dashboardSource.includes('setEpmIssueEpics({});'), 'Expected manual EPM refresh gating to clear stale project and issue state without fetching');
     assert.ok(dashboardSource.includes('EPM projects'), 'Expected EPM projects copy');
@@ -85,6 +90,20 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('/api/jira/labels?query=${encodeURIComponent(query)}&limit=20'), 'Expected reuse of Jira label autocomplete endpoint');
     assert.ok(dashboardSource.includes('No Jira label selected.'), 'Expected EPM empty Jira label state copy');
     assert.ok(!dashboardSource.includes('mock-input'), 'Did not expect mock-input class');
+});
+
+test('dashboard source keeps EPM settings preview draft-scoped and does not auto-load projects on open', () => {
+    const loadSettingsStart = dashboardSource.indexOf('const loadEpmSettings = async () => {');
+    const loadSettingsEnd = dashboardSource.indexOf('loadEpmSettings();', loadSettingsStart);
+    assert.ok(loadSettingsStart !== -1 && loadSettingsEnd !== -1, 'Expected EPM settings load effect block');
+    const loadSettingsSource = dashboardSource.slice(loadSettingsStart, loadSettingsEnd);
+
+    assert.ok(!loadSettingsSource.includes('refreshEpmProjects()'), 'Did not expect EPM settings open to auto-refresh main EPM projects');
+    assert.ok(!loadSettingsSource.includes('loadEpmProjectPreview('), 'Did not expect EPM settings open to auto-preview draft projects');
+    assert.ok(
+        loadSettingsSource.includes('resetEpmProjectPreview();') || loadSettingsSource.includes('setEpmSettingsProjects([]);'),
+        'Expected EPM settings load to clear stale preview rows'
+    );
 });
 
 test('settings hotkey effect is declared after the save handlers it depends on', () => {

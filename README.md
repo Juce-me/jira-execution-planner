@@ -186,7 +186,7 @@ CI will fail if `frontend/dist` is out of sync. We precompile JSX to avoid in-br
 
 ## EPM View
 
-Set the Atlassian Home credentials in `.env` (`ATLASSIAN_EMAIL`, `ATLASSIAN_API_TOKEN`). `ATLASSIAN_EMAIL` and `ATLASSIAN_API_TOKEN` fall back to `JIRA_EMAIL` and `JIRA_TOKEN` when left blank. Then open `Settings -> EPM` in the dashboard to set the Jira Home scope with `cloudId` and `subGoalKey`, override project display names, and choose Jira labels from Jira. Use the `ENG | EPM` switch in the dashboard header to browse Atlassian Home projects and their Jira rollup. EPM Jira queries stay scoped to the Jira projects listed in `dashboard-config.json -> projects.selected`, so add the relevant Jira project there if an EPM project points outside the current dashboard set.
+Set the Atlassian Home credentials in `.env` (`ATLASSIAN_EMAIL`, `ATLASSIAN_API_TOKEN`). `ATLASSIAN_EMAIL` and `ATLASSIAN_API_TOKEN` fall back to `JIRA_EMAIL` and `JIRA_TOKEN` when left blank. Then open `Settings -> EPM`, confirm the detected Atlassian site, choose a root goal, and choose the child sub-goal that directly owns the EPM project catalog. Use the `ENG | EPM` switch in the dashboard header to browse Atlassian Home projects and their Jira rollup. EPM Jira queries stay scoped to the Jira projects listed in `dashboard-config.json -> projects.selected`, so add the relevant Jira project there if an EPM project points outside the current dashboard set.
 
 You should see:
 ```

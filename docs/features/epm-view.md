@@ -8,7 +8,7 @@ Use the header `ENG | EPM` switch to move between team delivery and project deli
 
 If `Active` has no sprint selected, the dashboard keeps the EPM project selected but does not request Jira issues until you choose a sprint.
 
-Operators configure the EPM scope in `Settings -> EPM` with the Jira Home `cloudId` and `subGoalKey`. The same panel lets them override project display names and pick Jira labels from Jira’s label search so the shell can render the right Home name without changing Atlassian discovery.
+The EPM settings panel auto-detects the Atlassian site from Jira, then lets operators choose a root goal and one of its child sub-goals. The selected child sub-goal is the exact Jira Home catalog used for EPM projects.
 
 EPM Jira queries stay scoped to the Jira projects in `dashboard-config.json -> projects.selected`. If an Atlassian Home project maps to Jira work outside that set, add the Jira project in Settings first.
 

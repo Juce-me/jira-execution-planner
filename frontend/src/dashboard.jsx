@@ -621,6 +621,63 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     };
                 });
             };
+            const EPM_LABEL_SEARCH_GROUP_ID = 'epm-project';
+            const getEpmLabelRowKey = (homeProjectId) => getLabelRowKey(EPM_LABEL_SEARCH_GROUP_ID, homeProjectId);
+            const getEpmLabelSearchResults = (homeProjectId) => {
+                const key = getEpmLabelRowKey(homeProjectId);
+                const query = String(labelSearchQuery[key] || '').trim();
+                if (query.length < 3) return [];
+                return labelSearchResults[key] || [];
+            };
+            const selectEpmProjectLabel = React.useCallback((homeProjectId, label) => {
+                const key = getEpmLabelRowKey(homeProjectId);
+                updateEpmProjectDraft(homeProjectId, 'jiraLabel', label);
+                setLabelSearchQuery(prev => ({ ...prev, [key]: '' }));
+                setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
+                setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
+                setLabelSearchOpen(prev => ({ ...prev, [key]: false }));
+            }, [updateEpmProjectDraft]);
+            const scheduleEpmProjectLabelSearch = (homeProjectId, rawQuery) => {
+                scheduleJiraLabelSearch(EPM_LABEL_SEARCH_GROUP_ID, homeProjectId, rawQuery);
+            };
+            const handleEpmLabelSearchKeyDown = React.useCallback((homeProjectId, event, results) => {
+                const key = getEpmLabelRowKey(homeProjectId);
+                if (event.key === 'ArrowDown') {
+                    if (!results.length) return;
+                    event.preventDefault();
+                    setLabelSearchOpen(prev => ({ ...prev, [key]: true }));
+                    setLabelSearchIndex(prev => ({
+                        ...prev,
+                        [key]: Math.min((prev[key] || 0) + 1, results.length - 1)
+                    }));
+                    return;
+                }
+                if (event.key === 'ArrowUp') {
+                    if (!results.length) return;
+                    event.preventDefault();
+                    setLabelSearchOpen(prev => ({ ...prev, [key]: true }));
+                    setLabelSearchIndex(prev => ({
+                        ...prev,
+                        [key]: Math.max((prev[key] || 0) - 1, 0)
+                    }));
+                    return;
+                }
+                if (event.key === 'Enter') {
+                    if (!results.length) return;
+                    event.preventDefault();
+                    const index = labelSearchIndex[key] || 0;
+                    const label = results[index] || results[0];
+                    if (label) {
+                        selectEpmProjectLabel(homeProjectId, label);
+                    }
+                    return;
+                }
+                if (event.key === 'Escape' && labelSearchOpen[key]) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setLabelSearchOpen(prev => ({ ...prev, [key]: false }));
+                }
+            }, [labelSearchIndex, labelSearchOpen, selectEpmProjectLabel]);
             const updateEpmScopeDraft = (field, value) => {
                 setEpmConfigDraft((prev) => ({
                     ...prev,
@@ -15108,6 +15165,12 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             <div className="group-pane-list">
                                                 {epmProjects.map((project) => {
                                                     const draft = epmConfigDraft.projects?.[project.homeProjectId] || {};
+                                                    const rowKey = getEpmLabelRowKey(project.homeProjectId);
+                                                    const currentLabel = draft.jiraLabel || '';
+                                                    const results = getEpmLabelSearchResults(project.homeProjectId);
+                                                    const query = String(labelSearchQuery[rowKey] || '').trim();
+                                                    const isSearching = Boolean(labelSearchLoading[rowKey]);
+                                                    const activeIndex = Math.min(labelSearchIndex[rowKey] || 0, Math.max(results.length - 1, 0));
                                                     return (
                                                         <div key={project.homeProjectId} className="group-config-card">
                                                             <a href={project.homeUrl} target="_blank" rel="noopener noreferrer">
@@ -15123,12 +15186,62 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                 onChange={(event) => updateEpmProjectDraft(project.homeProjectId, 'customName', event.target.value)}
                                                                 placeholder="Custom name"
                                                             />
-                                                            <input
-                                                                type="text"
-                                                                value={draft.jiraLabel || ''}
-                                                                onChange={(event) => updateEpmProjectDraft(project.homeProjectId, 'jiraLabel', event.target.value)}
-                                                                placeholder="Jira label"
-                                                            />
+                                                            <div className="group-projects-subsection" style={{ marginTop: 0 }}>
+                                                                <div className="team-selector-label">Jira label</div>
+                                                                {currentLabel ? (
+                                                                    <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
+                                                                        <span className="team-name">{currentLabel}</span>
+                                                                        <button
+                                                                            className="remove-btn"
+                                                                            onClick={() => updateEpmProjectDraft(project.homeProjectId, 'jiraLabel', '')}
+                                                                            type="button"
+                                                                            title="Remove label"
+                                                                        >
+                                                                            ×
+                                                                        </button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="group-field-helper" style={{ marginTop: '0.35rem' }}>No Jira label selected.</div>
+                                                                )}
+                                                                <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
+                                                                    <input
+                                                                        type="text"
+                                                                        className="team-search-input"
+                                                                        placeholder={isSearching ? 'Searching labels...' : 'Search Jira labels...'}
+                                                                        value={labelSearchQuery[rowKey] || ''}
+                                                                        onChange={(event) => {
+                                                                            const value = event.target.value;
+                                                                            setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
+                                                                            setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                            setLabelSearchIndex(prev => ({ ...prev, [rowKey]: 0 }));
+                                                                            scheduleEpmProjectLabelSearch(project.homeProjectId, value);
+                                                                        }}
+                                                                        onFocus={() => {
+                                                                            setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                        }}
+                                                                        onBlur={() => window.setTimeout(() => setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false })), 120)}
+                                                                        onKeyDown={(event) => handleEpmLabelSearchKeyDown(project.homeProjectId, event, results)}
+                                                                    />
+                                                                    {labelSearchOpen[rowKey] && (
+                                                                        <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
+                                                                            {query.length < 3 ? (
+                                                                                <div className="team-search-result-item is-empty">Type at least 3 characters</div>
+                                                                            ) : results.length === 0 ? (
+                                                                                <div className="team-search-result-item is-empty">{isSearching ? 'Searching labels...' : 'No labels found'}</div>
+                                                                            ) : results.map((label, index) => (
+                                                                                <div
+                                                                                    key={`${rowKey}-${label}`}
+                                                                                    className={`team-search-result-item ${activeIndex === index ? 'active' : ''}`}
+                                                                                    onMouseEnter={() => setLabelSearchIndex(prev => ({ ...prev, [rowKey]: index }))}
+                                                                                    onClick={() => selectEpmProjectLabel(project.homeProjectId, label)}
+                                                                                >
+                                                                                    {label}
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
                                                             <input
                                                                 type="text"
                                                                 value={draft.jiraEpicKey || ''}

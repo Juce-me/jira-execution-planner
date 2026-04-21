@@ -37,6 +37,13 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('EPM projects'), 'Expected EPM projects copy');
     assert.ok(dashboardSource.includes('Jira label'), 'Expected Jira label copy');
     assert.ok(dashboardSource.includes('Jira epic'), 'Expected Jira epic copy');
+    assert.ok(dashboardSource.includes("const EPM_LABEL_SEARCH_GROUP_ID = 'epm-project';"), 'Expected dedicated EPM label search namespace constant');
+    assert.ok(dashboardSource.includes('const getEpmLabelRowKey = (homeProjectId) => getLabelRowKey(EPM_LABEL_SEARCH_GROUP_ID, homeProjectId);'), 'Expected EPM label picker reads to use the dedicated shared key helper');
+    assert.ok(dashboardSource.includes('scheduleJiraLabelSearch(EPM_LABEL_SEARCH_GROUP_ID, homeProjectId, rawQuery);'), 'Expected EPM label picker writes to reuse the shared Jira label scheduler with the same namespace');
+    assert.ok(!dashboardSource.includes("scheduleJiraLabelSearch('epm', homeProjectId, rawQuery);"), 'Did not expect the legacy EPM label search namespace');
+    assert.ok(dashboardSource.includes('Search Jira labels...'), 'Expected EPM Jira label search placeholder copy');
+    assert.ok(dashboardSource.includes('/api/jira/labels?query=${encodeURIComponent(query)}&limit=20'), 'Expected reuse of Jira label autocomplete endpoint');
+    assert.ok(dashboardSource.includes('No Jira label selected.'), 'Expected EPM empty Jira label state copy');
     assert.ok(!dashboardSource.includes('mock-input'), 'Did not expect mock-input class');
 });
 

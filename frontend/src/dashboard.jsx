@@ -192,11 +192,25 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmTab, setEpmTab] = useState(savedPrefsRef.current.epmTab ?? 'active');
             const [epmProjects, setEpmProjects] = useState([]);
             const [epmProjectsLoading, setEpmProjectsLoading] = useState(false);
+            const [epmProjectsError, setEpmProjectsError] = useState('');
             const [epmSelectedProjectId, setEpmSelectedProjectId] = useState(savedPrefsRef.current.epmSelectedProjectId ?? '');
-            const [epmConfigDraft, setEpmConfigDraft] = useState({ version: 1, scope: { cloudId: '', subGoalKey: '' }, projects: {} });
+            const [epmConfigDraft, setEpmConfigDraft] = useState({ version: 1, scope: { rootGoalKey: '', subGoalKey: '' }, projects: {} });
             const [epmConfigLoading, setEpmConfigLoading] = useState(false);
             const [epmConfigSaving, setEpmConfigSaving] = useState(false);
-            const epmConfigBaselineRef = useRef(JSON.stringify({ version: 1, scope: { cloudId: '', subGoalKey: '' }, projects: {} }));
+            const epmConfigBaselineRef = useRef(JSON.stringify({ version: 1, scope: { rootGoalKey: '', subGoalKey: '' }, projects: {} }));
+            const [epmScopeMeta, setEpmScopeMeta] = useState({ cloudId: '', error: '' });
+            const [epmRootGoals, setEpmRootGoals] = useState([]);
+            const [epmSubGoals, setEpmSubGoals] = useState([]);
+            const [epmRootGoalsLoading, setEpmRootGoalsLoading] = useState(false);
+            const [epmSubGoalsLoading, setEpmSubGoalsLoading] = useState(false);
+            const [epmRootGoalsError, setEpmRootGoalsError] = useState('');
+            const [epmSubGoalsError, setEpmSubGoalsError] = useState('');
+            const [epmRootGoalQuery, setEpmRootGoalQuery] = useState('');
+            const [epmSubGoalQuery, setEpmSubGoalQuery] = useState('');
+            const [epmRootGoalOpen, setEpmRootGoalOpen] = useState(false);
+            const [epmSubGoalOpen, setEpmSubGoalOpen] = useState(false);
+            const [epmRootGoalIndex, setEpmRootGoalIndex] = useState(0);
+            const [epmSubGoalIndex, setEpmSubGoalIndex] = useState(0);
             const [epmIssues, setEpmIssues] = useState([]);
             const [epmIssuesLoading, setEpmIssuesLoading] = useState(false);
             const [epmIssueEpics, setEpmIssueEpics] = useState({});
@@ -525,7 +539,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const sprintLoadRef = useRef({ sprintId: null, product: false, tech: false });
             const readyToCloseLoadRef = useRef('');
             const epmProjectsPendingSelectionRef = useRef(false);
+            const epmProjectsRequestIdRef = useRef(0);
             const epmIssuesRequestIdRef = useRef(0);
+            const epmSubGoalsRequestIdRef = useRef(0);
             const pendingConfigRefreshRef = useRef(0);
             const configRefreshTargetRef = useRef('none');
             const scenarioRefreshNonceRef = useRef(0);
@@ -553,6 +569,22 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 return response.json();
             };
+            const loadEpmScopeMeta = async () => {
+                const response = await fetch(`${BACKEND_URL}/api/epm/scope`, { cache: 'no-cache' });
+                if (!response.ok) {
+                    throw new Error(`EPM scope error ${response.status}`);
+                }
+                return response.json();
+            };
+            const loadEpmGoals = async (rootGoalKey = '') => {
+                const response = rootGoalKey
+                    ? await fetch(`${BACKEND_URL}/api/epm/goals?rootGoalKey=${encodeURIComponent(rootGoalKey)}`, { cache: 'no-cache' })
+                    : await fetch(`${BACKEND_URL}/api/epm/goals`, { cache: 'no-cache' });
+                if (!response.ok) {
+                    throw new Error(`EPM goals error ${response.status}`);
+                }
+                return response.json();
+            };
             const loadEpmProjects = async () => {
                 const response = await fetch(`${BACKEND_URL}/api/epm/projects`, { cache: 'no-cache' });
                 if (!response.ok) {
@@ -561,20 +593,32 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return response.json();
             };
             const refreshEpmProjects = async () => {
+                epmProjectsRequestIdRef.current += 1;
+                const requestId = epmProjectsRequestIdRef.current;
                 epmProjectsPendingSelectionRef.current = true;
                 setEpmProjectsLoading(true);
+                setEpmProjectsError('');
                 try {
                     const payload = await loadEpmProjects();
+                    if (epmProjectsRequestIdRef.current !== requestId) {
+                        return [];
+                    }
                     const nextProjects = Array.isArray(payload.projects) ? payload.projects : [];
                     setEpmProjects(nextProjects);
                     return nextProjects;
                 } catch (err) {
+                    if (epmProjectsRequestIdRef.current !== requestId) {
+                        return [];
+                    }
                     console.error('Failed to fetch EPM projects:', err);
                     setEpmProjects([]);
+                    setEpmProjectsError(err?.message || 'Failed to load EPM projects.');
                     return [];
                 } finally {
-                    epmProjectsPendingSelectionRef.current = false;
-                    setEpmProjectsLoading(false);
+                    if (epmProjectsRequestIdRef.current === requestId) {
+                        epmProjectsPendingSelectionRef.current = false;
+                        setEpmProjectsLoading(false);
+                    }
                 }
             };
             const saveEpmConfig = async () => {
@@ -598,6 +642,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         await refreshEpmProjects();
                     } else {
                         setEpmProjects([]);
+                        setEpmProjectsError('');
                     }
                 } catch (err) {
                     const message = err?.message || 'Failed to save EPM settings.';
@@ -686,6 +731,100 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         [field]: value,
                     },
                 }));
+            };
+            const clearEpmSubGoalOptions = () => {
+                epmSubGoalsRequestIdRef.current += 1;
+                setEpmSubGoals([]);
+                setEpmSubGoalsLoading(false);
+                setEpmSubGoalsError('');
+                setEpmSubGoalOpen(false);
+                setEpmSubGoalIndex(0);
+            };
+            const loadEpmSubGoalsForRoot = async (rootGoalKey, expectedSubGoalKey = '') => {
+                const normalizedRootGoalKey = String(rootGoalKey || '').trim().toUpperCase();
+                const normalizedExpectedSubGoalKey = String(expectedSubGoalKey || '').trim().toUpperCase();
+                epmSubGoalsRequestIdRef.current += 1;
+                const requestId = epmSubGoalsRequestIdRef.current;
+                if (!normalizedRootGoalKey) {
+                    setEpmSubGoals([]);
+                    setEpmSubGoalsLoading(false);
+                    setEpmSubGoalsError('');
+                    return { goals: [], hasExpectedSubGoal: !normalizedExpectedSubGoalKey, lookupFailed: false };
+                }
+                setEpmSubGoalsLoading(true);
+                setEpmSubGoalsError('');
+                try {
+                    const payload = await loadEpmGoals(normalizedRootGoalKey);
+                    if (epmSubGoalsRequestIdRef.current !== requestId) {
+                        return { goals: [], hasExpectedSubGoal: false, lookupFailed: true };
+                    }
+                    const nextGoals = Array.isArray(payload.goals) ? payload.goals : [];
+                    const lookupError = String(payload?.error || '').trim();
+                    const lookupFailed = Boolean(lookupError);
+                    const hasExpectedSubGoal = lookupFailed
+                        || !normalizedExpectedSubGoalKey
+                        || nextGoals.some((goal) => String(goal?.key || '').trim().toUpperCase() === normalizedExpectedSubGoalKey);
+                    setEpmSubGoals(nextGoals);
+                    setEpmSubGoalsError(lookupError);
+                    if (normalizedExpectedSubGoalKey && !lookupFailed && !hasExpectedSubGoal) {
+                        setEpmConfigDraft((prev) => {
+                            const prevRootGoalKey = String(prev?.scope?.rootGoalKey || '').trim().toUpperCase();
+                            const prevSubGoalKey = String(prev?.scope?.subGoalKey || '').trim().toUpperCase();
+                            if (prevRootGoalKey !== normalizedRootGoalKey || prevSubGoalKey !== normalizedExpectedSubGoalKey) {
+                                return prev;
+                            }
+                            return {
+                                ...prev,
+                                scope: {
+                                    ...(prev.scope || {}),
+                                    subGoalKey: '',
+                                },
+                            };
+                        });
+                    }
+                    return { goals: nextGoals, hasExpectedSubGoal, lookupFailed };
+                } catch (err) {
+                    if (epmSubGoalsRequestIdRef.current !== requestId) {
+                        return { goals: [], hasExpectedSubGoal: false, lookupFailed: true };
+                    }
+                    console.error('Failed to fetch EPM sub-goals:', err);
+                    setEpmSubGoals([]);
+                    setEpmSubGoalsError(err?.message || '');
+                    return { goals: [], hasExpectedSubGoal: true, lookupFailed: true };
+                } finally {
+                    if (epmSubGoalsRequestIdRef.current === requestId) {
+                        setEpmSubGoalsLoading(false);
+                    }
+                }
+            };
+            const selectEpmRootGoal = async (goal) => {
+                const rootGoalKey = String(goal?.key || '').trim().toUpperCase();
+                updateEpmScopeDraft('rootGoalKey', rootGoalKey);
+                updateEpmScopeDraft('subGoalKey', '');
+                setEpmRootGoalQuery('');
+                setEpmSubGoalQuery('');
+                setEpmRootGoalOpen(false);
+                setEpmRootGoalIndex(0);
+                clearEpmSubGoalOptions();
+                if (!rootGoalKey) {
+                    return;
+                }
+                await loadEpmSubGoalsForRoot(rootGoalKey);
+            };
+            const clearEpmRootGoal = () => {
+                updateEpmScopeDraft('rootGoalKey', '');
+                updateEpmScopeDraft('subGoalKey', '');
+                setEpmRootGoalQuery('');
+                setEpmSubGoalQuery('');
+                setEpmRootGoalOpen(false);
+                setEpmRootGoalIndex(0);
+                clearEpmSubGoalOptions();
+            };
+            const selectEpmSubGoal = (goal) => {
+                updateEpmScopeDraft('subGoalKey', String(goal?.key || '').trim().toUpperCase());
+                setEpmSubGoalQuery('');
+                setEpmSubGoalOpen(false);
+                setEpmSubGoalIndex(0);
             };
             const refreshEpmIssues = async (projectOverride = selectedEpmProject, projectIdOverride = epmSelectedProjectId) => {
                 epmIssuesRequestIdRef.current += 1;
@@ -933,27 +1072,109 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 if (!showGroupManage || groupManageTab !== 'epm') return;
                 let cancelled = false;
                 const loadEpmSettings = async () => {
+                    const emptyEpmConfig = { version: 1, scope: { rootGoalKey: '', subGoalKey: '' }, projects: {} };
                     setEpmConfigLoading(true);
+                    epmProjectsRequestIdRef.current += 1;
+                    epmProjectsPendingSelectionRef.current = false;
+                    setEpmProjects([]);
+                    setEpmProjectsLoading(false);
+                    setEpmProjectsError('');
+                    setEpmScopeMeta({ cloudId: '', error: '' });
+                    setEpmRootGoals([]);
+                    setEpmRootGoalsLoading(false);
+                    setEpmRootGoalsError('');
+                    clearEpmSubGoalOptions();
                     let shouldLoadProjects = false;
+                    let rootGoalKey = '';
+                    let loadedConfig = null;
                     try {
                         const config = await loadEpmConfig();
                         if (!cancelled) {
                             const nextConfig = normalizeEpmConfigDraft(config);
+                            loadedConfig = nextConfig;
                             setEpmConfigDraft(nextConfig);
                             epmConfigBaselineRef.current = JSON.stringify(nextConfig);
+                            rootGoalKey = String(nextConfig.scope?.rootGoalKey || '').trim().toUpperCase();
+                            setEpmRootGoalQuery('');
+                            setEpmSubGoalQuery('');
+                            setEpmRootGoalOpen(false);
+                            setEpmSubGoalOpen(false);
+                            setEpmRootGoalIndex(0);
+                            setEpmSubGoalIndex(0);
+                            clearEpmSubGoalOptions();
                             shouldLoadProjects = hasSavedEpmScopeConfig(nextConfig);
                         }
                     } catch (err) {
                         console.error('Failed to load EPM config:', err);
+                        if (!cancelled) {
+                            setEpmConfigDraft(emptyEpmConfig);
+                            epmConfigBaselineRef.current = JSON.stringify(emptyEpmConfig);
+                            setGroupDraftError('Failed to load EPM settings.');
+                            setEpmConfigLoading(false);
+                        }
+                        return;
+                    } finally {
+                        if (cancelled) {
+                            setEpmConfigLoading(false);
+                        }
+                    }
+                    if (cancelled) return;
+                    try {
+                        const scopeMeta = await loadEpmScopeMeta();
+                        if (!cancelled) {
+                            setEpmScopeMeta({
+                                cloudId: String(scopeMeta?.cloudId || '').trim(),
+                                error: String(scopeMeta?.error || '').trim(),
+                            });
+                        }
+                    } catch (err) {
+                        console.error('Failed to load EPM scope metadata:', err);
+                        if (!cancelled) {
+                            setEpmScopeMeta({ cloudId: '', error: err?.message || '' });
+                        }
+                    }
+                    if (cancelled) return;
+                    setEpmRootGoalsLoading(true);
+                    try {
+                        const rootGoalsPayload = await loadEpmGoals();
+                        if (!cancelled) {
+                            setEpmRootGoals(Array.isArray(rootGoalsPayload?.goals) ? rootGoalsPayload.goals : []);
+                            setEpmRootGoalsError(String(rootGoalsPayload?.error || '').trim());
+                        }
+                    } catch (err) {
+                        console.error('Failed to load EPM root goals:', err);
+                        if (!cancelled) {
+                            setEpmRootGoals([]);
+                            setEpmRootGoalsError(err?.message || '');
+                        }
                     } finally {
                         if (!cancelled) {
-                            setEpmConfigLoading(false);
+                            setEpmRootGoalsLoading(false);
+                        }
+                    }
+                    if (!cancelled && rootGoalKey) {
+                        const savedSubGoalKey = String(loadedConfig?.scope?.subGoalKey || '').trim().toUpperCase();
+                        const childGoalState = await loadEpmSubGoalsForRoot(rootGoalKey, savedSubGoalKey);
+                        if (!cancelled && savedSubGoalKey && !childGoalState.lookupFailed && !childGoalState.hasExpectedSubGoal && loadedConfig) {
+                            const reconciledConfig = normalizeEpmConfigDraft({
+                                ...loadedConfig,
+                                scope: {
+                                    ...(loadedConfig.scope || {}),
+                                    subGoalKey: '',
+                                },
+                            });
+                            setEpmConfigDraft(reconciledConfig);
+                            loadedConfig = reconciledConfig;
+                            shouldLoadProjects = false;
                         }
                     }
                     if (!cancelled && shouldLoadProjects) {
                         await refreshEpmProjects();
                     } else if (!cancelled) {
                         setEpmProjects([]);
+                    }
+                    if (!cancelled) {
+                        setEpmConfigLoading(false);
                     }
                 };
                 loadEpmSettings();
@@ -1122,14 +1343,108 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return {
                     version: 1,
                     scope: {
-                        cloudId: String(config?.scope?.cloudId || '').trim(),
+                        rootGoalKey: String(config?.scope?.rootGoalKey || '').trim().toUpperCase(),
                         subGoalKey: String(config?.scope?.subGoalKey || '').trim().toUpperCase(),
                     },
                     projects: config?.projects && typeof config.projects === 'object' ? config.projects : {},
                 };
             };
             const hasSavedEpmScopeConfig = (config) => {
-                return Boolean(config?.scope?.cloudId && config?.scope?.subGoalKey);
+                return Boolean(config?.scope?.rootGoalKey && config?.scope?.subGoalKey);
+            };
+            const filteredEpmRootGoals = React.useMemo(() => {
+                const query = String(epmRootGoalQuery || '').trim().toLowerCase();
+                if (!query) return epmRootGoals;
+                return epmRootGoals.filter((goal) => {
+                    const name = String(goal?.name || '').toLowerCase();
+                    const key = String(goal?.key || '').toLowerCase();
+                    return name.includes(query) || key.includes(query);
+                });
+            }, [epmRootGoals, epmRootGoalQuery]);
+            const filteredEpmSubGoals = React.useMemo(() => {
+                const query = String(epmSubGoalQuery || '').trim().toLowerCase();
+                if (!query) return epmSubGoals;
+                return epmSubGoals.filter((goal) => {
+                    const name = String(goal?.name || '').toLowerCase();
+                    const key = String(goal?.key || '').toLowerCase();
+                    return name.includes(query) || key.includes(query);
+                });
+            }, [epmSubGoals, epmSubGoalQuery]);
+            const selectedEpmRootGoal = React.useMemo(() => {
+                const key = String(epmConfigDraft.scope?.rootGoalKey || '').trim().toUpperCase();
+                if (!key) return null;
+                return epmRootGoals.find((goal) => String(goal?.key || '').trim().toUpperCase() === key) || { key, name: key };
+            }, [epmConfigDraft.scope?.rootGoalKey, epmRootGoals]);
+            const selectedEpmSubGoal = React.useMemo(() => {
+                const key = String(epmConfigDraft.scope?.subGoalKey || '').trim().toUpperCase();
+                if (!key) return null;
+                return epmSubGoals.find((goal) => String(goal?.key || '').trim().toUpperCase() === key) || null;
+            }, [epmConfigDraft.scope?.subGoalKey, epmSubGoals]);
+            const visibleEpmRootGoals = filteredEpmRootGoals.slice(0, 10);
+            const visibleEpmSubGoals = filteredEpmSubGoals.slice(0, 10);
+            const activeEpmRootGoalIndex = Math.min(epmRootGoalIndex, Math.max(visibleEpmRootGoals.length - 1, 0));
+            const activeEpmSubGoalIndex = Math.min(epmSubGoalIndex, Math.max(visibleEpmSubGoals.length - 1, 0));
+            const showEpmRootGoalResults = epmRootGoalOpen && (epmRootGoalsLoading || Boolean(epmRootGoalsError) || Boolean(epmRootGoalQuery.trim()) || visibleEpmRootGoals.length > 0 || (!epmRootGoalsLoading && !epmRootGoalsError && epmRootGoals.length === 0));
+            const showEpmSubGoalResults = epmSubGoalOpen && Boolean(epmConfigDraft.scope?.rootGoalKey) && (epmSubGoalsLoading || Boolean(epmSubGoalsError) || Boolean(epmSubGoalQuery.trim()) || visibleEpmSubGoals.length > 0 || (!epmSubGoalsLoading && !epmSubGoalsError && epmSubGoals.length === 0));
+            const handleEpmRootGoalSearchKeyDown = (event) => {
+                if (event.key === 'ArrowDown') {
+                    if (!visibleEpmRootGoals.length) return;
+                    event.preventDefault();
+                    setEpmRootGoalOpen(true);
+                    setEpmRootGoalIndex((prev) => Math.min(prev + 1, visibleEpmRootGoals.length - 1));
+                    return;
+                }
+                if (event.key === 'ArrowUp') {
+                    if (!visibleEpmRootGoals.length) return;
+                    event.preventDefault();
+                    setEpmRootGoalOpen(true);
+                    setEpmRootGoalIndex((prev) => Math.max(prev - 1, 0));
+                    return;
+                }
+                if (event.key === 'Enter') {
+                    if (!visibleEpmRootGoals.length) return;
+                    event.preventDefault();
+                    const goal = visibleEpmRootGoals[activeEpmRootGoalIndex] || visibleEpmRootGoals[0];
+                    if (goal) {
+                        void selectEpmRootGoal(goal);
+                    }
+                    return;
+                }
+                if (event.key === 'Escape' && epmRootGoalOpen) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setEpmRootGoalOpen(false);
+                }
+            };
+            const handleEpmSubGoalSearchKeyDown = (event) => {
+                if (event.key === 'ArrowDown') {
+                    if (!visibleEpmSubGoals.length) return;
+                    event.preventDefault();
+                    setEpmSubGoalOpen(true);
+                    setEpmSubGoalIndex((prev) => Math.min(prev + 1, visibleEpmSubGoals.length - 1));
+                    return;
+                }
+                if (event.key === 'ArrowUp') {
+                    if (!visibleEpmSubGoals.length) return;
+                    event.preventDefault();
+                    setEpmSubGoalOpen(true);
+                    setEpmSubGoalIndex((prev) => Math.max(prev - 1, 0));
+                    return;
+                }
+                if (event.key === 'Enter') {
+                    if (!visibleEpmSubGoals.length) return;
+                    event.preventDefault();
+                    const goal = visibleEpmSubGoals[activeEpmSubGoalIndex] || visibleEpmSubGoals[0];
+                    if (goal) {
+                        selectEpmSubGoal(goal);
+                    }
+                    return;
+                }
+                if (event.key === 'Escape' && epmSubGoalOpen) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setEpmSubGoalOpen(false);
+                }
             };
 
             const resolveInitialGroupId = (config) => {
@@ -1429,6 +1744,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     return false;
                 }
             }, [epmConfigDraft]);
+            const hasDraftEpmScope = React.useMemo(() => {
+                return hasSavedEpmScopeConfig(epmConfigDraft);
+            }, [epmConfigDraft]);
 
             const isGroupDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
@@ -1526,6 +1844,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const discardGroupDraftChanges = () => {
                 setShowGroupDiscardConfirm(false);
                 closeGroupManage();
+            };
+            const openEpmSettingsTab = () => {
+                epmProjectsRequestIdRef.current += 1;
+                epmProjectsPendingSelectionRef.current = false;
+                setEpmProjects([]);
+                setEpmProjectsError('');
+                setShowGroupManage(true);
+                setGroupManageTab('epm');
             };
 
             const closeAllTeamSearchDropdowns = () => {
@@ -14287,10 +14613,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             <div className="group-field-helper">Add a Jira label or Jira epic in Settings {'->'} EPM to pull Jira work into this view.</div>
                                             <button
                                                 className="secondary compact"
-                                                onClick={() => {
-                                                    setShowGroupManage(true);
-                                                    setGroupManageTab('epm');
-                                                }}
+                                                onClick={openEpmSettingsTab}
                                                 type="button"
                                             >
                                                 Open Settings
@@ -14497,7 +14820,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     >Priority weights</button>
                                     <button
                                         className={`group-modal-tab ${groupManageTab === 'epm' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('epm')}
+                                        onClick={openEpmSettingsTab}
                                         type="button"
                                     >EPM</button>
                                 </div>
@@ -15138,32 +15461,146 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         </div>
                                         <div className="group-config-card" style={{ marginBottom: '0.9rem' }}>
                                             <div className="group-projects-subsection">
-                                                <div className="team-selector-label">Atlassian cloud ID</div>
-                                                <div className="group-field-helper">The catalog is loaded from that Jira Home sub-goal.</div>
-                                                <input
-                                                    type="text"
-                                                    value={epmConfigDraft.scope?.cloudId || ''}
-                                                    onChange={(event) => updateEpmScopeDraft('cloudId', event.target.value)}
-                                                    placeholder="Atlassian cloud ID"
-                                                />
+                                                <div className="team-selector-label">Atlassian site</div>
+                                                <div className="group-field-helper">
+                                                    {epmScopeMeta.cloudId
+                                                        ? `Detected from Jira tenant_info: ${epmScopeMeta.cloudId}`
+                                                        : (epmScopeMeta.error || 'The Jira Home site will be detected automatically from your Atlassian credentials.')}
+                                                </div>
                                             </div>
                                             <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
-                                                <div className="team-selector-label">Sub-goal key</div>
-                                                <div className="group-field-helper">Use the Jira Home sub-goal that owns the EPM project catalog.</div>
-                                                <input
-                                                    type="text"
-                                                    value={epmConfigDraft.scope?.subGoalKey || ''}
-                                                    onChange={(event) => updateEpmScopeDraft('subGoalKey', event.target.value)}
-                                                    placeholder="Sub-goal key"
-                                                />
+                                                <div className="team-selector-label">Root goal</div>
+                                                <div className="group-field-helper">Choose the Jira Home parent goal that owns the EPM project catalog.</div>
+                                                {selectedEpmRootGoal && (
+                                                    <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
+                                                        <span className="team-name">
+                                                            {selectedEpmRootGoal.name || selectedEpmRootGoal.key}
+                                                            {selectedEpmRootGoal.key ? ` (${selectedEpmRootGoal.key})` : ''}
+                                                        </span>
+                                                        <button
+                                                            className="remove-btn"
+                                                            onClick={clearEpmRootGoal}
+                                                            type="button"
+                                                            title="Clear root goal"
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
+                                                    <input
+                                                        type="text"
+                                                        className="team-search-input"
+                                                        value={epmRootGoalQuery}
+                                                        onChange={(event) => {
+                                                            setEpmRootGoalQuery(event.target.value);
+                                                            setEpmRootGoalOpen(true);
+                                                            setEpmRootGoalIndex(0);
+                                                        }}
+                                                        onFocus={() => setEpmRootGoalOpen(true)}
+                                                        onBlur={() => { window.setTimeout(() => setEpmRootGoalOpen(false), 120); }}
+                                                        onKeyDown={handleEpmRootGoalSearchKeyDown}
+                                                        placeholder={epmRootGoalsLoading ? 'Loading root goals...' : 'Search root goals...'}
+                                                    />
+                                                    {showEpmRootGoalResults && (
+                                                        <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
+                                                            {epmRootGoalsLoading ? (
+                                                                <div className="team-search-result-item is-empty">Loading root goals...</div>
+                                                            ) : epmRootGoalsError ? (
+                                                                <div className="team-search-result-item is-empty">{epmRootGoalsError}</div>
+                                                            ) : !filteredEpmRootGoals.length ? (
+                                                                <div className="team-search-result-item is-empty">No root goals found</div>
+                                                            ) : (
+                                                                visibleEpmRootGoals.map((goal, index) => (
+                                                                    <div
+                                                                        key={goal.id || goal.key}
+                                                                        className={`team-search-result-item ${activeEpmRootGoalIndex === index ? 'active' : ''}`}
+                                                                        onClick={() => { void selectEpmRootGoal(goal); }}
+                                                                    >
+                                                                        <strong>{goal.name || goal.key}</strong>
+                                                                        {goal.key ? ` (${goal.key})` : ''}
+                                                                    </div>
+                                                                ))
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
+                                                <div className="team-selector-label">Sub-goal</div>
+                                                <div className="group-field-helper">
+                                                    {!epmConfigDraft.scope?.rootGoalKey
+                                                        ? 'Select a root goal before choosing a sub-goal.'
+                                                        : 'Choose the Jira Home child goal that owns the direct EPM projects.'}
+                                                </div>
+                                                {selectedEpmSubGoal && (
+                                                    <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
+                                                        <span className="team-name">
+                                                            {selectedEpmSubGoal.name || selectedEpmSubGoal.key}
+                                                            {selectedEpmSubGoal.key ? ` (${selectedEpmSubGoal.key})` : ''}
+                                                        </span>
+                                                        <button
+                                                            className="remove-btn"
+                                                            onClick={() => updateEpmScopeDraft('subGoalKey', '')}
+                                                            type="button"
+                                                            title="Clear sub-goal"
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
+                                                    <input
+                                                        type="text"
+                                                        className="team-search-input"
+                                                        value={epmSubGoalQuery}
+                                                        onChange={(event) => {
+                                                            setEpmSubGoalQuery(event.target.value);
+                                                            setEpmSubGoalOpen(true);
+                                                            setEpmSubGoalIndex(0);
+                                                        }}
+                                                        onFocus={() => {
+                                                            if (!epmConfigDraft.scope?.rootGoalKey) return;
+                                                            setEpmSubGoalOpen(true);
+                                                        }}
+                                                        onBlur={() => { window.setTimeout(() => setEpmSubGoalOpen(false), 120); }}
+                                                        onKeyDown={handleEpmSubGoalSearchKeyDown}
+                                                        placeholder={epmSubGoalsLoading ? 'Loading sub-goals...' : 'Search sub-goals...'}
+                                                        disabled={!epmConfigDraft.scope?.rootGoalKey}
+                                                    />
+                                                    {showEpmSubGoalResults && (
+                                                        <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
+                                                            {epmSubGoalsLoading ? (
+                                                                <div className="team-search-result-item is-empty">Loading sub-goals...</div>
+                                                            ) : epmSubGoalsError ? (
+                                                                <div className="team-search-result-item is-empty">{epmSubGoalsError}</div>
+                                                            ) : !filteredEpmSubGoals.length ? (
+                                                                <div className="team-search-result-item is-empty">No sub-goals found</div>
+                                                            ) : (
+                                                                visibleEpmSubGoals.map((goal, index) => (
+                                                                    <div
+                                                                        key={goal.id || goal.key}
+                                                                        className={`team-search-result-item ${activeEpmSubGoalIndex === index ? 'active' : ''}`}
+                                                                        onClick={() => selectEpmSubGoal(goal)}
+                                                                    >
+                                                                        <strong>{goal.name || goal.key}</strong>
+                                                                        {goal.key ? ` (${goal.key})` : ''}
+                                                                    </div>
+                                                                ))
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                         {epmConfigLoading || epmProjectsLoading ? (
                                             <div className="group-pane-empty">Loading EPM settings...</div>
-                                        ) : !hasSavedEpmScope ? (
-                                            <div className="group-pane-empty">Save an Atlassian cloud ID and Jira Home sub-goal key to load EPM projects.</div>
+                                        ) : !hasDraftEpmScope ? (
+                                            <div className="group-pane-empty">Save a root goal and sub-goal to load EPM projects.</div>
+                                        ) : epmProjectsError ? (
+                                            <div className="group-pane-empty">{epmProjectsError}</div>
                                         ) : epmProjects.length === 0 ? (
-                                            <div className="group-pane-empty">No EPM projects found.</div>
+                                            <div className="group-pane-empty">This sub-goal has no direct Jira Home projects. Choose a different child goal.</div>
                                         ) : (
                                             <div className="group-pane-list">
                                                 {epmProjects.map((project) => {

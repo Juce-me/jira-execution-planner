@@ -22,7 +22,7 @@ import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
-import { filterEpmProjectsForTab, getEpmSprintHelper, shouldUseEpmSprint } from './epm/epmProjectUtils.mjs';
+import { filterEpmProjectsForTab, getEpmProjectDisplayName, getEpmSprintHelper, shouldUseEpmSprint } from './epm/epmProjectUtils.mjs';
 import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
 import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
@@ -10096,7 +10096,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             <option value="">Select project...</option>
                             {visibleEpmProjects.map((project) => (
                                 <option key={project.homeProjectId} value={project.homeProjectId}>
-                                    {project.name || project.homeProjectId}
+                                    {getEpmProjectDisplayName(project)}
                                 </option>
                             ))}
                         </select>
@@ -14245,6 +14245,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     <div className="filters-strip">
                                         <div className="filters-group">
                                             <div className="filters-label">Project</div>
+                                            {selectedEpmProject && selectedEpmProject.matchState !== 'metadata-only' && (
+                                                <div className="group-pane-title">{getEpmProjectDisplayName(selectedEpmProject)}</div>
+                                            )}
                                             <div className="group-field-helper">
                                                 {selectedEpmProject
                                                     ? (selectedEpmProjectUpdateLine || selectedEpmProject.stateLabel || selectedEpmProject.stateValue || 'No updates yet')
@@ -14276,7 +14279,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
                                     {selectedEpmProject?.matchState === 'metadata-only' && (
                                         <div className="group-config-card epm-home-card">
-                                            <div className="group-pane-title">{selectedEpmProject.name}</div>
+                                            <div className="group-pane-title">{getEpmProjectDisplayName(selectedEpmProject)}</div>
                                             <div className="group-pane-subtitle">
                                                 {selectedEpmProjectUpdateLine || 'No updates yet'}
                                             </div>

@@ -10,8 +10,11 @@ const helperSource = fs.readFileSync(helperPath, 'utf8');
 
 test('dashboard source includes the EPM shell project picker and ENG gating hooks', () => {
     assert.ok(helperSource.includes('filterEpmProjectsForTab'), 'Expected filterEpmProjectsForTab in epmProjectUtils.mjs');
+    assert.ok(helperSource.includes('getEpmProjectDisplayName'), 'Expected getEpmProjectDisplayName in epmProjectUtils.mjs');
     assert.ok(helperSource.includes("String(tab || 'active')"), 'Expected active tab defaulting in epmProjectUtils.mjs');
     assert.ok(dashboardSource.includes('const selectedEpmProject = visibleEpmProjects.find((project) => project.homeProjectId === epmSelectedProjectId) || null;'), 'Expected selectedEpmProject derivation in dashboard.jsx');
+    assert.ok((dashboardSource.match(/getEpmProjectDisplayName\(selectedEpmProject\)/g) || []).length >= 2, 'Expected selected project display name helper in dashboard.jsx');
+    assert.ok(dashboardSource.includes('getEpmProjectDisplayName(project)'), 'Expected project picker display name helper in dashboard.jsx');
     assert.ok(dashboardSource.includes("setEpmSelectedProjectId('')"), 'Expected invalid EPM selection clearing in dashboard.jsx');
     assert.ok(dashboardSource.includes('epmSelectedProjectId'), 'Expected epmSelectedProjectId in dashboard.jsx');
     assert.ok(dashboardSource.includes('setEpmSelectedProjectId'), 'Expected setEpmSelectedProjectId in dashboard.jsx');

@@ -164,7 +164,7 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 - Lint: `TODO`
 - Typecheck: `TODO`
 - Run locally: `TODO`
-- EPM env: set `ATLASSIAN_CLOUD_ID` and `ROOT_GOAL_KEY`; `ATLASSIAN_EMAIL` / `ATLASSIAN_API_TOKEN` can reuse `JIRA_EMAIL` / `JIRA_TOKEN` when left blank
+- EPM scope: configure Jira Home `cloudId` and `subGoalKey` in `Settings -> EPM`; `ATLASSIAN_EMAIL` / `ATLASSIAN_API_TOKEN` can reuse `JIRA_EMAIL` / `JIRA_TOKEN` when left blank
 
 Prefer single-file or single-test runs during iteration. Full suites are for the final verification pass.
 

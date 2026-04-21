@@ -12,3 +12,13 @@ export function filterEpmProjectsForTab(projects, tab) {
         ? projects.filter((project) => String(project?.tabBucket || '').trim().toLowerCase() === normalizedTab)
         : [];
 }
+
+export function getEpmProjectDisplayName(project) {
+    return String(
+        project?.displayName ||
+        project?.customName ||
+        project?.name ||
+        project?.homeProjectId ||
+        ''
+    ).trim();
+}

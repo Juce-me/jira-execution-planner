@@ -278,7 +278,11 @@ def _container_id_from_cloud(cloud_id: str) -> str:
     return f"ati:cloud:townsquare::site/{cloud_id}"
 
 
-def resolve_root_goal(client: HomeGraphQLClient, root_goal_key: str, container_id: str) -> dict | None:
+def _normalize_goal_key(goal_key: str) -> str:
+    return str(goal_key or "").strip().upper()
+
+
+def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: str) -> dict | None:
     try:
         goals = client.execute_paginated(
             QUERY_GOALS_SEARCH,
@@ -286,12 +290,13 @@ def resolve_root_goal(client: HomeGraphQLClient, root_goal_key: str, container_i
             "goals_search",
         )
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
-        logger.warning("Root goal search failed: %s", exc)
+        logger.warning("Goal search failed: %s", exc)
         return None
+    expected_key = _normalize_goal_key(goal_key)
     for goal in goals:
-        if goal.get("key") == root_goal_key:
+        if _normalize_goal_key(goal.get("key")) == expected_key:
             return goal
-    logger.warning("Root goal %s not found among %d goals", root_goal_key, len(goals))
+    logger.warning("Goal %s not found among %d goals", goal_key, len(goals))
     return None
 
 
@@ -375,11 +380,14 @@ def merge_epm_linkage(home_project, epm_config_row):
     return {"labels": labels, "epicKeys": epic_keys}, match_state
 
 
-def fetch_epm_home_projects():
-    cloud_id = os.environ.get("ATLASSIAN_CLOUD_ID", "").strip()
-    root_goal_key = os.environ.get("ROOT_GOAL_KEY", "").strip()
-    if not cloud_id or not root_goal_key:
-        logger.warning("EPM home fetch skipped: ATLASSIAN_CLOUD_ID and ROOT_GOAL_KEY are required")
+def fetch_epm_home_projects(epm_scope):
+    scope = epm_scope if isinstance(epm_scope, dict) else {}
+    raw_cloud_id = scope.get("cloudId")
+    raw_sub_goal_key = scope.get("subGoalKey")
+    cloud_id = raw_cloud_id.strip() if isinstance(raw_cloud_id, str) else ""
+    sub_goal_key = raw_sub_goal_key.strip().upper() if isinstance(raw_sub_goal_key, str) else ""
+    if not cloud_id or not sub_goal_key:
+        logger.warning("EPM home fetch skipped: cloudId and subGoalKey are required")
         return []
 
     try:
@@ -389,19 +397,18 @@ def fetch_epm_home_projects():
         return []
 
     container_id = _container_id_from_cloud(cloud_id)
-    root_goal = resolve_root_goal(client, root_goal_key, container_id)
-    if not root_goal:
+    sub_goal = resolve_goal_by_key(client, sub_goal_key, container_id)
+    if not sub_goal:
         return []
 
     seen_project_ids: set[str] = set()
     result: list[dict] = []
-    for sub_goal in fetch_sub_goals(client, root_goal["id"]):
-        for raw_project in fetch_projects_for_goal(client, sub_goal["id"]):
-            project_id = raw_project.get("id")
-            if not project_id or project_id in seen_project_ids:
-                continue
-            seen_project_ids.add(project_id)
-            linkage = extract_home_jira_linkage(raw_project)
-            updates = fetch_latest_project_update(client, project_id)
-            result.append(build_home_project_record(raw_project, updates, linkage))
+    for raw_project in fetch_projects_for_goal(client, sub_goal["id"]):
+        project_id = raw_project.get("id")
+        if not project_id or project_id in seen_project_ids:
+            continue
+        seen_project_ids.add(project_id)
+        linkage = extract_home_jira_linkage(raw_project)
+        updates = fetch_latest_project_update(client, project_id)
+        result.append(build_home_project_record(raw_project, updates, linkage))
     return result

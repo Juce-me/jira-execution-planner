@@ -279,7 +279,7 @@ All new tests use synthetic placeholders (`ACME-1`, `rnd_project_example`, `clou
 - `frontend/src/epm/epmProjectUtils.mjs` — label normalization + rollup tree builder
 - `tests/test_epm_config_api.py` — v1→v2 migration, labelPrefix persistence, custom Project rows, label field validation
 - `tests/test_epm_home_api.py` — cloud-id memoization, `first: 1` updates, ThreadPoolExecutor order preservation
-- `tests/test_epm_projects_api.py` — rollup endpoint contract, dedup, metadata-only when label empty
+- `tests/test_epm_projects_api.py` — custom-Project surfacing in `/api/epm/projects` and `/api/epm/projects/preview`, `find_epm_project_or_404` branching by `homeProjectId` (custom UUID vs Home id), `tabBucket: 'all'` payload field. Rollup endpoint contract lives in `tests/test_epm_rollup_api.py` (Create list below)
 - `tests/test_epm_scope_resolution.py` — rollup JQL builder output
 - `tests/test_epm_settings_source_guards.js` — prefix field, autocomplete, show-all toggle, add-custom-Project markers
 - `tests/test_epm_view_source_guards.js` — rollup view hierarchy markers, ENG leak regression guard

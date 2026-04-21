@@ -193,10 +193,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmProjects, setEpmProjects] = useState([]);
             const [epmProjectsLoading, setEpmProjectsLoading] = useState(false);
             const [epmSelectedProjectId, setEpmSelectedProjectId] = useState(savedPrefsRef.current.epmSelectedProjectId ?? '');
-            const [epmConfigDraft, setEpmConfigDraft] = useState({ version: 1, projects: {} });
+            const [epmConfigDraft, setEpmConfigDraft] = useState({ version: 1, scope: { cloudId: '', subGoalKey: '' }, projects: {} });
             const [epmConfigLoading, setEpmConfigLoading] = useState(false);
             const [epmConfigSaving, setEpmConfigSaving] = useState(false);
-            const epmConfigBaselineRef = useRef(JSON.stringify({ version: 1, projects: {} }));
+            const epmConfigBaselineRef = useRef(JSON.stringify({ version: 1, scope: { cloudId: '', subGoalKey: '' }, projects: {} }));
             const [epmIssues, setEpmIssues] = useState([]);
             const [epmIssuesLoading, setEpmIssuesLoading] = useState(false);
             const [epmIssueEpics, setEpmIssueEpics] = useState({});
@@ -581,18 +581,24 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setEpmConfigSaving(true);
                 setGroupDraftError('');
                 try {
+                    const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraft);
                     const response = await fetch(`${BACKEND_URL}/api/epm/config`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(epmConfigDraft)
+                        body: JSON.stringify(normalizedDraft)
                     });
                     if (!response.ok) {
                         throw new Error(`Failed to save EPM config: ${response.status}`);
                     }
                     const payload = await response.json();
-                    setEpmConfigDraft(payload);
-                    epmConfigBaselineRef.current = JSON.stringify(payload);
-                    await refreshEpmProjects();
+                    const nextConfig = normalizeEpmConfigDraft(payload);
+                    setEpmConfigDraft(nextConfig);
+                    epmConfigBaselineRef.current = JSON.stringify(nextConfig);
+                    if (hasSavedEpmScopeConfig(nextConfig)) {
+                        await refreshEpmProjects();
+                    } else {
+                        setEpmProjects([]);
+                    }
                 } catch (err) {
                     const message = err?.message || 'Failed to save EPM settings.';
                     setGroupDraftError(message);
@@ -614,6 +620,15 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         },
                     };
                 });
+            };
+            const updateEpmScopeDraft = (field, value) => {
+                setEpmConfigDraft((prev) => ({
+                    ...prev,
+                    scope: {
+                        ...(prev.scope || {}),
+                        [field]: value,
+                    },
+                }));
             };
             const refreshEpmIssues = async (projectOverride = selectedEpmProject, projectIdOverride = epmSelectedProjectId) => {
                 epmIssuesRequestIdRef.current += 1;
@@ -664,6 +679,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
             };
             const refreshEpmView = async () => {
+                if (!hasSavedEpmScope) {
+                    setEpmProjects([]);
+                    setEpmIssues([]);
+                    setEpmIssueEpics({});
+                    setEpmIssuesLoading(false);
+                    return;
+                }
                 const nextProjects = await refreshEpmProjects();
                 const nextVisibleProjects = filterEpmProjectsForTab(nextProjects, epmTab);
                 const nextSelectedProject = nextVisibleProjects.find((project) => project.homeProjectId === epmSelectedProjectId) || null;
@@ -855,15 +877,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 let cancelled = false;
                 const loadEpmSettings = async () => {
                     setEpmConfigLoading(true);
+                    let shouldLoadProjects = false;
                     try {
                         const config = await loadEpmConfig();
                         if (!cancelled) {
-                            const nextConfig = {
-                                version: config?.version || 1,
-                                projects: config?.projects && typeof config.projects === 'object' ? config.projects : {}
-                            };
+                            const nextConfig = normalizeEpmConfigDraft(config);
                             setEpmConfigDraft(nextConfig);
                             epmConfigBaselineRef.current = JSON.stringify(nextConfig);
+                            shouldLoadProjects = hasSavedEpmScopeConfig(nextConfig);
                         }
                     } catch (err) {
                         console.error('Failed to load EPM config:', err);
@@ -872,8 +893,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             setEpmConfigLoading(false);
                         }
                     }
-                    if (!cancelled) {
+                    if (!cancelled && shouldLoadProjects) {
                         await refreshEpmProjects();
+                    } else if (!cancelled) {
+                        setEpmProjects([]);
                     }
                 };
                 loadEpmSettings();
@@ -1037,6 +1060,19 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     groups,
                     defaultGroupId: String(config?.defaultGroupId || '').trim(),
                 };
+            };
+            const normalizeEpmConfigDraft = (config) => {
+                return {
+                    version: 1,
+                    scope: {
+                        cloudId: String(config?.scope?.cloudId || '').trim(),
+                        subGoalKey: String(config?.scope?.subGoalKey || '').trim().toUpperCase(),
+                    },
+                    projects: config?.projects && typeof config.projects === 'object' ? config.projects : {},
+                };
+            };
+            const hasSavedEpmScopeConfig = (config) => {
+                return Boolean(config?.scope?.cloudId && config?.scope?.subGoalKey);
             };
 
             const resolveInitialGroupId = (config) => {
@@ -1327,6 +1363,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const isEpmConfigDirty = React.useMemo(() => {
                 return JSON.stringify(epmConfigDraft) !== epmConfigBaselineRef.current;
+            }, [epmConfigDraft]);
+            const hasSavedEpmScope = React.useMemo(() => {
+                try {
+                    const savedConfig = JSON.parse(epmConfigBaselineRef.current || '{}');
+                    return hasSavedEpmScopeConfig(savedConfig);
+                } catch (err) {
+                    return false;
+                }
             }, [epmConfigDraft]);
 
             const isGroupDraftDirty = React.useMemo(() => {
@@ -8116,8 +8160,12 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             useEffect(() => {
                 if (selectedView !== 'epm') return;
+                if (!hasSavedEpmScope) {
+                    setEpmProjects([]);
+                    return;
+                }
                 void refreshEpmProjects();
-            }, [selectedView]);
+            }, [selectedView, hasSavedEpmScope]);
 
             useEffect(() => {
                 if (selectedView !== 'epm') return;
@@ -15028,8 +15076,32 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             <div className="group-pane-title">EPM projects</div>
                                             <div className="group-pane-subtitle">Augment Jira Home projects with optional Jira label and Jira epic linkage.</div>
                                         </div>
+                                        <div className="group-config-card" style={{ marginBottom: '0.9rem' }}>
+                                            <div className="group-projects-subsection">
+                                                <div className="team-selector-label">Atlassian cloud ID</div>
+                                                <div className="group-field-helper">The catalog is loaded from that Jira Home sub-goal.</div>
+                                                <input
+                                                    type="text"
+                                                    value={epmConfigDraft.scope?.cloudId || ''}
+                                                    onChange={(event) => updateEpmScopeDraft('cloudId', event.target.value)}
+                                                    placeholder="Atlassian cloud ID"
+                                                />
+                                            </div>
+                                            <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
+                                                <div className="team-selector-label">Sub-goal key</div>
+                                                <div className="group-field-helper">Use the Jira Home sub-goal that owns the EPM project catalog.</div>
+                                                <input
+                                                    type="text"
+                                                    value={epmConfigDraft.scope?.subGoalKey || ''}
+                                                    onChange={(event) => updateEpmScopeDraft('subGoalKey', event.target.value)}
+                                                    placeholder="Sub-goal key"
+                                                />
+                                            </div>
+                                        </div>
                                         {epmConfigLoading || epmProjectsLoading ? (
                                             <div className="group-pane-empty">Loading EPM settings...</div>
+                                        ) : !hasSavedEpmScope ? (
+                                            <div className="group-pane-empty">Save an Atlassian cloud ID and Jira Home sub-goal key to load EPM projects.</div>
                                         ) : epmProjects.length === 0 ? (
                                             <div className="group-pane-empty">No EPM projects found.</div>
                                         ) : (
@@ -15045,6 +15117,12 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                 {project.latestUpdateDate ? `${project.latestUpdateDate} · ` : ''}
                                                                 {project.latestUpdateSnippet || 'No updates yet'}
                                                             </div>
+                                                            <input
+                                                                type="text"
+                                                                value={draft.customName || ''}
+                                                                onChange={(event) => updateEpmProjectDraft(project.homeProjectId, 'customName', event.target.value)}
+                                                                placeholder="Custom name"
+                                                            />
                                                             <input
                                                                 type="text"
                                                                 value={draft.jiraLabel || ''}

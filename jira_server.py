@@ -1433,6 +1433,18 @@ def dedupe_issues_by_key(issues):
     return deduped
 
 
+def build_epm_project_payload(home_project, config_row):
+    linkage, match_state = merge_epm_linkage(home_project, config_row)
+    custom_name = normalize_epm_text((config_row or {}).get('customName'))
+    return {
+        **home_project,
+        'customName': custom_name,
+        'displayName': custom_name or home_project.get('name', ''),
+        'resolvedLinkage': linkage,
+        'matchState': match_state,
+    }
+
+
 def find_epm_project_or_404(home_project_id):
     with _epm_cache_lock:
         for entry in EPM_PROJECTS_CACHE.values():
@@ -1441,10 +1453,10 @@ def find_epm_project_or_404(home_project_id):
                     return project
 
     epm_config = get_epm_config()
-    for home_project in fetch_epm_home_projects():
+    epm_scope = epm_config.get('scope') or {}
+    for home_project in fetch_epm_home_projects(epm_scope):
         config_row = epm_config['projects'].get(home_project['homeProjectId'])
-        linkage, match_state = merge_epm_linkage(home_project, config_row)
-        project = {**home_project, 'resolvedLinkage': linkage, 'matchState': match_state}
+        project = build_epm_project_payload(home_project, config_row)
         if project['homeProjectId'] == home_project_id:
             return project
 
@@ -6368,15 +6380,11 @@ def get_epm_projects_endpoint():
             return jsonify(cached['data'])
 
     projects = []
-    for home_project in fetch_epm_home_projects():
+    epm_scope = epm_config.get('scope') or {}
+    for home_project in fetch_epm_home_projects(epm_scope):
         project_id = home_project.get('homeProjectId')
         config_row = epm_config['projects'].get(project_id) if project_id else None
-        linkage, match_state = merge_epm_linkage(home_project, config_row)
-        projects.append({
-            **home_project,
-            'resolvedLinkage': linkage,
-            'matchState': match_state,
-        })
+        projects.append(build_epm_project_payload(home_project, config_row))
     payload = {'projects': projects}
     with _epm_cache_lock:
         EPM_PROJECTS_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}

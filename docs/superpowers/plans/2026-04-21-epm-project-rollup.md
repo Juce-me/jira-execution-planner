@@ -132,7 +132,7 @@ The legacy `/api/epm/projects/<id>/issues` endpoint enforces: `tab=active` requi
 **Sprint filter — applied post-union, to leaf issuetypes only:**
 
 - After union-and-dedup, if `tab=active` and `sprint=N` is present, drop any issue whose `issuetype.name` is in the leaf set `{'Story', 'Task', 'Sub-task', 'Subtask', 'Bug'}` AND whose sprint-field values do NOT contain sprint id `N`. Initiatives and Epics are never filtered — the tree spine is label-determined, not sprint-determined.
-- For `tab=backlog` and `tab=archived`, no sprint post-filter. Tab-level status filtering (if any) is inherited from `base_jql` + the existing status-bucket semantics from `build_epm_fields_list`.
+- For `tab=backlog` and `tab=archived`, no additional filtering is applied. The existing `/api/epm/projects/<id>/issues` endpoint does NOT apply any status/tab issue-level filter beyond the active-tab sprint requirement (see `jira_server.py:6468-6492`). Do not invent new backlog/archived filters — this plan does not specify or test any, and `build_epm_fields_list` is a field-selection helper, not a filter.
 - The sprint-field name to check is the same one the ENG flow uses. Verify by reading `shape_epm_issue_payload` output fields before implementing; do NOT hardcode a custom field id.
 - Ensure the Jira fields list passed to `fetch_issues_by_jql` includes the sprint field for all three queries (otherwise the post-filter has no data to look at).
 
@@ -182,7 +182,10 @@ After:
 Both project selectors (`/api/epm/projects`, `/api/epm/projects/preview`) and the rollup lookup (`/api/epm/projects/<id>/rollup`) must treat custom Projects as first-class entries alongside Home-derived ones. Concretely:
 
 - `build_epm_projects_payload(epm_config)` at `jira_server.py:1449-1457` must return `Home-derived projects ∪ custom Projects from config.projects[].filter(row.homeProjectId == null)`. Custom Projects render with `matchState: 'jep-fallback'` when `label` is set, `'metadata-only'` otherwise (per N10).
-- `find_epm_project_or_404(project_id)` at `jira_server.py:1460-1475` must resolve both Home `homeProjectId` strings and custom-Project UUIDs. Lookup order: config-by-id first (constant-time, covers custom + Home-linked), then fall back to the Home fetch path only if the id is not in config.
+- `find_epm_project_or_404(project_id)` at `jira_server.py:1460-1475` must resolve both Home `homeProjectId` strings and custom-Project UUIDs. **Branch explicitly on row shape, do not short-circuit Home-linked rows to the bare config entry** — the config stores only `{id, name, label, homeProjectId}` for Home-linked Projects, so serving them straight from config would lose Home-derived fields (`stateValue`, `stateLabel`, `tabBucket`, `latestUpdateDate`, `latestUpdateSnippet`, `homeUrl`). Correct flow:
+  1. Look up `config.projects[project_id]`. If not found, fall through to the existing Home-scan fallback (covers cache drift).
+  2. If the row has `homeProjectId == null` (custom Project) → return `build_custom_project_payload(row)` — no GraphQL call.
+  3. If the row has `homeProjectId` set (Home-linked Project) → resolve the Home metadata via the existing Home fetch path (`fetch_epm_home_projects` + cache hit first), then merge the config's `name`/`label` overrides onto the Home-shaped record via `build_epm_project_payload(home_record, row)`. The Home fetch path is the source of truth for lifecycle fields; config is the source of truth for user-typed `name` and `label`.
 - The rollup endpoint's `<id>` segment accepts either shape. No URL scheme change; the UUID format is opaque to the router.
 - A custom Project's `build_epm_project_payload` synthesizes the Home-shaped fields (`homeProjectId: null`, `homeUrl: ''`, `stateValue: ''`, `stateLabel: ''`, `tabBucket: 'all'`, `latestUpdateDate: ''`, `latestUpdateSnippet: ''`, `name: row.name`, `displayName: row.name`). No GraphQL calls.
 
@@ -193,7 +196,7 @@ Home-derived projects have a lifecycle bucket (`active` / `backlog` / `archived`
 Resolution — custom Projects get `tabBucket: 'all'`, and the filter treats `'all'` as a wildcard:
 
 - Update `filterEpmProjectsForTab` at `frontend/src/epm/epmProjectUtils.mjs:9-14` so it matches when `project.tabBucket === 'all'` OR `project.tabBucket === normalizedTab`. Single-line change.
-- Regression test in `tests/test_epm_view_source_guards.js` (or a new `tests/test_epm_project_utils.test.js` exercising the pure function) that asserts a project with `tabBucket: 'all'` appears on every tab and a project with `tabBucket: 'backlog'` still appears only on Backlog.
+- Regression test lives in a new file `tests/test_epm_project_utils.test.js` — a pure-function Node test (`node:test` + `node --test`) that imports `filterEpmProjectsForTab` directly from `frontend/src/epm/epmProjectUtils.mjs`. Assert: a project with `tabBucket: 'all'` appears on all three tabs (`active`, `backlog`, `archived`); a project with each of the three lifecycle buckets appears only on the matching tab; a project with missing/empty `tabBucket` appears on no tab (regression guard against silent omission). Do NOT duplicate this coverage in `tests/test_epm_view_source_guards.js` — that file stays source-grep style.
 - Do NOT silently omit `tabBucket` on custom Projects — missing/empty string would also hide them (the existing filter uses `|| ''` fallback, which never matches a real tab). The explicit `'all'` sentinel is the contract.
 
 ### N5. Migration.
@@ -288,6 +291,7 @@ All new tests use synthetic placeholders (`ACME-1`, `rnd_project_example`, `clou
 **Create:**
 
 - `tests/test_epm_rollup_api.py` — `/api/epm/projects/<id>/rollup` endpoint (S1/S2/S3 union, dedup, tab/sprint contract, three response states)
+- `tests/test_epm_project_utils.test.js` — pure-function Node test for `filterEpmProjectsForTab` with the `tabBucket: 'all'` wildcard behavior (N4b)
 - `docs/features/epm-rollup.md` — operator-facing doc for the new Project model (optional — can be folded into `epm-view.md` if concise)
 
 **Note on labels tests:** extend the existing Jira labels endpoint test coverage (wherever `/api/jira/labels` is currently tested, or add a small case to `tests/test_epm_config_api.py`) to cover the new `prefix=` param. Do not create a new `test_epm_labels_api.py`.
@@ -380,7 +384,7 @@ Cover: (a) saved config with 2 Home-linked Projects + 2 custom Projects → `GET
 
 - [ ] **Step 2: Implement.**
 
-Extend `build_epm_projects_payload` to append custom-Project rows after the Home loop. Build each via a new helper `build_custom_project_payload(row)` that synthesizes the Home-shaped fields listed in N4a — no GraphQL call. Rewrite `find_epm_project_or_404` to first try a direct config lookup (`config['projects'].get(id)`), then fall back to the Home fetch path only if the id is not in config (covers the rare case where a cache entry still holds a stale Home id).
+Extend `build_epm_projects_payload` to append custom-Project rows (rows where `homeProjectId == null`) after the Home loop. Build each via a new helper `build_custom_project_payload(row)` that synthesizes the Home-shaped fields listed in N4a (including `tabBucket: 'all'` per N4b) — no GraphQL call. Rewrite `find_epm_project_or_404` per the N4a branching rules: (i) config lookup by id; (ii) if custom, synthesize via `build_custom_project_payload`; (iii) if Home-linked, resolve the Home metadata through the existing fetch path and merge config overrides via `build_epm_project_payload`; (iv) if not in config at all, fall through to the existing Home-scan fallback. Add a focused test that the Home-linked branch still surfaces `stateValue`/`stateLabel`/`tabBucket`/`latestUpdateDate` sourced from the Home path, not from config.
 
 - [ ] **Step 3: Run tests, verify success.**
 
@@ -539,7 +543,7 @@ Short operator note: where to set the prefix, how to add a Project, what the hie
 
 ```bash
 .venv/bin/python -m unittest discover -s tests
-node --test tests/test_epm_view_source_guards.js tests/test_epm_settings_source_guards.js tests/test_epm_shell_source_guards.js
+node --test tests/test_epm_view_source_guards.js tests/test_epm_settings_source_guards.js tests/test_epm_shell_source_guards.js tests/test_epm_project_utils.test.js
 ```
 
 - [ ] **Step 2: Measure initial-load timing with EPM mode.**

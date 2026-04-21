@@ -275,7 +275,31 @@ def build_home_graphql_client() -> HomeGraphQLClient:
 
 
 def _container_id_from_cloud(cloud_id: str) -> str:
-    return f"ati:cloud:townsquare::site/{cloud_id}"
+    return f"ari:cloud:townsquare::site/{cloud_id}"
+
+
+def fetch_home_site_cloud_id() -> str:
+    jira_url = ""
+    try:
+        import jira_server  # local import avoids circular import at module load time
+
+        jira_url = str(getattr(jira_server, "JIRA_URL", "") or "").rstrip("/")
+    except Exception:
+        jira_url = ""
+    if not jira_url:
+        jira_url = str(os.environ.get("JIRA_URL") or "").rstrip("/")
+    if not jira_url:
+        raise RuntimeError("JIRA_URL must be set to detect the Atlassian site cloud ID")
+    request = Request(f"{jira_url}/_edge/tenant_info", headers={"Accept": "application/json"}, method="GET")
+    try:
+        with urlopen(request, timeout=HOME_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, ValueError, OSError) as exc:
+        raise RuntimeError("Failed to detect Atlassian site cloud ID") from exc
+    cloud_id = str(payload.get("cloudId") or "").strip()
+    if not cloud_id:
+        raise RuntimeError("Jira tenant_info did not return cloudId")
+    return cloud_id
 
 
 def _normalize_goal_key(goal_key: str) -> str:
@@ -311,6 +335,13 @@ def fetch_sub_goals(client: HomeGraphQLClient, root_goal_id: str) -> list[dict]:
         logger.warning("Sub-goal fetch failed: %s", exc)
         return []
     return [goal for goal in nodes if not goal.get("isArchived")]
+
+
+def fetch_sub_goals_for_root_key(client: HomeGraphQLClient, root_goal_key: str, container_id: str) -> list[dict]:
+    root_goal = resolve_goal_by_key(client, root_goal_key, container_id)
+    if not root_goal:
+        return []
+    return fetch_sub_goals(client, root_goal["id"])
 
 
 def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str) -> list[dict]:
@@ -382,16 +413,15 @@ def merge_epm_linkage(home_project, epm_config_row):
 
 def fetch_epm_home_projects(epm_scope):
     scope = epm_scope if isinstance(epm_scope, dict) else {}
-    raw_cloud_id = scope.get("cloudId")
     raw_sub_goal_key = scope.get("subGoalKey")
-    cloud_id = raw_cloud_id.strip() if isinstance(raw_cloud_id, str) else ""
     sub_goal_key = raw_sub_goal_key.strip().upper() if isinstance(raw_sub_goal_key, str) else ""
-    if not cloud_id or not sub_goal_key:
-        logger.warning("EPM home fetch skipped: cloudId and subGoalKey are required")
+    if not sub_goal_key:
+        logger.warning("EPM home fetch skipped: subGoalKey is required")
         return []
 
     try:
         client = build_home_graphql_client()
+        cloud_id = fetch_home_site_cloud_id()
     except RuntimeError as exc:
         logger.warning("EPM home fetch failed: %s", exc)
         return []

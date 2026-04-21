@@ -2,13 +2,18 @@ import unittest
 from urllib.error import HTTPError
 from unittest.mock import Mock, patch
 
+import jira_server
+
 from epm_home import (
     HomeGraphQLClient,
     bucket_epm_state,
     build_home_project_record,
     extract_latest_update,
     fetch_epm_home_projects,
+    fetch_home_site_cloud_id,
+    fetch_sub_goals_for_root_key,
     resolve_goal_by_key,
+    _container_id_from_cloud,
 )
 
 
@@ -40,6 +45,12 @@ class TestEpmHomeApi(unittest.TestCase):
 
         self.assertEqual(result, {'id': 'goal-1', 'key': '  crite-552 ', 'name': 'Retail Media'})
 
+    def test_container_id_uses_ari_prefix(self):
+        self.assertEqual(
+            _container_id_from_cloud('cloud-123'),
+            'ari:cloud:townsquare::site/cloud-123',
+        )
+
     def test_build_home_project_record_keeps_metadata_without_jira_linkage(self):
         project = build_home_project_record(
             {
@@ -64,31 +75,74 @@ class TestEpmHomeApi(unittest.TestCase):
     @patch('epm_home.logger.warning')
     def test_fetch_epm_home_projects_returns_empty_when_scope_missing(self, mock_warning):
         self.assertEqual(fetch_epm_home_projects({}), [])
-        mock_warning.assert_called_once_with('EPM home fetch skipped: cloudId and subGoalKey are required')
+        mock_warning.assert_called_once_with('EPM home fetch skipped: subGoalKey is required')
 
     @patch('epm_home.logger.warning')
     def test_fetch_epm_home_projects_returns_empty_when_scope_is_malformed_truthy_value(self, mock_warning):
         self.assertEqual(fetch_epm_home_projects('bad-scope'), [])
-        mock_warning.assert_called_once_with('EPM home fetch skipped: cloudId and subGoalKey are required')
+        mock_warning.assert_called_once_with('EPM home fetch skipped: subGoalKey is required')
 
     @patch('epm_home.build_home_graphql_client')
     @patch('epm_home.logger.warning')
     def test_fetch_epm_home_projects_returns_empty_when_scope_values_are_non_string(self, mock_warning, mock_build_client):
-        scope = {'cloudId': {'id': 'cloud-123'}, 'subGoalKey': ['CRITE-552']}
+        scope = {'subGoalKey': ['CRITE-552']}
 
         self.assertEqual(fetch_epm_home_projects(scope), [])
 
-        mock_warning.assert_called_once_with('EPM home fetch skipped: cloudId and subGoalKey are required')
+        mock_warning.assert_called_once_with('EPM home fetch skipped: subGoalKey is required')
         mock_build_client.assert_not_called()
+
+    @patch.dict('os.environ', {'JIRA_URL': ''}, clear=False)
+    @patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net')
+    @patch('epm_home.urlopen')
+    def test_fetch_home_site_cloud_id_uses_jira_tenant_info(self, mock_urlopen):
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = b'{"cloudId":"cloud-123"}'
+        mock_urlopen.return_value = response
+
+        self.assertEqual(fetch_home_site_cloud_id(), 'cloud-123')
+        self.assertEqual(mock_urlopen.call_args[0][0].full_url, 'https://example.atlassian.net/_edge/tenant_info')
+
+    @patch.dict('os.environ', {'JIRA_URL': ''}, clear=False)
+    @patch.object(jira_server, 'JIRA_URL', 'https://cli-override.atlassian.net')
+    @patch('epm_home.urlopen')
+    def test_fetch_home_site_cloud_id_prefers_jira_server_cli_override(self, mock_urlopen):
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = b'{"cloudId":"cloud-456"}'
+        mock_urlopen.return_value = response
+
+        self.assertEqual(fetch_home_site_cloud_id(), 'cloud-456')
+        self.assertEqual(mock_urlopen.call_args[0][0].full_url, 'https://cli-override.atlassian.net/_edge/tenant_info')
+
+    @patch('epm_home.resolve_goal_by_key')
+    def test_fetch_sub_goals_for_root_key_returns_non_archived_children(self, mock_resolve_goal):
+        client = HomeGraphQLClient('user@example.com', 'token')
+        client.execute_paginated = Mock(
+            return_value=[
+                {'id': 'goal-93', 'key': 'CRITE-93', 'name': 'Retail Media', 'url': 'https://home/goal/93', 'isArchived': False},
+                {'id': 'goal-old', 'key': 'CRITE-OLD', 'name': 'Old', 'url': 'https://home/goal/old', 'isArchived': True},
+            ]
+        )
+        mock_resolve_goal.return_value = {'id': 'goal-root', 'key': 'CRITE-223'}
+
+        result = fetch_sub_goals_for_root_key(client, 'CRITE-223', 'ari:cloud:townsquare::site/cloud-123')
+
+        self.assertEqual(result, [{'id': 'goal-93', 'key': 'CRITE-93', 'name': 'Retail Media', 'url': 'https://home/goal/93', 'isArchived': False}])
 
     @patch('epm_home.extract_home_jira_linkage')
     @patch('epm_home.fetch_latest_project_update')
     @patch('epm_home.fetch_projects_for_goal')
     @patch('epm_home.resolve_goal_by_key')
+    @patch('epm_home.fetch_home_site_cloud_id')
     @patch('epm_home.build_home_graphql_client')
     def test_fetch_epm_home_projects_resolves_sub_goal_scope(
         self,
         mock_build_client,
+        mock_fetch_cloud_id,
         mock_resolve_goal,
         mock_fetch_projects,
         mock_fetch_updates,
@@ -96,6 +150,7 @@ class TestEpmHomeApi(unittest.TestCase):
     ):
         client = Mock()
         mock_build_client.return_value = client
+        mock_fetch_cloud_id.return_value = 'cloud-123'
         mock_resolve_goal.return_value = {'id': 'goal-552', 'key': 'CRITE-552'}
         mock_fetch_projects.return_value = [
             {
@@ -110,9 +165,9 @@ class TestEpmHomeApi(unittest.TestCase):
         mock_fetch_updates.return_value = []
         mock_extract_linkage.return_value = {'labels': [], 'epicKeys': []}
 
-        result = fetch_epm_home_projects({'cloudId': 'cloud-123', 'subGoalKey': 'crite-552'})
+        result = fetch_epm_home_projects({'subGoalKey': 'crite-552'})
 
-        mock_resolve_goal.assert_called_once_with(client, 'CRITE-552', 'ati:cloud:townsquare::site/cloud-123')
+        mock_resolve_goal.assert_called_once_with(client, 'CRITE-552', 'ari:cloud:townsquare::site/cloud-123')
         mock_fetch_projects.assert_called_once_with(client, 'goal-552')
         self.assertEqual(
             result,
@@ -131,6 +186,16 @@ class TestEpmHomeApi(unittest.TestCase):
                 }
             ],
         )
+
+    @patch('epm_home.fetch_home_site_cloud_id', side_effect=RuntimeError('Jira tenant_info did not return cloudId'))
+    @patch('epm_home.logger.warning')
+    def test_fetch_epm_home_projects_returns_empty_when_tenant_info_lookup_fails(self, mock_warning, mock_fetch_cloud_id):
+        self.assertEqual(fetch_epm_home_projects({'subGoalKey': 'crite-552'}), [])
+        mock_fetch_cloud_id.assert_called_once_with()
+        mock_warning.assert_called_once()
+        self.assertEqual(mock_warning.call_args[0][0], 'EPM home fetch failed: %s')
+        self.assertIsInstance(mock_warning.call_args[0][1], RuntimeError)
+        self.assertEqual(str(mock_warning.call_args[0][1]), 'Jira tenant_info did not return cloudId')
 
     @patch('epm_home.time.sleep')
     @patch('epm_home.urlopen')

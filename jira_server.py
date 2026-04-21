@@ -27,6 +27,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 import io
 from requests import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
+import epm_home
 from epm_home import fetch_epm_home_projects, merge_epm_linkage
 from epm_scope import build_epm_scope_clause, should_apply_epm_sprint
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
@@ -1476,7 +1477,7 @@ def normalize_epm_scope(payload):
     if not isinstance(scope, dict):
         scope = {}
     return {
-        'cloudId': normalize_epm_text(scope.get('cloudId')),
+        'rootGoalKey': normalize_epm_upper_text(scope.get('rootGoalKey')),
         'subGoalKey': normalize_epm_upper_text(scope.get('subGoalKey')),
     }
 
@@ -1512,6 +1513,28 @@ def normalize_epm_config(payload):
 def get_epm_config():
     config = load_dashboard_config() or {}
     return normalize_epm_config(config.get('epm') or {})
+
+
+def fetch_home_site_cloud_id():
+    return epm_home.fetch_home_site_cloud_id()
+
+
+def fetch_epm_goal_catalog():
+    client = epm_home.build_home_graphql_client()
+    cloud_id = fetch_home_site_cloud_id()
+    container_id = epm_home._container_id_from_cloud(cloud_id)
+    return client.execute_paginated(
+        epm_home.QUERY_GOALS_SEARCH,
+        {'containerId': container_id, 'first': epm_home.HOME_PAGE_SIZE},
+        'goals_search',
+    )
+
+
+def fetch_epm_sub_goals(root_goal_key):
+    client = epm_home.build_home_graphql_client()
+    cloud_id = fetch_home_site_cloud_id()
+    container_id = epm_home._container_id_from_cloud(cloud_id)
+    return epm_home.fetch_sub_goals_for_root_key(client, root_goal_key, container_id)
 
 
 # --- Custom field config getters ---
@@ -6368,6 +6391,42 @@ def save_board_config_endpoint():
 @app.route('/api/epm/config', methods=['GET'])
 def get_epm_config_endpoint():
     return jsonify(get_epm_config())
+
+
+@app.route('/api/epm/scope', methods=['GET'])
+def get_epm_scope_endpoint():
+    scope = (get_epm_config().get('scope') or {})
+    try:
+        cloud_id = fetch_home_site_cloud_id()
+        error = ''
+    except RuntimeError as exc:
+        cloud_id = ''
+        error = str(exc)
+    return jsonify({
+        'cloudId': cloud_id,
+        'error': error,
+        'scope': {
+            'rootGoalKey': normalize_epm_upper_text(scope.get('rootGoalKey')),
+            'subGoalKey': normalize_epm_upper_text(scope.get('subGoalKey')),
+        },
+    })
+
+
+@app.route('/api/epm/goals', methods=['GET'])
+def get_epm_goals_endpoint():
+    root_goal_key = normalize_epm_upper_text(request.args.get('rootGoalKey'))
+    try:
+        goals = fetch_epm_sub_goals(root_goal_key) if root_goal_key else fetch_epm_goal_catalog()
+        error = ''
+    except (
+        RuntimeError,
+        epm_home.HomeAuthenticationError,
+        epm_home.HomeRateLimitError,
+        epm_home.HomeGraphQLError,
+    ) as exc:
+        goals = []
+        error = str(exc)
+    return jsonify({'goals': goals, 'error': error})
 
 
 @app.route('/api/epm/projects', methods=['GET'])

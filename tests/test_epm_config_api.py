@@ -38,7 +38,38 @@ class TestEpmConfigApi(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(
             response.get_json(),
-            {'version': 1, 'scope': {'cloudId': '', 'subGoalKey': ''}, 'projects': {}},
+            {'version': 1, 'scope': {'rootGoalKey': '', 'subGoalKey': ''}, 'projects': {}},
+        )
+
+    def test_get_epm_config_ignores_legacy_cloud_id_scope(self):
+        with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
+            json.dump(
+                {
+                    'version': 1,
+                    'epm': {
+                        'version': 1,
+                        'scope': {
+                            'cloudId': ' d3e3d2dc-39c8-4f41-bcd9-cf86b46de13e ',
+                            'subGoalKey': ' crite-93 ',
+                        },
+                        'projects': {},
+                    },
+                },
+                handle,
+            )
+
+        response = self.client.get('/api/epm/config')
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(
+            response.get_json(),
+            {
+                'version': 1,
+                'scope': {
+                    'rootGoalKey': '',
+                    'subGoalKey': 'CRITE-93',
+                },
+                'projects': {},
+            },
         )
 
     def test_get_epm_config_normalizes_existing_saved_config(self):
@@ -49,8 +80,8 @@ class TestEpmConfigApi(unittest.TestCase):
                     'epm': {
                         'version': 1,
                         'scope': {
-                            'cloudId': ' d3e3d2dc-39c8-4f41-bcd9-cf86b46de13e ',
-                            'subGoalKey': ' crite-552 ',
+                            'rootGoalKey': ' crite-223 ',
+                            'subGoalKey': ' crite-93 ',
                         },
                         'projects': {
                             'tsq-1': {
@@ -73,8 +104,8 @@ class TestEpmConfigApi(unittest.TestCase):
             {
                 'version': 1,
                 'scope': {
-                    'cloudId': 'd3e3d2dc-39c8-4f41-bcd9-cf86b46de13e',
-                    'subGoalKey': 'CRITE-552',
+                    'rootGoalKey': 'CRITE-223',
+                    'subGoalKey': 'CRITE-93',
                 },
                 'projects': {
                     'tsq-1': {
@@ -105,8 +136,8 @@ class TestEpmConfigApi(unittest.TestCase):
                 '/api/epm/config',
                 json={
                     'scope': {
-                        'cloudId': ' d3e3d2dc-39c8-4f41-bcd9-cf86b46de13e ',
-                        'subGoalKey': ' crite-552 ',
+                        'rootGoalKey': ' crite-223 ',
+                        'subGoalKey': ' crite-93 ',
                     },
                     'projects': {
                         'tsq-1': {
@@ -121,8 +152,8 @@ class TestEpmConfigApi(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
             payload = response.get_json()
             self.assertEqual(payload['version'], 1)
-            self.assertEqual(payload['scope']['cloudId'], 'd3e3d2dc-39c8-4f41-bcd9-cf86b46de13e')
-            self.assertEqual(payload['scope']['subGoalKey'], 'CRITE-552')
+            self.assertEqual(payload['scope']['rootGoalKey'], 'CRITE-223')
+            self.assertEqual(payload['scope']['subGoalKey'], 'CRITE-93')
             self.assertEqual(payload['projects']['tsq-1']['customName'], 'Retail Media')
             self.assertEqual(payload['projects']['tsq-1']['jiraLabel'], 'rnd_project_retail_media')
             self.assertEqual(payload['projects']['tsq-1']['jiraEpicKey'], 'RM-123')
@@ -136,8 +167,8 @@ class TestEpmConfigApi(unittest.TestCase):
 
         self.assertIn('teamGroups', saved)
         self.assertEqual(saved['teamGroups']['version'], 1)
-        self.assertEqual(saved['epm']['scope']['cloudId'], 'd3e3d2dc-39c8-4f41-bcd9-cf86b46de13e')
-        self.assertEqual(saved['epm']['scope']['subGoalKey'], 'CRITE-552')
+        self.assertEqual(saved['epm']['scope']['rootGoalKey'], 'CRITE-223')
+        self.assertEqual(saved['epm']['scope']['subGoalKey'], 'CRITE-93')
         self.assertEqual(saved['epm']['projects']['tsq-1']['jiraEpicKey'], 'RM-123')
         self.assertEqual(saved['epm']['projects']['tsq-1']['jiraLabel'], 'rnd_project_retail_media')
         self.assertEqual(saved['epm']['projects']['tsq-1']['customName'], 'Retail Media')

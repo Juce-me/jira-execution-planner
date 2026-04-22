@@ -155,9 +155,9 @@ Every `"issue"` in the hierarchy JSON uses the existing slim shape from `shape_e
 { "key": "...", "summary": "...", "status": "...", "assignee": "...", "issueType": "...", "parentKey": "...", "labels": [...] }
 ```
 
-Extension for the rollup endpoint: also include `"sprint": [ { "id": <int>, "name": "<str>", "state": "<str>" }, ... ]` — a list because Jira's sprint field is multi-valued. The sprint field id comes from `get_sprint_field_id()` at `jira_server.py:1566` (default `customfield_10101`, overridable via `dashboard-config.json -> sprintField`). `build_epm_fields_list()` at `jira_server.py:1391-1396` must be extended (or a parallel `build_epm_rollup_fields_list()` added) to include this field for all three rollup queries, otherwise the sprint data is absent and the frontend cannot render sprint badges.
+Extension for the rollup endpoint: also include `"sprint": [ { "id": <int>, "name": "<str>", "state": "<str>" }, ... ]` — a list because Jira's sprint field is multi-valued. The sprint field id comes from `get_sprint_field_id()` at `jira_server.py:1566` (default `customfield_10101`, overridable via `dashboard-config.json -> sprintField`). Add a new helper `build_epm_rollup_fields_list()` that starts from `build_epm_fields_list()` at `jira_server.py:1391-1396` and appends `get_sprint_field_id()` if not already present. Do NOT mutate `build_epm_fields_list()` in place — the legacy `/issues` endpoint should keep its existing field set unchanged to avoid shape drift for unrelated callers.
 
-**Sprint-field normalization contract.** This repo does not ship a reusable sprint-field parser. This plan defines the contract explicitly instead of pointing at non-existent helpers. Implement `normalize_epm_sprint_field(raw) -> list[dict]` in `epm_scope.py` (or a new helper module next to `shape_epm_issue_payload`) following these rules:
+**Sprint-field normalization contract.** This repo does not ship a reusable sprint-field parser. This plan defines the contract explicitly instead of pointing at non-existent helpers. Implement `normalize_epm_sprint_field(raw) -> list[dict]` in `epm_scope.py` (co-located with `build_rollup_jqls` so all rollup-helper logic lives in one module) following these rules:
 
 - Input: the value of `issue.fields[get_sprint_field_id()]`, which is one of:
   - `None` → return `[]`.
@@ -316,7 +316,7 @@ No new cache. No new endpoint. Three-line change on the backend (`prefix=` filte
 
 Keep `'home-linked'`, `'jep-fallback'`, `'metadata-only'`. Semantics:
 
-- `'home-linked'` — Project has a saved `label` AND a `homeProjectId` linking to a Home Goal.
+- `'home-linked'` — Project has a saved `label` AND a `homeProjectId` linking to the seeding Home project (the Home project id from `goals_byId(subGoalId).projects`, not a Home Goal id).
 - `'jep-fallback'` — Project has a saved `label` but no `homeProjectId` (custom Project).
 - `'metadata-only'` — Project has **no** saved `label`, regardless of `homeProjectId`.
 
@@ -422,7 +422,16 @@ Open `http://127.0.0.1:5050`, switch to EPM, confirm the banner is gone and no `
 
 - [ ] **Step 1: Write failing tests for `normalize_epm_config` accepting v1 and emitting v2.**
 
-Cover: (a) v1 config with `jiraLabel` + `jiraEpicKey` + `customName: "Foo"` → v2 with `label`, no `jiraEpicKey`, `labelPrefix: "rnd_project_"`, `name: "Foo"`, default `issueTypes`; (b) v2 config round-trips unchanged; (c) custom Projects (no `homeProjectId`) persist with a UUID-generated `id` that does **not** change when `name` is edited — assert via: create, save, rename, save, re-read, `id` is the same string; (d) missing `label` → Project row persists with `label: ""` and the rollup endpoint reports `metadataOnly: true` for it; (e) GET `/api/epm/config` returns v2 shape; (f) v1 input with empty `customName` loads as v2 with empty `name` (render-time fallback to the seeding Home project's name is the UI/backend's job, not the normalizer's); (g) config with partial `issueTypes: {"initiative": ["Theme"]}` round-trips with the user value preserved for `initiative` and defaults filled for `epic` + `leaf`; (h) config with an empty `issueTypes.epic: []` round-trips with the default `["Epic"]` restored (never persist empty).
+Cover (config-layer only — the rollup endpoint does not exist yet at this point in execution; its `metadataOnly` behavior is tested in Task 5 case (a)):
+
+- (a) v1 config with `jiraLabel` + `jiraEpicKey` + `customName: "Foo"` → v2 with `label`, no `jiraEpicKey`, `labelPrefix: "rnd_project_"`, `name: "Foo"`, default `issueTypes`.
+- (b) v2 config round-trips unchanged.
+- (c) custom Projects (no `homeProjectId`) persist with a UUID-generated `id` that does **not** change when `name` is edited — assert via: create, save, rename, save, re-read, `id` is the same string.
+- (d) Project row with missing or empty `label` persists with `label: ""` after normalization (round-trip preservation). Do NOT assert rollup-endpoint behavior here — see Task 5 case (a).
+- (e) `GET /api/epm/config` returns v2 shape.
+- (f) v1 input with empty `customName` loads as v2 with empty `name` (render-time fallback to the seeding Home project's name is the UI/backend's job, not the normalizer's).
+- (g) config with partial `issueTypes: {"initiative": ["Theme"]}` round-trips with the user value preserved for `initiative` and defaults filled for `epic` + `leaf`.
+- (h) config with an empty `issueTypes.epic: []` round-trips with the default `["Epic"]` restored (never persist empty).
 
 - [ ] **Step 2: Implement migration in `normalize_epm_config`.**
 
@@ -474,7 +483,7 @@ Extend `build_epm_projects_payload` to append custom-Project rows (rows where `h
 Do not add a new endpoint. Extend the existing route at `jira_server.py:6220-6255`.
 
 **Files:**
-- Modify: `tests/test_epm_config_api.py` (or the existing labels test file if one exists)
+- Modify: `tests/test_epm_config_api.py` (no dedicated labels-endpoint test file exists in the repo; adding a small test class here keeps the coverage close to the rest of EPM config behavior)
 - Modify: `jira_server.py`
 
 - [ ] **Step 1: Write failing tests for the new `prefix=` param on `/api/jira/labels`.**
@@ -531,7 +540,7 @@ Cover these cases explicitly — all must pass before implementation is consider
 
 - [ ] **Step 4: Implement the endpoint.**
 
-Add `EPM_ROLLUP_CACHE` and `EPM_ROLLUP_CACHE_TTL_SECONDS = 300`. Extend `clear_epm_caches()` at `jira_server.py:1376-1379` to also clear `EPM_ROLLUP_CACHE`. Factor `validate_epm_tab_sprint(tab, sprint) -> (error_json, status) | None` for reuse between `/issues` and `/rollup` endpoints. Resolve the Project via the updated `find_epm_project_or_404` (Home id OR custom UUID, per N4a). Build `base_jql = build_base_jql()`. Build Q1/Q2/Q3 via `build_rollup_jqls(label)`. Read `epm.issueTypes` from the normalized config (N3b) for the initiative/epic/leaf filter. Build the rollup field list: start from `build_epm_fields_list()` and append `get_sprint_field_id()` if not already present (per N3c); if many endpoints need the sprint field, introduce `build_epm_rollup_fields_list()` as a thin wrapper to keep the diff local.
+Add `EPM_ROLLUP_CACHE` and `EPM_ROLLUP_CACHE_TTL_SECONDS = 300`. Extend `clear_epm_caches()` at `jira_server.py:1376-1379` to also clear `EPM_ROLLUP_CACHE`. Factor `validate_epm_tab_sprint(tab, sprint) -> (error_json, status) | None` for reuse between `/issues` and `/rollup` endpoints. Resolve the Project via the updated `find_epm_project_or_404` (Home id OR custom UUID, per N4a). Build `base_jql = build_base_jql()`. Build Q1/Q2/Q3 via `build_rollup_jqls(label)`. Read `epm.issueTypes` from the normalized config (N3b) for the initiative/epic/leaf filter. Pass `build_epm_rollup_fields_list()` (the new helper introduced in N3c) to every `fetch_issues_by_jql` call so each response carries the sprint field for the frontend badges. Do NOT reuse `build_epm_fields_list()` directly here — it serves the legacy `/issues` endpoint and must stay byte-identical for unrelated callers.
 
 Execution order:
 
@@ -579,12 +588,16 @@ node --test tests/test_epm_settings_source_guards.js
 
 **Files:**
 - Modify: `tests/test_epm_view_source_guards.js`
+- Create: `tests/test_epm_project_utils.js` (pure-function Node test for `filterEpmProjectsForTab`; matches the filename declared in File Structure)
 - Modify: `frontend/src/dashboard.jsx`
 - Modify: `frontend/src/epm/epmProjectUtils.mjs`
 
-- [ ] **Step 1: Write failing source guards for the rollup view.**
+- [ ] **Step 1: Write failing source guards for the rollup view AND the pure-function tab-filter test.**
 
-Guards: (a) EPM board calls `/api/epm/projects/<id>/rollup` with the current `tab` and `sprint` URL params (preserving the legacy gating at `dashboard.jsx:907-921` — do not fetch when `tab=active && !selectedSprint`); (b) renderer groups issues by Initiative → Epic → Story hierarchy when `metadataOnly: false && emptyRollup: false`; (c) dedup by issue key (same story appearing in S1 and S3 renders once); (d) orphan stories (no labeled parent) render under the Project directly; (e) `metadataOnly: true` response shows OPEN SETTINGS CTA; (f) `emptyRollup: true` response shows a **different** empty-state message ("No issues match this label in the current scope") — this is the check Codex flagged, confirm the two states render distinct UI; (g) `filterEpmProjectsForTab` (at `frontend/src/epm/epmProjectUtils.mjs:9-14`) treats `tabBucket: 'all'` as visible on every tab, preserving exact-match behavior for lifecycle buckets (`'active'`/`'backlog'`/`'archived'`). Add a pure-function unit test that constructs projects with each bucket value and asserts visibility across all three tabs.
+Two files, distinct test styles:
+
+- In `tests/test_epm_view_source_guards.js` (source-grep style): (a) EPM board calls `/api/epm/projects/<id>/rollup` with the current `tab` and `sprint` URL params (preserving the legacy gating at `dashboard.jsx:907-921` — do not fetch when `tab=active && !selectedSprint`); (b) renderer groups issues by Initiative → Epic → Story hierarchy when `metadataOnly: false && emptyRollup: false`; (c) dedup by issue key (same story appearing in S1 and S3 renders once); (d) orphan stories (no labeled parent) render under the Project directly; (e) `metadataOnly: true` response shows OPEN SETTINGS CTA; (f) `emptyRollup: true` response shows a **different** empty-state message ("No issues match this label in the current scope") — the two states render distinct UI.
+- In `tests/test_epm_project_utils.js` (new pure-function Node test importing from `frontend/src/epm/epmProjectUtils.mjs`): construct projects with `tabBucket` in `{'all', 'active', 'backlog', 'archived', '', undefined}` and assert `filterEpmProjectsForTab(projects, tab)` returns: `'all'` visible on every tab; lifecycle buckets visible only on their matching tab; `''` / `undefined` visible on no tab (regression guard against silent omission). No bundle grep — direct ESM import of the helper.
 
 - [ ] **Step 2: Implement the rollup renderer.**
 
@@ -592,14 +605,14 @@ Add `buildRollupTree(payload)` in `epmProjectUtils.mjs` that consumes `{metadata
 
 Also update `filterEpmProjectsForTab` at `frontend/src/epm/epmProjectUtils.mjs:9-14` to treat `tabBucket: 'all'` as a wildcard: `project.tabBucket === 'all' || normalizedBucket === normalizedTab`. Preserve the existing `|| ''` fallback so malformed payloads still hide safely (neither `''` nor any other value besides the four canonical ones matches any tab).
 
-- [ ] **Step 3: Rebuild, run the source guard, and visually verify against a real tenant.**
+- [ ] **Step 3: Rebuild, run both test files, and visually verify against a real tenant.**
 
 ```bash
 npm run build
-node --test tests/test_epm_view_source_guards.js
+node --test tests/test_epm_view_source_guards.js tests/test_epm_project_utils.js
 ```
 
-Switch to EPM, pick a Project with a saved label, confirm hierarchy renders across all three buckets (labeled Initiative with labeled Epic child, labeled Epic without Initiative parent → rootEpics, labeled Story without labeled parent → orphanStories), confirm dedup, confirm metadata-only path for Projects with no label, confirm emptyRollup path for a Project whose label currently matches zero issues.
+Switch to EPM, pick a Project with a saved label, confirm hierarchy renders across all three buckets (labeled Initiative with labeled Epic child, labeled Epic without Initiative parent → rootEpics, labeled Story without labeled parent → orphanStories), confirm dedup, confirm metadata-only path for Projects with no label, confirm emptyRollup path for a Project whose label currently matches zero issues. Also flip to Backlog and Archived tabs with a custom Project saved — the custom Project must remain visible on all three tabs (pure-function assertion, plus visual confirmation).
 
 ---
 

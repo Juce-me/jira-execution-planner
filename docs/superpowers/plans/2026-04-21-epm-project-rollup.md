@@ -6,8 +6,8 @@
 
 - **Project (capital-P)** — the dashboard-side rollup entity this plan creates. One per config row in `epm.projects`. Has `{id, name, label, homeProjectId?}`.
 - **Jira project** — the Jira-side namespace like `CRITE`. Scoped by `build_base_jql()`.
-- **Home project** — an Atlassian Townsquare project object returned by `fetch_epm_home_projects()` (Home GraphQL). A Home project has state/lifecycle (`active`/`backlog`/`archived`).
-- **Home Goal** — an Atlassian Townsquare goal; the seed list for dashboard Projects comes from the configured sub-goal's child goals (not child projects).
+- **Home project** — an Atlassian Townsquare project object returned by `fetch_epm_home_projects()` at `epm_home.py:431-461`. The function resolves the saved sub-goal via `resolve_sub_goal_for_scope`, then reads `goals_byId(subGoalId).projects` (Home GraphQL `QUERY_GOAL_PROJECTS`). Each Home project has `{id, key, name, url, stateValue, stateLabel, homeProjectId}` plus derived `tabBucket` (active/backlog/archived from `stateValue`). **The seed list for dashboard Projects is this list of Home projects — NOT child goals.**
+- **Home Goal** — an Atlassian Townsquare goal. Used only as the scope selector (`rootGoalKey`, `subGoalKey` in settings); goals themselves are not seeded into dashboard Projects. The `Home Goal name` that serves as `displayName` fallback refers to the **Home project name** the dashboard Project was seeded from, not a goal name.
 
 When this plan says "Project" it means the dashboard entity unless prefixed with "Jira" or "Home".
 
@@ -59,7 +59,7 @@ If any answer is "no," fail the review with a pointer to the specific Task/Note.
 
 **Goal:** Replace the current "Jira Home projects enriched with optional label/epic" model with a first-class **Project** rollup driven by a single Jira label per Project. A Project's rollup surfaces every Initiative/Epic/Story/Task carrying its label, plus descendants whose ancestor carries the label, deduplicated by issue key and rendered as a 3-level hierarchy (Initiative → Epic → Story).
 
-**Architecture:** Projects become their own config entity. Each Project has `name` (defaults to a Home Goal name, user-editable) and `label` (a single Jira label, autocomplete-suggested from the configurable global prefix, default `rnd_project_`). Projects can be seeded from the selected Home sub-goal's child goals OR added manually (name + label only). Rollup is computed backend-side via three JQL calls: labeled issues (Q1), children of labeled Initiatives/Epics (Q2), grandchildren via Epic children of labeled Initiatives (Q3). No global fallback — a Project with no label stays in the `metadata-only` state. In parallel, the settings/preview performance regression (45s–78s wall time) is fixed by capping project-update fan-out and parallelizing per-project detail fetches.
+**Architecture:** Projects become their own config entity. Each Project has `name` (defaults to the seeding **Home project** name, user-editable) and `label` (a single Jira label, autocomplete-suggested from the configurable global prefix, default `rnd_project_`). Projects can be seeded from the Home projects returned by `fetch_epm_home_projects()` (i.e., the projects attached to the configured sub-goal via `goals_byId(subGoalId).projects`) OR added manually (name + label only). Rollup is computed backend-side via three JQL calls: labeled issues (Q1), children of labeled Initiatives/Epics (Q2), grandchildren via Epic children of labeled Initiatives (Q3). No global fallback — a Project with no label stays in the `metadata-only` state. In parallel, the settings/preview performance regression (45s–78s wall time) is fixed by capping project-update fan-out and parallelizing per-project detail fetches.
 
 **Tech Stack:** Python (Flask backend), React (JSX frontend), Python `unittest`, Node test runner, esbuild
 
@@ -155,9 +155,20 @@ Every `"issue"` in the hierarchy JSON uses the existing slim shape from `shape_e
 { "key": "...", "summary": "...", "status": "...", "assignee": "...", "issueType": "...", "parentKey": "...", "labels": [...] }
 ```
 
-Extension for the rollup endpoint: also include `"sprint": [ { "id": <int>, "name": "<str>", "state": "<str>" }, ... ]` — a list because Jira's sprint field is multi-valued. The sprint field id comes from `get_sprint_field_id()` at `jira_server.py:1566` (default `customfield_10101`, overridable via `dashboard-config.json -> sprintField`). `build_epm_fields_list()` at `jira_server.py:1391-1396` must be extended (or a parallel `build_epm_rollup_fields_list()` added) to include this field for all three rollup queries, otherwise the sprint data is absent and the active-tab filter has nothing to match.
+Extension for the rollup endpoint: also include `"sprint": [ { "id": <int>, "name": "<str>", "state": "<str>" }, ... ]` — a list because Jira's sprint field is multi-valued. The sprint field id comes from `get_sprint_field_id()` at `jira_server.py:1566` (default `customfield_10101`, overridable via `dashboard-config.json -> sprintField`). `build_epm_fields_list()` at `jira_server.py:1391-1396` must be extended (or a parallel `build_epm_rollup_fields_list()` added) to include this field for all three rollup queries, otherwise the sprint data is absent and the frontend cannot render sprint badges.
 
-Tenants that store the sprint field as an opaque string (older Jira Cloud sites) serialize it differently — parse it through the same helper path the ENG mode uses at `jira_server.py:4978`. Do not hand-roll a parser.
+**Sprint-field normalization contract.** This repo does not ship a reusable sprint-field parser. This plan defines the contract explicitly instead of pointing at non-existent helpers. Implement `normalize_epm_sprint_field(raw) -> list[dict]` in `epm_scope.py` (or a new helper module next to `shape_epm_issue_payload`) following these rules:
+
+- Input: the value of `issue.fields[get_sprint_field_id()]`, which is one of:
+  - `None` → return `[]`.
+  - `list[dict]` — modern Jira Cloud shape. Each entry has at least `id`, `name`, `state`. Return `[{'id': int(entry['id']), 'name': str(entry.get('name') or ''), 'state': str(entry.get('state') or '')}]` for each entry that has a usable `id`.
+  - `list[str]` — legacy "tabular" shape where each entry is `com.atlassian.greenhopper.service.sprint.Sprint@...[id=42,rapidViewId=7,state=ACTIVE,name=Sprint 42,...]`. Regex-extract `id=(\d+)`, `state=([A-Z]+)`, `name=([^,\]]+)` per entry. Skip entries where `id` is not parseable.
+  - Any other shape → return `[]`.
+- Output: sorted by `id` ascending, deduped by `id`.
+
+Mirror this helper with a unit test in `tests/test_epm_scope_resolution.py` (same file as `build_rollup_jqls` coverage since both helpers live in `epm_scope.py`) that asserts each of the four input shapes above normalizes to the documented output. Do not hand-roll regex elsewhere in the rollup code — everyone calls `normalize_epm_sprint_field`.
+
+The JQL-level `Sprint = N` filter (N3a) continues to run server-side — we rely on Jira to match sprint ids in `Sprint = N` JQL. Python-side sprint matching is only for rendering badges, never for filtering.
 
 **Three distinct response states — do not conflate.** All three share the same top-level keys so callers can render a single renderer branch; the `metadataOnly` and `emptyRollup` flags drive the UI state. The three hierarchy buckets (`initiatives`, `rootEpics`, `orphanStories`) are always present in the payload; empty for the non-render states.
 
@@ -221,7 +232,7 @@ After:
   "projects": {
     "<projectId>": {
       "id": "<projectId>",
-      "name": "<display name, defaults to Home Goal name>",
+      "name": "<display name, defaults to the seeding Home project name>",
       "label": "rnd_project_bsw",
       "homeProjectId": "<optional — null for custom projects>"
     }
@@ -261,7 +272,7 @@ Resolution — custom Projects get `tabBucket: 'all'`, and the filter treats `'a
 - Drop `jiraEpicKey`.
 - Set `labelPrefix` to `"rnd_project_"` if absent.
 - Use `homeProjectId` as the new `id` for Home-linked rows.
-- Use `customName` as `name`; if empty, leave empty (will be backfilled from Home Goal name at render time).
+- Use `customName` as `name`; if empty, leave empty (will be backfilled from the seeding Home project's `name` at render time — NOT from a Home Goal).
 
 **Stable IDs for custom Projects.** Custom Projects (no `homeProjectId`) get an id generated **once at creation time** via `uuid.uuid4().hex` (or equivalent). The id is persisted on the row and **never recomputed** — in particular, not from `name`. Renaming a custom Project must not change its id. Add a regression test: create a custom Project, save, rename, save again, assert `id` is unchanged and that `epm.projects[id]` still resolves.
 
@@ -328,14 +339,14 @@ All new tests use synthetic placeholders (`ACME-1`, `rnd_project_example`, `clou
 **Modify:**
 
 - `epm_home.py` — module-level `cloudId` memoization, `first: 1` project-updates fetch, ThreadPoolExecutor fan-out, documented fan-out cap
-- `epm_scope.py` — new `build_rollup_jqls(label)` helper that emits the three JQL strings; keep `build_epm_scope_clause` for the legacy issues endpoint during migration only
+- `epm_scope.py` — new `build_rollup_jqls(label) -> tuple[str, Callable[[list[str]], str | None]] | None` helper that returns `(s1_jql, child_predicate)` where `child_predicate(keys)` emits `("Epic Link" in (...) OR parent in (...))` JQL reused for both Q2 and Q3, or `None` when `keys` is empty. Add `normalize_epm_sprint_field(raw)` per N3c. Keep `build_epm_scope_clause` for the legacy issues endpoint during migration only
 - `jira_server.py` — v1→v2 migration in `normalize_epm_config`, `prefix=` query param on existing `/api/jira/labels`, new `/api/epm/projects/<id>/rollup` endpoint (preserves tab/sprint contract), new `EPM_ROLLUP_CACHE`
 - `frontend/src/dashboard.jsx` — new EPM settings canvas (prefix field, label autocomplete with show-all toggle, name defaulting, add-custom-Project button, remove epic field), rollup-view renderer (Initiative → Epic → Story hierarchy with dedup), ENG panel gating fix
 - `frontend/src/epm/epmProjectUtils.mjs` — label normalization + rollup tree builder
 - `tests/test_epm_config_api.py` — v1→v2 migration, labelPrefix persistence, custom Project rows, label field validation
 - `tests/test_epm_home_api.py` — cloud-id memoization, `first: 1` updates, ThreadPoolExecutor order preservation
 - `tests/test_epm_projects_api.py` — custom-Project surfacing in `/api/epm/projects` and `/api/epm/projects/preview`, `find_epm_project_or_404` branching by `homeProjectId` (custom UUID vs Home id), `tabBucket: 'all'` payload field. Rollup endpoint contract lives in `tests/test_epm_rollup_api.py` (Create list below)
-- `tests/test_epm_scope_resolution.py` — rollup JQL builder output
+- `tests/test_epm_scope_resolution.py` — rollup JQL builder output and `normalize_epm_sprint_field` coverage
 - `tests/test_epm_settings_source_guards.js` — prefix field, autocomplete, show-all toggle, add-custom-Project markers
 - `tests/test_epm_view_source_guards.js` — rollup view hierarchy markers, ENG leak regression guard
 - `AGENTS.md` — §10 Project context note: `epm.labelPrefix` default is `"rnd_project_"`, configurable in settings, never hardcoded
@@ -411,7 +422,7 @@ Open `http://127.0.0.1:5050`, switch to EPM, confirm the banner is gone and no `
 
 - [ ] **Step 1: Write failing tests for `normalize_epm_config` accepting v1 and emitting v2.**
 
-Cover: (a) v1 config with `jiraLabel` + `jiraEpicKey` + `customName: "Foo"` → v2 with `label`, no `jiraEpicKey`, `labelPrefix: "rnd_project_"`, `name: "Foo"`, default `issueTypes`; (b) v2 config round-trips unchanged; (c) custom Projects (no `homeProjectId`) persist with a UUID-generated `id` that does **not** change when `name` is edited — assert via: create, save, rename, save, re-read, `id` is the same string; (d) missing `label` → Project row persists with `label: ""` and the rollup endpoint reports `metadataOnly: true` for it; (e) GET `/api/epm/config` returns v2 shape; (f) v1 input with empty `customName` loads as v2 with empty `name` (render-time fallback to Home Goal name is the UI's job, not the normalizer's); (g) config with partial `issueTypes: {"initiative": ["Theme"]}` round-trips with the user value preserved for `initiative` and defaults filled for `epic` + `leaf`; (h) config with an empty `issueTypes.epic: []` round-trips with the default `["Epic"]` restored (never persist empty).
+Cover: (a) v1 config with `jiraLabel` + `jiraEpicKey` + `customName: "Foo"` → v2 with `label`, no `jiraEpicKey`, `labelPrefix: "rnd_project_"`, `name: "Foo"`, default `issueTypes`; (b) v2 config round-trips unchanged; (c) custom Projects (no `homeProjectId`) persist with a UUID-generated `id` that does **not** change when `name` is edited — assert via: create, save, rename, save, re-read, `id` is the same string; (d) missing `label` → Project row persists with `label: ""` and the rollup endpoint reports `metadataOnly: true` for it; (e) GET `/api/epm/config` returns v2 shape; (f) v1 input with empty `customName` loads as v2 with empty `name` (render-time fallback to the seeding Home project's name is the UI/backend's job, not the normalizer's); (g) config with partial `issueTypes: {"initiative": ["Theme"]}` round-trips with the user value preserved for `initiative` and defaults filled for `epic` + `leaf`; (h) config with an empty `issueTypes.epic: []` round-trips with the default `["Epic"]` restored (never persist empty).
 
 - [ ] **Step 2: Implement migration in `normalize_epm_config`.**
 
@@ -444,7 +455,7 @@ All tests in this task must mock `fetch_epm_home_projects` (via `patch('jira_ser
 - (c) `find_epm_project_or_404('<custom-uuid>')` returns the custom row (no Home fetch); `find_epm_project_or_404('<home-id>')` resolves via the mocked Home path and merges `config_row.name`/`label` over the Home metadata; `find_epm_project_or_404('unknown')` → 404.
 - (d) A custom Project with empty `label` renders `matchState: 'metadata-only'`; non-empty → `'jep-fallback'`.
 - (e) Every custom Project has `tabBucket: 'all'` in the payload (per N4b).
-- (f) For a Home-linked Project whose config row has `name: ""`, the response's `displayName` falls back to the Home Goal name (per N4a `build_epm_project_payload` update).
+- (f) For a Home-linked Project whose config row has `name: ""`, the response's `displayName` falls back to the seeding Home project's `name` (per N4a `build_epm_project_payload` update).
 
 - [ ] **Step 2: Implement.**
 
@@ -549,7 +560,7 @@ Guards: (a) `labelPrefix` field renders with persisted value (default `"rnd_proj
 
 - [ ] **Step 2: Implement the settings canvas.**
 
-Prefix field at top of EPM settings, bound to `epm.labelPrefix`. For each Project row: editable `name` input (placeholder = Home Goal name; empty value is valid and renders as the Home Goal name at display time), label autocomplete (typeahead against `/api/jira/labels?prefix=<savedPrefix>&limit=200`; always pass `limit=200` so client-side filtering has a large-enough pool), show-all toggle (re-queries `/api/jira/labels?limit=200` without `prefix`), remove button. "Add custom Project" button appends a new row with `homeProjectId: null` and a client-side placeholder id (the server rewrites to UUID on save; keep the client's draft id stable within the session for React keys). Remove the epic-key field and its hydration. Add `hydrateEpmProjectDraft` helper in `epmProjectUtils.mjs` that returns `{...row, displayName: row.name || homeProject?.name || ''}` for each row — the normalizer persists `name` exactly as typed, never the Home fallback.
+Prefix field at top of EPM settings, bound to `epm.labelPrefix`. For each Project row: editable `name` input (placeholder = the seeding Home project's `name`; empty value is valid and renders as the Home project name at display time), label autocomplete (typeahead against `/api/jira/labels?prefix=<savedPrefix>&limit=200`; always pass `limit=200` so client-side filtering has a large-enough pool), show-all toggle (re-queries `/api/jira/labels?limit=200` without `prefix`), remove button. "Add custom Project" button appends a new row with `homeProjectId: null` and a client-side placeholder id (the server rewrites to UUID on save; keep the client's draft id stable within the session for React keys). Remove the epic-key field and its hydration. Add `hydrateEpmProjectDraft` helper in `epmProjectUtils.mjs` that returns `{...row, displayName: row.name || homeProject?.name || ''}` for each row — the normalizer persists `name` exactly as typed, never the Home fallback.
 
 **Draft-id → server-UUID reconciliation on save.** The settings draft keys custom-Project rows on client-side strings (e.g., `draft-1776775000000`). On `POST /api/epm/config`, `normalize_epm_config` rewrites each custom-Project row to use a `uuid.uuid4().hex` id and returns the v2 config. The frontend replaces the draft row with the server-returned row (keyed by the new UUID) in a single state update after the POST resolves — do not carry both keys in state. If React key flicker is visible, key custom-Project rows on their `homeProjectId ?? id` composite and let React treat the id change as a remount. Existing Home-linked rows keep their stable id across saves (`id == homeProjectId`).
 
@@ -642,7 +653,7 @@ git add frontend/dist/dashboard.js frontend/dist/dashboard.css frontend/dist/das
 ## Out of scope (explicitly not in this plan)
 
 - Global fallback to match every `rnd_project_*` label. User rejected.
-- Auto-derivation of the per-project prefix from the Home Goal name. User rejected; the user types/picks the label.
+- Auto-derivation of the per-project prefix from the seeding Home project name. User rejected; the user types/picks the label.
 - Admin gating of settings routes. Still `TODO(SETTINGS_ADMIN_ONLY)` per prior plan.
 - Home-side Jira linkage (Townsquare `extract_home_jira_linkage` stub). No Home schema change yet.
 - Multiple labels per Project. Single label only. Multi-label is a follow-up if needed.

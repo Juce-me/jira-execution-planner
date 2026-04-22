@@ -52,6 +52,10 @@ Walk the plan in this order and fail fast on any "no":
 15. Are all tests using synthetic placeholders (no `CRITE-*`, no real tenant labels)? (N12, AGENTS.md §Security.)
 16. Does the plan touch `TASKS_CACHE` or `LABELS_CACHE` on config save? It must not. (N9.)
 17. Is `rnd_project_` referenced only as a default value for `epm.labelPrefix`, never hardcoded in JQL or in the rollup endpoint? (N2, N11, Task 8.)
+18. Does the frontend use `project.id` for every selector value, state key, and rollup URL, and treat `homeProjectId` as optional metadata only? (N4c, Task 7 Step 1 source-guard asserting `homeProjectId` never appears in identity positions.)
+19. Does `normalize_epm_config` preserve `draft-*` ids without generating UUIDs, and does the save handler (not preview, not normalize) do the `draft-*` → UUID rewrite before normalizing? (N5a, Task 3 case i, Task 3b case g.)
+20. Does Task 1 implement the 200-project fan-out cap with a failing test (250 inputs → 200 outputs + one truncation warning), not just document it in N6? (Task 1 Step 1 case d, Step 2.)
+21. Does the rollup endpoint run every fetched issue through `shape_epm_rollup_issue_payload` so the response carries `sprint: [{id, name, state}, ...]`, and does the legacy `/issues` response stay byte-identical (no sprint key added)? (N3c shaper section, Task 5 Step 3 case i, Step 4.)
 
 If any answer is "no," fail the review with a pointer to the specific Task/Note.
 
@@ -170,6 +174,8 @@ Mirror this helper with a unit test in `tests/test_epm_scope_resolution.py` (sam
 
 The JQL-level `Sprint = N` filter (N3a) continues to run server-side — we rely on Jira to match sprint ids in `Sprint = N` JQL. Python-side sprint matching is only for rendering badges, never for filtering.
 
+**Wiring into the response — `shape_epm_rollup_issue_payload`.** Do not extend `shape_epm_issue_payload` at `jira_server.py:1399-1422` in place; it serves the legacy `/issues` endpoint and must stay byte-identical. Add a new `shape_epm_rollup_issue_payload(issues)` helper alongside it (same file, one function below). The new helper delegates to `shape_epm_issue_payload` for the base slim shape, then walks each paired raw/slim tuple and attaches `slim['sprint'] = normalize_epm_sprint_field(raw_fields.get(get_sprint_field_id()))`. Return `(slim_issues, epic_details)` in the same tuple shape as the legacy helper. Every Q1/Q2/Q3 result goes through this new shaper before hitting the three-bucket placement logic. If `normalize_epm_sprint_field` returns `[]` for a given issue (no sprint data or the field was absent from the fetch), the issue's `sprint` key is still present as `[]` — the frontend can assume the key is always present on rollup payloads.
+
 **Three distinct response states — do not conflate.** All three share the same top-level keys so callers can render a single renderer branch; the `metadataOnly` and `emptyRollup` flags drive the UI state. The three hierarchy buckets (`initiatives`, `rootEpics`, `orphanStories`) are always present in the payload; empty for the non-render states.
 
 - Project has no `label` saved → `{ metadataOnly: true, emptyRollup: false, initiatives: {}, rootEpics: {}, orphanStories: [] }`. UI shows OPEN SETTINGS CTA. Do not run any query.
@@ -255,6 +261,20 @@ Both project selectors (`/api/epm/projects`, `/api/epm/projects/preview`) and th
 - A custom Project's `build_epm_project_payload` synthesizes the Home-shaped fields (`homeProjectId: null`, `homeUrl: ''`, `stateValue: ''`, `stateLabel: ''`, `tabBucket: 'all'`, `latestUpdateDate: ''`, `latestUpdateSnippet: ''`, `name: row.name`, `displayName: row.name`). No GraphQL calls.
 - `build_epm_project_payload` at `jira_server.py:1437-1446` must be updated in place for the v2 schema. Field-read changes: `config_row.get('customName')` → `config_row.get('name')`; drop the `jiraLabel`/`jiraEpicKey` reads and replace them with `config_row.get('label')`. Update `merge_epm_linkage` at `epm_home.py` similarly — it now receives only `label`, not the old `{jiraLabel, jiraEpicKey}` pair. `displayName` keeps the existing fallback pattern: `config_row.name or home_project.name or ''`. For custom Projects (`home_project == None` path), `displayName = row.name` directly — the Home fallback is unavailable.
 
+### N4c. Frontend uses `project.id` end-to-end, not `homeProjectId`.
+
+Custom Projects have `homeProjectId: null`, so any frontend code that keys on `homeProjectId` for selection/lookup will silently fail for them. The invariant: every frontend touchpoint that identifies a Project uses `project.id`. `homeProjectId` is optional metadata (for "Open in Jira Home" deep-link rendering only) and must never be read as an identity.
+
+Concrete migration points (Task 7 implements these; Task 7 Step 1 adds source guards):
+
+- **Selector option values and dropdown state.** Every `<option value={project.id}>`, not `value={project.homeProjectId}`. Search `frontend/src/dashboard.jsx` for existing `homeProjectId` bindings on the EPM project picker and rewrite to `id`.
+- **Selected-project state.** `selectedEpmProject` / `epmSelectedProjectId` / `epmProjectsPendingSelectionRef` / the `selectedEpmProject` memo must resolve Projects by `id`, not `homeProjectId`. Matching helper in `epmProjectUtils.mjs` (add `findEpmProjectById(projects, id)` if one does not already exist).
+- **Rollup fetch URL.** `fetch('${BACKEND_URL}/api/epm/projects/${encodeURIComponent(project.id)}/rollup?...')` — never `project.homeProjectId`. The backend accepts both shapes (N4a), but only `project.id` is guaranteed to resolve a custom Project's UUID.
+- **Settings row React keys.** Use `row.id` (Home id for Home-linked rows, draft/UUID for custom rows — see N5a for the draft/UUID transition). Not `row.homeProjectId`.
+- **Persisted selection across refresh.** If the dashboard stores `epmSelectedProjectId` in localStorage / sessionStorage (check before shipping), migrate the stored key once from a Home id to `id`. Since `id == homeProjectId` for Home-linked rows, this is effectively a no-op for existing users; custom Projects only start existing after a save, so there's no legacy custom-project value to migrate.
+
+Do NOT search the payload for a `homeProjectId` field anywhere in the frontend identity path. Grep regression-guard in `tests/test_epm_view_source_guards.js` (Task 7 Step 1): assert that `homeProjectId` appears only in (a) the "Open in Jira Home" link href, (b) the metadata-only-card CTA logic — never as a selector value, state key, or URL segment.
+
 ### N4b. Tab filter must accept the `all` bucket for custom Projects.
 
 Home-derived projects have a lifecycle bucket (`active` / `backlog` / `archived`) derived from their Atlassian Home state. Custom Projects have no Home state — they are config-only containers. Hardcoding `tabBucket: 'active'` would make them visible only on the Active tab and disappear from Backlog/Archived, which is wrong: the user created the container to slice Jira work, not to track a lifecycle.
@@ -277,6 +297,18 @@ Resolution — custom Projects get `tabBucket: 'all'`, and the filter treats `'a
 **Stable IDs for custom Projects.** Custom Projects (no `homeProjectId`) get an id generated **once at creation time** via `uuid.uuid4().hex` (or equivalent). The id is persisted on the row and **never recomputed** — in particular, not from `name`. Renaming a custom Project must not change its id. Add a regression test: create a custom Project, save, rename, save again, assert `id` is unchanged and that `epm.projects[id]` still resolves.
 
 No destructive changes: persist v2 on next save, but keep reading v1 safely.
+
+### N5a. Preview vs save — who assigns the UUID.
+
+Both `POST /api/epm/config` (save) and `POST /api/epm/projects/preview` funnel through `normalize_epm_config`. The frontend calls preview repeatedly during settings edits, so if `normalize_epm_config` rewrote draft ids to UUIDs on every call, each preview would churn the id and break the React-key / "pending selection" contracts.
+
+Contract:
+
+- **`normalize_epm_config` is pure.** It preserves any non-empty `id` on a custom-Project row verbatim, whether that id is a `draft-…` placeholder from the client, a real UUID from a prior save, or anything else. It does NOT generate UUIDs on its own. When `id` is empty/missing on a custom-Project row (`homeProjectId == null`), the normalizer leaves `id` empty — the row round-trips with `id: ""` and the caller decides what to do.
+- **`POST /api/epm/projects/preview`** normalizes and returns — draft ids survive the round trip unchanged. The frontend keeps using the same draft id across repeated previews in the same editing session.
+- **`POST /api/epm/config` (save)** runs a pre-normalize rewrite step: for every row in the incoming payload where `homeProjectId == null` AND (`id` is empty OR `id.startswith('draft-')`), replace `id` with `uuid.uuid4().hex`. Then call `normalize_epm_config`, persist, return the v2 config. The response carries the final UUID so the frontend can rekey (see Task 6 Step 2 draft-id → server-UUID reconciliation).
+- **Draft-id prefix convention.** Client-generated placeholder ids must start with `draft-` (e.g., `draft-1776775000000`). The prefix is what the save handler recognizes as "rewrite to UUID." Any other id shape is treated as a persisted UUID and left alone.
+- **Test coverage.** Task 3 case (i): two consecutive `normalize_epm_config` calls on a payload containing a custom row with `id: "draft-123"` return the same id twice (no churn). Task 3b case (g): `POST /api/epm/projects/preview` round-trips a `draft-` id unchanged; `POST /api/epm/config` on the same payload returns a new UUID that is NOT `"draft-123"` and is 32 hex chars (uuid.hex format).
 
 ### N6. Perf invariants (parallel to the feature work).
 
@@ -340,7 +372,7 @@ All new tests use synthetic placeholders (`ACME-1`, `rnd_project_example`, `clou
 
 - `epm_home.py` — module-level `cloudId` memoization, `first: 1` project-updates fetch, ThreadPoolExecutor fan-out, documented fan-out cap
 - `epm_scope.py` — new `build_rollup_jqls(label) -> tuple[str, Callable[[list[str]], str | None]] | None` helper that returns `(s1_jql, child_predicate)` where `child_predicate(keys)` emits `("Epic Link" in (...) OR parent in (...))` JQL reused for both Q2 and Q3, or `None` when `keys` is empty. Add `normalize_epm_sprint_field(raw)` per N3c. Keep `build_epm_scope_clause` for the legacy issues endpoint during migration only
-- `jira_server.py` — v1→v2 migration in `normalize_epm_config`, `prefix=` query param on existing `/api/jira/labels`, new `/api/epm/projects/<id>/rollup` endpoint (preserves tab/sprint contract), new `EPM_ROLLUP_CACHE`
+- `jira_server.py` — v1→v2 migration in `normalize_epm_config` (pure, no UUID generation per N5a), save-handler pre-normalize UUID rewrite for `draft-*` ids (N5a), `prefix=` query param on existing `/api/jira/labels`, new `/api/epm/projects/<id>/rollup` endpoint (preserves tab/sprint contract), new `build_epm_rollup_fields_list()` + `shape_epm_rollup_issue_payload()` helpers, new `EPM_ROLLUP_CACHE`
 - `frontend/src/dashboard.jsx` — new EPM settings canvas (prefix field, label autocomplete with show-all toggle, name defaulting, add-custom-Project button, remove epic field), rollup-view renderer (Initiative → Epic → Story hierarchy with dedup), ENG panel gating fix
 - `frontend/src/epm/epmProjectUtils.mjs` — label normalization + rollup tree builder
 - `tests/test_epm_config_api.py` — v1→v2 migration, labelPrefix persistence, custom Project rows, label field validation
@@ -372,13 +404,13 @@ All new tests use synthetic placeholders (`ACME-1`, `rnd_project_example`, `clou
 - Modify: `tests/test_epm_home_api.py`
 - Modify: `epm_home.py`
 
-- [ ] **Step 1: Write failing tests for cloud-id memoization and single-page updates.**
+- [ ] **Step 1: Write failing tests for cloud-id memoization, single-page updates, parallel fan-out ordering, and the 200-project cap.**
 
-Assert (a) `fetch_home_site_cloud_id` calls `urlopen` exactly once across two invocations when `JIRA_URL` is unchanged, (b) `fetch_latest_project_update` issues exactly one GraphQL call with `first: 1`, (c) `fetch_projects_for_goal` preserves input ordering when fan-out is parallelized.
+Assert (a) `fetch_home_site_cloud_id` calls `urlopen` exactly once across two invocations when `JIRA_URL` is unchanged; (b) `fetch_latest_project_update` issues exactly one GraphQL call with `first: 1`; (c) `fetch_projects_for_goal` preserves input ordering when fan-out is parallelized; (d) **fan-out cap:** when `fetch_projects_for_goal` is handed 250 project rows, it stops after processing 200 and logs a single warning (not one per skipped row). Return value contains exactly 200 items, matching the first 200 inputs in order.
 
-- [ ] **Step 2: Implement memoization + single-page updates + ThreadPoolExecutor fan-out.**
+- [ ] **Step 2: Implement memoization + single-page updates + ThreadPoolExecutor fan-out + 200-cap.**
 
-Module-level cache `_CLOUD_ID_CACHE: dict[str, str]` keyed by `JIRA_URL`. Replace `execute_paginated` in `fetch_latest_project_update` with a single `execute(QUERY_PROJECT_UPDATES, {"projectId": project_id, "first": 1})` and read `edges[0].node`. In `fetch_projects_for_goal`, wrap the per-project detail + update fetch in a helper function and submit via `ThreadPoolExecutor(max_workers=8)`, collecting results in input order.
+Module-level cache `_CLOUD_ID_CACHE: dict[str, str]` keyed by `JIRA_URL`. Replace `execute_paginated` in `fetch_latest_project_update` with a single `execute(QUERY_PROJECT_UPDATES, {"projectId": project_id, "first": 1})` and read `edges[0].node`. In `fetch_projects_for_goal`: slice the linked-project list to `[:HOME_MAX_PROJECTS_PER_GOAL]` with `HOME_MAX_PROJECTS_PER_GOAL = 200` as a module constant in `epm_home.py`; emit a single `logger.warning("Goal %s has %d projects; truncating to %d", goal_id, len(linked_projects), HOME_MAX_PROJECTS_PER_GOAL)` when truncation applies. Then wrap the per-project detail + update fetch in a helper function and submit via `ThreadPoolExecutor(max_workers=8)`, collecting results in input order.
 
 - [ ] **Step 3: Run tests, verify success, run full suite.**
 
@@ -432,10 +464,11 @@ Cover (config-layer only — the rollup endpoint does not exist yet at this poin
 - (f) v1 input with empty `customName` loads as v2 with empty `name` (render-time fallback to the seeding Home project's name is the UI/backend's job, not the normalizer's).
 - (g) config with partial `issueTypes: {"initiative": ["Theme"]}` round-trips with the user value preserved for `initiative` and defaults filled for `epic` + `leaf`.
 - (h) config with an empty `issueTypes.epic: []` round-trips with the default `["Epic"]` restored (never persist empty).
+- (i) **Normalizer does not churn ids.** Per N5a: calling `normalize_epm_config` twice on a payload where a custom row has `id: "draft-123"` returns `id: "draft-123"` both times. The normalizer never generates UUIDs; `id: ""` also round-trips as `id: ""`. UUID generation happens only in the save-handler pre-normalize step (covered in Task 3b).
 
 - [ ] **Step 2: Implement migration in `normalize_epm_config`.**
 
-Detect v1 by absence of `labelPrefix`/`version==2`. For v1 input, map as described in N5. For Home-linked rows, set `id = homeProjectId`. For custom Projects, generate `id = uuid.uuid4().hex` on first persist and carry it forward on every subsequent normalize — never recompute from `name`. Keep `normalize_epm_project_row` tolerant of both shapes during the deprecation window.
+Detect v1 by absence of `labelPrefix`/`version==2`. For v1 input, map as described in N5. For Home-linked rows, set `id = homeProjectId`. For custom Projects, preserve `id` verbatim if non-empty; leave `id` empty otherwise. **Do NOT call `uuid.uuid4()` inside `normalize_epm_config`** — per N5a the normalizer is pure; UUID assignment happens in the save handler before normalize. Keep `normalize_epm_project_row` tolerant of both v1 and v2 shapes during the deprecation window.
 
 Also ensure the normalized config carries `epm.issueTypes` with defaults per N3b: `{"initiative": ["Initiative"], "epic": ["Epic"], "leaf": ["Story", "Task", "Sub-task", "Subtask", "Bug"]}`. On v1 or v2 input where `issueTypes` is missing or partially missing, fill per-bucket defaults. Values normalize as stripped non-empty strings; buckets with an empty array after normalization fall back to their defaults (never persist an empty bucket).
 
@@ -465,10 +498,13 @@ All tests in this task must mock `fetch_epm_home_projects` (via `patch('jira_ser
 - (d) A custom Project with empty `label` renders `matchState: 'metadata-only'`; non-empty → `'jep-fallback'`.
 - (e) Every custom Project has `tabBucket: 'all'` in the payload (per N4b).
 - (f) For a Home-linked Project whose config row has `name: ""`, the response's `displayName` falls back to the seeding Home project's `name` (per N4a `build_epm_project_payload` update).
+- (g) **Save-handler UUID assignment (N5a).** `POST /api/epm/projects/preview` with a payload containing `{id: "draft-abc", homeProjectId: null, name: "New", label: ""}` returns a config whose row still has `id: "draft-abc"` — no UUID rewrite. `POST /api/epm/config` with the same payload returns a config where that row's `id` is a 32-char hex UUID (assert via `len(id) == 32` and `all(c in '0123456789abcdef' for c in id)`) and NOT `"draft-abc"`. A subsequent `POST /api/epm/config` with the just-saved payload (now carrying the real UUID) returns the same UUID unchanged — idempotent save.
 
 - [ ] **Step 2: Implement.**
 
 Extend `build_epm_projects_payload` to append custom-Project rows (rows where `homeProjectId == null`) after the Home loop. Build each via a new helper `build_custom_project_payload(row)` that synthesizes the Home-shaped fields listed in N4a (including `tabBucket: 'all'` per N4b) — no GraphQL call. Rewrite `find_epm_project_or_404` per the N4a branching rules: (i) config lookup by id; (ii) if custom, synthesize via `build_custom_project_payload`; (iii) if Home-linked, resolve the Home metadata through the existing fetch path and merge config overrides via `build_epm_project_payload`; (iv) if not in config at all, fall through to the existing Home-scan fallback. Add a focused test that the Home-linked branch still surfaces `stateValue`/`stateLabel`/`tabBucket`/`latestUpdateDate` sourced from the Home path, not from config.
+
+Also implement the **N5a save-handler UUID rewrite**. In `save_epm_config_endpoint` at `jira_server.py:6508-6519` (inside the existing handler, before `normalize_epm_config`): iterate `payload.get('projects', {}).values()` and for every row where `homeProjectId in (None, '')` AND (`id` is empty OR `str(id).startswith('draft-')`), set `row['id'] = uuid.uuid4().hex`. Then call `normalize_epm_config` as before. The preview endpoint at `preview_epm_projects_endpoint` does NOT get this rewrite — draft ids survive preview unchanged.
 
 - [ ] **Step 3: Run tests, verify success.**
 
@@ -537,6 +573,11 @@ Cover these cases explicitly — all must pass before implementation is consider
 - (f) **Sprint filter applied at JQL level, not post-union.** With `tab=active&sprint=N`, assert: (f1) every captured JQL string passed to `fetch_issues_by_jql` contains ` AND Sprint = <N>` appended (Q1, Q2, Q3 all three); (f2) for `tab=backlog` or `tab=archived`, no `Sprint =` appears in any captured JQL; (f3) documented consequence — a labeled Initiative without a Sprint field is absent from Q1 on Active tab, so its unlabeled descendants do not appear (test fixture: labeled Initiative in no sprint + its Epic child in sprint N; on `tab=active&sprint=N` the Epic is absent unless the Epic itself is labeled or in Q1); (f4) the response issue objects include the sprint field per N3c so the frontend can render sprint badges.
 - (g) Response cached keyed by `(projectId, tab, sprint, label, base_jql)`. Cache invalidated on `POST /api/epm/config` via `clear_epm_caches()`.
 - (h) Custom Project id — given a custom Project with UUID id saved in config, `GET /api/epm/projects/<uuid>/rollup` resolves the Project from config (no Home fetch path), executes the same Q1/Q2/Q3, and returns the same shape.
+- (i) **Sprint normalization reaches the response** (N3c wiring). Three sub-fixtures, one per accepted sprint-field input shape:
+  - Issue whose raw sprint field is `list[dict]` (modern): payload issue object contains `"sprint": [{"id": 42, "name": "Sprint 42", "state": "ACTIVE"}, ...]`.
+  - Issue whose raw sprint field is `list[str]` (legacy `com.atlassian.greenhopper.service.sprint.Sprint@...[id=7,state=CLOSED,name=Old]`): payload issue object contains `"sprint": [{"id": 7, "name": "Old", "state": "CLOSED"}]`.
+  - Issue whose raw sprint field is `None` or absent: payload issue object contains `"sprint": []` (key always present).
+  Also assert the legacy `/api/epm/projects/<id>/issues` endpoint is byte-identical for the same fixtures (no `sprint` key added to its response) — regression guard that `shape_epm_issue_payload` was not mutated.
 
 - [ ] **Step 4: Implement the endpoint.**
 
@@ -548,7 +589,7 @@ Execution order:
 2. Run Q1 with `base_jql AND Q1_jql` plus — if `should_apply_epm_sprint(tab)` is True — `AND Sprint = <N>`. If the resulting set is empty → return the `emptyRollup: true` payload.
 3. Extract Initiative/Epic keys from Q1 (case-insensitive match against `epm.issueTypes.initiative + epm.issueTypes.epic`). Run Q2 with `base_jql AND <child_predicate(keys)>` plus the same sprint clause when applicable. If the predicate returns `None` (empty keys) skip Q2.
 4. Extract Epic keys from Q2 (match against `epm.issueTypes.epic` only). Run Q3 with the same contract. Skip if predicate returns `None`.
-5. Union S1 ∪ S2 ∪ S3, dedup by `issue.key`. Build the three-bucket hierarchy per N3 placement rules using the configured issuetype sets. Return.
+5. Run every fetched issue list through `shape_epm_rollup_issue_payload` (the new helper introduced in N3c) so each slim issue carries `sprint: [{id, name, state}, ...]`. Union S1 ∪ S2 ∪ S3, dedup by `issue.key`. Build the three-bucket hierarchy per N3 placement rules using the configured issuetype sets. Return.
 
 Caches are keyed by `(projectId, tab, sprint, label, base_jql)` (per N3a). Do not key on `epm.issueTypes` — a config-level change already invalidates via `clear_epm_caches()` on `POST /api/epm/config`.
 
@@ -571,7 +612,7 @@ Guards: (a) `labelPrefix` field renders with persisted value (default `"rnd_proj
 
 Prefix field at top of EPM settings, bound to `epm.labelPrefix`. For each Project row: editable `name` input (placeholder = the seeding Home project's `name`; empty value is valid and renders as the Home project name at display time), label autocomplete (typeahead against `/api/jira/labels?prefix=<savedPrefix>&limit=200`; always pass `limit=200` so client-side filtering has a large-enough pool), show-all toggle (re-queries `/api/jira/labels?limit=200` without `prefix`), remove button. "Add custom Project" button appends a new row with `homeProjectId: null` and a client-side placeholder id (the server rewrites to UUID on save; keep the client's draft id stable within the session for React keys). Remove the epic-key field and its hydration. Add `hydrateEpmProjectDraft` helper in `epmProjectUtils.mjs` that returns `{...row, displayName: row.name || homeProject?.name || ''}` for each row — the normalizer persists `name` exactly as typed, never the Home fallback.
 
-**Draft-id → server-UUID reconciliation on save.** The settings draft keys custom-Project rows on client-side strings (e.g., `draft-1776775000000`). On `POST /api/epm/config`, `normalize_epm_config` rewrites each custom-Project row to use a `uuid.uuid4().hex` id and returns the v2 config. The frontend replaces the draft row with the server-returned row (keyed by the new UUID) in a single state update after the POST resolves — do not carry both keys in state. If React key flicker is visible, key custom-Project rows on their `homeProjectId ?? id` composite and let React treat the id change as a remount. Existing Home-linked rows keep their stable id across saves (`id == homeProjectId`).
+**Draft-id → server-UUID reconciliation on save.** The settings draft keys custom-Project rows on client-side strings (e.g., `draft-1776775000000`). Per N5a, `normalize_epm_config` is pure — it preserves those draft ids unchanged — so repeated `POST /api/epm/projects/preview` calls during editing do NOT churn ids. The draft-to-UUID transition happens only inside `POST /api/epm/config` (save), where the handler rewrites matching `draft-*` ids to `uuid.uuid4().hex` BEFORE calling the normalizer (see Task 3b Step 2). The response carries the final UUID. The frontend replaces the draft row with the server-returned row (keyed by the new UUID) in a single state update after the POST resolves — do not carry both keys in state. Existing Home-linked rows keep their stable id across saves (`id == homeProjectId`), so only custom Projects need this reconciliation step.
 
 - [ ] **Step 3: Rebuild, run guards, verify visually.**
 

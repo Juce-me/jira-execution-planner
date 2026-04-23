@@ -35,14 +35,14 @@ Walk the plan in this order and fail fast on any "no":
 2. Are the JQL builders wildcard-free, with label-value escaping? (N1, N3.)
 3. Does the rollup endpoint validate `tab=active` requires a numeric `sprint` (400 `sprint_required` / `sprint_not_numeric`), and does it cache keyed by `(projectId, tab, sprint, label, base_jql)`? (N3a, Task 5 Step 3 case e.)
 4. On `tab=active&sprint=N`, is `AND Sprint = N` appended to each of Q1/Q2/Q3 at the JQL level (not post-union)? Is the documented consequence — labeled Initiatives/Epics without a Sprint field drop out of the Active view and so do their unlabeled descendants — explicitly called out as user-accepted? (N3a, Task 5 Step 3 case f.)
-4a. Does `build_rollup_jqls` emit the dual-OR `("Epic Link" in (...) OR parent in (...))` for both Q2 and Q3 parent lookups, matching the repo's existing legacy-plus-modern handling in `epm_scope.py:19-23`? (N3, Task 5 Step 1 case b, Step 3 case c1.)
+4a. Does `build_rollup_jqls` emit the dual-OR `("Epic Link" in (...) OR parent in (...))` for both Q2 and Q3 parent lookups, matching the repo's existing legacy-plus-modern handling in `epm_scope.py:19-23`? Does the rollup field list include the resolved Epic Link field id so legacy-linked Stories get `parentKey` and nest under their Epic instead of falling into `orphanStories`? (N3, N3c, Task 5 Step 1 case b, Step 3 case c1.)
 4b. Are initiative/epic/leaf issuetype names read from `epm.issueTypes` in the normalized config, not hardcoded? Do placement rules and the Q2/Q3 seed-key filter use case-insensitive matching against those configured sets? (N3b, Task 3 Step 1 cases g–h, Task 5 Step 3 case c2.)
 4c. Does the rollup response include the sprint field on every issue per the N3c slim shape, using `get_sprint_field_id()` to select it in the Jira field list? (N3c, Task 5 Step 4.)
 5. Does the hierarchy response carry three mutually-exclusive buckets — `initiatives`, `rootEpics`, `orphanStories` — that can encode a labeled Epic with no labeled Initiative parent and a labeled Story with no labeled parent? (N3, Task 5 Step 3 case d, Task 7 Step 2.)
 6. Are the three rollup response states distinct and non-overlapping: `metadataOnly` (no label saved) vs `emptyRollup` (label saved but zero matches) vs normal render? (N3, N10, Task 5 Step 3 cases a–c, Task 7 Step 1 guards e–f.)
 7. Does Task 3b wire custom Projects into `/api/epm/projects`, `/api/epm/projects/preview`, and `find_epm_project_or_404` so a saved custom Project appears in the selector and its UUID resolves on `/rollup`? (N4a, Task 3b.)
 7a. Do custom Projects carry `tabBucket: 'all'` AND does `filterEpmProjectsForTab` treat `'all'` as visible on every tab, so custom Projects do not disappear on Backlog/Archived? (N4b, Task 3b guard e, Task 7 Step 1 guard g, Task 7 Step 2 filter change.)
-8. Does the config migration accept v1 without data loss and emit v2, and do custom Projects get a UUID `id` generated once and preserved across renames? (N4, N5, Task 3 Step 1 case c.)
+8. Does the config migration accept v1 without data loss and emit v2, does `normalize_epm_config` preserve existing persisted custom ids, and does the save handler generate a UUID once/rekey it/preserve it across renames? (N4, N5, Task 3 Step 1 case c, Task 3b case g.)
 9. Does the `customName → name` rename propagate to Task 6 source guards? (Task 6 Step 1 guard d must say `name`, not `customName`.)
 10. Does Task 4 extend the existing `/api/jira/labels` with a `prefix=` param (respecting the endpoint's actual `startAt/maxResults/isLast` pagination), not invent a new `/api/epm/labels` route? (N8, Task 4.)
 11. Does the UI call `/api/jira/labels` with an explicit `limit=200` (the server default is 50; client-side typeahead filtering against 50 silently drops valid matches)? (N8, Task 6 guard b.)
@@ -53,9 +53,11 @@ Walk the plan in this order and fail fast on any "no":
 16. Does the plan touch `TASKS_CACHE` or `LABELS_CACHE` on config save? It must not. (N9.)
 17. Is `rnd_project_` referenced only as a default value for `epm.labelPrefix`, never hardcoded in JQL or in the rollup endpoint? (N2, N11, Task 8.)
 18. Does the frontend use `project.id` for every selector value, state key, and rollup URL, and treat `homeProjectId` as optional metadata only? (N4c, Task 7 Step 1 source-guard asserting `homeProjectId` never appears in identity positions.)
-19. Does `normalize_epm_config` preserve `draft-*` ids without generating UUIDs, and does the save handler (not preview, not normalize) do the `draft-*` → UUID rewrite before normalizing? (N5a, Task 3 case i, Task 3b case g.)
-20. Does Task 1 implement the 200-project fan-out cap with a failing test (250 inputs → 200 outputs + one truncation warning), not just document it in N6? (Task 1 Step 1 case d, Step 2.)
+19. Does `normalize_epm_config` preserve `draft-*` ids without generating UUIDs, and does the save handler (not preview, not normalize) do the `draft-*` → UUID rewrite before normalizing AND rekey `projects` so no `draft-*` key remains in the saved/returned config? (N5a, Task 3 case i, Task 3b case g.)
+20. Does Task 1 implement the 200-project Home pagination cap with a failing test that proves the client stops requesting `goals_byId.projects` pages once 200 nodes are collected, rather than fetching all pages and slicing afterward? (Task 1 Step 1 case d, Step 2.)
 21. Does the rollup endpoint run every fetched issue through `shape_epm_rollup_issue_payload` so the response carries `sprint: [{id, name, state}, ...]`, and does the legacy `/issues` response stay byte-identical (no sprint key added)? (N3c shaper section, Task 5 Step 3 case i, Step 4.)
+22. Does the rollup endpoint avoid silent issue truncation by fetching `EPM_ROLLUP_QUERY_MAX_RESULTS + 1`, returning `truncated: true` plus `truncatedQueries` when any Q1/Q2/Q3 result exceeds the cap, and rendering a warning in the frontend? (N3d, Task 5 Step 3 case j, Task 7 Step 1 guard h.)
+23. Does the rollup endpoint preserve issue-load speed by using at most the Q1/Q2/Q3 Jira searches in the normal path, with no per-issue/per-key Jira fan-out and no parent-key batching unless explicitly revisited with measurements? (N3d, Task 5 Step 3 case k, Step 4.)
 
 If any answer is "no," fail the review with a pointer to the specific Task/Note.
 
@@ -159,7 +161,15 @@ Every `"issue"` in the hierarchy JSON uses the existing slim shape from `shape_e
 { "key": "...", "summary": "...", "status": "...", "assignee": "...", "issueType": "...", "parentKey": "...", "labels": [...] }
 ```
 
-Extension for the rollup endpoint: also include `"sprint": [ { "id": <int>, "name": "<str>", "state": "<str>" }, ... ]` — a list because Jira's sprint field is multi-valued. The sprint field id comes from `get_sprint_field_id()` at `jira_server.py:1566` (default `customfield_10101`, overridable via `dashboard-config.json -> sprintField`). Add a new helper `build_epm_rollup_fields_list()` that starts from `build_epm_fields_list()` at `jira_server.py:1391-1396` and appends `get_sprint_field_id()` if not already present. Do NOT mutate `build_epm_fields_list()` in place — the legacy `/issues` endpoint should keep its existing field set unchanged to avoid shape drift for unrelated callers.
+Extension for the rollup endpoint: also include `"sprint": [ { "id": <int>, "name": "<str>", "state": "<str>" }, ... ]` — a list because Jira's sprint field is multi-valued. The sprint field id comes from `get_sprint_field_id()` at `jira_server.py:1566` (default `customfield_10101`, overridable via `dashboard-config.json -> sprintField`). Add a new helper `build_epm_rollup_fields_list(epic_link_field_id=None)` that starts from `build_epm_fields_list()` at `jira_server.py:1391-1396` and appends `get_sprint_field_id()` plus `epic_link_field_id` if each is present and not already included. Do NOT mutate `build_epm_fields_list()` in place — the legacy `/issues` endpoint should keep its existing field set unchanged to avoid shape drift for unrelated callers.
+
+**Legacy Epic Link parent contract.** The JQL descendant lookup deliberately uses both `"Epic Link" in (...)` and `parent in (...)`, but Jira's issue payload only includes the legacy Epic Link value if the resolved custom field id is requested. The rollup endpoint must resolve `epic_link_field_id = resolve_epic_link_field_id(headers)` once, pass it into `build_epm_rollup_fields_list(epic_link_field_id)`, and pass the same id into `shape_epm_rollup_issue_payload(raw_issues, epic_link_field_id=epic_link_field_id)`. The shaper keeps the existing slim shape and sets `parentKey` this way:
+
+1. Prefer the existing `fields.parent.key`.
+2. If `fields.parent.key` is empty and `epic_link_field_id` is present, use `fields[epic_link_field_id]` as `parentKey`.
+3. Otherwise keep `parentKey: ""`.
+
+Do not expose a new `epicLinkKey` field unless a later UI requires it. The only purpose here is to prevent legacy Epic Link-only Stories from being fetched by Q2/Q3 and then incorrectly rendered as `orphanStories`.
 
 **Sprint-field normalization contract.** This repo does not ship a reusable sprint-field parser. This plan defines the contract explicitly instead of pointing at non-existent helpers. Implement `normalize_epm_sprint_field(raw) -> list[dict]` in `epm_scope.py` (co-located with `build_rollup_jqls` so all rollup-helper logic lives in one module) following these rules:
 
@@ -174,13 +184,25 @@ Mirror this helper with a unit test in `tests/test_epm_scope_resolution.py` (sam
 
 The JQL-level `Sprint = N` filter (N3a) continues to run server-side — we rely on Jira to match sprint ids in `Sprint = N` JQL. Python-side sprint matching is only for rendering badges, never for filtering.
 
-**Wiring into the response — `shape_epm_rollup_issue_payload`.** Do not extend `shape_epm_issue_payload` at `jira_server.py:1399-1422` in place; it serves the legacy `/issues` endpoint and must stay byte-identical. Add a new `shape_epm_rollup_issue_payload(issues)` helper alongside it (same file, one function below). The new helper delegates to `shape_epm_issue_payload` for the base slim shape, then walks each paired raw/slim tuple and attaches `slim['sprint'] = normalize_epm_sprint_field(raw_fields.get(get_sprint_field_id()))`. Return `(slim_issues, epic_details)` in the same tuple shape as the legacy helper. Every Q1/Q2/Q3 result goes through this new shaper before hitting the three-bucket placement logic. If `normalize_epm_sprint_field` returns `[]` for a given issue (no sprint data or the field was absent from the fetch), the issue's `sprint` key is still present as `[]` — the frontend can assume the key is always present on rollup payloads.
+**Wiring into the response — `shape_epm_rollup_issue_payload`.** Do not extend `shape_epm_issue_payload` at `jira_server.py:1399-1422` in place; it serves the legacy `/issues` endpoint and must stay byte-identical. Add a new `shape_epm_rollup_issue_payload(issues, epic_link_field_id=None)` helper alongside it (same file, one function below). The new helper delegates to `shape_epm_issue_payload` for the base slim shape, then walks each paired raw/slim tuple, fills `parentKey` from the legacy Epic Link field when the base shaper found no parent, and attaches `slim['sprint'] = normalize_epm_sprint_field(raw_fields.get(get_sprint_field_id()))`. Return `(slim_issues, epic_details)` in the same tuple shape as the legacy helper. Every Q1/Q2/Q3 result goes through this new shaper before hitting the three-bucket placement logic. If `normalize_epm_sprint_field` returns `[]` for a given issue (no sprint data or the field was absent from the fetch), the issue's `sprint` key is still present as `[]` — the frontend can assume the key is always present on rollup payloads.
 
 **Three distinct response states — do not conflate.** All three share the same top-level keys so callers can render a single renderer branch; the `metadataOnly` and `emptyRollup` flags drive the UI state. The three hierarchy buckets (`initiatives`, `rootEpics`, `orphanStories`) are always present in the payload; empty for the non-render states.
 
-- Project has no `label` saved → `{ metadataOnly: true, emptyRollup: false, initiatives: {}, rootEpics: {}, orphanStories: [] }`. UI shows OPEN SETTINGS CTA. Do not run any query.
-- Project has a `label` saved and Q1 returns zero matches → `{ metadataOnly: false, emptyRollup: true, initiatives: {}, rootEpics: {}, orphanStories: [] }`. UI shows "No issues match this label in the current scope." Do not run Q2/Q3.
-- Otherwise → `{ metadataOnly: false, emptyRollup: false, initiatives: {...}, rootEpics: {...}, orphanStories: [...] }` populated per the placement rules above.
+- Project has no `label` saved → `{ metadataOnly: true, emptyRollup: false, truncated: false, truncatedQueries: [], initiatives: {}, rootEpics: {}, orphanStories: [] }`. UI shows OPEN SETTINGS CTA. Do not run any query.
+- Project has a `label` saved and Q1 returns zero matches → `{ metadataOnly: false, emptyRollup: true, truncated: false, truncatedQueries: [], initiatives: {}, rootEpics: {}, orphanStories: [] }`. UI shows "No issues match this label in the current scope." Do not run Q2/Q3.
+- Otherwise → `{ metadataOnly: false, emptyRollup: false, truncated: <bool>, truncatedQueries: [...], initiatives: {...}, rootEpics: {...}, orphanStories: [...] }` populated per the placement rules above.
+
+### N3d. Rollup query cap must be visible, never silent.
+
+`fetch_issues_by_jql()` defaults to `max_results=500`. Calling it without an explicit rollup cap can silently return an incomplete Project tree that looks complete to the UI. The rollup endpoint must define `EPM_ROLLUP_QUERY_MAX_RESULTS = 2000` and fetch each Q1/Q2/Q3 with `max_results=EPM_ROLLUP_QUERY_MAX_RESULTS + 1`. After each query:
+
+- If `len(raw_issues) <= EPM_ROLLUP_QUERY_MAX_RESULTS`, proceed normally.
+- If `len(raw_issues) > EPM_ROLLUP_QUERY_MAX_RESULTS`, truncate that query's raw issue list to the first `EPM_ROLLUP_QUERY_MAX_RESULTS`, continue building the best-effort tree from the truncated data, and include top-level `truncated: true` plus `truncatedQueries: ["q1", ...]` in the response.
+- If no query exceeds the cap, include `truncated: false` and `truncatedQueries: []`.
+
+The response must not return a complete-looking payload after hitting the cap. Task 7 renders a small warning when `truncated` is true. Do not raise a 4xx/5xx for truncation; the dashboard should still show the usable partial rollup with an explicit warning.
+
+Issue-load speed invariant: the normal rollup path runs at most three Jira searches (Q1/Q2/Q3). Do **not** batch Q2/Q3 parent-key predicates in v1 and do not introduce per-parent or per-issue Jira fetches. The effective scope is already narrowed by `build_base_jql()`, the Project label, Active sprint when present, Jira permissions for the configured credentials, and any team/team-group constraints baked into the configured base JQL. If a future tenant proves the parent-key predicate itself is too large, revisit with measured data; do not add speculative batching now because it increases round trips for the common path.
 
 ### N3a. Tab/sprint contract — sprint is a JQL filter on every query.
 
@@ -294,7 +316,7 @@ Resolution — custom Projects get `tabBucket: 'all'`, and the filter treats `'a
 - Use `homeProjectId` as the new `id` for Home-linked rows.
 - Use `customName` as `name`; if empty, leave empty (will be backfilled from the seeding Home project's `name` at render time — NOT from a Home Goal).
 
-**Stable IDs for custom Projects.** Custom Projects (no `homeProjectId`) get an id generated **once at creation time** via `uuid.uuid4().hex` (or equivalent). The id is persisted on the row and **never recomputed** — in particular, not from `name`. Renaming a custom Project must not change its id. Add a regression test: create a custom Project, save, rename, save again, assert `id` is unchanged and that `epm.projects[id]` still resolves.
+**Stable IDs for custom Projects.** Custom Projects (no `homeProjectId`) get an id generated **once on first save** via `uuid.uuid4().hex` (or equivalent). The id is persisted on the row and **never recomputed** — in particular, not from `name`. Renaming a custom Project must not change its id. Add a regression test: create a custom Project, save, rename, save again, assert `id` is unchanged and that `epm.projects[id]` still resolves.
 
 No destructive changes: persist v2 on next save, but keep reading v1 safely.
 
@@ -307,15 +329,16 @@ Contract:
 - **`normalize_epm_config` is pure.** It preserves any non-empty `id` on a custom-Project row verbatim, whether that id is a `draft-…` placeholder from the client, a real UUID from a prior save, or anything else. It does NOT generate UUIDs on its own. When `id` is empty/missing on a custom-Project row (`homeProjectId == null`), the normalizer leaves `id` empty — the row round-trips with `id: ""` and the caller decides what to do.
 - **`POST /api/epm/projects/preview`** normalizes and returns — draft ids survive the round trip unchanged. The frontend keeps using the same draft id across repeated previews in the same editing session.
 - **`POST /api/epm/config` (save)** runs a pre-normalize rewrite step: for every row in the incoming payload where `homeProjectId == null` AND (`id` is empty OR `id.startswith('draft-')`), replace `id` with `uuid.uuid4().hex`. Then call `normalize_epm_config`, persist, return the v2 config. The response carries the final UUID so the frontend can rekey (see Task 6 Step 2 draft-id → server-UUID reconciliation).
+- **Map-key invariant.** The save handler must rebuild `payload['projects']` keyed by each row's final id before calling `normalize_epm_config`. Rewriting only `row['id']` is not sufficient: it would persist `projects["draft-abc"].id = "<uuid>"`, and `/api/epm/projects/<uuid>/rollup` would not resolve. After save, the returned and persisted config must have no `draft-*` keys; the map key and `row.id` must match for every custom Project.
 - **Draft-id prefix convention.** Client-generated placeholder ids must start with `draft-` (e.g., `draft-1776775000000`). The prefix is what the save handler recognizes as "rewrite to UUID." Any other id shape is treated as a persisted UUID and left alone.
-- **Test coverage.** Task 3 case (i): two consecutive `normalize_epm_config` calls on a payload containing a custom row with `id: "draft-123"` return the same id twice (no churn). Task 3b case (g): `POST /api/epm/projects/preview` round-trips a `draft-` id unchanged; `POST /api/epm/config` on the same payload returns a new UUID that is NOT `"draft-123"` and is 32 hex chars (uuid.hex format).
+- **Test coverage.** Task 3 case (i): two consecutive `normalize_epm_config` calls on a payload containing a custom row with `id: "draft-123"` return the same id twice (no churn). Task 3b case (g): `POST /api/epm/projects/preview` round-trips a `draft-` id unchanged; `POST /api/epm/config` on the same payload returns a new UUID that is NOT `"draft-123"` and is 32 hex chars (uuid.hex format), with the UUID as the `projects` map key and no `draft-123` key remaining.
 
 ### N6. Perf invariants (parallel to the feature work).
 
 - `fetch_latest_project_update` must use `first: 1` and stop after one page. The endpoint paginates `first: 10` today and reads only `ordered[0]` — pure waste (`epm_home.py:232-244, 399-408`).
 - Parallelize the per-project detail + latest-update fan-out in `fetch_projects_for_goal` using `concurrent.futures.ThreadPoolExecutor(max_workers=8)`. Preserve list order by zipping results back.
 - Memoize the detected cloud ID at module scope in `epm_home.fetch_home_site_cloud_id` keyed on `JIRA_URL` — first call fetches, subsequent calls return the cache.
-- Document hard fan-out cap: max 200 projects per rollup; stop paginating `goals_byId.projects` past that.
+- Implement a hard Home project-list cap: max 200 projects per goal. Do not call `execute_paginated()` and slice afterward. Add a capped `fetch_goal_project_links(client, goal_id)` helper (or equivalent) that pages `goals_byId.projects` manually, stops as soon as 200 nodes have been collected, and does not request the next page when the response at the cap still has `pageInfo.hasNextPage: true`.
 
 ### N7. ENG panel leakage.
 
@@ -370,13 +393,13 @@ All new tests use synthetic placeholders (`ACME-1`, `rnd_project_example`, `clou
 
 **Modify:**
 
-- `epm_home.py` — module-level `cloudId` memoization, `first: 1` project-updates fetch, ThreadPoolExecutor fan-out, documented fan-out cap
+- `epm_home.py` — module-level `cloudId` memoization, `first: 1` project-updates fetch, capped `goals_byId.projects` pagination, ThreadPoolExecutor fan-out
 - `epm_scope.py` — new `build_rollup_jqls(label) -> tuple[str, Callable[[list[str]], str | None]] | None` helper that returns `(s1_jql, child_predicate)` where `child_predicate(keys)` emits `("Epic Link" in (...) OR parent in (...))` JQL reused for both Q2 and Q3, or `None` when `keys` is empty. Add `normalize_epm_sprint_field(raw)` per N3c. Keep `build_epm_scope_clause` for the legacy issues endpoint during migration only
 - `jira_server.py` — v1→v2 migration in `normalize_epm_config` (pure, no UUID generation per N5a), save-handler pre-normalize UUID rewrite for `draft-*` ids (N5a), `prefix=` query param on existing `/api/jira/labels`, new `/api/epm/projects/<id>/rollup` endpoint (preserves tab/sprint contract), new `build_epm_rollup_fields_list()` + `shape_epm_rollup_issue_payload()` helpers, new `EPM_ROLLUP_CACHE`
 - `frontend/src/dashboard.jsx` — new EPM settings canvas (prefix field, label autocomplete with show-all toggle, name defaulting, add-custom-Project button, remove epic field), rollup-view renderer (Initiative → Epic → Story hierarchy with dedup), ENG panel gating fix
 - `frontend/src/epm/epmProjectUtils.mjs` — label normalization + rollup tree builder
 - `tests/test_epm_config_api.py` — v1→v2 migration, labelPrefix persistence, custom Project rows, label field validation
-- `tests/test_epm_home_api.py` — cloud-id memoization, `first: 1` updates, ThreadPoolExecutor order preservation
+- `tests/test_epm_home_api.py` — cloud-id memoization, `first: 1` updates, capped Home project pagination, ThreadPoolExecutor order preservation
 - `tests/test_epm_projects_api.py` — custom-Project surfacing in `/api/epm/projects` and `/api/epm/projects/preview`, `find_epm_project_or_404` branching by `homeProjectId` (custom UUID vs Home id), `tabBucket: 'all'` payload field. Rollup endpoint contract lives in `tests/test_epm_rollup_api.py` (Create list below)
 - `tests/test_epm_scope_resolution.py` — rollup JQL builder output and `normalize_epm_sprint_field` coverage
 - `tests/test_epm_settings_source_guards.js` — prefix field, autocomplete, show-all toggle, add-custom-Project markers
@@ -406,11 +429,11 @@ All new tests use synthetic placeholders (`ACME-1`, `rnd_project_example`, `clou
 
 - [ ] **Step 1: Write failing tests for cloud-id memoization, single-page updates, parallel fan-out ordering, and the 200-project cap.**
 
-Assert (a) `fetch_home_site_cloud_id` calls `urlopen` exactly once across two invocations when `JIRA_URL` is unchanged; (b) `fetch_latest_project_update` issues exactly one GraphQL call with `first: 1`; (c) `fetch_projects_for_goal` preserves input ordering when fan-out is parallelized; (d) **fan-out cap:** when `fetch_projects_for_goal` is handed 250 project rows, it stops after processing 200 and logs a single warning (not one per skipped row). Return value contains exactly 200 items, matching the first 200 inputs in order.
+Assert (a) `fetch_home_site_cloud_id` calls `urlopen` exactly once across two invocations when `JIRA_URL` is unchanged; (b) `fetch_latest_project_update` issues exactly one GraphQL call with `first: 1`; (c) `fetch_projects_for_goal` preserves input ordering when fan-out is parallelized; (c1) the latest-update fetch is part of the same bounded fan-out path, not a later sequential loop in `fetch_epm_home_projects` — mock two project details plus two `fetch_latest_project_update` calls and use a `threading.Event`/barrier-style assertion to prove both updates can be in flight concurrently, and also assert `fetch_epm_home_projects` consumes already-enriched project rows and does not call `fetch_latest_project_update` itself; (d) **pagination cap:** a fake `goals_byId.projects` connection with five 50-row pages (250 rows total) triggers exactly four GraphQL `execute` calls for the project-list pages, returns 200 project links, and logs a single truncation warning when the fourth page reports `pageInfo.hasNextPage: true`. This test must fail if the implementation fetches all five pages and slices the fully materialized list afterward.
 
 - [ ] **Step 2: Implement memoization + single-page updates + ThreadPoolExecutor fan-out + 200-cap.**
 
-Module-level cache `_CLOUD_ID_CACHE: dict[str, str]` keyed by `JIRA_URL`. Replace `execute_paginated` in `fetch_latest_project_update` with a single `execute(QUERY_PROJECT_UPDATES, {"projectId": project_id, "first": 1})` and read `edges[0].node`. In `fetch_projects_for_goal`: slice the linked-project list to `[:HOME_MAX_PROJECTS_PER_GOAL]` with `HOME_MAX_PROJECTS_PER_GOAL = 200` as a module constant in `epm_home.py`; emit a single `logger.warning("Goal %s has %d projects; truncating to %d", goal_id, len(linked_projects), HOME_MAX_PROJECTS_PER_GOAL)` when truncation applies. Then wrap the per-project detail + update fetch in a helper function and submit via `ThreadPoolExecutor(max_workers=8)`, collecting results in input order.
+Module-level cache `_CLOUD_ID_CACHE: dict[str, str]` keyed by `JIRA_URL`. Replace `execute_paginated` in `fetch_latest_project_update` with a single `execute(QUERY_PROJECT_UPDATES, {"projectId": project_id, "first": 1})` and read `edges[0].node`. Add `HOME_MAX_PROJECTS_PER_GOAL = 200` and a capped `fetch_goal_project_links(client, goal_id)` helper in `epm_home.py` that manually pages `QUERY_GOAL_PROJECTS` with `first: HOME_PAGE_SIZE`, appends nodes in order, and returns as soon as 200 nodes have been collected. If the page that reaches the cap has `pageInfo.hasNextPage: true`, emit one warning: `logger.warning("Goal %s has more than %d projects; truncating at %d", goal_id, HOME_MAX_PROJECTS_PER_GOAL, HOME_MAX_PROJECTS_PER_GOAL)`. Do not request the next cursor after that warning. Then wrap the per-project detail + update fetch in one helper function (detail fetch, `fetch_latest_project_update`, `build_home_project_record`) and submit via `ThreadPoolExecutor(max_workers=8)`, collecting results in input order. Remove the separate `fetch_latest_project_update` loop from `fetch_epm_home_projects`; after this change it should only dedupe/return already-enriched rows from `fetch_projects_for_goal`.
 
 - [ ] **Step 3: Run tests, verify success, run full suite.**
 
@@ -458,13 +481,13 @@ Cover (config-layer only — the rollup endpoint does not exist yet at this poin
 
 - (a) v1 config with `jiraLabel` + `jiraEpicKey` + `customName: "Foo"` → v2 with `label`, no `jiraEpicKey`, `labelPrefix: "rnd_project_"`, `name: "Foo"`, default `issueTypes`.
 - (b) v2 config round-trips unchanged.
-- (c) custom Projects (no `homeProjectId`) persist with a UUID-generated `id` that does **not** change when `name` is edited — assert via: create, save, rename, save, re-read, `id` is the same string.
+- (c) custom Projects (no `homeProjectId`) with an existing persisted `id` round-trip through `normalize_epm_config` unchanged, and editing `name` in the input does not change that `id`. Do NOT call the save endpoint in this task — save-time UUID assignment and rename persistence are covered in Task 3b case (g).
 - (d) Project row with missing or empty `label` persists with `label: ""` after normalization (round-trip preservation). Do NOT assert rollup-endpoint behavior here — see Task 5 case (a).
 - (e) `GET /api/epm/config` returns v2 shape.
 - (f) v1 input with empty `customName` loads as v2 with empty `name` (render-time fallback to the seeding Home project's name is the UI/backend's job, not the normalizer's).
 - (g) config with partial `issueTypes: {"initiative": ["Theme"]}` round-trips with the user value preserved for `initiative` and defaults filled for `epic` + `leaf`.
 - (h) config with an empty `issueTypes.epic: []` round-trips with the default `["Epic"]` restored (never persist empty).
-- (i) **Normalizer does not churn ids.** Per N5a: calling `normalize_epm_config` twice on a payload where a custom row has `id: "draft-123"` returns `id: "draft-123"` both times. The normalizer never generates UUIDs; `id: ""` also round-trips as `id: ""`. UUID generation happens only in the save-handler pre-normalize step (covered in Task 3b).
+- (i) **Normalizer does not churn ids or rekey maps.** Per N5a: calling `normalize_epm_config` twice on a payload where a custom row has `id: "draft-123"` returns `id: "draft-123"` both times under the same input map key. The normalizer never generates UUIDs; `id: ""` also round-trips as `id: ""`. UUID generation and map rekeying happen only in the save-handler pre-normalize step (covered in Task 3b).
 
 - [ ] **Step 2: Implement migration in `normalize_epm_config`.**
 
@@ -498,13 +521,22 @@ All tests in this task must mock `fetch_epm_home_projects` (via `patch('jira_ser
 - (d) A custom Project with empty `label` renders `matchState: 'metadata-only'`; non-empty → `'jep-fallback'`.
 - (e) Every custom Project has `tabBucket: 'all'` in the payload (per N4b).
 - (f) For a Home-linked Project whose config row has `name: ""`, the response's `displayName` falls back to the seeding Home project's `name` (per N4a `build_epm_project_payload` update).
-- (g) **Save-handler UUID assignment (N5a).** `POST /api/epm/projects/preview` with a payload containing `{id: "draft-abc", homeProjectId: null, name: "New", label: ""}` returns a config whose row still has `id: "draft-abc"` — no UUID rewrite. `POST /api/epm/config` with the same payload returns a config where that row's `id` is a 32-char hex UUID (assert via `len(id) == 32` and `all(c in '0123456789abcdef' for c in id)`) and NOT `"draft-abc"`. A subsequent `POST /api/epm/config` with the just-saved payload (now carrying the real UUID) returns the same UUID unchanged — idempotent save.
+- (g) **Save-handler UUID assignment + map rekey (N5a).** `POST /api/epm/projects/preview` with a payload containing `projects: {"draft-abc": {id: "draft-abc", homeProjectId: null, name: "New", label: ""}}` returns a config whose row still has `id: "draft-abc"` under the `"draft-abc"` map key — no UUID rewrite. `POST /api/epm/config` with the same payload returns a config where the `projects` object has exactly one new 32-char hex UUID key, that row's `id` equals the UUID key, and `"draft-abc"` is not present as a key or row id. A subsequent `POST /api/epm/config` with the just-saved payload (now carrying the real UUID key/id) returns the same UUID unchanged — idempotent save. Then rename that custom Project (`name: "Renamed"`) and save again; assert the same UUID key/id persists.
 
 - [ ] **Step 2: Implement.**
 
 Extend `build_epm_projects_payload` to append custom-Project rows (rows where `homeProjectId == null`) after the Home loop. Build each via a new helper `build_custom_project_payload(row)` that synthesizes the Home-shaped fields listed in N4a (including `tabBucket: 'all'` per N4b) — no GraphQL call. Rewrite `find_epm_project_or_404` per the N4a branching rules: (i) config lookup by id; (ii) if custom, synthesize via `build_custom_project_payload`; (iii) if Home-linked, resolve the Home metadata through the existing fetch path and merge config overrides via `build_epm_project_payload`; (iv) if not in config at all, fall through to the existing Home-scan fallback. Add a focused test that the Home-linked branch still surfaces `stateValue`/`stateLabel`/`tabBucket`/`latestUpdateDate` sourced from the Home path, not from config.
 
-Also implement the **N5a save-handler UUID rewrite**. In `save_epm_config_endpoint` at `jira_server.py:6508-6519` (inside the existing handler, before `normalize_epm_config`): iterate `payload.get('projects', {}).values()` and for every row where `homeProjectId in (None, '')` AND (`id` is empty OR `str(id).startswith('draft-')`), set `row['id'] = uuid.uuid4().hex`. Then call `normalize_epm_config` as before. The preview endpoint at `preview_epm_projects_endpoint` does NOT get this rewrite — draft ids survive preview unchanged.
+Also implement the **N5a save-handler UUID rewrite + map rekey**. In `save_epm_config_endpoint` at `jira_server.py:6508-6519` (inside the existing handler, before `normalize_epm_config`), rebuild the incoming `projects` dict:
+
+1. Iterate `payload.get('projects', {}).items()`.
+2. For each dict row, compute `home_project_id = normalize_epm_text(row.get('homeProjectId'))` and `row_id = normalize_epm_text(row.get('id'))`.
+3. If `home_project_id` is non-empty, force `row['id'] = home_project_id` and store the row under `home_project_id`.
+4. If `home_project_id` is empty and (`row_id` is empty OR `row_id.startswith('draft-')`), generate `row_id = uuid.uuid4().hex`.
+5. For custom rows, force `row['id'] = row_id`, force `row['homeProjectId'] = None`, and store the row under `row_id`.
+6. Replace `payload['projects']` with this rebuilt dict, then call `normalize_epm_config`.
+
+The preview endpoint at `preview_epm_projects_endpoint` does NOT get this rewrite — draft ids survive preview unchanged. Do not leave a saved config with `projects["draft-*"]`; the map key and `row.id` must match after every save.
 
 - [ ] **Step 3: Run tests, verify success.**
 
@@ -524,7 +556,7 @@ Do not add a new endpoint. Extend the existing route at `jira_server.py:6220-625
 
 - [ ] **Step 1: Write failing tests for the new `prefix=` param on `/api/jira/labels`.**
 
-Cover: (a) `GET /api/jira/labels?prefix=rnd_project_` returns only labels that case-insensitively start with `rnd_project_`; (b) `prefix=` and `query=` combine (prefix first, then substring); (c) no `prefix` param → existing behavior unchanged (regression guard); (d) existing `limit` cap still applies after filtering. Do **not** change pagination — the Jira label endpoint returns `{startAt, maxResults, total, isLast, values[]}` and the existing loop at lines 6226-6244 is already correct.
+Cover: (a) `GET /api/jira/labels?prefix=rnd_project_` returns only labels that case-insensitively start with `rnd_project_`; (b) `prefix=` and `query=` combine using the N8 order (existing substring `query` filter, then `prefix` filter, then `limit`); (c) no `prefix` param → existing behavior unchanged (regression guard); (d) existing `limit` cap still applies after filtering. Do **not** change pagination — the Jira label endpoint returns `{startAt, maxResults, total, isLast, values[]}` and the existing loop at lines 6226-6244 is already correct.
 
 - [ ] **Step 2: Implement the `prefix` filter.**
 
@@ -558,10 +590,10 @@ Reuse `_quote_jql_value` from `epm_scope.py:1-4` for both label and issue-key es
 
 Cover these cases explicitly — all must pass before implementation is considered done:
 
-- (a) Project with `label: ""` → 200 `{metadataOnly: true, emptyRollup: false, initiatives: {}, rootEpics: {}, orphanStories: []}`. Q1/Q2/Q3 must NOT run (assert via mock).
-- (b) Project with `label` set, Q1 returns zero → 200 `{metadataOnly: false, emptyRollup: true, initiatives: {}, rootEpics: {}, orphanStories: []}`. Q2/Q3 must NOT run.
+- (a) Project with `label: ""` → 200 `{metadataOnly: true, emptyRollup: false, truncated: false, truncatedQueries: [], initiatives: {}, rootEpics: {}, orphanStories: []}`. Q1/Q2/Q3 must NOT run (assert via mock).
+- (b) Project with `label` set, Q1 returns zero → 200 `{metadataOnly: false, emptyRollup: true, truncated: false, truncatedQueries: [], initiatives: {}, rootEpics: {}, orphanStories: []}`. Q2/Q3 must NOT run.
 - (c) Project with `label` set, Q1 returns mixed issuetypes → executes Q2 with `<keys>` = Q1 items whose issuetype matches the configured initiative-or-epic set (N3b), then Q3 with `<keys>` = Q2 items whose issuetype matches the configured epic set. Each Q2/Q3 captured JQL is the dual-OR `("Epic Link" in (...) OR parent in (...))`. Issues are deduped by `issue.key` across S1 ∪ S2 ∪ S3; a story appearing in both S1 (direct label) and S3 (child of labeled Epic) renders once.
-- (c1) **Triple-OR wiring.** Tenant-dual-schema fixture — one Story linked to its labeled Epic only via `customfield_<epic_link>` ("Epic Link"), another linked only via `parent`. Both surface in Q2. If either channel is missing, the test fails.
+- (c1) **Dual-schema wiring and nesting.** Tenant-dual-schema fixture — one Story linked to its labeled Epic only via `customfield_<epic_link>` ("Epic Link"), another linked only via `parent`. Both surface in Q2. The legacy Epic Link-only Story must have `parentKey` set to the Epic key in the rollup payload and must render under that Epic in `rootEpics` or `initiatives[...].epics[...]`, not under `orphanStories`. If either fetch channel or the legacy-parent shaping is missing, the test fails.
 - (c2) **Configurable issuetypes.** Override `epm.issueTypes.initiative = ["Theme"]` in config → the Q2 seed keys are drawn from Q1 items whose `issuetype.name == "Theme"`, not "Initiative". Tree buckets under `initiatives` still use the same key names. Case-insensitive match.
 - (d) Hierarchy three-bucket placement (matches N3 rules). Build a fixture that exercises each rule:
   - labeled Initiative with labeled Epic child with unlabeled Story grandchild → `initiatives[I].epics[E].stories[S]`.
@@ -578,18 +610,24 @@ Cover these cases explicitly — all must pass before implementation is consider
   - Issue whose raw sprint field is `list[str]` (legacy `com.atlassian.greenhopper.service.sprint.Sprint@...[id=7,state=CLOSED,name=Old]`): payload issue object contains `"sprint": [{"id": 7, "name": "Old", "state": "CLOSED"}]`.
   - Issue whose raw sprint field is `None` or absent: payload issue object contains `"sprint": []` (key always present).
   Also assert the legacy `/api/epm/projects/<id>/issues` endpoint is byte-identical for the same fixtures (no `sprint` key added to its response) — regression guard that `shape_epm_issue_payload` was not mutated.
+- (j) **No silent rollup truncation.** Patch `fetch_issues_by_jql` so Q1 returns `EPM_ROLLUP_QUERY_MAX_RESULTS + 1` synthetic issues. The endpoint must call the helper with `max_results=EPM_ROLLUP_QUERY_MAX_RESULTS + 1`, truncate Q1 to `EPM_ROLLUP_QUERY_MAX_RESULTS` before shaping/building the tree, and return top-level `truncated: true` plus `truncatedQueries: ["q1"]`. A normal under-cap fixture returns `truncated: false` and `truncatedQueries: []`. Repeat the over-cap assertion for Q2 or Q3 so truncation is not Q1-only.
+- (k) **Issue-load speed preserved.** In the normal under-cap rollup fixture, assert `fetch_issues_by_jql` is called no more than three times total (Q1, Q2 if seeded, Q3 if seeded), and that no implementation path loops over parent keys or issues to call Jira again. This guards against parent-key batching/per-issue enrichment being added without measurement.
 
 - [ ] **Step 4: Implement the endpoint.**
 
-Add `EPM_ROLLUP_CACHE` and `EPM_ROLLUP_CACHE_TTL_SECONDS = 300`. Extend `clear_epm_caches()` at `jira_server.py:1376-1379` to also clear `EPM_ROLLUP_CACHE`. Factor `validate_epm_tab_sprint(tab, sprint) -> (error_json, status) | None` for reuse between `/issues` and `/rollup` endpoints. Resolve the Project via the updated `find_epm_project_or_404` (Home id OR custom UUID, per N4a). Build `base_jql = build_base_jql()`. Build Q1/Q2/Q3 via `build_rollup_jqls(label)`. Read `epm.issueTypes` from the normalized config (N3b) for the initiative/epic/leaf filter. Pass `build_epm_rollup_fields_list()` (the new helper introduced in N3c) to every `fetch_issues_by_jql` call so each response carries the sprint field for the frontend badges. Do NOT reuse `build_epm_fields_list()` directly here — it serves the legacy `/issues` endpoint and must stay byte-identical for unrelated callers.
+Add `EPM_ROLLUP_CACHE`, `EPM_ROLLUP_CACHE_TTL_SECONDS = 300`, and `EPM_ROLLUP_QUERY_MAX_RESULTS = 2000`. Extend `clear_epm_caches()` at `jira_server.py:1376-1379` to also clear `EPM_ROLLUP_CACHE`. Factor `validate_epm_tab_sprint(tab, sprint) -> (error_json, status) | None` for reuse between `/issues` and `/rollup` endpoints. Resolve the Project via the updated `find_epm_project_or_404` (Home id OR custom UUID, per N4a). Build `base_jql = build_base_jql()`. Build Q1/Q2/Q3 via `build_rollup_jqls(label)`. Read `epm.issueTypes` from the normalized config (N3b) for the initiative/epic/leaf filter. Resolve `epic_link_field_id = resolve_epic_link_field_id(headers)` once and pass `build_epm_rollup_fields_list(epic_link_field_id)` (the new helper introduced in N3c) to every `fetch_issues_by_jql` call so each response carries the sprint field and the legacy Epic Link parent field for the frontend hierarchy. Do NOT reuse `build_epm_fields_list()` directly here — it serves the legacy `/issues` endpoint and must stay byte-identical for unrelated callers.
+
+Wrap each JQL fetch in a small rollup helper, e.g. `fetch_epm_rollup_query(jql, query_name, headers, fields_list)`, that calls `fetch_issues_by_jql(..., max_results=EPM_ROLLUP_QUERY_MAX_RESULTS + 1)`. If the helper receives more than `EPM_ROLLUP_QUERY_MAX_RESULTS`, record `query_name` in `truncatedQueries`, slice to the cap, and return the sliced list. The final payload always includes `truncated: bool(truncatedQueries)` and `truncatedQueries`.
+
+Do not split Q2/Q3 parent predicates into multiple Jira requests in this plan. The v1 performance contract is a maximum of three Jira searches for a cache miss, and the endpoint cache covers repeat renders. If future production data shows Jira rejecting the generated parent predicate even under the configured scope, handle that as a measured follow-up with a documented batch size and before/after timing.
 
 Execution order:
 
-1. If `label == ""` → return the `metadataOnly: true` payload (per N3 state bullets). No query runs.
+1. If `label == ""` → return the `metadataOnly: true` payload (per N3 state bullets) with `truncated: false` and `truncatedQueries: []`. No query runs.
 2. Run Q1 with `base_jql AND Q1_jql` plus — if `should_apply_epm_sprint(tab)` is True — `AND Sprint = <N>`. If the resulting set is empty → return the `emptyRollup: true` payload.
 3. Extract Initiative/Epic keys from Q1 (case-insensitive match against `epm.issueTypes.initiative + epm.issueTypes.epic`). Run Q2 with `base_jql AND <child_predicate(keys)>` plus the same sprint clause when applicable. If the predicate returns `None` (empty keys) skip Q2.
 4. Extract Epic keys from Q2 (match against `epm.issueTypes.epic` only). Run Q3 with the same contract. Skip if predicate returns `None`.
-5. Run every fetched issue list through `shape_epm_rollup_issue_payload` (the new helper introduced in N3c) so each slim issue carries `sprint: [{id, name, state}, ...]`. Union S1 ∪ S2 ∪ S3, dedup by `issue.key`. Build the three-bucket hierarchy per N3 placement rules using the configured issuetype sets. Return.
+5. Run every fetched issue list through `shape_epm_rollup_issue_payload(raw_issues, epic_link_field_id=epic_link_field_id)` (the new helper introduced in N3c) so each slim issue carries `sprint: [{id, name, state}, ...]` and legacy Epic Link-only stories get `parentKey`. Union S1 ∪ S2 ∪ S3, dedup by `issue.key`. Build the three-bucket hierarchy per N3 placement rules using the configured issuetype sets. Return with the truncation fields from N3d.
 
 Caches are keyed by `(projectId, tab, sprint, label, base_jql)` (per N3a). Do not key on `epm.issueTypes` — a config-level change already invalidates via `clear_epm_caches()` on `POST /api/epm/config`.
 
@@ -606,7 +644,7 @@ Caches are keyed by `(projectId, tab, sprint, label, base_jql)` (per N3a). Do no
 
 - [ ] **Step 1: Write failing source guards for the new settings canvas.**
 
-Guards: (a) `labelPrefix` field renders with persisted value (default `"rnd_project_"`); (b) label input is an autocomplete, calls `/api/jira/labels?prefix=<labelPrefix>&limit=200` on focus (both params required; the default server limit of 50 is too small for client-side typeahead filtering and would silently drop valid matches); (c) "Show all labels" toggle re-queries `/api/jira/labels?limit=200` without `prefix`; (d) `name` field (NOT `customName`) defaults to `homeProject.name` via placeholder / render-time fallback when empty; (e) "Add custom Project" button renders a row with `name` + `label` only (no `homeProjectId`), and the row's `id` comes from the server after first save (client sends placeholder, server assigns UUID); (f) the epic-key input is removed from the DOM (regression guard: no `data-field="jiraEpicKey"` and no "Jira Epic" label text in EPM settings).
+Guards: (a) `labelPrefix` field renders with persisted value (default `"rnd_project_"`); (b) label input is an autocomplete, calls `/api/jira/labels?prefix=<labelPrefix>&limit=200` on focus (both params required; the default server limit of 50 is too small for client-side typeahead filtering and would silently drop valid matches); (c) "Show all labels" toggle re-queries `/api/jira/labels?limit=200` without `prefix`; (d) `name` field (NOT `customName`) defaults to `homeProject.name` via placeholder / render-time fallback when empty; (e) "Add custom Project" button renders a row with `name` + `label` only (no `homeProjectId`), and the row's `id` comes from the server after first save (client sends placeholder, server assigns UUID); (f) the epic-key input is removed from the DOM (regression guard: no `data-field="jiraEpicKey"` and no "Jira Epic" label text in EPM settings); (g) preserve the MRT011 source guard already in `tests/test_epm_settings_source_guards.js`: opening Settings -> EPM must not call `refreshEpmProjects()` or `loadEpmProjectPreview(` from `loadEpmSettings`; preview/test remains draft-scoped until explicit Test Configuration or save.
 
 - [ ] **Step 2: Implement the settings canvas.**
 
@@ -637,12 +675,12 @@ node --test tests/test_epm_settings_source_guards.js
 
 Two files, distinct test styles:
 
-- In `tests/test_epm_view_source_guards.js` (source-grep style): (a) EPM board calls `/api/epm/projects/<id>/rollup` with the current `tab` and `sprint` URL params (preserving the legacy gating at `dashboard.jsx:907-921` — do not fetch when `tab=active && !selectedSprint`); (b) renderer groups issues by Initiative → Epic → Story hierarchy when `metadataOnly: false && emptyRollup: false`; (c) dedup by issue key (same story appearing in S1 and S3 renders once); (d) orphan stories (no labeled parent) render under the Project directly; (e) `metadataOnly: true` response shows OPEN SETTINGS CTA; (f) `emptyRollup: true` response shows a **different** empty-state message ("No issues match this label in the current scope") — the two states render distinct UI.
+- In `tests/test_epm_view_source_guards.js` (source-grep style): (a) EPM board calls `/api/epm/projects/<id>/rollup` with the current `tab` and `sprint` URL params (preserving the legacy gating at `dashboard.jsx:907-921` — do not fetch when `tab=active && !selectedSprint`); (b) renderer groups issues by Initiative → Epic → Story hierarchy when `metadataOnly: false && emptyRollup: false`; (c) dedup by issue key (same story appearing in S1 and S3 renders once); (d) orphan stories (no labeled parent) render under the Project directly; (e) `metadataOnly: true` response shows OPEN SETTINGS CTA; (f) `emptyRollup: true` response shows a **different** empty-state message ("No issues match this label in the current scope") — the two states render distinct UI; (g) custom Projects with `tabBucket: 'all'` remain visible on every tab via the pure-function test; (h) `truncated: true` response renders a compact warning such as "This rollup is truncated; narrow the label or Jira scope." while still rendering the partial tree.
 - In `tests/test_epm_project_utils.js` (new pure-function Node test importing from `frontend/src/epm/epmProjectUtils.mjs`): construct projects with `tabBucket` in `{'all', 'active', 'backlog', 'archived', '', undefined}` and assert `filterEpmProjectsForTab(projects, tab)` returns: `'all'` visible on every tab; lifecycle buckets visible only on their matching tab; `''` / `undefined` visible on no tab (regression guard against silent omission). No bundle grep — direct ESM import of the helper.
 
 - [ ] **Step 2: Implement the rollup renderer.**
 
-Add `buildRollupTree(payload)` in `epmProjectUtils.mjs` that consumes `{metadataOnly, emptyRollup, initiatives, rootEpics, orphanStories}` and returns either `{kind: 'metadataOnly'}`, `{kind: 'emptyRollup'}`, or `{kind: 'tree', initiatives: [...], rootEpics: [...], orphanStories: [...]}`. The renderer in `dashboard.jsx` branches on `kind`. Use existing sticky header classes (see AGENTS.md §"Sticky UI Layering" — do not introduce new z-index). Reuse existing issue-row components from ENG mode where possible.
+Add `buildRollupTree(payload)` in `epmProjectUtils.mjs` that consumes `{metadataOnly, emptyRollup, truncated, truncatedQueries, initiatives, rootEpics, orphanStories}` and returns either `{kind: 'metadataOnly'}`, `{kind: 'emptyRollup'}`, or `{kind: 'tree', truncated: Boolean(payload.truncated), truncatedQueries: [...], initiatives: [...], rootEpics: [...], orphanStories: [...]}`. The renderer in `dashboard.jsx` branches on `kind`; when `kind === 'tree' && truncated`, render a compact warning above the tree but still render the partial hierarchy. Use existing sticky header classes (see AGENTS.md §"Sticky UI Layering" — do not introduce new z-index). Reuse existing issue-row components from ENG mode where possible.
 
 Also update `filterEpmProjectsForTab` at `frontend/src/epm/epmProjectUtils.mjs:9-14` to treat `tabBucket: 'all'` as a wildcard: `project.tabBucket === 'all' || normalizedBucket === normalizedTab`. Preserve the existing `|| ''` fallback so malformed payloads still hide safely (neither `''` nor any other value besides the four canonical ones matches any tab).
 

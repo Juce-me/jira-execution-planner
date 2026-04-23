@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import jira_server
-from epm_scope import build_epm_scope_clause, should_apply_epm_sprint
+from epm_scope import build_epm_scope_clause, build_rollup_jqls, normalize_epm_sprint_field, should_apply_epm_sprint
 
 
 class TestEpmScopeResolution(unittest.TestCase):
@@ -32,6 +32,67 @@ class TestEpmScopeResolution(unittest.TestCase):
 
     def test_active_tab_applies_sprint(self):
         self.assertTrue(should_apply_epm_sprint('active'))
+
+    def test_build_rollup_jqls_empty_label_returns_none(self):
+        self.assertIsNone(build_rollup_jqls(''))
+        self.assertIsNone(build_rollup_jqls('   '))
+
+    def test_build_rollup_jqls_uses_exact_label_and_dual_child_predicate(self):
+        s1_jql, child_predicate = build_rollup_jqls('synthetic_label_alpha')
+
+        self.assertEqual(s1_jql, 'labels = "synthetic_label_alpha"')
+        self.assertEqual(
+            child_predicate(['SYN-1', 'SYN-2']),
+            '("Epic Link" in ("SYN-1", "SYN-2") OR parent in ("SYN-1", "SYN-2"))'
+        )
+        self.assertIsNone(child_predicate([]))
+
+    def test_build_rollup_jqls_escapes_label_and_child_keys(self):
+        s1_jql, child_predicate = build_rollup_jqls('alpha"beta\\gamma')
+
+        self.assertEqual(s1_jql, 'labels = "alpha\\"beta\\\\gamma"')
+        self.assertEqual(
+            child_predicate(['SYN"1\\A']),
+            '("Epic Link" in ("SYN\\"1\\\\A") OR parent in ("SYN\\"1\\\\A"))'
+        )
+
+    def test_normalize_epm_sprint_field_supports_modern_shape(self):
+        self.assertEqual(
+            normalize_epm_sprint_field([
+                {'id': '42', 'name': 'Sprint 42', 'state': 'ACTIVE'},
+                {'id': 7, 'name': 'Sprint 7', 'state': 'CLOSED'},
+                {'id': 'bad', 'name': 'Bad', 'state': 'ACTIVE'},
+                {'id': 42, 'name': 'Duplicate', 'state': 'ACTIVE'},
+            ]),
+            [
+                {'id': 7, 'name': 'Sprint 7', 'state': 'CLOSED'},
+                {'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'},
+            ]
+        )
+
+    def test_normalize_epm_sprint_field_supports_single_dict(self):
+        self.assertEqual(
+            normalize_epm_sprint_field({'id': '42', 'name': 'Sprint 42', 'state': 'ACTIVE'}),
+            [{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}]
+        )
+
+    def test_normalize_epm_sprint_field_supports_legacy_greenhopper_strings(self):
+        self.assertEqual(
+            normalize_epm_sprint_field([
+                'com.atlassian.greenhopper.service.sprint.Sprint@abc[id=7,rapidViewId=1,state=CLOSED,name=Old Sprint,startDate=]',
+                'com.atlassian.greenhopper.service.sprint.Sprint@def[id=42,rapidViewId=1,state=ACTIVE,name=Sprint 42]',
+                'com.atlassian.greenhopper.service.sprint.Sprint@bad[state=ACTIVE,name=Missing Id]',
+            ]),
+            [
+                {'id': 7, 'name': 'Old Sprint', 'state': 'CLOSED'},
+                {'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'},
+            ]
+        )
+
+    def test_normalize_epm_sprint_field_empty_or_unknown_shape_returns_empty_list(self):
+        self.assertEqual(normalize_epm_sprint_field(None), [])
+        self.assertEqual(normalize_epm_sprint_field('not a list'), [])
+        self.assertEqual(normalize_epm_sprint_field([{'id': 'bad'}]), [])
 
 
 class TestEpmScopeResolutionEndpoint(unittest.TestCase):

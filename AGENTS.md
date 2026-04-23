@@ -192,7 +192,8 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Never commit real Jira fixture data. Use synthetic or sanitized examples only, and never copy identifiable config-derived values into committed tests.
 - Jira API pagination uses `nextPageToken` / `isLast`, not `startAt` / `total`. Verify response shapes before coding against them.
 - Any new API plan in `docs/plans/` must use the same Jira pagination contract.
-- EPM Jira queries stay in `dashboard-config.json -> projects.selected`. Metadata-only Home projects must render the Home card plus the `Settings -> EPM` CTA, not an empty Jira board.
+- EPM Project rollups are label-driven; each Project has one exact Jira label. No wildcard/fallback. Metadata-only Home projects still render the Home card plus `Settings -> EPM` CTA.
+- `epm.labelPrefix` in `dashboard-config.json` controls the label autocomplete filter in the EPM settings canvas. Default is `"rnd_project_"`. The full matched label is what the rollup query uses; the prefix is only a UI filter.
 - Initial dashboard load is performance-critical. Avoid redundant requests, justify heavy endpoints, and measure before/after when claiming improvements.
 - For analytics-style views, prefer one scoped fetch plus client-side regrouping/filtering. Re-fetch only when scope changes or the user explicitly refreshes.
 - If per-issue Jira enrichment is required, define strict fan-out limits before implementation.

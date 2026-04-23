@@ -22,7 +22,7 @@ import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
-import { filterEpmProjectsForTab, getEpmProjectDisplayName, getEpmSprintHelper, shouldUseEpmSprint } from './epm/epmProjectUtils.mjs';
+import { buildRollupTree, filterEpmProjectsForTab, getEpmProjectDisplayName, getEpmProjectIdentity, getEpmSprintHelper, hydrateEpmProjectDraft, shouldUseEpmSprint } from './epm/epmProjectUtils.mjs';
 import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
 import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
@@ -30,6 +30,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
         const EMPTY_OBJECT = Object.freeze({});
+        const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';
+
+        const createEmptyEpmConfigDraft = () => ({
+            version: 2,
+            labelPrefix: DEFAULT_EPM_LABEL_PREFIX,
+            scope: { rootGoalKey: '', subGoalKey: '' },
+            projects: {}
+        });
 
         // Backend server URL
         const DEFAULT_BACKEND_PORT = 5050;
@@ -194,14 +202,16 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmProjectsLoading, setEpmProjectsLoading] = useState(false);
             const [epmProjectsError, setEpmProjectsError] = useState('');
             const [epmSelectedProjectId, setEpmSelectedProjectId] = useState(savedPrefsRef.current.epmSelectedProjectId ?? '');
-            const [epmConfigDraft, setEpmConfigDraft] = useState({ version: 1, scope: { rootGoalKey: '', subGoalKey: '' }, projects: {} });
+            const [epmConfigDraft, setEpmConfigDraft] = useState(createEmptyEpmConfigDraft());
             const [epmConfigLoading, setEpmConfigLoading] = useState(false);
             const [epmConfigSaving, setEpmConfigSaving] = useState(false);
             const [epmSettingsProjects, setEpmSettingsProjects] = useState([]);
             const [epmSettingsProjectsLoading, setEpmSettingsProjectsLoading] = useState(false);
             const [epmSettingsProjectsError, setEpmSettingsProjectsError] = useState('');
             const [epmSettingsPreviewRequested, setEpmSettingsPreviewRequested] = useState(false);
-            const epmConfigBaselineRef = useRef(JSON.stringify({ version: 1, scope: { rootGoalKey: '', subGoalKey: '' }, projects: {} }));
+            const [epmLabelShowAll, setEpmLabelShowAll] = useState({});
+            const [epmLabelChanging, setEpmLabelChanging] = useState({});
+            const epmConfigBaselineRef = useRef(JSON.stringify(createEmptyEpmConfigDraft()));
             const [epmScopeMeta, setEpmScopeMeta] = useState({ cloudId: '', error: '' });
             const [epmRootGoals, setEpmRootGoals] = useState([]);
             const [epmSubGoals, setEpmSubGoals] = useState([]);
@@ -215,9 +225,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmSubGoalOpen, setEpmSubGoalOpen] = useState(false);
             const [epmRootGoalIndex, setEpmRootGoalIndex] = useState(0);
             const [epmSubGoalIndex, setEpmSubGoalIndex] = useState(0);
-            const [epmIssues, setEpmIssues] = useState([]);
-            const [epmIssuesLoading, setEpmIssuesLoading] = useState(false);
-            const [epmIssueEpics, setEpmIssueEpics] = useState({});
+            const [epmRollupTree, setEpmRollupTree] = useState(null);
+            const [epmRollupLoading, setEpmRollupLoading] = useState(false);
             const [availableSprints, setAvailableSprints] = useState([]);
             const [sprintsLoading, setSprintsLoading] = useState(true);
             const [groupsConfig, setGroupsConfig] = useState({
@@ -545,7 +554,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const epmProjectsPendingSelectionRef = useRef(false);
             const epmProjectsRequestIdRef = useRef(0);
             const epmSettingsProjectsRequestIdRef = useRef(0);
-            const epmIssuesRequestIdRef = useRef(0);
+            const epmDraftIdCounterRef = useRef(0);
+            const epmRollupRequestIdRef = useRef(0);
             const epmSubGoalsRequestIdRef = useRef(0);
             const pendingConfigRefreshRef = useRef(0);
             const configRefreshTargetRef = useRef('none');
@@ -566,7 +576,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             }, [availableSprints, selectedSprint]);
             // filterEpmProjectsForTab owns the `project.tabBucket === epmTab` check.
             const visibleEpmProjects = React.useMemo(() => filterEpmProjectsForTab(epmProjects, epmTab), [epmProjects, epmTab]);
-            const selectedEpmProject = visibleEpmProjects.find((project) => project.homeProjectId === epmSelectedProjectId) || null;
+            const selectedEpmProject = visibleEpmProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;
             const loadEpmConfig = async () => {
                 const response = await fetch(`${BACKEND_URL}/api/epm/config`, { cache: 'no-cache' });
                 if (!response.ok) {
@@ -696,10 +706,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     setEpmConfigDraft(nextConfig);
                     epmConfigBaselineRef.current = JSON.stringify(nextConfig);
                     if (hasSavedEpmScopeConfig(nextConfig)) {
-                        await refreshEpmProjects();
+                        const nextProjects = await refreshEpmProjects();
+                        setEpmSettingsProjects(nextProjects);
+                        setEpmSettingsPreviewRequested(true);
                     } else {
                         setEpmProjects([]);
                         setEpmProjectsError('');
+                        setEpmSettingsProjects([]);
+                        setEpmSettingsPreviewRequested(false);
                     }
                 } catch (err) {
                     const message = err?.message || 'Failed to save EPM settings.';
@@ -710,40 +724,111 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     setEpmConfigSaving(false);
                 }
             };
-            const updateEpmProjectDraft = (homeProjectId, field, value) => {
+            const updateEpmLabelPrefixDraft = (value) => {
+                setEpmConfigDraft((prev) => ({
+                    ...prev,
+                    labelPrefix: value,
+                }));
+                setLabelSearchResults(prev => {
+                    const next = { ...prev };
+                    Object.keys(next).forEach((key) => {
+                        if (key.startsWith(`${EPM_LABEL_SEARCH_GROUP_ID}:`)) {
+                            delete next[key];
+                        }
+                    });
+                    return next;
+                });
+            };
+            const updateEpmProjectDraft = (projectId, field, value) => {
                 setEpmConfigDraft((prev) => {
                     const prevProjects = prev.projects || {};
-                    const prevRow = prevProjects[homeProjectId] || { homeProjectId };
+                    const rowSource = epmSettingsProjectRows.find(row => row.id === projectId);
+                    const prevRow = prevProjects[projectId] || { id: projectId, homeProjectId: rowSource?.homeProjectId };
                     return {
                         ...prev,
                         projects: {
                             ...prevProjects,
-                            [homeProjectId]: { ...prevRow, homeProjectId, [field]: value },
+                            [projectId]: { ...prevRow, id: projectId, [field]: value },
                         },
                     };
                 });
             };
             const EPM_LABEL_SEARCH_GROUP_ID = 'epm-project';
-            const getEpmLabelRowKey = (homeProjectId) => getLabelRowKey(EPM_LABEL_SEARCH_GROUP_ID, homeProjectId);
-            const getEpmLabelSearchResults = (homeProjectId) => {
-                const key = getEpmLabelRowKey(homeProjectId);
+            const getEpmLabelRowKey = (projectId) => getLabelRowKey(EPM_LABEL_SEARCH_GROUP_ID, projectId);
+            const getEpmLabelSearchResults = (projectId) => {
+                const key = getEpmLabelRowKey(projectId);
                 const query = String(labelSearchQuery[key] || '').trim();
-                if (query.length < 3) return [];
-                return labelSearchResults[key] || [];
+                const results = labelSearchResults[key] || [];
+                if (!query) return results;
+                const normalizedQuery = query.toLowerCase();
+                return results.filter(label => String(label || '').toLowerCase().includes(normalizedQuery));
             };
-            const selectEpmProjectLabel = React.useCallback((homeProjectId, label) => {
-                const key = getEpmLabelRowKey(homeProjectId);
-                updateEpmProjectDraft(homeProjectId, 'jiraLabel', label);
+            const addCustomEpmProjectDraft = () => {
+                epmDraftIdCounterRef.current += 1;
+                const draftId = `draft-${Date.now().toString(36)}-${epmDraftIdCounterRef.current}`;
+                setEpmConfigDraft((prev) => ({
+                    ...prev,
+                    projects: {
+                        ...(prev.projects || {}),
+                        [draftId]: {
+                            id: draftId,
+                            homeProjectId: null,
+                            name: '',
+                            label: '',
+                        },
+                    },
+                }));
+            };
+            const removeEpmProjectDraft = (projectId) => {
+                setEpmConfigDraft((prev) => {
+                    const nextProjects = { ...(prev.projects || {}) };
+                    delete nextProjects[projectId];
+                    return {
+                        ...prev,
+                        projects: nextProjects,
+                    };
+                });
+            };
+            const loadEpmProjectLabels = async (projectId, showAll = false) => {
+                const key = getEpmLabelRowKey(projectId);
+                const requestId = (labelSearchRequestIdRef.current[key] || 0) + 1;
+                labelSearchRequestIdRef.current[key] = requestId;
+                setLabelSearchLoading(prev => ({ ...prev, [key]: true }));
+                try {
+                    const prefix = String(epmConfigDraft.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX).trim();
+                    const response = showAll || !prefix
+                        ? await fetch(`${BACKEND_URL}/api/jira/labels?limit=200`, { cache: 'no-cache' })
+                        : await fetch(`${BACKEND_URL}/api/jira/labels?prefix=${encodeURIComponent(prefix)}&limit=200`, { cache: 'no-cache' });
+                    if (!response.ok) {
+                        throw new Error(`Labels error ${response.status}`);
+                    }
+                    const payload = await response.json();
+                    const nextResults = Array.isArray(payload.labels) ? payload.labels : [];
+                    if (labelSearchRequestIdRef.current[key] === requestId) {
+                        setLabelSearchResults(prev => ({ ...prev, [key]: nextResults }));
+                        setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
+                    }
+                } catch (error) {
+                    if (labelSearchRequestIdRef.current[key] === requestId) {
+                        setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
+                        setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
+                    }
+                } finally {
+                    if (labelSearchRequestIdRef.current[key] === requestId) {
+                        setLabelSearchLoading(prev => ({ ...prev, [key]: false }));
+                    }
+                }
+            };
+            const selectEpmProjectLabel = React.useCallback((projectId, label) => {
+                const key = getEpmLabelRowKey(projectId);
+                updateEpmProjectDraft(projectId, 'label', label);
                 setLabelSearchQuery(prev => ({ ...prev, [key]: '' }));
-                setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
                 setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
                 setLabelSearchOpen(prev => ({ ...prev, [key]: false }));
+                setEpmLabelChanging(prev => ({ ...prev, [key]: false }));
             }, [updateEpmProjectDraft]);
-            const scheduleEpmProjectLabelSearch = (homeProjectId, rawQuery) => {
-                scheduleJiraLabelSearch(EPM_LABEL_SEARCH_GROUP_ID, homeProjectId, rawQuery);
-            };
-            const handleEpmLabelSearchKeyDown = React.useCallback((homeProjectId, event, results) => {
-                const key = getEpmLabelRowKey(homeProjectId);
+            const handleEpmLabelSearchKeyDown = React.useCallback((projectId, event, results) => {
+                const key = getEpmLabelRowKey(projectId);
                 if (event.key === 'ArrowDown') {
                     if (!results.length) return;
                     event.preventDefault();
@@ -770,7 +855,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     const index = labelSearchIndex[key] || 0;
                     const label = results[index] || results[0];
                     if (label) {
-                        selectEpmProjectLabel(homeProjectId, label);
+                        selectEpmProjectLabel(projectId, label);
                     }
                     return;
                 }
@@ -893,66 +978,65 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setEpmSubGoalOpen(false);
                 setEpmSubGoalIndex(0);
             };
-            const refreshEpmIssues = async (projectOverride = selectedEpmProject, projectIdOverride = epmSelectedProjectId) => {
-                epmIssuesRequestIdRef.current += 1;
-                const requestId = epmIssuesRequestIdRef.current;
+            const refreshEpmRollup = async (projectOverride = selectedEpmProject, projectIdOverride = epmSelectedProjectId) => {
+                epmRollupRequestIdRef.current += 1;
+                const requestId = epmRollupRequestIdRef.current;
                 const currentProject = projectOverride || null;
-                const currentProjectId = projectIdOverride || '';
+                const currentProjectId = projectIdOverride || getEpmProjectIdentity(currentProject);
                 if (selectedView !== 'epm' || !currentProjectId || !currentProject) {
-                    setEpmIssues([]);
-                    setEpmIssueEpics({});
-                    setEpmIssuesLoading(false);
+                    setEpmRollupTree(null);
+                    setEpmRollupLoading(false);
+                    return;
+                }
+                if (currentProject.matchState === 'metadata-only') {
+                    setEpmRollupTree(buildRollupTree({ metadataOnly: true }));
+                    setEpmRollupLoading(false);
                     return;
                 }
                 if (epmTab === 'active' && !selectedSprint) {
-                    setEpmIssues([]);
-                    setEpmIssueEpics({});
-                    setEpmIssuesLoading(false);
+                    setEpmRollupTree(null);
+                    setEpmRollupLoading(false);
                     return;
                 }
-                setEpmIssuesLoading(true);
-                setEpmIssues([]);
-                setEpmIssueEpics({});
+                setEpmRollupLoading(true);
+                setEpmRollupTree(null);
                 const params = new URLSearchParams({ tab: epmTab });
                 if (epmTab === 'active' && selectedSprint) {
                     params.set('sprint', String(selectedSprint));
                 }
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/epm/projects/${encodeURIComponent(currentProjectId)}/issues?${params.toString()}`, { cache: 'no-cache' });
+                    const response = await fetch(`${BACKEND_URL}/api/epm/projects/${encodeURIComponent(currentProjectId)}/rollup?${params.toString()}`, { cache: 'no-cache' });
                     if (!response.ok) {
-                        throw new Error(`EPM issues error ${response.status}`);
+                        throw new Error(`EPM rollup error ${response.status}`);
                     }
                     const payload = await response.json();
-                    if (epmIssuesRequestIdRef.current !== requestId) {
+                    if (epmRollupRequestIdRef.current !== requestId) {
                         return;
                     }
-                    setEpmIssues(Array.isArray(payload.issues) ? payload.issues : []);
-                    setEpmIssueEpics(payload.epics && typeof payload.epics === 'object' ? payload.epics : {});
+                    setEpmRollupTree(buildRollupTree(payload));
                 } catch (err) {
-                    if (epmIssuesRequestIdRef.current !== requestId) {
+                    if (epmRollupRequestIdRef.current !== requestId) {
                         return;
                     }
-                    console.error('Failed to fetch EPM issues:', err);
-                    setEpmIssues([]);
-                    setEpmIssueEpics({});
+                    console.error('Failed to fetch EPM rollup:', err);
+                    setEpmRollupTree(null);
                 } finally {
-                    if (epmIssuesRequestIdRef.current === requestId) {
-                        setEpmIssuesLoading(false);
+                    if (epmRollupRequestIdRef.current === requestId) {
+                        setEpmRollupLoading(false);
                     }
                 }
             };
             const refreshEpmView = async () => {
                 if (!hasSavedEpmScope) {
                     setEpmProjects([]);
-                    setEpmIssues([]);
-                    setEpmIssueEpics({});
-                    setEpmIssuesLoading(false);
+                    setEpmRollupTree(null);
+                    setEpmRollupLoading(false);
                     return;
                 }
                 const nextProjects = await refreshEpmProjects();
                 const nextVisibleProjects = filterEpmProjectsForTab(nextProjects, epmTab);
-                const nextSelectedProject = nextVisibleProjects.find((project) => project.homeProjectId === epmSelectedProjectId) || null;
-                await refreshEpmIssues(nextSelectedProject, epmSelectedProjectId);
+                const nextSelectedProject = nextVisibleProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;
+                await refreshEpmRollup(nextSelectedProject, epmSelectedProjectId);
             };
             const filteredSprints = React.useMemo(() => {
                 if (!sprintSearch.trim()) return availableSprints;
@@ -1139,7 +1223,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 if (!showGroupManage || groupManageTab !== 'epm') return;
                 let cancelled = false;
                 const loadEpmSettings = async () => {
-                    const emptyEpmConfig = { version: 1, scope: { rootGoalKey: '', subGoalKey: '' }, projects: {} };
+                    const emptyEpmConfig = createEmptyEpmConfigDraft();
                     setEpmConfigLoading(true);
                     resetEpmProjectPreview();
                     setEpmScopeMeta({ cloudId: '', error: '' });
@@ -1395,13 +1479,33 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 };
             };
             const normalizeEpmConfigDraft = (config) => {
+                const sourceProjects = config?.projects && typeof config.projects === 'object' ? config.projects : {};
+                const projects = {};
+                Object.entries(sourceProjects).forEach(([projectId, row]) => {
+                    if (!row || typeof row !== 'object') return;
+                    const id = String(row.id || projectId || '').trim();
+                    if (!id) return;
+                    const normalizedRow = {
+                        id,
+                        name: String(row?.name ?? ''),
+                        label: String(row?.label ?? ''),
+                    };
+                    if (row.homeProjectId === null) {
+                        normalizedRow.homeProjectId = null;
+                    } else if (row.homeProjectId !== undefined) {
+                        normalizedRow.homeProjectId = String(row.homeProjectId || '').trim();
+                    }
+                    projects[id] = normalizedRow;
+                });
                 return {
-                    version: 1,
+                    version: 2,
+                    labelPrefix: String(config?.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX).trim(),
                     scope: {
                         rootGoalKey: String(config?.scope?.rootGoalKey || '').trim().toUpperCase(),
                         subGoalKey: String(config?.scope?.subGoalKey || '').trim().toUpperCase(),
                     },
-                    projects: config?.projects && typeof config.projects === 'object' ? config.projects : {},
+                    issueTypes: config?.issueTypes && typeof config.issueTypes === 'object' ? config.issueTypes : undefined,
+                    projects,
                 };
             };
             const hasSavedEpmScopeConfig = (config) => {
@@ -1802,6 +1906,47 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const hasDraftEpmScope = React.useMemo(() => {
                 return hasSavedEpmScopeConfig(epmConfigDraft);
             }, [epmConfigDraft]);
+            const epmSettingsProjectRows = React.useMemo(() => {
+                const configuredProjects = epmConfigDraft.projects || {};
+                const rows = [];
+                const seen = new Set();
+                (epmSettingsProjects || []).forEach((project) => {
+                    const projectId = String(project?.id || project?.homeProjectId || '').trim();
+                    if (!projectId) return;
+                    const homeProjectId = String(project?.homeProjectId || projectId).trim();
+                    const configuredRow = configuredProjects[projectId] || configuredProjects[homeProjectId] || {};
+                    rows.push(hydrateEpmProjectDraft({
+                        id: projectId,
+                        homeProjectId,
+                        homeName: String(project?.name || ''),
+                        homeUrl: project?.homeUrl || project?.url || '',
+                        latestUpdateDate: project?.latestUpdateDate || '',
+                        latestUpdateSnippet: project?.latestUpdateSnippet || '',
+                        name: String(configuredRow?.name ?? ''),
+                        label: String(configuredRow?.label ?? ''),
+                    }, { name: String(project?.name || '') }));
+                    seen.add(projectId);
+                    seen.add(homeProjectId);
+                });
+                Object.entries(configuredProjects).forEach(([projectId, row]) => {
+                    if (!row || typeof row !== 'object') return;
+                    const id = String(row.id || projectId || '').trim();
+                    if (!id || seen.has(id)) return;
+                    const homeProjectId = row.homeProjectId === null ? null : String(row.homeProjectId || '').trim();
+                    if (homeProjectId && seen.has(homeProjectId)) return;
+                    rows.push(hydrateEpmProjectDraft({
+                        id,
+                        homeProjectId,
+                        homeName: '',
+                        homeUrl: '',
+                        latestUpdateDate: '',
+                        latestUpdateSnippet: '',
+                        name: String(row?.name ?? ''),
+                        label: String(row?.label ?? ''),
+                    }, null));
+                });
+                return rows;
+            }, [epmConfigDraft, epmSettingsProjects]);
 
             const isGroupDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
@@ -4425,6 +4570,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             };
 
             useEffect(() => {
+                if (selectedView !== 'eng') return;
                 // Load tasks when sprint changes (team is filtered client-side)
                 if (selectedSprint === null) {
                     return;
@@ -4466,7 +4612,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 loadProductTasks();
                 loadTechTasks();
                 fetchMissingPlanningInfo(selectedSprint);
-            }, [selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, (activeGroup?.missingInfoComponents || []).join(','), configRefreshNonce]);
+            }, [selectedView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, (activeGroup?.missingInfoComponents || []).join(','), configRefreshNonce]);
 
             const fetchMissingPlanningInfo = async (sprintId) => {
                 const controller = registerSprintFetch();
@@ -5118,6 +5264,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
 
             useEffect(() => {
+                if (selectedView !== 'eng') return;
                 if (!activeGroupId) return;
                 if (selectedSprint === null) return;
                 if (groupsLoading) return;
@@ -5129,9 +5276,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 readyToCloseLoadRef.current = signature;
                 loadReadyToCloseProductTasks();
                 loadReadyToCloseTechTasks();
-            }, [activeGroupId, activeGroupTeamIds.join('|'), selectedSprint, groupsLoading, tasksFetched, productTasksLoading, techTasksLoading]);
+            }, [selectedView, activeGroupId, activeGroupTeamIds.join('|'), selectedSprint, groupsLoading, tasksFetched, productTasksLoading, techTasksLoading]);
 
             useEffect(() => {
+                if (selectedView !== 'eng') return;
                 let cancelled = false;
                 if (!isFutureSprintSelected) {
                     setBacklogProductEpics([]);
@@ -5163,7 +5311,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return () => {
                     cancelled = true;
                 };
-            }, [isFutureSprintSelected, groupsLoading, activeGroupId, activeGroupTeamIds.join('|'), selectedSprint, configRefreshNonce]);
+            }, [selectedView, isFutureSprintSelected, groupsLoading, activeGroupId, activeGroupTeamIds.join('|'), selectedSprint, configRefreshNonce]);
 
             useEffect(() => {
                 if (!showScenario) return;
@@ -8612,7 +8760,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             }, [selectedView, epmSelectedProjectId, selectedEpmProject]);
 
             useEffect(() => {
-                void refreshEpmIssues();
+                void refreshEpmRollup();
             }, [selectedView, epmSelectedProjectId, selectedEpmProject, epmTab, selectedSprint]);
 
             const issueByKey = React.useMemo(() => {
@@ -8695,6 +8843,80 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const selectedEpmProjectUpdateLine = [selectedEpmProject?.latestUpdateDate, selectedEpmProject?.latestUpdateSnippet || 'No updates yet']
                 .filter(Boolean)
                 .join(' · ');
+            const renderEpmRollupIssue = (issue, extraClassName = '') => {
+                const issueHref = jiraUrl ? `${jiraUrl}/browse/${issue.key}` : '#';
+                return (
+                    <div
+                        key={issue.key}
+                        className={`task-item ${extraClassName}`.trim()}
+                        data-task-key={issue.key}
+                        data-task-id={issue.key}
+                        data-issue-key={issue.key}
+                    >
+                        <div className="task-header">
+                            <div className="task-headline">
+                                <h3 className="task-title">
+                                    <a href={issueHref} target="_blank" rel="noopener noreferrer">
+                                        {issue.summary || issue.key}
+                                    </a>
+                                </h3>
+                                <span className="task-inline-meta">
+                                    <a
+                                        className="task-key-link"
+                                        href={issueHref}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        {issue.key}
+                                    </a>
+                                    {issue.issueType && (
+                                        <span className="task-inline-sp">{issue.issueType}</span>
+                                    )}
+                                </span>
+                            </div>
+                        </div>
+                        <div className="task-meta">
+                            <span className={`task-status ${String(issue.status || 'unknown').toLowerCase().replace(/\s+/g, '-')}`}>
+                                {issue.status || 'Unknown'}
+                            </span>
+                            <span className="task-team">{issue.assignee || 'Unassigned'}</span>
+                        </div>
+                    </div>
+                );
+            };
+            const renderEpmEpicNode = (epicNode) => (
+                <div key={epicNode.issue.key} className="epm-rollup-epic">
+                    {renderEpmRollupIssue(epicNode.issue, 'epm-rollup-epic-issue')}
+                    {epicNode.stories.length > 0 && (
+                        <div className="epm-rollup-children">
+                            {epicNode.stories.map(story => renderEpmRollupIssue(story, 'epm-rollup-story'))}
+                        </div>
+                    )}
+                </div>
+            );
+            const renderEpmInitiativeNode = (initiativeNode) => (
+                <div key={initiativeNode.issue.key} className="initiative-group">
+                    <div className="initiative-header">
+                        <InitiativeIcon className="initiative-header-icon" />
+                        <div className="initiative-label">
+                            <span className="initiative-label-name">{initiativeNode.issue.summary || initiativeNode.issue.key}</span>
+                            <a
+                                className="initiative-label-key"
+                                href={jiraUrl ? `${jiraUrl}/browse/${initiativeNode.issue.key}` : '#'}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                {initiativeNode.issue.key} ↗
+                            </a>
+                            <span className="initiative-divider" />
+                        </div>
+                    </div>
+                    <div className="initiative-body">
+                        {initiativeNode.epics.map(epicNode => renderEpmEpicNode(epicNode))}
+                        {initiativeNode.looseStories.map(story => renderEpmRollupIssue(story, 'epm-rollup-story'))}
+                    </div>
+                </div>
+            );
 
             const removeTask = (task) => {
                 const taskKey = task?.key;
@@ -10472,11 +10694,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             disabled={epmProjectsLoading || visibleEpmProjects.length === 0}
                         >
                             <option value="">Select project...</option>
-                            {visibleEpmProjects.map((project) => (
-                                <option key={project.homeProjectId} value={project.homeProjectId}>
-                                    {getEpmProjectDisplayName(project)}
-                                </option>
-                            ))}
+                            {visibleEpmProjects.filter(project => getEpmProjectIdentity(project)).map((project) => {
+                                const projectId = getEpmProjectIdentity(project);
+                                return (
+                                    <option key={projectId} value={projectId}>
+                                        {getEpmProjectDisplayName(project)}
+                                    </option>
+                                );
+                            })}
                         </select>
                     </div>
                 );
@@ -11111,7 +11336,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             loadReadyToCloseProductTasks({ forceRefresh: true });
                                             loadReadyToCloseTechTasks({ forceRefresh: true });
                                         }}
-                                        disabled={selectedView === 'eng' ? (loading || selectedSprint === null) : (epmProjectsLoading || epmIssuesLoading)}
+                                        disabled={selectedView === 'eng' ? (loading || selectedSprint === null) : (epmProjectsLoading || epmRollupLoading)}
                                         title={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
                                         aria-label={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
                                         type="button"
@@ -14681,14 +14906,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         </div>
                                     )}
 
-                                    {selectedEpmProject?.matchState === 'metadata-only' && (
+                                    {selectedEpmProject && epmRollupTree?.kind === 'metadataOnly' && (
                                         <div className="group-config-card epm-home-card">
                                             <div className="group-pane-title">{getEpmProjectDisplayName(selectedEpmProject)}</div>
                                             <div className="group-pane-subtitle">
                                                 {selectedEpmProjectUpdateLine || 'No updates yet'}
                                             </div>
                                             <a href={selectedEpmProject.homeUrl} target="_blank" rel="noopener noreferrer">Open in Jira Home</a>
-                                            <div className="group-field-helper">Add a Jira label or Jira epic in Settings {'->'} EPM to pull Jira work into this view.</div>
+                                            <div className="group-field-helper">Add a Jira label in Settings {'->'} EPM to pull Jira work into this view.</div>
                                             <button
                                                 className="secondary compact"
                                                 onClick={openEpmSettingsTab}
@@ -14699,76 +14924,55 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         </div>
                                     )}
 
-                                    {selectedEpmProject && selectedEpmProject.matchState !== 'metadata-only' && epmTab === 'active' && !selectedSprint && (
+                                    {selectedEpmProject && epmRollupTree?.kind !== 'metadataOnly' && epmTab === 'active' && !selectedSprint && (
                                         <div className="empty-state">
                                             <h2>Select a sprint</h2>
                                             <p>Select a sprint to see active work.</p>
                                         </div>
                                     )}
 
-                                    {selectedEpmProject && selectedEpmProject.matchState !== 'metadata-only' && epmIssuesLoading && (
+                                    {selectedEpmProject && epmRollupLoading && (
                                         <div className="empty-state">
                                             <h2>Loading Jira issues</h2>
                                             <p>Refreshing the selected EPM project board.</p>
                                         </div>
                                     )}
 
-                                    {selectedEpmProject && selectedEpmProject.matchState !== 'metadata-only' && !epmIssuesLoading && !(epmTab === 'active' && !selectedSprint) && epmIssues.length === 0 && (
+                                    {selectedEpmProject && !epmRollupLoading && epmRollupTree?.kind === 'emptyRollup' && !(epmTab === 'active' && !selectedSprint) && (
                                         <div className="empty-state">
                                             <h2>No Jira work found</h2>
-                                            <p>There are no Jira issues in the selected project and tab.</p>
+                                            <p>No issues match this label in the current scope.</p>
                                         </div>
                                     )}
 
-                                    {selectedEpmProject && selectedEpmProject.matchState !== 'metadata-only' && !epmIssuesLoading && epmIssues.length > 0 && (
+                                    {selectedEpmProject && !epmRollupLoading && epmRollupTree?.kind === 'tree' && (
                                         <div className="task-list epm-issue-board">
-                                            {epmIssues.map((issue) => {
-                                                const epic = epmIssueEpics[issue.parentKey] || null;
-                                                const issueHref = jiraUrl ? `${jiraUrl}/browse/${issue.key}` : '#';
-                                                return (
-                                                    <div
-                                                        key={issue.key}
-                                                        className="task-item"
-                                                        data-task-key={issue.key}
-                                                        data-task-id={issue.key}
-                                                        data-issue-key={issue.key}
-                                                    >
-                                                        <div className="task-header">
-                                                            <div className="task-headline">
-                                                                <h3 className="task-title">
-                                                                    <a href={issueHref} target="_blank" rel="noopener noreferrer">
-                                                                        {issue.summary || issue.key}
-                                                                    </a>
-                                                                </h3>
-                                                                <span className="task-inline-meta">
-                                                                    <a
-                                                                        className="task-key-link"
-                                                                        href={issueHref}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                    >
-                                                                        {issue.key}
-                                                                    </a>
-                                                                    {issue.issueType && (
-                                                                        <span className="task-inline-sp">{issue.issueType}</span>
-                                                                    )}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                        <div className="task-meta">
-                                                            <span className={`task-status ${String(issue.status || 'unknown').toLowerCase().replace(/\s+/g, '-')}`}>
-                                                                {issue.status || 'Unknown'}
-                                                            </span>
-                                                            <span className="task-team">{issue.assignee || 'Unassigned'}</span>
-                                                            {epic && (
-                                                                <span className="task-assignee">
-                                                                    <span>{epic.summary || epic.key}</span>
-                                                                </span>
-                                                            )}
+                                            {epmRollupTree.truncated && (
+                                                <div className="group-field-helper">
+                                                    This rollup is truncated; narrow the label or Jira scope.
+                                                </div>
+                                            )}
+                                            {epmRollupTree.initiatives.map(initiativeNode => renderEpmInitiativeNode(initiativeNode))}
+                                            {(epmRollupTree.rootEpics.length > 0 || epmRollupTree.orphanStories.length > 0) && (
+                                                <div className="initiative-group initiative-single">
+                                                    <div className="initiative-header">
+                                                        <div className="initiative-label initiative-label-only">
+                                                            <span className="initiative-label-name">{getEpmProjectDisplayName(selectedEpmProject)}</span>
+                                                            <span className="initiative-label-key">Project</span>
+                                                            <span className="initiative-divider" />
                                                         </div>
                                                     </div>
-                                                );
-                                            })}
+                                                    <div className="initiative-body">
+                                                        {epmRollupTree.rootEpics.map(epicNode => renderEpmEpicNode(epicNode))}
+                                                        {epmRollupTree.orphanStories.length > 0 && (
+                                                            <div className="epm-rollup-orphans">
+                                                                <div className="group-field-helper">Project stories</div>
+                                                                {epmRollupTree.orphanStories.map(story => renderEpmRollupIssue(story, 'epm-rollup-story'))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </>
@@ -15535,7 +15739,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     <div className="group-pane group-single-pane">
                                         <div className="group-pane-header">
                                             <div className="group-pane-title">EPM projects</div>
-                                            <div className="group-pane-subtitle">Augment Jira Home projects with optional Jira label and Jira epic linkage.</div>
+                                            <div className="group-pane-subtitle">Map Jira Home projects to EPM rollup labels.</div>
                                         </div>
                                         <div className="group-config-card" style={{ marginBottom: '0.9rem' }}>
                                             <div className="group-projects-subsection">
@@ -15675,123 +15879,170 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                 )}
                                             </div>
                                         </div>
+                                        <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
+                                            <div className="team-selector-label">Label prefix</div>
+                                            <input
+                                                type="text"
+                                                className="team-search-input"
+                                                value={epmConfigDraft.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX}
+                                                onChange={(event) => updateEpmLabelPrefixDraft(event.target.value)}
+                                                placeholder={DEFAULT_EPM_LABEL_PREFIX}
+                                            />
+                                        </div>
+                                        <div className="group-pane-tools" style={{ marginTop: '0.8rem' }}>
+                                            <button
+                                                className="secondary compact"
+                                                onClick={addCustomEpmProjectDraft}
+                                                type="button"
+                                            >
+                                                Add custom Project
+                                            </button>
+                                        </div>
                                         {epmConfigLoading ? (
                                             <div className="group-pane-empty">Loading EPM settings...</div>
                                         ) : !hasDraftEpmScope ? (
                                             <div className="group-pane-empty">Save a root goal and sub-goal to load EPM projects.</div>
-                                        ) : !epmSettingsPreviewRequested ? (
-                                            <div className="group-pane-empty">Run Test Configuration to preview projects for the selected draft scope.</div>
                                         ) : epmSettingsProjectsLoading ? (
                                             <div className="group-pane-empty">Previewing EPM projects...</div>
+                                        ) : epmSettingsProjectRows.length > 0 ? (
+                                            <div className="group-pane-list">
+                                                {epmSettingsProjectRows.map((project) => {
+                                                    const rowKey = getEpmLabelRowKey(project.id);
+                                                    const currentLabel = project.label || '';
+                                                    const results = getEpmLabelSearchResults(project.id);
+                                                    const isSearching = Boolean(labelSearchLoading[rowKey]);
+                                                    const showAllLabels = Boolean(epmLabelShowAll[rowKey]);
+                                                    const isChangingLabel = Boolean(epmLabelChanging[rowKey]);
+                                                    const activeIndex = Math.min(labelSearchIndex[rowKey] || 0, Math.max(results.length - 1, 0));
+                                                    return (
+                                                        <div key={project.id} className="group-projects-subsection" style={{ marginTop: 0, paddingBottom: '1rem', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
+                                                            <div className="group-list-line" style={{ alignItems: 'baseline', justifyContent: 'space-between', gap: '0.75rem' }}>
+                                                                {project.homeUrl ? (
+                                                                    <a href={project.homeUrl} target="_blank" rel="noopener noreferrer">
+                                                                        {project.displayName || project.homeName || project.id}
+                                                                    </a>
+                                                                ) : (
+                                                                    <span>{project.displayName || project.id}</span>
+                                                                )}
+                                                                <button
+                                                                    className="remove-btn"
+                                                                    onClick={() => removeEpmProjectDraft(project.id)}
+                                                                    type="button"
+                                                                    title="Remove Project"
+                                                                >
+                                                                    ×
+                                                                </button>
+                                                            </div>
+                                                            {project.latestUpdateDate && (
+                                                                <div className="group-field-helper" style={{ marginTop: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                    {project.latestUpdateSnippet || 'No updates yet'}
+                                                                </div>
+                                                            )}
+                                                            <div className="settings-two-col-grid settings-source-grid" style={{ padding: '0.75rem 0 0' }}>
+                                                                <div className="group-projects-subsection" style={{ marginTop: 0 }}>
+                                                                    <div className="team-selector-label">Project name</div>
+                                                                    <input
+                                                                        type="text"
+                                                                        className="team-search-input"
+                                                                        value={project.name || ''}
+                                                                        onChange={(event) => updateEpmProjectDraft(project.id, 'name', event.target.value)}
+                                                                        placeholder={project.homeName || project.name || 'Project name'}
+                                                                    />
+                                                                </div>
+                                                                <div className="group-projects-subsection" style={{ marginTop: 0 }}>
+                                                                    <div className="team-selector-label">Jira label</div>
+                                                                    {currentLabel ? (
+                                                                        <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
+                                                                            <span className="team-name">{currentLabel}</span>
+                                                                            <button
+                                                                                className="secondary compact"
+                                                                                onClick={() => {
+                                                                                    setEpmLabelChanging(prev => ({ ...prev, [rowKey]: true }));
+                                                                                    setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                                    void loadEpmProjectLabels(project.id, showAllLabels);
+                                                                                }}
+                                                                                type="button"
+                                                                                style={{ marginLeft: '0.35rem' }}
+                                                                            >
+                                                                                Change
+                                                                            </button>
+                                                                            <button
+                                                                                className="remove-btn"
+                                                                                onClick={() => updateEpmProjectDraft(project.id, 'label', '')}
+                                                                                type="button"
+                                                                                title="Remove label"
+                                                                            >
+                                                                                ×
+                                                                            </button>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="group-field-helper" style={{ marginTop: '0.35rem' }}>No Jira label selected.</div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            {(!currentLabel || isChangingLabel) && (
+                                                            <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
+                                                                <input
+                                                                    type="text"
+                                                                    className="team-search-input"
+                                                                    placeholder={isSearching ? 'Searching labels...' : 'Search Jira labels...'}
+                                                                    value={labelSearchQuery[rowKey] || ''}
+                                                                    onChange={(event) => {
+                                                                        const value = event.target.value;
+                                                                        setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
+                                                                        setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                        setLabelSearchIndex(prev => ({ ...prev, [rowKey]: 0 }));
+                                                                    }}
+                                                                    onFocus={() => {
+                                                                        setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                        void loadEpmProjectLabels(project.id, showAllLabels);
+                                                                    }}
+                                                                    onBlur={() => window.setTimeout(() => setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false })), 120)}
+                                                                    onKeyDown={(event) => handleEpmLabelSearchKeyDown(project.id, event, results)}
+                                                                />
+                                                                <button
+                                                                    className="secondary compact"
+                                                                    onClick={() => {
+                                                                        const nextShowAll = !showAllLabels;
+                                                                        setEpmLabelShowAll(prev => ({ ...prev, [rowKey]: nextShowAll }));
+                                                                        setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                        void loadEpmProjectLabels(project.id, nextShowAll);
+                                                                    }}
+                                                                    type="button"
+                                                                    style={{ marginTop: '0.45rem' }}
+                                                                >
+                                                                    {showAllLabels ? 'Use prefix' : 'Show all labels'}
+                                                                </button>
+                                                                {labelSearchOpen[rowKey] && (
+                                                                    <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
+                                                                        {results.length === 0 ? (
+                                                                            <div className="team-search-result-item is-empty">{isSearching ? 'Searching labels...' : 'No labels found'}</div>
+                                                                        ) : results.map((label, index) => (
+                                                                            <div
+                                                                                key={`${rowKey}-${label}`}
+                                                                                className={`team-search-result-item ${activeIndex === index ? 'active' : ''}`}
+                                                                                onMouseEnter={() => setLabelSearchIndex(prev => ({ ...prev, [rowKey]: index }))}
+                                                                                onClick={() => selectEpmProjectLabel(project.id, label)}
+                                                                            >
+                                                                                {label}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : !epmSettingsPreviewRequested ? (
+                                            <div className="group-pane-empty">Run Test Configuration to preview projects for the selected draft scope.</div>
                                         ) : epmSettingsProjectsError ? (
                                             <div className="group-pane-empty">{epmSettingsProjectsError}</div>
                                         ) : epmSettingsProjects.length === 0 ? (
                                             <div className="group-pane-empty">This sub-goal has no direct Jira Home projects. Choose a different child goal.</div>
                                         ) : (
-                                            <div className="group-pane-list">
-                                                {epmSettingsProjects.map((project) => {
-                                                    const draft = epmConfigDraft.projects?.[project.homeProjectId] || {};
-                                                    const rowKey = getEpmLabelRowKey(project.homeProjectId);
-                                                    const currentLabel = draft.jiraLabel || '';
-                                                    const results = getEpmLabelSearchResults(project.homeProjectId);
-                                                    const query = String(labelSearchQuery[rowKey] || '').trim();
-                                                    const isSearching = Boolean(labelSearchLoading[rowKey]);
-                                                    const activeIndex = Math.min(labelSearchIndex[rowKey] || 0, Math.max(results.length - 1, 0));
-                                                    return (
-                                                        <div key={project.homeProjectId} className="group-projects-subsection" style={{ marginTop: 0, paddingBottom: '1rem', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
-                                                            <div className="group-list-line" style={{ alignItems: 'baseline', justifyContent: 'space-between', gap: '0.75rem' }}>
-                                                                <a href={project.homeUrl} target="_blank" rel="noopener noreferrer">
-                                                                    {project.name || project.homeProjectId}
-                                                                </a>
-                                                                <span className="group-field-helper" style={{ margin: 0, whiteSpace: 'nowrap' }}>
-                                                                    {project.latestUpdateDate || 'No updates'}
-                                                                </span>
-                                                            </div>
-                                                            <div className="group-field-helper" style={{ marginTop: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                {project.latestUpdateSnippet || 'No updates yet'}
-                                                            </div>
-                                                            <div className="settings-two-col-grid settings-source-grid" style={{ padding: '0.75rem 0 0' }}>
-                                                                <div className="group-projects-subsection" style={{ marginTop: 0 }}>
-                                                                    <div className="team-selector-label">Custom name</div>
-                                                                    <input
-                                                                        type="text"
-                                                                        className="team-search-input"
-                                                                        value={draft.customName || ''}
-                                                                        onChange={(event) => updateEpmProjectDraft(project.homeProjectId, 'customName', event.target.value)}
-                                                                        placeholder="Custom name"
-                                                                    />
-                                                                </div>
-                                                                <div className="group-projects-subsection" style={{ marginTop: 0 }}>
-                                                                    <div className="team-selector-label">Jira epic</div>
-                                                                    <input
-                                                                        type="text"
-                                                                        className="team-search-input"
-                                                                        value={draft.jiraEpicKey || ''}
-                                                                        onChange={(event) => updateEpmProjectDraft(project.homeProjectId, 'jiraEpicKey', event.target.value)}
-                                                                        placeholder="Jira epic"
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                            <div className="group-projects-subsection" style={{ marginTop: '0.75rem', paddingBottom: 0, borderBottom: 'none' }}>
-                                                                <div className="team-selector-label">Jira label</div>
-                                                                {currentLabel ? (
-                                                                    <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
-                                                                        <span className="team-name">{currentLabel}</span>
-                                                                        <button
-                                                                            className="remove-btn"
-                                                                            onClick={() => updateEpmProjectDraft(project.homeProjectId, 'jiraLabel', '')}
-                                                                            type="button"
-                                                                            title="Remove label"
-                                                                        >
-                                                                            ×
-                                                                        </button>
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="group-field-helper" style={{ marginTop: '0.35rem' }}>No Jira label selected.</div>
-                                                                )}
-                                                                <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
-                                                                    <input
-                                                                        type="text"
-                                                                        className="team-search-input"
-                                                                        placeholder={isSearching ? 'Searching labels...' : 'Search Jira labels...'}
-                                                                        value={labelSearchQuery[rowKey] || ''}
-                                                                        onChange={(event) => {
-                                                                            const value = event.target.value;
-                                                                            setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
-                                                                            setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                            setLabelSearchIndex(prev => ({ ...prev, [rowKey]: 0 }));
-                                                                            scheduleEpmProjectLabelSearch(project.homeProjectId, value);
-                                                                        }}
-                                                                        onFocus={() => {
-                                                                            setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                        }}
-                                                                        onBlur={() => window.setTimeout(() => setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false })), 120)}
-                                                                        onKeyDown={(event) => handleEpmLabelSearchKeyDown(project.homeProjectId, event, results)}
-                                                                    />
-                                                                    {labelSearchOpen[rowKey] && (
-                                                                        <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
-                                                                            {query.length < 3 ? (
-                                                                                <div className="team-search-result-item is-empty">Type at least 3 characters</div>
-                                                                            ) : results.length === 0 ? (
-                                                                                <div className="team-search-result-item is-empty">{isSearching ? 'Searching labels...' : 'No labels found'}</div>
-                                                                            ) : results.map((label, index) => (
-                                                                                <div
-                                                                                    key={`${rowKey}-${label}`}
-                                                                                    className={`team-search-result-item ${activeIndex === index ? 'active' : ''}`}
-                                                                                    onMouseEnter={() => setLabelSearchIndex(prev => ({ ...prev, [rowKey]: index }))}
-                                                                                    onClick={() => selectEpmProjectLabel(project.homeProjectId, label)}
-                                                                                >
-                                                                                    {label}
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
+                                            <div className="group-pane-empty">No EPM projects found.</div>
                                         )}
                                     </div>
                                 </div>

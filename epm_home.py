@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import concurrent.futures
 import json
 import logging
 import os
@@ -17,6 +18,9 @@ HOME_GRAPHQL_ENDPOINT = "https://team.atlassian.com/gateway/api/graphql"
 HOME_TIMEOUT_SECONDS = 30
 HOME_MAX_RETRIES = 3
 HOME_PAGE_SIZE = 50
+HOME_MAX_PROJECTS_PER_GOAL = 200
+
+_CLOUD_ID_CACHE: dict[str, str] = {}
 
 ACTIVE_EPM_STATES = {"ON_TRACK", "AT_RISK", "OFF_TRACK"}
 BACKLOG_EPM_STATES = {"PENDING", "PAUSED"}
@@ -290,6 +294,8 @@ def fetch_home_site_cloud_id() -> str:
         jira_url = str(os.environ.get("JIRA_URL") or "").rstrip("/")
     if not jira_url:
         raise RuntimeError("JIRA_URL must be set to detect the Atlassian site cloud ID")
+    if jira_url in _CLOUD_ID_CACHE:
+        return _CLOUD_ID_CACHE[jira_url]
     request = Request(f"{jira_url}/_edge/tenant_info", headers={"Accept": "application/json"}, method="GET")
     try:
         with urlopen(request, timeout=HOME_TIMEOUT_SECONDS) as response:
@@ -299,6 +305,7 @@ def fetch_home_site_cloud_id() -> str:
     cloud_id = str(payload.get("cloudId") or "").strip()
     if not cloud_id:
         raise RuntimeError("Jira tenant_info did not return cloudId")
+    _CLOUD_ID_CACHE[jira_url] = cloud_id
     return cloud_id
 
 
@@ -361,48 +368,86 @@ def resolve_sub_goal_for_scope(client: HomeGraphQLClient, epm_scope: dict, conta
     return resolve_goal_by_key(client, sub_goal_key, container_id)
 
 
+def fetch_goal_project_links(client: HomeGraphQLClient, goal_id: str) -> list[dict]:
+    projects: list[dict] = []
+    after = None
+    while len(projects) < HOME_MAX_PROJECTS_PER_GOAL:
+        response = client.execute(
+            QUERY_GOAL_PROJECTS,
+            {"goalId": goal_id, "first": HOME_PAGE_SIZE, "after": after},
+        )
+        connection = (((response.get("data") or {}).get("goals_byId") or {}).get("projects") or {})
+        for edge in connection.get("edges", []) or []:
+            node = edge.get("node")
+            if node is not None:
+                projects.append(node)
+                if len(projects) >= HOME_MAX_PROJECTS_PER_GOAL:
+                    break
+        page_info = connection.get("pageInfo", {}) or {}
+        has_next_page = page_info.get("hasNextPage")
+        if len(projects) >= HOME_MAX_PROJECTS_PER_GOAL:
+            if has_next_page:
+                logger.warning(
+                    "Home goal %s project list truncated at %d projects.",
+                    goal_id,
+                    HOME_MAX_PROJECTS_PER_GOAL,
+                )
+            return projects
+        if not has_next_page:
+            return projects
+        next_cursor = page_info.get("endCursor")
+        if not next_cursor or next_cursor == after:
+            logger.warning("Pagination stopped for goals_byId.projects because the cursor did not advance.")
+            return projects
+        after = next_cursor
+    return projects
+
+
+def _fetch_home_project_record(client: HomeGraphQLClient, row: dict) -> dict | None:
+    project_id = row.get("id")
+    if not project_id:
+        return None
+    try:
+        detail = client.execute(QUERY_PROJECT_DETAILS, {"projectId": project_id})
+        payload = (detail.get("data") or {}).get("projects_byId") or {}
+        state = payload.get("state") or {}
+        project = {
+            "id": payload.get("id", project_id),
+            "key": payload.get("key", ""),
+            "name": payload.get("name", ""),
+            "url": payload.get("url", ""),
+            "stateValue": extract_project_status(payload),
+            "stateLabel": state.get("label", "") if isinstance(state, dict) else "",
+        }
+        updates = fetch_latest_project_update(client, project_id)
+        linkage = extract_home_jira_linkage(project)
+        return build_home_project_record(project, updates, linkage)
+    except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
+        logger.warning("Project detail fetch failed for %s: %s", project_id, exc)
+        return None
+
+
 def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str) -> list[dict]:
     try:
-        linked_projects = client.execute_paginated(
-            QUERY_GOAL_PROJECTS,
-            {"goalId": goal_id, "first": HOME_PAGE_SIZE},
-            "goals_byId.projects",
-        )
+        linked_projects = fetch_goal_project_links(client, goal_id)
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Goal project list fetch failed: %s", exc)
         return []
-    projects: list[dict] = []
-    for row in linked_projects:
-        project_id = row.get("id")
-        if not project_id:
-            continue
-        try:
-            detail = client.execute(QUERY_PROJECT_DETAILS, {"projectId": project_id})
-            payload = (detail.get("data") or {}).get("projects_byId") or {}
-        except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
-            logger.warning("Project detail fetch failed for %s: %s", project_id, exc)
-            continue
-        state = payload.get("state") or {}
-        projects.append(
-            {
-                "id": payload.get("id", project_id),
-                "key": payload.get("key", ""),
-                "name": payload.get("name", ""),
-                "url": payload.get("url", ""),
-                "stateValue": extract_project_status(payload),
-                "stateLabel": state.get("label", "") if isinstance(state, dict) else "",
-            }
-        )
-    return projects
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        records = executor.map(lambda row: _fetch_home_project_record(client, row), linked_projects)
+    return [record for record in records if record is not None]
 
 
 def fetch_latest_project_update(client: HomeGraphQLClient, project_id: str) -> list[dict]:
     try:
-        return client.execute_paginated(
+        response = client.execute(
             QUERY_PROJECT_UPDATES,
-            {"projectId": project_id, "first": 10},
-            "projects_byId.updates",
+            {"projectId": project_id, "first": 1},
         )
+        connection = (((response.get("data") or {}).get("projects_byId") or {}).get("updates") or {})
+        edge = next(iter(connection.get("edges", []) or []), None)
+        node = edge.get("node") if isinstance(edge, dict) else None
+        return [node] if node is not None else []
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Latest update fetch failed for %s: %s", project_id, exc)
         return []
@@ -450,12 +495,10 @@ def fetch_epm_home_projects(epm_scope):
 
     seen_project_ids: set[str] = set()
     result: list[dict] = []
-    for raw_project in fetch_projects_for_goal(client, sub_goal["id"]):
-        project_id = raw_project.get("id")
+    for home_project in fetch_projects_for_goal(client, sub_goal["id"]):
+        project_id = home_project.get("homeProjectId") or home_project.get("id")
         if not project_id or project_id in seen_project_ids:
             continue
         seen_project_ids.add(project_id)
-        linkage = extract_home_jira_linkage(raw_project)
-        updates = fetch_latest_project_update(client, project_id)
-        result.append(build_home_project_record(raw_project, updates, linkage))
+        result.append(home_project)
     return result

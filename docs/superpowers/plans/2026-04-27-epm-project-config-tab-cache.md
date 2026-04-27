@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Move EPM project mapping into a dedicated Projects sub-tab that opens only after the draft sub-goal and label prefix are set, preserves the saved sub-goal, and auto-loads cached Jira Home projects instead of requiring repeated manual previews.
+**Goal:** Move EPM project mapping into a dedicated Projects sub-tab that opens only after the draft sub-goal and label prefix are set, preserves the saved sub-goal, and auto-loads cached Jira Home projects as configuration inputs for EPM rollups.
 
-**Architecture:** Keep the top-level Dashboard Settings tab as `EPM`, then add EPM-local sub-tabs: `Scope` for Atlassian site/root/sub-goal/prefix and `Projects` for Jira Home project label mapping. Cache sub-goals by root in the frontend so reopening settings does not refetch them, and split backend EPM project caching so Jira Home project records are cached by scope while label mappings are shaped from the latest config on every response. The sub-goal is the project fetch root; do not clear it on modal open or label-prefix edits.
+**Architecture:** Keep the top-level Dashboard Settings tab as `EPM`, then add EPM-local sub-tabs: `Scope` for Atlassian site/root/sub-goal/prefix and `Projects` for Jira Home project label mapping. Cache sub-goals by root in the frontend so reopening settings does not refetch them, and split backend EPM project caching so Jira Home project records are cached by scope while label mappings are shaped from the latest config on every response. The sub-goal is the project-catalog root; configured project labels plus the selected sprint define the Jira structure fetched for EPM rollups. Jira teams and team groups must not participate in EPM rollup scope.
 
 **Tech Stack:** React 19, esbuild, Node `node:test` source guards, Python `unittest`, Flask.
 
@@ -14,17 +14,18 @@
 
 Sub-goals load again because `frontend/src/dashboard.jsx` clears the sub-goal options inside the EPM settings open effect and then calls `loadEpmSubGoalsForRoot(rootGoalKey, savedSubGoalKey)` every time the EPM tab opens. There is no frontend cache keyed by root goal, so the saved child goal is repeatedly fetched from Jira Home just to render a selected chip.
 
-Projects are also treated as a transient preview. `loadEpmSettings` calls `resetEpmProjectPreview()`, the project rows stay in the same overloaded EPM tab, and `/api/epm/config` clears `EPM_PROJECTS_CACHE` on every save. That makes the UI lose the cached Jira Home project list exactly when project mapping is being configured.
+Projects are currently wired through preview-named state and endpoints, but that is the wrong model. The discovered Jira Home projects are configuration inputs: each project row stores the exact Jira label used later to fetch the rollup issue hierarchy, and the Active EPM view adds the selected sprint to that label scope. `loadEpmSettings` calls `resetEpmProjectPreview()`, the project rows stay in the same overloaded EPM tab, and `/api/epm/config` clears `EPM_PROJECTS_CACHE` on every save. That makes the UI lose the cached Jira Home project list exactly when project mapping is being configured.
 
-The fix is not to reuse the current preview flow. The fix is to make scope setup and project mapping separate states:
+The fix is to remove the preview mental model and make scope setup plus project mapping separate configuration states:
 
 - `Scope` sub-tab: Atlassian site, root goal, sub-goal, label prefix.
-- `Projects` sub-tab: auto-loaded direct Jira Home projects plus custom project rows.
+- `Projects` sub-tab: auto-loaded direct Jira Home projects plus custom project rows; saved rows are EPM project configuration, not Jira team configuration.
 - `Projects` is disabled until `subGoalKey` and `labelPrefix` are both non-empty.
 - Opening EPM settings never clears `subGoalKey`.
 - Changing the root goal to a different key clears `subGoalKey`; selecting the same root does not.
 - Changing label prefix invalidates label autocomplete results, not the selected sub-goal.
 - Jira Home project records are cached by scope and reused for settings project loading.
+- EPM rollups continue to fetch Jira structure from configured labels and the selected sprint value; no team/group filter is added.
 
 ## Files
 
@@ -245,24 +246,40 @@ In `tests/test_epm_projects_api.py`, add this test method near the existing cach
         self.assertEqual(second_project['resolvedLinkage']['labels'], ['second_label'])
 ```
 
-Also update `test_projects_preview_endpoint_uses_draft_payload_without_saved_config_or_cache` so the preview endpoint is allowed to populate and reuse the Home project cache. Replace the assertions that expect `saved-config` to remain the only cache entry with:
+Rename `test_projects_preview_endpoint_uses_draft_payload_without_saved_config_or_cache` to `test_projects_configuration_endpoint_uses_draft_payload_without_saved_config` and change the request path from `/api/epm/projects/preview` to `/api/epm/projects/configuration`. Keep the existing assertions that saved config is not read, and replace the cache assertions that expect `saved-config` to remain the only cache entry with:
 
 ```python
         self.assertGreaterEqual(len(jira_server.EPM_PROJECTS_CACHE), 1)
         self.assertIn('saved-config', jira_server.EPM_PROJECTS_CACHE)
 ```
 
-- [ ] **Step 3: Run the backend tests and confirm they fail**
+- [ ] **Step 3: Strengthen the EPM rollup scope contract test**
+
+In `tests/test_epm_rollup_api.py`, update `test_active_sprint_filter_is_appended_to_every_query_and_sprint_reaches_response` so the root rollup query starts from the configured project label, every generated Active query uses the selected sprint, and no generated query uses Jira team fields:
+
+```python
+        self.assertEqual(response.status_code, 200)
+        jql_queries = [call.args[0] for call in mock_fetch.call_args_list]
+        self.assertIn('labels = "synthetic_label_alpha"', jql_queries[0])
+        for jql in jql_queries:
+            self.assertIn('Sprint = 42', jql)
+            self.assertNotIn('Team[Team]', jql)
+            self.assertNotIn('"Team"', jql)
+```
+
+Keep the existing response assertions in that test. This guards the correction explicitly: EPM starts the Jira structure from configured labels, applies the selected sprint to Active queries, and does not add Jira team filters.
+
+- [ ] **Step 4: Run the backend tests and confirm they fail**
 
 Run:
 
 ```bash
-python3 -m unittest tests.test_epm_config_api tests.test_epm_projects_api
+python3 -m unittest tests.test_epm_config_api tests.test_epm_projects_api tests.test_epm_rollup_api
 ```
 
 Expected: FAIL showing that config save clears the project cache and/or that the projects endpoint returns stale shaped labels from cache.
 
-- [ ] **Step 4: Add scoped Home project cache helpers**
+- [ ] **Step 5: Add scoped Home project cache helpers**
 
 In `jira_server.py`, replace `clear_epm_caches` with these helpers:
 
@@ -313,7 +330,7 @@ def get_cached_epm_home_projects(epm_scope, force_refresh=False):
     return home_projects
 ```
 
-- [ ] **Step 5: Shape payloads from current config every time**
+- [ ] **Step 6: Shape payloads from current config every time**
 
 Change `build_epm_projects_payload` to accept a refresh flag and use cached raw Home projects:
 
@@ -357,9 +374,9 @@ def find_epm_project_or_404(project_id):
     abort(404)
 ```
 
-- [ ] **Step 6: Wire refresh support into project endpoints**
+- [ ] **Step 7: Wire refresh support into project configuration endpoints**
 
-Update `/api/epm/projects` and `/api/epm/projects/preview`:
+Update `/api/epm/projects` and add `/api/epm/projects/configuration`. Keep the old `/api/epm/projects/preview` route as a compatibility alias for now, but no frontend code may call it.
 
 ```python
 @app.route('/api/epm/projects', methods=['GET'])
@@ -369,14 +386,19 @@ def get_epm_projects_endpoint():
     return jsonify(build_epm_projects_payload(epm_config, force_refresh=force_refresh))
 
 
-@app.route('/api/epm/projects/preview', methods=['POST'])
-def preview_epm_projects_endpoint():
+@app.route('/api/epm/projects/configuration', methods=['POST'])
+def configure_epm_projects_endpoint():
     payload = normalize_epm_config(request.get_json(silent=True) or {})
     force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
     return jsonify(build_epm_projects_payload(payload, force_refresh=force_refresh))
+
+
+@app.route('/api/epm/projects/preview', methods=['POST'])
+def preview_epm_projects_endpoint():
+    return configure_epm_projects_endpoint()
 ```
 
-- [ ] **Step 7: Stop clearing Home project cache on label-only saves**
+- [ ] **Step 8: Stop clearing Home project cache on label-only saves**
 
 Inside `save_epm_config_endpoint`, capture the previous config before overwriting `dashboard_config['epm']`, then clear only the right caches:
 
@@ -392,7 +414,7 @@ Inside `save_epm_config_endpoint`, capture the previous config before overwritin
         clear_epm_rollup_caches()
 ```
 
-- [ ] **Step 8: Run backend tests and confirm they pass**
+- [ ] **Step 9: Run backend tests and confirm they pass**
 
 Run:
 
@@ -402,10 +424,10 @@ python3 -m unittest tests.test_epm_config_api tests.test_epm_projects_api tests.
 
 Expected: all tests pass.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add jira_server.py tests/test_epm_config_api.py tests/test_epm_projects_api.py
+git add jira_server.py tests/test_epm_config_api.py tests/test_epm_projects_api.py tests/test_epm_rollup_api.py
 git commit -m "fix(epm): cache Home projects by scope"
 ```
 
@@ -428,8 +450,10 @@ test('dashboard source preserves saved EPM sub-goal on settings open', () => {
 
     assert.ok(!loadSettingsSource.includes('clearEpmSubGoalOptions();'), 'EPM settings open must not clear saved sub-goal options');
     assert.ok(!loadSettingsSource.includes('loadEpmSubGoalsForRoot(rootGoalKey, savedSubGoalKey)'), 'EPM settings open must not refetch sub-goals just to render the saved chip');
-    assert.ok(!loadSettingsSource.includes('resetEpmProjectPreview();'), 'EPM settings open must not erase cached project rows');
+    assert.ok(!loadSettingsSource.includes('resetEpmProjectPreview();'), 'EPM settings open must not use preview-named project reset state');
+    assert.ok(!loadSettingsSource.includes('resetEpmSettingsProjectRows();'), 'EPM settings open must not erase cached project configuration rows');
     assert.ok(dashboardSource.includes('const epmSubGoalsCacheRef = useRef(new Map());'), 'Expected sub-goals cache by root goal');
+    assert.ok(dashboardSource.includes('const resetEpmSettingsProjectRows = () => {'), 'Expected configuration-named project-row reset helper');
     assert.ok(dashboardSource.includes('return epmSubGoals.find((goal) => String(goal?.key || \'\').trim().toUpperCase() === key) || { key, name: key };'), 'Expected selected sub-goal fallback chip without refetch');
 });
 
@@ -488,7 +512,23 @@ Add this ref near `epmSubGoalsRequestIdRef`:
 const epmSubGoalsCacheRef = useRef(new Map());
 ```
 
-- [ ] **Step 5: Change `loadEpmSubGoalsForRoot` to use the cache**
+- [ ] **Step 5: Rename preview reset helper**
+
+Rename the settings project row reset helper from:
+
+```js
+const resetEpmProjectPreview = () => {
+```
+
+to:
+
+```js
+const resetEpmSettingsProjectRows = () => {
+```
+
+Update all callers in `frontend/src/dashboard.jsx`. This is only a visible settings-row reset; it must not clear `epmSettingsProjectsCacheRef.current`.
+
+- [ ] **Step 6: Change `loadEpmSubGoalsForRoot` to use the cache**
 
 Change the function signature and add cache reuse before the fetch:
 
@@ -526,12 +566,12 @@ epmSubGoalsCacheRef.current.set(normalizedRootGoalKey, nextGoals);
 
 Keep the existing stale-response guard and failure behavior.
 
-- [ ] **Step 6: Stop clearing/refetching on settings open**
+- [ ] **Step 7: Stop clearing/refetching on settings open**
 
 Inside `loadEpmSettings`, remove these calls:
 
 ```js
-resetEpmProjectPreview();
+resetEpmSettingsProjectRows();
 clearEpmSubGoalOptions();
 ```
 
@@ -551,7 +591,7 @@ if (!cancelled && rootGoalKey && epmSubGoalsCacheRef.current.has(rootGoalKey)) {
 }
 ```
 
-- [ ] **Step 7: Preserve selected sub-goal chip without loaded options**
+- [ ] **Step 8: Preserve selected sub-goal chip without loaded options**
 
 Change `selectedEpmSubGoal` to return a fallback object:
 
@@ -563,7 +603,7 @@ const selectedEpmSubGoal = React.useMemo(() => {
 }, [epmConfigDraft.scope?.subGoalKey, epmSubGoals]);
 ```
 
-- [ ] **Step 8: Clear sub-goal only on actual root changes**
+- [ ] **Step 9: Clear sub-goal only on actual root changes**
 
 Replace `selectEpmRootGoal` with:
 
@@ -573,7 +613,7 @@ const selectEpmRootGoal = async (goal) => {
     const previousRootGoalKey = String(epmConfigDraft.scope?.rootGoalKey || '').trim().toUpperCase();
     const rootChanged = previousRootGoalKey !== rootGoalKey;
     if (rootChanged) {
-        resetEpmProjectPreview();
+        resetEpmSettingsProjectRows();
     }
     setEpmConfigDraft((prev) => ({
         ...prev,
@@ -599,7 +639,7 @@ const selectEpmRootGoal = async (goal) => {
 
 Keep `clearEpmRootGoal` and `clearEpmSubGoal` as explicit user actions that clear the sub-goal.
 
-- [ ] **Step 9: Lazy-load sub-goals only when the picker is used**
+- [ ] **Step 10: Lazy-load sub-goals only when the picker is used**
 
 In the sub-goal input `onFocus`, call the loader only when a root exists:
 
@@ -611,7 +651,7 @@ onFocus={() => {
 }}
 ```
 
-- [ ] **Step 10: Run source guard and utility tests**
+- [ ] **Step 11: Run source guard and utility tests**
 
 Run:
 
@@ -621,7 +661,7 @@ node --test tests/test_epm_settings_source_guards.js tests/test_epm_project_util
 
 Expected: PASS.
 
-- [ ] **Step 11: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add frontend/src/dashboard.jsx tests/test_epm_settings_source_guards.js
@@ -761,7 +801,7 @@ git commit -m "feat(epm): split project mapping into settings tab"
 - Modify: `tests/test_epm_settings_source_guards.js`
 - Modify: `tests/test_epm_shell_source_guards.js`
 
-- [ ] **Step 1: Write source guards for automatic cached loading**
+- [ ] **Step 1: Write source guards for automatic cached configuration loading**
 
 In `tests/test_epm_settings_source_guards.js`, replace assertions that require explicit preview copy and the Test Configuration button to drive EPM project loading with:
 
@@ -772,13 +812,18 @@ In `tests/test_epm_settings_source_guards.js`, replace assertions that require e
     assert.ok(dashboardSource.includes("if (!showGroupManage || groupManageTab !== 'epm' || epmSettingsTab !== 'projects') return;"), 'Expected Projects tab scoped auto-load effect');
     assert.ok(dashboardSource.includes('void ensureEpmSettingsProjectsLoaded().catch(() => {});'), 'Expected Projects tab to auto-load projects');
     assert.ok(!dashboardSource.includes('Run Test Configuration to preview projects for the selected draft scope.'), 'Project tab must not require manual preview before showing rows');
+    assert.ok(!dashboardSource.includes('epmSettingsPreviewRequested'), 'EPM project configuration must not use preview-request state');
+    assert.ok(!dashboardSource.includes('loadEpmProjectPreview'), 'EPM project configuration must not use preview-named loaders');
+    assert.ok(dashboardSource.includes('const [epmSettingsProjectsLoaded, setEpmSettingsProjectsLoaded] = useState(false);'), 'Expected loaded-state for project configuration rows');
 ```
 
-In `tests/test_epm_shell_source_guards.js`, update the `fetchEpmProjectPreview` guard so it allows a refresh query. The expected source should include:
+In `tests/test_epm_shell_source_guards.js`, replace the `fetchEpmProjectPreview` guard with a configuration-loader guard. The expected source should include:
 
 ```js
-assert.ok(epmFetchSource.includes('const refreshParam = forceRefresh ? \'?refresh=true\' : \'\';'), 'Expected project preview refresh query support');
-assert.ok(epmFetchSource.includes('fetch(`${backendUrl}/api/epm/projects/preview${refreshParam}`'), 'Expected preview fetch to include refresh parameter');
+assert.ok(epmFetchSource.includes('export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {}) {'), 'Expected EPM configuration project loader');
+assert.ok(epmFetchSource.includes('const refreshParam = forceRefresh ? \'?refresh=true\' : \'\';'), 'Expected project configuration refresh query support');
+assert.ok(epmFetchSource.includes('fetch(`${backendUrl}/api/epm/projects/configuration${refreshParam}`'), 'Expected configuration fetch endpoint');
+assert.ok(!epmFetchSource.includes('/api/epm/projects/preview'), 'EPM settings must not call preview endpoint');
 ```
 
 - [ ] **Step 2: Run source guards and confirm they fail**
@@ -789,30 +834,30 @@ Run:
 node --test tests/test_epm_settings_source_guards.js tests/test_epm_shell_source_guards.js
 ```
 
-Expected: FAIL because project loading is manual and `epmFetch.js` has no refresh option.
+Expected: FAIL because project loading is manual and `epmFetch.js` still uses preview naming.
 
-- [ ] **Step 3: Add refresh support to `epmFetch.js`**
+- [ ] **Step 3: Add configuration project loading to `epmFetch.js`**
 
-Change `fetchEpmProjectPreview` to:
+Replace `fetchEpmProjectPreview` with:
 
 ```js
-export function fetchEpmProjectPreview(backendUrl, draftConfig, options = {}) {
+export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {}) {
     const forceRefresh = Boolean(options.forceRefresh);
     const refreshParam = forceRefresh ? '?refresh=true' : '';
-    return fetch(`${backendUrl}/api/epm/projects/preview${refreshParam}`, {
+    return fetch(`${backendUrl}/api/epm/projects/configuration${refreshParam}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(draftConfig || {}),
         cache: 'no-cache'
-    }).then(response => json(response, 'EPM project preview'));
+    }).then(response => json(response, 'EPM project configuration'));
 }
 ```
 
 Update the dashboard wrapper:
 
 ```js
-const loadEpmProjectPreview = async (draftConfig, options = {}) => {
-    return fetchEpmProjectPreview(BACKEND_URL, draftConfig, options);
+const loadEpmConfigurationProjects = async (draftConfig, options = {}) => {
+    return fetchEpmConfigurationProjects(BACKEND_URL, draftConfig, options);
 };
 ```
 
@@ -830,9 +875,17 @@ Add this memo near `canOpenEpmProjectsTab`:
 const epmSettingsProjectsCacheKey = React.useMemo(() => getEpmSettingsProjectsCacheKey(epmConfigDraft), [epmConfigDraft]);
 ```
 
-- [ ] **Step 5: Replace manual preview with cached automatic loader**
+- [ ] **Step 5: Replace manual project test flow with cached automatic configuration loader**
 
-Add this function near `previewEpmProjectSettings` and then delete the old `previewEpmProjectSettings` function:
+Rename state:
+
+```js
+const [epmSettingsProjectsLoaded, setEpmSettingsProjectsLoaded] = useState(false);
+```
+
+Delete `epmSettingsPreviewRequested` and delete `previewEpmProjectSettings`.
+
+Add this function near the settings project loading helpers:
 
 ```js
 const ensureEpmSettingsProjectsLoaded = async (options = {}) => {
@@ -848,7 +901,7 @@ const ensureEpmSettingsProjectsLoaded = async (options = {}) => {
         const cachedProjects = epmSettingsProjectsCacheRef.current.get(cacheKey) || [];
         setEpmSettingsProjects(cachedProjects);
         setEpmSettingsProjectsError('');
-        setEpmSettingsPreviewRequested(true);
+        setEpmSettingsProjectsLoaded(true);
         return cachedProjects;
     }
 
@@ -856,9 +909,9 @@ const ensureEpmSettingsProjectsLoaded = async (options = {}) => {
     const requestId = epmSettingsProjectsRequestIdRef.current;
     setEpmSettingsProjectsLoading(true);
     setEpmSettingsProjectsError('');
-    setEpmSettingsPreviewRequested(true);
+    setEpmSettingsProjectsLoaded(true);
     try {
-        const payload = await loadEpmProjectPreview(epmConfigDraft, { forceRefresh });
+        const payload = await loadEpmConfigurationProjects(epmConfigDraft, { forceRefresh });
         if (epmSettingsProjectsRequestIdRef.current !== requestId) {
             return [];
         }
@@ -942,7 +995,7 @@ In the Projects render branch, replace the loading/empty copy around the existin
 
 - [ ] **Step 9: Keep cache on scope-open and invalidate current rows on key changes**
 
-Do not call `resetEpmProjectPreview()` on settings open. On explicit root/sub-goal clear or a different root selection, continue to clear the visible settings rows by calling `resetEpmProjectPreview()`, but leave `epmSettingsProjectsCacheRef.current` intact so returning to an old scope key can reuse cached projects.
+Do not call `resetEpmSettingsProjectRows()` on settings open. On explicit root/sub-goal clear or a different root selection, continue to clear the visible settings rows by calling `resetEpmSettingsProjectRows()`, but leave `epmSettingsProjectsCacheRef.current` intact so returning to an old scope key can reuse cached projects.
 
 When label prefix changes, clear label autocomplete results as it already does. Do not clear `subGoalKey`.
 
@@ -1055,6 +1108,7 @@ Use the in-app browser or Playwright against `http://127.0.0.1:5050` and verify:
 - `Refresh projects` forces a new project fetch.
 - Project rows scroll inside the Projects sub-tab and do not sit underneath the modal footer.
 - Save persists project label mapping and does not clear the Home project cache for the same scope.
+- Active EPM rollup requests use the configured project label and selected sprint value; they do not use Jira team or team-group filters.
 
 Capture screenshots for:
 
@@ -1080,9 +1134,10 @@ git commit -m "build(epm): update settings project bundle"
 
 - No Jira Home sub-goal fetch on settings open just to render the saved sub-goal.
 - No project mapping rows in the Scope sub-tab.
-- No manual preview required before Projects can load.
+- No manual test/preview required before Projects can load.
 - No clearing `subGoalKey` except explicit clear or actual root-goal change.
 - No backend project cache invalidation on label-only EPM config saves.
 - No stale labels from cached project payloads; labels are shaped from the latest config.
+- No Jira team or team-group filter in EPM project configuration or EPM rollup JQL.
 - No rows hidden behind the modal footer in the Projects sub-tab.
 - Full test suite passes before merge or push.

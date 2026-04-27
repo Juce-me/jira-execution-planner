@@ -223,7 +223,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Keep auth-mode changes isolated from `frontend/src/dashboard.jsx` unless the user explicitly approves a dashboard UI change.
 - In settings UIs, when a value is already selected or the option set is small, default to a compact selected-state control and reveal search only on explicit change; do not leave persistent search inputs visible by default.
 - For any scoped view, show the active scope value in that same view; do not treat request parameters or hidden React state as a substitute for visible controls.
-- In EPM settings, never clear the saved sub-goal on modal open or project loading; the child goal is the project-catalog root and should drive cached project configuration fetches until the root goal actually changes.
+- In EPM settings, never clear the saved sub-goal on modal open or project loading; the child goal drives cached project configuration, and EPM rollups use configured project labels plus selected sprint, not Jira teams.
 
 ---
 

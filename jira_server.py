@@ -31,7 +31,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as
 import epm_home
 from epm_home import fetch_epm_home_projects, merge_epm_linkage
 from epm_rollup import EpmRollupDependencies, build_per_project_rollup
-from epm_scope import build_epm_scope_clause, build_rollup_jqls, normalize_epm_sprint_field, should_apply_epm_sprint
+from epm_scope import build_epm_scope_clause, normalize_epm_sprint_field, should_apply_epm_sprint
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
 
 # Load environment variables from .env file

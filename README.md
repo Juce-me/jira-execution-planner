@@ -26,6 +26,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Scenario planner** - [Feature guide](docs/features/scenario-planner.md)
 - ✅ **Alerts** - [Feature guide](docs/features/alerts.md)
 - ✅ **Sprint statistics** - [Feature guide](docs/features/statistics.md)
+- ✅ **EPM view** - [Feature guide](docs/features/epm-view.md)
 
 ## 📚 Feature Guides
 
@@ -33,6 +34,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - [Alerts](docs/features/alerts.md)
 - [Statistics](docs/features/statistics.md)
 - [Scenario Planner](docs/features/scenario-planner.md)
+- [EPM View](docs/features/epm-view.md)
 
 ## 📖 Technical Docs
 
@@ -181,6 +183,10 @@ npm run watch
 ```
 
 CI will fail if `frontend/dist` is out of sync. We precompile JSX to avoid in-browser Babel in production.
+
+## EPM View
+
+Set the Atlassian Home credentials in `.env` (`ATLASSIAN_EMAIL`, `ATLASSIAN_API_TOKEN`). `ATLASSIAN_EMAIL` and `ATLASSIAN_API_TOKEN` fall back to `JIRA_EMAIL` and `JIRA_TOKEN` when left blank. Then open `Settings -> EPM`, confirm the detected Atlassian site, choose a root goal, and choose the child sub-goal that directly owns the EPM project catalog. Set the label prefix used for Jira label autocomplete, then assign each Project one exact Jira label; there is no epic key field or wildcard label fallback. You can also add custom Projects with a name and label only. Use the `ENG | EPM` switch in the dashboard header to browse Project rollups rendered as Initiative -> Epic -> Story/Task hierarchies. EPM Jira queries stay scoped to the Jira projects listed in `dashboard-config.json -> projects.selected`, so add the relevant Jira project there if an EPM Project points outside the current dashboard set.
 
 You should see:
 ```

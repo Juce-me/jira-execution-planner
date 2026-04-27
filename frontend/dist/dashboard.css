@@ -1230,6 +1230,14 @@
             background: #fff;
         }
 
+        .epm-home-card .secondary.compact {
+            margin-top: 0.75rem;
+        }
+
+        .epm-issue-board {
+            gap: 0.85rem;
+        }
+
         .mapping-preview-section {
             margin-bottom: 0.1rem;
             order: 99;

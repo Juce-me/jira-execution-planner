@@ -30,6 +30,7 @@ from requests import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 import epm_home
 from epm_home import fetch_epm_home_projects, merge_epm_linkage
+from epm_rollup import EpmRollupDependencies, build_per_project_rollup
 from epm_scope import build_epm_scope_clause, build_rollup_jqls, normalize_epm_sprint_field, should_apply_epm_sprint
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
 
@@ -1559,6 +1560,29 @@ def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_quer
         truncated_queries.append(query_name)
         return raw_issues[:EPM_ROLLUP_QUERY_MAX_RESULTS]
     return raw_issues
+
+
+def build_epm_rollup_dependencies():
+    return EpmRollupDependencies(
+        find_epm_project_or_404=find_epm_project_or_404,
+        normalize_epm_text=normalize_epm_text,
+        validate_epm_tab_sprint=validate_epm_tab_sprint,
+        build_empty_epm_rollup_payload=build_empty_epm_rollup_payload,
+        build_base_jql=build_base_jql,
+        add_clause_to_jql=add_clause_to_jql,
+        build_jira_headers=build_jira_headers,
+        resolve_epic_link_field_id=resolve_epic_link_field_id,
+        build_epm_rollup_fields_list=build_epm_rollup_fields_list,
+        get_epm_config=get_epm_config,
+        normalize_epm_issue_type_sets=normalize_epm_issue_type_sets,
+        fetch_epm_rollup_query=fetch_epm_rollup_query,
+        shape_epm_rollup_issue_payload=shape_epm_rollup_issue_payload,
+        dedupe_issues_by_key=dedupe_issues_by_key,
+        build_epm_rollup_hierarchy=build_epm_rollup_hierarchy,
+        cache=EPM_ROLLUP_CACHE,
+        cache_lock=_epm_cache_lock,
+        cache_ttl_seconds=EPM_ROLLUP_CACHE_TTL_SECONDS,
+    )
 
 
 def build_epm_project_payload(home_project, config_row):
@@ -6763,95 +6787,16 @@ def get_epm_project_issues_endpoint(home_project_id):
 def get_epm_project_rollup_endpoint(project_id):
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
-    validation_error = validate_epm_tab_sprint(tab, sprint)
-    if validation_error:
-        error_payload, status = validation_error
-        return jsonify(error_payload), status
-
-    project = find_epm_project_or_404(project_id)
-    label = normalize_epm_text(project.get('label'))
-    rollup_jqls = build_rollup_jqls(label)
-    if not rollup_jqls:
-        return jsonify(build_empty_epm_rollup_payload(project, metadata_only=True))
-
-    base_jql = build_base_jql()
-    cache_key = f"{project_id}::{tab}::{sprint}::{label}::{base_jql}"
-    with _epm_cache_lock:
-        cached = EPM_ROLLUP_CACHE.get(cache_key)
-    if cached and (time.time() - cached['timestamp']) < EPM_ROLLUP_CACHE_TTL_SECONDS:
-        response = jsonify(cached['data'])
-        response.headers['Server-Timing'] = 'cache;dur=1'
-        return response
-
-    started = time.perf_counter()
-    s1_jql, child_predicate = rollup_jqls
-    headers = build_jira_headers()
-    epic_link_field_id = resolve_epic_link_field_id(headers)
-    fields_list = build_epm_rollup_fields_list(epic_link_field_id)
-    epm_config = get_epm_config()
-    issue_type_sets = normalize_epm_issue_type_sets(epm_config.get('issueTypes') or {})
-    truncated_queries = []
-
-    def with_sprint_filter(jql):
-        if should_apply_epm_sprint(tab):
-            return add_clause_to_jql(jql, f'Sprint = {sprint}')
-        return jql
-
-    q1_jql = with_sprint_filter(add_clause_to_jql(base_jql, s1_jql))
-    q1_raw = fetch_epm_rollup_query(q1_jql, 'q1', headers, fields_list, truncated_queries)
-    if not q1_raw:
-        payload = build_empty_epm_rollup_payload(project, empty_rollup=True)
-        with _epm_cache_lock:
-            EPM_ROLLUP_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
-        response = jsonify(payload)
-        response.headers['Server-Timing'] = f'jira-search;dur={round((time.perf_counter() - started) * 1000, 1)}'
-        return response
-
-    q1_issues, _ = shape_epm_rollup_issue_payload(q1_raw, epic_link_field_id=epic_link_field_id)
-    initiative_or_epic_types = issue_type_sets['initiative'] | issue_type_sets['epic']
-    q2_seed_keys = sorted({
-        issue.get('key')
-        for issue in q1_issues
-        if normalize_epm_text(issue.get('issueType')).lower() in initiative_or_epic_types and issue.get('key')
-    })
-
-    q2_issues = []
-    q2_predicate = child_predicate(q2_seed_keys)
-    if q2_predicate:
-        q2_jql = with_sprint_filter(add_clause_to_jql(base_jql, q2_predicate))
-        q2_raw = fetch_epm_rollup_query(q2_jql, 'q2', headers, fields_list, truncated_queries)
-        q2_issues, _ = shape_epm_rollup_issue_payload(q2_raw, epic_link_field_id=epic_link_field_id)
-
-    q3_seed_keys = sorted({
-        issue.get('key')
-        for issue in q2_issues
-        if normalize_epm_text(issue.get('issueType')).lower() in issue_type_sets['epic'] and issue.get('key')
-    })
-
-    q3_issues = []
-    q3_predicate = child_predicate(q3_seed_keys)
-    if q3_predicate:
-        q3_jql = with_sprint_filter(add_clause_to_jql(base_jql, q3_predicate))
-        q3_raw = fetch_epm_rollup_query(q3_jql, 'q3', headers, fields_list, truncated_queries)
-        q3_issues, _ = shape_epm_rollup_issue_payload(q3_raw, epic_link_field_id=epic_link_field_id)
-
-    hierarchy = build_epm_rollup_hierarchy(
-        dedupe_issues_by_key(q1_issues + q2_issues + q3_issues),
-        epm_config.get('issueTypes') or {},
+    payload, status, headers = build_per_project_rollup(
+        project_id,
+        tab,
+        sprint,
+        build_epm_rollup_dependencies(),
     )
-    payload = {
-        'project': project,
-        'metadataOnly': False,
-        'emptyRollup': False,
-        'truncated': bool(truncated_queries),
-        'truncatedQueries': truncated_queries,
-        **hierarchy,
-    }
-    with _epm_cache_lock:
-        EPM_ROLLUP_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
     response = jsonify(payload)
-    response.headers['Server-Timing'] = f'jira-search;dur={round((time.perf_counter() - started) * 1000, 1)}'
-    return response
+    for key, value in headers.items():
+        response.headers[key] = value
+    return response, status
 
 
 @app.route('/api/epm/config', methods=['POST'])

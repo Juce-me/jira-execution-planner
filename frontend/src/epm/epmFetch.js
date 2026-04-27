@@ -30,8 +30,9 @@ export const previewEpmProjects = (backendUrl, payload) =>
     }).then(response => json(response, 'EPM preview'));
 
 export const fetchEpmProjectRollup = (backendUrl, projectId, { tab, sprint } = {}) => {
-    const params = new URLSearchParams({ tab: tab || 'active' });
-    if (tab === 'active' && sprint) {
+    const effectiveTab = tab || 'active';
+    const params = new URLSearchParams({ tab: effectiveTab });
+    if (effectiveTab === 'active' && sprint) {
         params.set('sprint', String(sprint));
     }
     return fetch(`${backendUrl}/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}`, { cache: 'no-cache' })

@@ -4,9 +4,9 @@
 
 **Goal:** Add optional Atlassian OAuth 2.0 3LO login so Jira Execution Planner can call Jira on behalf of the signed-in user without requiring a personal API token.
 
-**Architecture:** Keep `basic` auth as the default and introduce `atlassian_oauth` behind `JIRA_AUTH_MODE`. Add a small backend auth/client boundary, migrate the first Jira endpoints through it, and gate the frontend on `/api/auth/status` before loading Jira data.
+**Architecture:** Keep `basic` auth as the default and introduce `atlassian_oauth` behind `JIRA_AUTH_MODE`. Add a small backend auth/client boundary and migrate the first Jira endpoints through it while keeping auth-mode changes isolated from `frontend/src/dashboard.jsx`.
 
-**Tech Stack:** Python Flask, `requests`, Flask signed sessions for local OAuth testing, React 19 frontend, Python `unittest`, Node source-guard tests.
+**Tech Stack:** Python Flask, `requests`, Flask signed sessions for local OAuth testing, Python `unittest`, Node source-guard tests.
 
 ---
 
@@ -17,12 +17,11 @@
 - `jira_auth.py` - auth mode parsing, OAuth URL/token helpers, resource matching, token refresh, Jira URL/header construction.
 - `tests/test_jira_auth.py` - backend unit tests for auth mode, URLs, resources, refresh behavior, and request headers.
 - `tests/test_auth_routes.py` - Flask route tests for auth status, login redirect, callback errors, and logout.
-- `tests/test_auth_source_guards.js` - frontend source guards for auth status and sign-in behavior.
+- `tests/test_auth_isolation_source_guard.js` - source guard that auth-mode work stays out of `frontend/src/dashboard.jsx`.
 
 **Modify:**
 
 - `jira_server.py` - register auth routes, configure Flask secret key, relax Basic-only startup validation, and migrate `/api/test` plus one small read endpoint to `jira_auth`.
-- `frontend/src/dashboard.jsx` - add auth status state, sign-in screen, and `401 auth_required` handling.
 - `.env.example` - document `JIRA_AUTH_MODE` and Atlassian OAuth variables.
 - `README.md` - document local OAuth setup and Basic auth fallback.
 
@@ -684,15 +683,14 @@ git commit -m "Route initial Jira calls through auth helper"
 
 ---
 
-## Task 4: Frontend Auth Gate
+## Task 4: Dashboard Isolation Guard
 
 **Files:**
-- Modify: `frontend/src/dashboard.jsx`
-- Create: `tests/test_auth_source_guards.js`
+- Create: `tests/test_auth_isolation_source_guard.js`
 
-- [ ] **Step 1: Add source guard tests**
+- [ ] **Step 1: Add source guard test**
 
-Create `tests/test_auth_source_guards.js`:
+Create `tests/test_auth_isolation_source_guard.js`:
 
 ```javascript
 const fs = require('fs');
@@ -701,18 +699,18 @@ const assert = require('assert');
 const source = fs.readFileSync('frontend/src/dashboard.jsx', 'utf8');
 
 assert(
-  source.includes('/api/auth/status'),
-  'dashboard must check auth status before loading Jira data'
+  !source.includes('/api/auth/status'),
+  'auth-mode implementation must stay isolated from dashboard.jsx in this slice'
 );
 
 assert(
-  source.includes('/api/auth/atlassian/login'),
-  'dashboard must expose Atlassian login URL'
+  !source.includes('/api/auth/atlassian/login'),
+  'dashboard.jsx must not expose Atlassian login UI in this slice'
 );
 
 assert(
-  source.includes('auth_required'),
-  'dashboard must handle backend auth_required responses'
+  !source.includes('auth_required'),
+  'dashboard.jsx must not add auth_required handling in this slice'
 );
 
 assert(
@@ -721,107 +719,22 @@ assert(
 );
 ```
 
-- [ ] **Step 2: Run source guard to verify failure**
+- [ ] **Step 2: Run source guard**
 
-Run: `node tests/test_auth_source_guards.js`
+Run: `node tests/test_auth_isolation_source_guard.js`
 
-Expected: FAIL because the dashboard does not include auth status or login handling yet.
+Expected: PASS.
 
-- [ ] **Step 3: Add auth state and gate**
-
-In `frontend/src/dashboard.jsx`, add auth state near other top-level state:
-
-```javascript
-const [authStatus, setAuthStatus] = useState({
-    loading: true,
-    authenticated: false,
-    loginRequired: false,
-    authMode: 'basic'
-});
-```
-
-Add a loader function near existing API helpers:
-
-```javascript
-async function loadAuthStatus() {
-    const response = await fetch('/api/auth/status');
-    const data = await response.json();
-    setAuthStatus({
-        loading: false,
-        authenticated: Boolean(data.authenticated),
-        loginRequired: Boolean(data.loginRequired),
-        authMode: data.authMode || 'basic',
-        siteName: data.siteName || '',
-        siteUrl: data.siteUrl || ''
-    });
-    return data;
-}
-```
-
-Call `loadAuthStatus()` before the first dashboard data fetch. If the returned status has `loginRequired: true`, skip Jira data loading.
-
-Where fetch helpers process API responses, add a shared check:
-
-```javascript
-if (response.status === 401) {
-    const body = await response.clone().json().catch(() => ({}));
-    if (body.error === 'auth_required') {
-        setAuthStatus((current) => ({
-            ...current,
-            authenticated: false,
-            loginRequired: true,
-            loading: false
-        }));
-        return null;
-    }
-}
-```
-
-Before rendering the main dashboard, add:
-
-```javascript
-if (authStatus.loading) {
-    return <div className="loading">Loading...</div>;
-}
-
-if (authStatus.loginRequired && !authStatus.authenticated) {
-    return (
-        <div className="app-shell auth-required">
-            <main className="auth-panel">
-                <h1>Jira Execution Planner</h1>
-                <p>Sign in with Atlassian to load Jira data.</p>
-                <a className="primary-button" href="/api/auth/atlassian/login">
-                    Sign in with Atlassian
-                </a>
-            </main>
-        </div>
-    );
-}
-```
-
-Use existing button/container classes where possible. If the exact class names differ, reuse the closest existing primary action styling instead of introducing a new visual system.
-
-- [ ] **Step 4: Run frontend guard and build**
+- [ ] **Step 3: Commit**
 
 Run:
 
 ```bash
-node tests/test_auth_source_guards.js
-npm run build
+git add tests/test_auth_isolation_source_guard.js
+git commit -m "Guard dashboard isolation for OAuth auth mode"
 ```
 
-Expected: source guard PASS and build PASS.
-
-- [ ] **Step 5: Commit**
-
-Run:
-
-```bash
-git add frontend/src/dashboard.jsx tests/test_auth_source_guards.js frontend/dist/dashboard.js frontend/dist/dashboard.js.map
-git commit -m "Add dashboard Atlassian auth gate"
-```
-
-If `frontend/dist/` is intentionally ignored or generated in this branch, do not force-add it.
+Expected: commit includes only the source guard.
 
 ---
 
@@ -907,11 +820,11 @@ Run:
 
 ```bash
 python3 -m unittest tests.test_jira_auth tests.test_auth_routes -v
-npm run build
+node tests/test_auth_isolation_source_guard.js
 JIRA_AUTH_MODE=atlassian_oauth JIRA_URL=https://example.atlassian.net ATLASSIAN_CLIENT_ID=client ATLASSIAN_CLIENT_SECRET=secret ATLASSIAN_REDIRECT_URI=http://localhost:5050/api/auth/atlassian/callback FLASK_SECRET_KEY=test python3 jira_server.py --help
 ```
 
-Expected: tests PASS, build PASS, and `--help` prints CLI help without starting the server.
+Expected: Python tests PASS, source guard PASS, and `--help` prints CLI help without starting the server.
 
 - [ ] **Step 5: Commit**
 
@@ -935,9 +848,9 @@ Run: `python3 -m unittest discover -s tests`
 
 Expected: PASS.
 
-- [ ] **Step 2: Run frontend build**
+- [ ] **Step 2: Run dashboard isolation guard**
 
-Run: `npm run build`
+Run: `node tests/test_auth_isolation_source_guard.js`
 
 Expected: PASS.
 
@@ -949,7 +862,7 @@ With a real Atlassian OAuth app configured in `.env`, run:
 python3 jira_server.py
 ```
 
-Open `http://localhost:5050`, click `Sign in with Atlassian`, complete Atlassian login, and confirm `/api/auth/status` returns:
+Open `http://localhost:5050/api/auth/atlassian/login`, complete Atlassian login, and confirm `/api/auth/status` returns:
 
 ```json
 {
@@ -973,6 +886,6 @@ Do not push. This repo requires explicit user confirmation before push.
 
 ## Plan Self-Review
 
-- Spec coverage: the plan covers auth mode config, OAuth login/callback, token storage, resource selection, Jira URL/header construction, frontend gating, docs, and verification.
+- Spec coverage: the plan covers auth mode config, OAuth login/callback, token storage, resource selection, Jira URL/header construction, dashboard isolation, docs, and verification.
 - Scope: Confluence support is intentionally deferred; the helper architecture keeps room for a later Confluence client.
-- Risk: Task 4 requires careful integration with existing dashboard load effects. Keep that edit narrow and verify with `npm run build`.
+- Risk: dashboard login UX is intentionally deferred so the auth-mode slice does not modify `frontend/src/dashboard.jsx`.

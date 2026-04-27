@@ -20,13 +20,14 @@ Add an optional Atlassian OAuth 2.0 3LO authentication mode so users can sign in
 - Do not remove API-token Basic auth in the first slice.
 - Do not add Confluence API calls in the first slice; design the auth layer so Confluence can be added later.
 - Do not build production multi-user persistence in the first slice.
+- Do not modify `frontend/src/dashboard.jsx` in the first slice. Auth-mode work stays isolated to backend helpers, routes, config, tests, and documentation unless a separate UI change is explicitly approved.
 
 ## Current State
 
 - `jira_server.py` reads `JIRA_URL`, `JIRA_EMAIL`, and `JIRA_TOKEN` at process startup.
 - Many Jira calls build `Authorization: Basic ...` headers inline.
 - Startup fails unless the Basic auth env vars are present.
-- The frontend assumes the backend can fetch Jira data immediately.
+- The current dashboard assumes the backend can fetch Jira data immediately.
 - There is no server-side user session or token refresh path.
 
 ## Proposed Design
@@ -96,11 +97,11 @@ https://api.atlassian.com/ex/jira/{cloudid}/rest/api/3/...
 
 Agile endpoints use the same `/ex/jira/{cloudid}` gateway path with their existing `/rest/agile/1.0/...` suffix.
 
-### 5. Frontend Flow
+### 5. Dashboard Isolation
 
-On dashboard load, the frontend calls `/api/auth/status`.
+The first OAuth slice does not change `frontend/src/dashboard.jsx`.
 
-If auth is required and missing, render a compact sign-in state with a `Sign in with Atlassian` action. If authenticated, load dashboard data as it does today. If a later API call returns `401 auth_required`, return to the sign-in state.
+OAuth login is exposed through backend routes and can be tested directly at `/api/auth/atlassian/login` plus `/api/auth/status`. Existing dashboard behavior stays unchanged until a later, explicit UI task decides how to present login state.
 
 No Atlassian token is stored in localStorage.
 
@@ -118,13 +119,13 @@ First slice:
 2. Add OAuth routes and token refresh.
 3. Add auth/client helper.
 4. Migrate `/api/test` and one small read-only Jira endpoint to the helper.
-5. Add frontend auth status/login gate.
 
 Second slice:
 
 1. Replace repeated inline Basic auth blocks in the remaining Jira endpoints.
 2. Remove duplicated URL/header construction.
 3. Add Confluence scopes and a Confluence client only when a real Confluence feature needs it.
+4. Add a dashboard login UI only after approving a separate UI plan.
 
 ## Error Handling
 
@@ -142,8 +143,8 @@ Second slice:
 - Unit tests for accessible-resource selection by normalized `JIRA_URL`.
 - Unit tests for Basic versus OAuth Jira URL/header construction.
 - Unit tests for refresh-token success and failure behavior.
-- Source guard test that frontend calls `/api/auth/status` before dashboard data loading.
-- Manual browser test for the local OAuth flow.
+- Source guard that auth-mode implementation does not modify `frontend/src/dashboard.jsx`.
+- Manual browser test for the local OAuth backend flow.
 
 ## References
 

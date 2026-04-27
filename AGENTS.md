@@ -323,7 +323,7 @@ Follow this checklist for ALL work in this repo. No exceptions.
 
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 
-- (empty)
+- Keep auth-mode changes isolated from `frontend/src/dashboard.jsx` unless the user explicitly approves a dashboard UI change.
 
 ---
 

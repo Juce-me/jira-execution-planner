@@ -214,6 +214,25 @@ test('epm helper file exists and owns the Active only copy', () => {
     assert.ok(dashboardSource.includes('buildRollupTree'), 'Expected dashboard.jsx to reference buildRollupTree');
 });
 
+test('EPM module homes own rollup fetch and rendering while staying isolated from ENG concerns', () => {
+    assert.ok(
+        epmFetchSource.includes('/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}') || epmFetchSource.includes('/api/epm/projects/'),
+        'Expected EPM fetch URLs to live in epmFetch.js'
+    );
+    assert.ok(epmRollupPanelSource.includes('This rollup is truncated; narrow the label or Jira scope.'), 'Expected rollup truncation UI in EpmRollupPanel.jsx');
+    assert.ok(epmRollupPanelSource.includes('No issues match this label in the current scope.'), 'Expected empty rollup UI in EpmRollupPanel.jsx');
+    assert.ok(epmRollupTreeSource.includes('EpmInitiativeNode'), 'Expected reusable initiative renderer in EpmRollupTree.jsx');
+    assert.ok(epmRollupTreeSource.includes('EpmEpicNode'), 'Expected reusable epic renderer in EpmRollupTree.jsx');
+    assert.ok(epmRollupTreeSource.includes('EpmRollupIssue'), 'Expected reusable issue renderer in EpmRollupTree.jsx');
+
+    for (const source of [epmFetchSource, epmRollupPanelSource, epmRollupTreeSource]) {
+        assert.ok(!source.includes('/api/tasks-with-team-name'), 'EPM modules must not fetch ENG tasks');
+        assert.ok(!source.includes('/api/backlog-epics'), 'EPM modules must not fetch ENG backlog epics');
+        assert.ok(!source.includes('showPlanning'), 'EPM modules must not own planning state');
+        assert.ok(!source.includes('showScenario'), 'EPM modules must not own scenario state');
+    }
+});
+
 test('ENG task fetching effects are unreachable in EPM view', () => {
     assert.ok(dashboardSource.includes('/api/tasks-with-team-name'), 'Expected ENG task endpoint in dashboard.jsx');
     assert.ok(dashboardSource.includes('/api/backlog-epics'), 'Expected ENG backlog endpoint in dashboard.jsx');

@@ -5,10 +5,14 @@ const test = require('node:test');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
 const epmFetchPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmFetch.js');
+const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupPanel.jsx');
+const epmRollupTreePath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupTree.jsx');
 const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs');
 
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 const epmFetchSource = fs.readFileSync(epmFetchPath, 'utf8');
+const epmRollupPanelSource = fs.existsSync(epmRollupPanelPath) ? fs.readFileSync(epmRollupPanelPath, 'utf8') : '';
+const epmRollupTreeSource = fs.existsSync(epmRollupTreePath) ? fs.readFileSync(epmRollupTreePath, 'utf8') : '';
 const helperSource = fs.existsSync(helperPath) ? fs.readFileSync(helperPath, 'utf8') : '';
 
 function countOccurrences(source, needle) {
@@ -261,21 +265,21 @@ test('EPM project identity positions use project id only', () => {
 });
 
 test('EPM rollup renderer branches on metadata, empty, truncated, and tree states', () => {
-    assert.ok(dashboardSource.includes("epmRollupTree?.kind === 'metadataOnly'"), 'Expected metadata-only rollup branch');
-    assert.ok(dashboardSource.includes('Open Settings'), 'Expected metadata-only branch to show OPEN SETTINGS CTA');
-    assert.ok(dashboardSource.includes("epmRollupTree?.kind === 'emptyRollup'"), 'Expected empty rollup branch');
-    assert.ok(dashboardSource.includes('No issues match this label in the current scope'), 'Expected distinct empty rollup message');
-    assert.ok(dashboardSource.includes("epmRollupTree?.kind === 'tree'"), 'Expected populated tree branch');
-    assert.ok(dashboardSource.includes('This rollup is truncated; narrow the label or Jira scope.'), 'Expected truncated rollup warning');
+    assert.ok(epmRollupPanelSource.includes("epmRollupTree?.kind === 'metadataOnly'"), 'Expected metadata-only rollup branch in EpmRollupPanel.jsx');
+    assert.ok(epmRollupPanelSource.includes('Open Settings'), 'Expected metadata-only branch to show OPEN SETTINGS CTA');
+    assert.ok(epmRollupPanelSource.includes("epmRollupTree?.kind === 'emptyRollup'"), 'Expected empty rollup branch in EpmRollupPanel.jsx');
+    assert.ok(epmRollupPanelSource.includes('No issues match this label in the current scope'), 'Expected distinct empty rollup message');
+    assert.ok(epmRollupPanelSource.includes("epmRollupTree?.kind !== 'tree'"), 'Expected populated tree guard in EpmRollupPanel.jsx');
+    assert.ok(epmRollupPanelSource.includes('This rollup is truncated; narrow the label or Jira scope.'), 'Expected truncated rollup warning');
 });
 
 test('EPM rollup renderer groups Initiative to Epic to Story and keeps orphans under Project', () => {
-    assert.ok(dashboardSource.includes('epmRollupTree.initiatives.map'), 'Expected initiatives to be rendered from rollup tree');
-    assert.ok(dashboardSource.includes('initiativeNode.epics.map'), 'Expected epics to be rendered under initiatives');
-    assert.ok(dashboardSource.includes('renderEpmRollupIssue(story'), 'Expected stories to be rendered under epics');
-    assert.ok(dashboardSource.includes('epmRollupTree.rootEpics.map'), 'Expected root epics to render directly under Project');
-    assert.ok(dashboardSource.includes('epmRollupTree.orphanStories.map'), 'Expected orphan stories to render directly under Project');
-    assert.ok(dashboardSource.includes('Project stories'), 'Expected orphan stories section under Project');
+    assert.ok(epmRollupPanelSource.includes('epmRollupTree.initiatives.map'), 'Expected initiatives to be rendered from rollup tree');
+    assert.ok(epmRollupTreeSource.includes('initiativeNode.epics.map'), 'Expected epics to be rendered under initiatives');
+    assert.ok(epmRollupTreeSource.includes('epicNode.stories.map'), 'Expected stories to be rendered under epics');
+    assert.ok(epmRollupTreeSource.includes('tree.rootEpics.map'), 'Expected root epics to render directly under Project');
+    assert.ok(epmRollupTreeSource.includes('tree.orphanStories.map'), 'Expected orphan stories to render directly under Project');
+    assert.ok(epmRollupTreeSource.includes('Project stories'), 'Expected orphan stories section under Project');
 });
 
 test('EPM rollup helper dedupes by issue key before rendering', () => {

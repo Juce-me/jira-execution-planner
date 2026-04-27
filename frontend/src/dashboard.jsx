@@ -23,6 +23,7 @@ import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
 import { fetchEpmConfig, fetchEpmScope, fetchEpmGoals, fetchEpmProjects, previewEpmProjects, fetchEpmProjectRollup } from './epm/epmFetch.js';
+import { EpmRollupPanel } from './epm/EpmRollupPanel.jsx';
 import { buildRollupTree, filterEpmProjectsForTab, getEpmProjectDisplayName, getEpmProjectIdentity, getEpmSprintHelper, hydrateEpmProjectDraft, shouldUseEpmSprint } from './epm/epmProjectUtils.mjs';
 import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
@@ -8803,80 +8804,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const selectedEpmProjectUpdateLine = [selectedEpmProject?.latestUpdateDate, selectedEpmProject?.latestUpdateSnippet || 'No updates yet']
                 .filter(Boolean)
                 .join(' · ');
-            const renderEpmRollupIssue = (issue, extraClassName = '') => {
-                const issueHref = jiraUrl ? `${jiraUrl}/browse/${issue.key}` : '#';
-                return (
-                    <div
-                        key={issue.key}
-                        className={`task-item ${extraClassName}`.trim()}
-                        data-task-key={issue.key}
-                        data-task-id={issue.key}
-                        data-issue-key={issue.key}
-                    >
-                        <div className="task-header">
-                            <div className="task-headline">
-                                <h3 className="task-title">
-                                    <a href={issueHref} target="_blank" rel="noopener noreferrer">
-                                        {issue.summary || issue.key}
-                                    </a>
-                                </h3>
-                                <span className="task-inline-meta">
-                                    <a
-                                        className="task-key-link"
-                                        href={issueHref}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                    >
-                                        {issue.key}
-                                    </a>
-                                    {issue.issueType && (
-                                        <span className="task-inline-sp">{issue.issueType}</span>
-                                    )}
-                                </span>
-                            </div>
-                        </div>
-                        <div className="task-meta">
-                            <span className={`task-status ${String(issue.status || 'unknown').toLowerCase().replace(/\s+/g, '-')}`}>
-                                {issue.status || 'Unknown'}
-                            </span>
-                            <span className="task-team">{issue.assignee || 'Unassigned'}</span>
-                        </div>
-                    </div>
-                );
-            };
-            const renderEpmEpicNode = (epicNode) => (
-                <div key={epicNode.issue.key} className="epm-rollup-epic">
-                    {renderEpmRollupIssue(epicNode.issue, 'epm-rollup-epic-issue')}
-                    {epicNode.stories.length > 0 && (
-                        <div className="epm-rollup-children">
-                            {epicNode.stories.map(story => renderEpmRollupIssue(story, 'epm-rollup-story'))}
-                        </div>
-                    )}
-                </div>
-            );
-            const renderEpmInitiativeNode = (initiativeNode) => (
-                <div key={initiativeNode.issue.key} className="initiative-group">
-                    <div className="initiative-header">
-                        <InitiativeIcon className="initiative-header-icon" />
-                        <div className="initiative-label">
-                            <span className="initiative-label-name">{initiativeNode.issue.summary || initiativeNode.issue.key}</span>
-                            <a
-                                className="initiative-label-key"
-                                href={jiraUrl ? `${jiraUrl}/browse/${initiativeNode.issue.key}` : '#'}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                {initiativeNode.issue.key} ↗
-                            </a>
-                            <span className="initiative-divider" />
-                        </div>
-                    </div>
-                    <div className="initiative-body">
-                        {initiativeNode.epics.map(epicNode => renderEpmEpicNode(epicNode))}
-                        {initiativeNode.looseStories.map(story => renderEpmRollupIssue(story, 'epm-rollup-story'))}
-                    </div>
-                </div>
-            );
 
             const removeTask = (task) => {
                 const taskKey = task?.key;
@@ -14866,74 +14793,18 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         </div>
                                     )}
 
-                                    {selectedEpmProject && epmRollupTree?.kind === 'metadataOnly' && (
-                                        <div className="group-config-card epm-home-card">
-                                            <div className="group-pane-title">{getEpmProjectDisplayName(selectedEpmProject)}</div>
-                                            <div className="group-pane-subtitle">
-                                                {selectedEpmProjectUpdateLine || 'No updates yet'}
-                                            </div>
-                                            <a href={selectedEpmProject.homeUrl} target="_blank" rel="noopener noreferrer">Open in Jira Home</a>
-                                            <div className="group-field-helper">Add a Jira label in Settings {'->'} EPM to pull Jira work into this view.</div>
-                                            <button
-                                                className="secondary compact"
-                                                onClick={openEpmSettingsTab}
-                                                type="button"
-                                            >
-                                                Open Settings
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {selectedEpmProject && epmRollupTree?.kind !== 'metadataOnly' && epmTab === 'active' && !selectedSprint && (
-                                        <div className="empty-state">
-                                            <h2>Select a sprint</h2>
-                                            <p>Select a sprint to see active work.</p>
-                                        </div>
-                                    )}
-
-                                    {selectedEpmProject && epmRollupLoading && (
-                                        <div className="empty-state">
-                                            <h2>Loading Jira issues</h2>
-                                            <p>Refreshing the selected EPM project board.</p>
-                                        </div>
-                                    )}
-
-                                    {selectedEpmProject && !epmRollupLoading && epmRollupTree?.kind === 'emptyRollup' && !(epmTab === 'active' && !selectedSprint) && (
-                                        <div className="empty-state">
-                                            <h2>No Jira work found</h2>
-                                            <p>No issues match this label in the current scope.</p>
-                                        </div>
-                                    )}
-
-                                    {selectedEpmProject && !epmRollupLoading && epmRollupTree?.kind === 'tree' && (
-                                        <div className="task-list epm-issue-board">
-                                            {epmRollupTree.truncated && (
-                                                <div className="group-field-helper">
-                                                    This rollup is truncated; narrow the label or Jira scope.
-                                                </div>
-                                            )}
-                                            {epmRollupTree.initiatives.map(initiativeNode => renderEpmInitiativeNode(initiativeNode))}
-                                            {(epmRollupTree.rootEpics.length > 0 || epmRollupTree.orphanStories.length > 0) && (
-                                                <div className="initiative-group initiative-single">
-                                                    <div className="initiative-header">
-                                                        <div className="initiative-label initiative-label-only">
-                                                            <span className="initiative-label-name">{getEpmProjectDisplayName(selectedEpmProject)}</span>
-                                                            <span className="initiative-label-key">Project</span>
-                                                            <span className="initiative-divider" />
-                                                        </div>
-                                                    </div>
-                                                    <div className="initiative-body">
-                                                        {epmRollupTree.rootEpics.map(epicNode => renderEpmEpicNode(epicNode))}
-                                                        {epmRollupTree.orphanStories.length > 0 && (
-                                                            <div className="epm-rollup-orphans">
-                                                                <div className="group-field-helper">Project stories</div>
-                                                                {epmRollupTree.orphanStories.map(story => renderEpmRollupIssue(story, 'epm-rollup-story'))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
+                                    {selectedEpmProject && (
+                                        <EpmRollupPanel
+                                            selectedEpmProject={selectedEpmProject}
+                                            selectedEpmProjectUpdateLine={selectedEpmProjectUpdateLine}
+                                            epmTab={epmTab}
+                                            selectedSprint={selectedSprint}
+                                            epmRollupLoading={epmRollupLoading}
+                                            epmRollupTree={epmRollupTree}
+                                            openEpmSettingsTab={openEpmSettingsTab}
+                                            jiraUrl={jiraUrl}
+                                            InitiativeIcon={InitiativeIcon}
+                                        />
                                     )}
                                 </>
                             )}

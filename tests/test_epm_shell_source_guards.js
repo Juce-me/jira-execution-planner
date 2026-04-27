@@ -5,17 +5,26 @@ const test = require('node:test');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
 const epmFetchPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmFetch.js');
+const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupPanel.jsx');
 const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs');
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 const epmFetchSource = fs.readFileSync(epmFetchPath, 'utf8');
+const epmRollupPanelSource = fs.readFileSync(epmRollupPanelPath, 'utf8');
 const helperSource = fs.readFileSync(helperPath, 'utf8');
+
+function countOccurrences(source, needle) {
+    return (source.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+}
 
 test('dashboard source includes the EPM shell project picker and ENG gating hooks', () => {
     assert.ok(helperSource.includes('filterEpmProjectsForTab'), 'Expected filterEpmProjectsForTab in epmProjectUtils.mjs');
     assert.ok(helperSource.includes('getEpmProjectDisplayName'), 'Expected getEpmProjectDisplayName in epmProjectUtils.mjs');
     assert.ok(helperSource.includes("String(tab || 'active')"), 'Expected active tab defaulting in epmProjectUtils.mjs');
     assert.ok(dashboardSource.includes('const selectedEpmProject = visibleEpmProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;'), 'Expected selectedEpmProject derivation in dashboard.jsx');
-    assert.ok((dashboardSource.match(/getEpmProjectDisplayName\(selectedEpmProject\)/g) || []).length >= 2, 'Expected selected project display name helper in dashboard.jsx');
+    assert.ok(
+        countOccurrences(dashboardSource + epmRollupPanelSource, 'getEpmProjectDisplayName(selectedEpmProject)') >= 2,
+        'Expected selected project display name helper across dashboard.jsx and EpmRollupPanel.jsx'
+    );
     assert.ok(dashboardSource.includes('getEpmProjectDisplayName(project)'), 'Expected project picker display name helper in dashboard.jsx');
     assert.ok(dashboardSource.includes("setEpmSelectedProjectId('')"), 'Expected invalid EPM selection clearing in dashboard.jsx');
     assert.ok(dashboardSource.includes('epmSelectedProjectId'), 'Expected epmSelectedProjectId in dashboard.jsx');
@@ -36,8 +45,8 @@ test('dashboard source wires EPM rollup loading and metadata-only rendering', ()
     assert.ok(dashboardSource.includes('fetchEpmProjectRollup(BACKEND_URL, currentProjectId'), 'Expected dashboard.jsx to fetch project-scoped EPM rollup through wrapper');
     assert.ok(epmFetchSource.includes('/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}'), 'Expected project-scoped EPM rollup fetch in epmFetch.js');
     assert.ok(dashboardSource.includes("currentProject.matchState === 'metadata-only'"), 'Expected metadata-only branch in dashboard.jsx');
-    assert.ok(dashboardSource.includes('Open in Jira Home'), 'Expected Jira Home CTA copy in dashboard.jsx');
-    assert.ok(dashboardSource.includes('Open Settings'), 'Expected settings CTA helper copy in dashboard.jsx');
+    assert.ok(epmRollupPanelSource.includes('Open in Jira Home'), 'Expected Jira Home CTA copy in EpmRollupPanel.jsx');
+    assert.ok(epmRollupPanelSource.includes('Open Settings'), 'Expected settings CTA helper copy in EpmRollupPanel.jsx');
     assert.ok(dashboardSource.includes("selectedView === 'eng' && !isCompletedSprintSelected"), 'Expected capacity shell to stay ENG-only');
     assert.ok(dashboardSource.includes("selectedView === 'eng' ? ("), 'Expected compact sticky controls to branch by view');
 });

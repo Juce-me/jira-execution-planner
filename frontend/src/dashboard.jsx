@@ -22,6 +22,7 @@ import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
+import { fetchEpmConfig, fetchEpmScope, fetchEpmGoals, fetchEpmProjects, previewEpmProjects, fetchEpmProjectRollup } from './epm/epmFetch.js';
 import { buildRollupTree, filterEpmProjectsForTab, getEpmProjectDisplayName, getEpmProjectIdentity, getEpmSprintHelper, hydrateEpmProjectDraft, shouldUseEpmSprint } from './epm/epmProjectUtils.mjs';
 import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
@@ -577,47 +578,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             // filterEpmProjectsForTab owns the `project.tabBucket === epmTab` check.
             const visibleEpmProjects = React.useMemo(() => filterEpmProjectsForTab(epmProjects, epmTab), [epmProjects, epmTab]);
             const selectedEpmProject = visibleEpmProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;
-            const loadEpmConfig = async () => {
-                const response = await fetch(`${BACKEND_URL}/api/epm/config`, { cache: 'no-cache' });
-                if (!response.ok) {
-                    throw new Error(`EPM config error ${response.status}`);
-                }
-                return response.json();
-            };
-            const loadEpmScopeMeta = async () => {
-                const response = await fetch(`${BACKEND_URL}/api/epm/scope`, { cache: 'no-cache' });
-                if (!response.ok) {
-                    throw new Error(`EPM scope error ${response.status}`);
-                }
-                return response.json();
-            };
-            const loadEpmGoals = async (rootGoalKey = '') => {
-                const response = rootGoalKey
-                    ? await fetch(`${BACKEND_URL}/api/epm/goals?rootGoalKey=${encodeURIComponent(rootGoalKey)}`, { cache: 'no-cache' })
-                    : await fetch(`${BACKEND_URL}/api/epm/goals`, { cache: 'no-cache' });
-                if (!response.ok) {
-                    throw new Error(`EPM goals error ${response.status}`);
-                }
-                return response.json();
-            };
-            const loadEpmProjects = async () => {
-                const response = await fetch(`${BACKEND_URL}/api/epm/projects`, { cache: 'no-cache' });
-                if (!response.ok) {
-                    throw new Error(`EPM projects error ${response.status}`);
-                }
-                return response.json();
-            };
-            const loadEpmProjectPreview = async (draftConfig) => {
-                const response = await fetch(`${BACKEND_URL}/api/epm/projects/preview`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(normalizeEpmConfigDraft(draftConfig)),
-                });
-                if (!response.ok) {
-                    throw new Error(`EPM preview error ${response.status}`);
-                }
-                return response.json();
-            };
+            const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);
+            const loadEpmScopeMeta = () => fetchEpmScope(BACKEND_URL);
+            const loadEpmGoals = (rootGoalKey = '') => fetchEpmGoals(BACKEND_URL, rootGoalKey);
+            const loadEpmProjects = () => fetchEpmProjects(BACKEND_URL);
+            const loadEpmProjectPreview = (draftConfig) => previewEpmProjects(BACKEND_URL, normalizeEpmConfigDraft(draftConfig));
             const resetEpmProjectPreview = () => {
                 epmSettingsProjectsRequestIdRef.current += 1;
                 setEpmSettingsPreviewRequested(false);
@@ -1000,16 +965,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 setEpmRollupLoading(true);
                 setEpmRollupTree(null);
-                const params = new URLSearchParams({ tab: epmTab });
-                if (epmTab === 'active' && selectedSprint) {
-                    params.set('sprint', String(selectedSprint));
-                }
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/epm/projects/${encodeURIComponent(currentProjectId)}/rollup?${params.toString()}`, { cache: 'no-cache' });
-                    if (!response.ok) {
-                        throw new Error(`EPM rollup error ${response.status}`);
-                    }
-                    const payload = await response.json();
+                    const payload = await fetchEpmProjectRollup(BACKEND_URL, currentProjectId, {
+                        tab: epmTab,
+                        sprint: selectedSprint,
+                    });
                     if (epmRollupRequestIdRef.current !== requestId) {
                         return;
                     }

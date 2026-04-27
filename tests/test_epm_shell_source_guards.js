@@ -4,8 +4,10 @@ const path = require('path');
 const test = require('node:test');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
+const epmFetchPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmFetch.js');
 const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs');
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+const epmFetchSource = fs.readFileSync(epmFetchPath, 'utf8');
 const helperSource = fs.readFileSync(helperPath, 'utf8');
 
 test('dashboard source includes the EPM shell project picker and ENG gating hooks', () => {
@@ -26,11 +28,13 @@ test('dashboard source includes the EPM shell project picker and ENG gating hook
 
 test('dashboard source wires EPM rollup loading and metadata-only rendering', () => {
     assert.ok(dashboardSource.includes("if (selectedView !== 'epm') return;"), 'Expected EPM-only project loading effect');
-    assert.ok(dashboardSource.includes("fetch(`${BACKEND_URL}/api/epm/projects`, { cache: 'no-cache' })"), 'Expected EPM projects fetch in dashboard.jsx');
+    assert.ok(dashboardSource.includes('const loadEpmProjects = () => fetchEpmProjects(BACKEND_URL);'), 'Expected dashboard.jsx to load EPM projects through wrapper');
+    assert.ok(epmFetchSource.includes("fetch(`${backendUrl}/api/epm/projects`, { cache: 'no-cache' })"), 'Expected EPM projects fetch in epmFetch.js');
     assert.ok(dashboardSource.includes("if (epmTab === 'active' && !selectedSprint) {"), 'Expected Active EPM sprint guard in dashboard.jsx');
     assert.ok(dashboardSource.includes('setEpmRollupTree(null);'), 'Expected Active EPM sprint guard to clear rollup tree');
     assert.ok(dashboardSource.includes('setEpmRollupLoading(false);'), 'Expected Active EPM sprint guard to stop rollup loading');
-    assert.ok(dashboardSource.includes('/api/epm/projects/${encodeURIComponent(currentProjectId)}/rollup?${params.toString()}'), 'Expected project-scoped EPM rollup fetch');
+    assert.ok(dashboardSource.includes('fetchEpmProjectRollup(BACKEND_URL, currentProjectId'), 'Expected dashboard.jsx to fetch project-scoped EPM rollup through wrapper');
+    assert.ok(epmFetchSource.includes('/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}'), 'Expected project-scoped EPM rollup fetch in epmFetch.js');
     assert.ok(dashboardSource.includes("currentProject.matchState === 'metadata-only'"), 'Expected metadata-only branch in dashboard.jsx');
     assert.ok(dashboardSource.includes('Open in Jira Home'), 'Expected Jira Home CTA copy in dashboard.jsx');
     assert.ok(dashboardSource.includes('Open Settings'), 'Expected settings CTA helper copy in dashboard.jsx');

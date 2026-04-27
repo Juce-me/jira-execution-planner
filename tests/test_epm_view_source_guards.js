@@ -4,9 +4,11 @@ const path = require('path');
 const test = require('node:test');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
+const epmFetchPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmFetch.js');
 const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs');
 
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+const epmFetchSource = fs.readFileSync(epmFetchPath, 'utf8');
 const helperSource = fs.existsSync(helperPath) ? fs.readFileSync(helperPath, 'utf8') : '';
 
 function countOccurrences(source, needle) {
@@ -217,9 +219,11 @@ test('ENG task fetching effects are unreachable in EPM view', () => {
 });
 
 test('EPM board fetches rollup with tab and sprint params while preserving active sprint gating', () => {
-    assert.ok(dashboardSource.includes('/api/epm/projects/${encodeURIComponent(currentProjectId)}/rollup?${params.toString()}'), 'Expected EPM board to fetch the rollup endpoint');
-    assert.ok(dashboardSource.includes('const params = new URLSearchParams({ tab: epmTab })'), 'Expected EPM rollup request to include current tab');
-    assert.ok(dashboardSource.includes("params.set('sprint', String(selectedSprint))"), 'Expected EPM rollup request to include selected sprint');
+    assert.ok(dashboardSource.includes('fetchEpmProjectRollup(BACKEND_URL, currentProjectId'), 'Expected EPM board to fetch the rollup endpoint through wrapper');
+    assert.ok(dashboardSource.includes('tab: epmTab'), 'Expected EPM rollup wrapper call to include current tab');
+    assert.ok(dashboardSource.includes('sprint: selectedSprint'), 'Expected EPM rollup wrapper call to include selected sprint');
+    assert.ok(epmFetchSource.includes("const params = new URLSearchParams({ tab: tab || 'active' })"), 'Expected EPM rollup request to include tab parameter');
+    assert.ok(epmFetchSource.includes("params.set('sprint', String(sprint))"), 'Expected EPM rollup request to include selected sprint');
     assert.ok(dashboardSource.includes("epmTab === 'active' && !selectedSprint"), 'Expected active tab to require selectedSprint before rollup fetch');
 });
 
@@ -241,7 +245,8 @@ test('EPM project identity positions use project id only', () => {
         'const refreshEpmView = async'
     );
     assert.ok(rollupFetchSnippet.includes('getEpmProjectIdentity(currentProject)'), 'Expected rollup URL id to come from project id identity helper');
-    assert.ok(rollupFetchSnippet.includes('encodeURIComponent(currentProjectId)}/rollup'), 'Expected rollup URL to encode current project id');
+    assert.ok(rollupFetchSnippet.includes('fetchEpmProjectRollup(BACKEND_URL, currentProjectId'), 'Expected rollup request to use current project id');
+    assert.ok(epmFetchSource.includes('encodeURIComponent(projectId)}/rollup'), 'Expected rollup URL wrapper to encode current project id');
     assert.ok(!rollupFetchSnippet.includes('homeProjectId'), 'Expected rollup URL path logic not to reference homeProjectId');
 
     const pickerSnippet = getSnippetBetween(

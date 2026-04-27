@@ -36,32 +36,51 @@ This is an EPM portfolio rollup feature, not a new codebase/ENG dashboard mode. 
 
 ### 0. Preparation before new behavior
 
-This feature must start by preparing the codebase, because the current EPM rollup is mostly embedded in `jira_server.py` and `frontend/src/dashboard.jsx`. The preparation work is sequenced as **Plan 1** (refactor only) under "Implementation Streams" below; the subsections here describe what that plan must accomplish.
+The current EPM view is mostly tangled inside `jira_server.py` (~6800 lines) and `frontend/src/dashboard.jsx` (~15000 lines). Plan 1 fully extracts the existing EPM implementation into self-contained modules with no behavior change, so Plan 2's portfolio rework lands in a clean boundary. Plan 2 will not begin until Plan 1 ships and verifies.
 
-#### Backend preparation
+#### Backend extraction — single `epm_view.py` blueprint
 
-Extract the current per-Project rollup route body into a pure builder function before adding the aggregate endpoint.
+Move every EPM-only handler and helper out of `jira_server.py` into a new Flask Blueprint module `epm_view.py`. `jira_server.py` is left only with the blueprint registration plus any routes that are not exclusively EPM.
 
-- New backend unit owns: tab/sprint validation handoff, project label handling, Q1/Q2/Q3 execution, issue shaping, hierarchy construction, truncation flags, and cache writes.
-- The Flask route keeps only request parsing, calling the builder, JSON response creation, and headers.
-- No behavior changes in this stream. Existing `tests/test_epm_rollup_api.py` must pass unchanged, plus a new no-behavior-change unit test covers the extracted builder directly.
+In scope for the move:
 
-#### Frontend preparation
+- All `/api/epm/*` route handlers currently defined in `jira_server.py`: config GET/PUT, scope, projects list, projects preview, single project, per-Project rollup, sub-goals, label autocomplete with prefix filter, and any other EPM-only routes.
+- Helpers attached to those handlers: `normalize_epm_config`, `normalize_epm_issue_types`, `normalize_epm_issue_type_sets`, `build_epm_projects_payload`, `build_custom_project_payload`, `find_epm_project_or_404`, `build_epm_rollup_fields_list`, `shape_epm_rollup_issue_payload`, `validate_epm_tab_sprint`, `build_epm_rollup_hierarchy`.
+- Module-level state used only by EPM: `EPM_ROLLUP_CACHE`, `EPM_ROLLUP_CACHE_TTL_SECONDS`, `EPM_ROLLUP_QUERY_MAX_RESULTS`.
 
-Extract EPM rollup fetch shaping and EPM rollup rendering from `frontend/src/dashboard.jsx` into EPM-specific modules under `frontend/src/epm/`.
+Out of scope: `epm_home.py` and `epm_scope.py` keep their current responsibilities; `epm_view.py` imports them.
 
-- `dashboard.jsx` remains the shell/router: selected view, shared controls, and passing state into EPM modules.
-- EPM modules own rollup response normalization, board state grouping, metadata-only cards, empty cards, tree rendering, and duplicate badges.
-- ENG/codebase task lists, planning controls, scenario controls, and alert panels stay in their existing branches.
+As part of this extraction, the per-Project rollup route body becomes a pure builder function inside `epm_view.py`. The route keeps only request parsing, calling the builder, JSON response creation, and headers. The builder is exported so Plan 2's aggregate path can reuse it for the fan-out fallback (§6).
+
+No behavior changes in this stream. Existing `tests/test_epm_rollup_api.py`, `tests/test_epm_projects_api.py`, `tests/test_epm_config_api.py`, `tests/test_epm_scope_api.py`, `tests/test_epm_issues_endpoint.py`, and `tests/test_epm_scope_resolution.py` must pass unchanged. Add a new builder unit test that covers the extracted per-Project rollup builder directly.
+
+#### Frontend extraction — modules under `frontend/src/epm/`
+
+Lift all EPM-only state, fetch, controls, and render out of `frontend/src/dashboard.jsx` into `frontend/src/epm/`. After Plan 1, `dashboard.jsx` is the shell/router: it owns the view switch, shared sprint/search controls, layout, and the `<EpmView />` mount point under `selectedView === 'epm'`. It does not contain EPM state, EPM fetch, EPM controls, or EPM render.
+
+Target layout:
+
+- `frontend/src/epm/epmProjectUtils.mjs` — existing pure helpers (`buildRollupTree`, `filterEpmProjectsForTab`, `getEpmProjectIdentity`, `shouldUseEpmSprint`, `getEpmSprintHelper`, `hydrateEpmProjectDraft`, `getEpmProjectDisplayName`). No move; tests already exist.
+- `frontend/src/epm/epmFetch.js` (new) — fetch wrappers for `/api/epm/config`, `/api/epm/scope`, `/api/epm/projects`, `/api/epm/projects/preview`, `/api/epm/projects/<id>`, `/api/epm/projects/<id>/rollup`, `/api/epm/sub-goals`, `/api/epm/labels`. Single fetch surface so Plan 2's aggregate call has an obvious home.
+- `frontend/src/epm/useEpmRollup.js` (new) — custom hook owning EPM state (`epmTab`, `epmProjects`, `epmProjectsLoading`, `epmProjectsError`, `epmSelectedProjectId`, `epmRollupTree`, `epmRollupLoading`, `epmRollupRequestIdRef`, `epmProjectsPendingSelectionRef`, `epmProjectsRequestIdRef`) plus `refreshEpmProjects`, `refreshEpmRollup`, `refreshEpmView`, and the existing useEffects that drive them.
+- `frontend/src/epm/EpmControls.jsx` (new) — `renderEpmTabs` + `renderEpmProjectPicker` as a focused component. Receives shared sprint state via props.
+- `frontend/src/epm/EpmRollupTree.jsx` (new) — `renderEpmInitiativeNode`, `renderEpmEpicNode`, `renderEpmRollupIssue` and any closure-captured handlers, lifted out of `dashboard.jsx`.
+- `frontend/src/epm/EpmView.jsx` (new) — top-level EPM view component. Mounts `EpmControls` and the EPM render branch (metadata-only card, empty card, focus-mode tree). Consumes `useEpmRollup`.
+- `frontend/src/epm/EpmSettings.jsx` (new) — the EPM settings panel content currently inside the settings modal in `dashboard.jsx`. The settings modal shell stays where it is and imports `EpmSettings` for the EPM tab.
+
+Closures that currently capture component-scoped values (search input, sprint state, request id refs) must be re-expressed as explicit props or hook return values. Any helper that depends on shared dashboard state stays in `dashboard.jsx` and is passed in.
+
+No behavior changes. Focus-mode rendering must produce byte-equivalent UI before and after extraction.
 
 #### Isolation tests
 
-Add or extend source guards as part of Plan 2 (alongside the new aggregate behavior, not in the refactor plan):
+Plan 2 (not Plan 1) adds the source guards proving the new aggregate code does not regress isolation:
 
-- EPM aggregate code must live under `frontend/src/epm/` except for minimal `dashboard.jsx` routing/wiring.
-- New EPM aggregate fetches must not call ENG endpoints such as `/api/tasks-with-team-name`, `/api/backlog-epics`, planning, or scenario endpoints.
-- ENG render branches must remain guarded by `selectedView === 'eng'`.
-- EPM render branches must remain guarded by `selectedView === 'epm'`.
+- EPM modules under `frontend/src/epm/` must not import ENG-only endpoints such as `/api/tasks-with-team-name`, `/api/backlog-epics`, planning, or scenario endpoints.
+- ENG render and fetch branches in `dashboard.jsx` remain guarded by `selectedView === 'eng'`.
+- EPM render and fetch branches remain guarded by `selectedView === 'epm'`.
+
+Plan 1 must leave `dashboard.jsx` in a state where these guards are trivially testable: every reference to EPM state or EPM fetch in `dashboard.jsx` must be either inside a `selectedView === 'epm'` branch or inside the `<EpmView />` mount.
 
 ### 1. Picker behavior
 
@@ -195,7 +214,7 @@ The aggregate cache stores the fallback result the same way it stores a non-fall
 
 ### 7. Frontend state and fetch
 
-New state in `dashboard.jsx`:
+New state added to `useEpmRollup.js` (the hook created in Plan 1):
 
 - `epmRollupBoards`: `Array<{ project, tree }>` for all-projects mode. `tree` is the result of `buildRollupTree(projectEntry.rollup)`. `null` when not loaded.
 - `epmDuplicates`: object keyed by issue key, matching the backend `duplicates` contract. The warning banner uses `Object.keys(epmDuplicates).length`; inline badges read the Project id list for the current issue key.
@@ -211,11 +230,11 @@ The existing `epmRollupTree` state stays for focus mode.
 
 Existing gating is preserved: when `tab === 'active' && !selectedSprint`, no fetch fires and the "Select a sprint" empty-state stays.
 
-The `useEffect` at `dashboard.jsx:8762-8764` keeps the same dependency set; on every fire, `refreshEpmBoards` resets the unused branch's state (focus mode clears `epmRollupBoards` / `epmDuplicates` / aggregate flags; all-projects mode clears `epmRollupTree`) so stale state from the previous mode never leaks into render.
+The rollup-trigger `useEffect` (relocated to `useEpmRollup.js` in Plan 1) keeps the same dependency set; on every fire, `refreshEpmBoards` resets the unused branch's state (focus mode clears `epmRollupBoards` / `epmDuplicates` / aggregate flags; all-projects mode clears `epmRollupTree`) so stale state from the previous mode never leaks into render.
 
 ### 8. Render
 
-The render branch at `dashboard.jsx:14948` (currently the focus-mode tree) is wrapped in a conditional:
+The EPM render branch (relocated to `EpmView.jsx` in Plan 1, currently rendering the focus-mode tree) is wrapped in a conditional:
 
 - When `epmSelectedProjectId !== ''`: existing focus-mode render, unchanged.
 - When `epmSelectedProjectId === ''` and `epmRollupBoards` is populated: render the stacked all-projects view.
@@ -237,9 +256,9 @@ Stacked all-projects view structure:
 3. For each entry in `epmRollupBoards`:
    - `tree.kind === 'metadataOnly'`: render the existing metadata-only card (Project name, latest update line, "Open in Jira Home" link, "Open Settings" CTA).
    - `tree.kind === 'emptyRollup'` or an empty `tree`: render a one-line collapsed header showing the Project's display name and an expand chevron. Clicking expands to a "No issues in this scope" placeholder.
-   - Otherwise: render the existing per-Project tree block (Initiatives → Epics → Stories, plus the Project-level group containing root epics and orphan stories), reusing `renderEpmInitiativeNode`, `renderEpmEpicNode`, `renderEpmRollupIssue`.
+   - Otherwise: render the existing per-Project tree block (Initiatives → Epics → Stories, plus the Project-level group containing root epics and orphan stories), reusing the `EpmRollupTree.jsx` helpers (`renderEpmInitiativeNode`, `renderEpmEpicNode`, `renderEpmRollupIssue`).
 
-4. Each issue row inside any per-Project tree checks whether `issue.key` is a key in the `epmDuplicates` object. When true, an inline `Also in: PROJ-B, PROJ-C` badge renders next to the existing row chrome. The badge text lists the display names of the other Projects (i.e., the Project ids in `epmDuplicates[issue.key]` minus the current Project's id, mapped to display names via the existing `epmProjects` state).
+4. Each issue row inside any per-Project tree checks whether `issue.key` is a key in the `epmDuplicates` object. When true, an inline `Also in: PROJ-B, PROJ-C` badge renders next to the existing row chrome. The badge text lists the display names of the other Projects (i.e., the Project ids in `epmDuplicates[issue.key]` minus the current Project's id, mapped to display names via the `epmProjects` state exposed by `useEpmRollup`).
 
 The empty-state behavior is consistent across tabs: empty Project boards collapse on every tab. The "Select a sprint" empty-state on `Active` without a selected sprint short-circuits the entire all-projects render, same as it does today for focus mode.
 
@@ -289,22 +308,34 @@ This design ships across **two implementation plans**, in order. The first plan 
 
 ### Plan 1 — Refactor (no behavior change)
 
-#### Stream A: Backend extraction
+This plan extracts the entire current EPM view from `jira_server.py` and `frontend/src/dashboard.jsx` into self-contained modules. No new endpoints, no new UI, no new state — only relocation. Plan 1 must merge and verify before Plan 2 begins.
 
-- Extract current per-Project rollup route logic from `jira_server.py` into a pure builder function/module.
-- The Flask route at `/api/epm/projects/<project_id>/rollup` keeps only request parsing, calling the builder, JSON response creation, and headers.
-- Response shape unchanged.
-- Add direct builder tests while preserving existing API tests.
-- Verification: `.venv/bin/python -m unittest tests.test_epm_rollup_api` plus the new builder unit tests, all green.
+#### Stream A: Backend extraction into `epm_view.py`
 
-#### Stream C-prep: Frontend extraction
-
-- Move EPM rollup response normalization and EPM rollup rendering (`renderEpmInitiativeNode`, `renderEpmEpicNode`, `renderEpmRollupIssue`, and adjacent helpers) from `frontend/src/dashboard.jsx` into modules under `frontend/src/epm/`.
-- `dashboard.jsx` retains shell/router responsibilities only for the EPM rollup surface: selected view, shared controls, passing state into EPM modules.
-- No new behavior; the focus-mode render path produces byte-equivalent UI.
+- Create `epm_view.py` as a Flask Blueprint module.
+- Move every EPM-only route handler and helper enumerated in §0's "Backend extraction" subsection from `jira_server.py` into `epm_view.py`.
+- Convert the per-Project rollup route body into a pure builder function inside `epm_view.py`; the route keeps only request parsing, calling the builder, JSON response creation, and headers. Export the builder so Plan 2's fan-out fallback can call it directly.
+- Register the blueprint in `jira_server.py` so URL paths and behavior are unchanged.
+- Move EPM-only module state (`EPM_ROLLUP_CACHE`, `EPM_ROLLUP_CACHE_TTL_SECONDS`, `EPM_ROLLUP_QUERY_MAX_RESULTS`) into `epm_view.py`.
+- `epm_home.py` and `epm_scope.py` are unchanged; `epm_view.py` imports them.
 - Verification:
-  - `node --test tests/test_epm_project_utils.js` and existing EPM source guards (`tests/test_epm_view_source_guards.js`, `tests/test_epm_settings_source_guards.js`, `tests/test_epm_shell_source_guards.js`) all green.
-  - **Manually verify focus mode in EPM Active, Backlog, and Archived after extraction**; existing source guards must pass unchanged. Confirm the rendered tree, metadata-only card, empty-rollup card, and truncation banner are visually identical to pre-refactor.
+  - `.venv/bin/python -m unittest tests.test_epm_rollup_api tests.test_epm_projects_api tests.test_epm_config_api tests.test_epm_scope_api tests.test_epm_issues_endpoint tests.test_epm_scope_resolution` — all green, no test changes required.
+  - New direct unit test for the extracted per-Project rollup builder, verifying it can be invoked without going through Flask.
+  - Full backend suite: `.venv/bin/python -m unittest discover -s tests` — all green.
+
+#### Stream C-prep: Frontend extraction into `frontend/src/epm/`
+
+- Create the new modules listed in §0's "Frontend extraction" subsection: `epmFetch.js`, `useEpmRollup.js`, `EpmControls.jsx`, `EpmRollupTree.jsx`, `EpmView.jsx`, `EpmSettings.jsx`.
+- Move EPM state, fetch, useEffects, controls, render helpers, and the EPM render branch out of `dashboard.jsx` into the appropriate new modules.
+- Move the EPM settings panel content into `EpmSettings.jsx`; the settings modal shell stays in its current location and imports `EpmSettings`.
+- `dashboard.jsx` mounts `<EpmView />` under `selectedView === 'epm'`. After this stream, `dashboard.jsx` contains no EPM state, no EPM fetch, no EPM rendering helpers — only the mount point and any shared shell pieces (view switch, sprint/search controls passed as props).
+- Re-express any closure capture as explicit props or hook return values; do not leak `dashboard.jsx`-scoped values into EPM modules through global state.
+- Rebuild the bundle (`npm run build`) and check `frontend/dist/dashboard.js` is updated; do not hand-edit it.
+- Verification:
+  - `node --test tests/test_epm_project_utils.js` — green, no test changes required.
+  - Existing EPM source guards (`tests/test_epm_view_source_guards.js`, `tests/test_epm_settings_source_guards.js`, `tests/test_epm_shell_source_guards.js`) — green. If a guard breaks because it grepped `dashboard.jsx` for a string that now lives under `frontend/src/epm/`, update the guard to grep the new location; do not silently widen its scope.
+  - **Manually verify focus mode in EPM Active, Backlog, and Archived after extraction.** Confirm the rendered tree, metadata-only card, empty-rollup card, truncation banner, project picker, tab switch, and EPM settings panel are visually and behaviorally identical to pre-refactor.
+  - Manually verify ENG view across Catch Up, Planning, and Scenario modes — no EPM extraction should touch ENG render paths, and the existing sticky/header behavior must remain unchanged (per AGENTS.md repo-specific constraints).
 
 ### Plan 2 — EPM portfolio rework (new behavior)
 
@@ -321,9 +352,11 @@ This design ships across **two implementation plans**, in order. The first plan 
 
 #### Stream C-feature: All-Projects UI
 
-- Add all-Projects mode as the default picker state.
-- Render stacked Project boards, metadata-only cards, empty collapsed boards, truncation banner, and duplicate badges.
-- Inline `Also in: ...` badges on duplicate issue rows.
+- Extend `useEpmRollup.js` (created in Plan 1) with all-Projects mode state: `epmRollupBoards`, `epmDuplicates`, `epmAggregateTruncated`, `epmAggregateFallback`. Add the dispatch logic in the renamed `refreshEpmBoards`.
+- Extend `epmFetch.js` with the aggregate `/api/epm/projects/rollup/all` call.
+- Extend `EpmView.jsx` with the all-Projects render branch (stacked Project boards, top duplicate banner, top truncation banner, collapsed empty boards, metadata-only cards inline, inline `Also in: ...` badges on duplicate issue rows). Reuse `EpmRollupTree.jsx` for per-Project tree rendering.
+- Picker default option `All projects` lives in `EpmControls.jsx`.
+- Add `groupAggregateRollupResponse` to `epmProjectUtils.mjs` (or a new sibling pure-function module) per §9.
 - Verification: `node --test tests/test_epm_project_utils.js` (extended) and EPM source guards (extended).
 
 #### Stream D: Isolation, performance, and regression guards
@@ -336,4 +369,4 @@ This design ships across **two implementation plans**, in order. The first plan 
 
 ## Open Questions
 
-None. This revision pins the Project label seed semantics (with the deliberate Q1 divergence from focus mode), descendant membership propagation, response shape (single canonical Project metadata location), truncation criterion, cache key, and the two-plan implementation split (refactor first, then portfolio rework).
+None. This revision pins the Project label seed semantics (with the deliberate Q1 divergence from focus mode), descendant membership propagation, response shape (single canonical Project metadata location), truncation criterion, cache key, the two-plan implementation split (refactor first, then portfolio rework), and the full EPM extraction targets for Plan 1 (`epm_view.py` blueprint on the backend, `frontend/src/epm/` module set on the frontend).

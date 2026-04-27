@@ -27,6 +27,7 @@ Postmortems serve to:
 | [MRT009](./MRT009-sticky-layering-regressions.md) | Sticky Layering Regressions | 2026-02-06 | High | Resolved | Sticky UI layers overlapped or stacked incorrectly after layout changes |
 | [MRT010](./MRT010-startup-api-load-fanout-and-overscoped-payloads.md) | Startup API Load Fan-Out and Overscoped Payloads | 2026-02-23 | High | Resolved | Slow cold loads caused by heavy endpoint reuse, overscoped preload requests, and redundant backend query passes |
 | [MRT011](./MRT011-epm-settings-overgeneralized-selection-ux.md) | EPM Settings Overgeneralized Selection UX | 2026-04-21 | High | In Progress | Persistent search controls and heavy live fetch reuse made EPM settings slow, unreadable, and misleading |
+| [MRT012](./MRT012-epm-active-sprint-value-hidden.md) | EPM Active Sprint Value Hidden | 2026-04-27 | High | In Progress | EPM Active used hidden sprint state without showing the selected sprint value or selector |
 
 ## Postmortem Template
 
@@ -80,8 +81,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 11
-- **Metadata complete (Date/Severity/Status)**: 11 (MRT001-MRT011)
+- **Total postmortems**: 12
+- **Metadata complete (Date/Severity/Status)**: 12 (MRT001-MRT012)
 
 ## Common Themes
 
@@ -135,5 +136,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-04-21*
-*Total Postmortems: 11*
+*Last Updated: 2026-04-27*
+*Total Postmortems: 12*

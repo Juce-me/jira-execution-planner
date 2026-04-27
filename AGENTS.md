@@ -222,6 +222,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - Keep auth-mode changes isolated from `frontend/src/dashboard.jsx` unless the user explicitly approves a dashboard UI change.
 - In settings UIs, when a value is already selected or the option set is small, default to a compact selected-state control and reveal search only on explicit change; do not leave persistent search inputs visible by default.
+- For any scoped view, show the active scope value in that same view; do not treat request parameters or hidden React state as a substitute for visible controls.
 
 ---
 

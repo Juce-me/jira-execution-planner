@@ -627,6 +627,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 const forceRefresh = Boolean(options.forceRefresh);
                 const draftConfig = normalizeEpmConfigDraft(options.draftConfig || epmConfigDraft);
                 const cacheKey = options.cacheKey || getEpmSettingsProjectsCacheKey(draftConfig);
+                epmSettingsProjectsRequestIdRef.current += 1;
+                const requestId = epmSettingsProjectsRequestIdRef.current;
                 if (!cacheKey) {
                     setEpmSettingsProjectsError('');
                     setEpmSettingsProjectsLoading(false);
@@ -653,8 +655,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     return cachedProjects;
                 }
 
-                epmSettingsProjectsRequestIdRef.current += 1;
-                const requestId = epmSettingsProjectsRequestIdRef.current;
                 const hasExistingRows = epmSettingsProjectsLoaded && epmSettingsProjectRows.length > 0;
                 setEpmSettingsProjectsLoading(!hasExistingRows);
                 setEpmSettingsProjectsRefreshing(hasExistingRows);

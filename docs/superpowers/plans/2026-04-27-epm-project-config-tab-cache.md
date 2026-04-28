@@ -4,7 +4,9 @@
 
 **Goal:** Move EPM project mapping into a dedicated Projects sub-tab that opens only after the draft sub-goal and label prefix are set, preserves the saved sub-goal, and auto-loads cached Jira Home projects as configuration inputs for EPM rollups.
 
-**Architecture:** Keep the top-level Dashboard Settings tab as `EPM`, then add EPM-local sub-tabs: `Scope` for Atlassian site/root/sub-goal/prefix and `Projects` for Jira Home project label mapping. Cache sub-goals by root in the frontend so reopening settings does not refetch them, and split backend EPM project caching so Jira Home project records are cached by scope while label mappings are shaped from the latest config on every response. The sub-goal is the project-catalog root; configured project labels plus the selected sprint define the Jira structure fetched for EPM rollups. Jira teams and team groups must not participate in EPM rollup scope.
+**Architecture:** Keep the top-level Dashboard Settings tab as `EPM`, then add EPM-local sub-tabs: `Scope` for Atlassian site/root/sub-goal/prefix and `Projects` for Jira Home project label mapping. Cache sub-goals by root in the frontend so reopening settings does not refetch them, and split backend EPM project caching so Jira Home project records are cached by scope while label mappings are shaped from the latest config on every response. The Projects tab gives users an explicit `Refresh from Jira Home` recovery path when a newly linked Project is missing: refresh bypasses the Home-project cache, reconciles new/missing Home projects with existing configuration, and preserves saved/custom mappings until the user removes them. The sub-goal is the project-catalog root; configured project labels plus the selected sprint define the Jira structure fetched for EPM rollups. Jira teams and team groups must not participate in EPM rollup scope.
+
+**Spec:** No separate design spec exists for this settings-cache follow-up. It is a settings workflow correction related to `docs/superpowers/plans/2026-04-27-epm-active-sprint-visibility.md`; it is not the portfolio rollup implementation from `docs/superpowers/specs/2026-04-27-epm-multi-project-rollup-design.md`.
 
 **Tech Stack:** React 19, esbuild, Node `node:test` source guards, Python `unittest`, Flask.
 
@@ -25,7 +27,25 @@ The fix is to remove the preview mental model and make scope setup plus project 
 - Changing the root goal to a different key clears `subGoalKey`; selecting the same root does not.
 - Changing label prefix invalidates label autocomplete results, not the selected sub-goal.
 - Jira Home project records are cached by scope and reused for settings project loading.
+- When a user notices a missing Jira Home Project, they go to `Dashboard Settings -> EPM -> Projects` and click `Refresh from Jira Home`. The refresh bypasses the cached Home project records for the current root/sub-goal scope, adds newly discovered Home project rows with blank labels, preserves existing configured labels/names, keeps custom rows, and marks configured Home rows that are no longer present in the latest Home fetch instead of silently deleting them.
 - EPM rollups continue to fetch Jira structure from configured labels and the selected sprint value; no team/group filter is added.
+
+## Frontend/Backend Dependency Contract
+
+Frontend settings depend on these backend contracts:
+
+- `GET /api/epm/config` returns the saved normalized EPM scope, label prefix, issue type buckets, and project mappings.
+- `GET /api/epm/scope` returns Atlassian site metadata and the normalized saved EPM scope.
+- `GET /api/epm/goals` returns root goals; `GET /api/epm/goals?rootGoalKey=...` returns sub-goals for the selected root goal.
+- `POST /api/epm/projects/configuration` returns project configuration rows shaped from the posted draft config plus cached Jira Home project records.
+- `POST /api/epm/projects/configuration?refresh=true` bypasses cached Jira Home project records for the draft scope, fetches the latest direct Jira Home projects, then shapes rows from the same posted draft config.
+- `GET /api/epm/projects` returns saved main-view EPM project rows shaped from the saved config plus cached Jira Home project records.
+- `GET /api/epm/projects?refresh=true` bypasses cached Jira Home project records for the saved scope, fetches the latest direct Jira Home projects, then shapes rows from the saved config.
+- `POST /api/epm/config` persists scope/project mappings, clears rollup caches, and clears the Home-project cache only when the root/sub-goal scope changes.
+- `GET /api/jira/labels?prefix=...` powers project-label autocomplete using `epm.labelPrefix`.
+- `GET /api/epm/projects/:id/rollup?tab=&sprint=` powers main EPM rollups and must use configured project labels plus the Active sprint value, never Jira teams or team groups.
+
+The frontend settings cache key intentionally includes `rootGoalKey`, `subGoalKey`, and `labelPrefix` because readiness, autocomplete, and visible project-row state all depend on the prefix. The backend Jira Home project cache key intentionally includes only `rootGoalKey` and `subGoalKey`, because Home project discovery does not depend on label prefix; labels are shaped from the latest config on every response.
 
 ## Files
 
@@ -34,18 +54,26 @@ The fix is to remove the preview mental model and make scope setup plus project 
 - Modify: `jira_server.py`
 - Modify: `tests/test_epm_config_api.py`
 - Modify: `tests/test_epm_projects_api.py`
+- Modify: `tests/test_epm_rollup_api.py`
 - Modify: `frontend/src/dashboard.jsx`
 - Modify: `frontend/dist/dashboard.css`
 - Modify: `tests/test_epm_settings_source_guards.js`
+- Modify: `tests/test_dashboard_css_extraction.py`
+- Modify: `package.json`
+- Modify: `package-lock.json`
 - Create: `tests/ui/epm_settings_visual_states.spec.js`
 - Generated by build: `frontend/dist/dashboard.js`
 - Generated by build: `frontend/dist/dashboard.js.map`
 
-Do not hand-edit `frontend/dist/dashboard.js` or `frontend/dist/dashboard.js.map`; regenerate them with `npm run build`. There is no CSS source file under `frontend/src`; `frontend/dist/dashboard.css` is the served stylesheet, so CSS-only scroll, skeleton, and tab polish changes go there.
+Do not hand-edit `frontend/dist/dashboard.js` or `frontend/dist/dashboard.js.map`; regenerate them with `npm run build`. CSS exception: there is no CSS source file under `frontend/src`, and `frontend/dist/dashboard.css` is the served stylesheet/source of truth for CSS-only modal layout changes in this repo. The AGENTS.md generated-bundle rule applies to JS bundles and source maps here, not to `frontend/dist/dashboard.css`.
+
+## Execution Granularity
+
+Tasks 2, 4, and 6 contain several related edits because they are anchored to existing large files. Execute them exactly in their small checkbox steps, and stop at each task's test command before moving on. Task 5 is intentionally split into Task 5A for loader/cache behavior and Task 5B for render states/save reconciliation because it changes both state flow and JSX.
 
 ## Release Dependency
 
-Do not start this settings implementation until the EPM Active sprint visibility work is merged into the target branch, or include that work in the same release before this plan. The Active EPM view must visibly show the selected sprint value because the configured project labels plus that sprint value define the Jira rollup scope.
+Do not start this settings implementation until the EPM Active sprint visibility work is merged into the target branch, or include that work in the same release before this plan. The Active EPM view must visibly show the selected sprint value because the configured project labels plus that sprint value define the Jira rollup scope. The dependency implementation plan is `docs/superpowers/plans/2026-04-27-epm-active-sprint-visibility.md`.
 
 Before Task 1, verify:
 
@@ -54,6 +82,51 @@ node --test tests/test_epm_view_source_guards.js
 ```
 
 Expected: PASS with source guards proving the Active EPM controls expose the sprint picker/value and hide it outside Active.
+
+If this verification fails, stop this settings plan and complete `docs/superpowers/plans/2026-04-27-epm-active-sprint-visibility.md` first, including its build and visual verification steps. Do not weaken or delete the source guard to proceed with this settings work.
+
+Also verify the existing project learning before Task 1:
+
+```bash
+rg -n "EPM settings.*configured project labels plus selected sprint" AGENTS.md
+```
+
+Expected: one existing line under `## 11. Project Learnings`. Do not add a duplicate learning.
+
+Use the repo-documented Python command convention from AGENTS.md (`python3 -m unittest ...`). If a local shell lacks dependencies but `.venv/bin/python` has them installed, run the equivalent `.venv/bin/python -m unittest ...` command and record that substitution in the handoff notes.
+
+## Pre-Flight: Acknowledge Baseline Stale Assertions
+
+`tests/test_epm_settings_source_guards.js` currently contains assertions that became obsolete during prior refactors and assertions that this plan deliberately invalidates. Subagents must not "fix" them ad-hoc — every removal listed below is owned by an explicit step in this plan.
+
+Run before Task 1:
+
+```bash
+node --test tests/test_epm_settings_source_guards.js 2>&1 | tail -30
+```
+
+Expected baseline failures (today, on the target branch):
+
+- The first test (`dashboard source includes the EPM settings tab and lazy-load flow`) fails because it asserts `const loadEpmConfig = async () => {` but `frontend/src/dashboard.jsx:582` declares `loadEpmConfig` as a non-async one-liner (`const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);`). **This pre-existing failure is owned by Task 5A Step 1**, which deletes the stale assertion as part of the broader preview-era cleanup.
+
+If any other failures appear, stop and reconcile with the plan before proceeding — the plan is sized against the failure set above.
+
+The complete list of source-guard assertions this plan will delete from the first test in `tests/test_epm_settings_source_guards.js` (line numbers reflect today's file; do not rely on them after edits — match by string):
+
+- `assert.ok(dashboardSource.includes('const loadEpmConfig = async () => {'), 'Expected EPM config loader');` — owned by Task 5A Step 1.
+- `assert.ok(dashboardSource.includes('const loadEpmProjectPreview = async (draftConfig) => {'), 'Expected EPM draft preview loader');` — owned by Task 5A Step 1.
+- `assert.ok(dashboardSource.includes('const childGoalState = await loadEpmSubGoalsForRoot(rootGoalKey, savedSubGoalKey);'), 'Expected child-goal validation before initial EPM project loading');` — owned by Task 3 Step 1.
+- `assert.ok(dashboardSource.includes('if (!cancelled && savedSubGoalKey && !childGoalState.lookupFailed && !childGoalState.hasExpectedSubGoal && loadedConfig) {'), 'Expected invalid saved sub-goal reconciliation only on confirmed lookup success');` — owned by Task 3 Step 1.
+- `assert.ok(dashboardSource.includes('return { goals: [], hasExpectedSubGoal: true, lookupFailed: true };'), 'Expected child-goal lookup failures to preserve saved scope instead of treating it as invalid');` — owned by Task 3 Step 1.
+- `assert.ok(dashboardSource.includes("subGoalKey: '',"), 'Expected invalid saved sub-goal reconciliation to clear the draft');` — owned by Task 3 Step 1.
+- `assert.ok(!dashboardSource.includes('epmConfigBaselineRef.current = JSON.stringify(reconciledConfig);'), 'Did not expect invalid sub-goal reconciliation to rewrite the saved baseline');` — owned by Task 3 Step 1 (the negation stays valid but the surrounding context is gone; remove for clarity).
+- `assert.ok(dashboardSource.includes("updateEpmScopeDraft('subGoalKey', '')"), 'Expected root-goal flow to clear the sub-goal draft');` — owned by Task 3 Step 1 (Task 3 Step 9 replaces `updateEpmScopeDraft('subGoalKey', '')` with an inline `setEpmConfigDraft((prev) => ({ ..., scope: { ..., subGoalKey: rootChanged ? '' : prev.scope?.subGoalKey || '' } }))`).
+- `assert.ok(dashboardSource.includes('if (hasSavedEpmScopeConfig(nextConfig)) {') && dashboardSource.includes('const nextProjects = await refreshEpmProjects();') && dashboardSource.includes('setEpmSettingsProjects(nextProjects);') && dashboardSource.includes('setEpmProjects([]);'), 'Expected save path to refresh only when saved scope exists and replace settings preview rows');` — owned by Task 5A Step 1 (Task 5A Step 10 replaces the post-save success branch; the `setEpmSettingsProjects(nextProjects)` clause no longer holds).
+- `assert.ok(dashboardSource.includes('Run Test Configuration to preview projects for the selected draft scope.'), 'Expected explicit preview helper copy before settings preview runs');` — owned by Task 5A Step 1.
+- `assert.ok(dashboardSource.includes('void previewEpmProjectSettings().catch(() => {});'), 'Expected EPM Test Configuration button to drive draft preview');` — owned by Task 5A Step 1.
+- `assert.ok(dashboardSource.includes('setEpmSettingsProjects([]);') && dashboardSource.includes('setEpmSettingsProjectsError(\'\');'), 'Expected scope changes and settings load to clear stale preview rows');` — owned by Task 5A Step 1 (the cleared-on-scope-change behavior is replaced by the cache-key reset effect added in Task 5A Step 6).
+
+Each affected step (Task 3 Step 1 and Task 5A Step 1) lists its deletions explicitly. If a deletion is missing or duplicated in those steps relative to this baseline, treat the per-task list as authoritative and update this Pre-Flight summary.
 
 ## Task 1: Add Frontend Readiness and Cache-Key Helpers
 
@@ -175,12 +248,32 @@ git commit -m "test(epm): add project settings cache helpers"
 - Modify: `jira_server.py`
 - Modify: `tests/test_epm_config_api.py`
 - Modify: `tests/test_epm_projects_api.py`
+- Modify: `tests/test_epm_rollup_api.py`
 
 This task fixes the backend quality issue: keeping the existing shaped `EPM_PROJECTS_CACHE` across config saves would preserve stale labels. Cache the raw Jira Home project records by scope, then shape each response with the latest normalized EPM config.
 
 - [ ] **Step 1: Write failing config-cache tests**
 
-In `tests/test_epm_config_api.py`, replace the cache assertions inside `test_post_epm_config_persists_projects_without_overwriting_team_groups` with:
+In `tests/test_epm_config_api.py`, update the saved dashboard config inside `test_post_epm_config_persists_projects_without_overwriting_team_groups` so this test is specifically a same-scope label/config save, not a first-time scope save:
+
+```python
+            json.dump(
+                {
+                    'version': 1,
+                    'projects': {'selected': []},
+                    'teamGroups': {'version': 1, 'groups': []},
+                    'epm': {
+                        'version': 2,
+                        'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+                        'labelPrefix': 'rnd_project_',
+                        'projects': {},
+                    },
+                },
+                handle,
+            )
+```
+
+Then replace the cache assertions inside that test with:
 
 ```python
             self.assertEqual(jira_server.EPM_PROJECTS_CACHE, {'dummy': {'value': 1}})
@@ -188,7 +281,37 @@ In `tests/test_epm_config_api.py`, replace the cache assertions inside `test_pos
             self.assertEqual(jira_server.TASKS_CACHE, {'dummy': {'value': 3}})
 ```
 
-Then add this test method to the same class:
+Then add these test methods to the same class so first-scope saves and actual scope changes still clear the Home-project cache:
+
+```python
+    def test_post_epm_config_clears_project_cache_when_scope_is_added(self):
+        with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
+            json.dump(
+                {
+                    'version': 1,
+                    'projects': {'selected': []},
+                    'teamGroups': {'version': 1, 'groups': []},
+                },
+                handle,
+            )
+
+        with patch.object(jira_server, 'EPM_PROJECTS_CACHE', {'old-empty-scope': {'value': 1}}), \
+             patch.object(jira_server, 'EPM_ISSUES_CACHE', {'old-issues': {'value': 2}}), \
+             patch.object(jira_server, 'EPM_ROLLUP_CACHE', {'old-rollup': {'value': 3}}):
+            response = self.client.post(
+                '/api/epm/config',
+                json={
+                    'scope': {'rootGoalKey': 'ROOT-NEW', 'subGoalKey': 'CHILD-NEW'},
+                    'labelPrefix': 'rnd_project_',
+                    'projects': {},
+                },
+            )
+
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+            self.assertEqual(jira_server.EPM_PROJECTS_CACHE, {})
+            self.assertEqual(jira_server.EPM_ISSUES_CACHE, {})
+            self.assertEqual(jira_server.EPM_ROLLUP_CACHE, {})
+```
 
 ```python
     def test_post_epm_config_clears_project_cache_when_scope_changes(self):
@@ -276,6 +399,65 @@ In `tests/test_epm_projects_api.py`, add this test method near the existing cach
         self.assertEqual(second_project['resolvedLinkage']['labels'], ['second_label'])
 ```
 
+Add this saved-config refresh test to prove `GET /api/epm/projects?refresh=true` bypasses cached Home projects for the same saved scope:
+
+```python
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_endpoint_refresh_bypasses_cached_home_projects(self, mock_fetch_projects, mock_get_epm_config):
+        first_home_projects = [self._home_projects()[0]]
+        refreshed_home_projects = [self._home_projects()[1]]
+        mock_fetch_projects.side_effect = [first_home_projects, refreshed_home_projects]
+        mock_get_epm_config.return_value = {
+            'version': 2,
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+            'labelPrefix': 'rnd_project_',
+            'projects': {},
+        }
+
+        first_response = self.client.get('/api/epm/projects')
+        cached_response = self.client.get('/api/epm/projects')
+        refreshed_response = self.client.get('/api/epm/projects?refresh=true')
+
+        self.assertEqual(first_response.status_code, 200, first_response.get_data(as_text=True))
+        self.assertEqual(cached_response.status_code, 200, cached_response.get_data(as_text=True))
+        self.assertEqual(refreshed_response.status_code, 200, refreshed_response.get_data(as_text=True))
+        self.assertEqual(mock_fetch_projects.call_count, 2)
+        self.assertEqual(first_response.get_json()['projects'][0]['homeProjectId'], 'home-1')
+        self.assertEqual(cached_response.get_json()['projects'][0]['homeProjectId'], 'home-1')
+        self.assertEqual(refreshed_response.get_json()['projects'][0]['homeProjectId'], 'home-2')
+        self.assertFalse(first_response.get_json()['cacheHit'])
+        self.assertTrue(cached_response.get_json()['cacheHit'])
+        self.assertFalse(refreshed_response.get_json()['cacheHit'])
+```
+
+Add this draft-config refresh test to prove `POST /api/epm/projects/configuration?refresh=true` bypasses cached Home projects while preserving draft labels:
+
+```python
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_configuration_refresh_bypasses_cache_and_preserves_draft_labels(self, mock_fetch_projects):
+        first_home_projects = [self._home_projects()[0]]
+        refreshed_home_projects = [self._home_projects()[0], self._home_projects()[1]]
+        mock_fetch_projects.side_effect = [first_home_projects, refreshed_home_projects]
+        draft_config = self._mixed_config()
+
+        first_response = self.client.post('/api/epm/projects/configuration', json=draft_config)
+        cached_response = self.client.post('/api/epm/projects/configuration', json=draft_config)
+        refreshed_response = self.client.post('/api/epm/projects/configuration?refresh=true', json=draft_config)
+
+        self.assertEqual(first_response.status_code, 200, first_response.get_data(as_text=True))
+        self.assertEqual(cached_response.status_code, 200, cached_response.get_data(as_text=True))
+        self.assertEqual(refreshed_response.status_code, 200, refreshed_response.get_data(as_text=True))
+        self.assertEqual(mock_fetch_projects.call_count, 2)
+        refreshed_projects = refreshed_response.get_json()['projects']
+        self.assertEqual([project['homeProjectId'] for project in refreshed_projects[:2]], ['home-1', 'home-2'])
+        home_two = next(project for project in refreshed_projects if project['homeProjectId'] == 'home-2')
+        self.assertEqual(home_two['resolvedLinkage']['labels'], ['synthetic_label_home_two'])
+        self.assertFalse(first_response.get_json()['cacheHit'])
+        self.assertTrue(cached_response.get_json()['cacheHit'])
+        self.assertFalse(refreshed_response.get_json()['cacheHit'])
+```
+
 Rename `test_projects_preview_endpoint_uses_draft_payload_without_saved_config_or_cache` to `test_projects_configuration_endpoint_uses_draft_payload_without_saved_config` and change the request path from `/api/epm/projects/preview` to `/api/epm/projects/configuration`. Keep the existing assertions that saved config is not read, and replace the cache assertions that expect `saved-config` to remain the only cache entry with:
 
 ```python
@@ -299,6 +481,27 @@ In `tests/test_epm_rollup_api.py`, update `test_active_sprint_filter_is_appended
 
 Keep the existing response assertions in that test. This guards the correction explicitly: EPM starts the Jira structure from configured labels, applies the selected sprint to Active queries, and does not add Jira team filters.
 
+Add this source guard to `tests/test_epm_rollup_api.py` so future rollup refactors do not reintroduce team-group scope through helper imports or alternate names:
+
+```python
+    def test_epm_rollup_builder_does_not_reference_team_group_scope(self):
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[1]
+        source = (repo_root / 'epm_rollup.py').read_text(encoding='utf-8')
+
+        for forbidden in (
+            'teamGroups',
+            'team_groups',
+            'TEAM_FIELD',
+            'Team[Team]',
+            '"Team"',
+            'get_team',
+            'resolve_team',
+        ):
+            self.assertNotIn(forbidden, source)
+```
+
 - [ ] **Step 4: Run the backend tests and confirm they fail**
 
 Run:
@@ -310,6 +513,14 @@ python3 -m unittest tests.test_epm_config_api tests.test_epm_projects_api tests.
 Expected: FAIL showing that config save clears the project cache and/or that the projects endpoint returns stale shaped labels from cache.
 
 - [ ] **Step 5: Add scoped Home project cache helpers**
+
+Before editing helpers, verify the existing TTL constant:
+
+```bash
+rg -n "EPM_PROJECTS_CACHE_TTL_SECONDS = 300" jira_server.py
+```
+
+Expected: one existing definition near the module-level cache constants. If it is missing, add `EPM_PROJECTS_CACHE_TTL_SECONDS = 300` next to `EPM_PROJECTS_CACHE = {}` before using it.
 
 In `jira_server.py`, replace `clear_epm_caches` with these helpers:
 
@@ -340,24 +551,48 @@ def clear_epm_caches():
         EPM_ROLLUP_CACHE.clear()
 ```
 
-Place this helper after `find_epm_config_row`:
+Place these helpers after `find_epm_config_row`. The backend cache key uses only root/sub-goal scope; it deliberately does not include `labelPrefix`.
 
 ```python
-def get_cached_epm_home_projects(epm_scope, force_refresh=False):
+def build_epm_home_projects_state(epm_scope, force_refresh=False):
     cache_key = build_epm_home_projects_cache_key(epm_scope)
     if not force_refresh:
         with _epm_cache_lock:
             cached = EPM_PROJECTS_CACHE.get(cache_key)
             if cached and (time.time() - cached['timestamp']) < EPM_PROJECTS_CACHE_TTL_SECONDS:
-                return cached.get('homeProjects', [])
+                return {
+                    'homeProjects': cached.get('homeProjects', []),
+                    'cacheHit': True,
+                    'fetchedAt': cached.get('fetchedAt', ''),
+                    'homeProjectCount': len(cached.get('homeProjects', [])),
+                    'homeProjectLimit': cached.get('homeProjectLimit'),
+                    'possiblyTruncated': bool(cached.get('possiblyTruncated')),
+                }
 
     home_projects = fetch_epm_home_projects(epm_scope)
+    home_project_limit = epm_home.HOME_MAX_PROJECTS_PER_GOAL
+    possibly_truncated = bool(home_project_limit and len(home_projects) >= home_project_limit)
+    fetched_at = datetime.utcnow().isoformat(timespec='seconds') + 'Z'
     with _epm_cache_lock:
         EPM_PROJECTS_CACHE[cache_key] = {
             'timestamp': time.time(),
+            'fetchedAt': fetched_at,
             'homeProjects': home_projects,
+            'homeProjectLimit': home_project_limit,
+            'possiblyTruncated': possibly_truncated,
         }
-    return home_projects
+    return {
+        'homeProjects': home_projects,
+        'cacheHit': False,
+        'fetchedAt': fetched_at,
+        'homeProjectCount': len(home_projects),
+        'homeProjectLimit': home_project_limit,
+        'possiblyTruncated': possibly_truncated,
+    }
+
+
+def get_cached_epm_home_projects(epm_scope, force_refresh=False):
+    return build_epm_home_projects_state(epm_scope, force_refresh=force_refresh)['homeProjects']
 ```
 
 - [ ] **Step 6: Shape payloads from current config every time**
@@ -369,15 +604,34 @@ def build_epm_projects_payload(epm_config, force_refresh=False):
     normalized_config = normalize_epm_config(epm_config or {})
     projects = []
     epm_scope = normalized_config.get('scope') or {}
-    for home_project in get_cached_epm_home_projects(epm_scope, force_refresh=force_refresh):
+    home_state = build_epm_home_projects_state(epm_scope, force_refresh=force_refresh)
+    returned_home_project_ids = set()
+    for home_project in home_state['homeProjects']:
         project_id = home_project.get('homeProjectId')
+        if project_id:
+            returned_home_project_ids.add(project_id)
         config_row = find_epm_config_row(normalized_config['projects'], project_id)
         projects.append(build_epm_project_payload(home_project, config_row))
     for row in normalized_config['projects'].values():
-        if normalize_epm_text(row.get('homeProjectId')):
+        home_project_id = normalize_epm_text(row.get('homeProjectId'))
+        if home_project_id and home_project_id in returned_home_project_ids:
+            continue
+        if home_project_id:
+            missing_home_row = build_custom_project_payload(row)
+            missing_home_row['homeProjectId'] = home_project_id
+            missing_home_row['missingFromHomeFetch'] = True
+            missing_home_row['matchState'] = 'missing-home-project'
+            projects.append(missing_home_row)
             continue
         projects.append(build_custom_project_payload(row))
-    return {'projects': projects}
+    return {
+        'projects': projects,
+        'cacheHit': home_state['cacheHit'],
+        'fetchedAt': home_state['fetchedAt'],
+        'homeProjectCount': home_state['homeProjectCount'],
+        'homeProjectLimit': home_state['homeProjectLimit'],
+        'possiblyTruncated': home_state['possiblyTruncated'],
+    }
 ```
 
 Replace `find_epm_project_or_404` with:
@@ -499,11 +753,22 @@ test('dashboard source clears EPM sub-goal only when root goal changes or user c
 });
 ```
 
-Also remove the broad assertion in the first source-guard test that currently requires `subGoalKey: '',` for invalid saved sub-goal reconciliation. Replace it with a narrower check that only root clear and explicit sub-goal clear paths can clear the value:
+Also delete these assertions from the first source-guard test in `tests/test_epm_settings_source_guards.js` (`dashboard source includes the EPM settings tab and lazy-load flow`). Match by full assertion line, not by line number — the file shifts as edits land. Each line below is the entire `assert.ok(...);` statement to remove:
 
 ```js
-    assert.ok(dashboardSource.includes('const clearEpmRootGoal = () => {'), 'Expected root clear handler');
-    assert.ok(dashboardSource.includes('const clearEpmSubGoal = () => {'), 'Expected explicit sub-goal clear handler');
+assert.ok(dashboardSource.includes('const childGoalState = await loadEpmSubGoalsForRoot(rootGoalKey, savedSubGoalKey);'), 'Expected child-goal validation before initial EPM project loading');
+assert.ok(dashboardSource.includes('if (!cancelled && savedSubGoalKey && !childGoalState.lookupFailed && !childGoalState.hasExpectedSubGoal && loadedConfig) {'), 'Expected invalid saved sub-goal reconciliation only on confirmed lookup success');
+assert.ok(dashboardSource.includes('return { goals: [], hasExpectedSubGoal: true, lookupFailed: true };'), 'Expected child-goal lookup failures to preserve saved scope instead of treating it as invalid');
+assert.ok(dashboardSource.includes("subGoalKey: '',"), 'Expected invalid saved sub-goal reconciliation to clear the draft');
+assert.ok(!dashboardSource.includes('epmConfigBaselineRef.current = JSON.stringify(reconciledConfig);'), 'Did not expect invalid sub-goal reconciliation to rewrite the saved baseline');
+assert.ok(dashboardSource.includes("updateEpmScopeDraft('subGoalKey', '')"), 'Expected root-goal flow to clear the sub-goal draft');
+```
+
+Insert in their place the narrower checks that root-clear and explicit sub-goal clear handlers exist:
+
+```js
+assert.ok(dashboardSource.includes('const clearEpmRootGoal = () => {'), 'Expected root clear handler');
+assert.ok(dashboardSource.includes('const clearEpmSubGoal = () => {'), 'Expected explicit sub-goal clear handler');
 ```
 
 - [ ] **Step 2: Run the source guard and confirm it fails**
@@ -718,8 +983,8 @@ test('dashboard source separates EPM scope and project mapping tabs', () => {
     assert.ok(!dashboardSource.includes("disabled={!canOpenEpmProjectsTab}"), 'Projects tab must stay clickable and show prerequisites inside the panel');
     assert.ok(dashboardSource.includes('role="tablist"'), 'Expected accessible EPM settings tablist');
     assert.ok(dashboardSource.includes('role="tab"'), 'Expected accessible EPM settings tabs');
-    assert.ok(dashboardSource.includes('aria-selected={epmSettingsTab === \'scope\'}'), 'Expected scope tab selected state');
-    assert.ok(dashboardSource.includes('aria-selected={epmSettingsTab === \'projects\'}'), 'Expected projects tab selected state');
+    assert.match(dashboardSource, /aria-selected=\{epmSettingsTab === ['"]scope['"]\}/, 'Expected scope tab selected state');
+    assert.match(dashboardSource, /aria-selected=\{epmSettingsTab === ['"]projects['"]\}/, 'Expected projects tab selected state');
     assert.ok(dashboardSource.includes('aria-controls="epm-settings-projects-panel"'), 'Expected projects tab panel relationship');
     assert.ok(dashboardSource.includes('const handleEpmSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for EPM sub-tabs');
     assert.ok(dashboardSource.includes('document.getElementById(`epm-settings-${tab}-tab`)'), 'Expected keyboard tab changes to preserve focus');
@@ -824,6 +1089,12 @@ Inside the current `{groupManageTab === 'epm' && (...)}` render branch, keep a s
                     <div className="group-pane-title">EPM scope</div>
                     <div className="group-pane-subtitle">Choose the Jira Home goal scope and label prefix used for EPM project mapping.</div>
                 </div>
+                {/* INSERT existing EPM scope JSX here:
+                    - Atlassian site subsection
+                    - Root goal picker
+                    - Sub-goal selected chip/search input; add data-epm-scope-field="subGoal" to the input and selected chip remove button
+                    - Label prefix input; add data-epm-scope-field="labelPrefix"
+                   Cut this JSX from the current EPM settings branch, starting at the Atlassian site subsection and ending immediately after the Label prefix input. */}
             </div>
         )}
         {epmSettingsTab === 'projects' && (
@@ -837,6 +1108,11 @@ Inside the current `{groupManageTab === 'epm' && (...)}` render branch, keep a s
                     <div className="group-pane-title">EPM projects</div>
                     <div className="group-pane-subtitle">Map direct Jira Home projects under the selected sub-goal to exact Jira labels.</div>
                 </div>
+                {/* INSERT existing EPM project JSX here:
+                    - Add custom Project button
+                    - Loading/error/empty states
+                    - epmSettingsProjectRows.map row renderer
+                   Cut this JSX from the current EPM settings branch, starting at the Add custom Project button and ending after the final No EPM projects found empty state. */}
             </div>
         )}
     </div>
@@ -931,7 +1207,7 @@ git add frontend/src/dashboard.jsx tests/test_epm_settings_source_guards.js
 git commit -m "feat(epm): split project mapping into settings tab"
 ```
 
-## Task 5: Auto-Load Cached Projects on the Projects Sub-Tab
+## Task 5A: Add Cached Project Configuration Loader
 
 **Files:**
 - Modify: `frontend/src/dashboard.jsx`
@@ -941,25 +1217,50 @@ git commit -m "feat(epm): split project mapping into settings tab"
 
 - [ ] **Step 1: Write source guards for automatic cached configuration loading**
 
-In `tests/test_epm_settings_source_guards.js`, replace assertions that require explicit preview copy and the Test Configuration button to drive EPM project loading with:
+In `tests/test_epm_settings_source_guards.js`, in the first source-guard test (`dashboard source includes the EPM settings tab and lazy-load flow`), delete the following preview-era assertions. Match by full assertion line, not by line number:
+
+```js
+assert.ok(dashboardSource.includes('const loadEpmConfig = async () => {'), 'Expected EPM config loader');
+assert.ok(dashboardSource.includes('const loadEpmProjectPreview = async (draftConfig) => {'), 'Expected EPM draft preview loader');
+assert.ok(dashboardSource.includes('if (hasSavedEpmScopeConfig(nextConfig)) {') && dashboardSource.includes('const nextProjects = await refreshEpmProjects();') && dashboardSource.includes('setEpmSettingsProjects(nextProjects);') && dashboardSource.includes('setEpmProjects([]);'), 'Expected save path to refresh only when saved scope exists and replace settings preview rows');
+assert.ok(dashboardSource.includes('Run Test Configuration to preview projects for the selected draft scope.'), 'Expected explicit preview helper copy before settings preview runs');
+assert.ok(dashboardSource.includes('void previewEpmProjectSettings().catch(() => {});'), 'Expected EPM Test Configuration button to drive draft preview');
+assert.ok(dashboardSource.includes('setEpmSettingsProjects([]);') && dashboardSource.includes('setEpmSettingsProjectsError(\'\');'), 'Expected scope changes and settings load to clear stale preview rows');
+```
+
+If a `loadEpmConfig` declaration assertion is needed at all, replace it with one that matches the current non-async wrapper signature:
+
+```js
+assert.ok(dashboardSource.includes('const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);'), 'Expected EPM config loader wrapper');
+```
+
+The existing negative assertions in the second source-guard test (`!loadSettingsSource.includes('loadEpmProjectPreview(')` etc.) stay valid as long as the new symbols are absent. Do not weaken them.
+
+After the deletions, add the following positive assertions to the first source-guard test (these cover the new auto-loader, snapshot-based fetch, header refresh, skeleton/error states, and save reconciliation):
 
 ```js
     assert.ok(dashboardSource.includes('const epmSettingsProjectsCacheRef = useRef(new Map());'), 'Expected settings project cache');
     assert.ok(dashboardSource.includes('const epmSettingsProjectsCacheKey = React.useMemo(() => getEpmSettingsProjectsCacheKey(epmConfigDraft), [epmConfigDraft]);'), 'Expected settings project cache key');
     assert.ok(dashboardSource.includes('const ensureEpmSettingsProjectsLoaded = async (options = {}) => {'), 'Expected automatic settings project loader');
     assert.ok(dashboardSource.includes("if (!showGroupManage || groupManageTab !== 'epm' || epmSettingsTab !== 'projects') return;"), 'Expected Projects tab scoped auto-load effect');
-    assert.ok(dashboardSource.includes('void ensureEpmSettingsProjectsLoaded().catch(() => {});'), 'Expected Projects tab to auto-load projects');
+    assert.ok(dashboardSource.includes('void ensureEpmSettingsProjectsLoaded({'), 'Expected Projects tab to auto-load projects with a stable draft snapshot');
+    assert.ok(dashboardSource.includes('draftConfig: draftSnapshot'), 'Expected Projects tab load to pass the draft snapshot');
+    assert.ok(dashboardSource.includes('cacheKey: cacheKeySnapshot'), 'Expected Projects tab load to pass the matching cache key');
     assert.ok(!dashboardSource.includes('Run Test Configuration to preview projects for the selected draft scope.'), 'Project tab must not require manual preview before showing rows');
     assert.ok(!dashboardSource.includes("groupManageTab === 'epm' && epmSettingsTab === 'projects' && (\\n    <div className=\"group-modal-button-row\">"), 'EPM project refresh must not live in modal footer');
     assert.ok(dashboardSource.includes('className="epm-projects-header-actions"'), 'Expected Projects header actions for refresh/status');
-    assert.ok(dashboardSource.includes('Refresh projects'), 'Expected Projects header refresh action');
+    assert.ok(dashboardSource.includes('Refresh from Jira Home'), 'Expected Projects header refresh action');
     assert.ok(dashboardSource.includes('epmSettingsProjectsLoadedAt'), 'Expected cached/last-loaded status state');
+    assert.ok(dashboardSource.includes('epmSettingsProjectsFetchMeta'), 'Expected Home project fetch metadata state');
     assert.ok(dashboardSource.includes('epmSettingsProjectsRefreshing'), 'Expected refresh state that preserves rows');
+    assert.ok(dashboardSource.includes('missingFromHomeFetch'), 'Expected missing Home project reconciliation state');
+    assert.ok(dashboardSource.includes('const getHomeBackedEpmSettingsProjects = (projects) => {'), 'Expected settings project cache to exclude custom rows rendered from config');
     assert.ok(dashboardSource.includes('epm-project-skeleton-row'), 'Expected skeleton loading rows');
     assert.ok(dashboardSource.includes('Retry'), 'Expected inline retry action for project load errors');
     assert.ok(!dashboardSource.includes('epmSettingsPreviewRequested'), 'EPM project configuration must not use preview-request state');
     assert.ok(!dashboardSource.includes('loadEpmProjectPreview'), 'EPM project configuration must not use preview-named loaders');
     assert.ok(dashboardSource.includes('const [epmSettingsProjectsLoaded, setEpmSettingsProjectsLoaded] = useState(false);'), 'Expected loaded-state for project configuration rows');
+    assert.ok(dashboardSource.includes('const updateEpmSettingsProjectRowsAfterSave = (savedConfig) => {'), 'Expected save path to reconcile settings rows after custom id rekeying');
 ```
 
 In `tests/test_epm_shell_source_guards.js`, replace the `fetchEpmProjectPreview` guard with a configuration-loader guard. The expected source should include:
@@ -1027,28 +1328,58 @@ Rename state:
 ```js
 const [epmSettingsProjectsLoaded, setEpmSettingsProjectsLoaded] = useState(false);
 const [epmSettingsProjectsLoadedAt, setEpmSettingsProjectsLoadedAt] = useState('');
+const [epmSettingsProjectsFetchMeta, setEpmSettingsProjectsFetchMeta] = useState({
+    cacheHit: false,
+    fetchedAt: '',
+    homeProjectCount: 0,
+    homeProjectLimit: null,
+    possiblyTruncated: false,
+});
 const [epmSettingsProjectsRefreshing, setEpmSettingsProjectsRefreshing] = useState(false);
 ```
 
 Delete `epmSettingsPreviewRequested` and delete `previewEpmProjectSettings`.
 
-Add this function near the settings project loading helpers:
+Add this helper near `epmSettingsProjectRows`. The settings project state/cache stores Home-backed rows only; custom rows are rendered from `epmConfigDraft.projects`, which lets saved custom Project IDs rekey cleanly after `/api/epm/config` responds:
+
+```js
+const getHomeBackedEpmSettingsProjects = (projects) => {
+    return Array.isArray(projects)
+        ? projects.filter(project => project?.homeProjectId !== null)
+        : [];
+};
+```
+
+Add this function near the settings project loading helpers. It accepts a draft/cache-key snapshot so rapid label-prefix edits cannot cache a response under a newer key than the request body that produced it:
 
 ```js
 const ensureEpmSettingsProjectsLoaded = async (options = {}) => {
     const forceRefresh = Boolean(options.forceRefresh);
-    const cacheKey = getEpmSettingsProjectsCacheKey(epmConfigDraft);
+    const draftConfig = normalizeEpmConfigDraft(options.draftConfig || epmConfigDraft);
+    const cacheKey = options.cacheKey || getEpmSettingsProjectsCacheKey(draftConfig);
     if (!cacheKey) {
         setEpmSettingsProjectsError('');
         setEpmSettingsProjectsLoading(false);
         setEpmSettingsProjectsRefreshing(false);
+        setEpmSettingsProjectsLoaded(false);
+        setEpmSettingsProjectsLoadedAt('');
         return [];
     }
     if (!forceRefresh && epmSettingsProjectsCacheRef.current.has(cacheKey)) {
-        const cachedProjects = epmSettingsProjectsCacheRef.current.get(cacheKey) || [];
+        const cachedEntry = epmSettingsProjectsCacheRef.current.get(cacheKey) || {};
+        const cachedProjects = Array.isArray(cachedEntry.projects) ? cachedEntry.projects : [];
+        const cachedLoadedAt = String(cachedEntry.loadedAt || '');
         setEpmSettingsProjects(cachedProjects);
+        setEpmSettingsProjectsFetchMeta(cachedEntry.meta || {
+            cacheHit: true,
+            fetchedAt: '',
+            homeProjectCount: cachedProjects.length,
+            homeProjectLimit: null,
+            possiblyTruncated: false,
+        });
         setEpmSettingsProjectsError('');
         setEpmSettingsProjectsLoaded(true);
+        setEpmSettingsProjectsLoadedAt(cachedLoadedAt);
         return cachedProjects;
     }
 
@@ -1058,16 +1389,25 @@ const ensureEpmSettingsProjectsLoaded = async (options = {}) => {
     setEpmSettingsProjectsLoading(!hasExistingRows);
     setEpmSettingsProjectsRefreshing(hasExistingRows);
     setEpmSettingsProjectsError('');
-    setEpmSettingsProjectsLoaded(true);
     try {
-        const payload = await loadEpmConfigurationProjects(epmConfigDraft, { forceRefresh });
+        const payload = await loadEpmConfigurationProjects(draftConfig, { forceRefresh });
         if (epmSettingsProjectsRequestIdRef.current !== requestId) {
             return [];
         }
-        const nextProjects = Array.isArray(payload.projects) ? payload.projects : [];
-        epmSettingsProjectsCacheRef.current.set(cacheKey, nextProjects);
+        const nextProjects = getHomeBackedEpmSettingsProjects(payload.projects);
+        const nextMeta = {
+            cacheHit: Boolean(payload.cacheHit),
+            fetchedAt: String(payload.fetchedAt || ''),
+            homeProjectCount: Number(payload.homeProjectCount || nextProjects.filter(project => project?.homeProjectId).length || 0),
+            homeProjectLimit: payload.homeProjectLimit ?? null,
+            possiblyTruncated: Boolean(payload.possiblyTruncated),
+        };
+        const loadedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        epmSettingsProjectsCacheRef.current.set(cacheKey, { projects: nextProjects, meta: nextMeta, loadedAt });
         setEpmSettingsProjects(nextProjects);
-        setEpmSettingsProjectsLoadedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        setEpmSettingsProjectsFetchMeta(nextMeta);
+        setEpmSettingsProjectsLoaded(true);
+        setEpmSettingsProjectsLoadedAt(loadedAt);
         return nextProjects;
     } catch (err) {
         if (epmSettingsProjectsRequestIdRef.current !== requestId) {
@@ -1085,17 +1425,46 @@ const ensureEpmSettingsProjectsLoaded = async (options = {}) => {
 };
 ```
 
-- [ ] **Step 6: Add Projects tab auto-load effect**
+- [ ] **Step 6: Add Projects tab cache-key reset and auto-load effects**
 
-Add this effect after the EPM settings load effect:
+Add this cache-key reset effect after the EPM settings load effect so `epmSettingsProjectsLoaded` cannot leak from a previous scope/key:
+
+```js
+useEffect(() => {
+    if (epmSettingsProjectsCacheKey && epmSettingsProjectsCacheRef.current.has(epmSettingsProjectsCacheKey)) return;
+    setEpmSettingsProjectsLoaded(false);
+    setEpmSettingsProjectsLoadedAt('');
+    setEpmSettingsProjectsFetchMeta({
+        cacheHit: false,
+        fetchedAt: '',
+        homeProjectCount: 0,
+        homeProjectLimit: null,
+        possiblyTruncated: false,
+    });
+}, [epmSettingsProjectsCacheKey]);
+```
+
+Add this auto-load effect after the reset effect. It takes a stable draft snapshot and matching cache key before starting the request:
 
 ```js
 useEffect(() => {
     if (!showGroupManage || groupManageTab !== 'epm' || epmSettingsTab !== 'projects') return;
     if (!canLoadEpmProjects || !epmSettingsProjectsCacheKey) return;
-    void ensureEpmSettingsProjectsLoaded().catch(() => {});
+    const draftSnapshot = normalizeEpmConfigDraft(epmConfigDraft);
+    const cacheKeySnapshot = getEpmSettingsProjectsCacheKey(draftSnapshot);
+    if (!cacheKeySnapshot || cacheKeySnapshot !== epmSettingsProjectsCacheKey) return;
+    void ensureEpmSettingsProjectsLoaded({
+        draftConfig: draftSnapshot,
+        cacheKey: cacheKeySnapshot,
+    }).catch(() => {});
 }, [showGroupManage, groupManageTab, epmSettingsTab, canLoadEpmProjects, epmSettingsProjectsCacheKey]);
 ```
+
+## Task 5B: Render Project Configuration States and Save Reconciliation
+
+**Files:**
+- Modify: `frontend/src/dashboard.jsx`
+- Modify: `tests/test_epm_settings_source_guards.js`
 
 - [ ] **Step 7: Move refresh/status into the Projects header**
 
@@ -1115,8 +1484,11 @@ In the Projects panel header, render refresh and cache status next to the title:
                 {epmSettingsProjectsRefreshing
                     ? 'Refreshing...'
                     : epmSettingsProjectsLoadedAt
-                        ? `Loaded ${epmSettingsProjectsLoadedAt}`
+                        ? `${epmSettingsProjectsFetchMeta.homeProjectCount} Home projects · fetched ${epmSettingsProjectsLoadedAt}${epmSettingsProjectsFetchMeta.cacheHit ? ' · cached' : ''}`
                         : 'Not loaded'}
+                {epmSettingsProjectsFetchMeta.possiblyTruncated && epmSettingsProjectsFetchMeta.homeProjectLimit
+                    ? ` · reached ${epmSettingsProjectsFetchMeta.homeProjectLimit} project limit`
+                    : ''}
             </span>
         )}
         <button
@@ -1125,7 +1497,7 @@ In the Projects panel header, render refresh and cache status next to the title:
             disabled={epmConfigLoading || epmConfigSaving || epmSettingsProjectsLoading || epmSettingsProjectsRefreshing || !canLoadEpmProjects}
             type="button"
         >
-            {epmSettingsProjectsRefreshing ? 'Refreshing...' : 'Refresh projects'}
+            {epmSettingsProjectsRefreshing ? 'Refreshing...' : 'Refresh from Jira Home'}
         </button>
     </div>
 </div>
@@ -1159,7 +1531,7 @@ In the Projects render branch, replace text-only states with polished states. Ke
 2. `epmProjectPrerequisites.length > 0` renders the prerequisite panel from Task 4.
 3. `epmSettingsProjectsLoading && !epmSettingsProjectRows.length` renders skeleton rows.
 4. `epmSettingsProjectsError && !epmSettingsProjectRows.length` renders an inline error panel with `Retry` and `Add custom Project`.
-5. `epmSettingsProjectRows.length > 0` renders the existing project-row map. If `epmSettingsProjectsError` is also set, show a compact inline warning above the rows with `Retry`; do not clear the rows.
+5. `epmSettingsProjectRows.length > 0` renders the existing project-row map. If `epmSettingsProjectsError` is also set, show a compact inline warning above the rows with `Retry`; do not clear the rows. If a row has `missingFromHomeFetch`, show a compact warning on that row: `Not returned by latest Jira Home refresh`.
 6. `epmSettingsProjects.length === 0 && epmSettingsProjectsLoaded` renders an empty state with `Add custom Project`.
 7. The final fallback renders skeleton rows only if a load is pending; otherwise no blank text-only panel.
 
@@ -1180,15 +1552,93 @@ const renderEpmProjectSkeletonRows = () => (
 
 The refresh path must preserve existing rows while the header status changes to `Refreshing...`.
 
+Update `epmSettingsProjectRows` so each row preserves the backend reconciliation flag:
+
+```js
+missingFromHomeFetch: Boolean(project?.missingFromHomeFetch),
+```
+
+Render the row warning close to the Project title:
+
+```jsx
+{project.missingFromHomeFetch && (
+    <div className="group-field-helper epm-project-row-warning">
+        Not returned by latest Jira Home refresh.
+    </div>
+)}
+```
+
 - [ ] **Step 9: Keep cache on scope-open and invalidate current rows on key changes**
 
 Do not call `resetEpmSettingsProjectRows()` on settings open. On explicit root/sub-goal clear or a different root selection, continue to clear the visible settings rows by calling `resetEpmSettingsProjectRows()`, but leave `epmSettingsProjectsCacheRef.current` intact so returning to an old scope key can reuse cached projects.
 
 When label prefix changes, clear label autocomplete results as it already does. Do not clear `subGoalKey`.
 
-- [ ] **Step 10: Run source guards**
+- [ ] **Step 10: Replace preview-era save behavior with settings-cache reconciliation**
+
+In `saveEpmConfig`, delete writes to `epmSettingsPreviewRequested` and do not overwrite settings rows with `refreshEpmProjects()` output. Saving configuration should persist the normalized draft, let the saved config rekey custom project rows, refresh the main EPM view when saved scope exists, and keep the settings project-row cache aligned with the saved scope key.
+
+Add this helper near the settings project loading helpers:
+
+```js
+const updateEpmSettingsProjectRowsAfterSave = (savedConfig) => {
+    const previousCacheKey = getEpmSettingsProjectsCacheKey(epmConfigDraft);
+    const nextCacheKey = getEpmSettingsProjectsCacheKey(savedConfig);
+    if (!nextCacheKey) return;
+    const rawPreviousEntry = previousCacheKey
+        ? epmSettingsProjectsCacheRef.current.get(previousCacheKey)
+        : null;
+    const previousEntry = rawPreviousEntry
+        ? {
+            ...rawPreviousEntry,
+            projects: getHomeBackedEpmSettingsProjects(rawPreviousEntry.projects),
+        }
+        : null;
+    const currentEntry = epmSettingsProjects.length > 0
+        ? {
+            projects: getHomeBackedEpmSettingsProjects(epmSettingsProjects),
+            meta: epmSettingsProjectsFetchMeta,
+            loadedAt: epmSettingsProjectsLoadedAt,
+        }
+        : null;
+    const nextEntry = previousEntry || currentEntry;
+    if (nextEntry) {
+        epmSettingsProjectsCacheRef.current.set(nextCacheKey, nextEntry);
+    }
+};
+```
+
+Replace the post-save success branch with:
+
+```js
+const payload = await response.json();
+const nextConfig = normalizeEpmConfigDraft(payload);
+setEpmConfigDraft(nextConfig);
+epmConfigBaselineRef.current = JSON.stringify(nextConfig);
+updateEpmSettingsProjectRowsAfterSave(nextConfig);
+if (hasSavedEpmScopeConfig(nextConfig)) {
+    await refreshEpmProjects();
+} else {
+    setEpmProjects([]);
+    setEpmProjectsError('');
+    setEpmSettingsProjects([]);
+    setEpmSettingsProjectsLoaded(false);
+}
+```
+
+This preserves Home-backed settings rows across save, handles custom Project id rekeying through `setEpmConfigDraft(nextConfig)`, renders custom rows from the normalized saved config, and avoids bringing main-view project payloads back into the draft settings cache.
+
+- [ ] **Step 11: Run source guards**
 
 Run:
+
+```bash
+rg -n "previewEpmProjectSettings|epmSettingsPreviewRequested|loadEpmProjectPreview" frontend/src/dashboard.jsx frontend/src/epm/epmFetch.js
+```
+
+Expected: no matches. `rg` exits 1 when no matches are found; that is the expected result for this check.
+
+Then run:
 
 ```bash
 node --test tests/test_epm_settings_source_guards.js tests/test_epm_shell_source_guards.js
@@ -1196,7 +1646,7 @@ node --test tests/test_epm_settings_source_guards.js tests/test_epm_shell_source
 
 Expected: PASS.
 
-- [ ] **Step 11: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add frontend/src/dashboard.jsx frontend/src/epm/epmFetch.js tests/test_epm_settings_source_guards.js tests/test_epm_shell_source_guards.js
@@ -1209,9 +1659,22 @@ git commit -m "feat(epm): auto-load cached settings projects"
 - Modify: `frontend/src/dashboard.jsx`
 - Modify: `frontend/dist/dashboard.css`
 - Modify: `tests/test_dashboard_css_extraction.py`
+- Modify: `package.json`
+- Modify: `package-lock.json`
 - Create: `tests/ui/epm_settings_visual_states.spec.js`
 
-- [ ] **Step 1: Add CSS contract tests**
+- [ ] **Step 1: Add Playwright test dependency**
+
+Run:
+
+```bash
+npm install -D @playwright/test
+npx playwright install chromium
+```
+
+Expected: `package.json` and `package-lock.json` include `@playwright/test` as a dev dependency, and Chromium is installed for the local Playwright runtime. Do not skip the dependency update if `tests/ui/epm_settings_visual_states.spec.js` is committed; the committed visual QA spec must be runnable from a clean checkout after `npm ci` plus `npx playwright install chromium`.
+
+- [ ] **Step 2: Add CSS contract tests**
 
 Append this test to `TestDashboardCssFileContract` in `tests/test_dashboard_css_extraction.py`:
 
@@ -1228,10 +1691,11 @@ Append this test to `TestDashboardCssFileContract` in `tests/test_dashboard_css_
         self.assertIn('.epm-prerequisite-panel', css)
         self.assertIn('.epm-project-skeleton-row', css)
         self.assertIn('.epm-project-load-error', css)
+        self.assertIn('.epm-project-row-warning', css)
         self.assertIn('.epm-label-menu-layer', css)
 ```
 
-- [ ] **Step 2: Run the CSS contract test and confirm it fails**
+- [ ] **Step 3: Run the CSS contract test and confirm it fails**
 
 Run:
 
@@ -1241,7 +1705,7 @@ python3 -m unittest tests.test_dashboard_css_extraction.TestDashboardCssFileCont
 
 Expected: FAIL because the EPM-specific layout classes do not exist yet.
 
-- [ ] **Step 3: Add explicit scroll and state styling**
+- [ ] **Step 4: Add explicit scroll and state styling**
 
 Add these classes to `frontend/dist/dashboard.css` near the existing group modal styles:
 
@@ -1327,6 +1791,10 @@ Add these classes to `frontend/dist/dashboard.css` near the existing group modal
     max-height: min(280px, calc(100vh - 24px));
     overflow-y: auto;
 }
+
+.epm-project-row-warning {
+    color: #92400e;
+}
 ```
 
 Layout contract:
@@ -1336,7 +1804,7 @@ Layout contract:
 - The body and panels use `min-height: 0` so flex children can shrink.
 - Project label autocomplete renders in `.epm-label-menu-layer` using fixed positioning from the focused input's `getBoundingClientRect()`, so it is not clipped by the scrolling list or modal footer.
 
-- [ ] **Step 4: Add fixed-position label autocomplete layer**
+- [ ] **Step 5: Add fixed-position label autocomplete layer**
 
 In `frontend/src/dashboard.jsx`, render EPM label search results into a dedicated fixed layer instead of inside the row scroll container. Keep existing row label behavior, but move only the results list.
 
@@ -1344,6 +1812,7 @@ Add state:
 
 ```js
 const [epmLabelMenuAnchor, setEpmLabelMenuAnchor] = useState(null);
+const epmLabelMenuInputRef = useRef(null);
 ```
 
 On label input focus, set the anchor:
@@ -1352,6 +1821,7 @@ On label input focus, set the anchor:
 const openEpmLabelMenu = (projectId, inputNode, showAllLabels) => {
     const rowKey = getEpmLabelRowKey(projectId);
     const rect = inputNode.getBoundingClientRect();
+    epmLabelMenuInputRef.current = inputNode;
     setEpmLabelMenuAnchor({
         projectId,
         rowKey,
@@ -1362,6 +1832,36 @@ const openEpmLabelMenu = (projectId, inputNode, showAllLabels) => {
     setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
     void loadEpmProjectLabels(projectId, showAllLabels);
 };
+```
+
+Keep the fixed menu aligned while the Projects list scrolls or the viewport changes:
+
+```js
+useEffect(() => {
+    if (!epmLabelMenuAnchor) return;
+    const reposition = () => {
+        const inputNode = epmLabelMenuInputRef.current;
+        if (!inputNode || !document.body.contains(inputNode)) {
+            setEpmLabelMenuAnchor(null);
+            epmLabelMenuInputRef.current = null;
+            return;
+        }
+        const rect = inputNode.getBoundingClientRect();
+        setEpmLabelMenuAnchor(prev => prev ? {
+            ...prev,
+            top: rect.bottom + 4,
+            left: rect.left,
+            width: rect.width,
+        } : prev);
+    };
+    const scrollRegion = document.querySelector('.epm-projects-scroll-region');
+    window.addEventListener('resize', reposition);
+    scrollRegion?.addEventListener('scroll', reposition, { passive: true });
+    return () => {
+        window.removeEventListener('resize', reposition);
+        scrollRegion?.removeEventListener('scroll', reposition);
+    };
+}, [epmLabelMenuAnchor?.rowKey]);
 ```
 
 Render the floating results once near the modal root:
@@ -1395,11 +1895,11 @@ Render the floating results once near the modal root:
 )}
 ```
 
-When closing a row menu, also call `setEpmLabelMenuAnchor(null)`.
+When closing a row menu, also call `setEpmLabelMenuAnchor(null)` and `epmLabelMenuInputRef.current = null`.
 
-- [ ] **Step 5: Create visual QA Playwright spec**
+- [ ] **Step 6: Create visual QA Playwright spec**
 
-Create `tests/ui/epm_settings_visual_states.spec.js` with this committed screenshot matrix. It uses mocked endpoints with synthetic data only.
+Create `tests/ui/epm_settings_visual_states.spec.js` with this committed screenshot matrix. It uses mocked endpoints with synthetic data only. The spec must be hermetic: register a catch-all `/api/**` mock before the specific EPM mocks so unrelated dashboard startup requests cannot hit real Jira-backed endpoints during visual QA.
 
 ```js
 const { test, expect } = require('@playwright/test');
@@ -1434,6 +1934,24 @@ const homeProjects = Array.from({ length: 18 }, (_, index) => ({
 }));
 
 async function mockSettings(page, overrides = {}) {
+    await page.route('**/api/**', route => {
+        const url = route.request().url();
+        const handledBySpecificMock = [
+            '/api/epm/config',
+            '/api/epm/scope',
+            '/api/epm/goals',
+            '/api/epm/projects/configuration',
+            '/api/jira/labels',
+        ].some(path => url.includes(path));
+        if (handledBySpecificMock) {
+            return route.fallback();
+        }
+        return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({}),
+        });
+    });
     await page.route('**/api/epm/config', route => route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -1524,6 +2042,18 @@ for (const viewport of viewports) {
             await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-many-rows.png`, fullPage: true });
         });
 
+        test('projects scrolled label menu stays aligned', async ({ page }) => {
+            await mockSettings(page);
+            await openEpmSettings(page);
+            await page.getByRole('tab', { name: 'Projects' }).click();
+            const scrollRegion = page.locator('.epm-projects-scroll-region');
+            await expect(scrollRegion).toBeVisible();
+            await scrollRegion.evaluate(node => { node.scrollTop = node.scrollHeight; });
+            await page.getByPlaceholder('Search Jira labels...').last().click();
+            await expect(page.locator('.epm-label-menu-layer')).toBeVisible();
+            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-scrolled-label-menu.png`, fullPage: true });
+        });
+
         test('projects error state', async ({ page }) => {
             await mockSettings(page, { projectError: true });
             await openEpmSettings(page);
@@ -1535,7 +2065,7 @@ for (const viewport of viewports) {
 }
 ```
 
-- [ ] **Step 6: Run CSS contract and source guards**
+- [ ] **Step 7: Run CSS contract and source guards**
 
 Run:
 
@@ -1546,29 +2076,14 @@ node --test tests/test_epm_settings_source_guards.js tests/test_epm_shell_source
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add frontend/src/dashboard.jsx frontend/dist/dashboard.css tests/test_dashboard_css_extraction.py tests/ui/epm_settings_visual_states.spec.js
+git add frontend/src/dashboard.jsx frontend/dist/dashboard.css tests/test_dashboard_css_extraction.py tests/ui/epm_settings_visual_states.spec.js package.json package-lock.json
 git commit -m "test(epm): add settings projects visual QA"
 ```
 
-## Task 7: Confirm Existing Project Learning
-
-**Files:**
-- No file changes expected.
-
-- [ ] **Step 1: Confirm the existing learning covers this plan**
-
-Run:
-
-```bash
-rg -n "EPM settings.*configured project labels plus selected sprint" AGENTS.md
-```
-
-Expected: one existing line under `## 11. Project Learnings`. Do not add a duplicate learning.
-
-## Task 8: Build, Test, and Visually Verify the Settings Flow
+## Task 7: Build, Test, and Visually Verify the Settings Flow
 
 **Files:**
 - Generated by build: `frontend/dist/dashboard.js`
@@ -1630,10 +2145,11 @@ Run:
 
 ```bash
 mkdir -p /tmp/epm-settings-qa
+npx playwright install chromium
 npx playwright test tests/ui/epm_settings_visual_states.spec.js
 ```
 
-Expected: PASS and screenshots written under `/tmp/epm-settings-qa` for desktop and mobile Scope loaded, Projects prerequisite state, Projects loading skeleton, Projects many rows/missing labels, and Projects error state. Inspect every screenshot before continuing.
+Expected: PASS and screenshots written under `/tmp/epm-settings-qa` for desktop and mobile Scope loaded, Projects prerequisite state, Projects loading skeleton, Projects many rows/missing labels, Projects scrolled label menu, and Projects error state. Inspect every screenshot before continuing.
 
 - [ ] **Step 7: Browser verification**
 
@@ -1647,9 +2163,9 @@ Use the in-app browser or Playwright against `http://127.0.0.1:5050` and verify:
 - Opening Projects auto-loads Jira Home projects once for that cache key.
 - Closing and reopening settings does not refetch sub-goals.
 - Returning to Projects for the same scope uses cached project rows.
-- `Refresh projects` is in the Projects header and forces a new project fetch without blanking existing rows.
+- `Refresh from Jira Home` is in the Projects header and forces a new project fetch without blanking existing rows.
 - Project rows scroll inside the Projects sub-tab and do not sit underneath the modal footer.
-- Label autocomplete menus render above the scroll region/footer and are not clipped.
+- Label autocomplete menus render above the scroll region/footer, stay aligned after scrolling the project list, and are not clipped.
 - Save persists project label mapping and does not clear the Home project cache for the same scope.
 - Active EPM rollup requests use the configured project label and selected sprint value; they do not use Jira team or team-group filters.
 
@@ -1659,6 +2175,7 @@ Capture screenshots for:
 - Desktop and mobile Projects prerequisite state.
 - Desktop and mobile Projects loading skeleton.
 - Desktop and mobile Projects with many rows, long/missing labels, header refresh/status, and footer visible.
+- Desktop and mobile Projects with the list scrolled and a lower-row label autocomplete menu open.
 - Desktop and mobile Projects error state with inline Retry.
 
 - [ ] **Step 8: Commit generated bundle**
@@ -1674,7 +2191,7 @@ git commit -m "build(epm): update settings project bundle"
 - No project mapping rows in the Scope sub-tab.
 - Projects tab is always clickable; missing prerequisites are shown inside the Projects panel with direct Scope actions.
 - No manual test/preview required before Projects can load.
-- Refresh projects is in the Projects header with cached/last-loaded status, not in the modal footer.
+- `Refresh from Jira Home` is in the Projects header with cached/last-loaded status, not in the modal footer.
 - Loading uses skeleton rows; refresh preserves existing rows; errors show inline Retry; empty state offers Add custom Project.
 - EPM sub-tabs have `tablist`/`tab`/`tabpanel` semantics, selected state, keyboard navigation, and stable focus.
 - No clearing `subGoalKey` except explicit clear or actual root-goal change.
@@ -1682,6 +2199,5 @@ git commit -m "build(epm): update settings project bundle"
 - No stale labels from cached project payloads; labels are shaped from the latest config.
 - No Jira team or team-group filter in EPM project configuration or EPM rollup JQL.
 - No rows hidden behind the modal footer in the Projects sub-tab.
-- Active EPM visibly shows the selected sprint value before this settings work ships.
-- Desktop and mobile visual QA screenshots cover Scope, prerequisites, loading, many rows, long/missing labels, and error states.
+- Desktop and mobile visual QA screenshots cover Scope, prerequisites, loading, many rows, long/missing labels, scrolled label menu alignment, and error states.
 - Full test suite passes before merge or push.

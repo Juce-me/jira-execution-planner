@@ -104,9 +104,13 @@ export function normalizeEpmSettingsKeyPart(value) {
     return String(value || '').trim().toUpperCase();
 }
 
+function normalizeEpmLabelPrefix(config) {
+    return String(config?.labelPrefix || '').trim();
+}
+
 export function isEpmProjectsConfigReady(config) {
     const subGoalKey = normalizeEpmSettingsKeyPart(config?.scope?.subGoalKey);
-    const labelPrefix = String(config?.labelPrefix || '').trim();
+    const labelPrefix = normalizeEpmLabelPrefix(config);
     return Boolean(subGoalKey && labelPrefix);
 }
 
@@ -115,7 +119,7 @@ export function getEpmProjectPrerequisites(config) {
     if (!normalizeEpmSettingsKeyPart(config?.scope?.subGoalKey)) {
         missing.push('subGoal');
     }
-    if (!String(config?.labelPrefix || '').trim()) {
+    if (!normalizeEpmLabelPrefix(config)) {
         missing.push('labelPrefix');
     }
     return missing;
@@ -126,6 +130,6 @@ export function getEpmSettingsProjectsCacheKey(config) {
     return [
         normalizeEpmSettingsKeyPart(config?.scope?.rootGoalKey),
         normalizeEpmSettingsKeyPart(config?.scope?.subGoalKey),
-        String(config?.labelPrefix || '').trim()
+        normalizeEpmLabelPrefix(config)
     ].join('::');
 }

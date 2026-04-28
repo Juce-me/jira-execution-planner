@@ -16,9 +16,9 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('if (isEpmConfigDirty) return true;'), 'Expected EPM dirty-state participation in modal dirty checks');
     assert.ok(dashboardSource.includes('isEpmConfigDirty,'), 'Expected EPM dirty-state participation in unsaved section counting');
     assert.ok(dashboardSource.includes('const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);'), 'Expected EPM config loader wrapper');
-    assert.ok(dashboardSource.includes('const loadEpmScopeMeta = async () => {'), 'Expected EPM scope metadata loader');
-    assert.ok(dashboardSource.includes('const loadEpmGoals = async (rootGoalKey = \'\') => {'), 'Expected EPM goals loader');
-    assert.ok(dashboardSource.includes('const loadEpmProjects = async () => {'), 'Expected EPM projects loader');
+    assert.ok(dashboardSource.includes('const loadEpmScopeMeta = () => fetchEpmScope(BACKEND_URL);'), 'Expected EPM scope metadata loader wrapper');
+    assert.ok(dashboardSource.includes('const loadEpmGoals = (rootGoalKey = \'\') => fetchEpmGoals(BACKEND_URL, rootGoalKey);'), 'Expected EPM goals loader wrapper');
+    assert.ok(dashboardSource.includes('const loadEpmProjects = () => fetchEpmProjects(BACKEND_URL);'), 'Expected EPM projects loader wrapper');
     assert.ok(dashboardSource.includes('const saveEpmConfig = async () => {'), 'Expected EPM config saver');
     assert.ok(dashboardSource.includes('const normalizeEpmConfigDraft = (config) => {'), 'Expected EPM config normalizer');
     assert.ok(dashboardSource.includes('const hasSavedEpmScopeConfig = (config) => {'), 'Expected saved-scope helper');
@@ -31,11 +31,6 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const currentProjectId = projectIdOverride || getEpmProjectIdentity(currentProject);'), 'Expected EPM issue fetch to use the shared project identity');
     assert.ok(dashboardSource.includes('const projectId = getEpmProjectIdentity(project);'), 'Expected EPM project picker options to use the shared project identity');
     assert.ok(dashboardSource.includes('const openEpmSettingsTab = () => {'), 'Expected helper that opens the EPM settings tab without flashing stale project rows');
-    assert.ok(dashboardSource.includes('fetch(`${BACKEND_URL}/api/epm/config`'), 'Expected EPM config fetch endpoint');
-    assert.ok(dashboardSource.includes('fetch(`${BACKEND_URL}/api/epm/scope`'), 'Expected EPM scope fetch endpoint');
-    assert.ok(dashboardSource.includes('fetch(`${BACKEND_URL}/api/epm/goals`'), 'Expected EPM goals fetch endpoint');
-    assert.ok(dashboardSource.includes('fetch(`${BACKEND_URL}/api/epm/projects`'), 'Expected EPM projects fetch endpoint');
-    assert.ok(dashboardSource.includes('fetch(`${BACKEND_URL}/api/epm/projects/preview`'), 'Expected EPM project preview fetch endpoint');
     assert.ok(dashboardSource.includes("const [epmSettingsProjects, setEpmSettingsProjects] = useState([]);"), 'Expected settings-scoped EPM project preview state');
     assert.ok(dashboardSource.includes("const [epmSettingsProjectsLoading, setEpmSettingsProjectsLoading] = useState(false);"), 'Expected settings-scoped EPM project preview loading state');
     assert.ok(dashboardSource.includes("const [epmSettingsProjectsError, setEpmSettingsProjectsError] = useState('');"), 'Expected settings-scoped EPM project preview error state');

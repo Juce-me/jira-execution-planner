@@ -202,8 +202,12 @@ class TestEpmRollupApi(unittest.TestCase):
             response = self.client.get('/api/epm/projects/project-1/rollup?tab=active&sprint=42')
 
         self.assertEqual(response.status_code, 200)
-        for call in mock_fetch.call_args_list:
-            self.assertIn('Sprint = 42', call.args[0])
+        jql_queries = [call.args[0] for call in mock_fetch.call_args_list]
+        self.assertIn('labels = "synthetic_label_alpha"', jql_queries[0])
+        for jql in jql_queries:
+            self.assertIn('Sprint = 42', jql)
+            self.assertNotIn('Team[Team]', jql)
+            self.assertNotIn('"Team"', jql)
         payload = response.get_json()
         self.assertEqual(payload['initiatives']['SYN-I1']['issue']['sprint'], [{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
         self.assertEqual(payload['initiatives']['SYN-I1']['epics']['SYN-E2']['issue']['sprint'], [{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
@@ -372,6 +376,23 @@ class TestEpmRollupApi(unittest.TestCase):
         finally:
             jira_server.EPIC_LINK_FIELD_CACHE = None
             jira_server.PARENT_NAME_FIELD_CACHE = None
+
+    def test_epm_rollup_builder_does_not_reference_team_group_scope(self):
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[1]
+        source = (repo_root / 'epm_rollup.py').read_text(encoding='utf-8')
+
+        for forbidden in (
+            'teamGroups',
+            'team_groups',
+            'TEAM_FIELD',
+            'Team[Team]',
+            '"Team"',
+            'get_team',
+            'resolve_team',
+        ):
+            self.assertNotIn(forbidden, source)
 
     def test_epic_link_resolver_uses_names_map_before_rest_lookup(self):
         jira_server.EPIC_LINK_FIELD_CACHE = None

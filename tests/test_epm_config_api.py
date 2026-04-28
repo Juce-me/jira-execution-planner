@@ -374,6 +374,12 @@ class TestEpmConfigApi(unittest.TestCase):
                     'version': 1,
                     'projects': {'selected': []},
                     'teamGroups': {'version': 1, 'groups': []},
+                    'epm': {
+                        'version': 2,
+                        'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+                        'labelPrefix': 'rnd_project_',
+                        'projects': {},
+                    },
                 },
                 handle,
             )
@@ -410,7 +416,7 @@ class TestEpmConfigApi(unittest.TestCase):
             self.assertEqual(payload['projects']['tsq-1']['name'], 'Synthetic Launch')
             self.assertEqual(payload['projects']['tsq-1']['label'], 'synthetic_label_alpha')
 
-            self.assertEqual(jira_server.EPM_PROJECTS_CACHE, {})
+            self.assertEqual(jira_server.EPM_PROJECTS_CACHE, {'dummy': {'value': 1}})
             self.assertEqual(jira_server.EPM_ISSUES_CACHE, {})
             self.assertEqual(jira_server.TASKS_CACHE, {'dummy': {'value': 3}})
 
@@ -427,6 +433,68 @@ class TestEpmConfigApi(unittest.TestCase):
         self.assertEqual(saved['epm']['projects']['tsq-1']['id'], 'tsq-1')
         self.assertEqual(saved['epm']['projects']['tsq-1']['label'], 'synthetic_label_alpha')
         self.assertEqual(saved['epm']['projects']['tsq-1']['name'], 'Synthetic Launch')
+
+    def test_post_epm_config_clears_project_cache_when_scope_is_added(self):
+        with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
+            json.dump(
+                {
+                    'version': 1,
+                    'projects': {'selected': []},
+                    'teamGroups': {'version': 1, 'groups': []},
+                },
+                handle,
+            )
+
+        with patch.object(jira_server, 'EPM_PROJECTS_CACHE', {'old-empty-scope': {'value': 1}}), \
+             patch.object(jira_server, 'EPM_ISSUES_CACHE', {'old-issues': {'value': 2}}), \
+             patch.object(jira_server, 'EPM_ROLLUP_CACHE', {'old-rollup': {'value': 3}}):
+            response = self.client.post(
+                '/api/epm/config',
+                json={
+                    'scope': {'rootGoalKey': 'ROOT-NEW', 'subGoalKey': 'CHILD-NEW'},
+                    'labelPrefix': 'rnd_project_',
+                    'projects': {},
+                },
+            )
+
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+            self.assertEqual(jira_server.EPM_PROJECTS_CACHE, {})
+            self.assertEqual(jira_server.EPM_ISSUES_CACHE, {})
+            self.assertEqual(jira_server.EPM_ROLLUP_CACHE, {})
+
+    def test_post_epm_config_clears_project_cache_when_scope_changes(self):
+        with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
+            json.dump(
+                {
+                    'version': 1,
+                    'projects': {'selected': []},
+                    'teamGroups': {'version': 1, 'groups': []},
+                    'epm': {
+                        'version': 2,
+                        'scope': {'rootGoalKey': 'ROOT-OLD', 'subGoalKey': 'CHILD-OLD'},
+                        'labelPrefix': 'rnd_project_',
+                        'projects': {},
+                    },
+                },
+                handle,
+            )
+
+        with patch.object(jira_server, 'EPM_PROJECTS_CACHE', {'old-scope': {'value': 1}}), \
+             patch.object(jira_server, 'EPM_ISSUES_CACHE', {'old-issues': {'value': 2}}), \
+             patch.object(jira_server, 'EPM_ROLLUP_CACHE', {'old-rollup': {'value': 3}}):
+            response = self.client.post(
+                '/api/epm/config',
+                json={
+                    'scope': {'rootGoalKey': 'ROOT-NEW', 'subGoalKey': 'CHILD-NEW'},
+                    'labelPrefix': 'rnd_project_',
+                    'projects': {},
+                },
+            )
+
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+            self.assertEqual(jira_server.EPM_PROJECTS_CACHE, {})
+            self.assertEqual(jira_server.EPM_ISSUES_CACHE, {})
+            self.assertEqual(jira_server.EPM_ROLLUP_CACHE, {})
 
     def test_jira_labels_prefix_filters_case_insensitive_startswith(self):
         labels = [

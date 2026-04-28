@@ -1374,11 +1374,71 @@ def get_effective_board_id():
     return get_board_config().get('boardId', '').strip()
 
 
+def build_epm_home_projects_cache_key(epm_scope):
+    scope = epm_scope if isinstance(epm_scope, dict) else {}
+    return json.dumps({
+        'rootGoalKey': normalize_epm_upper_text(scope.get('rootGoalKey')),
+        'subGoalKey': normalize_epm_upper_text(scope.get('subGoalKey')),
+    }, sort_keys=True)
+
+
+def clear_epm_project_cache():
+    with _epm_cache_lock:
+        EPM_PROJECTS_CACHE.clear()
+
+
+def clear_epm_rollup_caches():
+    with _epm_cache_lock:
+        EPM_ISSUES_CACHE.clear()
+        EPM_ROLLUP_CACHE.clear()
+
+
 def clear_epm_caches():
     with _epm_cache_lock:
         EPM_PROJECTS_CACHE.clear()
         EPM_ISSUES_CACHE.clear()
         EPM_ROLLUP_CACHE.clear()
+
+
+def build_epm_home_projects_state(epm_scope, force_refresh=False):
+    cache_key = build_epm_home_projects_cache_key(epm_scope)
+    if not force_refresh:
+        with _epm_cache_lock:
+            cached = EPM_PROJECTS_CACHE.get(cache_key)
+            if cached and (time.time() - cached['timestamp']) < EPM_PROJECTS_CACHE_TTL_SECONDS:
+                return {
+                    'homeProjects': cached.get('homeProjects', []),
+                    'cacheHit': True,
+                    'fetchedAt': cached.get('fetchedAt', ''),
+                    'homeProjectCount': len(cached.get('homeProjects', [])),
+                    'homeProjectLimit': cached.get('homeProjectLimit'),
+                    'possiblyTruncated': bool(cached.get('possiblyTruncated')),
+                }
+
+    home_projects = fetch_epm_home_projects(epm_scope)
+    home_project_limit = epm_home.HOME_MAX_PROJECTS_PER_GOAL
+    possibly_truncated = bool(home_project_limit and len(home_projects) >= home_project_limit)
+    fetched_at = datetime.utcnow().isoformat(timespec='seconds') + 'Z'
+    with _epm_cache_lock:
+        EPM_PROJECTS_CACHE[cache_key] = {
+            'timestamp': time.time(),
+            'fetchedAt': fetched_at,
+            'homeProjects': home_projects,
+            'homeProjectLimit': home_project_limit,
+            'possiblyTruncated': possibly_truncated,
+        }
+    return {
+        'homeProjects': home_projects,
+        'cacheHit': False,
+        'fetchedAt': fetched_at,
+        'homeProjectCount': len(home_projects),
+        'homeProjectLimit': home_project_limit,
+        'possiblyTruncated': possibly_truncated,
+    }
+
+
+def get_cached_epm_home_projects(epm_scope, force_refresh=False):
+    return build_epm_home_projects_state(epm_scope, force_refresh=force_refresh)['homeProjects']
 
 
 def build_jira_headers():
@@ -1642,28 +1702,41 @@ def find_epm_config_row(projects, project_id):
     return None
 
 
-def build_epm_projects_payload(epm_config):
+def build_epm_projects_payload(epm_config, force_refresh=False):
     normalized_config = normalize_epm_config(epm_config or {})
     projects = []
     epm_scope = normalized_config.get('scope') or {}
-    for home_project in fetch_epm_home_projects(epm_scope):
+    home_state = build_epm_home_projects_state(epm_scope, force_refresh=force_refresh)
+    returned_home_project_ids = set()
+    for home_project in home_state['homeProjects']:
         project_id = home_project.get('homeProjectId')
+        if project_id:
+            returned_home_project_ids.add(project_id)
         config_row = find_epm_config_row(normalized_config['projects'], project_id)
         projects.append(build_epm_project_payload(home_project, config_row))
     for row in normalized_config['projects'].values():
-        if normalize_epm_text(row.get('homeProjectId')):
+        home_project_id = normalize_epm_text(row.get('homeProjectId'))
+        if home_project_id and home_project_id in returned_home_project_ids:
+            continue
+        if home_project_id:
+            missing_home_row = build_custom_project_payload(row)
+            missing_home_row['homeProjectId'] = home_project_id
+            missing_home_row['missingFromHomeFetch'] = True
+            missing_home_row['matchState'] = 'missing-home-project'
+            projects.append(missing_home_row)
             continue
         projects.append(build_custom_project_payload(row))
-    return {'projects': projects}
+    return {
+        'projects': projects,
+        'cacheHit': home_state['cacheHit'],
+        'fetchedAt': home_state['fetchedAt'],
+        'homeProjectCount': home_state['homeProjectCount'],
+        'homeProjectLimit': home_state['homeProjectLimit'],
+        'possiblyTruncated': home_state['possiblyTruncated'],
+    }
 
 
 def find_epm_project_or_404(project_id):
-    with _epm_cache_lock:
-        for entry in EPM_PROJECTS_CACHE.values():
-            for project in (entry.get('data') or {}).get('projects', []):
-                if project.get('id') == project_id or project.get('homeProjectId') == project_id:
-                    return project
-
     epm_config = get_epm_config()
     epm_scope = epm_config.get('scope') or {}
     config_row = find_epm_config_row(epm_config['projects'], project_id)
@@ -1672,11 +1745,11 @@ def find_epm_project_or_404(project_id):
         home_project_id = normalize_epm_text(config_row.get('homeProjectId'))
         if not home_project_id:
             return build_custom_project_payload(config_row)
-        for home_project in fetch_epm_home_projects(epm_scope):
+        for home_project in get_cached_epm_home_projects(epm_scope):
             if home_project.get('homeProjectId') == home_project_id:
                 return build_epm_project_payload(home_project, config_row)
 
-    for home_project in fetch_epm_home_projects(epm_scope):
+    for home_project in get_cached_epm_home_projects(epm_scope):
         if home_project.get('homeProjectId') == project_id:
             config_row = find_epm_config_row(epm_config['projects'], project_id)
             return build_epm_project_payload(home_project, config_row)
@@ -6722,22 +6795,20 @@ def get_epm_goals_endpoint():
 @app.route('/api/epm/projects', methods=['GET'])
 def get_epm_projects_endpoint():
     epm_config = get_epm_config()
-    cache_key = json.dumps(epm_config, sort_keys=True)
-    with _epm_cache_lock:
-        cached = EPM_PROJECTS_CACHE.get(cache_key)
-        if cached and (time.time() - cached['timestamp']) < EPM_PROJECTS_CACHE_TTL_SECONDS:
-            return jsonify(cached['data'])
+    force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
+    return jsonify(build_epm_projects_payload(epm_config, force_refresh=force_refresh))
 
-    payload = build_epm_projects_payload(epm_config)
-    with _epm_cache_lock:
-        EPM_PROJECTS_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
-    return jsonify(payload)
+
+@app.route('/api/epm/projects/configuration', methods=['POST'])
+def configure_epm_projects_endpoint():
+    payload = normalize_epm_config(request.get_json(silent=True) or {})
+    force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
+    return jsonify(build_epm_projects_payload(payload, force_refresh=force_refresh))
 
 
 @app.route('/api/epm/projects/preview', methods=['POST'])
 def preview_epm_projects_endpoint():
-    payload = normalize_epm_config(request.get_json(silent=True) or {})
-    return jsonify(build_epm_projects_payload(payload))
+    return configure_epm_projects_endpoint()
 
 
 @app.route('/api/epm/projects/<home_project_id>/issues', methods=['GET'])
@@ -6826,9 +6897,14 @@ def save_epm_config_endpoint():
     payload = normalize_epm_config(raw_payload)
     try:
         dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+        previous_epm_config = normalize_epm_config(dashboard_config.get('epm') or {})
+        previous_scope_key = build_epm_home_projects_cache_key(previous_epm_config.get('scope') or {})
+        next_scope_key = build_epm_home_projects_cache_key(payload.get('scope') or {})
         dashboard_config['epm'] = payload
         save_dashboard_config(dashboard_config)
-        clear_epm_caches()
+        if previous_scope_key != next_scope_key:
+            clear_epm_project_cache()
+        clear_epm_rollup_caches()
     except Exception as e:
         return jsonify({'error': 'Failed to save EPM config', 'message': str(e)}), 500
     return jsonify(payload)

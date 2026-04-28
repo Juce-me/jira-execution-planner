@@ -22,7 +22,7 @@ import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
-import { fetchEpmConfig, fetchEpmScope, fetchEpmGoals, fetchEpmProjects, previewEpmProjects, fetchEpmProjectRollup } from './epm/epmFetch.js';
+import { fetchEpmConfig, fetchEpmScope, fetchEpmGoals, fetchEpmProjects, fetchEpmConfigurationProjects, fetchEpmProjectRollup } from './epm/epmFetch.js';
 import { EpmRollupPanel } from './epm/EpmRollupPanel.jsx';
 import {
     buildRollupTree,
@@ -221,7 +221,16 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmSettingsProjects, setEpmSettingsProjects] = useState([]);
             const [epmSettingsProjectsLoading, setEpmSettingsProjectsLoading] = useState(false);
             const [epmSettingsProjectsError, setEpmSettingsProjectsError] = useState('');
-            const [epmSettingsPreviewRequested, setEpmSettingsPreviewRequested] = useState(false);
+            const [epmSettingsProjectsLoaded, setEpmSettingsProjectsLoaded] = useState(false);
+            const [epmSettingsProjectsLoadedAt, setEpmSettingsProjectsLoadedAt] = useState('');
+            const [epmSettingsProjectsFetchMeta, setEpmSettingsProjectsFetchMeta] = useState({
+                cacheHit: false,
+                fetchedAt: '',
+                homeProjectCount: 0,
+                homeProjectLimit: null,
+                possiblyTruncated: false,
+            });
+            const [epmSettingsProjectsRefreshing, setEpmSettingsProjectsRefreshing] = useState(false);
             const [epmSettingsTab, setEpmSettingsTab] = useState('scope');
             const [epmLabelShowAll, setEpmLabelShowAll] = useState({});
             const [epmLabelChanging, setEpmLabelChanging] = useState({});
@@ -568,6 +577,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const epmProjectsPendingSelectionRef = useRef(false);
             const epmProjectsRequestIdRef = useRef(0);
             const epmSettingsProjectsRequestIdRef = useRef(0);
+            const epmSettingsProjectsCacheRef = useRef(new Map());
             const epmDraftIdCounterRef = useRef(0);
             const epmRollupRequestIdRef = useRef(0);
             const epmSubGoalsRequestIdRef = useRef(0);
@@ -596,13 +606,92 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const loadEpmScopeMeta = () => fetchEpmScope(BACKEND_URL);
             const loadEpmGoals = (rootGoalKey = '') => fetchEpmGoals(BACKEND_URL, rootGoalKey);
             const loadEpmProjects = () => fetchEpmProjects(BACKEND_URL);
-            const loadEpmProjectPreview = (draftConfig) => previewEpmProjects(BACKEND_URL, normalizeEpmConfigDraft(draftConfig));
+            const loadEpmConfigurationProjects = async (draftConfig, options = {}) => {
+                return fetchEpmConfigurationProjects(BACKEND_URL, draftConfig, options);
+            };
             const resetEpmSettingsProjectRows = () => {
                 epmSettingsProjectsRequestIdRef.current += 1;
-                setEpmSettingsPreviewRequested(false);
                 setEpmSettingsProjects([]);
                 setEpmSettingsProjectsLoading(false);
                 setEpmSettingsProjectsError('');
+                setEpmSettingsProjectsLoaded(false);
+                setEpmSettingsProjectsLoadedAt('');
+                setEpmSettingsProjectsRefreshing(false);
+            };
+            const getHomeBackedEpmSettingsProjects = (projects) => {
+                return Array.isArray(projects)
+                    ? projects.filter(project => project?.homeProjectId !== null)
+                    : [];
+            };
+            const ensureEpmSettingsProjectsLoaded = async (options = {}) => {
+                const forceRefresh = Boolean(options.forceRefresh);
+                const draftConfig = normalizeEpmConfigDraft(options.draftConfig || epmConfigDraft);
+                const cacheKey = options.cacheKey || getEpmSettingsProjectsCacheKey(draftConfig);
+                if (!cacheKey) {
+                    setEpmSettingsProjectsError('');
+                    setEpmSettingsProjectsLoading(false);
+                    setEpmSettingsProjectsRefreshing(false);
+                    setEpmSettingsProjectsLoaded(false);
+                    setEpmSettingsProjectsLoadedAt('');
+                    return [];
+                }
+                if (!forceRefresh && epmSettingsProjectsCacheRef.current.has(cacheKey)) {
+                    const cachedEntry = epmSettingsProjectsCacheRef.current.get(cacheKey) || {};
+                    const cachedProjects = Array.isArray(cachedEntry.projects) ? cachedEntry.projects : [];
+                    const cachedLoadedAt = String(cachedEntry.loadedAt || '');
+                    setEpmSettingsProjects(cachedProjects);
+                    setEpmSettingsProjectsFetchMeta(cachedEntry.meta || {
+                        cacheHit: true,
+                        fetchedAt: '',
+                        homeProjectCount: cachedProjects.length,
+                        homeProjectLimit: null,
+                        possiblyTruncated: false,
+                    });
+                    setEpmSettingsProjectsError('');
+                    setEpmSettingsProjectsLoaded(true);
+                    setEpmSettingsProjectsLoadedAt(cachedLoadedAt);
+                    return cachedProjects;
+                }
+
+                epmSettingsProjectsRequestIdRef.current += 1;
+                const requestId = epmSettingsProjectsRequestIdRef.current;
+                const hasExistingRows = epmSettingsProjectsLoaded && epmSettingsProjectRows.length > 0;
+                setEpmSettingsProjectsLoading(!hasExistingRows);
+                setEpmSettingsProjectsRefreshing(hasExistingRows);
+                setEpmSettingsProjectsError('');
+                try {
+                    const payload = await loadEpmConfigurationProjects(draftConfig, { forceRefresh });
+                    if (epmSettingsProjectsRequestIdRef.current !== requestId) {
+                        return [];
+                    }
+                    const nextProjects = getHomeBackedEpmSettingsProjects(payload.projects);
+                    const nextMeta = {
+                        cacheHit: Boolean(payload.cacheHit),
+                        fetchedAt: String(payload.fetchedAt || ''),
+                        homeProjectCount: Number(payload.homeProjectCount || nextProjects.filter(project => project?.homeProjectId).length || 0),
+                        homeProjectLimit: payload.homeProjectLimit ?? null,
+                        possiblyTruncated: Boolean(payload.possiblyTruncated),
+                    };
+                    const loadedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    epmSettingsProjectsCacheRef.current.set(cacheKey, { projects: nextProjects, meta: nextMeta, loadedAt });
+                    setEpmSettingsProjects(nextProjects);
+                    setEpmSettingsProjectsFetchMeta(nextMeta);
+                    setEpmSettingsProjectsLoaded(true);
+                    setEpmSettingsProjectsLoadedAt(loadedAt);
+                    return nextProjects;
+                } catch (err) {
+                    if (epmSettingsProjectsRequestIdRef.current !== requestId) {
+                        return [];
+                    }
+                    console.error('Failed to load EPM projects:', err);
+                    setEpmSettingsProjectsError(err?.message || 'Failed to load EPM projects.');
+                    return [];
+                } finally {
+                    if (epmSettingsProjectsRequestIdRef.current === requestId) {
+                        setEpmSettingsProjectsLoading(false);
+                        setEpmSettingsProjectsRefreshing(false);
+                    }
+                }
             };
             const refreshEpmProjects = async () => {
                 epmProjectsRequestIdRef.current += 1;
@@ -633,40 +722,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     }
                 }
             };
-            const previewEpmProjectSettings = async (draftConfig = epmConfigDraft) => {
-                const normalizedDraft = normalizeEpmConfigDraft(draftConfig);
-                epmSettingsProjectsRequestIdRef.current += 1;
-                const requestId = epmSettingsProjectsRequestIdRef.current;
-                setEpmSettingsPreviewRequested(true);
-                setEpmSettingsProjectsLoading(true);
-                setEpmSettingsProjectsError('');
-                if (!hasSavedEpmScopeConfig(normalizedDraft)) {
-                    setEpmSettingsProjects([]);
-                    setEpmSettingsProjectsLoading(false);
-                    return [];
-                }
-                try {
-                    const payload = await loadEpmProjectPreview(normalizedDraft);
-                    if (epmSettingsProjectsRequestIdRef.current !== requestId) {
-                        return [];
-                    }
-                    const nextProjects = Array.isArray(payload.projects) ? payload.projects : [];
-                    setEpmSettingsProjects(nextProjects);
-                    return nextProjects;
-                } catch (err) {
-                    if (epmSettingsProjectsRequestIdRef.current !== requestId) {
-                        return [];
-                    }
-                    console.error('Failed to preview EPM projects:', err);
-                    setEpmSettingsProjects([]);
-                    setEpmSettingsProjectsError(err?.message || 'Failed to preview EPM projects.');
-                    return [];
-                } finally {
-                    if (epmSettingsProjectsRequestIdRef.current === requestId) {
-                        setEpmSettingsProjectsLoading(false);
-                    }
-                }
-            };
             const saveEpmConfig = async () => {
                 setEpmConfigSaving(true);
                 setGroupDraftError('');
@@ -687,12 +742,12 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     if (hasSavedEpmScopeConfig(nextConfig)) {
                         const nextProjects = await refreshEpmProjects();
                         setEpmSettingsProjects(nextProjects);
-                        setEpmSettingsPreviewRequested(true);
+                        setEpmSettingsProjectsLoaded(true);
                     } else {
                         setEpmProjects([]);
                         setEpmProjectsError('');
                         setEpmSettingsProjects([]);
-                        setEpmSettingsPreviewRequested(false);
+                        setEpmSettingsProjectsLoaded(false);
                     }
                 } catch (err) {
                     const message = err?.message || 'Failed to save EPM settings.';
@@ -1306,6 +1361,31 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             }, [showGroupManage, groupManageTab]);
 
             useEffect(() => {
+                if (epmSettingsProjectsCacheKey && epmSettingsProjectsCacheRef.current.has(epmSettingsProjectsCacheKey)) return;
+                setEpmSettingsProjectsLoaded(false);
+                setEpmSettingsProjectsLoadedAt('');
+                setEpmSettingsProjectsFetchMeta({
+                    cacheHit: false,
+                    fetchedAt: '',
+                    homeProjectCount: 0,
+                    homeProjectLimit: null,
+                    possiblyTruncated: false,
+                });
+            }, [epmSettingsProjectsCacheKey]);
+
+            useEffect(() => {
+                if (!showGroupManage || groupManageTab !== 'epm' || epmSettingsTab !== 'projects') return;
+                if (!canLoadEpmProjects || !epmSettingsProjectsCacheKey) return;
+                const draftSnapshot = normalizeEpmConfigDraft(epmConfigDraft);
+                const cacheKeySnapshot = getEpmSettingsProjectsCacheKey(draftSnapshot);
+                if (!cacheKeySnapshot || cacheKeySnapshot !== epmSettingsProjectsCacheKey) return;
+                void ensureEpmSettingsProjectsLoaded({
+                    draftConfig: draftSnapshot,
+                    cacheKey: cacheKeySnapshot,
+                }).catch(() => {});
+            }, [showGroupManage, groupManageTab, epmSettingsTab, canLoadEpmProjects, epmSettingsProjectsCacheKey]);
+
+            useEffect(() => {
                 if (!showGroupManage) return;
                 const groups = groupDraft?.groups || [];
                 if (!groups.length) {
@@ -1890,6 +1970,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             }, [epmConfigDraft]);
             const epmProjectPrerequisites = React.useMemo(() => getEpmProjectPrerequisites(epmConfigDraft), [epmConfigDraft]);
             const canLoadEpmProjects = epmProjectPrerequisites.length === 0;
+            const epmSettingsProjectsCacheKey = React.useMemo(() => getEpmSettingsProjectsCacheKey(epmConfigDraft), [epmConfigDraft]);
             const epmSettingsProjectRows = React.useMemo(() => {
                 const configuredProjects = epmConfigDraft.projects || {};
                 const rows = [];
@@ -16003,8 +16084,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                             );
                                                         })}
                                                     </div>
-                                                ) : !epmSettingsPreviewRequested ? (
-                                                    <div className="group-pane-empty">Run Test Configuration to preview projects for the selected draft scope.</div>
                                                 ) : epmSettingsProjectsError ? (
                                                     <div className="group-pane-empty">{epmSettingsProjectsError}</div>
                                                 ) : epmSettingsProjects.length === 0 ? (
@@ -16523,25 +16602,21 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     </div>
                                 )}
                                 <div className="group-modal-footer">
-                                    <div className="group-modal-button-row">
-                                        <button
-                                            className="secondary compact"
-                                            onClick={groupManageTab === 'epm'
-                                                ? () => { void previewEpmProjectSettings().catch(() => {}); }
-                                                : testGroupsConfigConnection}
-                                            disabled={groupManageTab === 'epm'
-                                                ? (epmConfigLoading || epmConfigSaving || epmSettingsProjectsLoading || !hasDraftEpmScope)
-                                                : groupTesting}
-                                            type="button"
-                                        >
-                                            {groupManageTab === 'epm'
-                                                ? (epmSettingsProjectsLoading ? 'Previewing...' : 'Test configuration')
-                                                : (groupTesting ? 'Testing...' : 'Test configuration')}
-                                        </button>
-                                        {groupManageTab !== 'epm' && groupTestMessage && (
-                                            <span className="group-modal-meta" aria-live="polite">{groupTestMessage}</span>
-                                        )}
-                                    </div>
+                                    {groupManageTab !== 'epm' && (
+                                        <div className="group-modal-button-row">
+                                            <button
+                                                className="secondary compact"
+                                                onClick={testGroupsConfigConnection}
+                                                disabled={groupTesting}
+                                                type="button"
+                                            >
+                                                {groupTesting ? 'Testing...' : 'Test configuration'}
+                                            </button>
+                                            {groupTestMessage && (
+                                                <span className="group-modal-meta" aria-live="polite">{groupTestMessage}</span>
+                                            )}
+                                        </div>
+                                    )}
                                     <div className="group-modal-button-row">
                                         <button className="secondary compact lift-hover" onClick={requestCloseGroupManage} type="button">
                                             Cancel

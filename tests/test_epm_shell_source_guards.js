@@ -39,6 +39,10 @@ test('dashboard source wires EPM rollup loading and metadata-only rendering', ()
     assert.ok(dashboardSource.includes("if (selectedView !== 'epm') return;"), 'Expected EPM-only project loading effect');
     assert.ok(dashboardSource.includes('const loadEpmProjects = () => fetchEpmProjects(BACKEND_URL);'), 'Expected dashboard.jsx to load EPM projects through wrapper');
     assert.ok(epmFetchSource.includes("fetch(`${backendUrl}/api/epm/projects`, { cache: 'no-cache' })"), 'Expected EPM projects fetch in epmFetch.js');
+    assert.ok(epmFetchSource.includes('export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {}) {'), 'Expected EPM configuration project loader');
+    assert.ok(epmFetchSource.includes('const refreshParam = forceRefresh ? \'?refresh=true\' : \'\';'), 'Expected project configuration refresh query support');
+    assert.ok(epmFetchSource.includes('fetch(`${backendUrl}/api/epm/projects/configuration${refreshParam}`'), 'Expected configuration fetch endpoint');
+    assert.ok(!epmFetchSource.includes('/api/epm/projects/preview'), 'EPM settings must not call preview endpoint');
     assert.ok(dashboardSource.includes("if (epmTab === 'active' && !selectedSprint) {"), 'Expected Active EPM sprint guard in dashboard.jsx');
     assert.ok(dashboardSource.includes('setEpmRollupTree(null);'), 'Expected Active EPM sprint guard to clear rollup tree');
     assert.ok(dashboardSource.includes('setEpmRollupLoading(false);'), 'Expected Active EPM sprint guard to stop rollup loading');

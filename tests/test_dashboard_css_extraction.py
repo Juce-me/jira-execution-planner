@@ -72,6 +72,21 @@ class TestDashboardCssFileContract(unittest.TestCase):
         self.assertIn('--epic-sticky-top', css)
         self.assertIn('--scenario-sticky-top', css)
 
+    def test_epm_settings_projects_layout_contract(self):
+        css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'dist' / 'dashboard.css'
+        css = css_path.read_text(encoding='utf-8')
+        self.assertIn('.epm-settings-tab-panel', css)
+        self.assertIn('.epm-projects-tab-panel', css)
+        self.assertIn('.epm-projects-scroll-region', css)
+        self.assertIn('min-height: 0;', css)
+        self.assertIn('overflow-y: auto;', css)
+        self.assertIn('.epm-projects-header-actions', css)
+        self.assertIn('.epm-prerequisite-panel', css)
+        self.assertIn('.epm-project-skeleton-row', css)
+        self.assertIn('.epm-project-load-error', css)
+        self.assertIn('.epm-project-row-warning', css)
+        self.assertIn('.epm-label-menu-layer', css)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -234,6 +234,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmSettingsTab, setEpmSettingsTab] = useState('scope');
             const [epmLabelShowAll, setEpmLabelShowAll] = useState({});
             const [epmLabelChanging, setEpmLabelChanging] = useState({});
+            const [epmLabelMenuAnchor, setEpmLabelMenuAnchor] = useState(null);
+            const epmLabelMenuInputRef = useRef(null);
             const epmConfigBaselineRef = useRef(JSON.stringify(createEmptyEpmConfigDraft()));
             const [epmScopeMeta, setEpmScopeMeta] = useState({ cloudId: '', error: '' });
             const [epmRootGoals, setEpmRootGoals] = useState([]);
@@ -894,7 +896,49 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
                 setLabelSearchOpen(prev => ({ ...prev, [key]: false }));
                 setEpmLabelChanging(prev => ({ ...prev, [key]: false }));
+                setEpmLabelMenuAnchor(null);
+                epmLabelMenuInputRef.current = null;
             }, [updateEpmProjectDraft]);
+            const openEpmLabelMenu = (projectId, inputNode, showAllLabels) => {
+                if (!inputNode) return;
+                const rowKey = getEpmLabelRowKey(projectId);
+                const rect = inputNode.getBoundingClientRect();
+                epmLabelMenuInputRef.current = inputNode;
+                setEpmLabelMenuAnchor({
+                    projectId,
+                    rowKey,
+                    top: rect.bottom + 4,
+                    left: rect.left,
+                    width: rect.width,
+                });
+                setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                void loadEpmProjectLabels(projectId, showAllLabels);
+            };
+            useEffect(() => {
+                if (!epmLabelMenuAnchor) return;
+                const reposition = () => {
+                    const inputNode = epmLabelMenuInputRef.current;
+                    if (!inputNode || !document.body.contains(inputNode)) {
+                        setEpmLabelMenuAnchor(null);
+                        epmLabelMenuInputRef.current = null;
+                        return;
+                    }
+                    const rect = inputNode.getBoundingClientRect();
+                    setEpmLabelMenuAnchor(prev => prev ? {
+                        ...prev,
+                        top: rect.bottom + 4,
+                        left: rect.left,
+                        width: rect.width,
+                    } : prev);
+                };
+                const scrollRegion = document.querySelector('.epm-projects-scroll-region');
+                window.addEventListener('resize', reposition);
+                scrollRegion?.addEventListener('scroll', reposition, { passive: true });
+                return () => {
+                    window.removeEventListener('resize', reposition);
+                    scrollRegion?.removeEventListener('scroll', reposition);
+                };
+            }, [epmLabelMenuAnchor?.rowKey]);
             const handleEpmLabelSearchKeyDown = React.useCallback((projectId, event, results) => {
                 const key = getEpmLabelRowKey(projectId);
                 if (event.key === 'ArrowDown') {
@@ -15981,6 +16025,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                         </div>
                                                     </div>
                                                 </div>
+                                                <div className="epm-projects-scroll-region">
                                                 {epmProjectPrerequisites.length > 0 && (
                                                     <div className="epm-prerequisite-panel">
                                                         <div className="group-pane-title">Setup required</div>
@@ -16096,10 +16141,19 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                                     <span className="team-name">{currentLabel}</span>
                                                                                     <button
                                                                                         className="secondary compact"
-                                                                                        onClick={() => {
+                                                                                        onClick={(event) => {
                                                                                             setEpmLabelChanging(prev => ({ ...prev, [rowKey]: true }));
-                                                                                            setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                                            void loadEpmProjectLabels(project.id, showAllLabels);
+                                                                                            window.setTimeout(() => {
+                                                                                                const wrapper = event.target.closest('.group-projects-subsection');
+                                                                                                const input = wrapper ? wrapper.querySelector('.team-search-input[placeholder*="Search Jira labels"]') : null;
+                                                                                                if (input) {
+                                                                                                    input.focus();
+                                                                                                    openEpmLabelMenu(project.id, input, showAllLabels);
+                                                                                                } else {
+                                                                                                    setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                                                    void loadEpmProjectLabels(project.id, showAllLabels);
+                                                                                                }
+                                                                                            }, 0);
                                                                                         }}
                                                                                         type="button"
                                                                                         style={{ marginLeft: '0.35rem' }}
@@ -16130,45 +16184,40 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                             onChange={(event) => {
                                                                                 const value = event.target.value;
                                                                                 setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
-                                                                                setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                                openEpmLabelMenu(project.id, event.currentTarget, showAllLabels);
                                                                                 setLabelSearchIndex(prev => ({ ...prev, [rowKey]: 0 }));
                                                                             }}
-                                                                            onFocus={() => {
-                                                                                setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                                void loadEpmProjectLabels(project.id, showAllLabels);
+                                                                            onFocus={(event) => {
+                                                                                openEpmLabelMenu(project.id, event.currentTarget, showAllLabels);
                                                                             }}
-                                                                            onBlur={() => window.setTimeout(() => setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false })), 120)}
+                                                                            onBlur={() => window.setTimeout(() => {
+                                                                                setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false }));
+                                                                                setEpmLabelMenuAnchor(prev => (prev && prev.rowKey === rowKey ? null : prev));
+                                                                                if (epmLabelMenuInputRef.current && !document.body.contains(epmLabelMenuInputRef.current)) {
+                                                                                    epmLabelMenuInputRef.current = null;
+                                                                                }
+                                                                            }, 120)}
                                                                             onKeyDown={(event) => handleEpmLabelSearchKeyDown(project.id, event, results)}
                                                                         />
                                                                         <button
                                                                             className="secondary compact"
-                                                                            onClick={() => {
+                                                                            onClick={(event) => {
                                                                                 const nextShowAll = !showAllLabels;
                                                                                 setEpmLabelShowAll(prev => ({ ...prev, [rowKey]: nextShowAll }));
-                                                                                setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                                void loadEpmProjectLabels(project.id, nextShowAll);
+                                                                                const wrapper = event.target.closest('.team-search-wrapper');
+                                                                                const input = wrapper ? wrapper.querySelector('.team-search-input') : null;
+                                                                                if (input) {
+                                                                                    openEpmLabelMenu(project.id, input, nextShowAll);
+                                                                                } else {
+                                                                                    setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                                    void loadEpmProjectLabels(project.id, nextShowAll);
+                                                                                }
                                                                             }}
                                                                             type="button"
                                                                             style={{ marginTop: '0.45rem' }}
                                                                         >
                                                                             {showAllLabels ? 'Use prefix' : 'Show all labels'}
                                                                         </button>
-                                                                        {labelSearchOpen[rowKey] && (
-                                                                            <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
-                                                                                {results.length === 0 ? (
-                                                                                    <div className="team-search-result-item is-empty">{isSearching ? 'Searching labels...' : 'No labels found'}</div>
-                                                                                ) : results.map((label, index) => (
-                                                                                    <div
-                                                                                        key={`${rowKey}-${label}`}
-                                                                                        className={`team-search-result-item ${activeIndex === index ? 'active' : ''}`}
-                                                                                        onMouseEnter={() => setLabelSearchIndex(prev => ({ ...prev, [rowKey]: index }))}
-                                                                                        onClick={() => selectEpmProjectLabel(project.id, label)}
-                                                                                    >
-                                                                                        {label}
-                                                                                    </div>
-                                                                                ))}
-                                                                            </div>
-                                                                        )}
                                                                     </div>
                                                                     )}
                                                                 </div>
@@ -16190,9 +16239,36 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                 ) : (epmSettingsProjectsLoading || epmSettingsProjectsRefreshing) ? (
                                                     renderEpmProjectSkeletonRows()
                                                 ) : null}
+                                                </div>
                                             </div>
                                         )}
                                     </div>
+                                    {epmLabelMenuAnchor && labelSearchOpen[epmLabelMenuAnchor.rowKey] && (
+                                        <div
+                                            className="team-search-results epm-label-menu-layer"
+                                            style={{
+                                                top: epmLabelMenuAnchor.top,
+                                                left: epmLabelMenuAnchor.left,
+                                                width: epmLabelMenuAnchor.width,
+                                            }}
+                                            onMouseDown={(event) => event.preventDefault()}
+                                        >
+                                            {getEpmLabelSearchResults(epmLabelMenuAnchor.projectId).length === 0 ? (
+                                                <div className="team-search-result-item is-empty">
+                                                    {labelSearchLoading[epmLabelMenuAnchor.rowKey] ? 'Searching labels...' : 'No labels found'}
+                                                </div>
+                                            ) : getEpmLabelSearchResults(epmLabelMenuAnchor.projectId).map((label, index) => (
+                                                <div
+                                                    key={`${epmLabelMenuAnchor.rowKey}-${label}`}
+                                                    className={`team-search-result-item ${(labelSearchIndex[epmLabelMenuAnchor.rowKey] || 0) === index ? 'active' : ''}`}
+                                                    onMouseEnter={() => setLabelSearchIndex(prev => ({ ...prev, [epmLabelMenuAnchor.rowKey]: index }))}
+                                                    onClick={() => selectEpmProjectLabel(epmLabelMenuAnchor.projectId, label)}
+                                                >
+                                                    {label}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 )}
                                 {groupManageTab === 'teams' && (

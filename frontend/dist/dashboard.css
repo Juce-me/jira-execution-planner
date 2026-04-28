@@ -1238,6 +1238,92 @@
             gap: 0.85rem;
         }
 
+        .epm-settings-tabs {
+            flex-shrink: 0;
+        }
+
+        .epm-settings-tab-panel {
+            min-height: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+
+        .epm-projects-tab-panel {
+            min-height: 0;
+        }
+
+        .epm-projects-scroll-region {
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: visible;
+            flex: 1;
+            padding: 0.6rem 0.6rem 0.8rem;
+        }
+
+        .epm-projects-header-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .epm-prerequisite-panel,
+        .epm-project-load-error,
+        .epm-project-empty-state {
+            border: 1px solid var(--border);
+            background: #fff;
+            border-radius: 8px;
+            padding: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+        }
+
+        .epm-prerequisite-actions,
+        .epm-project-state-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .epm-project-skeleton-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .epm-project-skeleton-row {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: #fff;
+            padding: 0.75rem;
+            display: grid;
+            grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 1.4fr);
+            gap: 0.75rem;
+        }
+
+        .epm-project-skeleton-row span {
+            display: block;
+            height: 0.75rem;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(148,163,184,0.18), rgba(148,163,184,0.32), rgba(148,163,184,0.18));
+        }
+
+        .epm-label-menu-layer {
+            position: fixed;
+            z-index: 10000;
+            max-height: min(280px, calc(100vh - 24px));
+            overflow-y: auto;
+        }
+
+        .epm-project-row-warning {
+            color: #92400e;
+        }
+
         .mapping-preview-section {
             margin-bottom: 0.1rem;
             order: 99;

@@ -146,6 +146,25 @@ test('dashboard source clears EPM sub-goal only when root goal changes or user c
     assert.ok(selectRootSource.includes('if (rootChanged) {'), 'Expected sub-goal clear to be gated by actual root changes');
 });
 
+test('dashboard source separates EPM scope and project mapping tabs', () => {
+    assert.ok(dashboardSource.includes("const [epmSettingsTab, setEpmSettingsTab] = useState('scope');"), 'Expected EPM-local settings tab state');
+    assert.ok(dashboardSource.includes('const epmProjectPrerequisites = React.useMemo(() => getEpmProjectPrerequisites(epmConfigDraft), [epmConfigDraft]);'), 'Expected Projects prerequisite state');
+    assert.ok(dashboardSource.includes("className={`group-modal-tab ${epmSettingsTab === 'scope' ? 'active' : ''}`"), 'Expected EPM Scope sub-tab button');
+    assert.ok(dashboardSource.includes("className={`group-modal-tab ${epmSettingsTab === 'projects' ? 'active' : ''}`"), 'Expected EPM Projects sub-tab button');
+    assert.ok(!dashboardSource.includes("disabled={!canOpenEpmProjectsTab}"), 'Projects tab must stay clickable and show prerequisites inside the panel');
+    assert.ok(dashboardSource.includes('role="tablist"'), 'Expected accessible EPM settings tablist');
+    assert.ok(dashboardSource.includes('role="tab"'), 'Expected accessible EPM settings tabs');
+    assert.match(dashboardSource, /aria-selected=\{epmSettingsTab === ['"]scope['"]\}/, 'Expected scope tab selected state');
+    assert.match(dashboardSource, /aria-selected=\{epmSettingsTab === ['"]projects['"]\}/, 'Expected projects tab selected state');
+    assert.ok(dashboardSource.includes('aria-controls="epm-settings-projects-panel"'), 'Expected projects tab panel relationship');
+    assert.ok(dashboardSource.includes('const handleEpmSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for EPM sub-tabs');
+    assert.ok(dashboardSource.includes('document.getElementById(`epm-settings-${tab}-tab`)'), 'Expected keyboard tab changes to preserve focus');
+    assert.ok(dashboardSource.includes("epmSettingsTab === 'scope'"), 'Expected scope-only render branch');
+    assert.ok(dashboardSource.includes("epmSettingsTab === 'projects'"), 'Expected projects-only render branch');
+    assert.ok(dashboardSource.includes('Set sub-goal'), 'Expected prerequisite action for missing sub-goal');
+    assert.ok(dashboardSource.includes('Set label prefix'), 'Expected prerequisite action for missing label prefix');
+});
+
 test('settings hotkey effect is declared after the save handlers it depends on', () => {
     const hotkeyEffectIndex = dashboardSource.indexOf("window.addEventListener('keydown', handleKey);");
     const saveEpmConfigIndex = dashboardSource.indexOf('const saveEpmConfig = async () => {');

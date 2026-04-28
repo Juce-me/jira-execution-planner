@@ -222,6 +222,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmSettingsProjectsLoading, setEpmSettingsProjectsLoading] = useState(false);
             const [epmSettingsProjectsError, setEpmSettingsProjectsError] = useState('');
             const [epmSettingsPreviewRequested, setEpmSettingsPreviewRequested] = useState(false);
+            const [epmSettingsTab, setEpmSettingsTab] = useState('scope');
             const [epmLabelShowAll, setEpmLabelShowAll] = useState({});
             const [epmLabelChanging, setEpmLabelChanging] = useState({});
             const epmConfigBaselineRef = useRef(JSON.stringify(createEmptyEpmConfigDraft()));
@@ -1887,6 +1888,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const hasDraftEpmScope = React.useMemo(() => {
                 return hasSavedEpmScopeConfig(epmConfigDraft);
             }, [epmConfigDraft]);
+            const epmProjectPrerequisites = React.useMemo(() => getEpmProjectPrerequisites(epmConfigDraft), [epmConfigDraft]);
+            const canLoadEpmProjects = epmProjectPrerequisites.length === 0;
             const epmSettingsProjectRows = React.useMemo(() => {
                 const configuredProjects = epmConfigDraft.projects || {};
                 const rows = [];
@@ -2030,6 +2033,53 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 resetEpmSettingsProjectRows();
                 setShowGroupManage(true);
                 setGroupManageTab('epm');
+                setEpmSettingsTab('scope');
+            };
+
+            const focusEpmScopeField = React.useCallback((field) => {
+                setEpmSettingsTab('scope');
+                window.requestAnimationFrame(() => {
+                    const selector = field === 'labelPrefix'
+                        ? '[data-epm-scope-field="labelPrefix"]'
+                        : '[data-epm-scope-field="subGoal"]';
+                    const node = document.querySelector(selector);
+                    if (node && typeof node.focus === 'function') {
+                        node.focus();
+                    }
+                });
+            }, []);
+
+            const handleEpmSettingsTabKeyDown = (event) => {
+                const tabs = ['scope', 'projects'];
+                const focusTab = (tab) => {
+                    window.requestAnimationFrame(() => {
+                        const node = document.getElementById(`epm-settings-${tab}-tab`);
+                        if (node && typeof node.focus === 'function') {
+                            node.focus();
+                        }
+                    });
+                };
+                const currentIndex = tabs.indexOf(epmSettingsTab);
+                if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    const direction = event.key === 'ArrowRight' ? 1 : -1;
+                    const nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
+                    const nextTab = tabs[nextIndex];
+                    setEpmSettingsTab(nextTab);
+                    focusTab(nextTab);
+                    return;
+                }
+                if (event.key === 'Home') {
+                    event.preventDefault();
+                    setEpmSettingsTab('scope');
+                    focusTab('scope');
+                    return;
+                }
+                if (event.key === 'End') {
+                    event.preventDefault();
+                    setEpmSettingsTab('projects');
+                    focusTab('projects');
+                }
             };
 
             const closeAllTeamSearchDropdowns = () => {
@@ -15588,313 +15638,381 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 {groupManageTab === 'epm' && (
                                 <div className="group-modal-body group-projects-layout">
                                     <div className="group-pane group-single-pane">
-                                        <div className="group-pane-header">
-                                            <div className="group-pane-title">EPM projects</div>
-                                            <div className="group-pane-subtitle">Map Jira Home projects to EPM rollup labels.</div>
-                                        </div>
-                                        <div className="group-config-card" style={{ marginBottom: '0.9rem' }}>
-                                            <div className="group-projects-subsection">
-                                                <div className="team-selector-label">Atlassian site</div>
-                                                <div className="group-field-helper">
-                                                    {epmScopeMeta.cloudId
-                                                        ? `Detected from Jira tenant_info: ${epmScopeMeta.cloudId}`
-                                                        : (epmScopeMeta.error || 'The Jira Home site will be detected automatically from your Atlassian credentials.')}
-                                                </div>
-                                            </div>
-                                            <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
-                                                <div className="team-selector-label">Root goal</div>
-                                                <div className="group-field-helper">Choose the Jira Home parent goal that owns the EPM project catalog.</div>
-                                                {selectedEpmRootGoal && (
-                                                    <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
-                                                        <span className="team-name">
-                                                            {selectedEpmRootGoal.name || selectedEpmRootGoal.key}
-                                                            {selectedEpmRootGoal.key ? ` (${selectedEpmRootGoal.key})` : ''}
-                                                        </span>
-                                                        <button
-                                                            className="remove-btn"
-                                                            onClick={clearEpmRootGoal}
-                                                            type="button"
-                                                            title="Clear root goal"
-                                                        >
-                                                            ×
-                                                        </button>
-                                                    </div>
-                                                )}
-                                                {!selectedEpmRootGoal && (
-                                                    <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
-                                                        <input
-                                                            type="text"
-                                                            className="team-search-input"
-                                                            value={epmRootGoalQuery}
-                                                            onChange={(event) => {
-                                                                setEpmRootGoalQuery(event.target.value);
-                                                                setEpmRootGoalOpen(true);
-                                                                setEpmRootGoalIndex(0);
-                                                            }}
-                                                            onFocus={() => setEpmRootGoalOpen(true)}
-                                                            onBlur={() => { window.setTimeout(() => setEpmRootGoalOpen(false), 120); }}
-                                                            onKeyDown={handleEpmRootGoalSearchKeyDown}
-                                                            placeholder={epmRootGoalsLoading ? 'Loading root goals...' : 'Search root goals...'}
-                                                        />
-                                                        {showEpmRootGoalResults && (
-                                                            <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
-                                                                {epmRootGoalsLoading ? (
-                                                                    <div className="team-search-result-item is-empty">Loading root goals...</div>
-                                                                ) : epmRootGoalsError ? (
-                                                                    <div className="team-search-result-item is-empty">{epmRootGoalsError}</div>
-                                                                ) : !filteredEpmRootGoals.length ? (
-                                                                    <div className="team-search-result-item is-empty">No root goals found</div>
-                                                                ) : (
-                                                                    visibleEpmRootGoals.map((goal, index) => (
-                                                                        <div
-                                                                            key={goal.id || goal.key}
-                                                                            className={`team-search-result-item ${activeEpmRootGoalIndex === index ? 'active' : ''}`}
-                                                                            onClick={() => { void selectEpmRootGoal(goal); }}
-                                                                        >
-                                                                            <strong>{goal.name || goal.key}</strong>
-                                                                            {goal.key ? ` (${goal.key})` : ''}
-                                                                        </div>
-                                                                    ))
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
-                                                <div className="team-selector-label">Sub-goal</div>
-                                                <div className="group-field-helper">
-                                                    {!epmConfigDraft.scope?.rootGoalKey
-                                                        ? 'Select a root goal before choosing a sub-goal.'
-                                                        : 'Choose the Jira Home child goal that owns the direct EPM projects.'}
-                                                </div>
-                                                {selectedEpmSubGoal && (
-                                                    <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
-                                                        <span className="team-name">
-                                                            {selectedEpmSubGoal.name || selectedEpmSubGoal.key}
-                                                            {selectedEpmSubGoal.key ? ` (${selectedEpmSubGoal.key})` : ''}
-                                                        </span>
-                                                        <button
-                                                            className="remove-btn"
-                                                            onClick={clearEpmSubGoal}
-                                                            type="button"
-                                                            title="Clear sub-goal"
-                                                        >
-                                                            ×
-                                                        </button>
-                                                    </div>
-                                                )}
-                                                {!selectedEpmSubGoal && (
-                                                    <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
-                                                        <input
-                                                            type="text"
-                                                            className="team-search-input"
-                                                            value={epmSubGoalQuery}
-                                                            onChange={(event) => {
-                                                                setEpmSubGoalQuery(event.target.value);
-                                                                setEpmSubGoalOpen(true);
-                                                                setEpmSubGoalIndex(0);
-                                                            }}
-                                                            onFocus={() => {
-                                                                if (!epmConfigDraft.scope?.rootGoalKey) return;
-                                                                setEpmSubGoalOpen(true);
-                                                                void loadEpmSubGoalsForRoot(epmConfigDraft.scope.rootGoalKey);
-                                                            }}
-                                                            onBlur={() => { window.setTimeout(() => setEpmSubGoalOpen(false), 120); }}
-                                                            onKeyDown={handleEpmSubGoalSearchKeyDown}
-                                                            placeholder={epmSubGoalsLoading ? 'Loading sub-goals...' : 'Search sub-goals...'}
-                                                            disabled={!epmConfigDraft.scope?.rootGoalKey}
-                                                        />
-                                                        {showEpmSubGoalResults && (
-                                                            <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
-                                                                {epmSubGoalsLoading ? (
-                                                                    <div className="team-search-result-item is-empty">Loading sub-goals...</div>
-                                                                ) : epmSubGoalsError ? (
-                                                                    <div className="team-search-result-item is-empty">{epmSubGoalsError}</div>
-                                                                ) : !filteredEpmSubGoals.length ? (
-                                                                    <div className="team-search-result-item is-empty">No sub-goals found</div>
-                                                                ) : (
-                                                                    visibleEpmSubGoals.map((goal, index) => (
-                                                                        <div
-                                                                            key={goal.id || goal.key}
-                                                                            className={`team-search-result-item ${activeEpmSubGoalIndex === index ? 'active' : ''}`}
-                                                                            onClick={() => selectEpmSubGoal(goal)}
-                                                                        >
-                                                                            <strong>{goal.name || goal.key}</strong>
-                                                                            {goal.key ? ` (${goal.key})` : ''}
-                                                                        </div>
-                                                                    ))
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
-                                            <div className="team-selector-label">Label prefix</div>
-                                            <input
-                                                type="text"
-                                                className="team-search-input"
-                                                value={epmConfigDraft.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX}
-                                                onChange={(event) => updateEpmLabelPrefixDraft(event.target.value)}
-                                                placeholder={DEFAULT_EPM_LABEL_PREFIX}
-                                            />
-                                        </div>
-                                        <div className="group-pane-tools" style={{ marginTop: '0.8rem' }}>
+                                        <div
+                                            className="group-modal-tabs epm-settings-tabs"
+                                            role="tablist"
+                                            aria-label="EPM settings sections"
+                                            onKeyDown={handleEpmSettingsTabKeyDown}
+                                        >
                                             <button
-                                                className="secondary compact"
-                                                onClick={addCustomEpmProjectDraft}
+                                                className={`group-modal-tab ${epmSettingsTab === 'scope' ? 'active' : ''}`}
+                                                onClick={() => setEpmSettingsTab('scope')}
+                                                role="tab"
+                                                aria-selected={epmSettingsTab === 'scope'}
+                                                aria-controls="epm-settings-scope-panel"
+                                                id="epm-settings-scope-tab"
                                                 type="button"
-                                            >
-                                                Add custom Project
-                                            </button>
+                                            >Scope</button>
+                                            <button
+                                                className={`group-modal-tab ${epmSettingsTab === 'projects' ? 'active' : ''}`}
+                                                onClick={() => setEpmSettingsTab('projects')}
+                                                role="tab"
+                                                aria-selected={epmSettingsTab === 'projects'}
+                                                aria-controls="epm-settings-projects-panel"
+                                                id="epm-settings-projects-tab"
+                                                type="button"
+                                            >Projects</button>
                                         </div>
-                                        {epmConfigLoading ? (
-                                            <div className="group-pane-empty">Loading EPM settings...</div>
-                                        ) : !hasDraftEpmScope ? (
-                                            <div className="group-pane-empty">Save a root goal and sub-goal to load EPM projects.</div>
-                                        ) : epmSettingsProjectsLoading ? (
-                                            <div className="group-pane-empty">Previewing EPM projects...</div>
-                                        ) : epmSettingsProjectRows.length > 0 ? (
-                                            <div className="group-pane-list">
-                                                {epmSettingsProjectRows.map((project) => {
-                                                    const rowKey = getEpmLabelRowKey(project.id);
-                                                    const currentLabel = project.label || '';
-                                                    const results = getEpmLabelSearchResults(project.id);
-                                                    const isSearching = Boolean(labelSearchLoading[rowKey]);
-                                                    const showAllLabels = Boolean(epmLabelShowAll[rowKey]);
-                                                    const isChangingLabel = Boolean(epmLabelChanging[rowKey]);
-                                                    const activeIndex = Math.min(labelSearchIndex[rowKey] || 0, Math.max(results.length - 1, 0));
-                                                    return (
-                                                        <div key={project.id} className="group-projects-subsection" style={{ marginTop: 0, paddingBottom: '1rem', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
-                                                            <div className="group-list-line" style={{ alignItems: 'baseline', justifyContent: 'space-between', gap: '0.75rem' }}>
-                                                                {project.homeUrl ? (
-                                                                    <a href={project.homeUrl} target="_blank" rel="noopener noreferrer">
-                                                                        {project.displayName || project.homeName || project.id}
-                                                                    </a>
-                                                                ) : (
-                                                                    <span>{project.displayName || project.id}</span>
-                                                                )}
+                                        {epmSettingsTab === 'scope' && (
+                                            <div
+                                                id="epm-settings-scope-panel"
+                                                className="group-pane-list epm-settings-tab-panel"
+                                                role="tabpanel"
+                                                aria-labelledby="epm-settings-scope-tab"
+                                            >
+                                                <div className="group-pane-header" style={{ paddingLeft: 0, paddingRight: 0 }}>
+                                                    <div className="group-pane-title">EPM scope</div>
+                                                    <div className="group-pane-subtitle">Choose the Jira Home goal scope and label prefix used for EPM project mapping.</div>
+                                                </div>
+                                                <div className="group-config-card" style={{ marginBottom: '0.9rem' }}>
+                                                    <div className="group-projects-subsection">
+                                                        <div className="team-selector-label">Atlassian site</div>
+                                                        <div className="group-field-helper">
+                                                            {epmScopeMeta.cloudId
+                                                                ? `Detected from Jira tenant_info: ${epmScopeMeta.cloudId}`
+                                                                : (epmScopeMeta.error || 'The Jira Home site will be detected automatically from your Atlassian credentials.')}
+                                                        </div>
+                                                    </div>
+                                                    <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
+                                                        <div className="team-selector-label">Root goal</div>
+                                                        <div className="group-field-helper">Choose the Jira Home parent goal that owns the EPM project catalog.</div>
+                                                        {selectedEpmRootGoal && (
+                                                            <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
+                                                                <span className="team-name">
+                                                                    {selectedEpmRootGoal.name || selectedEpmRootGoal.key}
+                                                                    {selectedEpmRootGoal.key ? ` (${selectedEpmRootGoal.key})` : ''}
+                                                                </span>
                                                                 <button
                                                                     className="remove-btn"
-                                                                    onClick={() => removeEpmProjectDraft(project.id)}
+                                                                    onClick={clearEpmRootGoal}
                                                                     type="button"
-                                                                    title="Remove Project"
+                                                                    title="Clear root goal"
                                                                 >
                                                                     ×
                                                                 </button>
                                                             </div>
-                                                            {project.latestUpdateDate && (
-                                                                <div className="group-field-helper" style={{ marginTop: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                    {project.latestUpdateSnippet || 'No updates yet'}
-                                                                </div>
-                                                            )}
-                                                            <div className="settings-two-col-grid settings-source-grid" style={{ padding: '0.75rem 0 0' }}>
-                                                                <div className="group-projects-subsection" style={{ marginTop: 0 }}>
-                                                                    <div className="team-selector-label">Project name</div>
-                                                                    <input
-                                                                        type="text"
-                                                                        className="team-search-input"
-                                                                        value={project.name || ''}
-                                                                        onChange={(event) => updateEpmProjectDraft(project.id, 'name', event.target.value)}
-                                                                        placeholder={project.homeName || project.name || 'Project name'}
-                                                                    />
-                                                                </div>
-                                                                <div className="group-projects-subsection" style={{ marginTop: 0 }}>
-                                                                    <div className="team-selector-label">Jira label</div>
-                                                                    {currentLabel ? (
-                                                                        <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
-                                                                            <span className="team-name">{currentLabel}</span>
-                                                                            <button
-                                                                                className="secondary compact"
-                                                                                onClick={() => {
-                                                                                    setEpmLabelChanging(prev => ({ ...prev, [rowKey]: true }));
-                                                                                    setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                                    void loadEpmProjectLabels(project.id, showAllLabels);
-                                                                                }}
-                                                                                type="button"
-                                                                                style={{ marginLeft: '0.35rem' }}
-                                                                            >
-                                                                                Change
-                                                                            </button>
-                                                                            <button
-                                                                                className="remove-btn"
-                                                                                onClick={() => updateEpmProjectDraft(project.id, 'label', '')}
-                                                                                type="button"
-                                                                                title="Remove label"
-                                                                            >
-                                                                                ×
-                                                                            </button>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="group-field-helper" style={{ marginTop: '0.35rem' }}>No Jira label selected.</div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            {(!currentLabel || isChangingLabel) && (
+                                                        )}
+                                                        {!selectedEpmRootGoal && (
                                                             <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
                                                                 <input
                                                                     type="text"
                                                                     className="team-search-input"
-                                                                    placeholder={isSearching ? 'Searching labels...' : 'Search Jira labels...'}
-                                                                    value={labelSearchQuery[rowKey] || ''}
+                                                                    value={epmRootGoalQuery}
                                                                     onChange={(event) => {
-                                                                        const value = event.target.value;
-                                                                        setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
-                                                                        setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                        setLabelSearchIndex(prev => ({ ...prev, [rowKey]: 0 }));
+                                                                        setEpmRootGoalQuery(event.target.value);
+                                                                        setEpmRootGoalOpen(true);
+                                                                        setEpmRootGoalIndex(0);
                                                                     }}
-                                                                    onFocus={() => {
-                                                                        setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                        void loadEpmProjectLabels(project.id, showAllLabels);
-                                                                    }}
-                                                                    onBlur={() => window.setTimeout(() => setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false })), 120)}
-                                                                    onKeyDown={(event) => handleEpmLabelSearchKeyDown(project.id, event, results)}
+                                                                    onFocus={() => setEpmRootGoalOpen(true)}
+                                                                    onBlur={() => { window.setTimeout(() => setEpmRootGoalOpen(false), 120); }}
+                                                                    onKeyDown={handleEpmRootGoalSearchKeyDown}
+                                                                    placeholder={epmRootGoalsLoading ? 'Loading root goals...' : 'Search root goals...'}
                                                                 />
-                                                                <button
-                                                                    className="secondary compact"
-                                                                    onClick={() => {
-                                                                        const nextShowAll = !showAllLabels;
-                                                                        setEpmLabelShowAll(prev => ({ ...prev, [rowKey]: nextShowAll }));
-                                                                        setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                        void loadEpmProjectLabels(project.id, nextShowAll);
-                                                                    }}
-                                                                    type="button"
-                                                                    style={{ marginTop: '0.45rem' }}
-                                                                >
-                                                                    {showAllLabels ? 'Use prefix' : 'Show all labels'}
-                                                                </button>
-                                                                {labelSearchOpen[rowKey] && (
+                                                                {showEpmRootGoalResults && (
                                                                     <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
-                                                                        {results.length === 0 ? (
-                                                                            <div className="team-search-result-item is-empty">{isSearching ? 'Searching labels...' : 'No labels found'}</div>
-                                                                        ) : results.map((label, index) => (
-                                                                            <div
-                                                                                key={`${rowKey}-${label}`}
-                                                                                className={`team-search-result-item ${activeIndex === index ? 'active' : ''}`}
-                                                                                onMouseEnter={() => setLabelSearchIndex(prev => ({ ...prev, [rowKey]: index }))}
-                                                                                onClick={() => selectEpmProjectLabel(project.id, label)}
-                                                                            >
-                                                                                {label}
-                                                                            </div>
-                                                                        ))}
+                                                                        {epmRootGoalsLoading ? (
+                                                                            <div className="team-search-result-item is-empty">Loading root goals...</div>
+                                                                        ) : epmRootGoalsError ? (
+                                                                            <div className="team-search-result-item is-empty">{epmRootGoalsError}</div>
+                                                                        ) : !filteredEpmRootGoals.length ? (
+                                                                            <div className="team-search-result-item is-empty">No root goals found</div>
+                                                                        ) : (
+                                                                            visibleEpmRootGoals.map((goal, index) => (
+                                                                                <div
+                                                                                    key={goal.id || goal.key}
+                                                                                    className={`team-search-result-item ${activeEpmRootGoalIndex === index ? 'active' : ''}`}
+                                                                                    onClick={() => { void selectEpmRootGoal(goal); }}
+                                                                                >
+                                                                                    <strong>{goal.name || goal.key}</strong>
+                                                                                    {goal.key ? ` (${goal.key})` : ''}
+                                                                                </div>
+                                                                            ))
+                                                                        )}
                                                                     </div>
                                                                 )}
                                                             </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
+                                                        <div className="team-selector-label">Sub-goal</div>
+                                                        <div className="group-field-helper">
+                                                            {!epmConfigDraft.scope?.rootGoalKey
+                                                                ? 'Select a root goal before choosing a sub-goal.'
+                                                                : 'Choose the Jira Home child goal that owns the direct EPM projects.'}
+                                                        </div>
+                                                        {selectedEpmSubGoal && (
+                                                            <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
+                                                                <span className="team-name">
+                                                                    {selectedEpmSubGoal.name || selectedEpmSubGoal.key}
+                                                                    {selectedEpmSubGoal.key ? ` (${selectedEpmSubGoal.key})` : ''}
+                                                                </span>
+                                                                <button
+                                                                    className="remove-btn"
+                                                                    onClick={clearEpmSubGoal}
+                                                                    type="button"
+                                                                    title="Clear sub-goal"
+                                                                    data-epm-scope-field="subGoal"
+                                                                >
+                                                                    ×
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                        {!selectedEpmSubGoal && (
+                                                            <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
+                                                                <input
+                                                                    type="text"
+                                                                    className="team-search-input"
+                                                                    value={epmSubGoalQuery}
+                                                                    onChange={(event) => {
+                                                                        setEpmSubGoalQuery(event.target.value);
+                                                                        setEpmSubGoalOpen(true);
+                                                                        setEpmSubGoalIndex(0);
+                                                                    }}
+                                                                    onFocus={() => {
+                                                                        if (!epmConfigDraft.scope?.rootGoalKey) return;
+                                                                        setEpmSubGoalOpen(true);
+                                                                        void loadEpmSubGoalsForRoot(epmConfigDraft.scope.rootGoalKey);
+                                                                    }}
+                                                                    onBlur={() => { window.setTimeout(() => setEpmSubGoalOpen(false), 120); }}
+                                                                    onKeyDown={handleEpmSubGoalSearchKeyDown}
+                                                                    placeholder={epmSubGoalsLoading ? 'Loading sub-goals...' : 'Search sub-goals...'}
+                                                                    disabled={!epmConfigDraft.scope?.rootGoalKey}
+                                                                    data-epm-scope-field="subGoal"
+                                                                />
+                                                                {showEpmSubGoalResults && (
+                                                                    <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
+                                                                        {epmSubGoalsLoading ? (
+                                                                            <div className="team-search-result-item is-empty">Loading sub-goals...</div>
+                                                                        ) : epmSubGoalsError ? (
+                                                                            <div className="team-search-result-item is-empty">{epmSubGoalsError}</div>
+                                                                        ) : !filteredEpmSubGoals.length ? (
+                                                                            <div className="team-search-result-item is-empty">No sub-goals found</div>
+                                                                        ) : (
+                                                                            visibleEpmSubGoals.map((goal, index) => (
+                                                                                <div
+                                                                                    key={goal.id || goal.key}
+                                                                                    className={`team-search-result-item ${activeEpmSubGoalIndex === index ? 'active' : ''}`}
+                                                                                    onClick={() => selectEpmSubGoal(goal)}
+                                                                                >
+                                                                                    <strong>{goal.name || goal.key}</strong>
+                                                                                    {goal.key ? ` (${goal.key})` : ''}
+                                                                                </div>
+                                                                            ))
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
+                                                    <div className="team-selector-label">Label prefix</div>
+                                                    <input
+                                                        type="text"
+                                                        className="team-search-input"
+                                                        value={epmConfigDraft.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX}
+                                                        onChange={(event) => updateEpmLabelPrefixDraft(event.target.value)}
+                                                        placeholder={DEFAULT_EPM_LABEL_PREFIX}
+                                                        data-epm-scope-field="labelPrefix"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                        {epmSettingsTab === 'projects' && (
+                                            <div
+                                                id="epm-settings-projects-panel"
+                                                className="group-pane-list epm-settings-tab-panel epm-projects-tab-panel"
+                                                role="tabpanel"
+                                                aria-labelledby="epm-settings-projects-tab"
+                                            >
+                                                <div className="group-pane-header" style={{ paddingLeft: 0, paddingRight: 0 }}>
+                                                    <div className="group-pane-title">EPM projects</div>
+                                                    <div className="group-pane-subtitle">Map direct Jira Home projects under the selected sub-goal to exact Jira labels.</div>
+                                                </div>
+                                                {epmProjectPrerequisites.length > 0 && (
+                                                    <div className="epm-prerequisite-panel">
+                                                        <div className="group-pane-title">Setup required</div>
+                                                        <div className="group-pane-subtitle">Choose the Jira Home sub-goal and label prefix before loading project configuration.</div>
+                                                        <div className="epm-prerequisite-actions">
+                                                            {epmProjectPrerequisites.includes('subGoal') && (
+                                                                <button className="secondary compact" type="button" onClick={() => focusEpmScopeField('subGoal')}>
+                                                                    Set sub-goal
+                                                                </button>
+                                                            )}
+                                                            {epmProjectPrerequisites.includes('labelPrefix') && (
+                                                                <button className="secondary compact" type="button" onClick={() => focusEpmScopeField('labelPrefix')}>
+                                                                    Set label prefix
+                                                                </button>
                                                             )}
                                                         </div>
-                                                    );
-                                                })}
+                                                    </div>
+                                                )}
+                                                <div className="group-pane-tools" style={{ marginTop: '0.8rem' }}>
+                                                    <button
+                                                        className="secondary compact"
+                                                        onClick={addCustomEpmProjectDraft}
+                                                        type="button"
+                                                    >
+                                                        Add custom Project
+                                                    </button>
+                                                </div>
+                                                {epmConfigLoading ? (
+                                                    <div className="group-pane-empty">Loading EPM settings...</div>
+                                                ) : !hasDraftEpmScope ? (
+                                                    <div className="group-pane-empty">Save a root goal and sub-goal to load EPM projects.</div>
+                                                ) : epmSettingsProjectsLoading ? (
+                                                    <div className="group-pane-empty">Previewing EPM projects...</div>
+                                                ) : epmSettingsProjectRows.length > 0 ? (
+                                                    <div className="group-pane-list">
+                                                        {epmSettingsProjectRows.map((project) => {
+                                                            const rowKey = getEpmLabelRowKey(project.id);
+                                                            const currentLabel = project.label || '';
+                                                            const results = getEpmLabelSearchResults(project.id);
+                                                            const isSearching = Boolean(labelSearchLoading[rowKey]);
+                                                            const showAllLabels = Boolean(epmLabelShowAll[rowKey]);
+                                                            const isChangingLabel = Boolean(epmLabelChanging[rowKey]);
+                                                            const activeIndex = Math.min(labelSearchIndex[rowKey] || 0, Math.max(results.length - 1, 0));
+                                                            return (
+                                                                <div key={project.id} className="group-projects-subsection" style={{ marginTop: 0, paddingBottom: '1rem', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
+                                                                    <div className="group-list-line" style={{ alignItems: 'baseline', justifyContent: 'space-between', gap: '0.75rem' }}>
+                                                                        {project.homeUrl ? (
+                                                                            <a href={project.homeUrl} target="_blank" rel="noopener noreferrer">
+                                                                                {project.displayName || project.homeName || project.id}
+                                                                            </a>
+                                                                        ) : (
+                                                                            <span>{project.displayName || project.id}</span>
+                                                                        )}
+                                                                        <button
+                                                                            className="remove-btn"
+                                                                            onClick={() => removeEpmProjectDraft(project.id)}
+                                                                            type="button"
+                                                                            title="Remove Project"
+                                                                        >
+                                                                            ×
+                                                                        </button>
+                                                                    </div>
+                                                                    {project.latestUpdateDate && (
+                                                                        <div className="group-field-helper" style={{ marginTop: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                            {project.latestUpdateSnippet || 'No updates yet'}
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="settings-two-col-grid settings-source-grid" style={{ padding: '0.75rem 0 0' }}>
+                                                                        <div className="group-projects-subsection" style={{ marginTop: 0 }}>
+                                                                            <div className="team-selector-label">Project name</div>
+                                                                            <input
+                                                                                type="text"
+                                                                                className="team-search-input"
+                                                                                value={project.name || ''}
+                                                                                onChange={(event) => updateEpmProjectDraft(project.id, 'name', event.target.value)}
+                                                                                placeholder={project.homeName || project.name || 'Project name'}
+                                                                            />
+                                                                        </div>
+                                                                        <div className="group-projects-subsection" style={{ marginTop: 0 }}>
+                                                                            <div className="team-selector-label">Jira label</div>
+                                                                            {currentLabel ? (
+                                                                                <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
+                                                                                    <span className="team-name">{currentLabel}</span>
+                                                                                    <button
+                                                                                        className="secondary compact"
+                                                                                        onClick={() => {
+                                                                                            setEpmLabelChanging(prev => ({ ...prev, [rowKey]: true }));
+                                                                                            setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                                            void loadEpmProjectLabels(project.id, showAllLabels);
+                                                                                        }}
+                                                                                        type="button"
+                                                                                        style={{ marginLeft: '0.35rem' }}
+                                                                                    >
+                                                                                        Change
+                                                                                    </button>
+                                                                                    <button
+                                                                                        className="remove-btn"
+                                                                                        onClick={() => updateEpmProjectDraft(project.id, 'label', '')}
+                                                                                        type="button"
+                                                                                        title="Remove label"
+                                                                                    >
+                                                                                        ×
+                                                                                    </button>
+                                                                                </div>
+                                                                            ) : (
+                                                                                <div className="group-field-helper" style={{ marginTop: '0.35rem' }}>No Jira label selected.</div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    {(!currentLabel || isChangingLabel) && (
+                                                                    <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
+                                                                        <input
+                                                                            type="text"
+                                                                            className="team-search-input"
+                                                                            placeholder={isSearching ? 'Searching labels...' : 'Search Jira labels...'}
+                                                                            value={labelSearchQuery[rowKey] || ''}
+                                                                            onChange={(event) => {
+                                                                                const value = event.target.value;
+                                                                                setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
+                                                                                setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                                setLabelSearchIndex(prev => ({ ...prev, [rowKey]: 0 }));
+                                                                            }}
+                                                                            onFocus={() => {
+                                                                                setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                                void loadEpmProjectLabels(project.id, showAllLabels);
+                                                                            }}
+                                                                            onBlur={() => window.setTimeout(() => setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false })), 120)}
+                                                                            onKeyDown={(event) => handleEpmLabelSearchKeyDown(project.id, event, results)}
+                                                                        />
+                                                                        <button
+                                                                            className="secondary compact"
+                                                                            onClick={() => {
+                                                                                const nextShowAll = !showAllLabels;
+                                                                                setEpmLabelShowAll(prev => ({ ...prev, [rowKey]: nextShowAll }));
+                                                                                setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                                void loadEpmProjectLabels(project.id, nextShowAll);
+                                                                            }}
+                                                                            type="button"
+                                                                            style={{ marginTop: '0.45rem' }}
+                                                                        >
+                                                                            {showAllLabels ? 'Use prefix' : 'Show all labels'}
+                                                                        </button>
+                                                                        {labelSearchOpen[rowKey] && (
+                                                                            <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
+                                                                                {results.length === 0 ? (
+                                                                                    <div className="team-search-result-item is-empty">{isSearching ? 'Searching labels...' : 'No labels found'}</div>
+                                                                                ) : results.map((label, index) => (
+                                                                                    <div
+                                                                                        key={`${rowKey}-${label}`}
+                                                                                        className={`team-search-result-item ${activeIndex === index ? 'active' : ''}`}
+                                                                                        onMouseEnter={() => setLabelSearchIndex(prev => ({ ...prev, [rowKey]: index }))}
+                                                                                        onClick={() => selectEpmProjectLabel(project.id, label)}
+                                                                                    >
+                                                                                        {label}
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                ) : !epmSettingsPreviewRequested ? (
+                                                    <div className="group-pane-empty">Run Test Configuration to preview projects for the selected draft scope.</div>
+                                                ) : epmSettingsProjectsError ? (
+                                                    <div className="group-pane-empty">{epmSettingsProjectsError}</div>
+                                                ) : epmSettingsProjects.length === 0 ? (
+                                                    <div className="group-pane-empty">This sub-goal has no direct Jira Home projects. Choose a different child goal.</div>
+                                                ) : (
+                                                    <div className="group-pane-empty">No EPM projects found.</div>
+                                                )}
                                             </div>
-                                        ) : !epmSettingsPreviewRequested ? (
-                                            <div className="group-pane-empty">Run Test Configuration to preview projects for the selected draft scope.</div>
-                                        ) : epmSettingsProjectsError ? (
-                                            <div className="group-pane-empty">{epmSettingsProjectsError}</div>
-                                        ) : epmSettingsProjects.length === 0 ? (
-                                            <div className="group-pane-empty">This sub-goal has no direct Jira Home projects. Choose a different child goal.</div>
-                                        ) : (
-                                            <div className="group-pane-empty">No EPM projects found.</div>
                                         )}
                                     </div>
                                 </div>

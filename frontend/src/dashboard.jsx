@@ -22,9 +22,10 @@ import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
-import { fetchEpmConfig, fetchEpmScope, fetchEpmGoals, fetchEpmProjects, fetchEpmConfigurationProjects, fetchEpmProjectRollup } from './epm/epmFetch.js';
+import { fetchEpmConfig, fetchEpmScope, fetchEpmGoals, fetchEpmProjects, fetchEpmConfigurationProjects, fetchEpmProjectRollup, fetchEpmAllProjectsRollup } from './epm/epmFetch.js';
 import { EpmRollupPanel } from './epm/EpmRollupPanel.jsx';
 import {
+    buildAggregateRollupBoards,
     buildRollupTree,
     filterEpmProjectsForTab,
     getEpmProjectDisplayName,
@@ -251,6 +252,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmRootGoalIndex, setEpmRootGoalIndex] = useState(0);
             const [epmSubGoalIndex, setEpmSubGoalIndex] = useState(0);
             const [epmRollupTree, setEpmRollupTree] = useState(null);
+            const [epmRollupBoards, setEpmRollupBoards] = useState(null);
+            const [epmDuplicates, setEpmDuplicates] = useState({});
+            const [epmAggregateTruncated, setEpmAggregateTruncated] = useState(false);
+            const [epmAggregateFallback, setEpmAggregateFallback] = useState(false);
             const [epmRollupLoading, setEpmRollupLoading] = useState(false);
             const [availableSprints, setAvailableSprints] = useState([]);
             const [sprintsLoading, setSprintsLoading] = useState(true);
@@ -1123,23 +1128,84 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 const requestId = epmRollupRequestIdRef.current;
                 const currentProject = projectOverride || null;
                 const currentProjectId = projectIdOverride || getEpmProjectIdentity(currentProject);
-                if (selectedView !== 'epm' || !currentProjectId || !currentProject) {
+                if (selectedView !== 'epm') {
                     setEpmRollupTree(null);
-                    setEpmRollupLoading(false);
-                    return;
-                }
-                if (currentProject.matchState === 'metadata-only') {
-                    setEpmRollupTree(buildRollupTree({ metadataOnly: true }));
+                    setEpmRollupBoards(null);
+                    setEpmDuplicates({});
+                    setEpmAggregateTruncated(false);
+                    setEpmAggregateFallback(false);
                     setEpmRollupLoading(false);
                     return;
                 }
                 if (epmTab === 'active' && !selectedSprint) {
                     setEpmRollupTree(null);
+                    setEpmRollupBoards(null);
+                    setEpmDuplicates({});
+                    setEpmAggregateTruncated(false);
+                    setEpmAggregateFallback(false);
+                    setEpmRollupLoading(false);
+                    return;
+                }
+                if (epmSelectedProjectId === '' && currentProjectId === '') {
+                    setEpmRollupLoading(true);
+                    setEpmRollupTree(null);
+                    setEpmRollupBoards(null);
+                    setEpmDuplicates({});
+                    setEpmAggregateTruncated(false);
+                    setEpmAggregateFallback(false);
+                    try {
+                        const payload = await fetchEpmAllProjectsRollup(BACKEND_URL, {
+                            tab: epmTab,
+                            sprint: selectedSprint,
+                        });
+                        if (epmRollupRequestIdRef.current !== requestId) {
+                            return;
+                        }
+                        const aggregate = buildAggregateRollupBoards(payload);
+                        setEpmRollupBoards(aggregate.boards);
+                        setEpmDuplicates(aggregate.duplicates);
+                        setEpmAggregateTruncated(aggregate.truncated);
+                        setEpmAggregateFallback(aggregate.fallback);
+                    } catch (err) {
+                        if (epmRollupRequestIdRef.current !== requestId) {
+                            return;
+                        }
+                        console.error('Failed to fetch EPM all-projects rollup:', err);
+                        setEpmRollupBoards(null);
+                        setEpmDuplicates({});
+                        setEpmAggregateTruncated(false);
+                        setEpmAggregateFallback(false);
+                    } finally {
+                        if (epmRollupRequestIdRef.current === requestId) {
+                            setEpmRollupLoading(false);
+                        }
+                    }
+                    return;
+                }
+                if (!currentProject) {
+                    setEpmRollupTree(null);
+                    setEpmRollupBoards(null);
+                    setEpmDuplicates({});
+                    setEpmAggregateTruncated(false);
+                    setEpmAggregateFallback(false);
+                    setEpmRollupLoading(false);
+                    return;
+                }
+                if (currentProject.matchState === 'metadata-only' && !currentProject.label) {
+                    setEpmRollupTree(buildRollupTree({ metadataOnly: true }));
+                    setEpmRollupBoards(null);
+                    setEpmDuplicates({});
+                    setEpmAggregateTruncated(false);
+                    setEpmAggregateFallback(false);
                     setEpmRollupLoading(false);
                     return;
                 }
                 setEpmRollupLoading(true);
                 setEpmRollupTree(null);
+                setEpmRollupBoards(null);
+                setEpmDuplicates({});
+                setEpmAggregateTruncated(false);
+                setEpmAggregateFallback(false);
                 try {
                     const payload = await fetchEpmProjectRollup(BACKEND_URL, currentProjectId, {
                         tab: epmTab,
@@ -1165,6 +1231,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 if (!hasSavedEpmScope) {
                     setEpmProjects([]);
                     setEpmRollupTree(null);
+                    setEpmRollupBoards(null);
+                    setEpmDuplicates({});
+                    setEpmAggregateTruncated(false);
+                    setEpmAggregateFallback(false);
                     setEpmRollupLoading(false);
                     return;
                 }
@@ -10816,7 +10886,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             onChange={(event) => setEpmSelectedProjectId(event.target.value)}
                             disabled={epmProjectsLoading || visibleEpmProjects.length === 0}
                         >
-                            <option value="">Select project...</option>
+                            <option value="">All projects</option>
                             {visibleEpmProjects.filter(project => getEpmProjectIdentity(project)).map((project) => {
                                 const projectId = getEpmProjectIdentity(project);
                                 return (
@@ -11522,14 +11592,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 )}
                                 {selectedView === 'epm' && (
                                     <>
+                                        {shouldUseEpmSprint(epmTab) && renderSprintControl('main')}
                                         {renderEpmTabs()}
                                         {renderEpmProjectPicker()}
-                                        {selectedView === 'epm' && epmTab === 'active' && !selectedSprint && epmSelectedProjectId && (
-                                            <div className="empty-state epm-sprint-required">
-                                                <h2>Select a sprint</h2>
-                                                <p>The Active tab needs a sprint to scope Jira work.</p>
-                                            </div>
-                                        )}
                                     </>
                                 )}
                                 {selectedView === 'eng' && (
@@ -11585,6 +11650,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         </>
                                     ) : (
                                         <>
+                                            {shouldUseEpmSprint(epmTab) && renderSprintControl('compact')}
                                             {renderEpmTabs()}
                                             {renderEpmProjectPicker()}
                                             <button
@@ -14997,25 +15063,20 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     <div className="filters-strip">
                                         <div className="filters-group">
                                             <div className="filters-label">Project</div>
-                                            {selectedEpmProject && selectedEpmProject.matchState !== 'metadata-only' && (
+                                            {epmSelectedProjectId && selectedEpmProject && selectedEpmProject.matchState !== 'metadata-only' && (
                                                 <div className="group-pane-title">{getEpmProjectDisplayName(selectedEpmProject)}</div>
                                             )}
                                             <div className="group-field-helper">
-                                                {selectedEpmProject
+                                                {!epmSelectedProjectId
+                                                    ? 'All visible Atlassian Home projects.'
+                                                    : selectedEpmProject
                                                     ? (selectedEpmProjectUpdateLine || selectedEpmProject.stateLabel || selectedEpmProject.stateValue || 'No updates yet')
-                                                    : 'Pick an Atlassian Home project to inspect its Jira rollup.'}
+                                                    : 'This project is not available in the current EPM tab.'}
                                             </div>
                                         </div>
                                     </div>
 
-                                    {!epmSelectedProjectId && (
-                                        <div className="empty-state">
-                                            <h2>Select a project</h2>
-                                            <p>Choose an Atlassian Home project to load the EPM board.</p>
-                                        </div>
-                                    )}
-
-                                    {epmSelectedProjectId && epmProjectsLoading && (
+                                    {epmProjectsLoading && (
                                         <div className="empty-state">
                                             <h2>Loading EPM projects</h2>
                                             <p>Refreshing Atlassian Home project metadata.</p>
@@ -15029,7 +15090,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         </div>
                                     )}
 
-                                    {selectedEpmProject && (
+                                    {!epmProjectsLoading && (!epmSelectedProjectId || selectedEpmProject) && (
                                         <EpmRollupPanel
                                             selectedEpmProject={selectedEpmProject}
                                             selectedEpmProjectUpdateLine={selectedEpmProjectUpdateLine}
@@ -15037,6 +15098,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             selectedSprint={selectedSprint}
                                             epmRollupLoading={epmRollupLoading}
                                             epmRollupTree={epmRollupTree}
+                                            epmRollupBoards={epmRollupBoards}
+                                            epmDuplicates={epmDuplicates}
+                                            epmAggregateTruncated={epmAggregateTruncated}
                                             openEpmSettingsTab={openEpmSettingsTab}
                                             jiraUrl={jiraUrl}
                                             InitiativeIcon={InitiativeIcon}

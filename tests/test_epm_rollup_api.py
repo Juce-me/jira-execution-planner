@@ -192,6 +192,96 @@ class TestEpmRollupApi(unittest.TestCase):
             self.assertEqual(self.client.get('/api/epm/projects/project-1/rollup?tab=backlog').status_code, 200)
             self.assertEqual(self.client.get('/api/epm/projects/project-1/rollup?tab=archived').status_code, 200)
 
+    def test_all_projects_rollup_preserves_active_sprint_validation(self):
+        with patch.object(jira_server, 'build_epm_projects_payload') as mock_projects:
+            missing = self.client.get('/api/epm/projects/rollup/all?tab=active')
+            non_numeric = self.client.get('/api/epm/projects/rollup/all?tab=active&sprint=abc')
+
+        self.assertEqual(missing.status_code, 400)
+        self.assertEqual(missing.get_json(), {'error': 'sprint_required'})
+        self.assertEqual(non_numeric.status_code, 400)
+        self.assertEqual(non_numeric.get_json(), {'error': 'sprint_not_numeric'})
+        mock_projects.assert_not_called()
+
+    def test_all_projects_rollup_filters_visible_projects_and_reports_duplicates(self):
+        projects = [
+            {
+                'id': 'active-one',
+                'displayName': 'Active One',
+                'label': 'synthetic_one',
+                'resolvedLinkage': {'labels': ['synthetic_one'], 'epicKeys': []},
+                'matchState': 'home-linked',
+                'tabBucket': 'active',
+            },
+            {
+                'id': 'backlog-one',
+                'displayName': 'Backlog One',
+                'label': 'synthetic_backlog',
+                'resolvedLinkage': {'labels': ['synthetic_backlog'], 'epicKeys': []},
+                'matchState': 'home-linked',
+                'tabBucket': 'backlog',
+            },
+            {
+                'id': 'metadata-one',
+                'displayName': 'Metadata One',
+                'label': '',
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+                'matchState': 'metadata-only',
+                'tabBucket': 'active',
+            },
+            {
+                'id': 'custom-all',
+                'displayName': 'Custom All',
+                'label': 'synthetic_custom',
+                'resolvedLinkage': {'labels': ['synthetic_custom'], 'epicKeys': []},
+                'matchState': 'jep-fallback',
+                'tabBucket': 'all',
+            },
+        ]
+
+        def rollup_side_effect(project_id, tab, sprint, _deps):
+            self.assertEqual(tab, 'active')
+            self.assertEqual(sprint, '42')
+            if project_id == 'active-one':
+                return {
+                    'project': projects[0],
+                    'metadataOnly': False,
+                    'emptyRollup': False,
+                    'truncated': False,
+                    'truncatedQueries': [],
+                    'initiatives': {},
+                    'rootEpics': {},
+                    'orphanStories': [make_issue('SYN-DUP')['fields'] | {'key': 'SYN-DUP'}],
+                }, 200, {}
+            if project_id == 'custom-all':
+                return {
+                    'project': projects[3],
+                    'metadataOnly': False,
+                    'emptyRollup': False,
+                    'truncated': True,
+                    'truncatedQueries': ['q1'],
+                    'initiatives': {},
+                    'rootEpics': {},
+                    'orphanStories': [make_issue('SYN-DUP')['fields'] | {'key': 'SYN-DUP'}],
+                }, 200, {}
+            raise AssertionError(f'unexpected rollup project {project_id}')
+
+        with patch.object(jira_server, 'get_epm_config', return_value={'version': 2}), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': projects}), \
+             patch.object(jira_server, 'build_per_project_rollup', side_effect=rollup_side_effect) as mock_rollup:
+            response = self.client.get('/api/epm/projects/rollup/all?tab=active&sprint=42')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = response.get_json()
+        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['active-one', 'metadata-one', 'custom-all'])
+        self.assertEqual(mock_rollup.call_count, 2)
+        self.assertEqual([call.args[0] for call in mock_rollup.call_args_list], ['active-one', 'custom-all'])
+        self.assertTrue(payload['truncated'])
+        self.assertEqual(payload['duplicates'], {'SYN-DUP': ['active-one', 'custom-all']})
+        metadata_rollup = payload['projects'][1]['rollup']
+        self.assertTrue(metadata_rollup['metadataOnly'])
+        self.assertFalse(metadata_rollup['emptyRollup'])
+
     def test_active_sprint_filter_is_appended_to_every_query_and_sprint_reaches_response(self):
         project = {'id': 'project-1', 'label': 'synthetic_label_alpha', 'resolvedLinkage': {'labels': ['synthetic_label_alpha'], 'epicKeys': []}}
         q1 = [make_issue('SYN-I1', 'Initiative', labels=['synthetic_label_alpha'], sprint=[{'id': '42', 'name': 'Sprint 42', 'state': 'ACTIVE'}])]

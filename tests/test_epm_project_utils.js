@@ -83,6 +83,36 @@ test('buildRollupTree preserves hierarchy and dedupes repeated issue keys', asyn
     assert.deepStrictEqual(tree.orphanStories.map(issue => issue.key), ['STORY-5']);
 });
 
+test('buildAggregateRollupBoards normalizes project entries and duplicate metadata', async () => {
+    const { buildAggregateRollupBoards } = await import(helperUrl);
+    const result = buildAggregateRollupBoards({
+        projects: [
+            {
+                project: { id: 'project-a', displayName: 'Project A' },
+                rollup: {
+                    initiatives: {},
+                    rootEpics: {},
+                    orphanStories: [{ key: 'STORY-1', summary: 'Story 1' }]
+                }
+            },
+            {
+                project: { id: 'project-b', displayName: 'Project B' },
+                rollup: { metadataOnly: true }
+            }
+        ],
+        duplicates: { 'STORY-1': ['project-a', 'project-c'] },
+        truncated: true,
+        fallback: true
+    });
+
+    assert.strictEqual(result.truncated, true);
+    assert.strictEqual(result.fallback, true);
+    assert.deepStrictEqual(result.duplicates, { 'STORY-1': ['project-a', 'project-c'] });
+    assert.deepStrictEqual(result.boards.map(board => board.project.id), ['project-a', 'project-b']);
+    assert.strictEqual(result.boards[0].tree.kind, 'tree');
+    assert.strictEqual(result.boards[1].tree.kind, 'metadataOnly');
+});
+
 test('EPM settings project readiness and cache key use sub-goal plus prefix', async () => {
     const {
         getEpmProjectPrerequisites,

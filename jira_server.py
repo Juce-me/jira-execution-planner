@@ -1645,22 +1645,112 @@ def build_epm_rollup_dependencies():
     )
 
 
-def build_epm_project_payload(home_project, config_row):
+def filter_epm_home_tag_matches(home_project, label_prefix):
+    prefix = normalize_epm_text(label_prefix)
+    home_tags = home_project.get('homeTags') if isinstance(home_project, dict) else []
+    if not isinstance(home_tags, list):
+        home_tags = []
+    if not prefix:
+        return []
+    normalized_prefix = prefix.lower()
+    matches = []
+    seen = set()
+    for tag in home_tags:
+        tag_text = normalize_epm_text(tag)
+        if not tag_text or not tag_text.lower().startswith(normalized_prefix):
+            continue
+        dedupe_key = tag_text.lower()
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        matches.append(tag_text)
+    return matches
+
+
+def resolve_epm_project_label(home_project, config_row, label_prefix):
+    row = config_row or {}
+    manual_label = normalize_epm_text(row.get('label') if 'label' in row else row.get('jiraLabel'))
+    home_tags = home_project.get('homeTags') if isinstance(home_project, dict) else []
+    has_home_tags_field = isinstance(home_tags, list)
+    home_tags = [normalize_epm_text(tag) for tag in (home_tags if has_home_tags_field else []) if normalize_epm_text(tag)]
+    home_tag_matches = filter_epm_home_tag_matches({'homeTags': home_tags}, label_prefix)
+
+    if not has_home_tags_field:
+        legacy_labels = list(((home_project or {}).get('resolvedLinkage') or {}).get('labels') or [])
+        home_tag_matches = [normalize_epm_text(label) for label in legacy_labels if normalize_epm_text(label)]
+
+    if manual_label:
+        if not has_home_tags_field and manual_label in home_tag_matches:
+            return {
+                'label': manual_label,
+                'labelSource': 'home-tag',
+                'labelStatus': 'auto',
+                'homeTags': home_tags,
+                'homeTagMatches': home_tag_matches,
+            }
+        return {
+            'label': manual_label,
+            'labelSource': 'manual',
+            'labelStatus': 'manual',
+            'homeTags': home_tags,
+            'homeTagMatches': home_tag_matches,
+        }
+
+    if len(home_tag_matches) == 1:
+        return {
+            'label': home_tag_matches[0],
+            'labelSource': 'home-tag',
+            'labelStatus': 'auto',
+            'homeTags': home_tags,
+            'homeTagMatches': home_tag_matches,
+        }
+
+    if len(home_tag_matches) > 1:
+        return {
+            'label': '',
+            'labelSource': '',
+            'labelStatus': 'ambiguous',
+            'homeTags': home_tags,
+            'homeTagMatches': home_tag_matches,
+        }
+
+    status = 'unavailable' if (home_project or {}).get('homeTagsUnavailable') else 'missing'
+    return {
+        'label': '',
+        'labelSource': '',
+        'labelStatus': status,
+        'homeTags': home_tags,
+        'homeTagMatches': [],
+    }
+
+
+def build_epm_project_payload(home_project, config_row, label_prefix=None):
     row = config_row or {}
     linkage_row = dict(row)
     if 'jiraLabel' not in linkage_row and 'label' in row:
         linkage_row['jiraLabel'] = row.get('label')
     linkage, match_state = merge_epm_linkage(home_project, linkage_row)
+    label_resolution = resolve_epm_project_label(home_project, row, label_prefix)
+    resolved_label = label_resolution['label']
     custom_name = normalize_epm_text(row.get('name') if 'name' in row else row.get('customName'))
+    resolved_epics = sorted(set(linkage.get('epicKeys') or []))
+    resolved_labels = [resolved_label] if resolved_label else []
+    if resolved_label:
+        match_state = 'home-linked' if label_resolution['labelSource'] == 'home-tag' else 'jep-fallback'
+    elif resolved_epics:
+        match_state = 'home-linked'
+    else:
+        match_state = 'metadata-only'
     return {
         **home_project,
         'id': normalize_epm_text(row.get('id')) or home_project.get('homeProjectId', ''),
         'name': custom_name or home_project.get('name', ''),
-        'label': normalize_epm_text(row.get('label')),
+        'label': resolved_label,
         'customName': custom_name,
         'displayName': custom_name or home_project.get('name', ''),
-        'resolvedLinkage': linkage,
+        'resolvedLinkage': {'labels': resolved_labels, 'epicKeys': resolved_epics},
         'matchState': match_state,
+        **label_resolution,
     }
 
 
@@ -1682,6 +1772,10 @@ def build_custom_project_payload(row):
         'displayName': name,
         'resolvedLinkage': {'labels': [label] if label else [], 'epicKeys': []},
         'matchState': 'jep-fallback' if label else 'metadata-only',
+        'labelSource': 'manual' if label else '',
+        'labelStatus': 'manual' if label else 'missing',
+        'homeTags': [],
+        'homeTagMatches': [],
     }
 
 
@@ -1713,7 +1807,7 @@ def build_epm_projects_payload(epm_config, force_refresh=False):
         if project_id:
             returned_home_project_ids.add(project_id)
         config_row = find_epm_config_row(normalized_config['projects'], project_id)
-        projects.append(build_epm_project_payload(home_project, config_row))
+        projects.append(build_epm_project_payload(home_project, config_row, normalized_config.get('labelPrefix')))
     for row in normalized_config['projects'].values():
         home_project_id = normalize_epm_text(row.get('homeProjectId'))
         if home_project_id and home_project_id in returned_home_project_ids:
@@ -1736,6 +1830,115 @@ def build_epm_projects_payload(epm_config, force_refresh=False):
     }
 
 
+def filter_epm_projects_for_tab(projects, tab):
+    normalized_tab = normalize_epm_text(tab or 'active').lower()
+    visible = []
+    for project in projects or []:
+        tab_bucket = normalize_epm_text((project or {}).get('tabBucket')).lower()
+        if tab_bucket == normalized_tab or tab_bucket == 'all':
+            visible.append(project)
+    return visible
+
+
+def _epm_collection_values(collection):
+    if isinstance(collection, dict):
+        return list(collection.values())
+    if isinstance(collection, list):
+        return collection
+    return []
+
+
+def collect_epm_rollup_issue_keys(rollup):
+    keys = []
+    seen = set()
+
+    def add_issue(issue):
+        issue_key = normalize_epm_text((issue or {}).get('key'))
+        if not issue_key or issue_key in seen:
+            return
+        seen.add(issue_key)
+        keys.append(issue_key)
+
+    for initiative in _epm_collection_values((rollup or {}).get('initiatives')):
+        add_issue((initiative or {}).get('issue'))
+        for epic in _epm_collection_values((initiative or {}).get('epics')):
+            add_issue((epic or {}).get('issue'))
+            for story in _epm_collection_values((epic or {}).get('stories')):
+                add_issue(story)
+        for story in _epm_collection_values((initiative or {}).get('looseStories')):
+            add_issue(story)
+    for epic in _epm_collection_values((rollup or {}).get('rootEpics')):
+        add_issue((epic or {}).get('issue'))
+        for story in _epm_collection_values((epic or {}).get('stories')):
+            add_issue(story)
+    for story in _epm_collection_values((rollup or {}).get('orphanStories')):
+        add_issue(story)
+    return keys
+
+
+def build_all_epm_projects_rollup(tab, sprint):
+    tab = normalize_epm_text(tab or 'active').lower()
+    sprint = normalize_epm_text(sprint)
+    validation_error = validate_epm_tab_sprint(tab, sprint)
+    if validation_error:
+        error_payload, status = validation_error
+        return error_payload, status, {}
+
+    epm_config = get_epm_config()
+    projects_payload = build_epm_projects_payload(epm_config)
+    visible_projects = filter_epm_projects_for_tab(projects_payload.get('projects') or [], tab)
+    dependencies = build_epm_rollup_dependencies()
+    entries_by_project_id = {}
+    issue_memberships = {}
+
+    def build_entry(project):
+        project_id = get_epm_project_payload_identity(project)
+        if not normalize_epm_text(project.get('label')):
+            return project_id, {
+                'project': project,
+                'rollup': build_empty_epm_rollup_payload(project, metadata_only=True),
+            }
+        rollup, status, _headers = build_per_project_rollup(project_id, tab, sprint, dependencies)
+        if status != 200:
+            rollup = build_empty_epm_rollup_payload(project, metadata_only=True)
+        return project_id, {'project': project, 'rollup': rollup}
+
+    labeled_projects = [project for project in visible_projects if normalize_epm_text(project.get('label'))]
+    for project in visible_projects:
+        if not normalize_epm_text(project.get('label')):
+            project_id, entry = build_entry(project)
+            entries_by_project_id[project_id] = entry
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        future_to_project = {executor.submit(build_entry, project): project for project in labeled_projects}
+        for future in as_completed(future_to_project):
+            project_id, entry = future.result()
+            entries_by_project_id[project_id] = entry
+
+    ordered_entries = []
+    for project in visible_projects:
+        project_id = get_epm_project_payload_identity(project)
+        entry = entries_by_project_id.get(project_id)
+        if not entry:
+            continue
+        ordered_entries.append(entry)
+        for issue_key in collect_epm_rollup_issue_keys(entry['rollup']):
+            issue_memberships.setdefault(issue_key, []).append(project_id)
+
+    duplicates = {
+        issue_key: project_ids
+        for issue_key, project_ids in issue_memberships.items()
+        if len(project_ids) > 1
+    }
+    payload = {
+        'projects': ordered_entries,
+        'duplicates': duplicates,
+        'truncated': any(bool((entry.get('rollup') or {}).get('truncated')) for entry in ordered_entries),
+        'fallback': True,
+    }
+    return payload, 200, {}
+
+
 def find_epm_project_or_404(project_id):
     epm_config = get_epm_config()
     epm_scope = epm_config.get('scope') or {}
@@ -1747,14 +1950,18 @@ def find_epm_project_or_404(project_id):
             return build_custom_project_payload(config_row)
         for home_project in get_cached_epm_home_projects(epm_scope):
             if home_project.get('homeProjectId') == home_project_id:
-                return build_epm_project_payload(home_project, config_row)
+                return build_epm_project_payload(home_project, config_row, epm_config.get('labelPrefix'))
 
     for home_project in get_cached_epm_home_projects(epm_scope):
         if home_project.get('homeProjectId') == project_id:
             config_row = find_epm_config_row(epm_config['projects'], project_id)
-            return build_epm_project_payload(home_project, config_row)
+            return build_epm_project_payload(home_project, config_row, epm_config.get('labelPrefix'))
 
     abort(404)
+
+
+def get_epm_project_payload_identity(project):
+    return normalize_epm_text((project or {}).get('id'))
 
 
 def normalize_epm_text(value):
@@ -6809,6 +7016,17 @@ def configure_epm_projects_endpoint():
 @app.route('/api/epm/projects/preview', methods=['POST'])
 def preview_epm_projects_endpoint():
     return configure_epm_projects_endpoint()
+
+
+@app.route('/api/epm/projects/rollup/all', methods=['GET'])
+def get_all_epm_projects_rollup_endpoint():
+    tab = str(request.args.get('tab') or 'active').strip().lower()
+    sprint = str(request.args.get('sprint') or '').strip()
+    payload, status, headers = build_all_epm_projects_rollup(tab, sprint)
+    response = jsonify(payload)
+    for key, value in headers.items():
+        response.headers[key] = value
+    return response, status
 
 
 @app.route('/api/epm/projects/<home_project_id>/issues', methods=['GET'])

@@ -12,9 +12,11 @@ from epm_home import (
     bucket_epm_state,
     build_home_project_record,
     extract_latest_update,
+    extract_tag_names,
     fetch_epm_home_projects,
     fetch_home_site_cloud_id,
     fetch_latest_project_update,
+    fetch_project_tags,
     fetch_projects_for_goal,
     fetch_sub_goals_for_root_key,
     resolve_goal_by_key,
@@ -77,6 +79,80 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual(project['matchState'], 'metadata-only')
         self.assertEqual(project['latestUpdateDate'], '2026-04-12')
         self.assertEqual(project['latestUpdateSnippet'], 'Awaiting budget approval')
+
+    def test_extract_tag_names_normalizes_direct_and_cypher_tag_shapes(self):
+        tags = extract_tag_names([
+            {'name': ' rnd_project_alpha '},
+            {'node': {'name': 'rnd_project_beta'}},
+            {'data': {'name': 'rnd_project_gamma'}},
+            {'data': {'__typename': 'AtlassianHomeTag', 'name': 'rnd_project_delta'}},
+            {'name': 'rnd_project_alpha'},
+            {'name': ''},
+            'ignored',
+        ])
+
+        self.assertEqual(tags, [
+            'rnd_project_alpha',
+            'rnd_project_beta',
+            'rnd_project_gamma',
+            'rnd_project_delta',
+        ])
+
+    def test_fetch_project_tags_reads_direct_home_project_tags(self):
+        client = Mock()
+        client.execute.return_value = {
+            'data': {
+                'projects_byId': {
+                    'tags': {
+                        'edges': [
+                            {'node': {'name': 'rnd_project_alpha'}},
+                            {'node': {'name': 'epm'}},
+                        ],
+                    },
+                },
+            },
+        }
+
+        result = fetch_project_tags(client, {'id': 'proj-1'})
+
+        self.assertEqual(result, ['rnd_project_alpha', 'epm'])
+        client.execute.assert_called_once_with(epm_home.QUERY_PROJECT_TAGS, {'projectId': 'proj-1'})
+
+    @patch('epm_home.fetch_home_site_cloud_id', return_value='cloud-123')
+    @patch('epm_home.build_teamwork_graph_client')
+    def test_fetch_project_tags_falls_back_to_teamwork_graph_relationship(self, mock_build_twg_client, mock_cloud_id):
+        home_client = Mock()
+        home_client.execute.side_effect = epm_home.HomeGraphQLError('unknown field tags')
+        twg_client = Mock()
+        twg_client.execute.return_value = {
+            'data': {
+                'cypherQuery': {
+                    'edges': [
+                        {
+                            'node': {
+                                'columns': [
+                                    {
+                                        'value': {
+                                            'nodes': [
+                                                {'data': {'__typename': 'AtlassianHomeTag', 'name': 'rnd_project_alpha'}},
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            },
+        }
+        mock_build_twg_client.return_value = twg_client
+
+        result = fetch_project_tags(home_client, {'id': 'proj-1', 'url': 'https://home/project/proj-1'})
+
+        self.assertEqual(result, ['rnd_project_alpha'])
+        mock_cloud_id.assert_called_once_with()
+        mock_build_twg_client.assert_called_once_with()
+        self.assertIn('atlassian_project_has_atlassian_home_tag', twg_client.execute.call_args.args[1]['cypherQuery'])
 
     def test_fetch_epm_home_projects_requires_scope_argument(self):
         with self.assertRaises(TypeError):

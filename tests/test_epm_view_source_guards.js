@@ -243,11 +243,30 @@ test('ENG task fetching effects are unreachable in EPM view', () => {
 
 test('EPM board fetches rollup with tab and sprint params while preserving active sprint gating', () => {
     assert.ok(dashboardSource.includes('fetchEpmProjectRollup(BACKEND_URL, currentProjectId'), 'Expected EPM board to fetch the rollup endpoint through wrapper');
+    assert.ok(dashboardSource.includes('fetchEpmAllProjectsRollup(BACKEND_URL'), 'Expected EPM all-projects mode to fetch the aggregate rollup endpoint through wrapper');
     assert.ok(dashboardSource.includes('tab: epmTab'), 'Expected EPM rollup wrapper call to include current tab');
     assert.ok(dashboardSource.includes('sprint: selectedSprint'), 'Expected EPM rollup wrapper call to include selected sprint');
     assert.ok(epmFetchSource.includes("const params = new URLSearchParams({ tab: effectiveTab })"), 'Expected EPM rollup request to include tab parameter');
     assert.ok(epmFetchSource.includes("params.set('sprint', String(sprint))"), 'Expected EPM rollup request to include selected sprint');
+    assert.ok(epmFetchSource.includes('/api/epm/projects/rollup/all?${params.toString()}'), 'Expected aggregate EPM rollup request wrapper');
     assert.ok(dashboardSource.includes("epmTab === 'active' && !selectedSprint"), 'Expected active tab to require selectedSprint before rollup fetch');
+});
+
+test('EPM defaults to all projects and exposes sprint controls in Active', () => {
+    const pickerSnippet = getSnippetBetween(
+        dashboardSource,
+        'const renderEpmProjectPicker = () =>',
+        'const renderSprintControl ='
+    );
+    assert.ok(pickerSnippet.includes('<option value="">All projects</option>'), 'Expected blank EPM project selection to mean All projects');
+    assert.ok(!pickerSnippet.includes('Select project...'), 'Did not expect single-project placeholder copy');
+    assert.ok(dashboardSource.includes("epmSelectedProjectId === ''"), 'Expected explicit all-projects branch for blank EPM project selection');
+    assert.ok(dashboardSource.includes("shouldUseEpmSprint(epmTab) && renderSprintControl('main')"), 'Expected EPM Active main controls to render the sprint selector');
+    assert.ok(dashboardSource.includes("shouldUseEpmSprint(epmTab) && renderSprintControl('compact')"), 'Expected EPM Active compact controls to render the sprint selector');
+    assert.ok(
+        dashboardSource.includes("currentProject.matchState === 'metadata-only' && !currentProject.label"),
+        'Expected metadata-only shortcut to apply only when no label is present'
+    );
 });
 
 test('EPM project identity positions use project id only', () => {

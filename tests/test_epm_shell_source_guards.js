@@ -22,8 +22,8 @@ test('dashboard source includes the EPM shell project picker and ENG gating hook
     assert.ok(helperSource.includes("String(tab || 'active')"), 'Expected active tab defaulting in epmProjectUtils.mjs');
     assert.ok(dashboardSource.includes('const selectedEpmProject = visibleEpmProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;'), 'Expected selectedEpmProject derivation in dashboard.jsx');
     assert.ok(
-        countOccurrences(dashboardSource + epmRollupPanelSource, 'getEpmProjectDisplayName(selectedEpmProject)') >= 2,
-        'Expected selected project display name helper across dashboard.jsx and EpmRollupPanel.jsx'
+        countOccurrences(dashboardSource + epmRollupPanelSource, 'getEpmProjectDisplayName(') >= 4,
+        'Expected EPM project display name helper across focus and all-project render paths'
     );
     assert.ok(dashboardSource.includes('getEpmProjectDisplayName(project)'), 'Expected project picker display name helper in dashboard.jsx');
     assert.ok(dashboardSource.includes("setEpmSelectedProjectId('')"), 'Expected invalid EPM selection clearing in dashboard.jsx');

@@ -42,3 +42,13 @@ export const fetchEpmProjectRollup = (backendUrl, projectId, { tab, sprint } = {
     return fetch(`${backendUrl}/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}`, { cache: 'no-cache' })
         .then(response => json(response, 'EPM rollup'));
 };
+
+export const fetchEpmAllProjectsRollup = (backendUrl, { tab, sprint } = {}) => {
+    const effectiveTab = tab || 'active';
+    const params = new URLSearchParams({ tab: effectiveTab });
+    if (effectiveTab === 'active' && sprint) {
+        params.set('sprint', String(sprint));
+    }
+    return fetch(`${backendUrl}/api/epm/projects/rollup/all?${params.toString()}`, { cache: 'no-cache' })
+        .then(response => json(response, 'EPM all-projects rollup'));
+};

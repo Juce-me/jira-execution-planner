@@ -173,6 +173,56 @@ query ProjectUpdates($projectId: String!, $first: Int!, $after: String) {
 }
 """
 
+QUERY_PROJECT_TAGS = """
+query ProjectTags($projectId: String!) {
+  projects_byId(projectId: $projectId) {
+    tags @optIn(to: "Townsquare") {
+      edges { node { id name url } }
+    }
+  }
+}
+"""
+
+QUERY_TEAMWORK_GRAPH_PROJECT_TAGS = """
+query EpmProjectTags($cypherQuery: String!, $params: CypherRequestParams) {
+  cypherQuery(query: $cypherQuery, params: $params) {
+    edges {
+      node {
+        columns {
+          value {
+            __typename
+            ... on CypherQueryResultNode {
+              id
+              data {
+                __typename
+                ... on AtlassianHomeTag {
+                  id
+                  name
+                  url
+                }
+              }
+            }
+            ... on CypherQueryResultListNode {
+              nodes {
+                id
+                data {
+                  __typename
+                  ... on AtlassianHomeTag {
+                    id
+                    name
+                    url
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
 
 def adf_to_text(value: Any) -> str:
     """Flatten Atlassian Document Format content to plain text."""
@@ -248,7 +298,163 @@ def extract_latest_update(updates):
     }
 
 
-def build_home_project_record(project, updates, linkage):
+def _extract_tag_name(value: Any) -> str:
+    if isinstance(value, str):
+        return ""
+    if not isinstance(value, dict):
+        return ""
+    if isinstance(value.get("name"), str):
+        return value.get("name", "").strip()
+    for key in ("node", "data"):
+        nested = value.get(key)
+        if isinstance(nested, dict):
+            nested_name = _extract_tag_name(nested)
+            if nested_name:
+                return nested_name
+    return ""
+
+
+def extract_tag_names(values: Any) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def visit(value: Any) -> None:
+        if value is None:
+            return
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+            return
+        if isinstance(value, dict):
+            name = _extract_tag_name(value)
+            if name:
+                dedupe_key = name.lower()
+                if dedupe_key not in seen:
+                    seen.add(dedupe_key)
+                    names.append(name)
+                return
+            if "edges" in value:
+                visit(value.get("edges"))
+                return
+            if "node" in value:
+                visit(value.get("node"))
+                return
+            if "nodes" in value:
+                visit(value.get("nodes"))
+                return
+            if "columns" in value:
+                visit(value.get("columns"))
+                return
+            if "value" in value:
+                visit(value.get("value"))
+                return
+
+    visit(values)
+    return names
+
+
+def build_teamwork_graph_client() -> HomeGraphQLClient:
+    email = os.environ.get("ATLASSIAN_EMAIL") or os.environ.get("JIRA_EMAIL") or ""
+    token = os.environ.get("ATLASSIAN_API_TOKEN") or os.environ.get("JIRA_TOKEN") or ""
+    if not email or not token:
+        raise RuntimeError(
+            "ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (or JIRA_EMAIL/JIRA_TOKEN) must be set to use the EPM view"
+        )
+    jira_url = ""
+    try:
+        import jira_server
+
+        jira_url = str(getattr(jira_server, "JIRA_URL", "") or "").rstrip("/")
+    except Exception:
+        jira_url = ""
+    if not jira_url:
+        jira_url = str(os.environ.get("JIRA_URL") or "").rstrip("/")
+    if not jira_url:
+        raise RuntimeError("JIRA_URL must be set to query Atlassian project tags")
+    return HomeGraphQLClient(email, token, f"{jira_url}/gateway/api/graphql/twg")
+
+
+def _project_tag_cypher(project_ari: str | None = None, project_url: str | None = None) -> tuple[str, dict] | None:
+    if project_ari:
+        return (
+            "MATCH (project:AtlassianProject {ari: $id})-[:atlassian_project_has_atlassian_home_tag]->(tag:AtlassianHomeTag) RETURN tag",
+            {"id": project_ari},
+        )
+    if project_url:
+        return (
+            "MATCH (project:AtlassianProject {url: $url})-[:atlassian_project_has_atlassian_home_tag]->(tag:AtlassianHomeTag) RETURN tag",
+            {"url": project_url},
+        )
+    return None
+
+
+def _project_ari_candidates(project: dict) -> list[str]:
+    project_id = str((project or {}).get("id") or "").strip()
+    if not project_id:
+        return []
+    if project_id.startswith("ari:"):
+        return [project_id]
+    candidates: list[str] = []
+    try:
+        cloud_id = fetch_home_site_cloud_id()
+    except RuntimeError:
+        cloud_id = ""
+    if cloud_id:
+        candidates.append(f"ari:cloud:townsquare:{cloud_id}:project/{project_id}")
+    candidates.append(f"ari:cloud:townsquare::project/{project_id}")
+    return candidates
+
+
+def _extract_project_tags_from_home_response(response: dict) -> list[str]:
+    project = ((response.get("data") or {}).get("projects_byId") or {})
+    return extract_tag_names(project.get("tags"))
+
+
+def _extract_project_tags_from_twg_response(response: dict) -> list[str]:
+    connection = ((response.get("data") or {}).get("cypherQuery") or {})
+    return extract_tag_names(connection.get("edges"))
+
+
+def fetch_project_tags(client: HomeGraphQLClient, project: dict) -> list[str] | None:
+    project_id = str((project or {}).get("id") or "").strip()
+    if not project_id:
+        return []
+    try:
+        response = client.execute(QUERY_PROJECT_TAGS, {"projectId": project_id})
+        return _extract_project_tags_from_home_response(response)
+    except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
+        logger.warning("Direct Home project tag fetch failed for %s: %s", project_id, exc)
+
+    try:
+        teamwork_graph_client = build_teamwork_graph_client()
+        for project_ari in _project_ari_candidates(project):
+            cypher = _project_tag_cypher(project_ari=project_ari)
+            if not cypher:
+                continue
+            query, params = cypher
+            response = teamwork_graph_client.execute(
+                QUERY_TEAMWORK_GRAPH_PROJECT_TAGS,
+                {"cypherQuery": query, "params": params},
+            )
+            tags = _extract_project_tags_from_twg_response(response)
+            if tags:
+                return tags
+        project_url = str((project or {}).get("url") or "").strip()
+        cypher = _project_tag_cypher(project_url=project_url)
+        if cypher:
+            query, params = cypher
+            response = teamwork_graph_client.execute(
+                QUERY_TEAMWORK_GRAPH_PROJECT_TAGS,
+                {"cypherQuery": query, "params": params},
+            )
+            return _extract_project_tags_from_twg_response(response)
+    except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
+        logger.warning("Teamwork Graph project tag fetch failed for %s: %s", project_id, exc)
+        return None
+    return []
+
+
+def build_home_project_record(project, updates, linkage, home_tags=None, tags_unavailable=False):
     latest = extract_latest_update(updates)
     resolved_labels = sorted(set((linkage or {}).get("labels") or []))
     resolved_epics = sorted(set((linkage or {}).get("epicKeys") or []))
@@ -263,6 +469,8 @@ def build_home_project_record(project, updates, linkage):
         "tabBucket": bucket_epm_state(state_value),
         "latestUpdateDate": latest["date"],
         "latestUpdateSnippet": latest["snippet"],
+        "homeTags": extract_tag_names(home_tags or []),
+        "homeTagsUnavailable": bool(tags_unavailable),
         "resolvedLinkage": {"labels": resolved_labels, "epicKeys": resolved_epics},
         "matchState": match_state,
     }
@@ -420,8 +628,9 @@ def _fetch_home_project_record(client: HomeGraphQLClient, row: dict) -> dict | N
             "stateLabel": state.get("label", "") if isinstance(state, dict) else "",
         }
         updates = fetch_latest_project_update(client, project_id)
+        home_tags = fetch_project_tags(client, project)
         linkage = extract_home_jira_linkage(project)
-        return build_home_project_record(project, updates, linkage)
+        return build_home_project_record(project, updates, linkage, home_tags, tags_unavailable=home_tags is None)
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Project detail fetch failed for %s: %s", project_id, exc)
         return None

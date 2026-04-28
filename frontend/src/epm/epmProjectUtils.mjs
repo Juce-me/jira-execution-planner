@@ -84,6 +84,22 @@ export function buildRollupTree(payload) {
     };
 }
 
+export function buildAggregateRollupBoards(payload) {
+    const projects = Array.isArray(payload?.projects) ? payload.projects : [];
+    const duplicates = payload?.duplicates && typeof payload.duplicates === 'object' && !Array.isArray(payload.duplicates)
+        ? payload.duplicates
+        : {};
+    return {
+        boards: projects.map((entry) => ({
+            project: entry?.project || {},
+            tree: buildRollupTree(entry?.rollup || {})
+        })),
+        duplicates,
+        truncated: Boolean(payload?.truncated),
+        fallback: Boolean(payload?.fallback)
+    };
+}
+
 export function hydrateEpmProjectDraft(row, homeProject) {
     return {
         ...(row || {}),

@@ -53,11 +53,8 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const config = await loadEpmConfig();'), 'Expected config load to remain independent');
     assert.ok(dashboardSource.includes('const scopeMeta = await loadEpmScopeMeta();'), 'Expected scope metadata load to be handled separately');
     assert.ok(dashboardSource.includes('const rootGoalsPayload = await loadEpmGoals();'), 'Expected root-goal discovery load to be handled separately');
-    assert.ok(dashboardSource.includes('const childGoalState = await loadEpmSubGoalsForRoot(rootGoalKey, savedSubGoalKey);'), 'Expected child-goal validation before initial EPM project loading');
-    assert.ok(dashboardSource.includes('if (!cancelled && savedSubGoalKey && !childGoalState.lookupFailed && !childGoalState.hasExpectedSubGoal && loadedConfig) {'), 'Expected invalid saved sub-goal reconciliation only on confirmed lookup success');
-    assert.ok(dashboardSource.includes('return { goals: [], hasExpectedSubGoal: true, lookupFailed: true };'), 'Expected child-goal lookup failures to preserve saved scope instead of treating it as invalid');
-    assert.ok(dashboardSource.includes("subGoalKey: '',"), 'Expected invalid saved sub-goal reconciliation to clear the draft');
-    assert.ok(!dashboardSource.includes('epmConfigBaselineRef.current = JSON.stringify(reconciledConfig);'), 'Did not expect invalid sub-goal reconciliation to rewrite the saved baseline');
+    assert.ok(dashboardSource.includes('const clearEpmRootGoal = () => {'), 'Expected root clear handler');
+    assert.ok(dashboardSource.includes('const clearEpmSubGoal = () => {'), 'Expected explicit sub-goal clear handler');
     assert.ok(dashboardSource.includes('const hasDraftEpmScope = React.useMemo(() => {'), 'Expected draft-driven EPM scope helper for settings modal state');
     assert.ok(dashboardSource.includes('const showEpmRootGoalResults = epmRootGoalOpen &&') && dashboardSource.includes('Boolean(epmRootGoalsError)') && dashboardSource.includes('epmRootGoals.length === 0'), 'Expected root goal result panel gating to include error-only and empty-catalog states');
     assert.ok(dashboardSource.includes('const showEpmSubGoalResults = epmSubGoalOpen &&') && dashboardSource.includes('Boolean(epmSubGoalsError)') && dashboardSource.includes('epmSubGoals.length === 0'), 'Expected sub-goal result panel gating to include error-only and empty-catalog states');
@@ -71,7 +68,6 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('Sub-goal'), 'Expected Sub-goal copy');
     assert.ok(dashboardSource.includes('Label prefix'), 'Expected Label prefix copy');
     assert.ok(dashboardSource.includes('Project name'), 'Expected Project name copy');
-    assert.ok(dashboardSource.includes("updateEpmScopeDraft('subGoalKey', '')"), 'Expected root-goal flow to clear the sub-goal draft');
     assert.ok(dashboardSource.includes('Select a root goal before choosing a sub-goal.'), 'Expected root-goal prerequisite helper copy');
     assert.ok(dashboardSource.includes('This sub-goal has no direct Jira Home projects. Choose a different child goal.'), 'Expected empty child-goal helper copy');
     assert.ok(dashboardSource.includes('Loading root goals...'), 'Expected root goal loading copy');
@@ -124,18 +120,30 @@ test('EPM project utility hydrates display name without persisting Home fallback
     assert.ok(!utilsSource.includes('customName'), 'Did not expect legacy customName fallback in EPM project utils');
 });
 
-test('dashboard source keeps EPM settings preview draft-scoped and does not auto-load projects on open', () => {
+test('dashboard source preserves saved EPM sub-goal on settings open', () => {
     const loadSettingsStart = dashboardSource.indexOf('const loadEpmSettings = async () => {');
     const loadSettingsEnd = dashboardSource.indexOf('loadEpmSettings();', loadSettingsStart);
     assert.ok(loadSettingsStart !== -1 && loadSettingsEnd !== -1, 'Expected EPM settings load effect block');
     const loadSettingsSource = dashboardSource.slice(loadSettingsStart, loadSettingsEnd);
 
-    assert.ok(!loadSettingsSource.includes('refreshEpmProjects()'), 'Did not expect EPM settings open to auto-refresh main EPM projects');
-    assert.ok(!loadSettingsSource.includes('loadEpmProjectPreview('), 'Did not expect EPM settings open to auto-preview draft projects');
-    assert.ok(
-        loadSettingsSource.includes('resetEpmProjectPreview();') || loadSettingsSource.includes('setEpmSettingsProjects([]);'),
-        'Expected EPM settings load to clear stale preview rows'
-    );
+    assert.ok(!loadSettingsSource.includes('clearEpmSubGoalOptions();'), 'EPM settings open must not clear saved sub-goal options');
+    assert.ok(!loadSettingsSource.includes('loadEpmSubGoalsForRoot(rootGoalKey, savedSubGoalKey)'), 'EPM settings open must not refetch sub-goals just to render the saved chip');
+    assert.ok(!loadSettingsSource.includes('resetEpmProjectPreview();'), 'EPM settings open must not use preview-named project reset state');
+    assert.ok(!loadSettingsSource.includes('resetEpmSettingsProjectRows();'), 'EPM settings open must not erase cached project configuration rows');
+    assert.ok(dashboardSource.includes('const epmSubGoalsCacheRef = useRef(new Map());'), 'Expected sub-goals cache by root goal');
+    assert.ok(dashboardSource.includes('const resetEpmSettingsProjectRows = () => {'), 'Expected configuration-named project-row reset helper');
+    assert.ok(dashboardSource.includes('return epmSubGoals.find((goal) => String(goal?.key || \'\').trim().toUpperCase() === key) || { key, name: key };'), 'Expected selected sub-goal fallback chip without refetch');
+});
+
+test('dashboard source clears EPM sub-goal only when root goal changes or user clears it', () => {
+    const selectRootStart = dashboardSource.indexOf('const selectEpmRootGoal = async (goal) => {');
+    const clearRootStart = dashboardSource.indexOf('const clearEpmRootGoal = () => {', selectRootStart);
+    assert.ok(selectRootStart !== -1 && clearRootStart !== -1, 'Expected EPM root selection block');
+    const selectRootSource = dashboardSource.slice(selectRootStart, clearRootStart);
+
+    assert.ok(selectRootSource.includes('const rootChanged = previousRootGoalKey !== rootGoalKey;'), 'Expected same-root selection guard');
+    assert.ok(selectRootSource.includes("subGoalKey: rootChanged ? '' : prev.scope?.subGoalKey || ''"), 'Expected sub-goal preservation when root did not change');
+    assert.ok(selectRootSource.includes('if (rootChanged) {'), 'Expected sub-goal clear to be gated by actual root changes');
 });
 
 test('settings hotkey effect is declared after the save handlers it depends on', () => {

@@ -939,6 +939,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     scrollRegion?.removeEventListener('scroll', reposition);
                 };
             }, [epmLabelMenuAnchor?.rowKey]);
+            useEffect(() => {
+                if (showGroupManage && groupManageTab === 'epm' && epmSettingsTab === 'projects') return;
+                setEpmLabelMenuAnchor(null);
+                epmLabelMenuInputRef.current = null;
+            }, [showGroupManage, groupManageTab, epmSettingsTab]);
             const handleEpmLabelSearchKeyDown = React.useCallback((projectId, event, results) => {
                 const key = getEpmLabelRowKey(projectId);
                 if (event.key === 'ArrowDown') {

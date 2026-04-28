@@ -1444,31 +1444,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             }, [showGroupManage, groupManageTab]);
 
             useEffect(() => {
-                if (epmSettingsProjectsCacheKey && epmSettingsProjectsCacheRef.current.has(epmSettingsProjectsCacheKey)) return;
-                setEpmSettingsProjectsLoaded(false);
-                setEpmSettingsProjectsLoadedAt('');
-                setEpmSettingsProjectsFetchMeta({
-                    cacheHit: false,
-                    fetchedAt: '',
-                    homeProjectCount: 0,
-                    homeProjectLimit: null,
-                    possiblyTruncated: false,
-                });
-            }, [epmSettingsProjectsCacheKey]);
-
-            useEffect(() => {
-                if (!showGroupManage || groupManageTab !== 'epm' || epmSettingsTab !== 'projects') return;
-                if (!canLoadEpmProjects || !epmSettingsProjectsCacheKey) return;
-                const draftSnapshot = normalizeEpmConfigDraft(epmConfigDraft);
-                const cacheKeySnapshot = getEpmSettingsProjectsCacheKey(draftSnapshot);
-                if (!cacheKeySnapshot || cacheKeySnapshot !== epmSettingsProjectsCacheKey) return;
-                void ensureEpmSettingsProjectsLoaded({
-                    draftConfig: draftSnapshot,
-                    cacheKey: cacheKeySnapshot,
-                }).catch(() => {});
-            }, [showGroupManage, groupManageTab, epmSettingsTab, canLoadEpmProjects, epmSettingsProjectsCacheKey]);
-
-            useEffect(() => {
                 if (!showGroupManage) return;
                 const groups = groupDraft?.groups || [];
                 if (!groups.length) {
@@ -2054,6 +2029,32 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const epmProjectPrerequisites = React.useMemo(() => getEpmProjectPrerequisites(epmConfigDraft), [epmConfigDraft]);
             const canLoadEpmProjects = epmProjectPrerequisites.length === 0;
             const epmSettingsProjectsCacheKey = React.useMemo(() => getEpmSettingsProjectsCacheKey(epmConfigDraft), [epmConfigDraft]);
+
+            useEffect(() => {
+                if (epmSettingsProjectsCacheKey && epmSettingsProjectsCacheRef.current.has(epmSettingsProjectsCacheKey)) return;
+                setEpmSettingsProjectsLoaded(false);
+                setEpmSettingsProjectsLoadedAt('');
+                setEpmSettingsProjectsFetchMeta({
+                    cacheHit: false,
+                    fetchedAt: '',
+                    homeProjectCount: 0,
+                    homeProjectLimit: null,
+                    possiblyTruncated: false,
+                });
+            }, [epmSettingsProjectsCacheKey]);
+
+            useEffect(() => {
+                if (!showGroupManage || groupManageTab !== 'epm' || epmSettingsTab !== 'projects') return;
+                if (!canLoadEpmProjects || !epmSettingsProjectsCacheKey) return;
+                const draftSnapshot = normalizeEpmConfigDraft(epmConfigDraft);
+                const cacheKeySnapshot = getEpmSettingsProjectsCacheKey(draftSnapshot);
+                if (!cacheKeySnapshot || cacheKeySnapshot !== epmSettingsProjectsCacheKey) return;
+                void ensureEpmSettingsProjectsLoaded({
+                    draftConfig: draftSnapshot,
+                    cacheKey: cacheKeySnapshot,
+                }).catch(() => {});
+            }, [showGroupManage, groupManageTab, epmSettingsTab, canLoadEpmProjects, epmSettingsProjectsCacheKey]);
+
             const epmSettingsProjectRows = React.useMemo(() => {
                 const configuredProjects = epmConfigDraft.projects || {};
                 const rows = [];

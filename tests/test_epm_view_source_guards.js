@@ -267,6 +267,23 @@ test('EPM defaults to all projects and exposes sprint controls in Active', () =>
         dashboardSource.includes("currentProject.matchState === 'metadata-only' && !currentProject.label"),
         'Expected metadata-only shortcut to apply only when no label is present'
     );
+    assert.ok(
+        dashboardSource.indexOf("epmTab === 'active' && !selectedSprint") <
+            dashboardSource.indexOf("currentProject.matchState === 'metadata-only' && !currentProject.label"),
+        'Expected sprint-required guard to run before metadata-only rendering'
+    );
+    assert.ok(
+        dashboardSource.includes('flattenEpmRollupBoardsForDependencies'),
+        'Expected EPM rollup issues to feed the dependency lookup task list'
+    );
+    assert.ok(
+        epmRollupPanelSource.includes('renderEpicBlock'),
+        'Expected EPM rollup panel to reuse the ENG Epic/Story task renderer'
+    );
+    assert.ok(
+        dashboardSource.includes("const shouldRenderIssueDependencies = (selectedView === 'eng' || selectedView === 'epm') && showDependencies"),
+        'Expected EPM to show the same dependency pills, strips, and focus details as ENG'
+    );
 });
 
 test('EPM project identity positions use project id only', () => {
@@ -312,12 +329,12 @@ test('EPM rollup renderer branches on metadata, empty, truncated, and tree state
 });
 
 test('EPM rollup renderer groups Initiative to Epic to Story and keeps orphans under Project', () => {
-    assert.ok(epmRollupPanelSource.includes('epmRollupTree.initiatives.map'), 'Expected initiatives to be rendered from rollup tree');
-    assert.ok(epmRollupTreeSource.includes('initiativeNode.epics.map'), 'Expected epics to be rendered under initiatives');
-    assert.ok(epmRollupTreeSource.includes('epicNode.stories.map'), 'Expected stories to be rendered under epics');
-    assert.ok(epmRollupTreeSource.includes('tree.rootEpics.map'), 'Expected root epics to render directly under Project');
-    assert.ok(epmRollupTreeSource.includes('tree.orphanStories.map'), 'Expected orphan stories to render directly under Project');
-    assert.ok(epmRollupTreeSource.includes('Project stories'), 'Expected orphan stories section under Project');
+    assert.ok(epmRollupPanelSource.includes('tree.initiatives.map'), 'Expected initiatives to be rendered from rollup tree');
+    assert.ok(epmRollupPanelSource.includes('initiativeNode.epics.map'), 'Expected epics to be rendered under initiatives');
+    assert.ok(epmRollupPanelSource.includes('renderEpicBlock(buildEpmEngEpicGroup(epicNode))'), 'Expected EPM epics to use ENG Epic/Story renderer');
+    assert.ok(epmRollupPanelSource.includes('tree.rootEpics.map'), 'Expected root epics to render directly under Project');
+    assert.ok(epmRollupPanelSource.includes('tree.orphanStories'), 'Expected orphan stories to render directly under Project');
+    assert.ok(epmRollupPanelSource.includes('Project stories'), 'Expected orphan stories section under Project');
 });
 
 test('EPM rollup helper dedupes by issue key before rendering', () => {

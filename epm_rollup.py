@@ -18,6 +18,7 @@ class EpmRollupDependencies:
     add_clause_to_jql: Callable
     build_jira_headers: Callable
     resolve_epic_link_field_id: Callable
+    resolve_team_field_id: Callable
     build_epm_rollup_fields_list: Callable
     get_epm_config: Callable
     normalize_epm_issue_type_sets: Callable
@@ -56,7 +57,8 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
     s1_jql, child_predicate = rollup_jqls
     headers = deps.build_jira_headers()
     epic_link_field_id = deps.resolve_epic_link_field_id(headers)
-    fields_list = deps.build_epm_rollup_fields_list(epic_link_field_id)
+    team_field_id = deps.resolve_team_field_id(headers)
+    fields_list = deps.build_epm_rollup_fields_list(epic_link_field_id, team_field_id)
     epm_config = deps.get_epm_config()
     issue_type_sets = deps.normalize_epm_issue_type_sets(epm_config.get('issueTypes') or {})
     truncated_queries = []
@@ -74,7 +76,7 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
             deps.cache[cache_key] = {'timestamp': deps.now(), 'data': payload}
         return payload, 200, {'Server-Timing': f'jira-search;dur={round((time.perf_counter() - started) * 1000, 1)}'}
 
-    q1_issues, _ = deps.shape_epm_rollup_issue_payload(q1_raw, epic_link_field_id=epic_link_field_id)
+    q1_issues, _ = deps.shape_epm_rollup_issue_payload(q1_raw, epic_link_field_id=epic_link_field_id, team_field_id=team_field_id)
     initiative_or_epic_types = issue_type_sets['initiative'] | issue_type_sets['epic']
     q2_seed_keys = sorted({
         issue.get('key')
@@ -87,7 +89,7 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
     if q2_predicate:
         q2_jql = with_sprint_filter(deps.add_clause_to_jql(base_jql, q2_predicate))
         q2_raw = deps.fetch_epm_rollup_query(q2_jql, 'q2', headers, fields_list, truncated_queries)
-        q2_issues, _ = deps.shape_epm_rollup_issue_payload(q2_raw, epic_link_field_id=epic_link_field_id)
+        q2_issues, _ = deps.shape_epm_rollup_issue_payload(q2_raw, epic_link_field_id=epic_link_field_id, team_field_id=team_field_id)
 
     q3_seed_keys = sorted({
         issue.get('key')
@@ -100,7 +102,7 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
     if q3_predicate:
         q3_jql = with_sprint_filter(deps.add_clause_to_jql(base_jql, q3_predicate))
         q3_raw = deps.fetch_epm_rollup_query(q3_jql, 'q3', headers, fields_list, truncated_queries)
-        q3_issues, _ = deps.shape_epm_rollup_issue_payload(q3_raw, epic_link_field_id=epic_link_field_id)
+        q3_issues, _ = deps.shape_epm_rollup_issue_payload(q3_raw, epic_link_field_id=epic_link_field_id, team_field_id=team_field_id)
 
     hierarchy = deps.build_epm_rollup_hierarchy(
         deps.dedupe_issues_by_key(q1_issues + q2_issues + q3_issues),

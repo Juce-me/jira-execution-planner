@@ -282,6 +282,90 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertTrue(metadata_rollup['metadataOnly'])
         self.assertFalse(metadata_rollup['emptyRollup'])
 
+    def test_active_labeled_epic_fetches_all_selected_sprint_stories_under_epic(self):
+        project = {
+            'id': 'project-1',
+            'label': 'synthetic_label_alpha',
+            'resolvedLinkage': {'labels': ['synthetic_label_alpha'], 'epicKeys': []},
+        }
+        q1 = [
+            make_issue(
+                'PRODUCT-29920',
+                'Epic',
+                summary='AI for RFP creation',
+                labels=['synthetic_label_alpha'],
+                sprint=[{'id': 42, 'name': '2026Q2', 'state': 'active'}],
+            )
+        ]
+        q2 = [
+            make_issue(
+                'PRODUCT-30001',
+                'Story',
+                summary='Generate RFP outline',
+                parent_key='PRODUCT-29920',
+                labels=[],
+                sprint=[{'id': 42, 'name': '2026Q2', 'state': 'active'}],
+            ),
+            make_issue(
+                'PRODUCT-30002',
+                'Story',
+                summary='Validate extracted requirements',
+                epic_link='PRODUCT-29920',
+                labels=[],
+                sprint=[{'id': 42, 'name': '2026Q2', 'state': 'active'}],
+            ),
+        ]
+        patches = self.patch_common(project, [q1, q2])
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6] as mock_fetch:
+            response = self.client.get('/api/epm/projects/project-1/rollup?tab=active&sprint=42')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(mock_fetch.call_count, 2)
+        q1_jql, q2_jql = [call.args[0] for call in mock_fetch.call_args_list]
+        self.assertIn('labels = "synthetic_label_alpha"', q1_jql)
+        self.assertIn('Sprint = 42', q1_jql)
+        self.assertIn('"Epic Link" in ("PRODUCT-29920") OR parent in ("PRODUCT-29920")', q2_jql)
+        self.assertIn('Sprint = 42', q2_jql)
+        payload = response.get_json()
+        story_keys = [story['key'] for story in payload['rootEpics']['PRODUCT-29920']['stories']]
+        self.assertEqual(story_keys, ['PRODUCT-30001', 'PRODUCT-30002'])
+
+    def test_rollup_story_payload_contains_eng_card_fields(self):
+        project = {
+            'id': 'project-1',
+            'label': 'synthetic_label_alpha',
+            'resolvedLinkage': {'labels': ['synthetic_label_alpha'], 'epicKeys': []},
+        }
+        story = make_issue(
+            'PRODUCT-30001',
+            'Story',
+            summary='Generate RFP outline',
+            parent_key='PRODUCT-29920',
+            labels=[],
+            sprint=[{'id': 42, 'name': '2026Q2', 'state': 'active'}],
+        )
+        story['id'] = '30001'
+        story['fields']['priority'] = {'name': 'High'}
+        story['fields']['updated'] = '2026-04-28T12:00:00.000+0000'
+        story['fields']['customfield_10004'] = 3
+        story['fields']['customfield_team'] = {'id': 'team-a', 'name': 'Team A'}
+        q1 = [make_issue('PRODUCT-29920', 'Epic', labels=['synthetic_label_alpha'])]
+        q2 = [story]
+        patches = self.patch_common(project, [q1, q2])
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], \
+             patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_10004'), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'):
+            response = self.client.get('/api/epm/projects/project-1/rollup?tab=active&sprint=42')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload_story = response.get_json()['rootEpics']['PRODUCT-29920']['stories'][0]
+        self.assertEqual(payload_story['id'], '30001')
+        self.assertEqual(payload_story['priority'], 'High')
+        self.assertEqual(payload_story['storyPoints'], 3)
+        self.assertEqual(payload_story['updated'], '2026-04-28T12:00:00.000+0000')
+        self.assertEqual(payload_story['teamName'], 'Team A')
+        self.assertEqual(payload_story['teamId'], 'team-a')
+
     def test_active_sprint_filter_is_appended_to_every_query_and_sprint_reaches_response(self):
         project = {'id': 'project-1', 'label': 'synthetic_label_alpha', 'resolvedLinkage': {'labels': ['synthetic_label_alpha'], 'epicKeys': []}}
         q1 = [make_issue('SYN-I1', 'Initiative', labels=['synthetic_label_alpha'], sprint=[{'id': '42', 'name': 'Sprint 42', 'state': 'ACTIVE'}])]
@@ -479,8 +563,6 @@ class TestEpmRollupApi(unittest.TestCase):
             'TEAM_FIELD',
             'Team[Team]',
             '"Team"',
-            'get_team',
-            'resolve_team',
         ):
             self.assertNotIn(forbidden, source)
 

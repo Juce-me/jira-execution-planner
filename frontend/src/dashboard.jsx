@@ -28,6 +28,7 @@ import {
     buildAggregateRollupBoards,
     buildRollupTree,
     filterEpmProjectsForTab,
+    flattenEpmRollupBoardsForDependencies,
     getEpmProjectDisplayName,
     getEpmProjectIdentity,
     getEpmProjectPrerequisites,
@@ -8971,9 +8972,16 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 };
             }, [compactHeaderOffset, compactStickyVisible, epicGroups, planningOffset]);
 
+            const epmDependencyTasks = React.useMemo(() => {
+                const boards = Array.isArray(epmRollupBoards)
+                    ? epmRollupBoards
+                    : (epmRollupTree ? [{ project: selectedEpmProject, tree: epmRollupTree }] : []);
+                return flattenEpmRollupBoardsForDependencies(boards);
+            }, [epmRollupBoards, epmRollupTree, selectedEpmProject]);
+
             const dependencyTasks = React.useMemo(
-                () => [...loadedProductTasks, ...loadedTechTasks],
-                [loadedProductTasks, loadedTechTasks]
+                () => selectedView === 'epm' ? epmDependencyTasks : [...loadedProductTasks, ...loadedTechTasks],
+                [selectedView, epmDependencyTasks, loadedProductTasks, loadedTechTasks]
             );
             const dependencyKeySignature = React.useMemo(() => {
                 const keys = Array.from(new Set(dependencyTasks.map(task => task.key).filter(Boolean)));
@@ -8985,13 +8993,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     setDependencyData({});
                     return;
                 }
-                if (selectedSprint !== null && lastLoadedSprintRef.current !== selectedSprint) {
-                    return;
+                if (selectedView === 'eng') {
+                    if (selectedSprint !== null && lastLoadedSprintRef.current !== selectedSprint) return;
+                    if (!tasksFetched || productTasksLoading || techTasksLoading) return;
                 }
-                if (!tasksFetched) {
-                    return;
-                }
-                if (productTasksLoading || techTasksLoading) {
+                if (selectedView === 'epm' && epmRollupLoading) {
                     return;
                 }
                 if (!dependencyKeySignature) {
@@ -9000,7 +9006,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 const keys = dependencyKeySignature.split('|').filter(Boolean);
                 fetchDependencies(keys);
-            }, [showDependencies, showBlockedAlert, dependencyKeySignature, selectedSprint, tasksFetched, productTasksLoading, techTasksLoading]);
+            }, [selectedView, showDependencies, showBlockedAlert, dependencyKeySignature, selectedSprint, tasksFetched, productTasksLoading, techTasksLoading, epmRollupLoading]);
 
             useEffect(() => {
                 if (!showDependencies) {
@@ -11088,6 +11094,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         const epicTitle = epicInfo?.summary || epicGroup.parentSummary ||
                             (epicGroup.key === 'NO_EPIC' ? 'No Epic Linked' : epicGroup.key);
                         const epicTotalSp = epicGroup.storyPoints || 0;
+                        const shouldRenderIssueDependencies = (selectedView === 'eng' || selectedView === 'epm') && showDependencies;
                         return (
                             <div
                                 key={epicGroup.key}
@@ -11323,7 +11330,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     )}
                                                 </div>
                                                 <div className="task-header-right">
-                                                    {selectedView === 'eng' && showDependencies && hasDependencyLinks && (
+                                                    {shouldRenderIssueDependencies && hasDependencyLinks && (
                                                         <div className="dependency-pill-stack">
                                                             {dependsOnIds.length > 0 && (
                                                                 <span className="dependency-pill blocked">← BLOCKED BY</span>
@@ -11357,7 +11364,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     </span>
                                                 )}
                                             </div>
-                                            {selectedView === 'eng' && showDependencies && hasDeps && (
+                                            {shouldRenderIssueDependencies && hasDeps && (
                                                 <div className="dependency-strip">
                                                     {blockedByIds.length > 0 && (
                                                         <button
@@ -11417,7 +11424,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     )}
                                                 </div>
                                             )}
-                                            {selectedView === 'eng' && showDependencies && isFocused && (missingLines.length > 0 || hiddenLines.length > 0) && (
+                                            {shouldRenderIssueDependencies && isFocused && (missingLines.length > 0 || hiddenLines.length > 0) && (
                                                 <div className="dependency-missing">
                                                     {hiddenLines.length > 0 && (
                                                         <>
@@ -15101,6 +15108,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             epmRollupBoards={epmRollupBoards}
                                             epmDuplicates={epmDuplicates}
                                             epmAggregateTruncated={epmAggregateTruncated}
+                                            renderEpicBlock={renderEpicBlock}
                                             openEpmSettingsTab={openEpmSettingsTab}
                                             jiraUrl={jiraUrl}
                                             InitiativeIcon={InitiativeIcon}

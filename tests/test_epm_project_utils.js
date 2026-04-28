@@ -113,6 +113,55 @@ test('buildAggregateRollupBoards normalizes project entries and duplicate metada
     assert.strictEqual(result.boards[1].tree.kind, 'metadataOnly');
 });
 
+test('EPM rollup issues adapt to ENG task cards and dependency lookup', async () => {
+    const { buildEpmEngEpicGroup, toEpmEngTask, flattenEpmRollupBoardsForDependencies } = await import(helperUrl);
+    const story = {
+        id: '30001',
+        key: 'PRODUCT-30001',
+        summary: 'Generate RFP outline',
+        status: 'In Progress',
+        priority: 'High',
+        assignee: 'Alex',
+        storyPoints: 3,
+        updated: '2026-04-28T12:00:00.000+0000',
+        teamName: 'Team A',
+        teamId: 'team-a',
+        issueType: 'Story'
+    };
+    const task = toEpmEngTask(story);
+
+    assert.strictEqual(task.id, '30001');
+    assert.strictEqual(task.key, 'PRODUCT-30001');
+    assert.strictEqual(task.fields.summary, 'Generate RFP outline');
+    assert.strictEqual(task.fields.status.name, 'In Progress');
+    assert.strictEqual(task.fields.priority.name, 'High');
+    assert.strictEqual(task.fields.assignee.displayName, 'Alex');
+    assert.strictEqual(task.fields.customfield_10004, 3);
+    assert.strictEqual(task.fields.teamName, 'Team A');
+    assert.strictEqual(task.fields.teamId, 'team-a');
+
+    const epicGroup = buildEpmEngEpicGroup({
+        issue: { key: 'PRODUCT-29920', issueType: 'Epic', summary: 'AI for RFP creation', assignee: 'Aleksandr Petrovskii' },
+        stories: [story]
+    });
+    assert.strictEqual(epicGroup.key, 'PRODUCT-29920');
+    assert.strictEqual(epicGroup.epic.summary, 'AI for RFP creation');
+    assert.strictEqual(epicGroup.storyPoints, 3);
+    assert.strictEqual(epicGroup.tasks[0].key, 'PRODUCT-30001');
+
+    const dependencyTasks = flattenEpmRollupBoardsForDependencies([
+        {
+            tree: {
+                kind: 'tree',
+                initiatives: [],
+                rootEpics: [{ issue: { key: 'PRODUCT-29920', issueType: 'Epic', summary: 'AI for RFP creation' }, stories: [story] }],
+                orphanStories: []
+            }
+        }
+    ]);
+    assert.deepStrictEqual(dependencyTasks.map(item => item.key), ['PRODUCT-29920', 'PRODUCT-30001']);
+});
+
 test('EPM settings project readiness and cache key use sub-goal plus prefix', async () => {
     const {
         getEpmProjectPrerequisites,

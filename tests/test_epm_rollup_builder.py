@@ -23,6 +23,7 @@ class BuildPerProjectRollupTests(unittest.TestCase):
             add_clause_to_jql=jira_server.add_clause_to_jql,
             build_jira_headers=lambda: {'Authorization': 'Basic synthetic'},
             resolve_epic_link_field_id=lambda headers: 'customfield_epiclink',
+            resolve_team_field_id=lambda headers: 'customfield_team',
             build_epm_rollup_fields_list=jira_server.build_epm_rollup_fields_list,
             get_epm_config=lambda: {
                 'version': 2,

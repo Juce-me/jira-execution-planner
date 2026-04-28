@@ -1458,23 +1458,31 @@ def build_epm_fields_list():
     return fields_list
 
 
-def build_epm_rollup_fields_list(epic_link_field_id=None):
+def build_epm_rollup_fields_list(epic_link_field_id=None, team_field_id=None):
     fields_list = build_epm_fields_list()
     sprint_field_id = get_sprint_field_id()
     if sprint_field_id and sprint_field_id not in fields_list:
         fields_list.append(sprint_field_id)
     if epic_link_field_id and epic_link_field_id not in fields_list:
         fields_list.append(epic_link_field_id)
+    if team_field_id and team_field_id not in fields_list:
+        fields_list.append(team_field_id)
     return fields_list
 
 
-def shape_epm_issue_payload(issues):
+def shape_epm_issue_payload(issues, team_field_id=None, include_card_fields=False):
+    story_points_field = get_story_points_field_id() if include_card_fields else None
+    team_field_id = team_field_id or (get_team_field_id() if include_card_fields else None)
     slim_issues = []
     epic_details = {}
     for issue in issues or []:
         fields = issue.get('fields') or {}
         parent = fields.get('parent') or {}
         parent_key = parent.get('key') or ''
+        priority = fields.get('priority') or {}
+        raw_team = fields.get(team_field_id) if team_field_id else None
+        team_name = extract_team_name(raw_team) or ''
+        team_ids = extract_team_ids(raw_team)
         if parent_key and parent_key not in epic_details:
             parent_fields = parent.get('fields') or {}
             epic_details[parent_key] = {
@@ -1482,7 +1490,7 @@ def shape_epm_issue_payload(issues):
                 'summary': parent_fields.get('summary') or '',
                 'issueType': (parent_fields.get('issuetype') or {}).get('name') or '',
             }
-        slim_issues.append({
+        slim_issue = {
             'key': issue.get('key'),
             'summary': fields.get('summary') or '',
             'status': (fields.get('status') or {}).get('name') or '',
@@ -1490,12 +1498,22 @@ def shape_epm_issue_payload(issues):
             'issueType': (fields.get('issuetype') or {}).get('name') or '',
             'parentKey': parent_key,
             'labels': list(fields.get('labels') or []),
-        })
+        }
+        if include_card_fields:
+            slim_issue.update({
+                'id': issue.get('id'),
+                'priority': priority.get('name') if priority else '',
+                'storyPoints': fields.get(story_points_field),
+                'updated': fields.get('updated'),
+                'teamName': team_name,
+                'teamId': team_ids[0] if team_ids else '',
+            })
+        slim_issues.append(slim_issue)
     return slim_issues, epic_details
 
 
-def shape_epm_rollup_issue_payload(issues, epic_link_field_id=None):
-    slim_issues, epic_details = shape_epm_issue_payload(issues)
+def shape_epm_rollup_issue_payload(issues, epic_link_field_id=None, team_field_id=None):
+    slim_issues, epic_details = shape_epm_issue_payload(issues, team_field_id=team_field_id, include_card_fields=True)
     sprint_field_id = get_sprint_field_id()
     for raw_issue, slim_issue in zip(issues or [], slim_issues):
         fields = raw_issue.get('fields') or {}
@@ -1632,6 +1650,7 @@ def build_epm_rollup_dependencies():
         add_clause_to_jql=add_clause_to_jql,
         build_jira_headers=build_jira_headers,
         resolve_epic_link_field_id=resolve_epic_link_field_id,
+        resolve_team_field_id=resolve_team_field_id,
         build_epm_rollup_fields_list=build_epm_rollup_fields_list,
         get_epm_config=get_epm_config,
         normalize_epm_issue_type_sets=normalize_epm_issue_type_sets,

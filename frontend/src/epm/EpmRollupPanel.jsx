@@ -1,6 +1,5 @@
 import React from 'react';
-import { getEpmProjectDisplayName } from './epmProjectUtils.mjs';
-import { EpmInitiativeNode, EpmProjectRemainder } from './EpmRollupTree.jsx';
+import { buildEpmEngEpicGroup, getEpmProjectDisplayName, toEpmEngTask } from './epmProjectUtils.mjs';
 
 export function EpmRollupPanel({
     selectedEpmProject,
@@ -12,6 +11,7 @@ export function EpmRollupPanel({
     epmRollupBoards,
     epmDuplicates = {},
     epmAggregateTruncated = false,
+    renderEpicBlock,
     openEpmSettingsTab,
     jiraUrl,
     InitiativeIcon,
@@ -36,6 +36,52 @@ export function EpmRollupPanel({
         </div>
     );
 
+    const renderStoryOnlyGroup = (stories, key, parentSummary) => {
+        if (!Array.isArray(stories) || stories.length === 0) {
+            return null;
+        }
+        const tasks = stories.map(toEpmEngTask);
+        return (
+            <React.Fragment key={key}>
+                {renderEpicBlock({
+                    key: 'NO_EPIC',
+                    epic: null,
+                    tasks,
+                    storyPoints: tasks.reduce((sum, task) => {
+                        const value = Number(task.fields?.customfield_10004 || 0);
+                        return Number.isFinite(value) ? sum + value : sum;
+                    }, 0),
+                    parentSummary
+                })}
+            </React.Fragment>
+        );
+    };
+
+    const renderEpmTreeWithEngCards = (project, tree) => (
+        <>
+            {tree.initiatives.map(initiativeNode => (
+                <div key={initiativeNode.issue.key} className="initiative-group">
+                    <div className="initiative-header">
+                        <InitiativeIcon className="initiative-header-icon" />
+                        <div className="initiative-label">
+                            <span className="initiative-label-name">{initiativeNode.issue.summary || initiativeNode.issue.key}</span>
+                            <a className="initiative-label-key" href={jiraUrl ? `${jiraUrl}/browse/${initiativeNode.issue.key}` : '#'} target="_blank" rel="noopener noreferrer">
+                                {initiativeNode.issue.key} ↗
+                            </a>
+                            <span className="initiative-divider" />
+                        </div>
+                    </div>
+                    <div className="initiative-body">
+                        {initiativeNode.epics.map(epicNode => renderEpicBlock(buildEpmEngEpicGroup(epicNode)))}
+                        {renderStoryOnlyGroup(initiativeNode.looseStories, `${initiativeNode.issue.key}-loose`, 'Initiative stories')}
+                    </div>
+                </div>
+            ))}
+            {tree.rootEpics.map(epicNode => renderEpicBlock(buildEpmEngEpicGroup(epicNode)))}
+            {renderStoryOnlyGroup(tree.orphanStories, `${project?.id || 'project'}-orphan`, 'Project stories')}
+        </>
+    );
+
     if (epmTab === 'active' && !selectedSprint) {
         return (
             <div className="empty-state">
@@ -58,7 +104,7 @@ export function EpmRollupPanel({
             <div className="task-list epm-issue-board epm-portfolio-board">
                 {Object.keys(epmDuplicates || {}).length > 0 && (
                     <div className="group-field-helper">
-                        {Object.keys(epmDuplicates).length} issues appear in multiple projects - see badges below.
+                        {Object.keys(epmDuplicates).length} issues appear in multiple projects.
                     </div>
                 )}
                 {epmAggregateTruncated && (
@@ -73,19 +119,7 @@ export function EpmRollupPanel({
                         {tree?.kind === 'emptyRollup' && (
                             <div className="group-field-helper">No issues in this scope.</div>
                         )}
-                        {tree?.kind === 'tree' && (
-                            <>
-                                {tree.initiatives.map(initiativeNode => (
-                                    <EpmInitiativeNode
-                                        key={initiativeNode.issue.key}
-                                        initiativeNode={initiativeNode}
-                                        jiraUrl={jiraUrl}
-                                        InitiativeIcon={InitiativeIcon}
-                                    />
-                                ))}
-                                <EpmProjectRemainder project={project} tree={tree} jiraUrl={jiraUrl} />
-                            </>
-                        )}
+                        {tree?.kind === 'tree' && renderEpmTreeWithEngCards(project, tree)}
                     </section>
                 ))}
             </div>
@@ -125,15 +159,7 @@ export function EpmRollupPanel({
                     This rollup is truncated; narrow the label or Jira scope.
                 </div>
             )}
-            {epmRollupTree.initiatives.map(initiativeNode => (
-                <EpmInitiativeNode
-                    key={initiativeNode.issue.key}
-                    initiativeNode={initiativeNode}
-                    jiraUrl={jiraUrl}
-                    InitiativeIcon={InitiativeIcon}
-                />
-            ))}
-            <EpmProjectRemainder project={selectedEpmProject} tree={epmRollupTree} jiraUrl={jiraUrl} />
+            {renderEpmTreeWithEngCards(selectedEpmProject, epmRollupTree)}
         </div>
     );
 }

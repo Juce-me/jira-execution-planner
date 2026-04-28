@@ -623,6 +623,16 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     ? projects.filter(project => project?.homeProjectId !== null)
                     : [];
             };
+            const renderEpmProjectSkeletonRows = () => (
+                <div className="epm-project-skeleton-list" aria-label="Loading EPM projects">
+                    {[0, 1, 2].map((item) => (
+                        <div key={item} className="epm-project-skeleton-row">
+                            <span />
+                            <span />
+                        </div>
+                    ))}
+                </div>
+            );
             const ensureEpmSettingsProjectsLoaded = async (options = {}) => {
                 const forceRefresh = Boolean(options.forceRefresh);
                 const draftConfig = normalizeEpmConfigDraft(options.draftConfig || epmConfigDraft);
@@ -722,6 +732,31 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     }
                 }
             };
+            const updateEpmSettingsProjectRowsAfterSave = (savedConfig) => {
+                const previousCacheKey = getEpmSettingsProjectsCacheKey(epmConfigDraft);
+                const nextCacheKey = getEpmSettingsProjectsCacheKey(savedConfig);
+                if (!nextCacheKey) return;
+                const rawPreviousEntry = previousCacheKey
+                    ? epmSettingsProjectsCacheRef.current.get(previousCacheKey)
+                    : null;
+                const previousEntry = rawPreviousEntry
+                    ? {
+                        ...rawPreviousEntry,
+                        projects: getHomeBackedEpmSettingsProjects(rawPreviousEntry.projects),
+                    }
+                    : null;
+                const currentEntry = epmSettingsProjects.length > 0
+                    ? {
+                        projects: getHomeBackedEpmSettingsProjects(epmSettingsProjects),
+                        meta: epmSettingsProjectsFetchMeta,
+                        loadedAt: epmSettingsProjectsLoadedAt,
+                    }
+                    : null;
+                const nextEntry = previousEntry || currentEntry;
+                if (nextEntry) {
+                    epmSettingsProjectsCacheRef.current.set(nextCacheKey, nextEntry);
+                }
+            };
             const saveEpmConfig = async () => {
                 setEpmConfigSaving(true);
                 setGroupDraftError('');
@@ -739,10 +774,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     const nextConfig = normalizeEpmConfigDraft(payload);
                     setEpmConfigDraft(nextConfig);
                     epmConfigBaselineRef.current = JSON.stringify(nextConfig);
+                    updateEpmSettingsProjectRowsAfterSave(nextConfig);
                     if (hasSavedEpmScopeConfig(nextConfig)) {
-                        const nextProjects = await refreshEpmProjects();
-                        setEpmSettingsProjects(nextProjects);
-                        setEpmSettingsProjectsLoaded(true);
+                        await refreshEpmProjects();
                     } else {
                         setEpmProjects([]);
                         setEpmProjectsError('');
@@ -1989,6 +2023,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         latestUpdateSnippet: project?.latestUpdateSnippet || '',
                         name: String(configuredRow?.name ?? ''),
                         label: String(configuredRow?.label ?? ''),
+                        missingFromHomeFetch: Boolean(project?.missingFromHomeFetch),
                     }, { name: String(project?.name || '') }));
                     seen.add(projectId);
                     seen.add(homeProjectId);
@@ -15917,8 +15952,34 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                 aria-labelledby="epm-settings-projects-tab"
                                             >
                                                 <div className="group-pane-header" style={{ paddingLeft: 0, paddingRight: 0 }}>
-                                                    <div className="group-pane-title">EPM projects</div>
-                                                    <div className="group-pane-subtitle">Map direct Jira Home projects under the selected sub-goal to exact Jira labels.</div>
+                                                    <div className="group-pane-header-row">
+                                                        <div>
+                                                            <div className="group-pane-title">EPM projects</div>
+                                                            <div className="group-pane-subtitle">Map direct Jira Home projects under the selected sub-goal to exact Jira labels.</div>
+                                                        </div>
+                                                        <div className="epm-projects-header-actions">
+                                                            {canLoadEpmProjects && (
+                                                                <span className="group-modal-meta" aria-live="polite">
+                                                                    {epmSettingsProjectsRefreshing
+                                                                        ? 'Refreshing...'
+                                                                        : epmSettingsProjectsLoadedAt
+                                                                            ? `${epmSettingsProjectsFetchMeta.homeProjectCount} Home projects · fetched ${epmSettingsProjectsLoadedAt}${epmSettingsProjectsFetchMeta.cacheHit ? ' · cached' : ''}`
+                                                                            : 'Not loaded'}
+                                                                    {epmSettingsProjectsFetchMeta.possiblyTruncated && epmSettingsProjectsFetchMeta.homeProjectLimit
+                                                                        ? ` · reached ${epmSettingsProjectsFetchMeta.homeProjectLimit} project limit`
+                                                                        : ''}
+                                                                </span>
+                                                            )}
+                                                            <button
+                                                                className="secondary compact"
+                                                                onClick={() => { void ensureEpmSettingsProjectsLoaded({ forceRefresh: true }).catch(() => {}); }}
+                                                                disabled={epmConfigLoading || epmConfigSaving || epmSettingsProjectsLoading || epmSettingsProjectsRefreshing || !canLoadEpmProjects}
+                                                                type="button"
+                                                            >
+                                                                {epmSettingsProjectsRefreshing ? 'Refreshing...' : 'Refresh from Jira Home'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                                 {epmProjectPrerequisites.length > 0 && (
                                                     <div className="epm-prerequisite-panel">
@@ -15948,13 +16009,38 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                     </button>
                                                 </div>
                                                 {epmConfigLoading ? (
-                                                    <div className="group-pane-empty">Loading EPM settings...</div>
-                                                ) : !hasDraftEpmScope ? (
-                                                    <div className="group-pane-empty">Save a root goal and sub-goal to load EPM projects.</div>
-                                                ) : epmSettingsProjectsLoading ? (
-                                                    <div className="group-pane-empty">Previewing EPM projects...</div>
+                                                    renderEpmProjectSkeletonRows()
+                                                ) : epmProjectPrerequisites.length > 0 ? null
+                                                : (epmSettingsProjectsLoading && epmSettingsProjectRows.length === 0) ? (
+                                                    renderEpmProjectSkeletonRows()
+                                                ) : (epmSettingsProjectsError && epmSettingsProjectRows.length === 0) ? (
+                                                    <div className="epm-project-load-error">
+                                                        <div className="group-pane-subtitle">Failed to load EPM projects: {epmSettingsProjectsError}</div>
+                                                        <div className="epm-project-state-actions">
+                                                            <button
+                                                                className="secondary compact"
+                                                                onClick={() => { void ensureEpmSettingsProjectsLoaded({ forceRefresh: true }).catch(() => {}); }}
+                                                                type="button"
+                                                            >Retry</button>
+                                                            <button
+                                                                className="secondary compact"
+                                                                onClick={addCustomEpmProjectDraft}
+                                                                type="button"
+                                                            >Add custom Project</button>
+                                                        </div>
+                                                    </div>
                                                 ) : epmSettingsProjectRows.length > 0 ? (
                                                     <div className="group-pane-list">
+                                                        {epmSettingsProjectsError && (
+                                                            <div className="group-field-helper epm-project-load-error">
+                                                                Failed to refresh: {epmSettingsProjectsError}
+                                                                <button
+                                                                    className="secondary compact"
+                                                                    onClick={() => { void ensureEpmSettingsProjectsLoaded({ forceRefresh: true }).catch(() => {}); }}
+                                                                    type="button"
+                                                                >Retry</button>
+                                                            </div>
+                                                        )}
                                                         {epmSettingsProjectRows.map((project) => {
                                                             const rowKey = getEpmLabelRowKey(project.id);
                                                             const currentLabel = project.label || '';
@@ -15982,6 +16068,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                             ×
                                                                         </button>
                                                                     </div>
+                                                                    {project.missingFromHomeFetch && (
+                                                                        <div className="group-field-helper epm-project-row-warning">
+                                                                            Not returned by latest Jira Home refresh.
+                                                                        </div>
+                                                                    )}
                                                                     {project.latestUpdateDate && (
                                                                         <div className="group-field-helper" style={{ marginTop: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                                             {project.latestUpdateSnippet || 'No updates yet'}
@@ -16084,13 +16175,21 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                             );
                                                         })}
                                                     </div>
-                                                ) : epmSettingsProjectsError ? (
-                                                    <div className="group-pane-empty">{epmSettingsProjectsError}</div>
-                                                ) : epmSettingsProjects.length === 0 ? (
-                                                    <div className="group-pane-empty">This sub-goal has no direct Jira Home projects. Choose a different child goal.</div>
-                                                ) : (
-                                                    <div className="group-pane-empty">No EPM projects found.</div>
-                                                )}
+                                                ) : (epmSettingsProjects.length === 0 && epmSettingsProjectsLoaded && !epmSettingsProjectsLoading && !epmSettingsProjectsError) ? (
+                                                    <div className="epm-project-empty-state">
+                                                        <div className="group-pane-subtitle">No Home projects under the configured sub-goal.</div>
+                                                        <div className="group-pane-subtitle">This sub-goal has no direct Jira Home projects. Choose a different child goal.</div>
+                                                        <div className="epm-project-state-actions">
+                                                            <button
+                                                                className="secondary compact"
+                                                                onClick={addCustomEpmProjectDraft}
+                                                                type="button"
+                                                            >Add custom Project</button>
+                                                        </div>
+                                                    </div>
+                                                ) : (epmSettingsProjectsLoading || epmSettingsProjectsRefreshing) ? (
+                                                    renderEpmProjectSkeletonRows()
+                                                ) : null}
                                             </div>
                                         )}
                                     </div>

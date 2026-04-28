@@ -82,3 +82,42 @@ test('buildRollupTree preserves hierarchy and dedupes repeated issue keys', asyn
     assert.deepStrictEqual(tree.rootEpics[0].stories.map(issue => issue.key), ['STORY-4']);
     assert.deepStrictEqual(tree.orphanStories.map(issue => issue.key), ['STORY-5']);
 });
+
+test('EPM settings project readiness and cache key use sub-goal plus prefix', async () => {
+    const {
+        getEpmProjectPrerequisites,
+        getEpmSettingsProjectsCacheKey,
+        isEpmProjectsConfigReady,
+        normalizeEpmSettingsKeyPart
+    } = await import(helperUrl);
+
+    assert.strictEqual(normalizeEpmSettingsKeyPart(' child-34 '), 'CHILD-34');
+    assert.strictEqual(normalizeEpmSettingsKeyPart(null), '');
+
+    const config = {
+        labelPrefix: ' rnd_project_ ',
+        scope: {
+            rootGoalKey: ' root-223 ',
+            subGoalKey: ' child-34 '
+        }
+    };
+
+    assert.strictEqual(isEpmProjectsConfigReady(config), true);
+    assert.strictEqual(
+        getEpmSettingsProjectsCacheKey(config),
+        'ROOT-223::CHILD-34::rnd_project_'
+    );
+
+    assert.strictEqual(isEpmProjectsConfigReady({ ...config, labelPrefix: ' ' }), false);
+    assert.deepStrictEqual(getEpmProjectPrerequisites({ ...config, labelPrefix: ' ' }), ['labelPrefix']);
+    assert.strictEqual(
+        isEpmProjectsConfigReady({ ...config, scope: { rootGoalKey: 'ROOT-223', subGoalKey: '' } }),
+        false
+    );
+    assert.deepStrictEqual(
+        getEpmProjectPrerequisites({ ...config, scope: { rootGoalKey: 'ROOT-223', subGoalKey: '' } }),
+        ['subGoal']
+    );
+    assert.deepStrictEqual(getEpmProjectPrerequisites({}), ['subGoal', 'labelPrefix']);
+    assert.strictEqual(getEpmSettingsProjectsCacheKey({}), '');
+});

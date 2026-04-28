@@ -99,3 +99,33 @@ export function getEpmProjectDisplayName(project) {
         ''
     ).trim();
 }
+
+export function normalizeEpmSettingsKeyPart(value) {
+    return String(value || '').trim().toUpperCase();
+}
+
+export function isEpmProjectsConfigReady(config) {
+    const subGoalKey = normalizeEpmSettingsKeyPart(config?.scope?.subGoalKey);
+    const labelPrefix = String(config?.labelPrefix || '').trim();
+    return Boolean(subGoalKey && labelPrefix);
+}
+
+export function getEpmProjectPrerequisites(config) {
+    const missing = [];
+    if (!normalizeEpmSettingsKeyPart(config?.scope?.subGoalKey)) {
+        missing.push('subGoal');
+    }
+    if (!String(config?.labelPrefix || '').trim()) {
+        missing.push('labelPrefix');
+    }
+    return missing;
+}
+
+export function getEpmSettingsProjectsCacheKey(config) {
+    if (!isEpmProjectsConfigReady(config)) return '';
+    return [
+        normalizeEpmSettingsKeyPart(config?.scope?.rootGoalKey),
+        normalizeEpmSettingsKeyPart(config?.scope?.subGoalKey),
+        String(config?.labelPrefix || '').trim()
+    ].join('::');
+}

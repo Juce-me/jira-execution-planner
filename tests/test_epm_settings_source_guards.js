@@ -134,6 +134,18 @@ test('EPM project utility hydrates display name without persisting Home fallback
     assert.ok(!utilsSource.includes('customName'), 'Did not expect legacy customName fallback in EPM project utils');
 });
 
+test('Open Settings CTA opens the EPM Projects label tab', () => {
+    const openSettingsStart = dashboardSource.indexOf('const openEpmSettingsTab = () => {');
+    const openSettingsEnd = dashboardSource.indexOf('};', openSettingsStart);
+    assert.notStrictEqual(openSettingsStart, -1, 'Expected EPM settings open helper');
+    assert.notStrictEqual(openSettingsEnd, -1, 'Expected EPM settings open helper terminator');
+    const openSettingsSource = dashboardSource.slice(openSettingsStart, openSettingsEnd);
+
+    assert.ok(openSettingsSource.includes("setGroupManageTab('epm');"), 'Expected Open Settings to enter the EPM settings area');
+    assert.ok(openSettingsSource.includes("setEpmSettingsTab('projects');"), 'Expected Open Settings to land on the Projects labels tab');
+    assert.ok(!openSettingsSource.includes("setEpmSettingsTab('scope');"), 'Open Settings must not land on the Scope tab');
+});
+
 test('dashboard source preserves saved EPM sub-goal on settings open', () => {
     const loadSettingsStart = dashboardSource.indexOf('const loadEpmSettings = async () => {');
     const loadSettingsEnd = dashboardSource.indexOf('loadEpmSettings();', loadSettingsStart);

@@ -2270,7 +2270,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 resetEpmSettingsProjectRows();
                 setShowGroupManage(true);
                 setGroupManageTab('epm');
-                setEpmSettingsTab('scope');
+                setEpmSettingsTab('projects');
             };
 
             const focusEpmScopeField = React.useCallback((field) => {

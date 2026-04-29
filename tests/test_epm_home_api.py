@@ -80,6 +80,22 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual(project['latestUpdateDate'], '2026-04-12')
         self.assertEqual(project['latestUpdateSnippet'], 'Awaiting budget approval')
 
+    def test_build_home_project_record_keeps_string_home_tags_from_fetcher(self):
+        project = build_home_project_record(
+            {
+                'id': 'CRITE-723',
+                'name': 'Enriched Deals Redesign',
+                'url': 'https://home.atlassian.com/project/CRITE-723',
+                'stateValue': 'PENDING',
+                'stateLabel': 'Pending',
+            },
+            [],
+            {},
+            home_tags=['rnd_project_bsw_enriched_deals_redesign'],
+        )
+
+        self.assertEqual(project['homeTags'], ['rnd_project_bsw_enriched_deals_redesign'])
+
     def test_extract_tag_names_normalizes_direct_and_cypher_tag_shapes(self):
         tags = extract_tag_names([
             {'name': ' rnd_project_alpha '},

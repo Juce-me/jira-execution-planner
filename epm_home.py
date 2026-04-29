@@ -355,6 +355,34 @@ def extract_tag_names(values: Any) -> list[str]:
     return names
 
 
+def normalize_project_tag_names(values: Any) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def add(name: str) -> None:
+        normalized = name.strip()
+        if not normalized:
+            return
+        dedupe_key = normalized.lower()
+        if dedupe_key in seen:
+            return
+        seen.add(dedupe_key)
+        names.append(normalized)
+
+    if isinstance(values, list):
+        for value in values:
+            if isinstance(value, str):
+                add(value)
+            else:
+                for name in extract_tag_names(value):
+                    add(name)
+        return names
+
+    for name in extract_tag_names(values):
+        add(name)
+    return names
+
+
 def build_teamwork_graph_client() -> HomeGraphQLClient:
     email = os.environ.get("ATLASSIAN_EMAIL") or os.environ.get("JIRA_EMAIL") or ""
     token = os.environ.get("ATLASSIAN_API_TOKEN") or os.environ.get("JIRA_TOKEN") or ""
@@ -474,7 +502,7 @@ def build_home_project_record(project, updates, linkage, home_tags=None, tags_un
         "tabBucket": bucket_epm_state(state_value),
         "latestUpdateDate": latest["date"],
         "latestUpdateSnippet": latest["snippet"],
-        "homeTags": extract_tag_names(home_tags or []),
+        "homeTags": normalize_project_tag_names(home_tags or []),
         "homeTagsUnavailable": bool(tags_unavailable),
         "resolvedLinkage": {"labels": resolved_labels, "epicKeys": resolved_epics},
         "matchState": match_state,

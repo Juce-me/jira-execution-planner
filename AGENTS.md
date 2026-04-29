@@ -193,7 +193,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Jira API pagination uses `nextPageToken` / `isLast`, not `startAt` / `total`. Verify response shapes before coding against them.
 - Any new API plan in `docs/plans/` must use the same Jira pagination contract.
 - EPM Project rollups are label-driven; each Project has one exact Jira label. No wildcard/fallback. Metadata-only Home projects still render the Home card plus `Settings -> EPM` CTA.
-- `epm.labelPrefix` in `dashboard-config.json` controls the label autocomplete filter in the EPM settings canvas. Default is `"rnd_project_"`. The full matched label is what the rollup query uses; the prefix is only a UI filter.
+- `epm.labelPrefix` in `dashboard-config.json` is a Home tag mask such as `"rnd_project_*"` and also filters manual Jira-label autocomplete. Resolve each Home Project's exact matching tag as the Jira label; rollup JQL uses that full label, never the mask.
 - Initial dashboard load is performance-critical. Avoid redundant requests, justify heavy endpoints, and measure before/after when claiming improvements.
 - For analytics-style views, prefer one scoped fetch plus client-side regrouping/filtering. Re-fetch only when scope changes or the user explicitly refreshes.
 - If per-issue Jira enrichment is required, define strict fan-out limits before implementation.

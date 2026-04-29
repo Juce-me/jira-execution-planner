@@ -4,7 +4,7 @@
 
 **Goal:** Make EPM land on all visible Atlassian Home Projects by default and make the already-visible Active sprint selector drive an ENG-like Epic/Story/dependency rollup for every visible Project.
 
-**Architecture:** This plan assumes Goal 1 already landed: each Project payload has a display name from Atlassian Home and a resolved `label` from either a single matching Home tag or a manual override. It also assumes the EPM Active sprint selector is already present in the main and compact control surfaces; this plan verifies that contract and wires the selected sprint into the new all-Projects rollup path. Backend work adds an all-Projects aggregate endpoint by reusing the existing per-Project rollup builder and visible Project filtering, and it locks the rule that a labeled Epic fetches all of its Stories in the selected sprint even when those Stories do not carry the Project label. Frontend work treats blank EPM Project selection as "All projects", renders stacked Project boards with the same Epic/Story card structure and dependency interactions as ENG, and makes metadata-only rendering impossible for labeled Projects when Active has a selected sprint.
+**Architecture:** This plan assumes Goal 1 resolves each Atlassian Home Project's exact Jira label from that same Home Project's own tags. `epm.labelPrefix` is a mask such as `rnd_project_*`: the backend strips the trailing wildcard, matches Home tags case-insensitively, and uses the single matching tag name as the exact Jira label. Manual label search remains only an override/fallback. It also assumes the EPM Active sprint selector is already present in the main and compact control surfaces; this plan verifies that contract and wires the selected sprint into the all-Projects rollup path. Backend work adds an all-Projects aggregate endpoint by reusing the existing per-Project rollup builder and visible Project filtering. The rollup first discovers labeled Initiatives/Epics by exact label without applying the sprint filter, then applies the selected sprint when fetching/filtering leaf Stories so unlabeled Stories under labeled Jira structure still render for the chosen sprint. Frontend work treats blank EPM Project selection as "All projects", renders stacked Project boards with the same Epic/Story card structure and dependency interactions as ENG, sends `Open Settings` to the EPM `Projects` labels tab, and makes metadata-only rendering impossible for labeled Projects when Active has a selected sprint.
 
 **Tech Stack:** Python 3 + Flask + unittest; React 19 + esbuild; Node `node:test` source guards; Playwright for local visual smoke checks.
 
@@ -12,9 +12,11 @@
 
 ## Preconditions
 
-- Goal 1 is complete: `/api/epm/projects` returns Atlassian Home Project display names and resolved labels.
+- Goal 1 is complete: `/api/epm/projects` returns Atlassian Home Project display names and resolved labels. Labels are resolved from each Home Project's own tags, not from Jira's global label index or from a project-name slug.
+- `epm.labelPrefix` is a Home tag mask such as `rnd_project_*`; the matched Home tag is used as the exact Jira label in rollup JQL.
 - The EPM Active sprint selector already renders in the main and compact EPM controls.
-- EPM Active must not stop at an Epic card. For every labeled Epic returned by the Project rollup, fetch and render all child Stories in the selected sprint.
+- The `Refresh from Jira Home` button in `.epm-projects-header-actions` refetches Home Projects/tags and reshapes settings rows so single matching Home tags auto-fill labels.
+- EPM Active must not stop at an Initiative or Epic card. It first discovers labeled Initiatives/Epics by label, then fetches and renders child Stories in the selected sprint.
 - EPM issue rendering should mirror the ENG view's Jira structure: Initiative group, Epic block, Story task cards, story points, status, assignee/team metadata, and dependency/blocking chips.
 - `matchState: 'metadata-only'` means no usable label because the Home tag is missing or ambiguous.
 - A labeled Project with no matching Jira issues is `emptyRollup`, not `metadataOnly`.
@@ -27,6 +29,7 @@
 
 - Modify: `jira_server.py`
   - Add `GET /api/epm/projects/rollup/all`.
+  - Treat `epm.labelPrefix` as a Home tag mask such as `rnd_project_*` and resolve a single matching Home tag as the exact Project label.
   - Preserve enough issue fields for ENG-like EPM Story cards.
   - Ensure labeled Epics fetch all selected-sprint child Stories, not only labeled child issues.
   - Filter visible Projects by `tabBucket`.
@@ -36,7 +39,7 @@
 
 - Modify: `epm_rollup.py`
   - Resolve Team field IDs for EPM rollup queries and pass them into issue shaping.
-  - Fetch selected-sprint Stories under each labeled Epic through the existing child-query path.
+  - Discover labeled Initiatives/Epics without a sprint filter, then fetch/filter selected-sprint Stories under the discovered Jira structure.
 
 - Modify: `frontend/src/epm/epmFetch.js`
   - Add a wrapper for `/api/epm/projects/rollup/all`.
@@ -55,6 +58,7 @@
   - Treat `epmSelectedProjectId === ''` as all-Projects mode.
   - Preserve the existing EPM Active sprint picker in main and compact controls.
   - Ensure Active with a selected sprint fetches issue hierarchy for every visible labeled Project.
+  - Ensure the metadata-only `Open Settings` CTA opens `Settings -> EPM -> Projects`, where the labels are.
   - Feed EPM rollup Stories into the existing dependency fetch/focus flow when EPM is active.
 
 - Modify: `frontend/dist/dashboard.js`
@@ -65,6 +69,74 @@
 - Test: `tests/test_epm_project_utils.js`
 - Test: `tests/test_epm_view_source_guards.js`
 - Test: `tests/test_epm_shell_source_guards.js`
+
+---
+
+## Task 0: Home Tag Mask Label Resolution Alignment
+
+**Files:**
+- Modify: `jira_server.py`
+- Test: `tests/test_epm_projects_api.py`
+
+- [ ] **Step 0.1: Add failing mask-resolution test**
+
+Add a regression proving `epm.labelPrefix` behaves as a Home tag mask and not a literal Jira label prefix:
+
+```python
+@patch('jira_server.get_epm_config')
+@patch('jira_server.fetch_epm_home_projects', create=True)
+def test_projects_endpoint_treats_label_prefix_star_as_mask(self, mock_fetch_projects, mock_get_epm_config):
+    mock_fetch_projects.return_value = [
+        {
+            'homeProjectId': 'CRITE-723',
+            'name': 'Enriched Deals Redesign',
+            'homeUrl': 'https://home.atlassian.com/project/CRITE-723',
+            'stateValue': 'ON_TRACK',
+            'stateLabel': 'On Track',
+            'tabBucket': 'active',
+            'latestUpdateDate': '2026-04-19',
+            'latestUpdateSnippet': 'Ready for rollout',
+            'homeTags': ['rnd_project_bsw_enriched_deals_redesign'],
+            'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            'matchState': 'metadata-only',
+        }
+    ]
+    mock_get_epm_config.return_value = {
+        'version': 2,
+        'labelPrefix': 'rnd_project_*',
+        'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+        'projects': {},
+    }
+
+    response = self.client.get('/api/epm/projects')
+
+    self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+    project = response.get_json()['projects'][0]
+    self.assertEqual(project['label'], 'rnd_project_bsw_enriched_deals_redesign')
+    self.assertEqual(project['resolvedLinkage']['labels'], ['rnd_project_bsw_enriched_deals_redesign'])
+    self.assertEqual(project['labelSource'], 'home-tag')
+    self.assertEqual(project['labelStatus'], 'auto')
+```
+
+Expected: FAIL before implementation because `rnd_project_*` is treated literally and does not match `rnd_project_bsw_enriched_deals_redesign`.
+
+- [ ] **Step 0.2: Normalize `labelPrefix` masks before Home tag matching**
+
+In `jira_server.py`, add a small normalizer used by `filter_epm_home_tag_matches`:
+
+```python
+def normalize_epm_label_prefix_mask(label_prefix):
+    prefix = normalize_epm_text(label_prefix)
+    while prefix.endswith('*'):
+        prefix = prefix[:-1].strip()
+    return prefix
+```
+
+Then match Home tags using that normalized mask prefix, case-insensitively. The selected Home tag name remains the exact Jira label used by rollups.
+
+- [ ] **Step 0.3: Verify settings refresh behavior**
+
+Confirm `Refresh from Jira Home` in `.epm-projects-header-actions` calls the configuration project endpoint with force refresh, receives Home project tags, and reshapes each settings row so exactly one matching tag auto-fills the visible Jira label chip. Manual Jira label search remains only a fallback/override.
 
 ---
 
@@ -233,13 +305,61 @@ def test_active_labeled_epic_fetches_all_selected_sprint_stories_under_epic(self
     self.assertEqual(mock_fetch.call_count, 2)
     q1_jql, q2_jql = [call.args[0] for call in mock_fetch.call_args_list]
     self.assertIn('labels = "synthetic_label_alpha"', q1_jql)
-    self.assertIn('Sprint = 42', q1_jql)
+    self.assertNotIn('Sprint = 42', q1_jql)
     self.assertIn('"Epic Link" in ("PRODUCT-29920") OR parent in ("PRODUCT-29920")', q2_jql)
     self.assertIn('Sprint = 42', q2_jql)
     payload = response.get_json()
     story_keys = [story['key'] for story in payload['rootEpics']['PRODUCT-29920']['stories']]
     self.assertEqual(story_keys, ['PRODUCT-30001', 'PRODUCT-30002'])
 ```
+
+- [ ] **Step 1.4a: Add failing Home-tag Initiative-to-selected-sprint Story test**
+
+Add a regression that mirrors the corrected production flow:
+
+```python
+def test_active_label_root_finds_unsprinted_initiative_then_selected_sprint_stories(self):
+    project = {
+        'id': 'CRITE-723',
+        'label': 'rnd_project_bsw_enriched_deals_redesign',
+        'resolvedLinkage': {'labels': ['rnd_project_bsw_enriched_deals_redesign'], 'epicKeys': []},
+    }
+    q1 = [
+        make_issue(
+            'PRODUCT-34928',
+            'Initiative',
+            summary='Enriched Deals Redesign',
+            labels=['rnd_project_bsw_enriched_deals_redesign'],
+            sprint=[],
+        )
+    ]
+    q2 = [
+        make_issue('PRODUCT-35001', 'Epic', parent_key='PRODUCT-34928', sprint=[]),
+        make_issue('PRODUCT-35099', 'Story', parent_key='PRODUCT-34928', sprint=[{'id': 7, 'name': '2026Q1'}]),
+    ]
+    q3 = [
+        make_issue('PRODUCT-35111', 'Story', parent_key='PRODUCT-35001', sprint=[{'id': 42, 'name': '2026Q2'}]),
+    ]
+    patches = self.patch_common(project, [q1, q2, q3])
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6] as mock_fetch:
+        response = self.client.get('/api/epm/projects/CRITE-723/rollup?tab=active&sprint=42')
+
+    self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+    self.assertEqual(mock_fetch.call_count, 3)
+    q1_jql, q2_jql, q3_jql = [call.args[0] for call in mock_fetch.call_args_list]
+    self.assertIn('labels = "rnd_project_bsw_enriched_deals_redesign"', q1_jql)
+    self.assertNotIn('Sprint = 42', q1_jql)
+    self.assertIn('parent in ("PRODUCT-34928")', q2_jql)
+    self.assertNotIn('Sprint = 42', q2_jql)
+    self.assertIn('parent in ("PRODUCT-35001")', q3_jql)
+    self.assertIn('Sprint = 42', q3_jql)
+    payload = response.get_json()
+    story_keys = [story['key'] for story in payload['initiatives']['PRODUCT-34928']['epics']['PRODUCT-35001']['stories']]
+    self.assertEqual(story_keys, ['PRODUCT-35111'])
+    self.assertEqual(payload['initiatives']['PRODUCT-34928']['looseStories'], [])
+```
+
+Expected: FAIL before the corrected rollup builder because Q1 is sprint-filtered and cannot discover an unsprinted labeled Initiative.
 
 - [ ] **Step 1.5: Add failing ENG-compatible field shape test**
 
@@ -974,6 +1094,35 @@ const payload = await fetchEpmAllProjectsRollup(BACKEND_URL, {
 
 This is the Goal 3 behavior: changing the visible EPM Active sprint changes the aggregate rollup request for every visible Project.
 
+- [ ] **Step 3.4a: Send metadata-only Open Settings to the labels tab**
+
+Add or preserve a source guard in `tests/test_epm_settings_source_guards.js`:
+
+```javascript
+test('Open Settings CTA opens the EPM Projects label tab', () => {
+    const openSettingsStart = dashboardSource.indexOf('const openEpmSettingsTab = () => {');
+    const openSettingsEnd = dashboardSource.indexOf('};', openSettingsStart);
+    assert.notStrictEqual(openSettingsStart, -1, 'Expected EPM settings open helper');
+    assert.notStrictEqual(openSettingsEnd, -1, 'Expected EPM settings open helper terminator');
+    const openSettingsSource = dashboardSource.slice(openSettingsStart, openSettingsEnd);
+
+    assert.ok(openSettingsSource.includes("setGroupManageTab('epm');"), 'Expected Open Settings to enter the EPM settings area');
+    assert.ok(openSettingsSource.includes("setEpmSettingsTab('projects');"), 'Expected Open Settings to land on the Projects labels tab');
+    assert.ok(!openSettingsSource.includes("setEpmSettingsTab('scope');"), 'Open Settings must not land on the Scope tab');
+});
+```
+
+Implementation is the shared `openEpmSettingsTab` helper in `frontend/src/dashboard.jsx`:
+
+```javascript
+const openEpmSettingsTab = () => {
+    resetEpmSettingsProjectRows();
+    setShowGroupManage(true);
+    setGroupManageTab('epm');
+    setEpmSettingsTab('projects');
+};
+```
+
 - [ ] **Step 3.5: Feed visible EPM Stories into the dependency lookup flow**
 
 In `frontend/src/dashboard.jsx`, import `flattenEpmRollupBoardsForDependencies` from `frontend/src/epm/epmProjectUtils.mjs`.
@@ -1356,7 +1505,7 @@ const issue = (key, issueType, summary, parentKey = '', extras = {}) => ({
     if (url.pathname === '/api/config') body = { jiraUrl: 'https://example.atlassian.net', boardId: '123' };
     if (url.pathname === '/api/groups-config') body = { groups: [] };
     if (url.pathname === '/api/sprints') body = { sprints: [{ id: '42', name: 'Sprint 42', state: 'active' }] };
-    if (url.pathname === '/api/epm/config') body = { version: 2, labelPrefix: 'rnd_project_', scope: { rootGoalKey: 'ROOT-1', subGoalKey: 'SUB-1' }, projects: {} };
+    if (url.pathname === '/api/epm/config') body = { version: 2, labelPrefix: 'rnd_project_*', scope: { rootGoalKey: 'ROOT-1', subGoalKey: 'SUB-1' }, projects: {} };
     if (url.pathname === '/api/epm/projects') body = { projects };
     if (url.pathname === '/api/dependencies') {
       body = {
@@ -1482,10 +1631,15 @@ Expected: one implementation commit. Do not stage unrelated untracked files.
 
 ## Acceptance Checklist
 
+- [ ] `Refresh from Jira Home` fetches Home Projects and each Project's tags, then auto-fills the Jira label from the single tag matching `epm.labelPrefix` as a mask such as `rnd_project_*`.
+- [ ] A Home Project such as `CRITE-723` with tag `rnd_project_bsw_enriched_deals_redesign` maps that exact tag to the settings Jira label without manual search.
+- [ ] The metadata-only `Open Settings` CTA lands on `Settings -> EPM -> Projects`, where the label rows are visible.
 - [ ] EPM Active default selection is `All projects`, not `Select project...`.
 - [ ] EPM Active keeps the existing visible sprint selector in main and compact control surfaces.
 - [ ] Without a selected sprint, EPM Active does not fetch rollups and shows a sprint-required state.
 - [ ] With a selected sprint, all visible labeled Projects fetch and render Initiative/Epic/Story hierarchy.
+- [ ] Active rollups discover labeled Initiatives/Epics by exact label without `Sprint = ...` on the root label query, then fetch/filter leaf Stories by the selected sprint.
+- [ ] A labeled Initiative such as `PRODUCT-34928` can be unsprinted and still seed its Epic/Story hierarchy for the selected sprint.
 - [ ] A labeled Epic such as `AI for RFP creation` fetches all child Stories in the selected sprint even when those Stories do not carry the Project label.
 - [ ] EPM Story cards show the same dependency pills, dependency strips, hover/focus dimming, and missing/hidden dependency details as ENG.
 - [ ] A Project with an auto-filled label never renders metadata-only solely because the previous Home payload was metadata-only.

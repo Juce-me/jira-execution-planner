@@ -224,6 +224,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In settings UIs, when a value is already selected or the option set is small, default to a compact selected-state control and reveal search only on explicit change; do not leave persistent search inputs visible by default.
 - For any scoped view, show the active scope value in that same view; do not treat request parameters or hidden React state as a substitute for visible controls.
 - In EPM settings, never clear the saved sub-goal on modal open or project loading; the child goal drives cached project configuration, and EPM rollups use configured project labels plus selected sprint, not Jira teams.
+- In EPM, `labelPrefix` is a Home tag mask such as `rnd_project_*`; resolve each Home project's exact matching tag as its Jira label, then use the selected sprint only when fetching/filtering leaf stories, not when discovering labeled Initiatives/Epics.
 - For EPM Goal 2/3 planning, treat the Active sprint selector as already present; plan to wire selectedSprint into rollups and guard render priority, not rebuild the control.
 - EPM Active rollups must fetch selected-sprint Stories under each labeled Epic and render them with the ENG Epic/Story/dependency structure.
 

@@ -323,12 +323,54 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertEqual(mock_fetch.call_count, 2)
         q1_jql, q2_jql = [call.args[0] for call in mock_fetch.call_args_list]
         self.assertIn('labels = "synthetic_label_alpha"', q1_jql)
-        self.assertIn('Sprint = 42', q1_jql)
+        self.assertNotIn('Sprint = 42', q1_jql)
         self.assertIn('"Epic Link" in ("PRODUCT-29920") OR parent in ("PRODUCT-29920")', q2_jql)
         self.assertIn('Sprint = 42', q2_jql)
         payload = response.get_json()
         story_keys = [story['key'] for story in payload['rootEpics']['PRODUCT-29920']['stories']]
         self.assertEqual(story_keys, ['PRODUCT-30001', 'PRODUCT-30002'])
+
+    def test_active_label_root_finds_unsprinted_initiative_then_selected_sprint_stories(self):
+        project = {
+            'id': 'CRITE-723',
+            'label': 'rnd_project_bsw_enriched_deals_redesign',
+            'resolvedLinkage': {'labels': ['rnd_project_bsw_enriched_deals_redesign'], 'epicKeys': []},
+        }
+        q1 = [
+            make_issue(
+                'PRODUCT-34928',
+                'Initiative',
+                summary='Enriched Deals Redesign',
+                labels=['rnd_project_bsw_enriched_deals_redesign'],
+                sprint=[],
+            )
+        ]
+        q2 = [
+            make_issue('PRODUCT-35001', 'Epic', summary='Redesign serving path', parent_key='PRODUCT-34928', sprint=[]),
+            make_issue('PRODUCT-35099', 'Story', summary='Wrong sprint direct child', parent_key='PRODUCT-34928', sprint=[{'id': 7, 'name': '2026Q1'}]),
+        ]
+        q3 = [
+            make_issue('PRODUCT-35111', 'Story', summary='Selected sprint story', parent_key='PRODUCT-35001', sprint=[{'id': 42, 'name': '2026Q2'}]),
+        ]
+        patches = self.patch_common(project, [q1, q2, q3])
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6] as mock_fetch:
+            response = self.client.get('/api/epm/projects/CRITE-723/rollup?tab=active&sprint=42')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(mock_fetch.call_count, 3)
+        q1_jql, q2_jql, q3_jql = [call.args[0] for call in mock_fetch.call_args_list]
+        self.assertIn('labels = "rnd_project_bsw_enriched_deals_redesign"', q1_jql)
+        self.assertNotIn('Sprint = 42', q1_jql)
+        self.assertIn('parent in ("PRODUCT-34928")', q2_jql)
+        self.assertNotIn('Sprint = 42', q2_jql)
+        self.assertIn('parent in ("PRODUCT-35001")', q3_jql)
+        self.assertIn('Sprint = 42', q3_jql)
+        payload = response.get_json()
+        self.assertIn('PRODUCT-34928', payload['initiatives'])
+        self.assertIn('PRODUCT-35001', payload['initiatives']['PRODUCT-34928']['epics'])
+        story_keys = [story['key'] for story in payload['initiatives']['PRODUCT-34928']['epics']['PRODUCT-35001']['stories']]
+        self.assertEqual(story_keys, ['PRODUCT-35111'])
+        self.assertEqual(payload['initiatives']['PRODUCT-34928']['looseStories'], [])
 
     def test_rollup_story_payload_contains_eng_card_fields(self):
         project = {
@@ -366,11 +408,11 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertEqual(payload_story['teamName'], 'Team A')
         self.assertEqual(payload_story['teamId'], 'team-a')
 
-    def test_active_sprint_filter_is_appended_to_every_query_and_sprint_reaches_response(self):
+    def test_active_sprint_filter_starts_at_story_query_and_sprint_reaches_response(self):
         project = {'id': 'project-1', 'label': 'synthetic_label_alpha', 'resolvedLinkage': {'labels': ['synthetic_label_alpha'], 'epicKeys': []}}
         q1 = [make_issue('SYN-I1', 'Initiative', labels=['synthetic_label_alpha'], sprint=[{'id': '42', 'name': 'Sprint 42', 'state': 'ACTIVE'}])]
         q2 = [make_issue('SYN-E2', 'Epic', parent_key='SYN-I1', sprint=['com.atlassian.greenhopper.service.sprint.Sprint@abc[id=42,state=ACTIVE,name=Sprint 42]'])]
-        q3 = [make_issue('SYN-S1', 'Story', parent_key='SYN-E2', sprint=None)]
+        q3 = [make_issue('SYN-S1', 'Story', parent_key='SYN-E2', sprint=[{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])]
         patches = self.patch_common(project, [q1, q2, q3])
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6] as mock_fetch:
             response = self.client.get('/api/epm/projects/project-1/rollup?tab=active&sprint=42')
@@ -378,14 +420,16 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         jql_queries = [call.args[0] for call in mock_fetch.call_args_list]
         self.assertIn('labels = "synthetic_label_alpha"', jql_queries[0])
+        self.assertNotIn('Sprint = 42', jql_queries[0])
+        self.assertNotIn('Sprint = 42', jql_queries[1])
+        self.assertIn('Sprint = 42', jql_queries[2])
         for jql in jql_queries:
-            self.assertIn('Sprint = 42', jql)
             self.assertNotIn('Team[Team]', jql)
             self.assertNotIn('"Team"', jql)
         payload = response.get_json()
         self.assertEqual(payload['initiatives']['SYN-I1']['issue']['sprint'], [{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
         self.assertEqual(payload['initiatives']['SYN-I1']['epics']['SYN-E2']['issue']['sprint'], [{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
-        self.assertEqual(payload['initiatives']['SYN-I1']['epics']['SYN-E2']['stories'][0]['sprint'], [])
+        self.assertEqual(payload['initiatives']['SYN-I1']['epics']['SYN-E2']['stories'][0]['sprint'], [{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
 
     def test_backlog_rollup_does_not_append_sprint_filter(self):
         project = {'id': 'project-1', 'label': 'synthetic_label_alpha', 'resolvedLinkage': {'labels': ['synthetic_label_alpha'], 'epicKeys': []}}

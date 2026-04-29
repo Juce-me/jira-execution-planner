@@ -1664,8 +1664,15 @@ def build_epm_rollup_dependencies():
     )
 
 
-def filter_epm_home_tag_matches(home_project, label_prefix):
+def normalize_epm_label_prefix_mask(label_prefix):
     prefix = normalize_epm_text(label_prefix)
+    while prefix.endswith('*'):
+        prefix = prefix[:-1].strip()
+    return prefix
+
+
+def filter_epm_home_tag_matches(home_project, label_prefix):
+    prefix = normalize_epm_label_prefix_mask(label_prefix)
     home_tags = home_project.get('homeTags') if isinstance(home_project, dict) else []
     if not isinstance(home_tags, list):
         home_tags = []

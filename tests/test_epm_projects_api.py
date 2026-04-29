@@ -128,6 +128,40 @@ class TestEpmProjectsApi(unittest.TestCase):
 
     @patch('jira_server.get_epm_config')
     @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_endpoint_treats_label_prefix_star_as_mask(self, mock_fetch_projects, mock_get_epm_config):
+        mock_fetch_projects.return_value = [
+            {
+                'homeProjectId': 'CRITE-723',
+                'name': 'Enriched Deals Redesign',
+                'homeUrl': 'https://home.atlassian.com/project/CRITE-723',
+                'stateValue': 'ON_TRACK',
+                'stateLabel': 'On Track',
+                'tabBucket': 'active',
+                'latestUpdateDate': '2026-04-19',
+                'latestUpdateSnippet': 'Ready for rollout',
+                'homeTags': ['rnd_project_bsw_enriched_deals_redesign'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+                'matchState': 'metadata-only',
+            }
+        ]
+        mock_get_epm_config.return_value = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_*',
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+            'projects': {},
+        }
+
+        response = self.client.get('/api/epm/projects')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        project = response.get_json()['projects'][0]
+        self.assertEqual(project['label'], 'rnd_project_bsw_enriched_deals_redesign')
+        self.assertEqual(project['resolvedLinkage']['labels'], ['rnd_project_bsw_enriched_deals_redesign'])
+        self.assertEqual(project['labelSource'], 'home-tag')
+        self.assertEqual(project['labelStatus'], 'auto')
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
     def test_projects_endpoint_manual_label_overrides_home_tag(self, mock_fetch_projects, mock_get_epm_config):
         mock_fetch_projects.return_value = [
             {

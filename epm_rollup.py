@@ -32,6 +32,30 @@ class EpmRollupDependencies:
     now: Callable = time.time
 
 
+def _issue_type_name(issue, normalize_text):
+    return normalize_text((issue or {}).get('issueType')).lower()
+
+
+def _issue_matches_sprint(issue, sprint):
+    sprint_id = str(sprint or '').strip()
+    if not sprint_id:
+        return True
+    for entry in (issue or {}).get('sprint') or []:
+        if str((entry or {}).get('id') or '').strip() == sprint_id:
+            return True
+    return False
+
+
+def _filter_active_leaf_issues(issues, issue_type_sets, sprint, normalize_text):
+    initiative_or_epic_types = issue_type_sets['initiative'] | issue_type_sets['epic']
+    filtered = []
+    for issue in issues or []:
+        issue_type = _issue_type_name(issue, normalize_text)
+        if issue_type in initiative_or_epic_types or _issue_matches_sprint(issue, sprint):
+            filtered.append(issue)
+    return filtered
+
+
 def build_per_project_rollup(project_id, tab, sprint, deps):
     tab = str(tab or 'active').strip().lower()
     sprint = str(sprint or '').strip()
@@ -68,7 +92,12 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
             return deps.add_clause_to_jql(jql, f'Sprint = {sprint}')
         return jql
 
-    q1_jql = with_sprint_filter(deps.add_clause_to_jql(base_jql, s1_jql))
+    def filter_leaf_issues_for_active(issues):
+        if should_apply_epm_sprint(tab):
+            return _filter_active_leaf_issues(issues, issue_type_sets, sprint, deps.normalize_epm_text)
+        return issues
+
+    q1_jql = deps.add_clause_to_jql(base_jql, s1_jql)
     q1_raw = deps.fetch_epm_rollup_query(q1_jql, 'q1', headers, fields_list, truncated_queries)
     if not q1_raw:
         payload = deps.build_empty_epm_rollup_payload(project, empty_rollup=True)
@@ -77,6 +106,7 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
         return payload, 200, {'Server-Timing': f'jira-search;dur={round((time.perf_counter() - started) * 1000, 1)}'}
 
     q1_issues, _ = deps.shape_epm_rollup_issue_payload(q1_raw, epic_link_field_id=epic_link_field_id, team_field_id=team_field_id)
+    q1_issues = filter_leaf_issues_for_active(q1_issues)
     initiative_or_epic_types = issue_type_sets['initiative'] | issue_type_sets['epic']
     q2_seed_keys = sorted({
         issue.get('key')
@@ -87,9 +117,16 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
     q2_issues = []
     q2_predicate = child_predicate(q2_seed_keys)
     if q2_predicate:
-        q2_jql = with_sprint_filter(deps.add_clause_to_jql(base_jql, q2_predicate))
+        q2_has_initiative_seed = any(
+            issue.get('key') in q2_seed_keys and _issue_type_name(issue, deps.normalize_epm_text) in issue_type_sets['initiative']
+            for issue in q1_issues
+        )
+        q2_jql = deps.add_clause_to_jql(base_jql, q2_predicate)
+        if not q2_has_initiative_seed:
+            q2_jql = with_sprint_filter(q2_jql)
         q2_raw = deps.fetch_epm_rollup_query(q2_jql, 'q2', headers, fields_list, truncated_queries)
         q2_issues, _ = deps.shape_epm_rollup_issue_payload(q2_raw, epic_link_field_id=epic_link_field_id, team_field_id=team_field_id)
+        q2_issues = filter_leaf_issues_for_active(q2_issues)
 
     q3_seed_keys = sorted({
         issue.get('key')
@@ -103,6 +140,7 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
         q3_jql = with_sprint_filter(deps.add_clause_to_jql(base_jql, q3_predicate))
         q3_raw = deps.fetch_epm_rollup_query(q3_jql, 'q3', headers, fields_list, truncated_queries)
         q3_issues, _ = deps.shape_epm_rollup_issue_payload(q3_raw, epic_link_field_id=epic_link_field_id, team_field_id=team_field_id)
+        q3_issues = filter_leaf_issues_for_active(q3_issues)
 
     hierarchy = deps.build_epm_rollup_hierarchy(
         deps.dedupe_issues_by_key(q1_issues + q2_issues + q3_issues),

@@ -10,6 +10,12 @@ export function getEpmProjectIdentity(project) {
     return String(project?.id || '').trim();
 }
 
+export function isEmptyCustomEpmProjectRow(row) {
+    if (!row) return false;
+    if (row.homeProjectId !== null && String(row?.homeProjectId ?? '').trim()) return false;
+    return !String(row?.name ?? '').trim() && !String(row?.label ?? '').trim();
+}
+
 export function filterEpmProjectsForTab(projects, tab) {
     const normalizedTab = String(tab || 'active').trim().toLowerCase();
     return Array.isArray(projects)

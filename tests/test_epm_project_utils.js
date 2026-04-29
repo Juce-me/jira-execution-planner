@@ -222,3 +222,36 @@ test('hydrateEpmProjectDraft fills blank draft name and label from Home project'
     assert.strictEqual(row.label, 'rnd_project_pubcid_lastimp');
     assert.strictEqual(row.displayName, 'Pubcid for lastimp signal');
 });
+
+test('empty custom EPM project rows are disposable before save', async () => {
+    const { isEmptyCustomEpmProjectRow } = await import(helperUrl);
+
+    assert.strictEqual(
+        isEmptyCustomEpmProjectRow({ id: 'draft-1', homeProjectId: null, name: '', label: '' }),
+        true
+    );
+    assert.strictEqual(
+        isEmptyCustomEpmProjectRow({ id: 'draft-2', homeProjectId: null, name: '  ', label: '   ' }),
+        true
+    );
+    assert.strictEqual(
+        isEmptyCustomEpmProjectRow({ id: 'legacy-empty-1', name: '', label: '' }),
+        true
+    );
+    assert.strictEqual(
+        isEmptyCustomEpmProjectRow({ id: 'legacy-empty-2', homeProjectId: '', name: '', label: '' }),
+        true
+    );
+    assert.strictEqual(
+        isEmptyCustomEpmProjectRow({ id: 'home-1', homeProjectId: 'home-1', name: '', label: '' }),
+        false
+    );
+    assert.strictEqual(
+        isEmptyCustomEpmProjectRow({ id: 'draft-3', homeProjectId: null, name: 'Custom project', label: '' }),
+        false
+    );
+    assert.strictEqual(
+        isEmptyCustomEpmProjectRow({ id: 'draft-4', homeProjectId: null, name: '', label: 'rnd_project_custom' }),
+        false
+    );
+});

@@ -14,13 +14,21 @@ const epmConfig = {
     },
 };
 
+const homeProjectStatuses = [
+    { value: 'DONE', label: 'Completed' },
+    { value: 'ARCHIVED', label: 'Archived' },
+    { value: 'ON_TRACK', label: 'On track' },
+    { value: 'AT_RISK', label: 'At risk' },
+    { value: 'PAUSED', label: 'Paused' },
+];
+
 const homeProjects = Array.from({ length: 18 }, (_, index) => ({
     id: `home-${index + 1}`,
     homeProjectId: `home-${index + 1}`,
     name: `Synthetic Project ${index + 1}`,
     homeUrl: '',
-    stateValue: 'ON_TRACK',
-    stateLabel: 'On track',
+    stateValue: homeProjectStatuses[index % homeProjectStatuses.length].value,
+    stateLabel: homeProjectStatuses[index % homeProjectStatuses.length].label,
     tabBucket: 'active',
     latestUpdateDate: '2026-04-27',
     latestUpdateSnippet: 'Synthetic update',
@@ -143,6 +151,35 @@ for (const viewport of viewports) {
             await expect(page.getByText('On track').first()).toBeVisible();
             await expect(page.getByText('Synthetic update').first()).toHaveCount(0);
             await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-many-rows.png`, fullPage: true });
+        });
+
+        test('projects status and label columns stay aligned', async ({ page }) => {
+            await mockSettings(page);
+            await openEpmSettings(page);
+            await page.getByRole('tab', { name: 'Projects' }).click();
+            const rows = page.locator('.epm-project-settings-row');
+            await expect(rows.nth(3)).toBeVisible();
+            const statusLefts = [];
+            const labelLefts = [];
+            for (const rowIndex of [0, 1, 2, 3]) {
+                statusLefts.push((await rows.nth(rowIndex).locator('.epm-home-status-pill').boundingBox()).x);
+                labelLefts.push((await rows.nth(rowIndex).locator('.epm-project-label-cell').boundingBox()).x);
+            }
+            expect(Math.max(...statusLefts) - Math.min(...statusLefts)).toBeLessThanOrEqual(1);
+            expect(Math.max(...labelLefts) - Math.min(...labelLefts)).toBeLessThanOrEqual(1);
+        });
+
+        test('projects empty custom rows are deletable', async ({ page }) => {
+            await mockSettings(page);
+            await openEpmSettings(page);
+            await page.getByRole('tab', { name: 'Projects' }).click();
+            await page.getByRole('button', { name: 'Add custom Project' }).click();
+            const deleteEmptyProjectButton = page.getByRole('button', { name: 'Delete empty project' });
+            await expect(deleteEmptyProjectButton).toBeVisible();
+            await deleteEmptyProjectButton.scrollIntoViewIfNeeded();
+            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-empty-custom-delete.png`, fullPage: true });
+            await deleteEmptyProjectButton.click();
+            await expect(page.getByRole('button', { name: 'Delete empty project' })).toHaveCount(0);
         });
 
         test('projects scrolled label menu stays aligned', async ({ page }) => {

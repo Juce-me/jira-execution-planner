@@ -35,6 +35,7 @@ import {
     getEpmSettingsProjectsCacheKey,
     getEpmSprintHelper,
     hydrateEpmProjectDraft,
+    isEmptyCustomEpmProjectRow,
     isEpmProjectsConfigReady,
     shouldUseEpmSprint
 } from './epm/epmProjectUtils.mjs';
@@ -1686,6 +1687,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     } else if (row.homeProjectId !== undefined) {
                         normalizedRow.homeProjectId = String(row.homeProjectId || '').trim();
                     }
+                    if (isEmptyCustomEpmProjectRow(normalizedRow)) return;
                     projects[id] = normalizedRow;
                 });
                 return {
@@ -16178,6 +16180,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                             const activeIndex = Math.min(labelSearchIndex[rowKey] || 0, Math.max(results.length - 1, 0));
                                                             const projectStatus = String(project.stateLabel || project.stateValue || '').trim();
                                                             const canRemoveProject = project.homeProjectId === null || project.missingFromHomeFetch;
+                                                            const isEmptyCustomProject = isEmptyCustomEpmProjectRow(project);
                                                             const openEpmLabelSearchFromButton = (event) => {
                                                                 setEpmLabelChanging(prev => ({ ...prev, [rowKey]: true }));
                                                                 window.setTimeout(() => {
@@ -16193,8 +16196,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                 }, 0);
                                                             };
                                                             return (
-                                                                <div key={project.id} className="epm-project-settings-row" style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', flexWrap: 'wrap', padding: '0.55rem 0', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: '1 1 300px', minWidth: 0 }}>
+                                                                <div key={project.id} className="epm-project-settings-row" style={{ display: 'flex', alignItems: 'center', columnGap: '0.65rem', rowGap: '0.35rem', flexWrap: 'wrap', padding: '0.55rem 0', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
+                                                                    <div className="epm-project-name-cell" style={{ display: 'flex', alignItems: 'center', flex: '1 1 24rem', minWidth: '14rem', maxWidth: '100%' }}>
                                                                         <input
                                                                             type="text"
                                                                             className="team-search-input"
@@ -16202,20 +16205,24 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                             onChange={(event) => updateEpmProjectDraft(project.id, 'name', event.target.value)}
                                                                             placeholder={project.homeName || project.name || 'Project name'}
                                                                             aria-label={`Project name for ${project.displayName || project.homeName || project.id}`}
-                                                                            style={{ height: '2rem', minWidth: 0, flex: '1 1 220px', padding: '0.3rem 0.55rem', fontSize: '0.82rem' }}
+                                                                            style={{ height: '2rem', minWidth: 0, width: '100%', padding: '0.3rem 0.55rem', fontSize: '0.82rem' }}
                                                                         />
+                                                                    </div>
+                                                                    <div className="epm-project-status-cell" style={{ display: 'flex', alignItems: 'center', flex: '0 0 6.4rem', minWidth: 0 }}>
                                                                         {projectStatus && (
-                                                                            <span className="epm-home-status-pill" title="Jira Home status" style={{ flex: '0 0 auto', border: '1px solid var(--border)', borderRadius: '999px', padding: '0.16rem 0.45rem', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.58rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', background: '#fbfaf7', whiteSpace: 'nowrap' }}>
+                                                                            <span className="epm-home-status-pill" title="Jira Home status" style={{ maxWidth: '100%', border: '1px solid var(--border)', borderRadius: '999px', padding: '0.16rem 0.45rem', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.58rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', background: '#fbfaf7', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                                                 {projectStatus}
                                                                             </span>
                                                                         )}
+                                                                    </div>
+                                                                    <div className="epm-project-open-cell" style={{ display: 'flex', alignItems: 'center', flex: '0 0 2.4rem', minWidth: 0 }}>
                                                                         {project.homeUrl && (
-                                                                            <a href={project.homeUrl} target="_blank" rel="noopener noreferrer" title="Open Jira Home project" style={{ flex: '0 0 auto', fontSize: '0.62rem', whiteSpace: 'nowrap' }}>
+                                                                            <a href={project.homeUrl} target="_blank" rel="noopener noreferrer" title="Open Jira Home project" style={{ display: 'block', maxWidth: '100%', fontSize: '0.62rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                                                 Open
                                                                             </a>
                                                                         )}
                                                                     </div>
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: '1 1 360px', minWidth: 0, flexWrap: 'wrap' }}>
+                                                                    <div className="epm-project-label-cell" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: '1 1 18rem', minWidth: '12rem', maxWidth: '100%', flexWrap: 'wrap' }}>
                                                                         {currentLabel ? (
                                                                             <div className="epm-label-selected-chip" title={currentLabel} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, maxWidth: '100%', border: '1px solid var(--border)', borderRadius: '999px', background: '#f8f9fa', padding: '0.18rem 0.25rem 0.18rem 0.55rem' }}>
                                                                                 <span className="team-name" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>{currentLabel}</span>
@@ -16229,9 +16236,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                                 </button>
                                                                             </div>
                                                                         ) : (
-                                                                            <div className="epm-label-choice-actions" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
+                                                                            <div className="epm-label-choice-actions" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flexWrap: 'wrap' }}>
                                                                                 <div className="group-field-helper" style={{ margin: 0, whiteSpace: 'nowrap' }}>No Jira label selected.</div>
-                                                                                {!isChangingLabel && (
+                                                                                {!isChangingLabel && !isEmptyCustomProject && (
                                                                                     <button
                                                                                         className="secondary compact"
                                                                                         onClick={openEpmLabelSearchFromButton}
@@ -16239,6 +16246,18 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                                         style={{ padding: '0.22rem 0.55rem', fontSize: '0.62rem', whiteSpace: 'nowrap' }}
                                                                                     >
                                                                                         Choose label
+                                                                                    </button>
+                                                                                )}
+                                                                                {isEmptyCustomProject && (
+                                                                                    <button
+                                                                                        className="secondary compact"
+                                                                                        onClick={() => removeEpmProjectDraft(project.id)}
+                                                                                        type="button"
+                                                                                        title="Delete empty project"
+                                                                                        aria-label="Delete empty project"
+                                                                                        style={{ padding: '0.22rem 0.55rem', fontSize: '0.62rem', whiteSpace: 'nowrap' }}
+                                                                                    >
+                                                                                        Delete
                                                                                     </button>
                                                                                 )}
                                                                             </div>
@@ -16291,7 +16310,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                         </div>
                                                                         )}
                                                                     </div>
-                                                                    {canRemoveProject && (
+                                                                    {canRemoveProject && !isEmptyCustomProject && (
                                                                         <button
                                                                             className="secondary compact"
                                                                             onClick={() => removeEpmProjectDraft(project.id)}

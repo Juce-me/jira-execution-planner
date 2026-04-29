@@ -162,6 +162,42 @@ test('EPM project rows stay compact and show Home status instead of update snipp
     assert.ok(!projectsPanelSource.includes("project.latestUpdateSnippet || 'No updates yet'"), 'Project rows must not show update text');
 });
 
+test('EPM project rows use stable cells for variable statuses and labels', () => {
+    const projectsPanelStart = dashboardSource.indexOf('id="epm-settings-projects-panel"');
+    const projectsPanelEnd = dashboardSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
+    assert.notStrictEqual(projectsPanelStart, -1, 'Expected EPM projects settings panel');
+    assert.notStrictEqual(projectsPanelEnd, -1, 'Expected EPM projects row list before empty state');
+    const projectsPanelSource = dashboardSource.slice(projectsPanelStart, projectsPanelEnd);
+
+    assert.ok(projectsPanelSource.includes('className="epm-project-name-cell"'), 'Expected project names to live in a stable row cell');
+    assert.ok(projectsPanelSource.includes('className="epm-project-status-cell"'), 'Expected Home statuses to live in a fixed-width row cell');
+    assert.ok(projectsPanelSource.includes('className="epm-project-open-cell"'), 'Expected Home links to live in a fixed-width row cell');
+    assert.ok(projectsPanelSource.includes('className="epm-project-label-cell"'), 'Expected Jira labels to live in a bounded row cell');
+    assert.ok(projectsPanelSource.includes("flex: '0 0 6.4rem'"), 'Expected variable Home statuses to share a fixed column width');
+    assert.ok(projectsPanelSource.includes("flex: '1 1 18rem'"), 'Expected Jira labels to use a bounded flexible column');
+});
+
+test('EPM settings drops empty custom project rows and gives them an explicit delete action', () => {
+    const normalizeStart = dashboardSource.indexOf('const normalizeEpmConfigDraft = (config) => {');
+    const normalizeEnd = dashboardSource.indexOf('const hasSavedEpmScopeConfig = (config) => {', normalizeStart);
+    assert.notStrictEqual(normalizeStart, -1, 'Expected EPM config normalizer');
+    assert.notStrictEqual(normalizeEnd, -1, 'Expected EPM config normalizer end');
+    const normalizeSource = dashboardSource.slice(normalizeStart, normalizeEnd);
+
+    assert.ok(normalizeSource.includes('if (isEmptyCustomEpmProjectRow(normalizedRow)) return;'), 'Save normalization must skip fully empty custom project rows');
+
+    const projectsPanelStart = dashboardSource.indexOf('id="epm-settings-projects-panel"');
+    const projectsPanelEnd = dashboardSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
+    assert.notStrictEqual(projectsPanelStart, -1, 'Expected EPM projects settings panel');
+    assert.notStrictEqual(projectsPanelEnd, -1, 'Expected EPM projects row list before empty state');
+    const projectsPanelSource = dashboardSource.slice(projectsPanelStart, projectsPanelEnd);
+
+    assert.ok(projectsPanelSource.includes('const isEmptyCustomProject = isEmptyCustomEpmProjectRow(project);'), 'Expected empty custom row detection in the row renderer');
+    assert.ok(projectsPanelSource.includes('{!isChangingLabel && !isEmptyCustomProject && ('), 'Expected empty custom rows to prioritize Delete over Choose label');
+    assert.ok(projectsPanelSource.includes('Delete empty project'), 'Expected blank custom rows to expose a clear delete action');
+    assert.ok(projectsPanelSource.includes('{canRemoveProject && !isEmptyCustomProject && ('), 'Expected empty custom rows to avoid a second generic remove action');
+});
+
 test('EPM selected Jira label has one explicit change action', () => {
     const selectedLabelStart = dashboardSource.indexOf('className="epm-label-selected-chip"');
     const selectedLabelEnd = dashboardSource.indexOf('{isChangingLabel && (', selectedLabelStart);

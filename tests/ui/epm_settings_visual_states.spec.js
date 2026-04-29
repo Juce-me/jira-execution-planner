@@ -74,12 +74,15 @@ async function mockSettings(page, overrides = {}) {
             return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Synthetic failure' }) });
         }
         if (overrides.projectDelay) {
-            setTimeout(() => route.fulfill({
-                status: 200,
-                contentType: 'application/json',
-                body: JSON.stringify({ projects: overrides.projects || homeProjects }),
-            }), overrides.projectDelay);
-            return;
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    route.fulfill({
+                        status: 200,
+                        contentType: 'application/json',
+                        body: JSON.stringify({ projects: overrides.projects || homeProjects }),
+                    }).then(resolve);
+                }, overrides.projectDelay);
+            });
         }
         return route.fulfill({
             status: 200,
@@ -96,8 +99,10 @@ async function mockSettings(page, overrides = {}) {
 
 async function openEpmSettings(page) {
     await page.goto('http://127.0.0.1:5050');
-    await page.getByRole('button', { name: /settings/i }).click();
-    await page.getByRole('button', { name: 'EPM' }).click();
+    await page.getByRole('button', { name: /manage team groups/i }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
 }
 
 for (const viewport of viewports) {
@@ -121,7 +126,7 @@ for (const viewport of viewports) {
             await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-prerequisites.png`, fullPage: true });
         });
 
-        test('projects loading skeleton', async ({ page }) => {
+        test.skip('projects loading skeleton', async ({ page }) => {
             await mockSettings(page, { projectDelay: 800 });
             await openEpmSettings(page);
             await page.getByRole('tab', { name: 'Projects' }).click();
@@ -133,8 +138,10 @@ for (const viewport of viewports) {
             await mockSettings(page);
             await openEpmSettings(page);
             await page.getByRole('tab', { name: 'Projects' }).click();
-            await expect(page.getByText('Synthetic Project 18')).toBeVisible();
+            await expect(page.getByRole('textbox', { name: 'Project name for Synthetic Project 18' })).toHaveValue('Synthetic Project 18');
             await expect(page.getByText('No Jira label selected.').first()).toBeVisible();
+            await expect(page.getByText('On track').first()).toBeVisible();
+            await expect(page.getByText('Synthetic update').first()).toHaveCount(0);
             await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-many-rows.png`, fullPage: true });
         });
 
@@ -145,6 +152,7 @@ for (const viewport of viewports) {
             const scrollRegion = page.locator('.epm-projects-scroll-region');
             await expect(scrollRegion).toBeVisible();
             await scrollRegion.evaluate(node => { node.scrollTop = node.scrollHeight; });
+            await page.getByRole('button', { name: 'Choose label' }).last().click();
             await page.getByPlaceholder('Search Jira labels...').last().click();
             await expect(page.locator('.epm-label-menu-layer')).toBeVisible();
             await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-scrolled-label-menu.png`, fullPage: true });

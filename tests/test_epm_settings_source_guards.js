@@ -86,9 +86,10 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('fetch(`${BACKEND_URL}/api/jira/labels?prefix=${encodeURIComponent(prefix)}&limit=200`'), 'Expected EPM label autocomplete to use prefix and limit=200');
     assert.ok(dashboardSource.includes('fetch(`${BACKEND_URL}/api/jira/labels?limit=200`'), 'Expected Show all labels to query without prefix and with limit=200');
     assert.ok(dashboardSource.includes('Show all labels'), 'Expected Show all labels toggle copy');
-    assert.ok(dashboardSource.includes('Change'), 'Expected selected labels to expose an explicit Change action');
+    assert.ok(dashboardSource.includes('Change label'), 'Expected selected labels to expose an explicit Change action');
+    assert.ok(dashboardSource.includes('Choose label'), 'Expected unlabeled rows to expose an explicit Choose label action');
     assert.ok(dashboardSource.includes('const isChangingLabel = Boolean(epmLabelChanging[rowKey]);'), 'Expected label search field to be gated behind explicit Change state');
-    assert.ok(dashboardSource.includes('{(!currentLabel || isChangingLabel) && ('), 'Expected label search field to render only when no label is selected or Change is active');
+    assert.ok(dashboardSource.includes('{isChangingLabel && ('), 'Expected label search field to render only after explicit Choose or Change');
     assert.ok(dashboardSource.includes('No Jira label selected.'), 'Expected EPM empty Jira label state copy');
     assert.ok(dashboardSource.includes('placeholder={project.homeName || project.name || \'Project name\'}'), 'Expected name placeholder to default from the Home project name');
     assert.ok(dashboardSource.includes("name: String(row?.name ?? ''),"), 'Expected name field to be persisted exactly as typed');
@@ -144,6 +145,33 @@ test('Open Settings CTA opens the EPM Projects label tab', () => {
     assert.ok(openSettingsSource.includes("setGroupManageTab('epm');"), 'Expected Open Settings to enter the EPM settings area');
     assert.ok(openSettingsSource.includes("setEpmSettingsTab('projects');"), 'Expected Open Settings to land on the Projects labels tab');
     assert.ok(!openSettingsSource.includes("setEpmSettingsTab('scope');"), 'Open Settings must not land on the Scope tab');
+});
+
+test('EPM project rows stay compact and show Home status instead of update snippets', () => {
+    const projectsPanelStart = dashboardSource.indexOf('id="epm-settings-projects-panel"');
+    const projectsPanelEnd = dashboardSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
+    assert.notStrictEqual(projectsPanelStart, -1, 'Expected EPM projects settings panel');
+    assert.notStrictEqual(projectsPanelEnd, -1, 'Expected EPM projects row list before empty state');
+    const projectsPanelSource = dashboardSource.slice(projectsPanelStart, projectsPanelEnd);
+
+    assert.ok(projectsPanelSource.includes('className="epm-project-settings-row"'), 'Expected compact one-row project layout');
+    assert.ok(projectsPanelSource.includes('project.stateLabel || project.stateValue'), 'Expected Home project status beside the project name');
+    assert.ok(projectsPanelSource.includes('Choose label'), 'Expected no-label rows to keep search behind an explicit compact action');
+    assert.ok(!projectsPanelSource.includes('{(!currentLabel || isChangingLabel) && ('), 'Search input must not show by default for every no-label row');
+    assert.ok(!projectsPanelSource.includes('project.latestUpdateDate && ('), 'Project rows must not render Home update snippets');
+    assert.ok(!projectsPanelSource.includes("project.latestUpdateSnippet || 'No updates yet'"), 'Project rows must not show update text');
+});
+
+test('EPM selected Jira label has one explicit change action', () => {
+    const selectedLabelStart = dashboardSource.indexOf('className="epm-label-selected-chip"');
+    const selectedLabelEnd = dashboardSource.indexOf('{isChangingLabel && (', selectedLabelStart);
+    assert.notStrictEqual(selectedLabelStart, -1, 'Expected compact selected label chip');
+    assert.notStrictEqual(selectedLabelEnd, -1, 'Expected label search branch after selected chip');
+    const selectedLabelSource = dashboardSource.slice(selectedLabelStart, selectedLabelEnd);
+
+    assert.ok(selectedLabelSource.includes('Change label'), 'Expected one clear label-change action');
+    assert.ok(!selectedLabelSource.includes('title="Remove label"'), 'Selected label chip must not also expose a duplicate x action');
+    assert.ok(!selectedLabelSource.includes("updateEpmProjectDraft(project.id, 'label', '')"), 'Selected label chip must not clear the label through a duplicate x action');
 });
 
 test('dashboard source preserves saved EPM sub-goal on settings open', () => {

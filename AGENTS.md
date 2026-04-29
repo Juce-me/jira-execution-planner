@@ -228,6 +228,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Atlassian Home tag fetchers return normalized string tag lists; preserve those strings when building EPM project records instead of passing them through raw GraphQL shape extractors.
 - For EPM Goal 2/3 planning, treat the Active sprint selector as already present; plan to wire selectedSprint into rollups and guard render priority, not rebuild the control.
 - EPM Active rollups must fetch selected-sprint Stories under each labeled Epic and render them with the ENG Epic/Story/dependency structure.
+- In EPM settings Projects, keep rows compact: project name plus Home status on one line, no Home update snippets, and Jira label search hidden behind explicit Choose/Change actions.
 
 ---
 

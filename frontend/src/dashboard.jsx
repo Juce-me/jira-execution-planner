@@ -2140,6 +2140,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         homeProjectId,
                         homeName: String(project?.name || ''),
                         homeUrl: project?.homeUrl || project?.url || '',
+                        stateLabel: project?.stateLabel || '',
+                        stateValue: project?.stateValue || '',
                         latestUpdateDate: project?.latestUpdateDate || '',
                         latestUpdateSnippet: project?.latestUpdateSnippet || '',
                         name: String(configuredRow?.name ?? ''),
@@ -2160,6 +2162,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         homeProjectId,
                         homeName: '',
                         homeUrl: '',
+                        stateLabel: '',
+                        stateValue: '',
                         latestUpdateDate: '',
                         latestUpdateSnippet: '',
                         name: String(row?.name ?? ''),
@@ -16172,131 +16176,137 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                             const showAllLabels = Boolean(epmLabelShowAll[rowKey]);
                                                             const isChangingLabel = Boolean(epmLabelChanging[rowKey]);
                                                             const activeIndex = Math.min(labelSearchIndex[rowKey] || 0, Math.max(results.length - 1, 0));
+                                                            const projectStatus = String(project.stateLabel || project.stateValue || '').trim();
+                                                            const canRemoveProject = project.homeProjectId === null || project.missingFromHomeFetch;
+                                                            const openEpmLabelSearchFromButton = (event) => {
+                                                                setEpmLabelChanging(prev => ({ ...prev, [rowKey]: true }));
+                                                                window.setTimeout(() => {
+                                                                    const wrapper = event.target.closest('.epm-project-settings-row');
+                                                                    const input = wrapper ? wrapper.querySelector('.team-search-input[placeholder*="Search Jira labels"]') : null;
+                                                                    if (input) {
+                                                                        input.focus();
+                                                                        openEpmLabelMenu(project.id, input, showAllLabels);
+                                                                    } else {
+                                                                        setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                        void loadEpmProjectLabels(project.id, showAllLabels);
+                                                                    }
+                                                                }, 0);
+                                                            };
                                                             return (
-                                                                <div key={project.id} className="group-projects-subsection" style={{ marginTop: 0, paddingBottom: '1rem', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
-                                                                    <div className="group-list-line" style={{ alignItems: 'baseline', justifyContent: 'space-between', gap: '0.75rem' }}>
-                                                                        {project.homeUrl ? (
-                                                                            <a href={project.homeUrl} target="_blank" rel="noopener noreferrer">
-                                                                                {project.displayName || project.homeName || project.id}
-                                                                            </a>
-                                                                        ) : (
-                                                                            <span>{project.displayName || project.id}</span>
-                                                                        )}
-                                                                        <button
-                                                                            className="remove-btn"
-                                                                            onClick={() => removeEpmProjectDraft(project.id)}
-                                                                            type="button"
-                                                                            title="Remove Project"
-                                                                        >
-                                                                            ×
-                                                                        </button>
-                                                                    </div>
-                                                                    {project.missingFromHomeFetch && (
-                                                                        <div className="group-field-helper epm-project-row-warning">
-                                                                            Not returned by latest Jira Home refresh.
-                                                                        </div>
-                                                                    )}
-                                                                    {project.latestUpdateDate && (
-                                                                        <div className="group-field-helper" style={{ marginTop: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                            {project.latestUpdateSnippet || 'No updates yet'}
-                                                                        </div>
-                                                                    )}
-                                                                    <div className="settings-two-col-grid settings-source-grid" style={{ padding: '0.75rem 0 0' }}>
-                                                                        <div className="group-projects-subsection" style={{ marginTop: 0 }}>
-                                                                            <div className="team-selector-label">Project name</div>
-                                                                            <input
-                                                                                type="text"
-                                                                                className="team-search-input"
-                                                                                value={project.name || ''}
-                                                                                onChange={(event) => updateEpmProjectDraft(project.id, 'name', event.target.value)}
-                                                                                placeholder={project.homeName || project.name || 'Project name'}
-                                                                            />
-                                                                        </div>
-                                                                        <div className="group-projects-subsection" style={{ marginTop: 0 }}>
-                                                                            <div className="team-selector-label">Jira label</div>
-                                                                            {currentLabel ? (
-                                                                                <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
-                                                                                    <span className="team-name">{currentLabel}</span>
-                                                                                    <button
-                                                                                        className="secondary compact"
-                                                                                        onClick={(event) => {
-                                                                                            setEpmLabelChanging(prev => ({ ...prev, [rowKey]: true }));
-                                                                                            window.setTimeout(() => {
-                                                                                                const wrapper = event.target.closest('.group-projects-subsection');
-                                                                                                const input = wrapper ? wrapper.querySelector('.team-search-input[placeholder*="Search Jira labels"]') : null;
-                                                                                                if (input) {
-                                                                                                    input.focus();
-                                                                                                    openEpmLabelMenu(project.id, input, showAllLabels);
-                                                                                                } else {
-                                                                                                    setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                                                    void loadEpmProjectLabels(project.id, showAllLabels);
-                                                                                                }
-                                                                                            }, 0);
-                                                                                        }}
-                                                                                        type="button"
-                                                                                        style={{ marginLeft: '0.35rem' }}
-                                                                                    >
-                                                                                        Change
-                                                                                    </button>
-                                                                                    <button
-                                                                                        className="remove-btn"
-                                                                                        onClick={() => updateEpmProjectDraft(project.id, 'label', '')}
-                                                                                        type="button"
-                                                                                        title="Remove label"
-                                                                                    >
-                                                                                        ×
-                                                                                    </button>
-                                                                                </div>
-                                                                            ) : (
-                                                                                <div className="group-field-helper" style={{ marginTop: '0.35rem' }}>No Jira label selected.</div>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                    {(!currentLabel || isChangingLabel) && (
-                                                                    <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
+                                                                <div key={project.id} className="epm-project-settings-row" style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', flexWrap: 'wrap', padding: '0.55rem 0', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: '1 1 300px', minWidth: 0 }}>
                                                                         <input
                                                                             type="text"
                                                                             className="team-search-input"
-                                                                            placeholder={isSearching ? 'Searching labels...' : 'Search Jira labels...'}
-                                                                            value={labelSearchQuery[rowKey] || ''}
-                                                                            onChange={(event) => {
-                                                                                const value = event.target.value;
-                                                                                setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
-                                                                                openEpmLabelMenu(project.id, event.currentTarget, showAllLabels);
-                                                                                setLabelSearchIndex(prev => ({ ...prev, [rowKey]: 0 }));
-                                                                            }}
-                                                                            onFocus={(event) => {
-                                                                                openEpmLabelMenu(project.id, event.currentTarget, showAllLabels);
-                                                                            }}
-                                                                            onBlur={() => window.setTimeout(() => {
-                                                                                setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false }));
-                                                                                setEpmLabelMenuAnchor(prev => (prev && prev.rowKey === rowKey ? null : prev));
-                                                                                if (epmLabelMenuInputRef.current && !document.body.contains(epmLabelMenuInputRef.current)) {
-                                                                                    epmLabelMenuInputRef.current = null;
-                                                                                }
-                                                                            }, 120)}
-                                                                            onKeyDown={(event) => handleEpmLabelSearchKeyDown(project.id, event, results)}
+                                                                            value={project.name || ''}
+                                                                            onChange={(event) => updateEpmProjectDraft(project.id, 'name', event.target.value)}
+                                                                            placeholder={project.homeName || project.name || 'Project name'}
+                                                                            aria-label={`Project name for ${project.displayName || project.homeName || project.id}`}
+                                                                            style={{ height: '2rem', minWidth: 0, flex: '1 1 220px', padding: '0.3rem 0.55rem', fontSize: '0.82rem' }}
                                                                         />
+                                                                        {projectStatus && (
+                                                                            <span className="epm-home-status-pill" title="Jira Home status" style={{ flex: '0 0 auto', border: '1px solid var(--border)', borderRadius: '999px', padding: '0.16rem 0.45rem', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.58rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', background: '#fbfaf7', whiteSpace: 'nowrap' }}>
+                                                                                {projectStatus}
+                                                                            </span>
+                                                                        )}
+                                                                        {project.homeUrl && (
+                                                                            <a href={project.homeUrl} target="_blank" rel="noopener noreferrer" title="Open Jira Home project" style={{ flex: '0 0 auto', fontSize: '0.62rem', whiteSpace: 'nowrap' }}>
+                                                                                Open
+                                                                            </a>
+                                                                        )}
+                                                                    </div>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: '1 1 360px', minWidth: 0, flexWrap: 'wrap' }}>
+                                                                        {currentLabel ? (
+                                                                            <div className="epm-label-selected-chip" title={currentLabel} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, maxWidth: '100%', border: '1px solid var(--border)', borderRadius: '999px', background: '#f8f9fa', padding: '0.18rem 0.25rem 0.18rem 0.55rem' }}>
+                                                                                <span className="team-name" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>{currentLabel}</span>
+                                                                                <button
+                                                                                    className="secondary compact"
+                                                                                    onClick={openEpmLabelSearchFromButton}
+                                                                                    type="button"
+                                                                                    style={{ padding: '0.22rem 0.55rem', fontSize: '0.62rem' }}
+                                                                                >
+                                                                                    Change label
+                                                                                </button>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="epm-label-choice-actions" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
+                                                                                <div className="group-field-helper" style={{ margin: 0, whiteSpace: 'nowrap' }}>No Jira label selected.</div>
+                                                                                {!isChangingLabel && (
+                                                                                    <button
+                                                                                        className="secondary compact"
+                                                                                        onClick={openEpmLabelSearchFromButton}
+                                                                                        type="button"
+                                                                                        style={{ padding: '0.22rem 0.55rem', fontSize: '0.62rem', whiteSpace: 'nowrap' }}
+                                                                                    >
+                                                                                        Choose label
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                        )}
+                                                                        {isChangingLabel && (
+                                                                        <div className="team-search-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: '1 1 260px', minWidth: 0 }}>
+                                                                            <input
+                                                                                type="text"
+                                                                                className="team-search-input"
+                                                                                placeholder={isSearching ? 'Searching labels...' : 'Search Jira labels...'}
+                                                                                value={labelSearchQuery[rowKey] || ''}
+                                                                                onChange={(event) => {
+                                                                                    const value = event.target.value;
+                                                                                    setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
+                                                                                    openEpmLabelMenu(project.id, event.currentTarget, showAllLabels);
+                                                                                    setLabelSearchIndex(prev => ({ ...prev, [rowKey]: 0 }));
+                                                                                }}
+                                                                                onFocus={(event) => {
+                                                                                    openEpmLabelMenu(project.id, event.currentTarget, showAllLabels);
+                                                                                }}
+                                                                                onBlur={() => window.setTimeout(() => {
+                                                                                    setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false }));
+                                                                                    setEpmLabelMenuAnchor(prev => (prev && prev.rowKey === rowKey ? null : prev));
+                                                                                    if (epmLabelMenuInputRef.current && !document.body.contains(epmLabelMenuInputRef.current)) {
+                                                                                        epmLabelMenuInputRef.current = null;
+                                                                                    }
+                                                                                }, 120)}
+                                                                                onKeyDown={(event) => handleEpmLabelSearchKeyDown(project.id, event, results)}
+                                                                                style={{ height: '2rem', minWidth: '10rem', flex: '1 1 180px', padding: '0.3rem 0.55rem', fontSize: '0.82rem' }}
+                                                                            />
+                                                                            <button
+                                                                                className="secondary compact"
+                                                                                onClick={(event) => {
+                                                                                    const nextShowAll = !showAllLabels;
+                                                                                    setEpmLabelShowAll(prev => ({ ...prev, [rowKey]: nextShowAll }));
+                                                                                    const wrapper = event.target.closest('.team-search-wrapper');
+                                                                                    const input = wrapper ? wrapper.querySelector('.team-search-input') : null;
+                                                                                    if (input) {
+                                                                                        openEpmLabelMenu(project.id, input, nextShowAll);
+                                                                                    } else {
+                                                                                        setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                                        void loadEpmProjectLabels(project.id, nextShowAll);
+                                                                                    }
+                                                                                }}
+                                                                                type="button"
+                                                                                style={{ padding: '0.28rem 0.55rem', whiteSpace: 'nowrap' }}
+                                                                            >
+                                                                                {showAllLabels ? 'Use prefix' : 'Show all labels'}
+                                                                            </button>
+                                                                        </div>
+                                                                        )}
+                                                                    </div>
+                                                                    {canRemoveProject && (
                                                                         <button
                                                                             className="secondary compact"
-                                                                            onClick={(event) => {
-                                                                                const nextShowAll = !showAllLabels;
-                                                                                setEpmLabelShowAll(prev => ({ ...prev, [rowKey]: nextShowAll }));
-                                                                                const wrapper = event.target.closest('.team-search-wrapper');
-                                                                                const input = wrapper ? wrapper.querySelector('.team-search-input') : null;
-                                                                                if (input) {
-                                                                                    openEpmLabelMenu(project.id, input, nextShowAll);
-                                                                                } else {
-                                                                                    setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                                    void loadEpmProjectLabels(project.id, nextShowAll);
-                                                                                }
-                                                                            }}
+                                                                            onClick={() => removeEpmProjectDraft(project.id)}
                                                                             type="button"
-                                                                            style={{ marginTop: '0.45rem' }}
+                                                                            title="Remove Project"
+                                                                            aria-label={`Remove ${project.displayName || project.homeName || project.id}`}
+                                                                            style={{ padding: '0.28rem 0.55rem', flex: '0 0 auto' }}
                                                                         >
-                                                                            {showAllLabels ? 'Use prefix' : 'Show all labels'}
+                                                                            Remove
                                                                         </button>
-                                                                    </div>
+                                                                    )}
+                                                                    {project.missingFromHomeFetch && (
+                                                                        <div className="group-field-helper epm-project-row-warning" style={{ flexBasis: '100%', margin: 0 }}>
+                                                                            Not returned by latest Jira Home refresh.
+                                                                        </div>
                                                                     )}
                                                                 </div>
                                                             );

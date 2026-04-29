@@ -174,9 +174,17 @@ export function flattenEpmRollupBoardsForDependencies(boards = []) {
 }
 
 export function hydrateEpmProjectDraft(row, homeProject) {
+    const draftName = String(row?.name ?? '');
+    const homeName = String(homeProject?.name || row?.homeName || '');
+    const draftLabel = String(row?.label ?? '');
+    const homeLabel = String(homeProject?.label || '');
+    const name = draftName.trim() ? draftName : homeName;
+    const label = draftLabel.trim() ? draftLabel : homeLabel;
     return {
         ...(row || {}),
-        displayName: row?.name || homeProject?.name || ''
+        name,
+        label,
+        displayName: name || homeName || ''
     };
 }
 

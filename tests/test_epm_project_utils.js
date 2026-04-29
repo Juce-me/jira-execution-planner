@@ -200,3 +200,25 @@ test('EPM settings project readiness and cache key use sub-goal plus prefix', as
     assert.deepStrictEqual(getEpmProjectPrerequisites({}), ['subGoal', 'labelPrefix']);
     assert.strictEqual(getEpmSettingsProjectsCacheKey({}), '');
 });
+
+test('hydrateEpmProjectDraft fills blank draft name and label from Home project', async () => {
+    const { hydrateEpmProjectDraft } = await import(helperUrl);
+
+    const row = hydrateEpmProjectDraft(
+        {
+            id: 'home-1',
+            homeProjectId: 'home-1',
+            homeName: 'Pubcid for lastimp signal',
+            name: '',
+            label: ''
+        },
+        {
+            name: 'Pubcid for lastimp signal',
+            label: 'rnd_project_pubcid_lastimp'
+        }
+    );
+
+    assert.strictEqual(row.name, 'Pubcid for lastimp signal');
+    assert.strictEqual(row.label, 'rnd_project_pubcid_lastimp');
+    assert.strictEqual(row.displayName, 'Pubcid for lastimp signal');
+});

@@ -128,7 +128,9 @@ test('EPM project utility hydrates display name without persisting Home fallback
     assert.ok(utilsSource.includes("return String(project?.id || '').trim();"), 'Expected project identity to use project id only');
     assert.ok(!utilsSource.includes('project?.id || project?.homeProjectId'), 'Did not expect Home project id fallback in identity helper');
     assert.ok(utilsSource.includes('export function hydrateEpmProjectDraft(row, homeProject) {'), 'Expected hydrateEpmProjectDraft helper');
-    assert.ok(utilsSource.includes("displayName: row?.name || homeProject?.name || ''"), 'Expected displayName fallback to Home project name');
+    assert.ok(utilsSource.includes("const name = draftName.trim() ? draftName : homeName;"), 'Expected draft name to fall back to Home project name');
+    assert.ok(utilsSource.includes("const label = draftLabel.trim() ? draftLabel : homeLabel;"), 'Expected blank draft label to fall back to Home project label');
+    assert.ok(utilsSource.includes("displayName: name || homeName || ''"), 'Expected displayName fallback to hydrated project name');
     assert.ok(!utilsSource.includes('customName'), 'Did not expect legacy customName fallback in EPM project utils');
 });
 

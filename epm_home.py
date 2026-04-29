@@ -84,6 +84,8 @@ class HomeGraphQLClient:
                 if exc.code == 429:
                     raise HomeRateLimitError("Atlassian Home rate-limited after retries.") from exc
                 raise HomeGraphQLError(f"Atlassian Home request failed: {exc}") from exc
+            except OSError as exc:
+                raise HomeGraphQLError(f"Atlassian Home request failed: {exc}") from exc
             except ValueError as exc:
                 raise HomeGraphQLError("Atlassian Home returned invalid JSON.") from exc
             errors = data.get("errors") or []
@@ -419,9 +421,12 @@ def fetch_project_tags(client: HomeGraphQLClient, project: dict) -> list[str] | 
     project_id = str((project or {}).get("id") or "").strip()
     if not project_id:
         return []
+    direct_tags: list[str] | None = None
     try:
         response = client.execute(QUERY_PROJECT_TAGS, {"projectId": project_id})
-        return _extract_project_tags_from_home_response(response)
+        direct_tags = _extract_project_tags_from_home_response(response)
+        if direct_tags:
+            return direct_tags
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Direct Home project tag fetch failed for %s: %s", project_id, exc)
 
@@ -450,8 +455,8 @@ def fetch_project_tags(client: HomeGraphQLClient, project: dict) -> list[str] | 
             return _extract_project_tags_from_twg_response(response)
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Teamwork Graph project tag fetch failed for %s: %s", project_id, exc)
-        return None
-    return []
+        return direct_tags if direct_tags is not None else None
+    return direct_tags if direct_tags is not None else []
 
 
 def build_home_project_record(project, updates, linkage, home_tags=None, tags_unavailable=False):

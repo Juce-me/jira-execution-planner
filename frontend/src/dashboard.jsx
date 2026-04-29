@@ -2145,7 +2145,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         name: String(configuredRow?.name ?? ''),
                         label: String(configuredRow?.label ?? ''),
                         missingFromHomeFetch: Boolean(project?.missingFromHomeFetch),
-                    }, { name: String(project?.name || '') }));
+                    }, project));
                     seen.add(projectId);
                     seen.add(homeProjectId);
                 });

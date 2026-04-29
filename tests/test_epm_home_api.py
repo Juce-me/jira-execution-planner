@@ -120,6 +120,49 @@ class TestEpmHomeApi(unittest.TestCase):
 
     @patch('epm_home.fetch_home_site_cloud_id', return_value='cloud-123')
     @patch('epm_home.build_teamwork_graph_client')
+    def test_fetch_project_tags_falls_back_to_teamwork_graph_when_direct_tags_are_empty(self, mock_build_twg_client, mock_cloud_id):
+        home_client = Mock()
+        home_client.execute.return_value = {
+            'data': {
+                'projects_byId': {
+                    'tags': {
+                        'edges': [],
+                    },
+                },
+            },
+        }
+        twg_client = Mock()
+        twg_client.execute.return_value = {
+            'data': {
+                'cypherQuery': {
+                    'edges': [
+                        {
+                            'node': {
+                                'columns': [
+                                    {
+                                        'value': {
+                                            'nodes': [
+                                                {'data': {'__typename': 'AtlassianHomeTag', 'name': 'rnd_project_pubcid_lastimp'}},
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            },
+        }
+        mock_build_twg_client.return_value = twg_client
+
+        result = fetch_project_tags(home_client, {'id': 'proj-1', 'url': 'https://home/project/proj-1'})
+
+        self.assertEqual(result, ['rnd_project_pubcid_lastimp'])
+        mock_cloud_id.assert_called_once_with()
+        mock_build_twg_client.assert_called_once_with()
+
+    @patch('epm_home.fetch_home_site_cloud_id', return_value='cloud-123')
+    @patch('epm_home.build_teamwork_graph_client')
     def test_fetch_project_tags_falls_back_to_teamwork_graph_relationship(self, mock_build_twg_client, mock_cloud_id):
         home_client = Mock()
         home_client.execute.side_effect = epm_home.HomeGraphQLError('unknown field tags')
@@ -400,7 +443,8 @@ class TestEpmHomeApi(unittest.TestCase):
         client.execute.side_effect = execute
         mock_fetch_update.return_value = []
 
-        result = fetch_projects_for_goal(client, 'goal-1')
+        with patch('epm_home.fetch_project_tags', return_value=[]):
+            result = fetch_projects_for_goal(client, 'goal-1')
 
         self.assertEqual([row['homeProjectId'] for row in result], ['proj-slow', 'proj-fast', 'proj-medium'])
 
@@ -453,7 +497,10 @@ class TestEpmHomeApi(unittest.TestCase):
                 release_updates.set()
             return [{'creationDate': '2026-04-12T10:00:00.000Z', 'summary': f'Update {project_id}'}]
 
-        with patch('epm_home.fetch_latest_project_update', side_effect=fetch_update) as mock_fetch_update:
+        with patch('epm_home.fetch_latest_project_update', side_effect=fetch_update) as mock_fetch_update, patch(
+            'epm_home.fetch_project_tags',
+            return_value=[],
+        ):
             result = fetch_epm_home_projects({'subGoalKey': 'child-200'})
 
         self.assertEqual(mock_fetch_update.call_count, 2)

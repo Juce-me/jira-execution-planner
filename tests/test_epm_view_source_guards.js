@@ -193,6 +193,21 @@ test('dashboard source renders mutually exclusive EPM controls as segmented radi
     assert.ok(dashboardSource.includes('aria-checked={epmTab === tab.value}'), 'Expected EPM state options to expose checked state');
 });
 
+test('EPM project picker uses the sprint-style custom dropdown', () => {
+    const pickerStart = dashboardSource.indexOf('const renderEpmProjectPicker = () => {');
+    const pickerEnd = dashboardSource.indexOf('const renderSprintControl = (surface) =>', pickerStart);
+    assert.notStrictEqual(pickerStart, -1, 'Expected EPM project picker renderer');
+    assert.notStrictEqual(pickerEnd, -1, 'Expected EPM project picker before sprint control');
+    const pickerSource = dashboardSource.slice(pickerStart, pickerEnd);
+
+    assert.ok(pickerSource.includes('className="sprint-dropdown epm-project-dropdown"'), 'Expected Project to use the same dropdown shell as Sprint');
+    assert.ok(pickerSource.includes('className={`sprint-dropdown-toggle ${showEpmProjectDropdown ? \'open\' : \'\'}`}'), 'Expected Project toggle to use sprint dropdown toggle styling');
+    assert.ok(pickerSource.includes('className="sprint-dropdown-panel"'), 'Expected Project menu to use sprint dropdown panel styling');
+    assert.ok(pickerSource.includes('className="sprint-dropdown-search"'), 'Expected Project menu to use the sprint dropdown search styling');
+    assert.ok(pickerSource.includes('className="sprint-dropdown-option"'), 'Expected Project options to use sprint dropdown option styling');
+    assert.ok(!pickerSource.includes('<select'), 'Project picker must not use a native select');
+});
+
 test('dashboard source keeps the ENG/EPM switch in the main header only', () => {
     assert.ok(dashboardSource.includes('renderViewSwitch()'), 'Expected renderViewSwitch() in dashboard.jsx');
     assert.strictEqual(countOccurrences(dashboardSource, 'renderViewSwitch()'), 1, 'Expected renderViewSwitch() only in the main header');
@@ -346,7 +361,7 @@ test('EPM defaults to all projects and exposes sprint controls in Active', () =>
         'const renderEpmProjectPicker = () =>',
         'const renderSprintControl ='
     );
-    assert.ok(pickerSnippet.includes('<option value="">All projects</option>'), 'Expected blank EPM project selection to mean All projects');
+    assert.ok(pickerSnippet.includes('All projects'), 'Expected blank EPM project selection to mean All projects');
     assert.ok(!pickerSnippet.includes('Select project...'), 'Did not expect single-project placeholder copy');
     assert.ok(dashboardSource.includes("epmSelectedProjectId === ''"), 'Expected explicit all-projects branch for blank EPM project selection');
     assert.ok(dashboardSource.includes("shouldUseEpmSprint(epmTab) && renderSprintControl('main')"), 'Expected EPM Active main controls to render the sprint selector');
@@ -401,9 +416,10 @@ test('EPM project identity positions use project id only', () => {
         'const renderEpmProjectPicker = () =>',
         'const renderSprintControl ='
     );
-    assert.ok(pickerSnippet.includes('visibleEpmProjects.filter(project => getEpmProjectIdentity(project)).map'), 'Expected picker to omit projects with no project.id');
+    assert.ok(dashboardSource.includes('const projects = visibleEpmProjects.filter(project => getEpmProjectIdentity(project));'), 'Expected picker source to omit projects with no project.id');
     assert.ok(pickerSnippet.includes('const projectId = getEpmProjectIdentity(project)'), 'Expected picker option key/value to use project id identity helper');
-    assert.ok(pickerSnippet.includes('<option key={projectId} value={projectId}>'), 'Expected picker option key/value to use project id');
+    assert.ok(pickerSnippet.includes('key={projectId}'), 'Expected picker option key to use project id');
+    assert.ok(pickerSnippet.includes('data-project-id={projectId}'), 'Expected picker option value to use project id');
     assert.ok(!pickerSnippet.includes('homeProjectId'), 'Expected picker identity logic not to reference homeProjectId');
 });
 

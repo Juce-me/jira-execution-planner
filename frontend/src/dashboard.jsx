@@ -13845,7 +13845,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         )}
 
                         {/* --- Team MicroBar tiles --- */}
-                        {selectedTeamEntries.length > 1 && (() => {
+                        {selectedTeamEntries.length > 0 && (() => {
                             const sortedTeams = [...selectedTeamEntries].sort((a, b) => {
                                 if (capacityEnabled) {
                                     const da = a.storyPoints - (a.teamCapacity || 0);

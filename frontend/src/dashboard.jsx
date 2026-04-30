@@ -29,6 +29,7 @@ import {
     filterEpmSettingsProjectsForView,
     buildRollupTree,
     filterEpmProjectsForTab,
+    filterEpmRollupBoardsForSearch,
     flattenEpmRollupBoardsForDependencies,
     getEpmProjectDisplayName,
     getEpmProjectIdentity,
@@ -264,6 +265,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmAggregateTruncated, setEpmAggregateTruncated] = useState(false);
             const [epmAggregateFallback, setEpmAggregateFallback] = useState(false);
             const [epmRollupLoading, setEpmRollupLoading] = useState(false);
+            const [epmProjectRollupLoadingIds, setEpmProjectRollupLoadingIds] = useState(() => new Set());
             const [availableSprints, setAvailableSprints] = useState([]);
             const [sprintsLoading, setSprintsLoading] = useState(true);
             const [groupsConfig, setGroupsConfig] = useState({
@@ -616,6 +618,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             // filterEpmProjectsForTab owns the `project.tabBucket === epmTab` check.
             const visibleEpmProjects = React.useMemo(() => filterEpmProjectsForTab(epmProjects, epmTab), [epmProjects, epmTab]);
             const selectedEpmProject = visibleEpmProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;
+            const visibleEpmRollupBoards = React.useMemo(() => {
+                if (!Array.isArray(epmRollupBoards)) return epmRollupBoards;
+                return filterEpmRollupBoardsForSearch(epmRollupBoards, searchQuery);
+            }, [epmRollupBoards, searchQuery]);
             const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);
             const loadEpmScopeMeta = () => fetchEpmScope(BACKEND_URL);
             const loadEpmGoals = (rootGoalKey = '') => fetchEpmGoals(BACKEND_URL, rootGoalKey);
@@ -1141,6 +1147,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 const requestId = epmRollupRequestIdRef.current;
                 const currentProject = projectOverride || null;
                 const currentProjectId = projectIdOverride || getEpmProjectIdentity(currentProject);
+                setEpmProjectRollupLoadingIds(new Set());
                 if (selectedView !== 'epm') {
                     setEpmRollupTree(null);
                     setEpmRollupBoards(null);
@@ -1253,6 +1260,49 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 } finally {
                     if (epmRollupRequestIdRef.current === requestId) {
                         setEpmRollupLoading(false);
+                    }
+                }
+            };
+            const loadArchivedEpmProjectRollup = async (project) => {
+                if (epmTab !== 'archived') return;
+                const projectId = getEpmProjectIdentity(project);
+                if (!projectId || !project?.label) return;
+                const currentBoard = (epmRollupBoards || []).find((board) => getEpmProjectIdentity(board?.project) === projectId);
+                if (currentBoard?.tree?.kind === 'tree' || currentBoard?.tree?.kind === 'emptyRollup') return;
+                if (epmProjectRollupLoadingIds.has(projectId)) return;
+                const requestId = epmRollupRequestIdRef.current;
+                setEpmProjectRollupLoadingIds((prev) => {
+                    const next = new Set(prev);
+                    next.add(projectId);
+                    return next;
+                });
+                try {
+                    const payload = await fetchEpmProjectRollup(BACKEND_URL, projectId, {
+                        tab: epmTab,
+                        sprint: selectedSprint,
+                    });
+                    if (epmRollupRequestIdRef.current !== requestId) {
+                        return;
+                    }
+                    const tree = buildRollupTree(payload);
+                    setEpmRollupBoards((prev) => Array.isArray(prev)
+                        ? prev.map((board) => (
+                            getEpmProjectIdentity(board?.project) === projectId
+                                ? { ...board, tree }
+                                : board
+                        ))
+                        : prev);
+                } catch (err) {
+                    if (epmRollupRequestIdRef.current === requestId) {
+                        console.error('Failed to fetch archived EPM project rollup:', err);
+                    }
+                } finally {
+                    if (epmRollupRequestIdRef.current === requestId) {
+                        setEpmProjectRollupLoadingIds((prev) => {
+                            const next = new Set(prev);
+                            next.delete(projectId);
+                            return next;
+                        });
                     }
                 }
             };
@@ -9023,11 +9073,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             }, [compactHeaderOffset, compactStickyVisible, epicGroups, planningOffset]);
 
             const epmDependencyTasks = React.useMemo(() => {
-                const boards = Array.isArray(epmRollupBoards)
-                    ? epmRollupBoards
+                const boards = Array.isArray(visibleEpmRollupBoards)
+                    ? visibleEpmRollupBoards
                     : (epmRollupTree ? [{ project: selectedEpmProject, tree: epmRollupTree }] : []);
                 return flattenEpmRollupBoardsForDependencies(boards);
-            }, [epmRollupBoards, epmRollupTree, selectedEpmProject]);
+            }, [visibleEpmRollupBoards, epmRollupTree, selectedEpmProject]);
 
             const dependencyTasks = React.useMemo(
                 () => selectedView === 'epm' ? epmDependencyTasks : [...loadedProductTasks, ...loadedTechTasks],
@@ -15151,9 +15201,12 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             selectedSprint={selectedSprint}
                                             epmRollupLoading={epmRollupLoading}
                                             epmRollupTree={epmRollupTree}
-                                            epmRollupBoards={epmRollupBoards}
+                                            epmRollupBoards={visibleEpmRollupBoards}
                                             epmDuplicates={epmDuplicates}
                                             epmAggregateTruncated={epmAggregateTruncated}
+                                            epmProjectRollupLoadingIds={epmProjectRollupLoadingIds}
+                                            searchQuery={searchQuery}
+                                            onProjectExpand={loadArchivedEpmProjectRollup}
                                             renderEpicBlock={renderEpicBlock}
                                             openEpmSettingsTab={openEpmSettingsTab}
                                             jiraUrl={jiraUrl}

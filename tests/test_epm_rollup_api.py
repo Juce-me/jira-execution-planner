@@ -4,10 +4,10 @@ from unittest.mock import Mock, patch
 import jira_server
 
 
-def make_issue(key, issue_type='Story', summary=None, parent_key='', labels=None, sprint=None, epic_link=''):
+def make_issue(key, issue_type='Story', summary=None, parent_key='', labels=None, sprint=None, epic_link='', status='To Do'):
     fields = {
         'summary': summary or key,
-        'status': {'name': 'In Progress'},
+        'status': {'name': status},
         'assignee': {'displayName': 'Alex'},
         'issuetype': {'name': issue_type},
         'labels': list(labels or []),
@@ -281,6 +281,97 @@ class TestEpmRollupApi(unittest.TestCase):
         metadata_rollup = payload['projects'][1]['rollup']
         self.assertTrue(metadata_rollup['metadataOnly'])
         self.assertFalse(metadata_rollup['emptyRollup'])
+
+    def test_all_projects_backlog_only_includes_paused_pending_projects(self):
+        projects = [
+            {
+                'id': 'active-one',
+                'displayName': 'Active One',
+                'label': 'synthetic_active',
+                'tabBucket': 'active',
+            },
+            {
+                'id': 'pending-one',
+                'displayName': 'Pending One',
+                'label': 'synthetic_pending',
+                'stateValue': 'PENDING',
+            },
+            {
+                'id': 'paused-one',
+                'displayName': 'Paused One',
+                'label': 'synthetic_paused',
+                'tabBucket': 'backlog',
+            },
+            {
+                'id': 'archived-one',
+                'displayName': 'Archived One',
+                'label': 'synthetic_archived',
+                'tabBucket': 'archived',
+            },
+            {
+                'id': 'custom-all',
+                'displayName': 'Custom All',
+                'label': 'synthetic_custom',
+                'tabBucket': 'all',
+            },
+        ]
+
+        def rollup_side_effect(project_id, tab, sprint, _deps):
+            self.assertEqual(tab, 'backlog')
+            self.assertEqual(sprint, '')
+            return {
+                'project': next(project for project in projects if project['id'] == project_id),
+                'metadataOnly': False,
+                'emptyRollup': True,
+                'truncated': False,
+                'truncatedQueries': [],
+                'initiatives': {},
+                'rootEpics': {},
+                'orphanStories': [],
+            }, 200, {}
+
+        with patch.object(jira_server, 'get_epm_config', return_value={'version': 2}), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': projects}), \
+             patch.object(jira_server, 'build_per_project_rollup', side_effect=rollup_side_effect) as mock_rollup:
+            response = self.client.get('/api/epm/projects/rollup/all?tab=backlog')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = response.get_json()
+        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['pending-one', 'paused-one'])
+        self.assertEqual(set(call.args[0] for call in mock_rollup.call_args_list), {'pending-one', 'paused-one'})
+
+    def test_all_projects_archived_returns_metadata_only_until_project_expand(self):
+        projects = [
+            {
+                'id': 'active-one',
+                'displayName': 'Active One',
+                'label': 'synthetic_active',
+                'tabBucket': 'active',
+            },
+            {
+                'id': 'archived-one',
+                'displayName': 'Archived One',
+                'label': 'synthetic_archived',
+                'tabBucket': 'archived',
+            },
+            {
+                'id': 'completed-one',
+                'displayName': 'Completed One',
+                'label': 'synthetic_completed',
+                'stateValue': 'COMPLETED',
+            },
+        ]
+
+        with patch.object(jira_server, 'get_epm_config', return_value={'version': 2}), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': projects}), \
+             patch.object(jira_server, 'build_per_project_rollup') as mock_rollup:
+            response = self.client.get('/api/epm/projects/rollup/all?tab=archived')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = response.get_json()
+        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['archived-one', 'completed-one'])
+        self.assertTrue(all(entry['rollup']['metadataOnly'] for entry in payload['projects']))
+        mock_rollup.assert_not_called()
 
     def test_all_projects_rollup_reports_server_timing_breakdown(self):
         projects = [
@@ -556,9 +647,8 @@ class TestEpmRollupApi(unittest.TestCase):
 
         self.assertEqual(rollup_response.status_code, 200)
         rollup_issues = rollup_response.get_json()['orphanStories']
-        self.assertEqual(rollup_issues[0]['sprint'], [{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
-        self.assertEqual(rollup_issues[1]['sprint'], [{'id': 7, 'name': 'Old', 'state': 'CLOSED'}])
-        self.assertEqual(rollup_issues[2]['sprint'], [])
+        self.assertEqual([issue['key'] for issue in rollup_issues], ['SYN-S3'])
+        self.assertEqual(rollup_issues[0]['sprint'], [])
 
         jira_server.EPM_ISSUES_CACHE.clear()
         with patch.object(jira_server, 'find_epm_project_or_404', return_value=project), \

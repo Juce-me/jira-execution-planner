@@ -1868,7 +1868,14 @@ def filter_epm_projects_for_tab(projects, tab):
     visible = []
     for project in projects or []:
         tab_bucket = normalize_epm_text((project or {}).get('tabBucket')).lower()
-        if tab_bucket == normalized_tab or tab_bucket == 'all':
+        if tab_bucket not in {'active', 'backlog', 'archived', 'all'}:
+            state_value = normalize_epm_text((project or {}).get('stateValue') or (project or {}).get('stateLabel'))
+            tab_bucket = epm_home.bucket_epm_state(state_value) if state_value else ''
+        if normalized_tab == 'active':
+            matches_tab = tab_bucket == 'active' or tab_bucket == 'all'
+        else:
+            matches_tab = tab_bucket == normalized_tab
+        if matches_tab:
             visible.append(project)
     return visible
 
@@ -1929,7 +1936,7 @@ def build_all_epm_projects_rollup(tab, sprint):
 
     def build_entry(project):
         project_id = get_epm_project_payload_identity(project)
-        if not normalize_epm_text(project.get('label')):
+        if tab == 'archived' or not normalize_epm_text(project.get('label')):
             return project_id, {
                 'project': project,
                 'rollup': build_empty_epm_rollup_payload(project, metadata_only=True),
@@ -1939,9 +1946,9 @@ def build_all_epm_projects_rollup(tab, sprint):
             rollup = build_empty_epm_rollup_payload(project, metadata_only=True)
         return project_id, {'project': project, 'rollup': rollup}
 
-    labeled_projects = [project for project in visible_projects if normalize_epm_text(project.get('label'))]
+    labeled_projects = [] if tab == 'archived' else [project for project in visible_projects if normalize_epm_text(project.get('label'))]
     for project in visible_projects:
-        if not normalize_epm_text(project.get('label')):
+        if tab == 'archived' or not normalize_epm_text(project.get('label')):
             project_id, entry = build_entry(project)
             entries_by_project_id[project_id] = entry
 

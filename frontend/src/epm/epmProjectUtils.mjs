@@ -16,12 +16,30 @@ export function isEmptyCustomEpmProjectRow(row) {
     return !String(row?.name ?? '').trim() && !String(row?.label ?? '').trim();
 }
 
+const ACTIVE_EPM_PROJECT_STATES = new Set(['on track', 'at risk', 'off track']);
+const BACKLOG_EPM_PROJECT_STATES = new Set(['pending', 'paused']);
+const ARCHIVED_EPM_PROJECT_STATES = new Set(['completed', 'cancelled', 'archived', 'done', 'release', 'released']);
+
+function getEpmProjectLifecycleBucket(project) {
+    const tabBucket = String(project?.tabBucket || '').trim().toLowerCase();
+    if (['active', 'backlog', 'archived', 'all'].includes(tabBucket)) return tabBucket;
+    const status = normalizeEpmSettingsStatus(project?.stateValue || project?.stateLabel || '');
+    if (!status) return '';
+    if (ACTIVE_EPM_PROJECT_STATES.has(status)) return 'active';
+    if (BACKLOG_EPM_PROJECT_STATES.has(status)) return 'backlog';
+    if (ARCHIVED_EPM_PROJECT_STATES.has(status)) return 'archived';
+    return '';
+}
+
 export function filterEpmProjectsForTab(projects, tab) {
     const normalizedTab = String(tab || 'active').trim().toLowerCase();
     return Array.isArray(projects)
         ? projects.filter((project) => {
-            const tabBucket = String(project?.tabBucket || '').trim().toLowerCase();
-            return tabBucket === normalizedTab || tabBucket === 'all';
+            const tabBucket = getEpmProjectLifecycleBucket(project);
+            if (normalizedTab === 'active') {
+                return tabBucket === 'active' || tabBucket === 'all';
+            }
+            return tabBucket === normalizedTab;
         })
         : [];
 }
@@ -104,6 +122,60 @@ export function buildAggregateRollupBoards(payload) {
         truncated: Boolean(payload?.truncated),
         fallback: Boolean(payload?.fallback)
     };
+}
+
+function normalizeEpmSearchText(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function collectEpmIssueSearchText(issue) {
+    return [
+        issue?.key,
+        issue?.summary,
+        issue?.status,
+        issue?.issueType,
+        issue?.assignee,
+        issue?.teamName,
+        issue?.parentKey,
+        issue?.parentSummary
+    ].map(normalizeEpmSearchText).filter(Boolean).join(' ');
+}
+
+function collectEpmTreeSearchText(tree) {
+    if (!tree || tree.kind !== 'tree') return '';
+    const parts = [];
+    tree.initiatives.forEach(initiative => {
+        parts.push(collectEpmIssueSearchText(initiative.issue));
+        initiative.epics.forEach(epic => {
+            parts.push(collectEpmIssueSearchText(epic.issue));
+            epic.stories.forEach(story => parts.push(collectEpmIssueSearchText(story)));
+        });
+        initiative.looseStories.forEach(story => parts.push(collectEpmIssueSearchText(story)));
+    });
+    tree.rootEpics.forEach(epic => {
+        parts.push(collectEpmIssueSearchText(epic.issue));
+        epic.stories.forEach(story => parts.push(collectEpmIssueSearchText(story)));
+    });
+    tree.orphanStories.forEach(story => parts.push(collectEpmIssueSearchText(story)));
+    return parts.filter(Boolean).join(' ');
+}
+
+export function filterEpmRollupBoardsForSearch(boards, query) {
+    if (!Array.isArray(boards)) return [];
+    const normalizedQuery = normalizeEpmSearchText(query);
+    if (!normalizedQuery) return boards;
+    return boards.filter(({ project, tree }) => {
+        const projectText = [
+            getEpmProjectDisplayName(project),
+            project?.label,
+            project?.stateLabel,
+            project?.stateValue,
+            project?.latestUpdateSnippet,
+            project?.latestUpdateDate,
+            project?.homeProjectId
+        ].map(normalizeEpmSearchText).filter(Boolean).join(' ');
+        return `${projectText} ${collectEpmTreeSearchText(tree)}`.includes(normalizedQuery);
+    });
 }
 
 export function toEpmEngTask(issue = {}) {

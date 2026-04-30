@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { buildEpmEngEpicGroup, buildEpmProjectUpdateLine, getEpmProjectDisplayName, toEpmEngTask } from './epmProjectUtils.mjs';
 
 export function EpmRollupPanel({
@@ -11,6 +11,9 @@ export function EpmRollupPanel({
     epmRollupBoards,
     epmDuplicates = {},
     epmAggregateTruncated = false,
+    epmProjectRollupLoadingIds,
+    searchQuery = '',
+    onProjectExpand,
     renderEpicBlock,
     openEpmSettingsTab,
     jiraUrl,
@@ -19,15 +22,38 @@ export function EpmRollupPanel({
     const [collapsedProjectIds, setCollapsedProjectIds] = useState(() => new Set());
 
     const getProjectKey = (project) => project?.id || getEpmProjectDisplayName(project) || '';
+    const projectKeysSignature = Array.isArray(epmRollupBoards)
+        ? epmRollupBoards.map(({ project }) => getProjectKey(project)).filter(Boolean).join('|')
+        : '';
     const isCollapsed = (project) => collapsedProjectIds.has(getProjectKey(project));
     const toggleCollapsed = (project) => {
         const key = getProjectKey(project);
+        const willExpand = collapsedProjectIds.has(key);
         setCollapsedProjectIds((prev) => {
             const next = new Set(prev);
             if (next.has(key)) next.delete(key); else next.add(key);
             return next;
         });
+        if (willExpand && onProjectExpand) {
+            onProjectExpand(project);
+        }
     };
+
+    useEffect(() => {
+        if (selectedEpmProject || !Array.isArray(epmRollupBoards)) return;
+        if (epmTab === 'archived') {
+            setCollapsedProjectIds((prev) => {
+                const next = new Set(prev);
+                epmRollupBoards.forEach(({ project }) => {
+                    const key = getProjectKey(project);
+                    if (key) next.add(key);
+                });
+                return next;
+            });
+            return;
+        }
+        setCollapsedProjectIds(new Set());
+    }, [epmTab, selectedEpmProject, projectKeysSignature]);
 
     const renderProjectIcon = () => (
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
@@ -104,7 +130,10 @@ export function EpmRollupPanel({
         });
         const clusters = new Map();
         Object.entries(epmDuplicates || {}).forEach(([issueKey, projectIds]) => {
-            const sorted = (Array.isArray(projectIds) ? projectIds : []).filter(Boolean).slice().sort();
+            const sorted = (Array.isArray(projectIds) ? projectIds : [])
+                .filter(id => id && projectsById.has(id))
+                .slice()
+                .sort();
             if (sorted.length < 2) return;
             const clusterKey = sorted.join('|');
             if (!clusters.has(clusterKey)) {
@@ -261,8 +290,16 @@ export function EpmRollupPanel({
                         This rollup is truncated; narrow the label or Jira scope.
                     </div>
                 )}
+                {epmRollupBoards.length === 0 && (
+                    <div className="empty-state">
+                        <h2>No EPM projects found</h2>
+                        <p>{searchQuery ? 'No projects match the search.' : 'No projects are available in this EPM tab.'}</p>
+                    </div>
+                )}
                 {epmRollupBoards.map(({ project, tree }) => {
                     const collapsed = isCollapsed(project);
+                    const projectKey = getProjectKey(project);
+                    const projectLoading = epmProjectRollupLoadingIds?.has?.(projectKey);
                     return (
                         <section
                             className={`epm-project-board ${collapsed ? 'is-collapsed' : ''}`}
@@ -270,11 +307,14 @@ export function EpmRollupPanel({
                         >
                             {renderPortfolioHeader(project)}
                             <div className="epm-project-board-body">
-                                {tree?.kind === 'metadataOnly' && renderMetadataOnlyCard(project, buildEpmProjectUpdateLine(project).text || 'No updates yet', false)}
+                                {projectLoading && (
+                                    <div className="group-field-helper">Loading Jira issues...</div>
+                                )}
+                                {!projectLoading && tree?.kind === 'metadataOnly' && renderMetadataOnlyCard(project, buildEpmProjectUpdateLine(project).text || 'No updates yet', false)}
                                 {tree?.kind === 'emptyRollup' && (
                                     <div className="group-field-helper">No issues in this scope.</div>
                                 )}
-                                {tree?.kind === 'tree' && renderEpmTreeWithEngCards(project, tree)}
+                                {!projectLoading && tree?.kind === 'tree' && renderEpmTreeWithEngCards(project, tree)}
                             </div>
                         </section>
                     );

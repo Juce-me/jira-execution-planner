@@ -43,15 +43,16 @@ class BuildPerProjectRollupTests(unittest.TestCase):
         )
         return deps, cache, fetch_calls
 
-    def make_issue(self, key, issue_type='Story', parent_key='', labels=None):
+    def make_issue(self, key, issue_type='Story', parent_key='', labels=None, status='To Do', sprint=None, epic_link=''):
         fields = {
             'summary': key,
-            'status': {'name': 'In Progress'},
+            'status': {'name': status},
             'assignee': {'displayName': 'Alex'},
             'issuetype': {'name': issue_type},
             'labels': list(labels or []),
-            'customfield_sprint': [],
         }
+        if sprint != 'absent':
+            fields[jira_server.get_sprint_field_id()] = [] if sprint is None else sprint
         if parent_key:
             fields['parent'] = {
                 'key': parent_key,
@@ -60,6 +61,8 @@ class BuildPerProjectRollupTests(unittest.TestCase):
                     'issuetype': {'name': 'Epic'},
                 },
             }
+        if epic_link:
+            fields['customfield_epiclink'] = epic_link
         return {'key': key, 'fields': fields}
 
     def test_metadata_only_short_circuit(self):
@@ -120,6 +123,30 @@ class BuildPerProjectRollupTests(unittest.TestCase):
         self.assertEqual(
             first_payload['initiatives']['INIT-1']['epics']['EPIC-1']['stories'][0]['key'],
             'STORY-1',
+        )
+
+    def test_backlog_prunes_sprinted_stories_and_done_or_in_progress_epics(self):
+        project = {'id': 'proj-e', 'label': 'synthetic_label_alpha', 'resolvedLinkage': {'labels': ['synthetic_label_alpha'], 'epicKeys': []}}
+        q1 = [
+            self.make_issue('EPIC-OPEN', 'Epic', labels=['synthetic_label_alpha'], status='To Do'),
+            self.make_issue('EPIC-ACTIVE', 'Epic', labels=['synthetic_label_alpha'], status='In Progress'),
+            self.make_issue('EPIC-DONE', 'Epic', labels=['synthetic_label_alpha'], status='Done'),
+        ]
+        q2 = [
+            self.make_issue('STORY-BACKLOG', 'Story', parent_key='EPIC-OPEN', sprint=[]),
+            self.make_issue('STORY-SPRINTED', 'Story', parent_key='EPIC-OPEN', sprint=[{'id': 42, 'name': '2026Q2'}]),
+            self.make_issue('STORY-ACTIVE-EPIC', 'Story', parent_key='EPIC-ACTIVE', sprint=[]),
+            self.make_issue('STORY-DONE-EPIC', 'Story', parent_key='EPIC-DONE', sprint=[]),
+        ]
+        deps, _, _ = self.make_deps(project, [q1, q2])
+
+        payload, status, _headers = build_per_project_rollup('proj-e', 'backlog', '', deps)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(list(payload['rootEpics'].keys()), ['EPIC-OPEN'])
+        self.assertEqual(
+            [story['key'] for story in payload['rootEpics']['EPIC-OPEN']['stories']],
+            ['STORY-BACKLOG'],
         )
 
 

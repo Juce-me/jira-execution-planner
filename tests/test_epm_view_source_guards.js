@@ -498,7 +498,16 @@ test('EPM rollup helper dedupes by issue key before rendering', () => {
     assert.ok(helperSource.includes('seenKeys.add(key)'), 'Expected rollup tree builder to remember rendered issue keys');
 });
 
-test('EPM project helper keeps custom all bucket visible on every tab', () => {
-    assert.ok(helperSource.includes("tabBucket === 'all'"), 'Expected tabBucket all wildcard in filterEpmProjectsForTab');
-    assert.ok(helperSource.includes('tabBucket === normalizedTab'), 'Expected lifecycle buckets to match only the current tab');
+test('EPM project helper uses strict backlog and archived lifecycle buckets', () => {
+    assert.ok(helperSource.includes("normalizedTab === 'active'"), 'Expected active tab to own custom all project visibility');
+    assert.ok(helperSource.includes("BACKLOG_EPM_PROJECT_STATES"), 'Expected backlog tab to be limited to paused/pending states');
+    assert.ok(helperSource.includes("ARCHIVED_EPM_PROJECT_STATES"), 'Expected archived tab to be limited to archived/completed states');
+    assert.ok(helperSource.includes('filterEpmRollupBoardsForSearch'), 'Expected EPM board search helper');
+});
+
+test('EPM archived portfolio boards lazy-load Jira rollups on expand', () => {
+    assert.ok(epmRollupPanelSource.includes("epmTab === 'archived'"), 'Expected archived boards to initialize collapsed');
+    assert.ok(epmRollupPanelSource.includes('onProjectExpand(project)'), 'Expected project expand callback in EpmRollupPanel.jsx');
+    assert.ok(dashboardSource.includes('loadArchivedEpmProjectRollup'), 'Expected archived lazy rollup loader in dashboard.jsx');
+    assert.ok(dashboardSource.includes('fetchEpmProjectRollup(BACKEND_URL, projectId'), 'Expected archived expand to fetch the per-project rollup');
 });

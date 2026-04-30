@@ -5,13 +5,16 @@ const { pathToFileURL } = require('url');
 
 const helperUrl = pathToFileURL(path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs')).href;
 
-test('filterEpmProjectsForTab treats all as wildcard and hides malformed buckets', async () => {
+test('filterEpmProjectsForTab uses strict lifecycle buckets outside active', async () => {
     const { filterEpmProjectsForTab } = await import(helperUrl);
     const projects = [
         { id: 'all-project', tabBucket: 'all' },
         { id: 'active-project', tabBucket: 'active' },
         { id: 'backlog-project', tabBucket: 'backlog' },
+        { id: 'pending-state-project', stateValue: 'PENDING' },
+        { id: 'paused-state-project', stateLabel: 'Paused' },
         { id: 'archived-project', tabBucket: 'archived' },
+        { id: 'completed-state-project', stateValue: 'COMPLETED' },
         { id: 'empty-project', tabBucket: '' },
         { id: 'missing-project' }
     ];
@@ -22,11 +25,63 @@ test('filterEpmProjectsForTab treats all as wildcard and hides malformed buckets
     );
     assert.deepStrictEqual(
         filterEpmProjectsForTab(projects, 'backlog').map(project => project.id),
-        ['all-project', 'backlog-project']
+        ['backlog-project', 'pending-state-project', 'paused-state-project']
     );
     assert.deepStrictEqual(
         filterEpmProjectsForTab(projects, 'archived').map(project => project.id),
-        ['all-project', 'archived-project']
+        ['archived-project', 'completed-state-project']
+    );
+});
+
+test('filterEpmRollupBoardsForSearch narrows EPM boards by project, label, update, and issue text', async () => {
+    const { filterEpmRollupBoardsForSearch } = await import(helperUrl);
+    const boards = [
+        {
+            project: {
+                id: 'project-a',
+                displayName: 'Data Partnership: Support Revenue Share Fee Model',
+                label: 'rnd_project_data_partnerships_ui',
+                latestUpdateSnippet: 'Finance Gateway handoff is on track'
+            },
+            tree: {
+                kind: 'tree',
+                initiatives: [],
+                rootEpics: [
+                    {
+                        issue: { key: 'PRODUCT-32946', summary: 'Data partnership UI' },
+                        stories: [{ key: 'PRODUCT-36553', summary: 'Data Partnership JSON Support' }]
+                    }
+                ],
+                orphanStories: []
+            }
+        },
+        {
+            project: {
+                id: 'project-b',
+                displayName: 'Pubcid2LR mapping',
+                label: 'rnd_project_bsw_pubcid2lr_mapping',
+                latestUpdateSnippet: 'Final update'
+            },
+            tree: {
+                kind: 'tree',
+                initiatives: [],
+                rootEpics: [],
+                orphanStories: [{ key: 'PRODUCT-31722', summary: 'Assess the cost of pubcid2lr collection' }]
+            }
+        }
+    ];
+
+    assert.deepStrictEqual(
+        filterEpmRollupBoardsForSearch(boards, 'data partnership').map(board => board.project.id),
+        ['project-a']
+    );
+    assert.deepStrictEqual(
+        filterEpmRollupBoardsForSearch(boards, 'PRODUCT-31722').map(board => board.project.id),
+        ['project-b']
+    );
+    assert.deepStrictEqual(
+        filterEpmRollupBoardsForSearch(boards, 'missing').map(board => board.project.id),
+        []
     );
 });
 

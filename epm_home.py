@@ -7,6 +7,7 @@ import concurrent.futures
 import json
 import logging
 import os
+import re
 import time
 from typing import Any
 from urllib.error import HTTPError
@@ -18,7 +19,7 @@ HOME_GRAPHQL_ENDPOINT = "https://team.atlassian.com/gateway/api/graphql"
 HOME_TIMEOUT_SECONDS = 30
 HOME_MAX_RETRIES = 3
 HOME_PAGE_SIZE = 50
-HOME_MAX_PROJECTS_PER_GOAL = 200
+HOME_MAX_PROJECTS_PER_GOAL = 500
 
 _CLOUD_ID_CACHE: dict[str, str] = {}
 
@@ -275,7 +276,7 @@ def extract_project_status(project_data: dict) -> str:
 
 
 def bucket_epm_state(state_value):
-    normalized = str(state_value or "").strip().upper()
+    normalized = re.sub(r"[^A-Z0-9]+", "_", str(state_value or "").strip().upper()).strip("_")
     if normalized in ACTIVE_EPM_STATES:
         return "active"
     if normalized in BACKLOG_EPM_STATES:

@@ -36,6 +36,10 @@ class TestEpmHomeApi(unittest.TestCase):
     def test_bucket_completed_as_archived(self):
         self.assertEqual(bucket_epm_state('COMPLETED'), 'archived')
 
+    def test_bucket_on_track_label_as_active(self):
+        self.assertEqual(bucket_epm_state('On track'), 'active')
+        self.assertEqual(bucket_epm_state('ON TRACK'), 'active')
+
     def test_extract_latest_update_prefers_newest_creation_date(self):
         latest = extract_latest_update([
             {'creationDate': '2026-04-01T08:00:00.000Z', 'summary': 'Older update'},
@@ -550,7 +554,47 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual(result[0]['homeProjectId'], 'proj-enriched')
 
     @patch('epm_home.logger.warning')
-    def test_fetch_goal_project_links_caps_at_200_without_fetching_extra_page(self, mock_warning):
+    def test_fetch_goal_project_links_reads_more_than_200_projects(self, mock_warning):
+        client = Mock()
+
+        def page(cursor, start, has_next=True):
+            return {
+                'data': {
+                    'goals_byId': {
+                        'projects': {
+                            'pageInfo': {'hasNextPage': has_next, 'endCursor': cursor},
+                            'edges': [{'node': {'id': f'proj-{index}'}} for index in range(start, start + 50)],
+                        }
+                    }
+                }
+            }
+
+        client.execute.side_effect = [
+            page('cursor-1', 0),
+            page('cursor-2', 50),
+            page('cursor-3', 100),
+            page('cursor-4', 150),
+            page('cursor-5', 200, has_next=False),
+        ]
+
+        result = epm_home.fetch_goal_project_links(client, 'goal-1')
+
+        self.assertEqual(len(result), 250)
+        self.assertEqual(result[0]['id'], 'proj-0')
+        self.assertEqual(result[-1]['id'], 'proj-249')
+        self.assertEqual(client.execute.call_count, 5)
+        for call_index, call in enumerate(client.execute.call_args_list):
+            variables = call.args[1]
+            self.assertEqual(variables['first'], 50)
+            self.assertEqual(variables['goalId'], 'goal-1')
+            if call_index == 0:
+                self.assertIsNone(variables['after'])
+            else:
+                self.assertEqual(variables['after'], f'cursor-{call_index}')
+        mock_warning.assert_not_called()
+
+    @patch('epm_home.logger.warning')
+    def test_fetch_goal_project_links_caps_large_goal_fetches(self, mock_warning):
         client = Mock()
 
         def page(cursor, start):
@@ -566,27 +610,15 @@ class TestEpmHomeApi(unittest.TestCase):
             }
 
         client.execute.side_effect = [
-            page('cursor-1', 0),
-            page('cursor-2', 50),
-            page('cursor-3', 100),
-            page('cursor-4', 150),
-            page('cursor-5', 200),
+            page(f'cursor-{page_index + 1}', page_index * 50)
+            for page_index in range(11)
         ]
 
         result = epm_home.fetch_goal_project_links(client, 'goal-1')
 
-        self.assertEqual(len(result), 200)
-        self.assertEqual(result[0]['id'], 'proj-0')
-        self.assertEqual(result[-1]['id'], 'proj-199')
-        self.assertEqual(client.execute.call_count, 4)
-        for call_index, call in enumerate(client.execute.call_args_list):
-            variables = call.args[1]
-            self.assertEqual(variables['first'], 50)
-            self.assertEqual(variables['goalId'], 'goal-1')
-            if call_index == 0:
-                self.assertIsNone(variables['after'])
-            else:
-                self.assertEqual(variables['after'], f'cursor-{call_index}')
+        self.assertEqual(len(result), 500)
+        self.assertEqual(result[-1]['id'], 'proj-499')
+        self.assertEqual(client.execute.call_count, 10)
         mock_warning.assert_called_once()
         self.assertIn('truncated', mock_warning.call_args.args[0])
 

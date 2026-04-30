@@ -28,6 +28,7 @@ Postmortems serve to:
 | [MRT010](./MRT010-startup-api-load-fanout-and-overscoped-payloads.md) | Startup API Load Fan-Out and Overscoped Payloads | 2026-02-23 | High | Resolved | Slow cold loads caused by heavy endpoint reuse, overscoped preload requests, and redundant backend query passes |
 | [MRT011](./MRT011-epm-settings-overgeneralized-selection-ux.md) | EPM Settings Overgeneralized Selection UX | 2026-04-21 | High | In Progress | Persistent search controls and heavy live fetch reuse made EPM settings slow, unreadable, and misleading |
 | [MRT012](./MRT012-epm-active-sprint-value-hidden.md) | EPM Active Sprint Value Hidden | 2026-04-27 | High | In Progress | EPM Active used hidden sprint state without showing the selected sprint value or selector |
+| [MRT013](./MRT013-epm-active-home-projects-hidden.md) | EPM Active Home Projects Hidden | 2026-04-30 | High | Resolved | Home project pagination and status-label normalization hid Active projects before rollup rendering |
 
 ## Postmortem Template
 
@@ -81,8 +82,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 12
-- **Metadata complete (Date/Severity/Status)**: 12 (MRT001-MRT012)
+- **Total postmortems**: 13
+- **Metadata complete (Date/Severity/Status)**: 13 (MRT001-MRT013)
 
 ## Common Themes
 
@@ -136,5 +137,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-04-27*
-*Total Postmortems: 12*
+*Last Updated: 2026-04-30*
+*Total Postmortems: 13*

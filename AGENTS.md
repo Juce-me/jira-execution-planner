@@ -228,6 +228,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Atlassian Home tag fetchers return normalized string tag lists; preserve those strings when building EPM project records instead of passing them through raw GraphQL shape extractors.
 - For EPM Goal 2/3 planning, treat the Active sprint selector as already present; plan to wire selectedSprint into rollups and guard render priority, not rebuild the control.
 - EPM Active rollups must fetch selected-sprint Stories under each labeled Epic and render them with the ENG Epic/Story/dependency structure.
+- EPM project board headers must keep the collapse button separate from links, label pills, and long update text; never nest anchors or metadata inside the toggle.
+- EPM Active visibility must be validated from Home project lifecycle labels as well as enum values, and Home project pagination caps must exceed current scoped Home goal sizes.
 - In EPM settings Projects, keep rows compact: project name plus Home status on one line, no Home update snippets, and Jira label search hidden behind explicit Choose/Change actions.
 - In EPM settings Projects, blank custom rows, including legacy rows with missing Home linkage, are draft-only: show an explicit delete action and drop fully empty rows before saving.
 - In EPM settings Projects, put project name, Home status, Home link, and Jira label in stable cells so variable statuses do not distort the row.

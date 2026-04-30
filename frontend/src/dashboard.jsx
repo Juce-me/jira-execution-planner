@@ -223,6 +223,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmConfigDraft, setEpmConfigDraft] = useState(createEmptyEpmConfigDraft());
             const [epmConfigLoading, setEpmConfigLoading] = useState(false);
             const [epmConfigSaving, setEpmConfigSaving] = useState(false);
+            const [epmConfigLoaded, setEpmConfigLoaded] = useState(false);
             const [epmSettingsProjects, setEpmSettingsProjects] = useState([]);
             const [epmSettingsProjectsLoading, setEpmSettingsProjectsLoading] = useState(false);
             const [epmSettingsProjectsError, setEpmSettingsProjectsError] = useState('');
@@ -716,10 +717,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     }
                 }
             };
-            const refreshEpmProjects = async () => {
+            const refreshEpmProjects = async (options = {}) => {
+                const background = Boolean(options.background);
                 epmProjectsRequestIdRef.current += 1;
                 const requestId = epmProjectsRequestIdRef.current;
-                epmProjectsPendingSelectionRef.current = true;
+                if (!background) {
+                    epmProjectsPendingSelectionRef.current = true;
+                }
                 setEpmProjectsLoading(true);
                 setEpmProjectsError('');
                 try {
@@ -735,12 +739,16 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         return [];
                     }
                     console.error('Failed to fetch EPM projects:', err);
-                    setEpmProjects([]);
+                    if (!background) {
+                        setEpmProjects([]);
+                    }
                     setEpmProjectsError(err?.message || 'Failed to load EPM projects.');
                     return [];
                 } finally {
                     if (epmProjectsRequestIdRef.current === requestId) {
-                        epmProjectsPendingSelectionRef.current = false;
+                        if (!background) {
+                            epmProjectsPendingSelectionRef.current = false;
+                        }
                         setEpmProjectsLoading(false);
                     }
                 }
@@ -785,8 +793,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     }
                     const payload = await response.json();
                     const nextConfig = normalizeEpmConfigDraft(payload);
-                    setEpmConfigDraft(nextConfig);
-                    epmConfigBaselineRef.current = JSON.stringify(nextConfig);
+                    applySavedEpmConfig(nextConfig);
                     updateEpmSettingsProjectRowsAfterSave(nextConfig);
                     if (hasSavedEpmScopeConfig(nextConfig)) {
                         await refreshEpmProjects();
@@ -1143,6 +1150,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     setEpmRollupLoading(false);
                     return;
                 }
+                if (!epmConfigLoaded) {
+                    setEpmRollupLoading(false);
+                    return;
+                }
                 if (!hasSavedEpmScope) {
                     setEpmRollupTree(null);
                     setEpmRollupBoards(null);
@@ -1246,6 +1257,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
             };
             const refreshEpmView = async () => {
+                if (!epmConfigLoaded) {
+                    setEpmProjectsLoading(false);
+                    setEpmRollupLoading(false);
+                    return;
+                }
                 if (!hasSavedEpmScope) {
                     setEpmProjects([]);
                     setEpmRollupTree(null);
@@ -1254,6 +1270,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     setEpmAggregateTruncated(false);
                     setEpmAggregateFallback(false);
                     setEpmRollupLoading(false);
+                    return;
+                }
+                if (epmSelectedProjectId === '') {
+                    await refreshEpmRollup(null, '');
+                    void refreshEpmProjects({ background: true });
                     return;
                 }
                 const nextProjects = await refreshEpmProjects();
@@ -1456,10 +1477,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     try {
                         const config = await loadEpmConfig();
                         if (!cancelled) {
-                            const nextConfig = normalizeEpmConfigDraft(config);
+                            const nextConfig = applySavedEpmConfig(config);
                             loadedConfig = nextConfig;
-                            setEpmConfigDraft(nextConfig);
-                            epmConfigBaselineRef.current = JSON.stringify(nextConfig);
                             rootGoalKey = String(nextConfig.scope?.rootGoalKey || '').trim().toUpperCase();
                             setEpmRootGoalQuery('');
                             setEpmSubGoalQuery('');
@@ -1471,8 +1490,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     } catch (err) {
                         console.error('Failed to load EPM config:', err);
                         if (!cancelled) {
-                            setEpmConfigDraft(emptyEpmConfig);
-                            epmConfigBaselineRef.current = JSON.stringify(emptyEpmConfig);
+                            applySavedEpmConfig(emptyEpmConfig);
                             setGroupDraftError('Failed to load EPM settings.');
                             setEpmConfigLoading(false);
                         }
@@ -1715,6 +1733,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     issueTypes: config?.issueTypes && typeof config.issueTypes === 'object' ? config.issueTypes : undefined,
                     projects,
                 };
+            };
+            const applySavedEpmConfig = (config) => {
+                const nextConfig = normalizeEpmConfigDraft(config);
+                setEpmConfigDraft(nextConfig);
+                epmConfigBaselineRef.current = JSON.stringify(nextConfig);
+                setEpmConfigLoaded(true);
+                return nextConfig;
             };
             const hasSavedEpmScopeConfig = (config) => {
                 return Boolean(config?.scope?.rootGoalKey && config?.scope?.subGoalKey);
@@ -4852,9 +4877,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
                         setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
                         setUserCanEditSettings(config.userCanEditSettings !== false);
+                        applySavedEpmConfig(config.epm);
+                    } else {
+                        applySavedEpmConfig(createEmptyEpmConfigDraft());
                     }
                 } catch (err) {
                     console.error('Failed to load config:', err);
+                    applySavedEpmConfig(createEmptyEpmConfigDraft());
                 }
             };
 
@@ -9037,12 +9066,17 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             useEffect(() => {
                 if (selectedView !== 'epm') return;
+                if (!epmConfigLoaded) return;
                 if (!hasSavedEpmScope) {
                     setEpmProjects([]);
                     return;
                 }
+                if (epmSelectedProjectId === '') {
+                    void refreshEpmProjects({ background: true });
+                    return;
+                }
                 void refreshEpmView();
-            }, [selectedView, hasSavedEpmScope]);
+            }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId]);
 
             useEffect(() => {
                 if (selectedView !== 'epm') return;
@@ -9055,7 +9089,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             useEffect(() => {
                 void refreshEpmRollup();
-            }, [selectedView, hasSavedEpmScope, epmSelectedProjectId, selectedEpmProject, epmTab, selectedSprint]);
+            }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, selectedEpmProject, epmTab, selectedSprint]);
 
             const issueByKey = React.useMemo(() => {
                 const map = new Map();
@@ -11540,7 +11574,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     {renderViewSwitch()}
                                     {renderSearchControl('main')}
                                     <button
-                                        className="secondary compact refresh-icon"
+                                        className={`secondary compact refresh-icon ${selectedView === 'epm' && epmProjectsLoading ? 'is-loading' : ''}`}
                                         onClick={() => {
                                             if (selectedView === 'epm') {
                                                 void refreshEpmView();
@@ -15088,21 +15122,28 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
                             {selectedView === 'epm' && (
                                 <>
-                                    {epmProjectsLoading && (
+                                    {!epmConfigLoaded && (
+                                        <div className="empty-state">
+                                            <h2>Loading EPM settings</h2>
+                                            <p>Loading saved project configuration.</p>
+                                        </div>
+                                    )}
+
+                                    {epmConfigLoaded && epmProjectsLoading && !epmRollupBoards && !epmRollupTree && (
                                         <div className="empty-state">
                                             <h2>Loading EPM projects</h2>
                                             <p>Refreshing Atlassian Home project metadata.</p>
                                         </div>
                                     )}
 
-                                    {epmSelectedProjectId && !epmProjectsLoading && !selectedEpmProject && (
+                                    {epmConfigLoaded && epmSelectedProjectId && !epmProjectsLoading && !selectedEpmProject && (
                                         <div className="empty-state">
                                             <h2>Project unavailable</h2>
                                             <p>This project is not available in the current EPM tab.</p>
                                         </div>
                                     )}
 
-                                    {!epmProjectsLoading && (!epmSelectedProjectId || selectedEpmProject) && (
+                                    {epmConfigLoaded && (!epmProjectsLoading || epmRollupBoards || epmRollupTree) && (!epmSelectedProjectId || selectedEpmProject) && (
                                         <EpmRollupPanel
                                             selectedEpmProject={selectedEpmProject}
                                             selectedEpmProjectUpdateLine={selectedEpmProjectUpdateLine}

@@ -224,6 +224,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Keep progress updates compact: state the action directly instead of explaining routine tool choices.
 - In settings UIs, when a value is already selected or the option set is small, default to a compact selected-state control and reveal search only on explicit change; do not leave persistent search inputs visible by default.
 - In EPM settings project lists, sort only by table data columns; keep Home as a subtle icon beside the project name, never as a sort option or primary row action.
+- Load saved EPM config with the initial user config bootstrap; never make the EPM board depend on opening Settings to populate saved scope/projects.
 - For any scoped view, show the active scope value in that same view; do not treat request parameters or hidden React state as a substitute for visible controls.
 - In EPM settings, never clear the saved sub-goal on modal open or project loading; the child goal drives cached project configuration, and EPM rollups use configured project labels plus selected sprint, not Jira teams.
 - In EPM, `labelPrefix` is a Home tag mask such as `rnd_project_*`; resolve each Home project's exact matching tag as its Jira label, then use the selected sprint only when fetching/filtering leaf stories, not when discovering labeled Initiatives/Epics.

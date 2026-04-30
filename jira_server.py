@@ -6358,7 +6358,8 @@ def get_config():
         'userCanEditSettings': True,  # Placeholder until SSO/admin roles are implemented
         'groupsConfigPath': resolve_groups_config_path(),
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),
-        'projectsConfigured': bool(get_selected_projects())
+        'projectsConfigured': bool(get_selected_projects()),
+        'epm': get_epm_config()
     })
 
 

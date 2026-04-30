@@ -254,8 +254,9 @@ test('EPM board fetches rollup with tab and sprint params while preserving activ
     assert.ok(dashboardSource.includes("epmTab === 'active' && !selectedSprint"), 'Expected active tab to require selectedSprint before rollup fetch');
 });
 
-test('EPM initial load warms project metadata before all-project rollup', () => {
+test('EPM initial all-project load fetches rollup before background project metadata refresh', () => {
     const functions = getConstFunctionBodies(dashboardSource);
+    const refreshEpmViewSource = functions.get('refreshEpmView') || '';
     const refreshEpmRollupSource = functions.get('refreshEpmRollup') || '';
     assert.ok(
         refreshEpmRollupSource.includes('if (!hasSavedEpmScope) {'),
@@ -267,11 +268,56 @@ test('EPM initial load warms project metadata before all-project rollup', () => 
     );
     assert.ok(
         dashboardSource.includes('void refreshEpmView();'),
-        'Expected EPM view load effect to warm project metadata then rollup'
+        'Expected EPM view load effect to enter the combined refresh workflow'
     );
     assert.ok(
-        !dashboardSource.includes('void refreshEpmProjects();\n            }, [selectedView, hasSavedEpmScope]);'),
-        'EPM view load effect must not fire project metadata separately from rollup'
+        refreshEpmViewSource.includes("if (epmSelectedProjectId === '') {"),
+        'Expected explicit all-project branch in EPM view refresh'
+    );
+    assert.ok(
+        refreshEpmViewSource.includes("await refreshEpmRollup(null, '');"),
+        'Expected all-project branch to fetch rollup without waiting for the project picker list'
+    );
+    assert.ok(
+        refreshEpmViewSource.includes('void refreshEpmProjects({ background: true });'),
+        'Expected all-project branch to refresh Home project metadata in the background'
+    );
+    assert.ok(
+        dashboardSource.includes("if (epmSelectedProjectId === '') {\n                    void refreshEpmProjects({ background: true });"),
+        'Expected EPM bootstrap effect to refresh project metadata in the background for all-project mode'
+    );
+});
+
+test('EPM board bootstraps saved config from initial user config before loading projects', () => {
+    const functions = getConstFunctionBodies(dashboardSource);
+    const loadConfigSource = functions.get('loadConfig') || '';
+    const refreshEpmRollupSource = functions.get('refreshEpmRollup') || '';
+    const effects = getUseEffectBodies(dashboardSource);
+    const epmViewLoadEffect = effects.find(body => body.includes("if (selectedView !== 'epm') return;") && body.includes('void refreshEpmView();')) || '';
+
+    assert.ok(
+        dashboardSource.includes('const [epmConfigLoaded, setEpmConfigLoaded] = useState(false);'),
+        'Expected explicit EPM config loaded state'
+    );
+    assert.ok(
+        dashboardSource.includes('const applySavedEpmConfig = (config) => {'),
+        'Expected shared helper for applying saved EPM config'
+    );
+    assert.ok(
+        loadConfigSource.includes('applySavedEpmConfig(config.epm);'),
+        'Expected main user config load to hydrate saved EPM config'
+    );
+    assert.ok(
+        refreshEpmRollupSource.includes('if (!epmConfigLoaded) {'),
+        'Expected rollup refresh to wait for saved EPM config bootstrap'
+    );
+    assert.ok(
+        epmViewLoadEffect.includes('if (!epmConfigLoaded) return;'),
+        'Expected EPM view load effect to wait for saved EPM config bootstrap'
+    );
+    assert.ok(
+        dashboardSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId]);'),
+        'Expected EPM view load effect to rerun after config bootstrap'
     );
 });
 

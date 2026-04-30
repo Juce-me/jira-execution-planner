@@ -1798,6 +1798,7 @@ def build_custom_project_payload(row):
         'tabBucket': 'all',
         'latestUpdateDate': '',
         'latestUpdateSnippet': '',
+        'latestUpdateHtml': '',
         'name': name,
         'label': label,
         'customName': name,

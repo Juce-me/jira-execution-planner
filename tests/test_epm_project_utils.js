@@ -285,7 +285,12 @@ test('buildEpmProjectUpdateLine uses relative dates and status fallback', async 
             latestUpdateSnippet: '[on track] Work is progressing',
             stateLabel: 'On track'
         }, now),
-        { text: '2 weeks ago · [on track] Work is progressing', title: '2026-04-16' }
+        {
+            text: '2 weeks ago · [on track] Work is progressing',
+            title: '2026-04-16',
+            relativeDate: '2 weeks ago',
+            message: '[on track] Work is progressing'
+        }
     );
     assert.deepStrictEqual(
         buildEpmProjectUpdateLine({
@@ -293,11 +298,41 @@ test('buildEpmProjectUpdateLine uses relative dates and status fallback', async 
             latestUpdateSnippet: '',
             stateLabel: 'Pending'
         }, now),
-        { text: 'today · Status is pending.', title: '2026-04-30' }
+        {
+            text: 'today · Status is pending.',
+            title: '2026-04-30',
+            relativeDate: 'today',
+            message: 'Status is pending.'
+        }
     );
     assert.deepStrictEqual(
         buildEpmProjectUpdateLine({ stateValue: 'ON_TRACK' }, now),
-        { text: 'Status is on track.', title: '' }
+        {
+            text: 'Status is on track.',
+            title: '',
+            relativeDate: '',
+            message: 'Status is on track.'
+        }
+    );
+});
+
+test('buildEpmProjectUpdateLine exposes formatted Home update html when available', async () => {
+    const { buildEpmProjectUpdateLine } = await import(helperUrl);
+    const now = new Date('2026-04-30T12:00:00Z');
+
+    assert.deepStrictEqual(
+        buildEpmProjectUpdateLine({
+            latestUpdateDate: '2026-04-29',
+            latestUpdateSnippet: 'Build ready and linked.',
+            latestUpdateHtml: '<p><strong>Build ready</strong> and <a href="https://example.test">linked</a>.</p>'
+        }, now),
+        {
+            text: 'yesterday · Build ready and linked.',
+            title: '2026-04-29',
+            relativeDate: 'yesterday',
+            message: 'Build ready and linked.',
+            messageHtml: '<p><strong>Build ready</strong> and <a href="https://example.test">linked</a>.</p>'
+        }
     );
 });
 

@@ -42,6 +42,22 @@ export function EpmRollupPanel({
         </svg>
     );
 
+    const renderProjectUpdate = (updateLine) => {
+        if (!updateLine?.text) return null;
+        return (
+            <div className="epm-project-board-update-row" title={updateLine.title || undefined}>
+                <div className="epm-project-board-update">
+                    {updateLine.messageHtml ? (
+                        <div className="epm-project-board-update-copy" dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }} />
+                    ) : (
+                        <span className="epm-project-board-update-copy">{updateLine.message || updateLine.text}</span>
+                    )}
+                </div>
+                {updateLine.relativeDate && <span className="epm-project-board-update-date">{updateLine.relativeDate}</span>}
+            </div>
+        );
+    };
+
     const renderPortfolioHeader = (project) => {
         const collapsed = isCollapsed(project);
         const updateLine = buildEpmProjectUpdateLine(project);
@@ -76,9 +92,7 @@ export function EpmRollupPanel({
                         )}
                     </div>
                 </div>
-                {updateLine.text && (
-                    <div className="epm-project-board-update" title={updateLine.title || undefined}>{updateLine.text}</div>
-                )}
+                {renderProjectUpdate(updateLine)}
             </>
         );
     };

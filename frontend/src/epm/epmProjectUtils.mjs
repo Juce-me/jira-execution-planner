@@ -332,12 +332,19 @@ export function buildEpmProjectUpdateLine(project, now = new Date()) {
     const date = String(project?.latestUpdateDate || '').trim();
     const relativeDate = formatEpmProjectRelativeDate(date, now);
     const snippet = String(project?.latestUpdateSnippet || '').trim();
+    const messageHtml = String(project?.latestUpdateHtml || '').trim();
     const status = getEpmProjectStatusText(project);
     const message = snippet || (status ? `Status is ${status}.` : 'No Home status update.');
-    return {
+    const line = {
         text: [relativeDate, message].filter(Boolean).join(' · '),
-        title: date
+        title: date,
+        relativeDate,
+        message: message
     };
+    if (messageHtml) {
+        line.messageHtml = messageHtml;
+    }
+    return line;
 }
 
 export function normalizeEpmSettingsKeyPart(value) {

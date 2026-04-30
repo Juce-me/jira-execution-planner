@@ -6867,6 +6867,10 @@
             --epm-project-accent-surface: rgba(7, 71, 166, 0.08);
             --epm-project-accent-soft: rgba(7, 71, 166, 0.32);
             --epm-project-accent-fade: rgba(7, 71, 166, 0.08);
+            --epm-project-hover-surface: rgba(7, 71, 166, 0.12);
+            --epm-project-message-bg: #fff3e4;
+            --epm-project-message-text: #514338;
+            --epm-project-radius: 8px;
         }
 
         .epm-portfolio-board {
@@ -6905,6 +6909,16 @@
             text-align: left;
             color: inherit;
             font: inherit;
+            border-radius: var(--epm-project-radius);
+            transition: background-color 0.14s ease, box-shadow 0.14s ease, color 0.14s ease;
+        }
+
+        /* EPM hover contrast principle: use light accent surfaces with dark text so local hovers never inherit the global dark button hover. */
+        .epm-project-board-toggle:hover {
+            background: var(--epm-project-hover-surface);
+            color: var(--text-primary);
+            transform: none;
+            box-shadow: 0 2px 8px rgba(7, 71, 166, 0.14);
         }
 
         .epm-project-board-toggle:hover .epm-project-board-name,
@@ -6916,7 +6930,10 @@
         .epm-project-board-toggle:focus-visible {
             outline: 2px solid var(--epm-project-accent);
             outline-offset: 2px;
-            border-radius: 4px;
+            border-radius: var(--epm-project-radius);
+            background: var(--epm-project-hover-surface);
+            transform: none;
+            box-shadow: 0 2px 8px rgba(7, 71, 166, 0.14);
         }
 
         .epm-project-board-chevron {
@@ -6992,19 +7009,73 @@
             text-underline-offset: 2px;
         }
 
+        .epm-project-board-update-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 0.5rem;
+            width: fit-content;
+            max-width: min(48rem, calc(100% - 42px));
+            margin: 0 0 12px 42px;
+        }
+
         .epm-project-board-update {
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.6rem;
-            color: var(--text-secondary);
+            flex: 1 1 auto;
+            min-width: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 0.72rem;
+            color: var(--epm-project-message-text);
             white-space: normal;
-            overflow: hidden;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            width: calc(100% - 42px);
-            margin: 0 0 10px 42px;
+            overflow-wrap: anywhere;
+            display: block;
+            width: auto;
+            max-width: 100%;
+            margin: 0;
+            padding: 0.38rem 0.68rem 0.42rem;
             text-align: left;
-            line-height: 1.45;
+            line-height: 1.35;
+            background-color: var(--epm-project-message-bg);
+            background-image: linear-gradient(180deg, #fffaf3 0%, var(--epm-project-message-bg) 100%);
+            border: 1px solid rgba(190, 128, 71, 0.28);
+            border-radius: var(--epm-project-radius);
+            box-shadow: 0 6px 18px rgba(120, 81, 42, 0.08);
+        }
+
+        .epm-project-board-update-date {
+            flex: 0 0 auto;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.58rem;
+            font-weight: 600;
+            color: #8a7866;
+            white-space: nowrap;
+            padding-bottom: 0.18rem;
+        }
+
+        .epm-project-board-update-copy {
+            min-width: 0;
+        }
+
+        .epm-project-board-update-copy p {
+            margin: 0;
+        }
+
+        .epm-project-board-update-copy p + p {
+            margin-top: 0.16rem;
+        }
+
+        .epm-project-board-update-copy a {
+            color: var(--epm-project-accent);
+            font-weight: 600;
+            text-decoration: underline;
+            text-decoration-color: rgba(7, 71, 166, 0.35);
+            text-underline-offset: 2px;
+        }
+
+        .epm-project-board-update-copy strong {
+            font-weight: 700;
+        }
+
+        .epm-project-board-update-copy em {
+            font-style: italic;
         }
 
         .epm-project-board-body {

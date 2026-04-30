@@ -42,8 +42,16 @@ async function loadHeaderFixture(page) {
                             <div class="epm-project-board-meta">
                                 <span class="epm-project-board-label-pill">RnD_Project_RFP_AI</span>
                                 <a class="epm-project-board-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-324">Home</a>
-                                <span class="epm-project-board-update">2026-04-29 · [on track] RFP AI bot and related deals AI work are progressing - build ready for client testing, rollout model defined.</span>
                             </div>
+                        </div>
+                        <div class="epm-project-board-update-row">
+                            <div class="epm-project-board-update">
+                                <div class="epm-project-board-update-copy">
+                                    <p><strong>RFP AI bot</strong> and related <em>deals AI</em> work are progressing.</p>
+                                    <p>Build is ready for <a href="https://example.test/client-testing">client testing</a>; rollout model defined.</p>
+                                </div>
+                            </div>
+                            <span class="epm-project-board-update-date">yesterday</span>
                         </div>
                         <div class="epm-project-board-body">
                             <div class="epic-card">
@@ -70,7 +78,9 @@ for (const viewport of [
         const body = page.locator('.epm-project-board-body');
         const toggle = page.locator('.epm-project-board-toggle');
         const meta = page.locator('.epm-project-board-meta');
-        const update = page.locator('.epm-project-board-update');
+        const updateRow = page.locator('.epm-project-board-update-row');
+        const update = page.locator('.epm-project-board-update').first();
+        const updateDate = page.locator('.epm-project-board-update-date');
 
         await expect(header).toBeVisible();
         await expect(toggle.locator('a')).toHaveCount(0);
@@ -80,17 +90,52 @@ for (const viewport of [
         const bodyBox = await body.boundingBox();
         const toggleBox = await toggle.boundingBox();
         const metaBox = await meta.boundingBox();
+        const updateRowBox = await updateRow.boundingBox();
         const updateBox = await update.boundingBox();
+        const updateDateBox = await updateDate.boundingBox();
 
         expect(headerBox).toBeTruthy();
         expect(bodyBox).toBeTruthy();
         expect(toggleBox).toBeTruthy();
         expect(metaBox).toBeTruthy();
+        expect(updateRowBox).toBeTruthy();
         expect(updateBox).toBeTruthy();
+        expect(updateDateBox).toBeTruthy();
 
         expect(boxesOverlap(toggleBox, metaBox)).toBe(false);
         expect(bodyBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height - 0.5);
-        expect(updateBox.x + updateBox.width).toBeLessThanOrEqual(headerBox.x + headerBox.width + 0.5);
+        expect(updateRowBox.x + updateRowBox.width).toBeLessThanOrEqual(headerBox.x + headerBox.width + 0.5);
+        expect(updateDateBox.x).toBeGreaterThan(updateBox.x + updateBox.width - 0.5);
+        await expect(update.locator('strong')).toHaveText('RFP AI bot');
+        await expect(update.locator('em')).toHaveText('deals AI');
+        await expect(update.locator('a')).toHaveAttribute('href', 'https://example.test/client-testing');
+
+        const updateStyle = await update.evaluate((node) => {
+            const style = window.getComputedStyle(node);
+            return {
+                borderRadius: style.borderRadius,
+                backgroundColor: style.backgroundColor,
+                color: style.color,
+                width: style.width,
+                maxWidth: style.maxWidth,
+            };
+        });
+        expect(updateStyle.borderRadius).toBe('8px');
+        expect(updateStyle.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+        expect(updateStyle.color).not.toBe('rgb(255, 255, 255)');
+
+        await toggle.hover();
+        await page.waitForTimeout(180);
+        const hoverStyle = await toggle.evaluate((node) => {
+            const style = window.getComputedStyle(node);
+            return {
+                backgroundColor: style.backgroundColor,
+                transform: style.transform,
+            };
+        });
+        expect(hoverStyle.backgroundColor).not.toBe('rgb(47, 47, 47)');
+        expect(hoverStyle.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+        expect(hoverStyle.transform).toBe('none');
 
         await page.screenshot({ path: `/tmp/epm-portfolio-header-qa/${viewport.name}.png`, fullPage: true });
     });

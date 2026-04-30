@@ -1,3 +1,4 @@
+import json
 import unittest
 import threading
 import time
@@ -47,6 +48,40 @@ class TestEpmHomeApi(unittest.TestCase):
         ])
         self.assertEqual(latest['date'], '2026-04-09')
         self.assertEqual(latest['snippet'], 'Latest update')
+
+    def test_extract_latest_update_preserves_adf_formatting_as_safe_html(self):
+        latest = extract_latest_update([
+            {
+                'creationDate': '2026-04-09T12:00:00.000Z',
+                'summary': json.dumps({
+                    'version': 1,
+                    'type': 'doc',
+                    'content': [
+                        {
+                            'type': 'paragraph',
+                            'content': [
+                                {'type': 'text', 'text': 'Bold', 'marks': [{'type': 'strong'}]},
+                                {'type': 'text', 'text': ' and '},
+                                {'type': 'text', 'text': 'italic', 'marks': [{'type': 'em'}]},
+                                {'type': 'text', 'text': ' '},
+                                {
+                                    'type': 'text',
+                                    'text': 'link',
+                                    'marks': [{'type': 'link', 'attrs': {'href': 'https://example.test/update'}}],
+                                },
+                            ],
+                        },
+                        {'type': 'paragraph', 'content': [{'type': 'text', 'text': 'Second paragraph'}]},
+                    ],
+                }),
+            }
+        ])
+
+        self.assertEqual(latest['snippet'], 'Bold and italic link Second paragraph')
+        self.assertEqual(
+            latest['html'],
+            '<p><strong>Bold</strong> and <em>italic</em> <a href="https://example.test/update" target="_blank" rel="noopener noreferrer">link</a></p><p>Second paragraph</p>',
+        )
 
     def test_resolve_goal_by_key_matches_goal_key_case_insensitively(self):
         client = HomeGraphQLClient('user@example.com', 'token')

@@ -434,8 +434,8 @@ test('EPM portfolio update line renders below the project header with relative d
         'const buildDuplicateClusters = () => {'
     );
     const headerCloseIndex = headerSource.indexOf('</div>');
-    const updateIndex = headerSource.indexOf('className="epm-project-board-update"');
-    assert.notStrictEqual(updateIndex, -1, 'Expected visible project board update line');
+    const updateIndex = headerSource.indexOf('renderProjectUpdate(updateLine)');
+    assert.ok(epmRollupPanelSource.includes('className="epm-project-board-update"'), 'Expected visible project board update line');
     assert.ok(updateIndex > headerCloseIndex, 'Project update line must render after the header wrapper');
 
     const metaStart = headerSource.indexOf('className="epm-project-board-meta"');
@@ -445,6 +445,51 @@ test('EPM portfolio update line renders below the project header with relative d
     assert.ok(epmRollupPanelSource.includes('buildEpmProjectUpdateLine(project)'), 'Expected board update line to use shared relative-date helper');
     assert.ok(epmRollupPanelSource.includes('title={updateLine.title || undefined}'), 'Expected exact update date on hover');
     assert.ok(helperSource.includes('export function buildEpmProjectUpdateLine'), 'Expected shared EPM project update line helper');
+});
+
+test('EPM portfolio update line preserves formatted Home update HTML safely', () => {
+    assert.ok(epmRollupPanelSource.includes('className="epm-project-board-update-row"'), 'Expected update row wrapper to separate bubble from date');
+    assert.ok(epmRollupPanelSource.includes('updateLine.messageHtml'), 'Expected update renderer to branch on formatted Home update HTML');
+    assert.ok(epmRollupPanelSource.includes('dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }}'), 'Expected formatted update HTML to be injected from sanitized server output');
+    assert.ok(epmRollupPanelSource.includes('epm-project-board-update-date'), 'Expected relative date to stay separate from formatted update HTML');
+    assert.ok(epmRollupPanelSource.indexOf('className="epm-project-board-update"') < epmRollupPanelSource.indexOf('className="epm-project-board-update-date"'), 'Expected date component to render to the right of the bubble');
+    assert.ok(helperSource.includes('messageHtml'), 'Expected shared update helper to expose formatted update HTML');
+    assert.ok(helperSource.includes('message:'), 'Expected shared update helper to expose plain message without the date');
+});
+
+test('EPM project hover states document and enforce accessible contrast', () => {
+    assert.ok(
+        dashboardCssSource.includes('EPM hover contrast principle:'),
+        'Expected CSS to document the EPM hover contrast principle'
+    );
+    assert.ok(
+        dashboardCssSource.includes('--epm-project-radius: 8px;'),
+        'Expected EPM project rectangles to share one radius token'
+    );
+    assert.ok(
+        countOccurrences(dashboardCssSource, 'border-radius: var(--epm-project-radius);') >= 3,
+        'Expected EPM project rectangular surfaces to reuse the shared radius token'
+    );
+    assert.ok(
+        !dashboardCssSource.includes('border-radius: 18px 18px 18px 5px;'),
+        'Expected update bubble to avoid bespoke large/tail rounding'
+    );
+    assert.ok(
+        dashboardCssSource.includes('.epm-project-board-toggle:hover {'),
+        'Expected EPM project toggle to own its hover style instead of inheriting global button:hover'
+    );
+    assert.ok(
+        dashboardCssSource.includes('background: var(--epm-project-hover-surface);'),
+        'Expected EPM project toggle hover to use a light accent surface'
+    );
+    assert.ok(
+        dashboardCssSource.includes('transform: none;'),
+        'Expected EPM project toggle hover to reset the global button hover transform'
+    );
+    assert.ok(
+        dashboardCssSource.includes('box-shadow: 0 2px 8px rgba(7, 71, 166, 0.14);'),
+        'Expected EPM project toggle hover to use a visible but low-contrast-safe affordance'
+    );
 });
 
 test('EPM rollup helper dedupes by issue key before rendering', () => {

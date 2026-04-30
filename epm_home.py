@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import concurrent.futures
+import html as html_module
 import json
 import logging
 import os
@@ -266,6 +267,85 @@ def _extract_text_from_adf_nodes(nodes: list) -> str:
     return " ".join(part.strip() for part in parts if part and part.strip())
 
 
+def adf_to_html(value: Any) -> str:
+    """Render Atlassian Document Format content to safe HTML."""
+    if not value:
+        return ""
+    if isinstance(value, dict):
+        document = value
+    elif isinstance(value, str):
+        try:
+            document = json.loads(value)
+        except (TypeError, ValueError):
+            return html_module.escape(value)
+    else:
+        return html_module.escape(str(value))
+    if not isinstance(document, dict) or document.get("content") is None:
+        return html_module.escape(value if isinstance(value, str) else str(value))
+    return _render_adf_html_nodes(document.get("content", []))
+
+
+def _safe_adf_href(value: Any) -> str:
+    href = str(value or "").strip()
+    if re.match(r"^(https?://|mailto:)", href, re.IGNORECASE):
+        return href
+    return ""
+
+
+def _render_adf_html_nodes(nodes: list) -> str:
+    parts: list[str] = []
+    for node in nodes or []:
+        if not isinstance(node, dict):
+            continue
+        node_type = node.get("type", "")
+        if node_type == "text":
+            text = html_module.escape(str(node.get("text", "")))
+            marks = node.get("marks", [])
+            if not isinstance(marks, list):
+                marks = []
+            for mark in marks:
+                if not isinstance(mark, dict):
+                    continue
+                mark_type = mark.get("type", "")
+                if mark_type == "strong":
+                    text = f"<strong>{text}</strong>"
+                elif mark_type == "em":
+                    text = f"<em>{text}</em>"
+            for mark in marks:
+                if not isinstance(mark, dict) or mark.get("type") != "link":
+                    continue
+                href = _safe_adf_href((mark.get("attrs") or {}).get("href"))
+                if href:
+                    safe_href = html_module.escape(href, quote=True)
+                    text = f'<a href="{safe_href}" target="_blank" rel="noopener noreferrer">{text}</a>'
+                break
+            parts.append(text)
+            continue
+        if node_type in {"paragraph", "heading"}:
+            inner = _render_adf_html_nodes(node.get("content", []))
+            if inner:
+                parts.append(f"<p>{inner}</p>")
+            continue
+        if node_type == "hardBreak":
+            parts.append("<br>")
+            continue
+        if node_type in {"bulletList", "orderedList"}:
+            tag = "ul" if node_type == "bulletList" else "ol"
+            items = _render_adf_html_nodes(node.get("content", []))
+            if items:
+                parts.append(f"<{tag}>{items}</{tag}>")
+            continue
+        if node_type == "listItem":
+            inner = _render_adf_html_nodes(node.get("content", []))
+            inner = re.sub(r"^<p>(.*)</p>$", r"\1", inner)
+            if inner:
+                parts.append(f"<li>{inner}</li>")
+            continue
+        if node.get("content"):
+            parts.append(_render_adf_html_nodes(node.get("content", [])))
+    return "".join(parts)
+
+
 def extract_project_status(project_data: dict) -> str:
     state = project_data.get("state") or project_data.get("status")
     if isinstance(state, dict):
@@ -298,6 +378,7 @@ def extract_latest_update(updates):
     return {
         "date": str(latest["creationDate"])[:10],
         "snippet": adf_to_text(latest.get("summary")).strip(),
+        "html": adf_to_html(latest.get("summary")).strip(),
     }
 
 
@@ -503,6 +584,7 @@ def build_home_project_record(project, updates, linkage, home_tags=None, tags_un
         "tabBucket": bucket_epm_state(state_value),
         "latestUpdateDate": latest["date"],
         "latestUpdateSnippet": latest["snippet"],
+        "latestUpdateHtml": latest.get("html", ""),
         "homeTags": normalize_project_tag_names(home_tags or []),
         "homeTagsUnavailable": bool(tags_unavailable),
         "resolvedLinkage": {"labels": resolved_labels, "epicKeys": resolved_epics},

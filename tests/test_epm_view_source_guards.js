@@ -381,6 +381,26 @@ test('EPM portfolio project header separates collapse control from metadata', ()
     assert.ok(dashboardCssSource.includes('.epm-project-board-meta'), 'Expected CSS for bounded project board metadata');
 });
 
+test('EPM portfolio update line renders below the project header with relative date fallback', () => {
+    const headerSource = getSnippetBetween(
+        epmRollupPanelSource,
+        'const renderPortfolioHeader = (project) => {',
+        'const buildDuplicateClusters = () => {'
+    );
+    const headerCloseIndex = headerSource.indexOf('</div>');
+    const updateIndex = headerSource.indexOf('className="epm-project-board-update"');
+    assert.notStrictEqual(updateIndex, -1, 'Expected visible project board update line');
+    assert.ok(updateIndex > headerCloseIndex, 'Project update line must render after the header wrapper');
+
+    const metaStart = headerSource.indexOf('className="epm-project-board-meta"');
+    const metaEnd = headerSource.indexOf('</div>', metaStart);
+    const metaSource = headerSource.slice(metaStart, metaEnd);
+    assert.ok(!metaSource.includes('epm-project-board-update'), 'Project update line must not live inside metadata');
+    assert.ok(epmRollupPanelSource.includes('buildEpmProjectUpdateLine(project)'), 'Expected board update line to use shared relative-date helper');
+    assert.ok(epmRollupPanelSource.includes('title={updateLine.title || undefined}'), 'Expected exact update date on hover');
+    assert.ok(helperSource.includes('export function buildEpmProjectUpdateLine'), 'Expected shared EPM project update line helper');
+});
+
 test('EPM rollup helper dedupes by issue key before rendering', () => {
     assert.ok(helperSource.includes('const seenKeys = new Set()'), 'Expected rollup tree builder to track seen issue keys');
     assert.ok(helperSource.includes('seenKeys.has(key)'), 'Expected rollup tree builder to skip duplicate issue keys');

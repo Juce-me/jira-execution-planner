@@ -169,12 +169,12 @@ test('EPM project rows use stable cells for variable statuses and labels', () =>
     assert.notStrictEqual(projectsPanelEnd, -1, 'Expected EPM projects row list before empty state');
     const projectsPanelSource = dashboardSource.slice(projectsPanelStart, projectsPanelEnd);
 
+    assert.ok(projectsPanelSource.includes('className="epm-project-settings-table"'), 'Expected table-style project settings layout');
+    assert.ok(projectsPanelSource.includes('className="epm-project-table-header"'), 'Expected table-style project settings header');
     assert.ok(projectsPanelSource.includes('className="epm-project-name-cell"'), 'Expected project names to live in a stable row cell');
-    assert.ok(projectsPanelSource.includes('className="epm-project-status-cell"'), 'Expected Home statuses to live in a fixed-width row cell');
-    assert.ok(projectsPanelSource.includes('className="epm-project-open-cell"'), 'Expected Home links to live in a fixed-width row cell');
+    assert.ok(projectsPanelSource.includes('className="epm-project-status-cell"'), 'Expected Home statuses to live in a stable row cell');
     assert.ok(projectsPanelSource.includes('className="epm-project-label-cell"'), 'Expected Jira labels to live in a bounded row cell');
-    assert.ok(projectsPanelSource.includes("flex: '0 0 6.4rem'"), 'Expected variable Home statuses to share a fixed column width');
-    assert.ok(projectsPanelSource.includes("flex: '1 1 18rem'"), 'Expected Jira labels to use a bounded flexible column');
+    assert.ok(!projectsPanelSource.includes('className="epm-project-open-cell"'), 'Home must not be a standalone table column');
 });
 
 test('EPM project Home links render as compact shortcut icons', () => {
@@ -187,10 +187,11 @@ test('EPM project Home links render as compact shortcut icons', () => {
     assert.ok(projectsPanelSource.includes('className="epm-project-home-shortcut"'), 'Expected Home project link to use compact shortcut styling');
     assert.ok(projectsPanelSource.includes('aria-label={`Open Jira Home project for ${project.displayName || project.homeName || project.id}`}'), 'Expected Home shortcut to keep an accessible project-specific label');
     assert.ok(projectsPanelSource.includes('M7 17L17 7'), 'Expected shortcut to use an external-link glyph');
+    assert.ok(projectsPanelSource.indexOf('className="epm-project-home-shortcut"') > projectsPanelSource.indexOf('className="epm-project-name-cell"'), 'Expected Home shortcut to render inside/near the project name cell');
     assert.ok(!projectsPanelSource.includes('>Open<'), 'Home shortcut should not render noisy Open text');
 });
 
-test('EPM project rows expose compact sorting controls', () => {
+test('EPM project rows expose table header sorting and view controls', () => {
     const projectsPanelStart = dashboardSource.indexOf('id="epm-settings-projects-panel"');
     const projectsPanelEnd = dashboardSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
     assert.notStrictEqual(projectsPanelStart, -1, 'Expected EPM projects settings panel');
@@ -198,12 +199,19 @@ test('EPM project rows expose compact sorting controls', () => {
     const projectsPanelSource = dashboardSource.slice(projectsPanelStart, projectsPanelEnd);
 
     assert.ok(dashboardSource.includes('sortEpmSettingsProjects'), 'Expected dashboard to import the settings project sorter');
-    assert.ok(dashboardSource.includes("const [epmSettingsProjectSort, setEpmSettingsProjectSort] = useState('home');"), 'Expected settings project sort state');
-    assert.ok(dashboardSource.includes('sortEpmSettingsProjects(rows, epmSettingsProjectSort);'), 'Expected settings project rows to apply the selected sort');
-    assert.ok(projectsPanelSource.includes('className="epm-project-sort-control"'), 'Expected compact sort control in the Projects header');
-    assert.ok(projectsPanelSource.includes('value={epmSettingsProjectSort}'), 'Expected sort control to reflect selected sort');
-    assert.ok(projectsPanelSource.includes("value=\"status\""), 'Expected Home status sort option');
-    assert.ok(projectsPanelSource.includes("value=\"label\""), 'Expected Jira label sort option');
+    assert.ok(dashboardSource.includes('filterEpmSettingsProjectsForView'), 'Expected dashboard to import the settings project view filter');
+    assert.ok(dashboardSource.includes("const [epmSettingsProjectSort, setEpmSettingsProjectSort] = useState('status');"), 'Expected settings project sort to default to status');
+    assert.ok(dashboardSource.includes("const [epmSettingsProjectView, setEpmSettingsProjectView] = useState('current');"), 'Expected settings project view to default to current');
+    assert.ok(dashboardSource.includes('filterEpmSettingsProjectsForView(rows, epmSettingsProjectView)'), 'Expected settings project rows to filter by selected view before sorting');
+    assert.ok(projectsPanelSource.includes('className="epm-project-view-control"'), 'Expected Current/Archived/All view control in Projects tools');
+    assert.ok(projectsPanelSource.includes("['current', 'archived', 'all']"), 'Expected Current, Archived, and All view choices');
+    assert.ok(projectsPanelSource.includes('className="epm-project-table-sort"'), 'Expected sorting to live in table headers');
+    assert.ok(projectsPanelSource.includes("setEpmSettingsProjectSort('name')"), 'Expected Project header sort action');
+    assert.ok(projectsPanelSource.includes("setEpmSettingsProjectSort('status')"), 'Expected Status header sort action');
+    assert.ok(projectsPanelSource.includes("setEpmSettingsProjectSort('label')"), 'Expected Jira label header sort action');
+    assert.ok(dashboardSource.includes('No projects in this view.'), 'Expected filtered-empty project views to show an empty state');
+    assert.ok(!projectsPanelSource.includes('className="epm-project-sort-control"'), 'Sort dropdown must not stay in the panel header');
+    assert.ok(!projectsPanelSource.includes('Home order'), 'Home must not be a sort option');
 });
 
 test('EPM settings drops empty custom project rows and gives them an explicit delete action', () => {

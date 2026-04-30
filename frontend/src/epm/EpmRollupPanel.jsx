@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { buildEpmEngEpicGroup, getEpmProjectDisplayName, toEpmEngTask } from './epmProjectUtils.mjs';
+import { buildEpmEngEpicGroup, buildEpmProjectUpdateLine, getEpmProjectDisplayName, toEpmEngTask } from './epmProjectUtils.mjs';
 
 export function EpmRollupPanel({
     selectedEpmProject,
@@ -29,13 +29,6 @@ export function EpmRollupPanel({
         });
     };
 
-    const buildUpdateLine = (project) => {
-        const parts = [];
-        if (project?.latestUpdateDate) parts.push(project.latestUpdateDate);
-        if (project?.latestUpdateSnippet) parts.push(project.latestUpdateSnippet);
-        return parts.join(' · ');
-    };
-
     const renderProjectIcon = () => (
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
             <rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" fill="none"/>
@@ -51,40 +44,42 @@ export function EpmRollupPanel({
 
     const renderPortfolioHeader = (project) => {
         const collapsed = isCollapsed(project);
-        const updateLine = buildUpdateLine(project);
+        const updateLine = buildEpmProjectUpdateLine(project);
         return (
-            <div
-                className={`epm-project-board-header ${collapsed ? 'is-collapsed' : ''}`}
-            >
-                <button
-                    type="button"
-                    className="epm-project-board-toggle"
-                    onClick={() => toggleCollapsed(project)}
-                    aria-expanded={!collapsed}
+            <>
+                <div
+                    className={`epm-project-board-header ${collapsed ? 'is-collapsed' : ''}`}
                 >
-                    <span className="epm-project-board-chevron">{renderChevron()}</span>
-                    <span className="epm-project-board-icon">{renderProjectIcon()}</span>
-                    <span className="epm-project-board-name">{getEpmProjectDisplayName(project)}</span>
-                </button>
-                <div className="epm-project-board-meta">
-                    {project?.label && (
-                        <span className="epm-project-board-label-pill">{project.label}</span>
-                    )}
-                    {project?.homeUrl && (
-                        <a
-                            className="epm-project-board-link"
-                            href={project.homeUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                        >
-                            Home ↗
-                        </a>
-                    )}
-                    {updateLine && (
-                        <span className="epm-project-board-update">{updateLine}</span>
-                    )}
+                    <button
+                        type="button"
+                        className="epm-project-board-toggle"
+                        onClick={() => toggleCollapsed(project)}
+                        aria-expanded={!collapsed}
+                    >
+                        <span className="epm-project-board-chevron">{renderChevron()}</span>
+                        <span className="epm-project-board-icon">{renderProjectIcon()}</span>
+                        <span className="epm-project-board-name">{getEpmProjectDisplayName(project)}</span>
+                    </button>
+                    <div className="epm-project-board-meta">
+                        {project?.label && (
+                            <span className="epm-project-board-label-pill">{project.label}</span>
+                        )}
+                        {project?.homeUrl && (
+                            <a
+                                className="epm-project-board-link"
+                                href={project.homeUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                Home ↗
+                            </a>
+                        )}
+                    </div>
                 </div>
-            </div>
+                {updateLine.text && (
+                    <div className="epm-project-board-update" title={updateLine.title || undefined}>{updateLine.text}</div>
+                )}
+            </>
         );
     };
 
@@ -261,7 +256,7 @@ export function EpmRollupPanel({
                         >
                             {renderPortfolioHeader(project)}
                             <div className="epm-project-board-body">
-                                {tree?.kind === 'metadataOnly' && renderMetadataOnlyCard(project, buildUpdateLine(project) || 'No updates yet', false)}
+                                {tree?.kind === 'metadataOnly' && renderMetadataOnlyCard(project, buildEpmProjectUpdateLine(project).text || 'No updates yet', false)}
                                 {tree?.kind === 'emptyRollup' && (
                                     <div className="group-field-helper">No issues in this scope.</div>
                                 )}
@@ -277,7 +272,7 @@ export function EpmRollupPanel({
     if (!selectedEpmProject) return null;
 
     if (epmRollupTree?.kind === 'metadataOnly') {
-        return renderMetadataOnlyCard(selectedEpmProject, selectedEpmProjectUpdateLine);
+        return renderMetadataOnlyCard(selectedEpmProject, buildEpmProjectUpdateLine(selectedEpmProject).text || selectedEpmProjectUpdateLine);
     }
 
     if (epmRollupLoading) {

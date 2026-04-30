@@ -223,7 +223,7 @@ test('hydrateEpmProjectDraft fills blank draft name and label from Home project'
     assert.strictEqual(row.displayName, 'Pubcid for lastimp signal');
 });
 
-test('sortEpmSettingsProjects supports compact settings sorting without mutating input', async () => {
+test('sortEpmSettingsProjects defaults to status-first sorting without mutating input', async () => {
     const { sortEpmSettingsProjects } = await import(helperUrl);
     const projects = [
         { id: 'b', displayName: 'Beta', stateLabel: 'Pending', label: '' },
@@ -233,8 +233,8 @@ test('sortEpmSettingsProjects supports compact settings sorting without mutating
     ];
 
     assert.deepStrictEqual(
-        sortEpmSettingsProjects(projects, 'home').map(project => project.id),
-        ['b', 'c', 'a', 'd']
+        sortEpmSettingsProjects(projects).map(project => project.id),
+        ['c', 'b', 'a', 'd']
     );
     assert.deepStrictEqual(
         sortEpmSettingsProjects(projects, 'name').map(project => project.id),
@@ -249,6 +249,56 @@ test('sortEpmSettingsProjects supports compact settings sorting without mutating
         ['c', 'd', 'a', 'b']
     );
     assert.deepStrictEqual(projects.map(project => project.id), ['b', 'c', 'a', 'd']);
+});
+
+test('filterEpmSettingsProjectsForView hides archived Home projects from Current', async () => {
+    const { filterEpmSettingsProjectsForView } = await import(helperUrl);
+    const projects = [
+        { id: 'on-track', tabBucket: 'active', stateValue: 'ON_TRACK' },
+        { id: 'completed', tabBucket: 'archived', stateValue: 'COMPLETED' },
+        { id: 'cancelled', stateLabel: 'Cancelled' },
+        { id: 'custom', tabBucket: 'all', homeProjectId: null },
+        { id: 'missing-home', tabBucket: 'all', missingFromHomeFetch: true, homeProjectId: 'home-1' }
+    ];
+
+    assert.deepStrictEqual(
+        filterEpmSettingsProjectsForView(projects, 'current').map(project => project.id),
+        ['on-track', 'custom', 'missing-home']
+    );
+    assert.deepStrictEqual(
+        filterEpmSettingsProjectsForView(projects, 'archived').map(project => project.id),
+        ['completed', 'cancelled']
+    );
+    assert.deepStrictEqual(
+        filterEpmSettingsProjectsForView(projects, 'all').map(project => project.id),
+        ['on-track', 'completed', 'cancelled', 'custom', 'missing-home']
+    );
+});
+
+test('buildEpmProjectUpdateLine uses relative dates and status fallback', async () => {
+    const { buildEpmProjectUpdateLine } = await import(helperUrl);
+    const now = new Date('2026-04-30T12:00:00Z');
+
+    assert.deepStrictEqual(
+        buildEpmProjectUpdateLine({
+            latestUpdateDate: '2026-04-16',
+            latestUpdateSnippet: '[on track] Work is progressing',
+            stateLabel: 'On track'
+        }, now),
+        { text: '2 weeks ago · [on track] Work is progressing', title: '2026-04-16' }
+    );
+    assert.deepStrictEqual(
+        buildEpmProjectUpdateLine({
+            latestUpdateDate: '2026-04-30',
+            latestUpdateSnippet: '',
+            stateLabel: 'Pending'
+        }, now),
+        { text: 'today · Status is pending.', title: '2026-04-30' }
+    );
+    assert.deepStrictEqual(
+        buildEpmProjectUpdateLine({ stateValue: 'ON_TRACK' }, now),
+        { text: 'Status is on track.', title: '' }
+    );
 });
 
 test('empty custom EPM project rows are disposable before save', async () => {

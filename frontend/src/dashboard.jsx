@@ -26,6 +26,7 @@ import { fetchEpmConfig, fetchEpmScope, fetchEpmGoals, fetchEpmProjects, fetchEp
 import { EpmRollupPanel } from './epm/EpmRollupPanel.jsx';
 import {
     buildAggregateRollupBoards,
+    filterEpmSettingsProjectsForView,
     buildRollupTree,
     filterEpmProjectsForTab,
     flattenEpmRollupBoardsForDependencies,
@@ -235,7 +236,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 possiblyTruncated: false,
             });
             const [epmSettingsProjectsRefreshing, setEpmSettingsProjectsRefreshing] = useState(false);
-            const [epmSettingsProjectSort, setEpmSettingsProjectSort] = useState('home');
+            const [epmSettingsProjectSort, setEpmSettingsProjectSort] = useState('status');
+            const [epmSettingsProjectView, setEpmSettingsProjectView] = useState('current');
             const [epmSettingsTab, setEpmSettingsTab] = useState('scope');
             const [epmLabelShowAll, setEpmLabelShowAll] = useState({});
             const [epmLabelChanging, setEpmLabelChanging] = useState({});
@@ -2185,8 +2187,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         label: String(row?.label ?? ''),
                     }, null));
                 });
-                return sortEpmSettingsProjects(rows, epmSettingsProjectSort);
-            }, [epmConfigDraft, epmSettingsProjectSort, epmSettingsProjects]);
+                return sortEpmSettingsProjects(filterEpmSettingsProjectsForView(rows, epmSettingsProjectView), epmSettingsProjectSort);
+            }, [epmConfigDraft, epmSettingsProjectSort, epmSettingsProjectView, epmSettingsProjects]);
 
             const isGroupDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
@@ -16083,21 +16085,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                             <div className="group-pane-subtitle">Map direct Jira Home projects under the selected sub-goal to exact Jira labels.</div>
                                                         </div>
                                                         <div className="epm-projects-header-actions">
-                                                            <label className="epm-project-sort-control" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                                                                <span className="group-modal-meta">Sort</span>
-                                                                <select
-                                                                    className="team-select compact"
-                                                                    value={epmSettingsProjectSort}
-                                                                    onChange={(event) => setEpmSettingsProjectSort(event.target.value)}
-                                                                    aria-label="Sort EPM projects"
-                                                                    style={{ height: '2rem', minWidth: '9rem', padding: '0 0.55rem', fontSize: '0.7rem' }}
-                                                                >
-                                                                    <option value="home">Home order</option>
-                                                                    <option value="name">Project name</option>
-                                                                    <option value="status">Home status</option>
-                                                                    <option value="label">Jira label</option>
-                                                                </select>
-                                                            </label>
                                                             {canLoadEpmProjects && (
                                                                 <span className="group-modal-meta" aria-live="polite">
                                                                     {epmSettingsProjectsRefreshing
@@ -16140,7 +16127,21 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                         </div>
                                                     </div>
                                                 )}
-                                                <div className="group-pane-tools" style={{ marginTop: '0.8rem' }}>
+                                                <div className="group-pane-tools" style={{ marginTop: '0.8rem', justifyContent: 'space-between', gap: '0.7rem' }}>
+                                                    <div className="epm-project-view-control" role="group" aria-label="EPM project view" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                                        {['current', 'archived', 'all'].map((view) => (
+                                                            <button
+                                                                key={view}
+                                                                className={`secondary compact ${epmSettingsProjectView === view ? 'active' : ''}`}
+                                                                onClick={() => setEpmSettingsProjectView(view)}
+                                                                type="button"
+                                                                aria-pressed={epmSettingsProjectView === view}
+                                                                style={{ padding: '0.26rem 0.55rem', fontSize: '0.62rem' }}
+                                                            >
+                                                                {view === 'current' ? 'Current' : view === 'archived' ? 'Archived' : 'All'}
+                                                            </button>
+                                                        ))}
+                                                    </div>
                                                     <button
                                                         className="secondary compact"
                                                         onClick={addCustomEpmProjectDraft}
@@ -16171,7 +16172,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                         </div>
                                                     </div>
                                                 ) : epmSettingsProjectRows.length > 0 ? (
-                                                    <div className="group-pane-list">
+                                                    <div className="epm-project-settings-table" role="table" aria-label="EPM project labels" style={{ display: 'grid', rowGap: 0 }}>
                                                         {epmSettingsProjectsError && (
                                                             <div className="group-field-helper epm-project-load-error">
                                                                 Failed to refresh: {epmSettingsProjectsError}
@@ -16182,6 +16183,36 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                 >Retry</button>
                                                             </div>
                                                         )}
+                                                        <div className="epm-project-table-header" role="row" style={{ display: 'grid', gridTemplateColumns: 'minmax(18rem, 1.35fr) 7rem minmax(18rem, 1fr) auto', alignItems: 'center', columnGap: '0.65rem', padding: '0.4rem 0', borderBottom: '1px solid rgba(148,163,184,0.24)' }}>
+                                                            <button
+                                                                className="epm-project-table-sort"
+                                                                onClick={() => setEpmSettingsProjectSort('name')}
+                                                                type="button"
+                                                                aria-pressed={epmSettingsProjectSort === 'name'}
+                                                                style={{ justifySelf: 'start', padding: 0, border: 0, background: 'transparent', color: 'var(--text-muted)', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', cursor: 'pointer' }}
+                                                            >
+                                                                Project{epmSettingsProjectSort === 'name' ? ' ↑' : ''}
+                                                            </button>
+                                                            <button
+                                                                className="epm-project-table-sort"
+                                                                onClick={() => setEpmSettingsProjectSort('status')}
+                                                                type="button"
+                                                                aria-pressed={epmSettingsProjectSort === 'status'}
+                                                                style={{ justifySelf: 'start', padding: 0, border: 0, background: 'transparent', color: 'var(--text-muted)', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', cursor: 'pointer' }}
+                                                            >
+                                                                Status{epmSettingsProjectSort === 'status' ? ' ↑' : ''}
+                                                            </button>
+                                                            <button
+                                                                className="epm-project-table-sort"
+                                                                onClick={() => setEpmSettingsProjectSort('label')}
+                                                                type="button"
+                                                                aria-pressed={epmSettingsProjectSort === 'label'}
+                                                                style={{ justifySelf: 'start', padding: 0, border: 0, background: 'transparent', color: 'var(--text-muted)', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', cursor: 'pointer' }}
+                                                            >
+                                                                Jira label{epmSettingsProjectSort === 'label' ? ' ↑' : ''}
+                                                            </button>
+                                                            <span aria-hidden="true" />
+                                                        </div>
                                                         {epmSettingsProjectRows.map((project) => {
                                                             const rowKey = getEpmLabelRowKey(project.id);
                                                             const currentLabel = project.label || '';
@@ -16208,8 +16239,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                 }, 0);
                                                             };
                                                             return (
-                                                                <div key={project.id} className="epm-project-settings-row" style={{ display: 'flex', alignItems: 'center', columnGap: '0.65rem', rowGap: '0.35rem', flexWrap: 'wrap', padding: '0.55rem 0', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
-                                                                    <div className="epm-project-name-cell" style={{ display: 'flex', alignItems: 'center', flex: '1 1 24rem', minWidth: '14rem', maxWidth: '100%' }}>
+                                                                <div key={project.id} className="epm-project-settings-row" role="row" style={{ display: 'grid', gridTemplateColumns: 'minmax(18rem, 1.35fr) 7rem minmax(18rem, 1fr) auto', alignItems: 'center', columnGap: '0.65rem', rowGap: '0.35rem', padding: '0.55rem 0', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
+                                                                    <div className="epm-project-name-cell" role="cell" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0, maxWidth: '100%' }}>
                                                                         <input
                                                                             type="text"
                                                                             className="team-search-input"
@@ -16219,15 +16250,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                             aria-label={`Project name for ${project.displayName || project.homeName || project.id}`}
                                                                             style={{ height: '2rem', minWidth: 0, width: '100%', padding: '0.3rem 0.55rem', fontSize: '0.82rem' }}
                                                                         />
-                                                                    </div>
-                                                                    <div className="epm-project-status-cell" style={{ display: 'flex', alignItems: 'center', flex: '0 0 6.4rem', minWidth: 0 }}>
-                                                                        {projectStatus && (
-                                                                            <span className="epm-home-status-pill" title="Jira Home status" style={{ maxWidth: '100%', border: '1px solid var(--border)', borderRadius: '999px', padding: '0.16rem 0.45rem', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.58rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', background: '#fbfaf7', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                                {projectStatus}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="epm-project-open-cell" style={{ display: 'flex', alignItems: 'center', flex: '0 0 2.4rem', minWidth: 0 }}>
                                                                         {project.homeUrl && (
                                                                             <a
                                                                                 className="epm-project-home-shortcut"
@@ -16245,7 +16267,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                             </a>
                                                                         )}
                                                                     </div>
-                                                                    <div className="epm-project-label-cell" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: '1 1 18rem', minWidth: '12rem', maxWidth: '100%', flexWrap: 'wrap' }}>
+                                                                    <div className="epm-project-status-cell" role="cell" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                                                                        {projectStatus && (
+                                                                            <span className="epm-home-status-pill" title="Jira Home status" style={{ maxWidth: '100%', border: '1px solid var(--border)', borderRadius: '999px', padding: '0.16rem 0.45rem', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.58rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', background: '#fbfaf7', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                                {projectStatus}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="epm-project-label-cell" role="cell" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, maxWidth: '100%', flexWrap: 'wrap' }}>
                                                                         {currentLabel ? (
                                                                             <div className="epm-label-selected-chip" title={currentLabel} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, maxWidth: '100%', border: '1px solid var(--border)', borderRadius: '999px', background: '#f8f9fa', padding: '0.18rem 0.25rem 0.18rem 0.55rem' }}>
                                                                                 <span className="team-name" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>{currentLabel}</span>
@@ -16348,13 +16377,17 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                         </button>
                                                                     )}
                                                                     {project.missingFromHomeFetch && (
-                                                                        <div className="group-field-helper epm-project-row-warning" style={{ flexBasis: '100%', margin: 0 }}>
+                                                                        <div className="group-field-helper epm-project-row-warning" style={{ gridColumn: '1 / -1', margin: 0 }}>
                                                                             Not returned by latest Jira Home refresh.
                                                                         </div>
                                                                     )}
                                                                 </div>
                                                             );
                                                         })}
+                                                    </div>
+                                                ) : (epmSettingsProjects.length > 0 && epmSettingsProjectsLoaded && !epmSettingsProjectsLoading && !epmSettingsProjectsError) ? (
+                                                    <div className="epm-project-empty-state">
+                                                        <div className="group-pane-subtitle">No projects in this view.</div>
                                                     </div>
                                                 ) : (epmSettingsProjects.length === 0 && epmSettingsProjectsLoaded && !epmSettingsProjectsLoading && !epmSettingsProjectsError) ? (
                                                     <div className="epm-project-empty-state">

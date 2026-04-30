@@ -229,10 +229,25 @@ function getEpmSettingsStatusRank(project) {
     return Object.prototype.hasOwnProperty.call(ranks, status) ? ranks[status] : 999;
 }
 
-export function sortEpmSettingsProjects(projects, sortKey = 'home') {
+function isArchivedEpmSettingsProject(project) {
+    const bucket = normalizeEpmSettingsSortText(project?.tabBucket || '');
+    const status = normalizeEpmSettingsStatus(project?.stateLabel || project?.stateValue || '');
+    return bucket === 'archived' || ['archived', 'cancelled', 'completed', 'done', 'release', 'released'].includes(status);
+}
+
+export function filterEpmSettingsProjectsForView(projects, view = 'current') {
     const source = Array.isArray(projects) ? projects : [];
-    const key = String(sortKey || 'home').trim().toLowerCase();
-    if (!key || key === 'home') return source.slice();
+    const normalizedView = normalizeEpmSettingsSortText(view || 'current');
+    if (normalizedView === 'all') return source.slice();
+    if (normalizedView === 'archived') {
+        return source.filter(project => isArchivedEpmSettingsProject(project));
+    }
+    return source.filter(project => !isArchivedEpmSettingsProject(project));
+}
+
+export function sortEpmSettingsProjects(projects, sortKey = 'status') {
+    const source = Array.isArray(projects) ? projects : [];
+    const key = String(sortKey || 'status').trim().toLowerCase();
 
     return source
         .map((project, index) => ({ project, index }))
@@ -268,6 +283,61 @@ export function sortEpmSettingsProjects(projects, sortKey = 'home') {
             return a.index - b.index;
         })
         .map(entry => entry.project);
+}
+
+function parseEpmProjectDate(value) {
+    const text = String(value || '').trim();
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (!year || !month || !day) return null;
+    return new Date(Date.UTC(year, month - 1, day));
+}
+
+function startOfUtcDay(value) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+function formatEpmProjectRelativeDate(value, now = new Date()) {
+    const date = parseEpmProjectDate(value);
+    const nowDay = startOfUtcDay(now);
+    if (!date || nowDay === null) return '';
+    const dateDay = startOfUtcDay(date);
+    const days = Math.max(0, Math.floor((nowDay - dateDay) / 86400000));
+    if (days === 0) return 'today';
+    if (days === 1) return 'yesterday';
+    if (days < 7) return `${days} days ago`;
+    if (days < 30) {
+        const weeks = Math.max(1, Math.floor(days / 7));
+        return `${weeks} ${weeks === 1 ? 'week' : 'weeks'} ago`;
+    }
+    if (days < 365) {
+        const months = Math.max(1, Math.floor(days / 30));
+        return `${months} ${months === 1 ? 'month' : 'months'} ago`;
+    }
+    const years = Math.max(1, Math.floor(days / 365));
+    return `${years} ${years === 1 ? 'year' : 'years'} ago`;
+}
+
+function getEpmProjectStatusText(project) {
+    const status = normalizeEpmSettingsStatus(project?.stateLabel || project?.stateValue || '');
+    return status;
+}
+
+export function buildEpmProjectUpdateLine(project, now = new Date()) {
+    const date = String(project?.latestUpdateDate || '').trim();
+    const relativeDate = formatEpmProjectRelativeDate(date, now);
+    const snippet = String(project?.latestUpdateSnippet || '').trim();
+    const status = getEpmProjectStatusText(project);
+    const message = snippet || (status ? `Status is ${status}.` : 'No Home status update.');
+    return {
+        text: [relativeDate, message].filter(Boolean).join(' · '),
+        title: date
+    };
 }
 
 export function normalizeEpmSettingsKeyPart(value) {

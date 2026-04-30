@@ -1407,7 +1407,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setTeamSearchFeedback({});
                 setShowGroupDiscardConfirm(false);
                 setShowGroupListMobile(false);
-                setGroupManageTab('scope');
                 setProjectSearchQuery('');
                 setActiveGroupDraftId(resolveInitialGroupId(normalized));
                 loadSelectedProjects();
@@ -15073,22 +15072,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
                             {selectedView === 'epm' && (
                                 <>
-                                    <div className="filters-strip">
-                                        <div className="filters-group">
-                                            <div className="filters-label">Project</div>
-                                            {epmSelectedProjectId && selectedEpmProject && selectedEpmProject.matchState !== 'metadata-only' && (
-                                                <div className="group-pane-title">{getEpmProjectDisplayName(selectedEpmProject)}</div>
-                                            )}
-                                            <div className="group-field-helper">
-                                                {!epmSelectedProjectId
-                                                    ? 'All visible Atlassian Home projects.'
-                                                    : selectedEpmProject
-                                                    ? (selectedEpmProjectUpdateLine || selectedEpmProject.stateLabel || selectedEpmProject.stateValue || 'No updates yet')
-                                                    : 'This project is not available in the current EPM tab.'}
-                                            </div>
-                                        </div>
-                                    </div>
-
                                     {epmProjectsLoading && (
                                         <div className="empty-state">
                                             <h2>Loading EPM projects</h2>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { buildEpmEngEpicGroup, getEpmProjectDisplayName, toEpmEngTask } from './epmProjectUtils.mjs';
 
 export function EpmRollupPanel({
@@ -16,6 +16,145 @@ export function EpmRollupPanel({
     jiraUrl,
     InitiativeIcon,
 }) {
+    const [collapsedProjectIds, setCollapsedProjectIds] = useState(() => new Set());
+
+    const getProjectKey = (project) => project?.id || getEpmProjectDisplayName(project) || '';
+    const isCollapsed = (project) => collapsedProjectIds.has(getProjectKey(project));
+    const toggleCollapsed = (project) => {
+        const key = getProjectKey(project);
+        setCollapsedProjectIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key); else next.add(key);
+            return next;
+        });
+    };
+
+    const buildUpdateLine = (project) => {
+        const parts = [];
+        if (project?.latestUpdateDate) parts.push(project.latestUpdateDate);
+        if (project?.latestUpdateSnippet) parts.push(project.latestUpdateSnippet);
+        return parts.join(' · ');
+    };
+
+    const renderProjectIcon = () => (
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+            <rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" fill="none"/>
+            <path d="M3 9h18" stroke="currentColor" strokeWidth="1.6"/>
+        </svg>
+    );
+
+    const renderChevron = () => (
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+    );
+
+    const renderPortfolioHeader = (project) => {
+        const collapsed = isCollapsed(project);
+        const updateLine = buildUpdateLine(project);
+        return (
+            <button
+                type="button"
+                className={`epm-project-board-header ${collapsed ? 'is-collapsed' : ''}`}
+                onClick={() => toggleCollapsed(project)}
+                aria-expanded={!collapsed}
+            >
+                <span className="epm-project-board-chevron">{renderChevron()}</span>
+                <span className="epm-project-board-icon">{renderProjectIcon()}</span>
+                <span className="epm-project-board-name">{getEpmProjectDisplayName(project)}</span>
+                {project?.label && (
+                    <span className="epm-project-board-label-pill">{project.label}</span>
+                )}
+                {project?.homeUrl && (
+                    <a
+                        className="epm-project-board-link"
+                        href={project.homeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        Home ↗
+                    </a>
+                )}
+                {updateLine && (
+                    <span className="epm-project-board-update">{updateLine}</span>
+                )}
+            </button>
+        );
+    };
+
+    const buildDuplicateClusters = () => {
+        const projectsById = new Map();
+        (epmRollupBoards || []).forEach(({ project }) => {
+            if (project?.id) projectsById.set(project.id, project);
+        });
+        const clusters = new Map();
+        Object.entries(epmDuplicates || {}).forEach(([issueKey, projectIds]) => {
+            const sorted = (Array.isArray(projectIds) ? projectIds : []).filter(Boolean).slice().sort();
+            if (sorted.length < 2) return;
+            const clusterKey = sorted.join('|');
+            if (!clusters.has(clusterKey)) {
+                clusters.set(clusterKey, {
+                    clusterKey,
+                    projects: sorted.map((id) => projectsById.get(id) || { id, name: id }),
+                    issues: [],
+                });
+            }
+            clusters.get(clusterKey).issues.push(issueKey);
+        });
+        return Array.from(clusters.values());
+    };
+
+    const renderDuplicatesCallout = () => {
+        const clusters = buildDuplicateClusters();
+        if (clusters.length === 0) return null;
+        return (
+            <div className="epm-duplicates-callout" role="region" aria-label="Issues counted in multiple projects">
+                <div className="epm-duplicates-heading">
+                    <span className="epm-duplicates-heading-text">Issues counted in multiple projects</span>
+                    <button
+                        type="button"
+                        className="secondary compact epm-duplicates-fix-button"
+                        onClick={openEpmSettingsTab}
+                    >
+                        Fix labels in Settings
+                    </button>
+                </div>
+                <p className="epm-duplicates-explanation">
+                    These issues match the Jira labels of more than one project, so they appear in each rollup. Tighten the labels in Settings to give each project a unique scope.
+                </p>
+                <div className="epm-duplicates-rows">
+                    {clusters.map((cluster) => (
+                        <div className="epm-duplicates-row" key={cluster.clusterKey}>
+                            <div className="epm-duplicates-projects">
+                                {cluster.projects.map((project) => (
+                                    <span className="epm-duplicates-project-chip" key={project.id || getEpmProjectDisplayName(project)}>
+                                        <span className="epm-duplicates-project-name">{getEpmProjectDisplayName(project)}</span>
+                                        {project.label && (
+                                            <span className="epm-duplicates-project-label">{project.label}</span>
+                                        )}
+                                    </span>
+                                ))}
+                            </div>
+                            <details className="epm-duplicates-issues">
+                                <summary>{`${cluster.issues.length} ${cluster.issues.length === 1 ? 'issue' : 'issues'}`}</summary>
+                                <ul>
+                                    {cluster.issues.map((key) => (
+                                        <li key={key}>
+                                            <a href={jiraUrl ? `${jiraUrl}/browse/${key}` : '#'} target="_blank" rel="noopener noreferrer">
+                                                {key} ↗
+                                            </a>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </details>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
     const renderMetadataOnlyCard = (project, updateLine, showTitle = true) => (
         <div className="group-config-card epm-home-card">
             {showTitle && <div className="group-pane-title">{getEpmProjectDisplayName(project)}</div>}
@@ -102,26 +241,30 @@ export function EpmRollupPanel({
         }
         return (
             <div className="task-list epm-issue-board epm-portfolio-board">
-                {Object.keys(epmDuplicates || {}).length > 0 && (
-                    <div className="group-field-helper">
-                        {Object.keys(epmDuplicates).length} issues appear in multiple projects.
-                    </div>
-                )}
+                {renderDuplicatesCallout()}
                 {epmAggregateTruncated && (
                     <div className="group-field-helper">
                         This rollup is truncated; narrow the label or Jira scope.
                     </div>
                 )}
-                {epmRollupBoards.map(({ project, tree }) => (
-                    <section className="epm-project-board" key={project?.id || getEpmProjectDisplayName(project)}>
-                        <div className="group-pane-title">{getEpmProjectDisplayName(project)}</div>
-                        {tree?.kind === 'metadataOnly' && renderMetadataOnlyCard(project, [project?.latestUpdateDate, project?.latestUpdateSnippet || 'No updates yet'].filter(Boolean).join(' · '), false)}
-                        {tree?.kind === 'emptyRollup' && (
-                            <div className="group-field-helper">No issues in this scope.</div>
-                        )}
-                        {tree?.kind === 'tree' && renderEpmTreeWithEngCards(project, tree)}
-                    </section>
-                ))}
+                {epmRollupBoards.map(({ project, tree }) => {
+                    const collapsed = isCollapsed(project);
+                    return (
+                        <section
+                            className={`epm-project-board ${collapsed ? 'is-collapsed' : ''}`}
+                            key={getProjectKey(project)}
+                        >
+                            {renderPortfolioHeader(project)}
+                            <div className="epm-project-board-body">
+                                {tree?.kind === 'metadataOnly' && renderMetadataOnlyCard(project, buildUpdateLine(project) || 'No updates yet', false)}
+                                {tree?.kind === 'emptyRollup' && (
+                                    <div className="group-field-helper">No issues in this scope.</div>
+                                )}
+                                {tree?.kind === 'tree' && renderEpmTreeWithEngCards(project, tree)}
+                            </div>
+                        </section>
+                    );
+                })}
             </div>
         );
     }

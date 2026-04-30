@@ -4,12 +4,14 @@ const path = require('path');
 const test = require('node:test');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
+const dashboardCssPath = path.join(__dirname, '..', 'frontend', 'dist', 'dashboard.css');
 const epmFetchPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmFetch.js');
 const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupPanel.jsx');
 const epmRollupTreePath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupTree.jsx');
 const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs');
 
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+const dashboardCssSource = fs.existsSync(dashboardCssPath) ? fs.readFileSync(dashboardCssPath, 'utf8') : '';
 const epmFetchSource = fs.readFileSync(epmFetchPath, 'utf8');
 const epmRollupPanelSource = fs.existsSync(epmRollupPanelPath) ? fs.readFileSync(epmRollupPanelPath, 'utf8') : '';
 const epmRollupTreeSource = fs.existsSync(epmRollupTreePath) ? fs.readFileSync(epmRollupTreePath, 'utf8') : '';
@@ -335,6 +337,27 @@ test('EPM rollup renderer groups Initiative to Epic to Story and keeps orphans u
     assert.ok(epmRollupPanelSource.includes('tree.rootEpics.map'), 'Expected root epics to render directly under Project');
     assert.ok(epmRollupPanelSource.includes('tree.orphanStories'), 'Expected orphan stories to render directly under Project');
     assert.ok(epmRollupPanelSource.includes('Project stories'), 'Expected orphan stories section under Project');
+});
+
+test('EPM portfolio project header separates collapse control from metadata', () => {
+    const headerSource = getSnippetBetween(
+        epmRollupPanelSource,
+        'const renderPortfolioHeader = (project) => {',
+        'const buildDuplicateClusters = () => {'
+    );
+    const toggleStart = headerSource.indexOf('className="epm-project-board-toggle"');
+    const toggleEnd = headerSource.indexOf('</button>', toggleStart);
+    assert.notStrictEqual(toggleStart, -1, 'Expected a dedicated project board toggle button');
+    assert.notStrictEqual(toggleEnd, -1, 'Expected project board toggle button to close');
+    const toggleSource = headerSource.slice(toggleStart, toggleEnd);
+
+    assert.ok(headerSource.includes('className={`epm-project-board-header ${collapsed ? \'is-collapsed\' : \'\'}`}'), 'Expected project header wrapper');
+    assert.ok(headerSource.includes('className="epm-project-board-meta"'), 'Expected project metadata wrapper outside the toggle');
+    assert.ok(!toggleSource.includes('epm-project-board-link'), 'Project Home link must not be nested inside the toggle button');
+    assert.ok(!toggleSource.includes('epm-project-board-update'), 'Project update text must not be nested inside the toggle button');
+    assert.ok(!toggleSource.includes('<a'), 'Project toggle button must not contain nested anchors');
+    assert.ok(dashboardCssSource.includes('.epm-project-board-toggle'), 'Expected CSS for the dedicated project board toggle');
+    assert.ok(dashboardCssSource.includes('.epm-project-board-meta'), 'Expected CSS for bounded project board metadata');
 });
 
 test('EPM rollup helper dedupes by issue key before rendering', () => {

@@ -53,33 +53,38 @@ export function EpmRollupPanel({
         const collapsed = isCollapsed(project);
         const updateLine = buildUpdateLine(project);
         return (
-            <button
-                type="button"
+            <div
                 className={`epm-project-board-header ${collapsed ? 'is-collapsed' : ''}`}
-                onClick={() => toggleCollapsed(project)}
-                aria-expanded={!collapsed}
             >
-                <span className="epm-project-board-chevron">{renderChevron()}</span>
-                <span className="epm-project-board-icon">{renderProjectIcon()}</span>
-                <span className="epm-project-board-name">{getEpmProjectDisplayName(project)}</span>
-                {project?.label && (
-                    <span className="epm-project-board-label-pill">{project.label}</span>
-                )}
-                {project?.homeUrl && (
-                    <a
-                        className="epm-project-board-link"
-                        href={project.homeUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        Home ↗
-                    </a>
-                )}
-                {updateLine && (
-                    <span className="epm-project-board-update">{updateLine}</span>
-                )}
-            </button>
+                <button
+                    type="button"
+                    className="epm-project-board-toggle"
+                    onClick={() => toggleCollapsed(project)}
+                    aria-expanded={!collapsed}
+                >
+                    <span className="epm-project-board-chevron">{renderChevron()}</span>
+                    <span className="epm-project-board-icon">{renderProjectIcon()}</span>
+                    <span className="epm-project-board-name">{getEpmProjectDisplayName(project)}</span>
+                </button>
+                <div className="epm-project-board-meta">
+                    {project?.label && (
+                        <span className="epm-project-board-label-pill">{project.label}</span>
+                    )}
+                    {project?.homeUrl && (
+                        <a
+                            className="epm-project-board-link"
+                            href={project.homeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            Home ↗
+                        </a>
+                    )}
+                    {updateLine && (
+                        <span className="epm-project-board-update">{updateLine}</span>
+                    )}
+                </div>
+            </div>
         );
     };
 

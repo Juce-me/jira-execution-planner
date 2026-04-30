@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 import json
 import os
+from pathlib import Path
 import tempfile
 from werkzeug.exceptions import NotFound
 
@@ -88,6 +89,10 @@ class TestEpmProjectsApi(unittest.TestCase):
                 },
             },
         }
+
+    def test_server_uses_timezone_aware_utc_timestamps(self):
+        source = Path(jira_server.__file__).read_text()
+        self.assertNotIn('datetime.utcnow()', source)
 
     @patch('jira_server.get_epm_config')
     @patch('jira_server.fetch_epm_home_projects', create=True)

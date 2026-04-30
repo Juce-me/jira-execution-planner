@@ -203,6 +203,73 @@ export function getEpmProjectDisplayName(project) {
     ).trim();
 }
 
+function normalizeEpmSettingsSortText(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function normalizeEpmSettingsStatus(value) {
+    return normalizeEpmSettingsSortText(value).replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function getEpmSettingsStatusRank(project) {
+    const status = normalizeEpmSettingsStatus(project?.stateLabel || project?.stateValue || '');
+    const ranks = {
+        'on track': 10,
+        'at risk': 20,
+        'off track': 30,
+        blocked: 40,
+        pending: 50,
+        paused: 60,
+        done: 70,
+        completed: 70,
+        release: 80,
+        released: 80,
+        archived: 90
+    };
+    return Object.prototype.hasOwnProperty.call(ranks, status) ? ranks[status] : 999;
+}
+
+export function sortEpmSettingsProjects(projects, sortKey = 'home') {
+    const source = Array.isArray(projects) ? projects : [];
+    const key = String(sortKey || 'home').trim().toLowerCase();
+    if (!key || key === 'home') return source.slice();
+
+    return source
+        .map((project, index) => ({ project, index }))
+        .sort((a, b) => {
+            if (key === 'name') {
+                const aName = normalizeEpmSettingsSortText(getEpmProjectDisplayName(a.project));
+                const bName = normalizeEpmSettingsSortText(getEpmProjectDisplayName(b.project));
+                const nameCompare = aName.localeCompare(bName);
+                return nameCompare || a.index - b.index;
+            }
+            if (key === 'status') {
+                const rankCompare = getEpmSettingsStatusRank(a.project) - getEpmSettingsStatusRank(b.project);
+                if (rankCompare) return rankCompare;
+                const aStatus = normalizeEpmSettingsStatus(a.project?.stateLabel || a.project?.stateValue || '');
+                const bStatus = normalizeEpmSettingsStatus(b.project?.stateLabel || b.project?.stateValue || '');
+                const statusCompare = aStatus.localeCompare(bStatus);
+                if (statusCompare) return statusCompare;
+                const aName = normalizeEpmSettingsSortText(getEpmProjectDisplayName(a.project));
+                const bName = normalizeEpmSettingsSortText(getEpmProjectDisplayName(b.project));
+                return aName.localeCompare(bName) || a.index - b.index;
+            }
+            if (key === 'label') {
+                const aLabel = normalizeEpmSettingsSortText(a.project?.label || '');
+                const bLabel = normalizeEpmSettingsSortText(b.project?.label || '');
+                if (aLabel && !bLabel) return -1;
+                if (!aLabel && bLabel) return 1;
+                const labelCompare = aLabel.localeCompare(bLabel);
+                if (labelCompare) return labelCompare;
+                const aName = normalizeEpmSettingsSortText(getEpmProjectDisplayName(a.project));
+                const bName = normalizeEpmSettingsSortText(getEpmProjectDisplayName(b.project));
+                return aName.localeCompare(bName) || a.index - b.index;
+            }
+            return a.index - b.index;
+        })
+        .map(entry => entry.project);
+}
+
 export function normalizeEpmSettingsKeyPart(value) {
     return String(value || '').trim().toUpperCase();
 }

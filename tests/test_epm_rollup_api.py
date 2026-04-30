@@ -282,6 +282,42 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertTrue(metadata_rollup['metadataOnly'])
         self.assertFalse(metadata_rollup['emptyRollup'])
 
+    def test_all_projects_rollup_reports_server_timing_breakdown(self):
+        projects = [
+            {
+                'id': 'active-one',
+                'displayName': 'Active One',
+                'label': 'synthetic_one',
+                'resolvedLinkage': {'labels': ['synthetic_one'], 'epicKeys': []},
+                'matchState': 'home-linked',
+                'tabBucket': 'active',
+            },
+        ]
+
+        with patch.object(jira_server, 'get_epm_config', return_value={'version': 2}), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': projects}), \
+             patch.object(jira_server, 'build_per_project_rollup', return_value=(
+                 {
+                     'project': projects[0],
+                     'metadataOnly': False,
+                     'emptyRollup': True,
+                     'truncated': False,
+                     'truncatedQueries': [],
+                     'initiatives': {},
+                     'rootEpics': {},
+                     'orphanStories': [],
+                 },
+                 200,
+                 {},
+             )):
+            response = self.client.get('/api/epm/projects/rollup/all?tab=active&sprint=42')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        server_timing = response.headers.get('Server-Timing', '')
+        self.assertIn('home-projects;dur=', server_timing)
+        self.assertIn('epm-rollups;dur=', server_timing)
+        self.assertIn('total;dur=', server_timing)
+
     def test_active_labeled_epic_fetches_all_selected_sprint_stories_under_epic(self):
         project = {
             'id': 'project-1',

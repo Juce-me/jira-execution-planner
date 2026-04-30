@@ -16,7 +16,7 @@ import threading
 import time
 import subprocess
 import uuid
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 try:
     from zoneinfo import ZoneInfo
 except Exception:  # pragma: no cover - Python < 3.9 fallback
@@ -200,6 +200,12 @@ def log_error(*parts):
 
 
 configure_logging()
+
+
+def utc_now_iso(timespec=None):
+    now = datetime.now(timezone.utc)
+    value = now.isoformat(timespec=timespec) if timespec else now.isoformat()
+    return value.replace('+00:00', 'Z')
 
 
 RETRYABLE_JIRA_STATUS_CODES = {429, 500, 502, 503, 504}
@@ -1418,7 +1424,7 @@ def build_epm_home_projects_state(epm_scope, force_refresh=False):
     home_projects = fetch_epm_home_projects(epm_scope)
     home_project_limit = epm_home.HOME_MAX_PROJECTS_PER_GOAL
     possibly_truncated = bool(home_project_limit and len(home_projects) >= home_project_limit)
-    fetched_at = datetime.utcnow().isoformat(timespec='seconds') + 'Z'
+    fetched_at = utc_now_iso(timespec='seconds')
     with _epm_cache_lock:
         EPM_PROJECTS_CACHE[cache_key] = {
             'timestamp': time.time(),
@@ -1903,6 +1909,7 @@ def collect_epm_rollup_issue_keys(rollup):
 
 
 def build_all_epm_projects_rollup(tab, sprint):
+    started = time.perf_counter()
     tab = normalize_epm_text(tab or 'active').lower()
     sprint = normalize_epm_text(sprint)
     validation_error = validate_epm_tab_sprint(tab, sprint)
@@ -1911,7 +1918,9 @@ def build_all_epm_projects_rollup(tab, sprint):
         return error_payload, status, {}
 
     epm_config = get_epm_config()
+    projects_started = time.perf_counter()
     projects_payload = build_epm_projects_payload(epm_config)
+    projects_ms = round((time.perf_counter() - projects_started) * 1000, 1)
     visible_projects = filter_epm_projects_for_tab(projects_payload.get('projects') or [], tab)
     dependencies = build_epm_rollup_dependencies()
     entries_by_project_id = {}
@@ -1935,11 +1944,13 @@ def build_all_epm_projects_rollup(tab, sprint):
             project_id, entry = build_entry(project)
             entries_by_project_id[project_id] = entry
 
+    rollups_started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=8) as executor:
         future_to_project = {executor.submit(build_entry, project): project for project in labeled_projects}
         for future in as_completed(future_to_project):
             project_id, entry = future.result()
             entries_by_project_id[project_id] = entry
+    rollups_ms = round((time.perf_counter() - rollups_started) * 1000, 1)
 
     ordered_entries = []
     for project in visible_projects:
@@ -1962,7 +1973,21 @@ def build_all_epm_projects_rollup(tab, sprint):
         'truncated': any(bool((entry.get('rollup') or {}).get('truncated')) for entry in ordered_entries),
         'fallback': True,
     }
-    return payload, 200, {}
+    total_ms = round((time.perf_counter() - started) * 1000, 1)
+    logger.info(
+        "EPM all-projects rollup timing tab=%s sprint=%s projects=%d visible=%d labeled=%d home_projects_ms=%s rollups_ms=%s total_ms=%s",
+        tab,
+        sprint or '',
+        len(projects_payload.get('projects') or []),
+        len(visible_projects),
+        len(labeled_projects),
+        projects_ms,
+        rollups_ms,
+        total_ms,
+    )
+    return payload, 200, {
+        'Server-Timing': f'home-projects;dur={projects_ms}, epm-rollups;dur={rollups_ms}, total;dur={total_ms}'
+    }
 
 
 def find_epm_project_or_404(project_id):
@@ -2375,7 +2400,7 @@ def build_update_check_payload():
             'remote': UPDATE_CHECK_REMOTE
         },
         'updateAvailable': update_available,
-        'checkedAt': datetime.utcnow().isoformat() + 'Z'
+        'checkedAt': utc_now_iso()
     }
 
 
@@ -4505,7 +4530,7 @@ def post_scenario_overrides():
     data.setdefault('scenarios', {})[scope_key] = {
         'scope_key': scope_key,
         'name': name,
-        'updated_at': datetime.utcnow().isoformat(timespec='seconds'),
+        'updated_at': utc_now_iso(timespec='seconds'),
         'overrides': overrides,
     }
     save_scenario_overrides(data)

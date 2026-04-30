@@ -254,6 +254,27 @@ test('EPM board fetches rollup with tab and sprint params while preserving activ
     assert.ok(dashboardSource.includes("epmTab === 'active' && !selectedSprint"), 'Expected active tab to require selectedSprint before rollup fetch');
 });
 
+test('EPM initial load warms project metadata before all-project rollup', () => {
+    const functions = getConstFunctionBodies(dashboardSource);
+    const refreshEpmRollupSource = functions.get('refreshEpmRollup') || '';
+    assert.ok(
+        refreshEpmRollupSource.includes('if (!hasSavedEpmScope) {'),
+        'Expected EPM rollup refresh to skip when saved EPM scope is not loaded'
+    );
+    assert.ok(
+        refreshEpmRollupSource.includes('if (epmProjectsPendingSelectionRef.current) {'),
+        'Expected EPM rollup refresh to wait while project metadata is loading'
+    );
+    assert.ok(
+        dashboardSource.includes('void refreshEpmView();'),
+        'Expected EPM view load effect to warm project metadata then rollup'
+    );
+    assert.ok(
+        !dashboardSource.includes('void refreshEpmProjects();\n            }, [selectedView, hasSavedEpmScope]);'),
+        'EPM view load effect must not fire project metadata separately from rollup'
+    );
+});
+
 test('EPM defaults to all projects and exposes sprint controls in Active', () => {
     const pickerSnippet = getSnippetBetween(
         dashboardSource,

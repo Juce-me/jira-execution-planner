@@ -71,7 +71,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('setEpmRootGoalsError(String(rootGoalsPayload?.error || \'\').trim());'), 'Expected handled root-goal discovery errors to surface in picker state');
     assert.ok(dashboardSource.includes('const lookupError = String(payload?.error || \'\').trim();') && dashboardSource.includes('setEpmSubGoalsError(lookupError);'), 'Expected handled sub-goal discovery errors to surface in picker state');
     assert.ok(dashboardSource.includes("setGroupDraftError('Failed to load EPM settings.');"), 'Expected config-load failures to clear stale EPM draft state and surface an error');
-    assert.ok(dashboardSource.includes('if (!hasSavedEpmScope) {') && dashboardSource.includes('void refreshEpmProjects();'), 'Expected main EPM view fetch gating on saved scope');
+    assert.ok(dashboardSource.includes('if (!hasSavedEpmScope) {') && dashboardSource.includes('void refreshEpmView();'), 'Expected main EPM view fetch gating on saved scope');
     assert.ok(dashboardSource.includes('const refreshEpmView = async () => {') && dashboardSource.includes('if (!hasSavedEpmScope) {') && dashboardSource.includes('setEpmProjects([]);') && dashboardSource.includes('setEpmRollupTree(null);') && dashboardSource.includes('setEpmRollupLoading(false);'), 'Expected manual EPM refresh gating to clear stale project and rollup state without fetching');
     assert.ok(dashboardSource.includes('EPM projects'), 'Expected EPM projects copy');
     assert.ok(dashboardSource.includes('Add custom Project'), 'Expected Add custom Project button copy');
@@ -177,6 +177,35 @@ test('EPM project rows use stable cells for variable statuses and labels', () =>
     assert.ok(projectsPanelSource.includes("flex: '1 1 18rem'"), 'Expected Jira labels to use a bounded flexible column');
 });
 
+test('EPM project Home links render as compact shortcut icons', () => {
+    const projectsPanelStart = dashboardSource.indexOf('id="epm-settings-projects-panel"');
+    const projectsPanelEnd = dashboardSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
+    assert.notStrictEqual(projectsPanelStart, -1, 'Expected EPM projects settings panel');
+    assert.notStrictEqual(projectsPanelEnd, -1, 'Expected EPM projects row list before empty state');
+    const projectsPanelSource = dashboardSource.slice(projectsPanelStart, projectsPanelEnd);
+
+    assert.ok(projectsPanelSource.includes('className="epm-project-home-shortcut"'), 'Expected Home project link to use compact shortcut styling');
+    assert.ok(projectsPanelSource.includes('aria-label={`Open Jira Home project for ${project.displayName || project.homeName || project.id}`}'), 'Expected Home shortcut to keep an accessible project-specific label');
+    assert.ok(projectsPanelSource.includes('M7 17L17 7'), 'Expected shortcut to use an external-link glyph');
+    assert.ok(!projectsPanelSource.includes('>Open<'), 'Home shortcut should not render noisy Open text');
+});
+
+test('EPM project rows expose compact sorting controls', () => {
+    const projectsPanelStart = dashboardSource.indexOf('id="epm-settings-projects-panel"');
+    const projectsPanelEnd = dashboardSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
+    assert.notStrictEqual(projectsPanelStart, -1, 'Expected EPM projects settings panel');
+    assert.notStrictEqual(projectsPanelEnd, -1, 'Expected EPM projects row list before empty state');
+    const projectsPanelSource = dashboardSource.slice(projectsPanelStart, projectsPanelEnd);
+
+    assert.ok(dashboardSource.includes('sortEpmSettingsProjects'), 'Expected dashboard to import the settings project sorter');
+    assert.ok(dashboardSource.includes("const [epmSettingsProjectSort, setEpmSettingsProjectSort] = useState('home');"), 'Expected settings project sort state');
+    assert.ok(dashboardSource.includes('sortEpmSettingsProjects(rows, epmSettingsProjectSort);'), 'Expected settings project rows to apply the selected sort');
+    assert.ok(projectsPanelSource.includes('className="epm-project-sort-control"'), 'Expected compact sort control in the Projects header');
+    assert.ok(projectsPanelSource.includes('value={epmSettingsProjectSort}'), 'Expected sort control to reflect selected sort');
+    assert.ok(projectsPanelSource.includes("value=\"status\""), 'Expected Home status sort option');
+    assert.ok(projectsPanelSource.includes("value=\"label\""), 'Expected Jira label sort option');
+});
+
 test('EPM settings drops empty custom project rows and gives them an explicit delete action', () => {
     const normalizeStart = dashboardSource.indexOf('const normalizeEpmConfigDraft = (config) => {');
     const normalizeEnd = dashboardSource.indexOf('const hasSavedEpmScopeConfig = (config) => {', normalizeStart);
@@ -205,7 +234,10 @@ test('EPM selected Jira label has one explicit change action', () => {
     assert.notStrictEqual(selectedLabelEnd, -1, 'Expected label search branch after selected chip');
     const selectedLabelSource = dashboardSource.slice(selectedLabelStart, selectedLabelEnd);
 
-    assert.ok(selectedLabelSource.includes('Change label'), 'Expected one clear label-change action');
+    assert.ok(selectedLabelSource.includes('className="epm-label-change-shortcut"'), 'Expected selected label change to use a compact icon action');
+    assert.ok(selectedLabelSource.includes('title="Change label"'), 'Expected compact label-change action to keep a readable title');
+    assert.ok(selectedLabelSource.includes('&times;'), 'Expected compact label-change action to render as a cross');
+    assert.ok(!selectedLabelSource.includes('>\n                                                                                    Change label\n                                                                                </button>'), 'Selected label chip must not render a bulky Change label text button');
     assert.ok(!selectedLabelSource.includes('title="Remove label"'), 'Selected label chip must not also expose a duplicate x action');
     assert.ok(!selectedLabelSource.includes("updateEpmProjectDraft(project.id, 'label', '')"), 'Selected label chip must not clear the label through a duplicate x action');
 });

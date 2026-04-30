@@ -37,7 +37,8 @@ import {
     hydrateEpmProjectDraft,
     isEmptyCustomEpmProjectRow,
     isEpmProjectsConfigReady,
-    shouldUseEpmSprint
+    shouldUseEpmSprint,
+    sortEpmSettingsProjects
 } from './epm/epmProjectUtils.mjs';
 import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
@@ -234,6 +235,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 possiblyTruncated: false,
             });
             const [epmSettingsProjectsRefreshing, setEpmSettingsProjectsRefreshing] = useState(false);
+            const [epmSettingsProjectSort, setEpmSettingsProjectSort] = useState('home');
             const [epmSettingsTab, setEpmSettingsTab] = useState('scope');
             const [epmLabelShowAll, setEpmLabelShowAll] = useState({});
             const [epmLabelChanging, setEpmLabelChanging] = useState({});
@@ -1137,6 +1139,18 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     setEpmAggregateTruncated(false);
                     setEpmAggregateFallback(false);
                     setEpmRollupLoading(false);
+                    return;
+                }
+                if (!hasSavedEpmScope) {
+                    setEpmRollupTree(null);
+                    setEpmRollupBoards(null);
+                    setEpmDuplicates({});
+                    setEpmAggregateTruncated(false);
+                    setEpmAggregateFallback(false);
+                    setEpmRollupLoading(false);
+                    return;
+                }
+                if (epmProjectsPendingSelectionRef.current) {
                     return;
                 }
                 if (epmTab === 'active' && !selectedSprint) {
@@ -2171,8 +2185,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         label: String(row?.label ?? ''),
                     }, null));
                 });
-                return rows;
-            }, [epmConfigDraft, epmSettingsProjects]);
+                return sortEpmSettingsProjects(rows, epmSettingsProjectSort);
+            }, [epmConfigDraft, epmSettingsProjectSort, epmSettingsProjects]);
 
             const isGroupDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
@@ -9025,7 +9039,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     setEpmProjects([]);
                     return;
                 }
-                void refreshEpmProjects();
+                void refreshEpmView();
             }, [selectedView, hasSavedEpmScope]);
 
             useEffect(() => {
@@ -9039,7 +9053,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             useEffect(() => {
                 void refreshEpmRollup();
-            }, [selectedView, epmSelectedProjectId, selectedEpmProject, epmTab, selectedSprint]);
+            }, [selectedView, hasSavedEpmScope, epmSelectedProjectId, selectedEpmProject, epmTab, selectedSprint]);
 
             const issueByKey = React.useMemo(() => {
                 const map = new Map();
@@ -16069,6 +16083,21 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                             <div className="group-pane-subtitle">Map direct Jira Home projects under the selected sub-goal to exact Jira labels.</div>
                                                         </div>
                                                         <div className="epm-projects-header-actions">
+                                                            <label className="epm-project-sort-control" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                                                                <span className="group-modal-meta">Sort</span>
+                                                                <select
+                                                                    className="team-select compact"
+                                                                    value={epmSettingsProjectSort}
+                                                                    onChange={(event) => setEpmSettingsProjectSort(event.target.value)}
+                                                                    aria-label="Sort EPM projects"
+                                                                    style={{ height: '2rem', minWidth: '9rem', padding: '0 0.55rem', fontSize: '0.7rem' }}
+                                                                >
+                                                                    <option value="home">Home order</option>
+                                                                    <option value="name">Project name</option>
+                                                                    <option value="status">Home status</option>
+                                                                    <option value="label">Jira label</option>
+                                                                </select>
+                                                            </label>
                                                             {canLoadEpmProjects && (
                                                                 <span className="group-modal-meta" aria-live="polite">
                                                                     {epmSettingsProjectsRefreshing
@@ -16200,8 +16229,19 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                     </div>
                                                                     <div className="epm-project-open-cell" style={{ display: 'flex', alignItems: 'center', flex: '0 0 2.4rem', minWidth: 0 }}>
                                                                         {project.homeUrl && (
-                                                                            <a href={project.homeUrl} target="_blank" rel="noopener noreferrer" title="Open Jira Home project" style={{ display: 'block', maxWidth: '100%', fontSize: '0.62rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                                Open
+                                                                            <a
+                                                                                className="epm-project-home-shortcut"
+                                                                                href={project.homeUrl}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                title="Open Jira Home project"
+                                                                                aria-label={`Open Jira Home project for ${project.displayName || project.homeName || project.id}`}
+                                                                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '1.75rem', height: '1.75rem', border: '1px solid var(--border)', borderRadius: '999px', background: '#fff', color: 'var(--accent)', textDecoration: 'none' }}
+                                                                            >
+                                                                                <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" focusable="false">
+                                                                                    <path d="M7 17L17 7" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                                                                    <path d="M9 7h8v8" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                                                                </svg>
                                                                             </a>
                                                                         )}
                                                                     </div>
@@ -16210,12 +16250,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                             <div className="epm-label-selected-chip" title={currentLabel} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, maxWidth: '100%', border: '1px solid var(--border)', borderRadius: '999px', background: '#f8f9fa', padding: '0.18rem 0.25rem 0.18rem 0.55rem' }}>
                                                                                 <span className="team-name" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>{currentLabel}</span>
                                                                                 <button
-                                                                                    className="secondary compact"
+                                                                                    className="epm-label-change-shortcut"
                                                                                     onClick={openEpmLabelSearchFromButton}
                                                                                     type="button"
-                                                                                    style={{ padding: '0.22rem 0.55rem', fontSize: '0.62rem' }}
+                                                                                    title="Change label"
+                                                                                    aria-label={`Change Jira label for ${project.displayName || project.homeName || project.id}`}
+                                                                                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '1.35rem', height: '1.35rem', flex: '0 0 auto', border: '1px solid var(--border)', borderRadius: '999px', background: '#fff', color: 'var(--text-muted)', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.8rem', lineHeight: 1, padding: 0, cursor: 'pointer' }}
                                                                                 >
-                                                                                    Change label
+                                                                                    &times;
                                                                                 </button>
                                                                             </div>
                                                                         ) : (

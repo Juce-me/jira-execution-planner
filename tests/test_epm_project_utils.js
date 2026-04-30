@@ -223,6 +223,34 @@ test('hydrateEpmProjectDraft fills blank draft name and label from Home project'
     assert.strictEqual(row.displayName, 'Pubcid for lastimp signal');
 });
 
+test('sortEpmSettingsProjects supports compact settings sorting without mutating input', async () => {
+    const { sortEpmSettingsProjects } = await import(helperUrl);
+    const projects = [
+        { id: 'b', displayName: 'Beta', stateLabel: 'Pending', label: '' },
+        { id: 'c', displayName: 'Alpha', stateValue: 'ON_TRACK', label: 'rnd_project_alpha' },
+        { id: 'a', displayName: 'Gamma', stateLabel: 'Archived', label: 'rnd_project_gamma' },
+        { id: 'd', displayName: 'Delta', stateLabel: '', label: 'rnd_project_delta' }
+    ];
+
+    assert.deepStrictEqual(
+        sortEpmSettingsProjects(projects, 'home').map(project => project.id),
+        ['b', 'c', 'a', 'd']
+    );
+    assert.deepStrictEqual(
+        sortEpmSettingsProjects(projects, 'name').map(project => project.id),
+        ['c', 'b', 'd', 'a']
+    );
+    assert.deepStrictEqual(
+        sortEpmSettingsProjects(projects, 'status').map(project => project.id),
+        ['c', 'b', 'a', 'd']
+    );
+    assert.deepStrictEqual(
+        sortEpmSettingsProjects(projects, 'label').map(project => project.id),
+        ['c', 'd', 'a', 'b']
+    );
+    assert.deepStrictEqual(projects.map(project => project.id), ['b', 'c', 'a', 'd']);
+});
+
 test('empty custom EPM project rows are disposable before save', async () => {
     const { isEmptyCustomEpmProjectRow } = await import(helperUrl);
 

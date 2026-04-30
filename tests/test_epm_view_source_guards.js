@@ -4,12 +4,14 @@ const path = require('path');
 const test = require('node:test');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
+const dashboardCssPath = path.join(__dirname, '..', 'frontend', 'dist', 'dashboard.css');
 const epmFetchPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmFetch.js');
 const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupPanel.jsx');
 const epmRollupTreePath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupTree.jsx');
 const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs');
 
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+const dashboardCssSource = fs.existsSync(dashboardCssPath) ? fs.readFileSync(dashboardCssPath, 'utf8') : '';
 const epmFetchSource = fs.readFileSync(epmFetchPath, 'utf8');
 const epmRollupPanelSource = fs.existsSync(epmRollupPanelPath) ? fs.readFileSync(epmRollupPanelPath, 'utf8') : '';
 const epmRollupTreeSource = fs.existsSync(epmRollupTreePath) ? fs.readFileSync(epmRollupTreePath, 'utf8') : '';
@@ -182,16 +184,35 @@ test('dashboard source keeps the ENG and EPM switch contract', () => {
     assert.ok(!dashboardSource.includes('view-switch'), 'Did not expect view-switch in dashboard.jsx');
 });
 
-test('dashboard source reuses renderViewSwitch in both header contexts', () => {
+test('dashboard source renders mutually exclusive EPM controls as segmented radio groups', () => {
+    assert.ok(dashboardSource.includes('className="segmented-control view-mode-control"'), 'Expected ENG/EPM selector to use a segmented control wrapper');
+    assert.ok(dashboardSource.includes('className="segmented-control epm-state-control"'), 'Expected EPM project-state selector to use a segmented control wrapper');
+    assert.ok(countOccurrences(dashboardSource, 'role="radiogroup"') >= 2, 'Expected view and EPM state selectors to expose radio group semantics');
+    assert.ok(countOccurrences(dashboardSource, 'role="radio"') >= 2, 'Expected segmented options to expose radio semantics');
+    assert.ok(dashboardSource.includes('aria-checked={selectedView === \'eng\'}'), 'Expected ENG option to expose checked state');
+    assert.ok(dashboardSource.includes('aria-checked={epmTab === tab.value}'), 'Expected EPM state options to expose checked state');
+});
+
+test('dashboard source keeps the ENG/EPM switch in the main header only', () => {
     assert.ok(dashboardSource.includes('renderViewSwitch()'), 'Expected renderViewSwitch() in dashboard.jsx');
-    assert.ok(countOccurrences(dashboardSource, 'renderViewSwitch()') >= 2, 'Expected renderViewSwitch() in both header contexts');
+    assert.strictEqual(countOccurrences(dashboardSource, 'renderViewSwitch()'), 1, 'Expected renderViewSwitch() only in the main header');
     assert.ok(
         hasCallAfter(dashboardSource, 'header-actions-row', 'renderViewSwitch()'),
         'Expected renderViewSwitch() near the main header actions row'
     );
+});
+
+test('dashboard source omits view and project selectors from compact sticky controls', () => {
+    const compactControlsSource = getSnippetBetween(
+        dashboardSource,
+        'className="compact-sticky-header-controls"',
+        'className="compact-sticky-header-search"'
+    );
+    assert.ok(!compactControlsSource.includes('renderViewSwitch()'), 'Did not expect ENG/EPM switch in compact sticky controls');
+    assert.ok(!compactControlsSource.includes('renderEpmProjectPicker()'), 'Did not expect Project selector in compact sticky controls');
     assert.ok(
-        hasCallAfter(dashboardSource, 'compact-sticky-header-controls', 'renderViewSwitch()'),
-        'Expected renderViewSwitch() near the compact sticky header controls'
+        compactControlsSource.includes("shouldUseEpmSprint(epmTab) && renderSprintControl('compact')"),
+        'Expected compact EPM Active controls to keep the sprint selector'
     );
 });
 
@@ -203,13 +224,13 @@ test('dashboard source exposes EPM settings access in both header contexts', () 
     );
 });
 
-test('epm helper file exists and owns the Active only copy', () => {
+test('epm helper file exists without ambiguous Active-only helper copy', () => {
     assert.ok(fs.existsSync(helperPath), 'Expected frontend/src/epm/epmProjectUtils.mjs to exist');
     assert.ok(helperSource.includes('shouldUseEpmSprint'), 'Expected shouldUseEpmSprint in epmProjectUtils.mjs');
-    assert.ok(helperSource.includes('getEpmSprintHelper'), 'Expected getEpmSprintHelper in epmProjectUtils.mjs');
     assert.ok(helperSource.includes('buildRollupTree'), 'Expected buildRollupTree in epmProjectUtils.mjs');
-    assert.ok(helperSource.includes('Active only'), 'Expected Active only in epmProjectUtils.mjs');
-    assert.ok(dashboardSource.includes('getEpmSprintHelper'), 'Expected dashboard.jsx to reference getEpmSprintHelper');
+    assert.ok(!helperSource.includes('getEpmSprintHelper'), 'Did not expect extra EPM sprint helper copy');
+    assert.ok(!helperSource.includes('Active only'), 'Did not expect ambiguous Active only copy');
+    assert.ok(!dashboardSource.includes('getEpmSprintHelper'), 'Did not expect dashboard.jsx to render ambiguous Active only copy');
     assert.ok(dashboardSource.includes('shouldUseEpmSprint'), 'Expected dashboard.jsx to reference shouldUseEpmSprint');
     assert.ok(dashboardSource.includes('buildRollupTree'), 'Expected dashboard.jsx to reference buildRollupTree');
 });
@@ -243,11 +264,114 @@ test('ENG task fetching effects are unreachable in EPM view', () => {
 
 test('EPM board fetches rollup with tab and sprint params while preserving active sprint gating', () => {
     assert.ok(dashboardSource.includes('fetchEpmProjectRollup(BACKEND_URL, currentProjectId'), 'Expected EPM board to fetch the rollup endpoint through wrapper');
+    assert.ok(dashboardSource.includes('fetchEpmAllProjectsRollup(BACKEND_URL'), 'Expected EPM all-projects mode to fetch the aggregate rollup endpoint through wrapper');
     assert.ok(dashboardSource.includes('tab: epmTab'), 'Expected EPM rollup wrapper call to include current tab');
     assert.ok(dashboardSource.includes('sprint: selectedSprint'), 'Expected EPM rollup wrapper call to include selected sprint');
     assert.ok(epmFetchSource.includes("const params = new URLSearchParams({ tab: effectiveTab })"), 'Expected EPM rollup request to include tab parameter');
     assert.ok(epmFetchSource.includes("params.set('sprint', String(sprint))"), 'Expected EPM rollup request to include selected sprint');
+    assert.ok(epmFetchSource.includes('/api/epm/projects/rollup/all?${params.toString()}'), 'Expected aggregate EPM rollup request wrapper');
     assert.ok(dashboardSource.includes("epmTab === 'active' && !selectedSprint"), 'Expected active tab to require selectedSprint before rollup fetch');
+});
+
+test('EPM initial all-project load fetches rollup before background project metadata refresh', () => {
+    const functions = getConstFunctionBodies(dashboardSource);
+    const refreshEpmViewSource = functions.get('refreshEpmView') || '';
+    const refreshEpmRollupSource = functions.get('refreshEpmRollup') || '';
+    assert.ok(
+        refreshEpmRollupSource.includes('if (!hasSavedEpmScope) {'),
+        'Expected EPM rollup refresh to skip when saved EPM scope is not loaded'
+    );
+    assert.ok(
+        refreshEpmRollupSource.includes('if (epmProjectsPendingSelectionRef.current) {'),
+        'Expected EPM rollup refresh to wait while project metadata is loading'
+    );
+    assert.ok(
+        dashboardSource.includes('void refreshEpmView();'),
+        'Expected EPM view load effect to enter the combined refresh workflow'
+    );
+    assert.ok(
+        refreshEpmViewSource.includes("if (epmSelectedProjectId === '') {"),
+        'Expected explicit all-project branch in EPM view refresh'
+    );
+    assert.ok(
+        refreshEpmViewSource.includes("await refreshEpmRollup(null, '');"),
+        'Expected all-project branch to fetch rollup without waiting for the project picker list'
+    );
+    assert.ok(
+        refreshEpmViewSource.includes('void refreshEpmProjects({ background: true });'),
+        'Expected all-project branch to refresh Home project metadata in the background'
+    );
+    assert.ok(
+        dashboardSource.includes("if (epmSelectedProjectId === '') {\n                    void refreshEpmProjects({ background: true });"),
+        'Expected EPM bootstrap effect to refresh project metadata in the background for all-project mode'
+    );
+});
+
+test('EPM board bootstraps saved config from initial user config before loading projects', () => {
+    const functions = getConstFunctionBodies(dashboardSource);
+    const loadConfigSource = functions.get('loadConfig') || '';
+    const refreshEpmRollupSource = functions.get('refreshEpmRollup') || '';
+    const effects = getUseEffectBodies(dashboardSource);
+    const epmViewLoadEffect = effects.find(body => body.includes("if (selectedView !== 'epm') return;") && body.includes('void refreshEpmView();')) || '';
+
+    assert.ok(
+        dashboardSource.includes('const [epmConfigLoaded, setEpmConfigLoaded] = useState(false);'),
+        'Expected explicit EPM config loaded state'
+    );
+    assert.ok(
+        dashboardSource.includes('const applySavedEpmConfig = (config) => {'),
+        'Expected shared helper for applying saved EPM config'
+    );
+    assert.ok(
+        loadConfigSource.includes('applySavedEpmConfig(config.epm);'),
+        'Expected main user config load to hydrate saved EPM config'
+    );
+    assert.ok(
+        refreshEpmRollupSource.includes('if (!epmConfigLoaded) {'),
+        'Expected rollup refresh to wait for saved EPM config bootstrap'
+    );
+    assert.ok(
+        epmViewLoadEffect.includes('if (!epmConfigLoaded) return;'),
+        'Expected EPM view load effect to wait for saved EPM config bootstrap'
+    );
+    assert.ok(
+        dashboardSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId]);'),
+        'Expected EPM view load effect to rerun after config bootstrap'
+    );
+});
+
+test('EPM defaults to all projects and exposes sprint controls in Active', () => {
+    const pickerSnippet = getSnippetBetween(
+        dashboardSource,
+        'const renderEpmProjectPicker = () =>',
+        'const renderSprintControl ='
+    );
+    assert.ok(pickerSnippet.includes('<option value="">All projects</option>'), 'Expected blank EPM project selection to mean All projects');
+    assert.ok(!pickerSnippet.includes('Select project...'), 'Did not expect single-project placeholder copy');
+    assert.ok(dashboardSource.includes("epmSelectedProjectId === ''"), 'Expected explicit all-projects branch for blank EPM project selection');
+    assert.ok(dashboardSource.includes("shouldUseEpmSprint(epmTab) && renderSprintControl('main')"), 'Expected EPM Active main controls to render the sprint selector');
+    assert.ok(dashboardSource.includes("shouldUseEpmSprint(epmTab) && renderSprintControl('compact')"), 'Expected EPM Active compact controls to render the sprint selector');
+    assert.ok(
+        dashboardSource.includes("currentProject.matchState === 'metadata-only' && !currentProject.label"),
+        'Expected metadata-only shortcut to apply only when no label is present'
+    );
+    assert.ok(
+        dashboardSource.indexOf("epmTab === 'active' && !selectedSprint") <
+            dashboardSource.indexOf("currentProject.matchState === 'metadata-only' && !currentProject.label"),
+        'Expected sprint-required guard to run before metadata-only rendering'
+    );
+    assert.ok(
+        dashboardSource.includes('flattenEpmRollupBoardsForDependencies'),
+        'Expected EPM rollup issues to feed the dependency lookup task list'
+    );
+    assert.ok(
+        epmRollupPanelSource.includes('renderEpicBlock'),
+        'Expected EPM rollup panel to reuse the ENG Epic/Story task renderer'
+    );
+    assert.ok(
+        dashboardSource.includes("const shouldRenderIssueDependencies = (selectedView === 'eng' || selectedView === 'epm') && showDependencies"),
+        'Expected EPM to show the same dependency pills, strips, and focus details as ENG'
+    );
 });
 
 test('EPM project identity positions use project id only', () => {
@@ -293,12 +417,106 @@ test('EPM rollup renderer branches on metadata, empty, truncated, and tree state
 });
 
 test('EPM rollup renderer groups Initiative to Epic to Story and keeps orphans under Project', () => {
-    assert.ok(epmRollupPanelSource.includes('epmRollupTree.initiatives.map'), 'Expected initiatives to be rendered from rollup tree');
-    assert.ok(epmRollupTreeSource.includes('initiativeNode.epics.map'), 'Expected epics to be rendered under initiatives');
-    assert.ok(epmRollupTreeSource.includes('epicNode.stories.map'), 'Expected stories to be rendered under epics');
-    assert.ok(epmRollupTreeSource.includes('tree.rootEpics.map'), 'Expected root epics to render directly under Project');
-    assert.ok(epmRollupTreeSource.includes('tree.orphanStories.map'), 'Expected orphan stories to render directly under Project');
-    assert.ok(epmRollupTreeSource.includes('Project stories'), 'Expected orphan stories section under Project');
+    assert.ok(epmRollupPanelSource.includes('tree.initiatives.map'), 'Expected initiatives to be rendered from rollup tree');
+    assert.ok(epmRollupPanelSource.includes('initiativeNode.epics.map'), 'Expected epics to be rendered under initiatives');
+    assert.ok(epmRollupPanelSource.includes('renderEpicBlock(buildEpmEngEpicGroup(epicNode))'), 'Expected EPM epics to use ENG Epic/Story renderer');
+    assert.ok(epmRollupPanelSource.includes('tree.rootEpics.map'), 'Expected root epics to render directly under Project');
+    assert.ok(epmRollupPanelSource.includes('tree.orphanStories'), 'Expected orphan stories to render directly under Project');
+    assert.ok(epmRollupPanelSource.includes('Project stories'), 'Expected orphan stories section under Project');
+});
+
+test('EPM portfolio project header separates collapse control from metadata', () => {
+    const headerSource = getSnippetBetween(
+        epmRollupPanelSource,
+        'const renderPortfolioHeader = (project) => {',
+        'const buildDuplicateClusters = () => {'
+    );
+    const toggleStart = headerSource.indexOf('className="epm-project-board-toggle"');
+    const toggleEnd = headerSource.indexOf('</button>', toggleStart);
+    assert.notStrictEqual(toggleStart, -1, 'Expected a dedicated project board toggle button');
+    assert.notStrictEqual(toggleEnd, -1, 'Expected project board toggle button to close');
+    const toggleSource = headerSource.slice(toggleStart, toggleEnd);
+
+    assert.ok(headerSource.includes('className={`epm-project-board-header ${collapsed ? \'is-collapsed\' : \'\'}`}'), 'Expected project header wrapper');
+    assert.ok(headerSource.includes('className="epm-project-board-meta"'), 'Expected project metadata wrapper outside the toggle');
+    assert.ok(!toggleSource.includes('epm-project-board-link'), 'Project Home link must not be nested inside the toggle button');
+    assert.ok(!toggleSource.includes('epm-project-board-update'), 'Project update text must not be nested inside the toggle button');
+    assert.ok(!toggleSource.includes('<a'), 'Project toggle button must not contain nested anchors');
+    assert.ok(dashboardCssSource.includes('.epm-project-board-toggle'), 'Expected CSS for the dedicated project board toggle');
+    assert.ok(dashboardCssSource.includes('.epm-project-board-meta'), 'Expected CSS for bounded project board metadata');
+});
+
+test('EPM portfolio update line renders below the project header with relative date fallback', () => {
+    const headerSource = getSnippetBetween(
+        epmRollupPanelSource,
+        'const renderPortfolioHeader = (project) => {',
+        'const buildDuplicateClusters = () => {'
+    );
+    const headerCloseIndex = headerSource.indexOf('</div>');
+    const updateIndex = headerSource.indexOf('renderProjectUpdate(updateLine)');
+    assert.ok(epmRollupPanelSource.includes('className="epm-project-board-update"'), 'Expected visible project board update line');
+    assert.ok(updateIndex > headerCloseIndex, 'Project update line must render after the header wrapper');
+
+    const metaStart = headerSource.indexOf('className="epm-project-board-meta"');
+    const metaEnd = headerSource.indexOf('</div>', metaStart);
+    const metaSource = headerSource.slice(metaStart, metaEnd);
+    assert.ok(!metaSource.includes('epm-project-board-update'), 'Project update line must not live inside metadata');
+    assert.ok(epmRollupPanelSource.includes('buildEpmProjectUpdateLine(project)'), 'Expected board update line to use shared relative-date helper');
+    assert.ok(epmRollupPanelSource.includes('title={updateLine.title || undefined}'), 'Expected exact update date on hover');
+    assert.ok(helperSource.includes('export function buildEpmProjectUpdateLine'), 'Expected shared EPM project update line helper');
+});
+
+test('EPM portfolio update line preserves formatted Home update HTML safely', () => {
+    assert.ok(epmRollupPanelSource.includes('className="epm-project-board-update-row"'), 'Expected update row wrapper to separate bubble from date');
+    assert.ok(epmRollupPanelSource.includes('updateLine.messageHtml'), 'Expected update renderer to branch on formatted Home update HTML');
+    assert.ok(epmRollupPanelSource.includes('dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }}'), 'Expected formatted update HTML to be injected from sanitized server output');
+    const updateRendererSource = getSnippetBetween(
+        epmRollupPanelSource,
+        'const renderProjectUpdate = (updateLine) => {',
+        'const renderPortfolioHeader = (project) => {'
+    );
+    assert.ok(updateRendererSource.includes('epm-project-board-update-date'), 'Expected relative date label in the update bubble');
+    assert.ok(
+        updateRendererSource.indexOf('epm-project-board-update-date') < updateRendererSource.indexOf('epm-project-board-update-copy'),
+        'Expected relative date label to render above the update copy'
+    );
+    assert.ok(helperSource.includes('messageHtml'), 'Expected shared update helper to expose formatted update HTML');
+    assert.ok(helperSource.includes('message:'), 'Expected shared update helper to expose plain message without the date');
+});
+
+test('EPM project hover states document and enforce accessible contrast', () => {
+    assert.ok(
+        dashboardCssSource.includes('EPM hover contrast principle:'),
+        'Expected CSS to document the EPM hover contrast principle'
+    );
+    assert.ok(
+        dashboardCssSource.includes('--epm-project-radius: 8px;'),
+        'Expected EPM project rectangles to share one radius token'
+    );
+    assert.ok(
+        countOccurrences(dashboardCssSource, 'border-radius: var(--epm-project-radius);') >= 3,
+        'Expected EPM project rectangular surfaces to reuse the shared radius token'
+    );
+    assert.ok(
+        !dashboardCssSource.includes('border-radius: 18px 18px 18px 5px;'),
+        'Expected update bubble to avoid bespoke large/tail rounding'
+    );
+    assert.ok(
+        dashboardCssSource.includes('.epm-project-board-toggle:hover {'),
+        'Expected EPM project toggle to own its hover style instead of inheriting global button:hover'
+    );
+    assert.ok(
+        dashboardCssSource.includes('background: var(--epm-project-hover-surface);'),
+        'Expected EPM project toggle hover to use a light accent surface'
+    );
+    assert.ok(
+        dashboardCssSource.includes('transform: none;'),
+        'Expected EPM project toggle hover to reset the global button hover transform'
+    );
+    assert.ok(
+        dashboardCssSource.includes('box-shadow: 0 2px 8px rgba(7, 71, 166, 0.14);'),
+        'Expected EPM project toggle hover to use a visible but low-contrast-safe affordance'
+    );
 });
 
 test('EPM rollup helper dedupes by issue key before rendering', () => {
@@ -307,7 +525,16 @@ test('EPM rollup helper dedupes by issue key before rendering', () => {
     assert.ok(helperSource.includes('seenKeys.add(key)'), 'Expected rollup tree builder to remember rendered issue keys');
 });
 
-test('EPM project helper keeps custom all bucket visible on every tab', () => {
-    assert.ok(helperSource.includes("tabBucket === 'all'"), 'Expected tabBucket all wildcard in filterEpmProjectsForTab');
-    assert.ok(helperSource.includes('tabBucket === normalizedTab'), 'Expected lifecycle buckets to match only the current tab');
+test('EPM project helper uses strict backlog and archived lifecycle buckets', () => {
+    assert.ok(helperSource.includes("normalizedTab === 'active'"), 'Expected active tab to own custom all project visibility');
+    assert.ok(helperSource.includes("BACKLOG_EPM_PROJECT_STATES"), 'Expected backlog tab to be limited to paused/pending states');
+    assert.ok(helperSource.includes("ARCHIVED_EPM_PROJECT_STATES"), 'Expected archived tab to be limited to archived/completed states');
+    assert.ok(helperSource.includes('filterEpmRollupBoardsForSearch'), 'Expected EPM board search helper');
+});
+
+test('EPM archived portfolio boards lazy-load Jira rollups on expand', () => {
+    assert.ok(epmRollupPanelSource.includes("epmTab === 'archived'"), 'Expected archived boards to initialize collapsed');
+    assert.ok(epmRollupPanelSource.includes('onProjectExpand(project)'), 'Expected project expand callback in EpmRollupPanel.jsx');
+    assert.ok(dashboardSource.includes('loadArchivedEpmProjectRollup'), 'Expected archived lazy rollup loader in dashboard.jsx');
+    assert.ok(dashboardSource.includes('fetchEpmProjectRollup(BACKEND_URL, projectId'), 'Expected archived expand to fetch the per-project rollup');
 });

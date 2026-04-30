@@ -317,6 +317,15 @@
             height: 30px;
         }
 
+        .refresh-icon.is-loading svg {
+            animation: epm-refresh-spin 0.9s linear infinite;
+        }
+
+        @keyframes epm-refresh-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
         .search-clear {
             position: absolute;
             right: 0.35rem;
@@ -391,6 +400,71 @@
             transform: translateY(-50%);
         }
 
+
+        .segmented-control {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            height: var(--control-height);
+            margin-left: 0.4rem;
+            margin-top: 0.4rem;
+            margin-bottom: 0;
+            padding: 3px;
+            background: #ece9e1;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            align-self: flex-start;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+        }
+
+        .view-mode-control,
+        .epm-state-control {
+            margin-left: 0;
+        }
+
+        .segmented-control-button {
+            padding: 0 0.75rem;
+            font-size: 0.7rem;
+            font-family: 'IBM Plex Mono', monospace;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            background: transparent;
+            border: 0;
+            margin: 0;
+            color: var(--text-secondary);
+            height: 100%;
+            min-width: 2.8rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            box-shadow: none;
+            transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+        }
+
+        .segmented-control-button:hover {
+            background: rgba(255, 255, 255, 0.72);
+            color: var(--text-primary);
+            transform: none;
+            box-shadow: none;
+        }
+
+        .segmented-control-button.active {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            box-shadow: 0 1px 2px rgba(22, 22, 22, 0.18);
+        }
+
+        .segmented-control-button.active:hover {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            box-shadow: 0 1px 2px rgba(22, 22, 22, 0.18);
+        }
+
+        .segmented-control-button:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
 
         .mode-switch {
             display: inline-flex;
@@ -1238,6 +1312,92 @@
             gap: 0.85rem;
         }
 
+        .epm-settings-tabs {
+            flex-shrink: 0;
+        }
+
+        .epm-settings-tab-panel {
+            min-height: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+
+        .epm-projects-tab-panel {
+            min-height: 0;
+        }
+
+        .epm-projects-scroll-region {
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: visible;
+            flex: 1;
+            padding: 0.6rem 0.6rem 0.8rem;
+        }
+
+        .epm-projects-header-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .epm-prerequisite-panel,
+        .epm-project-load-error,
+        .epm-project-empty-state {
+            border: 1px solid var(--border);
+            background: #fff;
+            border-radius: 8px;
+            padding: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+        }
+
+        .epm-prerequisite-actions,
+        .epm-project-state-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .epm-project-skeleton-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .epm-project-skeleton-row {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: #fff;
+            padding: 0.75rem;
+            display: grid;
+            grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 1.4fr);
+            gap: 0.75rem;
+        }
+
+        .epm-project-skeleton-row span {
+            display: block;
+            height: 0.75rem;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(148,163,184,0.18), rgba(148,163,184,0.32), rgba(148,163,184,0.18));
+        }
+
+        .epm-label-menu-layer {
+            position: fixed;
+            z-index: 10000;
+            max-height: min(280px, calc(100vh - 24px));
+            overflow-y: auto;
+        }
+
+        .epm-project-row-warning {
+            color: #92400e;
+        }
+
         .mapping-preview-section {
             margin-bottom: 0.1rem;
             order: 99;
@@ -1998,6 +2158,7 @@
             color: var(--text-primary);
             cursor: pointer;
             transition: all 0.2s;
+            border-radius: 10px;
         }
 
         select:focus {
@@ -6765,4 +6926,413 @@
             font-size: 0.55rem;
             font-weight: bold;
             line-height: 1;
+        }
+
+        :root {
+            --epm-project-accent: #0747a6;
+            --epm-project-accent-surface: rgba(7, 71, 166, 0.08);
+            --epm-project-accent-soft: rgba(7, 71, 166, 0.32);
+            --epm-project-accent-fade: rgba(7, 71, 166, 0.08);
+            --epm-project-hover-surface: rgba(7, 71, 166, 0.12);
+            --epm-project-message-bg: #fff3e4;
+            --epm-project-message-text: #514338;
+            --epm-project-radius: 8px;
+        }
+
+        .epm-portfolio-board {
+            display: flex;
+            flex-direction: column;
+            gap: 1.4rem;
+        }
+
+        .epm-project-board {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            position: relative;
+        }
+
+        .epm-project-board::before {
+            content: '';
+            position: absolute;
+            left: 6px;
+            top: 18px;
+            bottom: 8px;
+            width: 2px;
+            border-radius: 999px;
+            background: linear-gradient(
+                to bottom,
+                var(--epm-project-accent) 0%,
+                var(--epm-project-accent) 78%,
+                var(--epm-project-accent-soft) 92%,
+                var(--epm-project-accent-fade) 100%
+            );
+        }
+
+        .epm-project-board.is-collapsed::before {
+            display: none;
+        }
+
+        .epm-project-board-header {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 4px 10px;
+            width: 100%;
+            margin: 0 0 4px;
+            min-width: 0;
+        }
+
+        .epm-project-board-toggle {
+            display: grid;
+            grid-template-columns: 14px 18px minmax(0, auto);
+            align-items: center;
+            column-gap: 10px;
+            min-width: 0;
+            max-width: 100%;
+            padding: 0;
+            background: transparent;
+            border: 0;
+            cursor: pointer;
+            text-align: left;
+            color: inherit;
+            font: inherit;
+            border-radius: var(--epm-project-radius);
+            transition: background-color 0.14s ease, box-shadow 0.14s ease, color 0.14s ease;
+        }
+
+        /* EPM hover contrast principle: use light accent surfaces with dark text so local hovers never inherit the global dark button hover. */
+        .epm-project-board-toggle:hover {
+            background: var(--epm-project-hover-surface);
+            color: var(--text-primary);
+            transform: none;
+            box-shadow: 0 2px 8px rgba(7, 71, 166, 0.14);
+        }
+
+        .epm-project-board-toggle:hover .epm-project-board-name,
+        .epm-project-board-toggle:focus-visible .epm-project-board-name {
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .epm-project-board-toggle:focus-visible {
+            outline: 2px solid var(--epm-project-accent);
+            outline-offset: 2px;
+            border-radius: var(--epm-project-radius);
+            background: var(--epm-project-hover-surface);
+            transform: none;
+            box-shadow: 0 2px 8px rgba(7, 71, 166, 0.14);
+        }
+
+        .epm-project-board-chevron {
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--epm-project-accent);
+            transition: transform 0.15s ease;
+            transform: rotate(90deg);
+        }
+
+        .epm-project-board.is-collapsed .epm-project-board-chevron {
+            transform: rotate(0deg);
+        }
+
+        .epm-project-board-icon {
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--epm-project-accent);
+        }
+
+        .epm-project-board-meta {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            flex: 1 1 360px;
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .epm-project-board-name {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.72rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--epm-project-accent);
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+            max-width: min(36rem, 100%);
+        }
+
+        .epm-project-board-label-pill {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            padding: 0.1rem 0.4rem;
+            border: 1px solid var(--epm-project-accent-soft);
+            background: var(--epm-project-accent-surface);
+            color: var(--epm-project-accent);
+            border-radius: 999px;
+            white-space: nowrap;
+            max-width: min(18rem, 40%);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 0 1 auto;
+        }
+
+        .epm-project-board-link {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            color: var(--epm-project-accent);
+            text-decoration: none;
+            white-space: nowrap;
+            flex: 0 0 auto;
+        }
+
+        .epm-project-board-link:hover {
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .epm-project-board-update-row {
+            display: block;
+            width: fit-content;
+            max-width: min(48rem, calc(100% - 42px));
+            margin: 0 0 18px 42px;
+        }
+
+        .epm-project-board-update {
+            position: relative;
+            min-width: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 0.72rem;
+            color: var(--text-primary);
+            white-space: normal;
+            overflow-wrap: anywhere;
+            display: block;
+            width: auto;
+            max-width: 100%;
+            margin: 0;
+            padding: 0.5rem 0.68rem 0.44rem;
+            text-align: left;
+            line-height: 1.35;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--epm-project-radius);
+            box-shadow: 0 4px 12px var(--shadow);
+        }
+
+        .epm-project-board-update-date {
+            position: absolute;
+            top: -0.38rem;
+            left: 0.75rem;
+            z-index: 1;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.5rem;
+            font-weight: 500;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            background: var(--bg-primary);
+            white-space: nowrap;
+            line-height: 1;
+            padding: 0 0.3rem;
+        }
+
+        .epm-project-board-update-copy {
+            min-width: 0;
+        }
+
+        .epm-project-board-update-copy p {
+            margin: 0;
+        }
+
+        .epm-project-board-update-copy p + p {
+            margin-top: 0.16rem;
+        }
+
+        .epm-project-board-update-copy ul,
+        .epm-project-board-update-copy ol {
+            margin: 0.2rem 0 0.2rem 1.1rem;
+            padding-left: 1.1rem;
+        }
+
+        .epm-project-board-update-copy li + li {
+            margin-top: 0.06rem;
+        }
+
+        .epm-project-board-update-copy a {
+            color: var(--epm-project-accent);
+            font-weight: 600;
+            text-decoration: underline;
+            text-decoration-color: rgba(7, 71, 166, 0.35);
+            text-underline-offset: 2px;
+        }
+
+        .epm-project-board-update-copy strong {
+            font-weight: 700;
+        }
+
+        .epm-project-board-update-copy em {
+            font-style: italic;
+        }
+
+        .epm-project-board-body {
+            position: relative;
+            padding-left: 28px;
+            padding-bottom: 10px;
+        }
+
+        .epm-project-board.is-collapsed .epm-project-board-body {
+            display: none;
+        }
+
+        .epm-duplicates-callout {
+            border: 1px solid #f4c98a;
+            background: #fff8e6;
+            border-radius: 10px;
+            padding: 0.75rem 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+
+        .epm-duplicates-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .epm-duplicates-heading-text {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #8a5a00;
+            font-weight: 600;
+        }
+
+        .epm-duplicates-fix-button {
+            white-space: nowrap;
+        }
+
+        .epm-duplicates-explanation {
+            margin: 0;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        .epm-duplicates-rows {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .epm-duplicates-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding-top: 0.5rem;
+            border-top: 1px dashed rgba(138, 90, 0, 0.25);
+        }
+
+        .epm-duplicates-row:first-child {
+            padding-top: 0;
+            border-top: 0;
+        }
+
+        .epm-duplicates-projects {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .epm-duplicates-project-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.2rem 0.5rem;
+            border: 1px solid var(--border);
+            background: #fff;
+            border-radius: 6px;
+            min-width: 0;
+        }
+
+        .epm-duplicates-project-name {
+            font-size: 0.7rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .epm-duplicates-project-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.58rem;
+            color: var(--text-secondary);
+            background: var(--epm-project-accent-surface);
+            border: 1px solid var(--epm-project-accent-soft);
+            color: var(--epm-project-accent);
+            padding: 0.05rem 0.35rem;
+            border-radius: 999px;
+            white-space: nowrap;
+        }
+
+        .epm-duplicates-issues {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        .epm-duplicates-issues > summary {
+            cursor: pointer;
+            white-space: nowrap;
+            list-style: none;
+        }
+
+        .epm-duplicates-issues > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .epm-duplicates-issues > summary::before {
+            content: '▸ ';
+            display: inline-block;
+            transition: transform 0.15s ease;
+            transform-origin: 0.25em 50%;
+        }
+
+        .epm-duplicates-issues[open] > summary::before {
+            transform: rotate(90deg);
+        }
+
+        .epm-duplicates-issues ul {
+            margin: 0.4rem 0 0;
+            padding-left: 1rem;
+            list-style: none;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem 0.6rem;
+        }
+
+        .epm-duplicates-issues li {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+        }
+
+        .epm-duplicates-issues a {
+            color: var(--epm-project-accent);
+            text-decoration: none;
+        }
+
+        .epm-duplicates-issues a:hover {
+            text-decoration: underline;
+            text-underline-offset: 2px;
         }

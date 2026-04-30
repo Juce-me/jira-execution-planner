@@ -193,7 +193,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Jira API pagination uses `nextPageToken` / `isLast`, not `startAt` / `total`. Verify response shapes before coding against them.
 - Any new API plan in `docs/plans/` must use the same Jira pagination contract.
 - EPM Project rollups are label-driven; each Project has one exact Jira label. No wildcard/fallback. Metadata-only Home projects still render the Home card plus `Settings -> EPM` CTA.
-- `epm.labelPrefix` in `dashboard-config.json` controls the label autocomplete filter in the EPM settings canvas. Default is `"rnd_project_"`. The full matched label is what the rollup query uses; the prefix is only a UI filter.
+- `epm.labelPrefix` in `dashboard-config.json` is a Home tag mask such as `"rnd_project_*"` and also filters manual Jira-label autocomplete. Resolve each Home Project's exact matching tag as the Jira label; rollup JQL uses that full label, never the mask.
 - Initial dashboard load is performance-critical. Avoid redundant requests, justify heavy endpoints, and measure before/after when claiming improvements.
 - For analytics-style views, prefer one scoped fetch plus client-side regrouping/filtering. Re-fetch only when scope changes or the user explicitly refreshes.
 - If per-issue Jira enrichment is required, define strict fan-out limits before implementation.
@@ -221,8 +221,24 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 
 - Keep auth-mode changes isolated from `frontend/src/dashboard.jsx` unless the user explicitly approves a dashboard UI change.
+- Keep progress updates compact: state the action directly instead of explaining routine tool choices.
 - In settings UIs, when a value is already selected or the option set is small, default to a compact selected-state control and reveal search only on explicit change; do not leave persistent search inputs visible by default.
+- In EPM settings project lists, sort only by table data columns; keep Home as a subtle icon beside the project name, never as a sort option or primary row action.
+- Load saved EPM config with the initial user config bootstrap; never make the EPM board depend on opening Settings to populate saved scope/projects.
 - For any scoped view, show the active scope value in that same view; do not treat request parameters or hidden React state as a substitute for visible controls.
+- In EPM settings, never clear the saved sub-goal on modal open or project loading; the child goal drives cached project configuration, and EPM rollups use configured project labels plus selected sprint, not Jira teams.
+- In EPM, `labelPrefix` is a Home tag mask such as `rnd_project_*`; resolve each Home project's exact matching tag as its Jira label, then use the selected sprint only when fetching/filtering leaf stories, not when discovering labeled Initiatives/Epics.
+- Atlassian Home tag fetchers return normalized string tag lists; preserve those strings when building EPM project records instead of passing them through raw GraphQL shape extractors.
+- For EPM Goal 2/3 planning, treat the Active sprint selector as already present; plan to wire selectedSprint into rollups and guard render priority, not rebuild the control.
+- EPM Active rollups must fetch selected-sprint Stories under each labeled Epic and render them with the ENG Epic/Story/dependency structure.
+- EPM project board headers must keep the collapse button separate from links, label pills, and long update text; never nest anchors or metadata inside the toggle.
+- EPM Active visibility must be validated from Home project lifecycle labels as well as enum values, and Home project pagination caps must exceed current scoped Home goal sizes.
+- EPM cold loads must warm project metadata before all-project rollups, and aggregate EPM endpoints must expose `Server-Timing` before performance tuning.
+- In EPM settings Projects, keep rows compact: project name plus Home status on one line, no Home update snippets, and Jira label search hidden behind explicit Choose/Change actions.
+- In EPM settings Projects, blank custom rows, including legacy rows with missing Home linkage, are draft-only: show an explicit delete action and drop fully empty rows before saving.
+- In EPM settings Projects, put project name, Home status, Home link, and Jira label in stable cells so variable statuses do not distort the row.
+- In EPM settings Projects, use table-style header sorting and compact icon actions in cells; avoid bulky text sort/change controls in headers or label chips.
+- For UI screenshots, wait for CSS animations/transitions to settle or disable them before capturing visual proof.
 
 ---
 

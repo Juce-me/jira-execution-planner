@@ -22,14 +22,17 @@ test('dashboard source includes the EPM shell project picker and ENG gating hook
     assert.ok(helperSource.includes("String(tab || 'active')"), 'Expected active tab defaulting in epmProjectUtils.mjs');
     assert.ok(dashboardSource.includes('const selectedEpmProject = visibleEpmProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;'), 'Expected selectedEpmProject derivation in dashboard.jsx');
     assert.ok(
-        countOccurrences(dashboardSource + epmRollupPanelSource, 'getEpmProjectDisplayName(selectedEpmProject)') >= 2,
-        'Expected selected project display name helper across dashboard.jsx and EpmRollupPanel.jsx'
+        countOccurrences(dashboardSource + epmRollupPanelSource, 'getEpmProjectDisplayName(') >= 4,
+        'Expected EPM project display name helper across focus and all-project render paths'
     );
     assert.ok(dashboardSource.includes('getEpmProjectDisplayName(project)'), 'Expected project picker display name helper in dashboard.jsx');
     assert.ok(dashboardSource.includes("setEpmSelectedProjectId('')"), 'Expected invalid EPM selection clearing in dashboard.jsx');
     assert.ok(dashboardSource.includes('epmSelectedProjectId'), 'Expected epmSelectedProjectId in dashboard.jsx');
     assert.ok(dashboardSource.includes('setEpmSelectedProjectId'), 'Expected setEpmSelectedProjectId in dashboard.jsx');
-    assert.ok(dashboardSource.includes("selectedView === 'eng' && showDependencies"), 'Expected ENG-only dependency gating in dashboard.jsx');
+    assert.ok(
+        dashboardSource.includes("const shouldRenderIssueDependencies = (selectedView === 'eng' || selectedView === 'epm') && showDependencies"),
+        'Expected ENG and EPM dependency rendering in dashboard.jsx'
+    );
     assert.ok(dashboardSource.includes("selectedView === 'eng' && showPlanning"), 'Expected ENG-only planning gating in dashboard.jsx');
     assert.ok(dashboardSource.includes("selectedView === 'eng' && showStats"), 'Expected ENG-only stats gating in dashboard.jsx');
     assert.ok(dashboardSource.includes("selectedView === 'eng' && showScenario"), 'Expected ENG-only scenario gating in dashboard.jsx');
@@ -39,6 +42,10 @@ test('dashboard source wires EPM rollup loading and metadata-only rendering', ()
     assert.ok(dashboardSource.includes("if (selectedView !== 'epm') return;"), 'Expected EPM-only project loading effect');
     assert.ok(dashboardSource.includes('const loadEpmProjects = () => fetchEpmProjects(BACKEND_URL);'), 'Expected dashboard.jsx to load EPM projects through wrapper');
     assert.ok(epmFetchSource.includes("fetch(`${backendUrl}/api/epm/projects`, { cache: 'no-cache' })"), 'Expected EPM projects fetch in epmFetch.js');
+    assert.ok(epmFetchSource.includes('export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {}) {'), 'Expected EPM configuration project loader');
+    assert.ok(epmFetchSource.includes('const refreshParam = forceRefresh ? \'?refresh=true\' : \'\';'), 'Expected project configuration refresh query support');
+    assert.ok(epmFetchSource.includes('fetch(`${backendUrl}/api/epm/projects/configuration${refreshParam}`'), 'Expected configuration fetch endpoint');
+    assert.ok(!epmFetchSource.includes('/api/epm/projects/preview'), 'EPM settings must not call preview endpoint');
     assert.ok(dashboardSource.includes("if (epmTab === 'active' && !selectedSprint) {"), 'Expected Active EPM sprint guard in dashboard.jsx');
     assert.ok(dashboardSource.includes('setEpmRollupTree(null);'), 'Expected Active EPM sprint guard to clear rollup tree');
     assert.ok(dashboardSource.includes('setEpmRollupLoading(false);'), 'Expected Active EPM sprint guard to stop rollup loading');

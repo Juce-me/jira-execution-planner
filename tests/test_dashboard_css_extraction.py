@@ -72,6 +72,54 @@ class TestDashboardCssFileContract(unittest.TestCase):
         self.assertIn('--epic-sticky-top', css)
         self.assertIn('--scenario-sticky-top', css)
 
+    def test_epm_settings_projects_layout_contract(self):
+        css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'dist' / 'dashboard.css'
+        css = css_path.read_text(encoding='utf-8')
+        self.assertIn('.epm-settings-tab-panel', css)
+        self.assertIn('.epm-projects-tab-panel', css)
+        self.assertIn('.epm-projects-scroll-region', css)
+        self.assertIn('min-height: 0;', css)
+        self.assertIn('overflow-y: auto;', css)
+        self.assertIn('.epm-projects-header-actions', css)
+        self.assertIn('.epm-prerequisite-panel', css)
+        self.assertIn('.epm-project-skeleton-row', css)
+        self.assertIn('.epm-project-load-error', css)
+        self.assertIn('.epm-project-row-warning', css)
+        self.assertIn('.epm-label-menu-layer', css)
+
+    def test_epm_segmented_controls_and_update_lists_contract(self):
+        css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'dist' / 'dashboard.css'
+        css = css_path.read_text(encoding='utf-8')
+        self.assertIn('.segmented-control', css)
+        self.assertIn('.segmented-control-button', css)
+        self.assertIn('.segmented-control-button.active', css)
+        self.assertIn('.epm-state-control', css)
+        self.assertIn('.epm-project-board-update-copy ul,', css)
+        self.assertIn('.epm-project-board-update-copy ol', css)
+        self.assertIn('padding-left: 1.1rem;', css)
+
+    def test_select_controls_share_rounded_control_shape(self):
+        css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'dist' / 'dashboard.css'
+        css = css_path.read_text(encoding='utf-8')
+        select_start = css.index('        select {')
+        select_end = css.index('        select:focus', select_start)
+        select_block = css[select_start:select_end]
+        self.assertIn('border-radius: 10px;', select_block)
+
+    def test_epm_project_board_timeline_and_update_bubble_contract(self):
+        css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'dist' / 'dashboard.css'
+        css = css_path.read_text(encoding='utf-8')
+        self.assertIn('.epm-project-board::before', css)
+        self.assertIn('.epm-project-board.is-collapsed::before', css)
+        self.assertNotIn('.epm-project-board-body::before', css)
+        update_start = css.index('        .epm-project-board-update {')
+        update_end = css.index('        .epm-project-board-update-date', update_start)
+        update_block = css[update_start:update_end]
+        self.assertIn('background-color: var(--bg-secondary);', update_block)
+        self.assertIn('border: 1px solid var(--border);', update_block)
+        self.assertNotIn('background-image:', update_block)
+        self.assertNotIn('rgba(190, 128, 71', update_block)
+
 
 if __name__ == '__main__':
     unittest.main()

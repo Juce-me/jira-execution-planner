@@ -13,7 +13,7 @@ test('epic alert team headers link their epic counts to Jira', () => {
         /backlogEpicTeams\.map\(group => \{\s+const keys = group\.items\.map\(item => item\.key\);\s+const teamLink = buildKeyListLink\(keys\);[\s\S]*?className="alert-team-link"/,
         /missingTeamEpicTeams\.map\(group => \{\s+const keys = group\.items\.map\(item => item\.key\);\s+const teamLink = buildKeyListLink\(keys\);[\s\S]*?className="alert-team-link"/,
         /missingLabelEpicTeams\.map\(group => \{\s+const keys = group\.items\.map\(item => item\.key\);\s+const teamLink = buildKeyListLink\(keys\);[\s\S]*?className="alert-team-link"/,
-        /createStoriesEpicTeams\.map\(group => \{\s+const keys = group\.items\.map\(item => item\.key\);\s+const teamLink = buildKeyListLink\(keys\);[\s\S]*?className="alert-team-link"/
+        /needsStoriesTeams\.map\(group => \{\s+const keys = group\.items\.map\(item => item\.epic\.key\);\s+const teamLink = buildKeyListLink\(keys\);[\s\S]*?className="alert-team-link"/
     ];
 
     expectedBlocks.forEach((pattern) => {

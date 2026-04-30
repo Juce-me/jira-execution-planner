@@ -1,3 +1,4 @@
+import json
 import unittest
 import threading
 import time
@@ -12,9 +13,11 @@ from epm_home import (
     bucket_epm_state,
     build_home_project_record,
     extract_latest_update,
+    extract_tag_names,
     fetch_epm_home_projects,
     fetch_home_site_cloud_id,
     fetch_latest_project_update,
+    fetch_project_tags,
     fetch_projects_for_goal,
     fetch_sub_goals_for_root_key,
     resolve_goal_by_key,
@@ -34,6 +37,10 @@ class TestEpmHomeApi(unittest.TestCase):
     def test_bucket_completed_as_archived(self):
         self.assertEqual(bucket_epm_state('COMPLETED'), 'archived')
 
+    def test_bucket_on_track_label_as_active(self):
+        self.assertEqual(bucket_epm_state('On track'), 'active')
+        self.assertEqual(bucket_epm_state('ON TRACK'), 'active')
+
     def test_extract_latest_update_prefers_newest_creation_date(self):
         latest = extract_latest_update([
             {'creationDate': '2026-04-01T08:00:00.000Z', 'summary': 'Older update'},
@@ -41,6 +48,40 @@ class TestEpmHomeApi(unittest.TestCase):
         ])
         self.assertEqual(latest['date'], '2026-04-09')
         self.assertEqual(latest['snippet'], 'Latest update')
+
+    def test_extract_latest_update_preserves_adf_formatting_as_safe_html(self):
+        latest = extract_latest_update([
+            {
+                'creationDate': '2026-04-09T12:00:00.000Z',
+                'summary': json.dumps({
+                    'version': 1,
+                    'type': 'doc',
+                    'content': [
+                        {
+                            'type': 'paragraph',
+                            'content': [
+                                {'type': 'text', 'text': 'Bold', 'marks': [{'type': 'strong'}]},
+                                {'type': 'text', 'text': ' and '},
+                                {'type': 'text', 'text': 'italic', 'marks': [{'type': 'em'}]},
+                                {'type': 'text', 'text': ' '},
+                                {
+                                    'type': 'text',
+                                    'text': 'link',
+                                    'marks': [{'type': 'link', 'attrs': {'href': 'https://example.test/update'}}],
+                                },
+                            ],
+                        },
+                        {'type': 'paragraph', 'content': [{'type': 'text', 'text': 'Second paragraph'}]},
+                    ],
+                }),
+            }
+        ])
+
+        self.assertEqual(latest['snippet'], 'Bold and italic link Second paragraph')
+        self.assertEqual(
+            latest['html'],
+            '<p><strong>Bold</strong> and <em>italic</em> <a href="https://example.test/update" target="_blank" rel="noopener noreferrer">link</a></p><p>Second paragraph</p>',
+        )
 
     def test_resolve_goal_by_key_matches_goal_key_case_insensitively(self):
         client = HomeGraphQLClient('user@example.com', 'token')
@@ -77,6 +118,139 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual(project['matchState'], 'metadata-only')
         self.assertEqual(project['latestUpdateDate'], '2026-04-12')
         self.assertEqual(project['latestUpdateSnippet'], 'Awaiting budget approval')
+
+    def test_build_home_project_record_keeps_string_home_tags_from_fetcher(self):
+        project = build_home_project_record(
+            {
+                'id': 'CRITE-723',
+                'name': 'Enriched Deals Redesign',
+                'url': 'https://home.atlassian.com/project/CRITE-723',
+                'stateValue': 'PENDING',
+                'stateLabel': 'Pending',
+            },
+            [],
+            {},
+            home_tags=['rnd_project_bsw_enriched_deals_redesign'],
+        )
+
+        self.assertEqual(project['homeTags'], ['rnd_project_bsw_enriched_deals_redesign'])
+
+    def test_extract_tag_names_normalizes_direct_and_cypher_tag_shapes(self):
+        tags = extract_tag_names([
+            {'name': ' rnd_project_alpha '},
+            {'node': {'name': 'rnd_project_beta'}},
+            {'data': {'name': 'rnd_project_gamma'}},
+            {'data': {'__typename': 'AtlassianHomeTag', 'name': 'rnd_project_delta'}},
+            {'name': 'rnd_project_alpha'},
+            {'name': ''},
+            'ignored',
+        ])
+
+        self.assertEqual(tags, [
+            'rnd_project_alpha',
+            'rnd_project_beta',
+            'rnd_project_gamma',
+            'rnd_project_delta',
+        ])
+
+    def test_fetch_project_tags_reads_direct_home_project_tags(self):
+        client = Mock()
+        client.execute.return_value = {
+            'data': {
+                'projects_byId': {
+                    'tags': {
+                        'edges': [
+                            {'node': {'name': 'rnd_project_alpha'}},
+                            {'node': {'name': 'epm'}},
+                        ],
+                    },
+                },
+            },
+        }
+
+        result = fetch_project_tags(client, {'id': 'proj-1'})
+
+        self.assertEqual(result, ['rnd_project_alpha', 'epm'])
+        client.execute.assert_called_once_with(epm_home.QUERY_PROJECT_TAGS, {'projectId': 'proj-1'})
+
+    @patch('epm_home.fetch_home_site_cloud_id', return_value='cloud-123')
+    @patch('epm_home.build_teamwork_graph_client')
+    def test_fetch_project_tags_falls_back_to_teamwork_graph_when_direct_tags_are_empty(self, mock_build_twg_client, mock_cloud_id):
+        home_client = Mock()
+        home_client.execute.return_value = {
+            'data': {
+                'projects_byId': {
+                    'tags': {
+                        'edges': [],
+                    },
+                },
+            },
+        }
+        twg_client = Mock()
+        twg_client.execute.return_value = {
+            'data': {
+                'cypherQuery': {
+                    'edges': [
+                        {
+                            'node': {
+                                'columns': [
+                                    {
+                                        'value': {
+                                            'nodes': [
+                                                {'data': {'__typename': 'AtlassianHomeTag', 'name': 'rnd_project_pubcid_lastimp'}},
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            },
+        }
+        mock_build_twg_client.return_value = twg_client
+
+        result = fetch_project_tags(home_client, {'id': 'proj-1', 'url': 'https://home/project/proj-1'})
+
+        self.assertEqual(result, ['rnd_project_pubcid_lastimp'])
+        mock_cloud_id.assert_called_once_with()
+        mock_build_twg_client.assert_called_once_with()
+
+    @patch('epm_home.fetch_home_site_cloud_id', return_value='cloud-123')
+    @patch('epm_home.build_teamwork_graph_client')
+    def test_fetch_project_tags_falls_back_to_teamwork_graph_relationship(self, mock_build_twg_client, mock_cloud_id):
+        home_client = Mock()
+        home_client.execute.side_effect = epm_home.HomeGraphQLError('unknown field tags')
+        twg_client = Mock()
+        twg_client.execute.return_value = {
+            'data': {
+                'cypherQuery': {
+                    'edges': [
+                        {
+                            'node': {
+                                'columns': [
+                                    {
+                                        'value': {
+                                            'nodes': [
+                                                {'data': {'__typename': 'AtlassianHomeTag', 'name': 'rnd_project_alpha'}},
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            },
+        }
+        mock_build_twg_client.return_value = twg_client
+
+        result = fetch_project_tags(home_client, {'id': 'proj-1', 'url': 'https://home/project/proj-1'})
+
+        self.assertEqual(result, ['rnd_project_alpha'])
+        mock_cloud_id.assert_called_once_with()
+        mock_build_twg_client.assert_called_once_with()
+        self.assertIn('atlassian_project_has_atlassian_home_tag', twg_client.execute.call_args.args[1]['cypherQuery'])
 
     def test_fetch_epm_home_projects_requires_scope_argument(self):
         with self.assertRaises(TypeError):
@@ -324,7 +498,8 @@ class TestEpmHomeApi(unittest.TestCase):
         client.execute.side_effect = execute
         mock_fetch_update.return_value = []
 
-        result = fetch_projects_for_goal(client, 'goal-1')
+        with patch('epm_home.fetch_project_tags', return_value=[]):
+            result = fetch_projects_for_goal(client, 'goal-1')
 
         self.assertEqual([row['homeProjectId'] for row in result], ['proj-slow', 'proj-fast', 'proj-medium'])
 
@@ -377,7 +552,10 @@ class TestEpmHomeApi(unittest.TestCase):
                 release_updates.set()
             return [{'creationDate': '2026-04-12T10:00:00.000Z', 'summary': f'Update {project_id}'}]
 
-        with patch('epm_home.fetch_latest_project_update', side_effect=fetch_update) as mock_fetch_update:
+        with patch('epm_home.fetch_latest_project_update', side_effect=fetch_update) as mock_fetch_update, patch(
+            'epm_home.fetch_project_tags',
+            return_value=[],
+        ):
             result = fetch_epm_home_projects({'subGoalKey': 'child-200'})
 
         self.assertEqual(mock_fetch_update.call_count, 2)
@@ -411,7 +589,47 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual(result[0]['homeProjectId'], 'proj-enriched')
 
     @patch('epm_home.logger.warning')
-    def test_fetch_goal_project_links_caps_at_200_without_fetching_extra_page(self, mock_warning):
+    def test_fetch_goal_project_links_reads_more_than_200_projects(self, mock_warning):
+        client = Mock()
+
+        def page(cursor, start, has_next=True):
+            return {
+                'data': {
+                    'goals_byId': {
+                        'projects': {
+                            'pageInfo': {'hasNextPage': has_next, 'endCursor': cursor},
+                            'edges': [{'node': {'id': f'proj-{index}'}} for index in range(start, start + 50)],
+                        }
+                    }
+                }
+            }
+
+        client.execute.side_effect = [
+            page('cursor-1', 0),
+            page('cursor-2', 50),
+            page('cursor-3', 100),
+            page('cursor-4', 150),
+            page('cursor-5', 200, has_next=False),
+        ]
+
+        result = epm_home.fetch_goal_project_links(client, 'goal-1')
+
+        self.assertEqual(len(result), 250)
+        self.assertEqual(result[0]['id'], 'proj-0')
+        self.assertEqual(result[-1]['id'], 'proj-249')
+        self.assertEqual(client.execute.call_count, 5)
+        for call_index, call in enumerate(client.execute.call_args_list):
+            variables = call.args[1]
+            self.assertEqual(variables['first'], 50)
+            self.assertEqual(variables['goalId'], 'goal-1')
+            if call_index == 0:
+                self.assertIsNone(variables['after'])
+            else:
+                self.assertEqual(variables['after'], f'cursor-{call_index}')
+        mock_warning.assert_not_called()
+
+    @patch('epm_home.logger.warning')
+    def test_fetch_goal_project_links_caps_large_goal_fetches(self, mock_warning):
         client = Mock()
 
         def page(cursor, start):
@@ -427,27 +645,15 @@ class TestEpmHomeApi(unittest.TestCase):
             }
 
         client.execute.side_effect = [
-            page('cursor-1', 0),
-            page('cursor-2', 50),
-            page('cursor-3', 100),
-            page('cursor-4', 150),
-            page('cursor-5', 200),
+            page(f'cursor-{page_index + 1}', page_index * 50)
+            for page_index in range(11)
         ]
 
         result = epm_home.fetch_goal_project_links(client, 'goal-1')
 
-        self.assertEqual(len(result), 200)
-        self.assertEqual(result[0]['id'], 'proj-0')
-        self.assertEqual(result[-1]['id'], 'proj-199')
-        self.assertEqual(client.execute.call_count, 4)
-        for call_index, call in enumerate(client.execute.call_args_list):
-            variables = call.args[1]
-            self.assertEqual(variables['first'], 50)
-            self.assertEqual(variables['goalId'], 'goal-1')
-            if call_index == 0:
-                self.assertIsNone(variables['after'])
-            else:
-                self.assertEqual(variables['after'], f'cursor-{call_index}')
+        self.assertEqual(len(result), 500)
+        self.assertEqual(result[-1]['id'], 'proj-499')
+        self.assertEqual(client.execute.call_count, 10)
         mock_warning.assert_called_once()
         self.assertIn('truncated', mock_warning.call_args.args[0])
 

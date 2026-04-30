@@ -78,7 +78,7 @@ test.describe('PRODUCT-33712: Focus mode position stability', () => {
         await page.addInitScript(getDateFreezeScript(TODAY));
 
         // Mock the scenario API endpoint
-        await page.route('**/api/scenario', async (route) => {
+        await page.route('**\/api\/scenario', async (route) => {
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
@@ -138,7 +138,7 @@ test.describe('PRODUCT-33712: Focus mode position stability', () => {
         await page.addInitScript(getDateFreezeScript(TODAY));
 
         // Mock the scenario API endpoint
-        await page.route('**/api/scenario', async (route) => {
+        await page.route('**\/api\/scenario', async (route) => {
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
@@ -185,7 +185,7 @@ test.describe('PRODUCT-33712: Focus mode position stability', () => {
         await page.addInitScript(getDateFreezeScript(TODAY));
 
         // Mock the scenario API endpoint
-        await page.route('**/api/scenario', async (route) => {
+        await page.route('**\/api\/scenario', async (route) => {
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',

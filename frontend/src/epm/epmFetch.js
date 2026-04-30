@@ -22,12 +22,16 @@ export const fetchEpmGoals = (backendUrl, rootGoalKey = '') => {
 export const fetchEpmProjects = (backendUrl) =>
     fetch(`${backendUrl}/api/epm/projects`, { cache: 'no-cache' }).then(response => json(response, 'EPM projects'));
 
-export const previewEpmProjects = (backendUrl, payload) =>
-    fetch(`${backendUrl}/api/epm/projects/preview`, {
+export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {}) {
+    const forceRefresh = Boolean(options.forceRefresh);
+    const refreshParam = forceRefresh ? '?refresh=true' : '';
+    return fetch(`${backendUrl}/api/epm/projects/configuration${refreshParam}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-    }).then(response => json(response, 'EPM preview'));
+        body: JSON.stringify(draftConfig || {}),
+        cache: 'no-cache'
+    }).then(response => json(response, 'EPM project configuration'));
+}
 
 export const fetchEpmProjectRollup = (backendUrl, projectId, { tab, sprint } = {}) => {
     const effectiveTab = tab || 'active';
@@ -37,4 +41,14 @@ export const fetchEpmProjectRollup = (backendUrl, projectId, { tab, sprint } = {
     }
     return fetch(`${backendUrl}/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}`, { cache: 'no-cache' })
         .then(response => json(response, 'EPM rollup'));
+};
+
+export const fetchEpmAllProjectsRollup = (backendUrl, { tab, sprint } = {}) => {
+    const effectiveTab = tab || 'active';
+    const params = new URLSearchParams({ tab: effectiveTab });
+    if (effectiveTab === 'active' && sprint) {
+        params.set('sprint', String(sprint));
+    }
+    return fetch(`${backendUrl}/api/epm/projects/rollup/all?${params.toString()}`, { cache: 'no-cache' })
+        .then(response => json(response, 'EPM all-projects rollup'));
 };

@@ -4,10 +4,10 @@ from unittest.mock import Mock, patch
 import jira_server
 
 
-def make_issue(key, issue_type='Story', summary=None, parent_key='', labels=None, sprint=None, epic_link=''):
+def make_issue(key, issue_type='Story', summary=None, parent_key='', labels=None, sprint=None, epic_link='', status='To Do'):
     fields = {
         'summary': summary or key,
-        'status': {'name': 'In Progress'},
+        'status': {'name': status},
         'assignee': {'displayName': 'Alex'},
         'issuetype': {'name': issue_type},
         'labels': list(labels or []),
@@ -192,22 +192,371 @@ class TestEpmRollupApi(unittest.TestCase):
             self.assertEqual(self.client.get('/api/epm/projects/project-1/rollup?tab=backlog').status_code, 200)
             self.assertEqual(self.client.get('/api/epm/projects/project-1/rollup?tab=archived').status_code, 200)
 
-    def test_active_sprint_filter_is_appended_to_every_query_and_sprint_reaches_response(self):
+    def test_all_projects_rollup_preserves_active_sprint_validation(self):
+        with patch.object(jira_server, 'build_epm_projects_payload') as mock_projects:
+            missing = self.client.get('/api/epm/projects/rollup/all?tab=active')
+            non_numeric = self.client.get('/api/epm/projects/rollup/all?tab=active&sprint=abc')
+
+        self.assertEqual(missing.status_code, 400)
+        self.assertEqual(missing.get_json(), {'error': 'sprint_required'})
+        self.assertEqual(non_numeric.status_code, 400)
+        self.assertEqual(non_numeric.get_json(), {'error': 'sprint_not_numeric'})
+        mock_projects.assert_not_called()
+
+    def test_all_projects_rollup_filters_visible_projects_and_reports_duplicates(self):
+        projects = [
+            {
+                'id': 'active-one',
+                'displayName': 'Active One',
+                'label': 'synthetic_one',
+                'resolvedLinkage': {'labels': ['synthetic_one'], 'epicKeys': []},
+                'matchState': 'home-linked',
+                'tabBucket': 'active',
+            },
+            {
+                'id': 'backlog-one',
+                'displayName': 'Backlog One',
+                'label': 'synthetic_backlog',
+                'resolvedLinkage': {'labels': ['synthetic_backlog'], 'epicKeys': []},
+                'matchState': 'home-linked',
+                'tabBucket': 'backlog',
+            },
+            {
+                'id': 'metadata-one',
+                'displayName': 'Metadata One',
+                'label': '',
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+                'matchState': 'metadata-only',
+                'tabBucket': 'active',
+            },
+            {
+                'id': 'custom-all',
+                'displayName': 'Custom All',
+                'label': 'synthetic_custom',
+                'resolvedLinkage': {'labels': ['synthetic_custom'], 'epicKeys': []},
+                'matchState': 'jep-fallback',
+                'tabBucket': 'all',
+            },
+        ]
+
+        def rollup_side_effect(project_id, tab, sprint, _deps):
+            self.assertEqual(tab, 'active')
+            self.assertEqual(sprint, '42')
+            if project_id == 'active-one':
+                return {
+                    'project': projects[0],
+                    'metadataOnly': False,
+                    'emptyRollup': False,
+                    'truncated': False,
+                    'truncatedQueries': [],
+                    'initiatives': {},
+                    'rootEpics': {},
+                    'orphanStories': [make_issue('SYN-DUP')['fields'] | {'key': 'SYN-DUP'}],
+                }, 200, {}
+            if project_id == 'custom-all':
+                return {
+                    'project': projects[3],
+                    'metadataOnly': False,
+                    'emptyRollup': False,
+                    'truncated': True,
+                    'truncatedQueries': ['q1'],
+                    'initiatives': {},
+                    'rootEpics': {},
+                    'orphanStories': [make_issue('SYN-DUP')['fields'] | {'key': 'SYN-DUP'}],
+                }, 200, {}
+            raise AssertionError(f'unexpected rollup project {project_id}')
+
+        with patch.object(jira_server, 'get_epm_config', return_value={'version': 2}), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': projects}), \
+             patch.object(jira_server, 'build_per_project_rollup', side_effect=rollup_side_effect) as mock_rollup:
+            response = self.client.get('/api/epm/projects/rollup/all?tab=active&sprint=42')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = response.get_json()
+        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['active-one', 'metadata-one', 'custom-all'])
+        self.assertEqual(mock_rollup.call_count, 2)
+        self.assertEqual([call.args[0] for call in mock_rollup.call_args_list], ['active-one', 'custom-all'])
+        self.assertTrue(payload['truncated'])
+        self.assertEqual(payload['duplicates'], {'SYN-DUP': ['active-one', 'custom-all']})
+        metadata_rollup = payload['projects'][1]['rollup']
+        self.assertTrue(metadata_rollup['metadataOnly'])
+        self.assertFalse(metadata_rollup['emptyRollup'])
+
+    def test_all_projects_backlog_only_includes_paused_pending_projects(self):
+        projects = [
+            {
+                'id': 'active-one',
+                'displayName': 'Active One',
+                'label': 'synthetic_active',
+                'tabBucket': 'active',
+            },
+            {
+                'id': 'pending-one',
+                'displayName': 'Pending One',
+                'label': 'synthetic_pending',
+                'stateValue': 'PENDING',
+            },
+            {
+                'id': 'paused-one',
+                'displayName': 'Paused One',
+                'label': 'synthetic_paused',
+                'tabBucket': 'backlog',
+            },
+            {
+                'id': 'archived-one',
+                'displayName': 'Archived One',
+                'label': 'synthetic_archived',
+                'tabBucket': 'archived',
+            },
+            {
+                'id': 'custom-all',
+                'displayName': 'Custom All',
+                'label': 'synthetic_custom',
+                'tabBucket': 'all',
+            },
+        ]
+
+        def rollup_side_effect(project_id, tab, sprint, _deps):
+            self.assertEqual(tab, 'backlog')
+            self.assertEqual(sprint, '')
+            return {
+                'project': next(project for project in projects if project['id'] == project_id),
+                'metadataOnly': False,
+                'emptyRollup': True,
+                'truncated': False,
+                'truncatedQueries': [],
+                'initiatives': {},
+                'rootEpics': {},
+                'orphanStories': [],
+            }, 200, {}
+
+        with patch.object(jira_server, 'get_epm_config', return_value={'version': 2}), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': projects}), \
+             patch.object(jira_server, 'build_per_project_rollup', side_effect=rollup_side_effect) as mock_rollup:
+            response = self.client.get('/api/epm/projects/rollup/all?tab=backlog')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = response.get_json()
+        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['pending-one', 'paused-one'])
+        self.assertEqual(set(call.args[0] for call in mock_rollup.call_args_list), {'pending-one', 'paused-one'})
+
+    def test_all_projects_archived_returns_metadata_only_until_project_expand(self):
+        projects = [
+            {
+                'id': 'active-one',
+                'displayName': 'Active One',
+                'label': 'synthetic_active',
+                'tabBucket': 'active',
+            },
+            {
+                'id': 'archived-one',
+                'displayName': 'Archived One',
+                'label': 'synthetic_archived',
+                'tabBucket': 'archived',
+            },
+            {
+                'id': 'completed-one',
+                'displayName': 'Completed One',
+                'label': 'synthetic_completed',
+                'stateValue': 'COMPLETED',
+            },
+        ]
+
+        with patch.object(jira_server, 'get_epm_config', return_value={'version': 2}), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': projects}), \
+             patch.object(jira_server, 'build_per_project_rollup') as mock_rollup:
+            response = self.client.get('/api/epm/projects/rollup/all?tab=archived')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = response.get_json()
+        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['archived-one', 'completed-one'])
+        self.assertTrue(all(entry['rollup']['metadataOnly'] for entry in payload['projects']))
+        mock_rollup.assert_not_called()
+
+    def test_all_projects_rollup_reports_server_timing_breakdown(self):
+        projects = [
+            {
+                'id': 'active-one',
+                'displayName': 'Active One',
+                'label': 'synthetic_one',
+                'resolvedLinkage': {'labels': ['synthetic_one'], 'epicKeys': []},
+                'matchState': 'home-linked',
+                'tabBucket': 'active',
+            },
+        ]
+
+        with patch.object(jira_server, 'get_epm_config', return_value={'version': 2}), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': projects}), \
+             patch.object(jira_server, 'build_per_project_rollup', return_value=(
+                 {
+                     'project': projects[0],
+                     'metadataOnly': False,
+                     'emptyRollup': True,
+                     'truncated': False,
+                     'truncatedQueries': [],
+                     'initiatives': {},
+                     'rootEpics': {},
+                     'orphanStories': [],
+                 },
+                 200,
+                 {},
+             )):
+            response = self.client.get('/api/epm/projects/rollup/all?tab=active&sprint=42')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        server_timing = response.headers.get('Server-Timing', '')
+        self.assertIn('home-projects;dur=', server_timing)
+        self.assertIn('epm-rollups;dur=', server_timing)
+        self.assertIn('total;dur=', server_timing)
+
+    def test_active_labeled_epic_fetches_all_selected_sprint_stories_under_epic(self):
+        project = {
+            'id': 'project-1',
+            'label': 'synthetic_label_alpha',
+            'resolvedLinkage': {'labels': ['synthetic_label_alpha'], 'epicKeys': []},
+        }
+        q1 = [
+            make_issue(
+                'PRODUCT-29920',
+                'Epic',
+                summary='AI for RFP creation',
+                labels=['synthetic_label_alpha'],
+                sprint=[{'id': 42, 'name': '2026Q2', 'state': 'active'}],
+            )
+        ]
+        q2 = [
+            make_issue(
+                'PRODUCT-30001',
+                'Story',
+                summary='Generate RFP outline',
+                parent_key='PRODUCT-29920',
+                labels=[],
+                sprint=[{'id': 42, 'name': '2026Q2', 'state': 'active'}],
+            ),
+            make_issue(
+                'PRODUCT-30002',
+                'Story',
+                summary='Validate extracted requirements',
+                epic_link='PRODUCT-29920',
+                labels=[],
+                sprint=[{'id': 42, 'name': '2026Q2', 'state': 'active'}],
+            ),
+        ]
+        patches = self.patch_common(project, [q1, q2])
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6] as mock_fetch:
+            response = self.client.get('/api/epm/projects/project-1/rollup?tab=active&sprint=42')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(mock_fetch.call_count, 2)
+        q1_jql, q2_jql = [call.args[0] for call in mock_fetch.call_args_list]
+        self.assertIn('labels = "synthetic_label_alpha"', q1_jql)
+        self.assertNotIn('Sprint = 42', q1_jql)
+        self.assertIn('"Epic Link" in ("PRODUCT-29920") OR parent in ("PRODUCT-29920")', q2_jql)
+        self.assertIn('Sprint = 42', q2_jql)
+        payload = response.get_json()
+        story_keys = [story['key'] for story in payload['rootEpics']['PRODUCT-29920']['stories']]
+        self.assertEqual(story_keys, ['PRODUCT-30001', 'PRODUCT-30002'])
+
+    def test_active_label_root_finds_unsprinted_initiative_then_selected_sprint_stories(self):
+        project = {
+            'id': 'CRITE-723',
+            'label': 'rnd_project_bsw_enriched_deals_redesign',
+            'resolvedLinkage': {'labels': ['rnd_project_bsw_enriched_deals_redesign'], 'epicKeys': []},
+        }
+        q1 = [
+            make_issue(
+                'PRODUCT-34928',
+                'Initiative',
+                summary='Enriched Deals Redesign',
+                labels=['rnd_project_bsw_enriched_deals_redesign'],
+                sprint=[],
+            )
+        ]
+        q2 = [
+            make_issue('PRODUCT-35001', 'Epic', summary='Redesign serving path', parent_key='PRODUCT-34928', sprint=[]),
+            make_issue('PRODUCT-35099', 'Story', summary='Wrong sprint direct child', parent_key='PRODUCT-34928', sprint=[{'id': 7, 'name': '2026Q1'}]),
+        ]
+        q3 = [
+            make_issue('PRODUCT-35111', 'Story', summary='Selected sprint story', parent_key='PRODUCT-35001', sprint=[{'id': 42, 'name': '2026Q2'}]),
+        ]
+        patches = self.patch_common(project, [q1, q2, q3])
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6] as mock_fetch:
+            response = self.client.get('/api/epm/projects/CRITE-723/rollup?tab=active&sprint=42')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(mock_fetch.call_count, 3)
+        q1_jql, q2_jql, q3_jql = [call.args[0] for call in mock_fetch.call_args_list]
+        self.assertIn('labels = "rnd_project_bsw_enriched_deals_redesign"', q1_jql)
+        self.assertNotIn('Sprint = 42', q1_jql)
+        self.assertIn('parent in ("PRODUCT-34928")', q2_jql)
+        self.assertNotIn('Sprint = 42', q2_jql)
+        self.assertIn('parent in ("PRODUCT-35001")', q3_jql)
+        self.assertIn('Sprint = 42', q3_jql)
+        payload = response.get_json()
+        self.assertIn('PRODUCT-34928', payload['initiatives'])
+        self.assertIn('PRODUCT-35001', payload['initiatives']['PRODUCT-34928']['epics'])
+        story_keys = [story['key'] for story in payload['initiatives']['PRODUCT-34928']['epics']['PRODUCT-35001']['stories']]
+        self.assertEqual(story_keys, ['PRODUCT-35111'])
+        self.assertEqual(payload['initiatives']['PRODUCT-34928']['looseStories'], [])
+
+    def test_rollup_story_payload_contains_eng_card_fields(self):
+        project = {
+            'id': 'project-1',
+            'label': 'synthetic_label_alpha',
+            'resolvedLinkage': {'labels': ['synthetic_label_alpha'], 'epicKeys': []},
+        }
+        story = make_issue(
+            'PRODUCT-30001',
+            'Story',
+            summary='Generate RFP outline',
+            parent_key='PRODUCT-29920',
+            labels=[],
+            sprint=[{'id': 42, 'name': '2026Q2', 'state': 'active'}],
+        )
+        story['id'] = '30001'
+        story['fields']['priority'] = {'name': 'High'}
+        story['fields']['updated'] = '2026-04-28T12:00:00.000+0000'
+        story['fields']['customfield_10004'] = 3
+        story['fields']['customfield_team'] = {'id': 'team-a', 'name': 'Team A'}
+        q1 = [make_issue('PRODUCT-29920', 'Epic', labels=['synthetic_label_alpha'])]
+        q2 = [story]
+        patches = self.patch_common(project, [q1, q2])
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], \
+             patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_10004'), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'):
+            response = self.client.get('/api/epm/projects/project-1/rollup?tab=active&sprint=42')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload_story = response.get_json()['rootEpics']['PRODUCT-29920']['stories'][0]
+        self.assertEqual(payload_story['id'], '30001')
+        self.assertEqual(payload_story['priority'], 'High')
+        self.assertEqual(payload_story['storyPoints'], 3)
+        self.assertEqual(payload_story['updated'], '2026-04-28T12:00:00.000+0000')
+        self.assertEqual(payload_story['teamName'], 'Team A')
+        self.assertEqual(payload_story['teamId'], 'team-a')
+
+    def test_active_sprint_filter_starts_at_story_query_and_sprint_reaches_response(self):
         project = {'id': 'project-1', 'label': 'synthetic_label_alpha', 'resolvedLinkage': {'labels': ['synthetic_label_alpha'], 'epicKeys': []}}
         q1 = [make_issue('SYN-I1', 'Initiative', labels=['synthetic_label_alpha'], sprint=[{'id': '42', 'name': 'Sprint 42', 'state': 'ACTIVE'}])]
         q2 = [make_issue('SYN-E2', 'Epic', parent_key='SYN-I1', sprint=['com.atlassian.greenhopper.service.sprint.Sprint@abc[id=42,state=ACTIVE,name=Sprint 42]'])]
-        q3 = [make_issue('SYN-S1', 'Story', parent_key='SYN-E2', sprint=None)]
+        q3 = [make_issue('SYN-S1', 'Story', parent_key='SYN-E2', sprint=[{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])]
         patches = self.patch_common(project, [q1, q2, q3])
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6] as mock_fetch:
             response = self.client.get('/api/epm/projects/project-1/rollup?tab=active&sprint=42')
 
         self.assertEqual(response.status_code, 200)
-        for call in mock_fetch.call_args_list:
-            self.assertIn('Sprint = 42', call.args[0])
+        jql_queries = [call.args[0] for call in mock_fetch.call_args_list]
+        self.assertIn('labels = "synthetic_label_alpha"', jql_queries[0])
+        self.assertNotIn('Sprint = 42', jql_queries[0])
+        self.assertNotIn('Sprint = 42', jql_queries[1])
+        self.assertIn('Sprint = 42', jql_queries[2])
+        for jql in jql_queries:
+            self.assertNotIn('Team[Team]', jql)
+            self.assertNotIn('"Team"', jql)
         payload = response.get_json()
         self.assertEqual(payload['initiatives']['SYN-I1']['issue']['sprint'], [{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
         self.assertEqual(payload['initiatives']['SYN-I1']['epics']['SYN-E2']['issue']['sprint'], [{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
-        self.assertEqual(payload['initiatives']['SYN-I1']['epics']['SYN-E2']['stories'][0]['sprint'], [])
+        self.assertEqual(payload['initiatives']['SYN-I1']['epics']['SYN-E2']['stories'][0]['sprint'], [{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
 
     def test_backlog_rollup_does_not_append_sprint_filter(self):
         project = {'id': 'project-1', 'label': 'synthetic_label_alpha', 'resolvedLinkage': {'labels': ['synthetic_label_alpha'], 'epicKeys': []}}
@@ -298,9 +647,8 @@ class TestEpmRollupApi(unittest.TestCase):
 
         self.assertEqual(rollup_response.status_code, 200)
         rollup_issues = rollup_response.get_json()['orphanStories']
-        self.assertEqual(rollup_issues[0]['sprint'], [{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
-        self.assertEqual(rollup_issues[1]['sprint'], [{'id': 7, 'name': 'Old', 'state': 'CLOSED'}])
-        self.assertEqual(rollup_issues[2]['sprint'], [])
+        self.assertEqual([issue['key'] for issue in rollup_issues], ['SYN-S3'])
+        self.assertEqual(rollup_issues[0]['sprint'], [])
 
         jira_server.EPM_ISSUES_CACHE.clear()
         with patch.object(jira_server, 'find_epm_project_or_404', return_value=project), \
@@ -372,6 +720,21 @@ class TestEpmRollupApi(unittest.TestCase):
         finally:
             jira_server.EPIC_LINK_FIELD_CACHE = None
             jira_server.PARENT_NAME_FIELD_CACHE = None
+
+    def test_epm_rollup_builder_does_not_reference_team_group_scope(self):
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[1]
+        source = (repo_root / 'epm_rollup.py').read_text(encoding='utf-8')
+
+        for forbidden in (
+            'teamGroups',
+            'team_groups',
+            'TEAM_FIELD',
+            'Team[Team]',
+            '"Team"',
+        ):
+            self.assertNotIn(forbidden, source)
 
     def test_epic_link_resolver_uses_names_map_before_rest_lookup(self):
         jira_server.EPIC_LINK_FIELD_CACHE = None

@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 import json
 import os
+from pathlib import Path
 import tempfile
 from werkzeug.exceptions import NotFound
 
@@ -88,6 +89,202 @@ class TestEpmProjectsApi(unittest.TestCase):
                 },
             },
         }
+
+    def test_server_uses_timezone_aware_utc_timestamps(self):
+        source = Path(jira_server.__file__).read_text()
+        self.assertNotIn('datetime.utcnow()', source)
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_endpoint_auto_fills_label_from_single_matching_home_tag(self, mock_fetch_projects, mock_get_epm_config):
+        mock_fetch_projects.return_value = [
+            {
+                'homeProjectId': 'tsq-1',
+                'name': 'Data Partnerships: CPM data fees',
+                'homeUrl': 'https://home/project/1',
+                'stateValue': 'ON_TRACK',
+                'stateLabel': 'On Track',
+                'tabBucket': 'active',
+                'latestUpdateDate': '2026-04-19',
+                'latestUpdateSnippet': 'Ready for rollout',
+                'homeTags': ['epm', 'Data', 'Rnd_Project_BSW_Enablement'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+                'matchState': 'metadata-only',
+            }
+        ]
+        mock_get_epm_config.return_value = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+            'projects': {},
+        }
+
+        response = self.client.get('/api/epm/projects')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        project = response.get_json()['projects'][0]
+        self.assertEqual(project['displayName'], 'Data Partnerships: CPM data fees')
+        self.assertEqual(project['label'], 'Rnd_Project_BSW_Enablement')
+        self.assertEqual(project['resolvedLinkage']['labels'], ['Rnd_Project_BSW_Enablement'])
+        self.assertEqual(project['matchState'], 'home-linked')
+        self.assertEqual(project['labelSource'], 'home-tag')
+        self.assertEqual(project['labelStatus'], 'auto')
+        self.assertEqual(project['homeTagMatches'], ['Rnd_Project_BSW_Enablement'])
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_endpoint_treats_label_prefix_star_as_mask(self, mock_fetch_projects, mock_get_epm_config):
+        mock_fetch_projects.return_value = [
+            {
+                'homeProjectId': 'CRITE-723',
+                'name': 'Enriched Deals Redesign',
+                'homeUrl': 'https://home.atlassian.com/project/CRITE-723',
+                'stateValue': 'ON_TRACK',
+                'stateLabel': 'On Track',
+                'tabBucket': 'active',
+                'latestUpdateDate': '2026-04-19',
+                'latestUpdateSnippet': 'Ready for rollout',
+                'homeTags': ['rnd_project_bsw_enriched_deals_redesign'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+                'matchState': 'metadata-only',
+            }
+        ]
+        mock_get_epm_config.return_value = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_*',
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+            'projects': {},
+        }
+
+        response = self.client.get('/api/epm/projects')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        project = response.get_json()['projects'][0]
+        self.assertEqual(project['label'], 'rnd_project_bsw_enriched_deals_redesign')
+        self.assertEqual(project['resolvedLinkage']['labels'], ['rnd_project_bsw_enriched_deals_redesign'])
+        self.assertEqual(project['labelSource'], 'home-tag')
+        self.assertEqual(project['labelStatus'], 'auto')
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_endpoint_manual_label_overrides_home_tag(self, mock_fetch_projects, mock_get_epm_config):
+        mock_fetch_projects.return_value = [
+            {
+                'homeProjectId': 'tsq-1',
+                'name': 'Synthetic Launch',
+                'homeUrl': 'https://home/project/1',
+                'stateValue': 'ON_TRACK',
+                'stateLabel': 'On Track',
+                'tabBucket': 'active',
+                'latestUpdateDate': '2026-04-19',
+                'latestUpdateSnippet': 'Ready for rollout',
+                'homeTags': ['rnd_project_home'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+                'matchState': 'metadata-only',
+            }
+        ]
+        mock_get_epm_config.return_value = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+            'projects': {
+                'tsq-1': {
+                    'id': 'tsq-1',
+                    'homeProjectId': 'tsq-1',
+                    'name': '',
+                    'label': 'rnd_project_manual',
+                }
+            },
+        }
+
+        response = self.client.get('/api/epm/projects')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        project = response.get_json()['projects'][0]
+        self.assertEqual(project['label'], 'rnd_project_manual')
+        self.assertEqual(project['resolvedLinkage']['labels'], ['rnd_project_manual'])
+        self.assertEqual(project['matchState'], 'jep-fallback')
+        self.assertEqual(project['labelSource'], 'manual')
+        self.assertEqual(project['labelStatus'], 'manual')
+        self.assertEqual(project['homeTagMatches'], ['rnd_project_home'])
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_endpoint_multiple_matching_home_tags_require_manual_label(self, mock_fetch_projects, mock_get_epm_config):
+        mock_fetch_projects.return_value = [
+            {
+                'homeProjectId': 'tsq-1',
+                'name': 'Synthetic Launch',
+                'homeUrl': 'https://home/project/1',
+                'stateValue': 'ON_TRACK',
+                'stateLabel': 'On Track',
+                'tabBucket': 'active',
+                'latestUpdateDate': '2026-04-19',
+                'latestUpdateSnippet': 'Ready for rollout',
+                'homeTags': ['rnd_project_alpha', 'rnd_project_beta'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+                'matchState': 'metadata-only',
+            }
+        ]
+        mock_get_epm_config.return_value = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+            'projects': {},
+        }
+
+        response = self.client.get('/api/epm/projects')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        project = response.get_json()['projects'][0]
+        self.assertEqual(project['label'], '')
+        self.assertEqual(project['resolvedLinkage']['labels'], [])
+        self.assertEqual(project['matchState'], 'metadata-only')
+        self.assertEqual(project['labelSource'], '')
+        self.assertEqual(project['labelStatus'], 'ambiguous')
+        self.assertEqual(project['homeTagMatches'], ['rnd_project_alpha', 'rnd_project_beta'])
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_cache_reuses_home_tags_but_reshapes_label_prefix(self, mock_fetch_projects, mock_get_epm_config):
+        mock_fetch_projects.return_value = [
+            {
+                'homeProjectId': 'tsq-1',
+                'name': 'Synthetic Launch',
+                'homeUrl': 'https://home/project/1',
+                'stateValue': 'ON_TRACK',
+                'stateLabel': 'On Track',
+                'tabBucket': 'active',
+                'latestUpdateDate': '2026-04-19',
+                'latestUpdateSnippet': 'Ready for rollout',
+                'homeTags': ['rnd_project_alpha', 'alt_project_beta'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+                'matchState': 'metadata-only',
+            }
+        ]
+        mock_get_epm_config.side_effect = [
+            {
+                'version': 2,
+                'labelPrefix': 'rnd_project_',
+                'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+                'projects': {},
+            },
+            {
+                'version': 2,
+                'labelPrefix': 'alt_project_',
+                'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+                'projects': {},
+            },
+        ]
+
+        first_response = self.client.get('/api/epm/projects')
+        second_response = self.client.get('/api/epm/projects')
+
+        self.assertEqual(first_response.status_code, 200, first_response.get_data(as_text=True))
+        self.assertEqual(second_response.status_code, 200, second_response.get_data(as_text=True))
+        self.assertEqual(mock_fetch_projects.call_count, 1)
+        self.assertEqual(first_response.get_json()['projects'][0]['label'], 'rnd_project_alpha')
+        self.assertEqual(second_response.get_json()['projects'][0]['label'], 'alt_project_beta')
 
     @patch('jira_server.get_epm_config')
     @patch('jira_server.fetch_epm_home_projects', create=True)
@@ -282,7 +479,7 @@ class TestEpmProjectsApi(unittest.TestCase):
 
     @patch('jira_server.get_epm_config')
     @patch('jira_server.fetch_epm_home_projects', create=True)
-    def test_projects_preview_endpoint_uses_draft_payload_without_saved_config_or_cache(self, mock_fetch_projects, mock_get_epm_config):
+    def test_projects_configuration_endpoint_uses_draft_payload_without_saved_config(self, mock_fetch_projects, mock_get_epm_config):
         mock_fetch_projects.return_value = [
             {
                 'homeProjectId': 'tsq-1',
@@ -305,7 +502,7 @@ class TestEpmProjectsApi(unittest.TestCase):
         jira_server.EPM_PROJECTS_CACHE['saved-config'] = {'timestamp': 1, 'data': {'projects': [{'homeProjectId': 'cached-project'}]}}
 
         response = self.client.post(
-            '/api/epm/projects/preview',
+            '/api/epm/projects/configuration',
             json={
                 'scope': {'rootGoalKey': ' root-100 ', 'subGoalKey': ' child-200 '},
                 'projects': {
@@ -326,8 +523,116 @@ class TestEpmProjectsApi(unittest.TestCase):
         self.assertEqual(payload['projects'][0]['displayName'], 'Preview Launch')
         self.assertEqual(payload['projects'][0]['resolvedLinkage']['labels'], ['synthetic_label_alpha'])
         self.assertEqual(payload['projects'][0]['resolvedLinkage']['epicKeys'], [])
+        self.assertGreaterEqual(len(jira_server.EPM_PROJECTS_CACHE), 1)
         self.assertIn('saved-config', jira_server.EPM_PROJECTS_CACHE)
-        self.assertEqual(jira_server.EPM_PROJECTS_CACHE['saved-config']['data']['projects'][0]['homeProjectId'], 'cached-project')
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_cache_reuses_home_records_but_shapes_latest_labels(self, mock_fetch_projects, mock_get_epm_config):
+        mock_fetch_projects.return_value = [
+            {
+                'homeProjectId': 'tsq-1',
+                'name': 'Synthetic Launch',
+                'homeUrl': 'https://home/project/1',
+                'stateValue': 'ON_TRACK',
+                'stateLabel': 'On Track',
+                'tabBucket': 'active',
+                'latestUpdateDate': '2026-04-19',
+                'latestUpdateSnippet': 'Ready for rollout',
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+                'matchState': 'metadata-only',
+            }
+        ]
+        mock_get_epm_config.side_effect = [
+            {
+                'version': 2,
+                'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+                'labelPrefix': 'rnd_project_',
+                'projects': {
+                    'tsq-1': {
+                        'id': 'tsq-1',
+                        'homeProjectId': 'tsq-1',
+                        'name': 'Synthetic Launch',
+                        'label': 'first_label',
+                    }
+                },
+            },
+            {
+                'version': 2,
+                'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+                'labelPrefix': 'rnd_project_',
+                'projects': {
+                    'tsq-1': {
+                        'id': 'tsq-1',
+                        'homeProjectId': 'tsq-1',
+                        'name': 'Synthetic Launch',
+                        'label': 'second_label',
+                    }
+                },
+            },
+        ]
+
+        first_response = self.client.get('/api/epm/projects')
+        second_response = self.client.get('/api/epm/projects')
+
+        self.assertEqual(first_response.status_code, 200, first_response.get_data(as_text=True))
+        self.assertEqual(second_response.status_code, 200, second_response.get_data(as_text=True))
+        self.assertEqual(mock_fetch_projects.call_count, 1)
+        first_project = first_response.get_json()['projects'][0]
+        second_project = second_response.get_json()['projects'][0]
+        self.assertEqual(first_project['resolvedLinkage']['labels'], ['first_label'])
+        self.assertEqual(second_project['resolvedLinkage']['labels'], ['second_label'])
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_endpoint_refresh_bypasses_cached_home_projects(self, mock_fetch_projects, mock_get_epm_config):
+        first_home_projects = [self._home_projects()[0]]
+        refreshed_home_projects = [self._home_projects()[1]]
+        mock_fetch_projects.side_effect = [first_home_projects, refreshed_home_projects]
+        mock_get_epm_config.return_value = {
+            'version': 2,
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+            'labelPrefix': 'rnd_project_',
+            'projects': {},
+        }
+
+        first_response = self.client.get('/api/epm/projects')
+        cached_response = self.client.get('/api/epm/projects')
+        refreshed_response = self.client.get('/api/epm/projects?refresh=true')
+
+        self.assertEqual(first_response.status_code, 200, first_response.get_data(as_text=True))
+        self.assertEqual(cached_response.status_code, 200, cached_response.get_data(as_text=True))
+        self.assertEqual(refreshed_response.status_code, 200, refreshed_response.get_data(as_text=True))
+        self.assertEqual(mock_fetch_projects.call_count, 2)
+        self.assertEqual(first_response.get_json()['projects'][0]['homeProjectId'], 'home-1')
+        self.assertEqual(cached_response.get_json()['projects'][0]['homeProjectId'], 'home-1')
+        self.assertEqual(refreshed_response.get_json()['projects'][0]['homeProjectId'], 'home-2')
+        self.assertFalse(first_response.get_json()['cacheHit'])
+        self.assertTrue(cached_response.get_json()['cacheHit'])
+        self.assertFalse(refreshed_response.get_json()['cacheHit'])
+
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_configuration_refresh_bypasses_cache_and_preserves_draft_labels(self, mock_fetch_projects):
+        first_home_projects = [self._home_projects()[0]]
+        refreshed_home_projects = [self._home_projects()[0], self._home_projects()[1]]
+        mock_fetch_projects.side_effect = [first_home_projects, refreshed_home_projects]
+        draft_config = self._mixed_config()
+
+        first_response = self.client.post('/api/epm/projects/configuration', json=draft_config)
+        cached_response = self.client.post('/api/epm/projects/configuration', json=draft_config)
+        refreshed_response = self.client.post('/api/epm/projects/configuration?refresh=true', json=draft_config)
+
+        self.assertEqual(first_response.status_code, 200, first_response.get_data(as_text=True))
+        self.assertEqual(cached_response.status_code, 200, cached_response.get_data(as_text=True))
+        self.assertEqual(refreshed_response.status_code, 200, refreshed_response.get_data(as_text=True))
+        self.assertEqual(mock_fetch_projects.call_count, 2)
+        refreshed_projects = refreshed_response.get_json()['projects']
+        self.assertEqual([project['homeProjectId'] for project in refreshed_projects[:2]], ['home-1', 'home-2'])
+        home_two = next(project for project in refreshed_projects if project['homeProjectId'] == 'home-2')
+        self.assertEqual(home_two['resolvedLinkage']['labels'], ['synthetic_label_home_two'])
+        self.assertFalse(first_response.get_json()['cacheHit'])
+        self.assertTrue(cached_response.get_json()['cacheHit'])
+        self.assertFalse(refreshed_response.get_json()['cacheHit'])
 
     @patch('jira_server.get_epm_config')
     @patch('jira_server.fetch_epm_home_projects', create=True)

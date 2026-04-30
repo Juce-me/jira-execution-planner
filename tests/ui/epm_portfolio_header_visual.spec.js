@@ -46,12 +46,12 @@ async function loadHeaderFixture(page) {
                         </div>
                         <div class="epm-project-board-update-row">
                             <div class="epm-project-board-update">
+                                <span class="epm-project-board-update-date">yesterday</span>
                                 <div class="epm-project-board-update-copy">
                                     <p><strong>RFP AI bot</strong> and related <em>deals AI</em> work are progressing.</p>
                                     <p>Build is ready for <a href="https://example.test/client-testing">client testing</a>; rollout model defined.</p>
                                 </div>
                             </div>
-                            <span class="epm-project-board-update-date">yesterday</span>
                         </div>
                         <div class="epm-project-board-body">
                             <div class="epic-card">
@@ -105,7 +105,9 @@ for (const viewport of [
         expect(boxesOverlap(toggleBox, metaBox)).toBe(false);
         expect(bodyBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height - 0.5);
         expect(updateRowBox.x + updateRowBox.width).toBeLessThanOrEqual(headerBox.x + headerBox.width + 0.5);
-        expect(updateDateBox.x).toBeGreaterThan(updateBox.x + updateBox.width - 0.5);
+        expect(updateDateBox.y).toBeLessThanOrEqual(updateBox.y + 1);
+        expect(updateDateBox.x).toBeGreaterThan(updateBox.x);
+        expect(updateDateBox.x + updateDateBox.width).toBeLessThan(updateBox.x + updateBox.width);
         await expect(update.locator('strong')).toHaveText('RFP AI bot');
         await expect(update.locator('em')).toHaveText('deals AI');
         await expect(update.locator('a')).toHaveAttribute('href', 'https://example.test/client-testing');
@@ -121,8 +123,18 @@ for (const viewport of [
             };
         });
         expect(updateStyle.borderRadius).toBe('8px');
-        expect(updateStyle.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+        expect(updateStyle.backgroundColor).toBe('rgb(255, 255, 255)');
         expect(updateStyle.color).not.toBe('rgb(255, 255, 255)');
+
+        const timelineStyle = await page.locator('.epm-project-board').first().evaluate((node) => {
+            const style = window.getComputedStyle(node, '::before');
+            return {
+                content: style.content,
+                top: style.top,
+            };
+        });
+        expect(timelineStyle.content).not.toBe('none');
+        expect(parseFloat(timelineStyle.top)).toBeLessThan(updateRowBox.y - headerBox.y + 1);
 
         await toggle.hover();
         await page.waitForTimeout(180);

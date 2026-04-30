@@ -238,6 +238,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In EPM settings Projects, blank custom rows, including legacy rows with missing Home linkage, are draft-only: show an explicit delete action and drop fully empty rows before saving.
 - In EPM settings Projects, put project name, Home status, Home link, and Jira label in stable cells so variable statuses do not distort the row.
 - In EPM settings Projects, use table-style header sorting and compact icon actions in cells; avoid bulky text sort/change controls in headers or label chips.
+- For UI screenshots, wait for CSS animations/transitions to settle or disable them before capturing visual proof.
 
 ---
 

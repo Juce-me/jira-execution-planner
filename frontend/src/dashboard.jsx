@@ -35,7 +35,6 @@ import {
     getEpmProjectIdentity,
     getEpmProjectPrerequisites,
     getEpmSettingsProjectsCacheKey,
-    getEpmSprintHelper,
     hydrateEpmProjectDraft,
     isEmptyCustomEpmProjectRow,
     isEpmProjectsConfigReady,
@@ -10945,17 +10944,21 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             );
 
             const renderViewSwitch = () => (
-                <div className="mode-switch">
+                <div className="segmented-control view-mode-control" role="radiogroup" aria-label="Dashboard view">
                     <button
-                        className={`mode-switch-button ${selectedView === 'eng' ? 'active' : ''}`}
+                        className={`segmented-control-button ${selectedView === 'eng' ? 'active' : ''}`}
                         onClick={() => setSelectedView('eng')}
+                        role="radio"
+                        aria-checked={selectedView === 'eng'}
                         type="button"
                     >
                         ENG
                     </button>
                     <button
-                        className={`mode-switch-button ${selectedView === 'epm' ? 'active' : ''}`}
+                        className={`segmented-control-button ${selectedView === 'epm' ? 'active' : ''}`}
                         onClick={() => setSelectedView('epm')}
+                        role="radio"
+                        aria-checked={selectedView === 'epm'}
                         type="button"
                     >
                         EPM
@@ -10966,23 +10969,20 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const renderEpmTabs = () => {
                 if (selectedView !== 'epm') return null;
                 return (
-                    <>
-                        <div className="mode-switch">
-                            {epmTabOptions.map((tab) => (
-                                <button
-                                    key={tab.value}
-                                    className={`mode-switch-button ${epmTab === tab.value ? 'active' : ''}`}
-                                    onClick={() => setEpmTab(tab.value)}
-                                    type="button"
-                                >
-                                    {tab.label}
-                                </button>
-                            ))}
-                        </div>
-                        {!shouldUseEpmSprint(epmTab) && (
-                            <div className="controls-label">{getEpmSprintHelper(epmTab)}</div>
-                        )}
-                    </>
+                    <div className="segmented-control epm-state-control" role="radiogroup" aria-label="EPM project state">
+                        {epmTabOptions.map((tab) => (
+                            <button
+                                key={tab.value}
+                                className={`segmented-control-button ${epmTab === tab.value ? 'active' : ''}`}
+                                onClick={() => setEpmTab(tab.value)}
+                                role="radio"
+                                aria-checked={epmTab === tab.value}
+                                type="button"
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
                 );
             };
 
@@ -11753,7 +11753,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         {compactStickyVisible && (
                             <>
                                 <div className="compact-sticky-header-controls">
-                                    {renderViewSwitch()}
                                     {selectedView === 'eng' ? (
                                         <>
                                             {renderSprintControl('compact')}
@@ -11764,7 +11763,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         <>
                                             {shouldUseEpmSprint(epmTab) && renderSprintControl('compact')}
                                             {renderEpmTabs()}
-                                            {renderEpmProjectPicker()}
                                             <button
                                                 className="group-gear-button"
                                                 onClick={openEpmSettingsTab}

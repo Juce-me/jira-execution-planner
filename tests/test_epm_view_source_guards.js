@@ -184,16 +184,35 @@ test('dashboard source keeps the ENG and EPM switch contract', () => {
     assert.ok(!dashboardSource.includes('view-switch'), 'Did not expect view-switch in dashboard.jsx');
 });
 
-test('dashboard source reuses renderViewSwitch in both header contexts', () => {
+test('dashboard source renders mutually exclusive EPM controls as segmented radio groups', () => {
+    assert.ok(dashboardSource.includes('className="segmented-control view-mode-control"'), 'Expected ENG/EPM selector to use a segmented control wrapper');
+    assert.ok(dashboardSource.includes('className="segmented-control epm-state-control"'), 'Expected EPM project-state selector to use a segmented control wrapper');
+    assert.ok(countOccurrences(dashboardSource, 'role="radiogroup"') >= 2, 'Expected view and EPM state selectors to expose radio group semantics');
+    assert.ok(countOccurrences(dashboardSource, 'role="radio"') >= 2, 'Expected segmented options to expose radio semantics');
+    assert.ok(dashboardSource.includes('aria-checked={selectedView === \'eng\'}'), 'Expected ENG option to expose checked state');
+    assert.ok(dashboardSource.includes('aria-checked={epmTab === tab.value}'), 'Expected EPM state options to expose checked state');
+});
+
+test('dashboard source keeps the ENG/EPM switch in the main header only', () => {
     assert.ok(dashboardSource.includes('renderViewSwitch()'), 'Expected renderViewSwitch() in dashboard.jsx');
-    assert.ok(countOccurrences(dashboardSource, 'renderViewSwitch()') >= 2, 'Expected renderViewSwitch() in both header contexts');
+    assert.strictEqual(countOccurrences(dashboardSource, 'renderViewSwitch()'), 1, 'Expected renderViewSwitch() only in the main header');
     assert.ok(
         hasCallAfter(dashboardSource, 'header-actions-row', 'renderViewSwitch()'),
         'Expected renderViewSwitch() near the main header actions row'
     );
+});
+
+test('dashboard source omits view and project selectors from compact sticky controls', () => {
+    const compactControlsSource = getSnippetBetween(
+        dashboardSource,
+        'className="compact-sticky-header-controls"',
+        'className="compact-sticky-header-search"'
+    );
+    assert.ok(!compactControlsSource.includes('renderViewSwitch()'), 'Did not expect ENG/EPM switch in compact sticky controls');
+    assert.ok(!compactControlsSource.includes('renderEpmProjectPicker()'), 'Did not expect Project selector in compact sticky controls');
     assert.ok(
-        hasCallAfter(dashboardSource, 'compact-sticky-header-controls', 'renderViewSwitch()'),
-        'Expected renderViewSwitch() near the compact sticky header controls'
+        compactControlsSource.includes("shouldUseEpmSprint(epmTab) && renderSprintControl('compact')"),
+        'Expected compact EPM Active controls to keep the sprint selector'
     );
 });
 
@@ -205,13 +224,13 @@ test('dashboard source exposes EPM settings access in both header contexts', () 
     );
 });
 
-test('epm helper file exists and owns the Active only copy', () => {
+test('epm helper file exists without ambiguous Active-only helper copy', () => {
     assert.ok(fs.existsSync(helperPath), 'Expected frontend/src/epm/epmProjectUtils.mjs to exist');
     assert.ok(helperSource.includes('shouldUseEpmSprint'), 'Expected shouldUseEpmSprint in epmProjectUtils.mjs');
-    assert.ok(helperSource.includes('getEpmSprintHelper'), 'Expected getEpmSprintHelper in epmProjectUtils.mjs');
     assert.ok(helperSource.includes('buildRollupTree'), 'Expected buildRollupTree in epmProjectUtils.mjs');
-    assert.ok(helperSource.includes('Active only'), 'Expected Active only in epmProjectUtils.mjs');
-    assert.ok(dashboardSource.includes('getEpmSprintHelper'), 'Expected dashboard.jsx to reference getEpmSprintHelper');
+    assert.ok(!helperSource.includes('getEpmSprintHelper'), 'Did not expect extra EPM sprint helper copy');
+    assert.ok(!helperSource.includes('Active only'), 'Did not expect ambiguous Active only copy');
+    assert.ok(!dashboardSource.includes('getEpmSprintHelper'), 'Did not expect dashboard.jsx to render ambiguous Active only copy');
     assert.ok(dashboardSource.includes('shouldUseEpmSprint'), 'Expected dashboard.jsx to reference shouldUseEpmSprint');
     assert.ok(dashboardSource.includes('buildRollupTree'), 'Expected dashboard.jsx to reference buildRollupTree');
 });
@@ -451,8 +470,16 @@ test('EPM portfolio update line preserves formatted Home update HTML safely', ()
     assert.ok(epmRollupPanelSource.includes('className="epm-project-board-update-row"'), 'Expected update row wrapper to separate bubble from date');
     assert.ok(epmRollupPanelSource.includes('updateLine.messageHtml'), 'Expected update renderer to branch on formatted Home update HTML');
     assert.ok(epmRollupPanelSource.includes('dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }}'), 'Expected formatted update HTML to be injected from sanitized server output');
-    assert.ok(epmRollupPanelSource.includes('epm-project-board-update-date'), 'Expected relative date to stay separate from formatted update HTML');
-    assert.ok(epmRollupPanelSource.indexOf('className="epm-project-board-update"') < epmRollupPanelSource.indexOf('className="epm-project-board-update-date"'), 'Expected date component to render to the right of the bubble');
+    const updateRendererSource = getSnippetBetween(
+        epmRollupPanelSource,
+        'const renderProjectUpdate = (updateLine) => {',
+        'const renderPortfolioHeader = (project) => {'
+    );
+    assert.ok(updateRendererSource.includes('epm-project-board-update-date'), 'Expected relative date label in the update bubble');
+    assert.ok(
+        updateRendererSource.indexOf('epm-project-board-update-date') < updateRendererSource.indexOf('epm-project-board-update-copy'),
+        'Expected relative date label to render above the update copy'
+    );
     assert.ok(helperSource.includes('messageHtml'), 'Expected shared update helper to expose formatted update HTML');
     assert.ok(helperSource.includes('message:'), 'Expected shared update helper to expose plain message without the date');
 });

@@ -220,6 +220,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmProjectsLoading, setEpmProjectsLoading] = useState(false);
             const [epmProjectsError, setEpmProjectsError] = useState('');
             const [epmSelectedProjectId, setEpmSelectedProjectId] = useState(savedPrefsRef.current.epmSelectedProjectId ?? '');
+            const [epmProjectSearch, setEpmProjectSearch] = useState('');
+            const [showEpmProjectDropdown, setShowEpmProjectDropdown] = useState(false);
+            const epmProjectDropdownRefs = useRef({ main: null, compact: null });
             const [epmConfigDraft, setEpmConfigDraft] = useState(createEmptyEpmConfigDraft());
             const [epmConfigLoading, setEpmConfigLoading] = useState(false);
             const [epmConfigSaving, setEpmConfigSaving] = useState(false);
@@ -617,6 +620,17 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             // filterEpmProjectsForTab owns the `project.tabBucket === epmTab` check.
             const visibleEpmProjects = React.useMemo(() => filterEpmProjectsForTab(epmProjects, epmTab), [epmProjects, epmTab]);
             const selectedEpmProject = visibleEpmProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;
+            const filteredEpmProjects = React.useMemo(() => {
+                const query = epmProjectSearch.trim().toLowerCase();
+                const projects = visibleEpmProjects.filter(project => getEpmProjectIdentity(project));
+                if (!query) return projects;
+                return projects.filter(project => {
+                    const projectId = getEpmProjectIdentity(project).toLowerCase();
+                    const name = getEpmProjectDisplayName(project).toLowerCase();
+                    const label = String(project?.label || '').toLowerCase();
+                    return projectId.includes(query) || name.includes(query) || label.includes(query);
+                });
+            }, [visibleEpmProjects, epmProjectSearch]);
             const visibleEpmRollupBoards = React.useMemo(() => {
                 if (!Array.isArray(epmRollupBoards)) return epmRollupBoards;
                 return filterEpmRollupBoardsForSearch(epmRollupBoards, searchQuery);
@@ -1354,6 +1368,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setShowSprintDropdown(next.sprint);
                 setShowGroupDropdown(next.group);
                 setShowTeamDropdown(next.team);
+                setShowEpmProjectDropdown(next.project);
             };
 
             const invalidateSprintDataForConfigSave = (refreshTarget) => {
@@ -4783,6 +4798,18 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     if (!node) return;
                     if (!node.contains(event.target)) {
                         setShowGroupDropdown(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, [compactStickyVisible]);
+
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    const node = getActiveDropdownNode(epmProjectDropdownRefs);
+                    if (!node) return;
+                    if (!node.contains(event.target)) {
+                        setShowEpmProjectDropdown(false);
                     }
                 };
                 document.addEventListener('mousedown', handleClickOutside);
@@ -10846,6 +10873,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setShowTeamDropdown(false);
                 setShowSprintDropdown(false);
                 setShowGroupDropdown(false);
+                setShowEpmProjectDropdown(false);
             }, [compactStickyVisible]);
 
             useEffect(() => {
@@ -10988,25 +11016,85 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const renderEpmProjectPicker = () => {
                 if (selectedView !== 'epm') return null;
+                const surface = 'main';
+                const isDisabled = epmProjectsLoading || visibleEpmProjects.length === 0;
+                const selectedProjectName = selectedEpmProject
+                    ? getEpmProjectDisplayName(selectedEpmProject)
+                    : 'All projects';
                 return (
                     <div className="control-field" data-label="Project">
                         <span className="control-label">Project</span>
-                        <select
-                            className="control-select"
-                            value={epmSelectedProjectId}
-                            onChange={(event) => setEpmSelectedProjectId(event.target.value)}
-                            disabled={epmProjectsLoading || visibleEpmProjects.length === 0}
-                        >
-                            <option value="">All projects</option>
-                            {visibleEpmProjects.filter(project => getEpmProjectIdentity(project)).map((project) => {
-                                const projectId = getEpmProjectIdentity(project);
-                                return (
-                                    <option key={projectId} value={projectId}>
-                                        {getEpmProjectDisplayName(project)}
-                                    </option>
-                                );
-                            })}
-                        </select>
+                        <div className="sprint-dropdown epm-project-dropdown" ref={(node) => { epmProjectDropdownRefs.current[surface] = node; }}>
+                            <div
+                                className={`sprint-dropdown-toggle ${showEpmProjectDropdown ? 'open' : ''}`}
+                                role="button"
+                                aria-label="Select Project"
+                                tabIndex={isDisabled ? -1 : 0}
+                                onClick={() => {
+                                    if (isDisabled) return;
+                                    applyExclusiveDropdownState('project', showEpmProjectDropdown);
+                                }}
+                                onKeyDown={(event) => {
+                                    if (isDisabled) return;
+                                    if (event.key === 'Enter' || event.key === ' ') {
+                                        event.preventDefault();
+                                        applyExclusiveDropdownState('project', showEpmProjectDropdown);
+                                    }
+                                }}
+                                aria-disabled={isDisabled}
+                            >
+                                <span>{epmProjectsLoading ? 'Loading...' : selectedProjectName}</span>
+                                <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                                    <path d="M6 9L1 4h10z"/>
+                                </svg>
+                            </div>
+                            {showEpmProjectDropdown && surface === activeControlSurface && (
+                                <div className="sprint-dropdown-panel">
+                                    <input
+                                        type="text"
+                                        className="sprint-dropdown-search"
+                                        placeholder="Filter..."
+                                        value={epmProjectSearch}
+                                        onChange={(event) => setEpmProjectSearch(event.target.value)}
+                                        aria-label="Filter Projects"
+                                    />
+                                    <div className="sprint-dropdown-list">
+                                        <div
+                                            className="sprint-dropdown-option"
+                                            data-project-id=""
+                                            onClick={() => {
+                                                setEpmSelectedProjectId('');
+                                                setShowEpmProjectDropdown(false);
+                                                setEpmProjectSearch('');
+                                            }}
+                                        >
+                                            All projects
+                                        </div>
+                                        {filteredEpmProjects.length === 0 ? (
+                                            <div className="sprint-dropdown-option">No projects available</div>
+                                        ) : (
+                                            filteredEpmProjects.map((project) => {
+                                                const projectId = getEpmProjectIdentity(project);
+                                                return (
+                                                    <div
+                                                        key={projectId}
+                                                        className="sprint-dropdown-option"
+                                                        data-project-id={projectId}
+                                                        onClick={() => {
+                                                            setEpmSelectedProjectId(projectId);
+                                                            setShowEpmProjectDropdown(false);
+                                                            setEpmProjectSearch('');
+                                                        }}
+                                                    >
+                                                        {getEpmProjectDisplayName(project)}
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 );
             };

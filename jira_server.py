@@ -7,7 +7,6 @@ import base64
 import csv
 import logging
 import os
-import random
 import re
 import json
 import hashlib
@@ -33,6 +32,8 @@ from epm_rollup import EpmRollupDependencies, build_per_project_rollup
 from epm_scope import build_epm_scope_clause, normalize_epm_sprint_field, should_apply_epm_sprint
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
 from backend.app import app
+from backend import config_store as _config_store
+from backend import jira_client as _jira_client
 
 # Load environment variables from .env file
 load_dotenv()
@@ -205,74 +206,9 @@ def utc_now_iso(timespec=None):
     return value.replace('+00:00', 'Z')
 
 
-RETRYABLE_JIRA_STATUS_CODES = {429, 500, 502, 503, 504}
-
-
-class SyntheticJiraResponse:
-    """Small response-like object for fast-fail and retry exhaustion paths."""
-    def __init__(self, status_code, payload):
-        self.status_code = int(status_code)
-        self._payload = payload if isinstance(payload, dict) else {'message': str(payload)}
-        self.text = json.dumps(self._payload)
-
-    def json(self):
-        return self._payload
-
-
-class JiraCircuitBreaker:
-    def __init__(self, failure_threshold=5, open_seconds=30.0):
-        self.failure_threshold = max(1, int(failure_threshold))
-        self.open_seconds = max(1.0, float(open_seconds))
-        self._lock = threading.RLock()
-        self._state = 'closed'
-        self._failure_count = 0
-        self._opened_until = 0.0
-
-    def before_request(self, now):
-        with self._lock:
-            if self._state == 'open':
-                if now >= self._opened_until:
-                    self._state = 'half-open'
-                    return True, {'state': self._state, 'failureCount': self._failure_count}
-                return False, {
-                    'state': 'open',
-                    'failureCount': self._failure_count,
-                    'retryAfterSeconds': max(0.0, round(self._opened_until - now, 3))
-                }
-            return True, {'state': self._state, 'failureCount': self._failure_count}
-
-    def record_success(self):
-        with self._lock:
-            self._state = 'closed'
-            self._failure_count = 0
-            self._opened_until = 0.0
-
-    def record_failure(self, now):
-        with self._lock:
-            if self._state == 'half-open':
-                self._state = 'open'
-                self._failure_count = max(1, self._failure_count)
-                self._opened_until = now + self.open_seconds
-                return {'state': self._state, 'failureCount': self._failure_count, 'openedForSeconds': self.open_seconds}
-
-            self._failure_count += 1
-            if self._failure_count >= self.failure_threshold:
-                self._state = 'open'
-                self._opened_until = now + self.open_seconds
-            return {'state': self._state, 'failureCount': self._failure_count, 'openedForSeconds': self.open_seconds if self._state == 'open' else 0.0}
-
-    def force_open(self, now=None):
-        now_value = time.monotonic() if now is None else float(now)
-        with self._lock:
-            self._state = 'open'
-            self._failure_count = max(self._failure_count, self.failure_threshold)
-            self._opened_until = now_value + self.open_seconds
-
-    def reset(self):
-        with self._lock:
-            self._state = 'closed'
-            self._failure_count = 0
-            self._opened_until = 0.0
+RETRYABLE_JIRA_STATUS_CODES = _jira_client.RETRYABLE_JIRA_STATUS_CODES
+SyntheticJiraResponse = _jira_client.SyntheticJiraResponse
+JiraCircuitBreaker = _jira_client.JiraCircuitBreaker
 
 
 JIRA_SEARCH_CIRCUIT_BREAKER = JiraCircuitBreaker(
@@ -282,17 +218,14 @@ JIRA_SEARCH_CIRCUIT_BREAKER = JiraCircuitBreaker(
 
 
 def _build_jira_unavailable_response(message, attempts=0, elapsed_seconds=0.0, upstream_status=None, circuit=None):
-    payload = {
-        'error': 'Jira temporarily unavailable',
-        'message': message,
-        'attempts': int(attempts),
-        'retryElapsedSeconds': round(float(elapsed_seconds), 2)
-    }
-    if upstream_status is not None:
-        payload['upstreamStatus'] = int(upstream_status)
-    if circuit:
-        payload['circuit'] = circuit
-    return SyntheticJiraResponse(503, payload)
+    return _jira_client._build_jira_unavailable_response(
+        message,
+        attempts=attempts,
+        elapsed_seconds=elapsed_seconds,
+        upstream_status=upstream_status,
+        circuit=circuit,
+        response_cls=SyntheticJiraResponse
+    )
 
 
 def resilient_jira_get(url, *, params=None, headers=None, timeout=30, session=None, breaker=None,
@@ -300,90 +233,26 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, session=No
                        max_attempts=None, max_elapsed_seconds=None,
                        base_delay_seconds=None, max_delay_seconds=None):
     """GET with bounded retries + circuit breaker for Jira upstream calls."""
-    session = session or HTTP_SESSION
-    breaker = breaker or JIRA_SEARCH_CIRCUIT_BREAKER
-    now_fn = now_fn or time.monotonic
-    sleep_fn = sleep_fn or time.sleep
-    rand_fn = rand_fn or random.random
-    max_attempts = max(1, int(max_attempts if max_attempts is not None else JIRA_RETRY_MAX_ATTEMPTS))
-    max_elapsed_seconds = float(max_elapsed_seconds if max_elapsed_seconds is not None else JIRA_RETRY_MAX_ELAPSED_SECONDS)
-    base_delay_seconds = float(base_delay_seconds if base_delay_seconds is not None else JIRA_RETRY_BASE_DELAY_SECONDS)
-    max_delay_seconds = float(max_delay_seconds if max_delay_seconds is not None else JIRA_RETRY_MAX_DELAY_SECONDS)
-
-    started_at = now_fn()
-    allowed, breaker_state = breaker.before_request(started_at)
-    if not allowed:
-        log_warning(
-            f'Jira circuit open; fast-failing request retry_after_s={breaker_state.get("retryAfterSeconds", 0)}'
-        )
-        return _build_jira_unavailable_response(
-            'Jira is temporarily unavailable. Please retry shortly.',
-            attempts=0,
-            elapsed_seconds=0.0,
-            circuit=breaker_state
-        )
-
-    last_status = None
-    last_exception = None
-    attempts = 0
-
-    while attempts < max_attempts:
-        attempts += 1
-        attempt_started = now_fn()
-        try:
-            response = session.get(url, params=params, headers=headers, timeout=timeout)
-            latency_ms = round((now_fn() - attempt_started) * 1000, 1)
-            last_status = getattr(response, 'status_code', None)
-            if last_status not in RETRYABLE_JIRA_STATUS_CODES:
-                breaker.record_success()
-                log_debug(f'Jira GET ok status={last_status} attempt={attempts} latency_ms={latency_ms}')
-                return response
-            log_warning(f'Jira GET retryable status={last_status} attempt={attempts} latency_ms={latency_ms}')
-        except (requests.Timeout, requests.ConnectionError) as exc:
-            last_exception = exc
-            latency_ms = round((now_fn() - attempt_started) * 1000, 1)
-            log_warning(f'Jira GET transient exception type={type(exc).__name__} attempt={attempts} latency_ms={latency_ms}')
-        except Exception:
-            # Unknown exceptions are not retried; keep existing behavior predictable.
-            breaker.record_failure(now_fn())
-            raise
-
-        elapsed = now_fn() - started_at
-        if attempts >= max_attempts or elapsed >= max_elapsed_seconds:
-            state = breaker.record_failure(now_fn())
-            message = (
-                f'Jira server may be unavailable. Retried for {int(round(elapsed))} seconds and failed.'
-                if elapsed >= max_elapsed_seconds else
-                'Jira request failed after retry attempts.'
-            )
-            if state.get('state') == 'open':
-                log_error(f'Jira circuit opened after failed request failures={state.get("failureCount")}')
-            return _build_jira_unavailable_response(
-                message,
-                attempts=attempts,
-                elapsed_seconds=elapsed,
-                upstream_status=last_status,
-                circuit=state
-            )
-
-        delay = min(max_delay_seconds, base_delay_seconds * (2 ** (attempts - 1)))
-        jitter = min(0.25, delay * 0.25) * rand_fn()
-        total_delay = delay + jitter
-        if elapsed + total_delay > max_elapsed_seconds:
-            total_delay = max(0.0, max_elapsed_seconds - elapsed)
-        if total_delay <= 0:
-            continue
-        log_info(f'Jira GET retry scheduled attempt={attempts + 1} sleep_s={round(total_delay, 2)}')
-        sleep_fn(total_delay)
-
-    # Defensive fallback (loop should return above)
-    state = breaker.record_failure(now_fn())
-    return _build_jira_unavailable_response(
-        f'Jira request failed after {attempts} attempts.',
-        attempts=attempts,
-        elapsed_seconds=(now_fn() - started_at),
-        upstream_status=last_status,
-        circuit=state
+    return _jira_client.resilient_jira_get(
+        url,
+        params=params,
+        headers=headers,
+        timeout=timeout,
+        session=session or HTTP_SESSION,
+        breaker=breaker or JIRA_SEARCH_CIRCUIT_BREAKER,
+        now_fn=now_fn,
+        sleep_fn=sleep_fn,
+        rand_fn=rand_fn,
+        max_attempts=JIRA_RETRY_MAX_ATTEMPTS if max_attempts is None else max_attempts,
+        max_elapsed_seconds=JIRA_RETRY_MAX_ELAPSED_SECONDS if max_elapsed_seconds is None else max_elapsed_seconds,
+        base_delay_seconds=JIRA_RETRY_BASE_DELAY_SECONDS if base_delay_seconds is None else base_delay_seconds,
+        max_delay_seconds=JIRA_RETRY_MAX_DELAY_SECONDS if max_delay_seconds is None else max_delay_seconds,
+        log_debug_fn=log_debug,
+        log_info_fn=log_info,
+        log_warning_fn=log_warning,
+        log_error_fn=log_error,
+        unavailable_response_fn=_build_jira_unavailable_response,
+        retryable_status_codes=RETRYABLE_JIRA_STATUS_CODES
     )
 
 def parse_args():
@@ -735,25 +604,19 @@ def build_team_value(raw_team):
 
 def jira_search_request(headers, payload):
     """Call Jira search endpoint using query parameters for /search/jql."""
-    url = f'{JIRA_URL}/rest/api/3/search/jql'
-    params = {}
+    def request_fn(url, **kwargs):
+        return resilient_jira_get(
+            url,
+            session=HTTP_SESSION,
+            breaker=JIRA_SEARCH_CIRCUIT_BREAKER,
+            **kwargs
+        )
 
-    def to_csv(value):
-        if isinstance(value, list):
-            return ','.join(value)
-        return value
-
-    for key in ('jql', 'startAt', 'maxResults', 'expand', 'fields', 'fieldsByKeys', 'nextPageToken'):
-        if key in payload and payload[key] is not None:
-            params[key] = to_csv(payload[key])
-
-    return resilient_jira_get(
-        url,
-        params=params,
-        headers=headers,
-        timeout=30,
-        session=HTTP_SESSION,
-        breaker=JIRA_SEARCH_CIRCUIT_BREAKER
+    return _jira_client.jira_search_request(
+        JIRA_URL,
+        headers,
+        payload,
+        request_fn=request_fn
     )
 
 
@@ -1161,91 +1024,53 @@ def normalize_epic_keys(epic_keys):
 
 
 def resolve_groups_config_path():
-    return GROUPS_CONFIG_PATH or './team-groups.json'
+    return _config_store.resolve_groups_config_path(GROUPS_CONFIG_PATH)
 
 
 def load_groups_config_file(path):
-    if not path or not os.path.exists(path):
-        return None
-    try:
-        with open(path, 'r') as handle:
-            return json.load(handle)
-    except Exception as e:
-        log_warning(f'Failed to read groups config: {e}')
-        return None
+    return _config_store.load_groups_config_file(path, log_warning_fn=log_warning)
 
 
 def resolve_dashboard_config_path():
-    return DASHBOARD_CONFIG_PATH or './dashboard-config.json'
+    return _config_store.resolve_dashboard_config_path(DASHBOARD_CONFIG_PATH)
 
 
 def load_dashboard_config():
     """Load the unified dashboard config, migrating from legacy team-groups.json if needed."""
-    path = resolve_dashboard_config_path()
-    if os.path.exists(path):
-        try:
-            with open(path, 'r') as handle:
-                return json.load(handle)
-        except Exception as e:
-            log_warning(f'Failed to read dashboard config: {e}')
-            return None
-    # Migrate from legacy team-groups.json
-    legacy = load_groups_config_file(resolve_groups_config_path())
-    if legacy:
-        config = {
-            'version': 1,
-            'projects': {'selected': []},
-            'teamGroups': legacy
-        }
-        save_dashboard_config(config)
-        return config
-    return None
+    return _config_store.load_dashboard_config(
+        resolve_dashboard_config_path(),
+        resolve_groups_config_path(),
+        load_groups_config_file,
+        save_dashboard_config,
+        log_warning_fn=log_warning
+    )
 
 
 def save_dashboard_config(config):
     """Write the unified dashboard config to disk."""
-    path = resolve_dashboard_config_path()
-    directory = os.path.dirname(path)
-    if directory:
-        os.makedirs(directory, exist_ok=True)
-    with open(path, 'w') as handle:
-        json.dump(config, handle, indent=2)
+    return _config_store.save_dashboard_config(config, resolve_dashboard_config_path())
 
 
 def resolve_team_catalog_path():
-    return TEAM_CATALOG_PATH or './team-catalog.json'
+    return _config_store.resolve_team_catalog_path(TEAM_CATALOG_PATH)
 
 
 def load_team_catalog():
-    path = resolve_team_catalog_path()
-    if not os.path.exists(path):
-        return {'catalog': {}, 'meta': {}}
-    try:
-        with open(path, 'r') as handle:
-            data = json.load(handle)
-        if not isinstance(data, dict):
-            return {'catalog': {}, 'meta': {}}
-        return {
-            'catalog': normalize_team_catalog(data.get('catalog') or {}),
-            'meta': normalize_team_catalog_meta(data.get('meta') or {})
-        }
-    except Exception as e:
-        log_warning(f'Failed to read team catalog: {e}')
-        return {'catalog': {}, 'meta': {}}
+    return _config_store.load_team_catalog(
+        resolve_team_catalog_path(),
+        normalize_team_catalog_fn=normalize_team_catalog,
+        normalize_team_catalog_meta_fn=normalize_team_catalog_meta,
+        log_warning_fn=log_warning
+    )
 
 
 def save_team_catalog_file(catalog_data):
-    path = resolve_team_catalog_path()
-    directory = os.path.dirname(path)
-    if directory:
-        os.makedirs(directory, exist_ok=True)
-    normalized = {
-        'catalog': normalize_team_catalog(catalog_data.get('catalog') or {}),
-        'meta': normalize_team_catalog_meta(catalog_data.get('meta') or {})
-    }
-    with open(path, 'w') as handle:
-        json.dump(normalized, handle, indent=2)
-    return normalized
+    return _config_store.save_team_catalog_file(
+        catalog_data,
+        resolve_team_catalog_path(),
+        normalize_team_catalog_fn=normalize_team_catalog,
+        normalize_team_catalog_meta_fn=normalize_team_catalog_meta
+    )
 
 
 def migrate_team_catalog_from_config():

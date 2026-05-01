@@ -167,6 +167,93 @@ class TestEpmProjectsApi(unittest.TestCase):
 
     @patch('jira_server.get_epm_config')
     @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_endpoint_reports_server_timing_breakdown(self, mock_fetch_projects, mock_get_epm_config):
+        mock_fetch_projects.return_value = self._home_projects()
+        mock_get_epm_config.return_value = self._mixed_config()
+
+        response = self.client.get('/api/epm/projects')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        server_timing = response.headers.get('Server-Timing', '')
+        self.assertIn('home-projects;dur=', server_timing)
+        self.assertIn('total;dur=', server_timing)
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_endpoint_can_return_active_lifecycle_subset(self, mock_fetch_projects, mock_get_epm_config):
+        mock_fetch_projects.return_value = [
+            {
+                'homeProjectId': 'pending-one',
+                'name': 'Pending One',
+                'stateValue': 'PENDING',
+                'stateLabel': 'Pending',
+                'tabBucket': 'active',
+                'homeTags': ['rnd_project_pending'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            },
+            {
+                'homeProjectId': 'on-track-one',
+                'name': 'On Track One',
+                'stateValue': 'ON_TRACK',
+                'stateLabel': 'On track',
+                'tabBucket': 'active',
+                'homeTags': ['rnd_project_on_track'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            },
+            {
+                'homeProjectId': 'at-risk-one',
+                'name': 'At Risk One',
+                'stateValue': 'AT_RISK',
+                'stateLabel': 'At risk',
+                'tabBucket': 'active',
+                'homeTags': ['rnd_project_at_risk'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            },
+            {
+                'homeProjectId': 'off-track-one',
+                'name': 'Off Track One',
+                'stateValue': 'OFF_TRACK',
+                'stateLabel': 'Off track',
+                'tabBucket': 'active',
+                'homeTags': ['rnd_project_off_track'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            },
+            {
+                'homeProjectId': 'paused-one',
+                'name': 'Paused One',
+                'stateValue': 'PAUSED',
+                'stateLabel': 'Paused',
+                'tabBucket': 'backlog',
+                'homeTags': ['rnd_project_paused'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            },
+            {
+                'homeProjectId': 'completed-one',
+                'name': 'Completed One',
+                'stateValue': 'COMPLETED',
+                'stateLabel': 'Completed',
+                'tabBucket': 'archived',
+                'homeTags': ['rnd_project_completed'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            },
+        ]
+        mock_get_epm_config.return_value = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+            'projects': {},
+        }
+
+        response = self.client.get('/api/epm/projects?tab=active')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(
+            [project['id'] for project in response.get_json()['projects']],
+            ['pending-one', 'on-track-one', 'at-risk-one', 'off-track-one'],
+        )
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
     def test_projects_endpoint_manual_label_overrides_home_tag(self, mock_fetch_projects, mock_get_epm_config):
         mock_fetch_projects.return_value = [
             {

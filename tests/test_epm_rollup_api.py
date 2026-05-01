@@ -282,7 +282,7 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertTrue(metadata_rollup['metadataOnly'])
         self.assertFalse(metadata_rollup['emptyRollup'])
 
-    def test_all_projects_backlog_only_includes_paused_pending_projects(self):
+    def test_all_projects_backlog_only_includes_paused_projects(self):
         projects = [
             {
                 'id': 'active-one',
@@ -337,8 +337,72 @@ class TestEpmRollupApi(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         payload = response.get_json()
-        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['pending-one', 'paused-one'])
-        self.assertEqual(set(call.args[0] for call in mock_rollup.call_args_list), {'pending-one', 'paused-one'})
+        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['paused-one'])
+        self.assertEqual(set(call.args[0] for call in mock_rollup.call_args_list), {'paused-one'})
+
+    def test_all_projects_active_includes_pending_and_active_lifecycle_projects(self):
+        projects = [
+            {
+                'id': 'pending-one',
+                'displayName': 'Pending One',
+                'label': 'synthetic_pending',
+                'stateValue': 'PENDING',
+            },
+            {
+                'id': 'on-track-one',
+                'displayName': 'On Track One',
+                'label': 'synthetic_on_track',
+                'stateLabel': 'On track',
+            },
+            {
+                'id': 'at-risk-one',
+                'displayName': 'At Risk One',
+                'label': 'synthetic_at_risk',
+                'stateValue': 'AT_RISK',
+            },
+            {
+                'id': 'off-track-one',
+                'displayName': 'Off Track One',
+                'label': 'synthetic_off_track',
+                'stateValue': 'OFF_TRACK',
+            },
+            {
+                'id': 'paused-one',
+                'displayName': 'Paused One',
+                'label': 'synthetic_paused',
+                'stateValue': 'PAUSED',
+            },
+        ]
+
+        def rollup_side_effect(project_id, tab, sprint, _deps):
+            self.assertEqual(tab, 'active')
+            self.assertEqual(sprint, '42')
+            return {
+                'project': next(project for project in projects if project['id'] == project_id),
+                'metadataOnly': False,
+                'emptyRollup': True,
+                'truncated': False,
+                'truncatedQueries': [],
+                'initiatives': {},
+                'rootEpics': {},
+                'orphanStories': [],
+            }, 200, {}
+
+        with patch.object(jira_server, 'get_epm_config', return_value={'version': 2}), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': projects}), \
+             patch.object(jira_server, 'build_per_project_rollup', side_effect=rollup_side_effect) as mock_rollup:
+            response = self.client.get('/api/epm/projects/rollup/all?tab=active&sprint=42')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = response.get_json()
+        self.assertEqual(
+            [entry['project']['id'] for entry in payload['projects']],
+            ['pending-one', 'on-track-one', 'at-risk-one', 'off-track-one'],
+        )
+        self.assertEqual(
+            set(call.args[0] for call in mock_rollup.call_args_list),
+            {'pending-one', 'on-track-one', 'at-risk-one', 'off-track-one'},
+        )
 
     def test_all_projects_archived_returns_metadata_only_until_project_expand(self):
         projects = [

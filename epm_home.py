@@ -24,8 +24,8 @@ HOME_MAX_PROJECTS_PER_GOAL = 500
 
 _CLOUD_ID_CACHE: dict[str, str] = {}
 
-ACTIVE_EPM_STATES = {"ON_TRACK", "AT_RISK", "OFF_TRACK"}
-BACKLOG_EPM_STATES = {"PENDING", "PAUSED"}
+ACTIVE_EPM_STATES = {"PENDING", "ON_TRACK", "AT_RISK", "OFF_TRACK"}
+BACKLOG_EPM_STATES = {"PAUSED"}
 ARCHIVED_EPM_STATES = {"COMPLETED", "CANCELLED", "ARCHIVED"}
 
 MATCH_STATE_HOME_LINKED = "home-linked"
@@ -151,7 +151,18 @@ query GoalProjects($goalId: ID!, $first: Int!, $after: String) {
   goals_byId(goalId: $goalId) {
     projects(first: $first, after: $after) @optIn(to: "Townsquare") {
       pageInfo { hasNextPage endCursor }
-      edges { node { id key name url } }
+      edges {
+        node {
+          id key name url
+          state { label value }
+          tags @optIn(to: "Townsquare") {
+            edges { node { id name url } }
+          }
+          updates(first: 1) @optIn(to: "Townsquare") {
+            edges { node { id url creationDate editDate summary updateType } }
+          }
+        }
+      }
     }
   }
 }
@@ -592,6 +603,18 @@ def build_home_project_record(project, updates, linkage, home_tags=None, tags_un
     }
 
 
+def _shape_project_detail(project_id: str, payload: dict) -> dict:
+    state = payload.get("state") or {}
+    return {
+        "id": payload.get("id", project_id),
+        "key": payload.get("key", ""),
+        "name": payload.get("name", ""),
+        "url": payload.get("url", ""),
+        "stateValue": extract_project_status(payload),
+        "stateLabel": state.get("label", "") if isinstance(state, dict) else "",
+    }
+
+
 def build_home_graphql_client() -> HomeGraphQLClient:
     email = os.environ.get("ATLASSIAN_EMAIL") or os.environ.get("JIRA_EMAIL") or ""
     token = os.environ.get("ATLASSIAN_API_TOKEN") or os.environ.get("JIRA_TOKEN") or ""
@@ -734,15 +757,7 @@ def _fetch_home_project_record(client: HomeGraphQLClient, row: dict) -> dict | N
     try:
         detail = client.execute(QUERY_PROJECT_DETAILS, {"projectId": project_id})
         payload = (detail.get("data") or {}).get("projects_byId") or {}
-        state = payload.get("state") or {}
-        project = {
-            "id": payload.get("id", project_id),
-            "key": payload.get("key", ""),
-            "name": payload.get("name", ""),
-            "url": payload.get("url", ""),
-            "stateValue": extract_project_status(payload),
-            "stateLabel": state.get("label", "") if isinstance(state, dict) else "",
-        }
+        project = _shape_project_detail(project_id, payload)
         updates = fetch_latest_project_update(client, project_id)
         home_tags = fetch_project_tags(client, project)
         linkage = extract_home_jira_linkage(project)
@@ -752,6 +767,34 @@ def _fetch_home_project_record(client: HomeGraphQLClient, row: dict) -> dict | N
         return None
 
 
+def _extract_first_project_update(row: dict) -> list[dict]:
+    connection = row.get("updates") or {}
+    edge = next(iter(connection.get("edges", []) or []), None)
+    node = edge.get("node") if isinstance(edge, dict) else None
+    return [node] if node is not None else []
+
+
+def _has_enriched_goal_project_fields(row: dict) -> bool:
+    return isinstance(row, dict) and all(key in row for key in ("state", "tags", "updates"))
+
+
+def _build_home_project_record_from_goal_row(row: dict) -> dict | None:
+    project_id = row.get("id")
+    if not project_id:
+        return None
+    project = _shape_project_detail(project_id, row)
+    updates = _extract_first_project_update(row)
+    home_tags = normalize_project_tag_names(row.get("tags"))
+    linkage = extract_home_jira_linkage(project)
+    return build_home_project_record(project, updates, linkage, home_tags)
+
+
+def _fetch_or_build_home_project_record(client: HomeGraphQLClient, row: dict) -> dict | None:
+    if _has_enriched_goal_project_fields(row):
+        return _build_home_project_record_from_goal_row(row)
+    return _fetch_home_project_record(client, row)
+
+
 def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str) -> list[dict]:
     try:
         linked_projects = fetch_goal_project_links(client, goal_id)
@@ -759,7 +802,7 @@ def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str) -> list[dic
         logger.warning("Goal project list fetch failed: %s", exc)
         return []
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        records = executor.map(lambda row: _fetch_home_project_record(client, row), linked_projects)
+        records = executor.map(lambda row: _fetch_or_build_home_project_record(client, row), linked_projects)
     return [record for record in records if record is not None]
 
 

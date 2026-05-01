@@ -638,7 +638,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);
             const loadEpmScopeMeta = () => fetchEpmScope(BACKEND_URL);
             const loadEpmGoals = (rootGoalKey = '') => fetchEpmGoals(BACKEND_URL, rootGoalKey);
-            const loadEpmProjects = () => fetchEpmProjects(BACKEND_URL);
+            const loadEpmProjects = (tab = epmTab) => fetchEpmProjects(BACKEND_URL, { tab });
             const loadEpmConfigurationProjects = async (draftConfig, options = {}) => {
                 return fetchEpmConfigurationProjects(BACKEND_URL, draftConfig, options);
             };
@@ -738,6 +738,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             };
             const refreshEpmProjects = async (options = {}) => {
                 const background = Boolean(options.background);
+                const tab = options.tab || epmTab;
                 epmProjectsRequestIdRef.current += 1;
                 const requestId = epmProjectsRequestIdRef.current;
                 if (!background) {
@@ -746,7 +747,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setEpmProjectsLoading(true);
                 setEpmProjectsError('');
                 try {
-                    const payload = await loadEpmProjects();
+                    const payload = await loadEpmProjects(tab);
                     if (epmProjectsRequestIdRef.current !== requestId) {
                         return [];
                     }
@@ -1336,8 +1337,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     return;
                 }
                 if (epmSelectedProjectId === '') {
+                    await refreshEpmProjects();
                     await refreshEpmRollup(null, '');
-                    void refreshEpmProjects({ background: true });
                     return;
                 }
                 const nextProjects = await refreshEpmProjects();
@@ -9147,12 +9148,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     setEpmProjects([]);
                     return;
                 }
-                if (epmSelectedProjectId === '') {
-                    void refreshEpmProjects({ background: true });
-                    return;
-                }
                 void refreshEpmView();
-            }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId]);
+            }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab]);
 
             useEffect(() => {
                 if (selectedView !== 'epm') return;

@@ -31,8 +31,8 @@ class TestEpmHomeApi(unittest.TestCase):
         if cache is not None:
             cache.clear()
 
-    def test_bucket_pending_as_backlog(self):
-        self.assertEqual(bucket_epm_state('PENDING'), 'backlog')
+    def test_bucket_pending_as_active(self):
+        self.assertEqual(bucket_epm_state('PENDING'), 'active')
 
     def test_bucket_completed_as_archived(self):
         self.assertEqual(bucket_epm_state('COMPLETED'), 'archived')
@@ -502,6 +502,71 @@ class TestEpmHomeApi(unittest.TestCase):
             result = fetch_projects_for_goal(client, 'goal-1')
 
         self.assertEqual([row['homeProjectId'] for row in result], ['proj-slow', 'proj-fast', 'proj-medium'])
+
+    @patch('epm_home.fetch_goal_project_links')
+    def test_fetch_projects_for_goal_uses_enriched_goal_project_rows_without_per_project_fetches(self, mock_project_links):
+        client = Mock()
+        client.execute.side_effect = AssertionError('enriched goal project rows should not need per-project Home calls')
+        mock_project_links.return_value = [
+            {
+                'id': 'proj-a',
+                'key': 'PROJA',
+                'name': 'Project A',
+                'url': 'https://home/proj-a',
+                'state': {'label': 'On track', 'value': 'ON_TRACK'},
+                'updates': {
+                    'edges': [
+                        {'node': {'creationDate': '2026-04-12T10:00:00.000Z', 'summary': 'Latest A'}},
+                    ],
+                },
+                'tags': {
+                    'edges': [
+                        {'node': {'name': 'rnd_project_alpha'}},
+                    ],
+                },
+            },
+            {
+                'id': 'proj-b',
+                'key': 'PROJB',
+                'name': 'Project B',
+                'url': 'https://home/proj-b',
+                'state': {'label': 'Paused', 'value': 'PAUSED'},
+                'updates': {'edges': []},
+                'tags': {'edges': [{'node': {'name': 'rnd_project_beta'}}]},
+            },
+        ]
+
+        with patch('epm_home.fetch_latest_project_update') as mock_fetch_update, patch(
+            'epm_home.fetch_project_tags',
+        ) as mock_fetch_tags:
+            result = fetch_projects_for_goal(client, 'goal-1')
+
+        mock_fetch_update.assert_not_called()
+        mock_fetch_tags.assert_not_called()
+        self.assertEqual([row['homeProjectId'] for row in result], ['proj-a', 'proj-b'])
+        self.assertEqual(result[0]['latestUpdateSnippet'], 'Latest A')
+        self.assertEqual(result[0]['homeTags'], ['rnd_project_alpha'])
+        self.assertEqual(result[1]['tabBucket'], 'backlog')
+
+    def test_fetch_goal_project_links_requests_project_enrichment_fields(self):
+        client = Mock()
+        client.execute.return_value = {
+            'data': {
+                'goals_byId': {
+                    'projects': {
+                        'pageInfo': {'hasNextPage': False, 'endCursor': None},
+                        'edges': [],
+                    },
+                },
+            },
+        }
+
+        epm_home.fetch_goal_project_links(client, 'goal-1')
+
+        query = client.execute.call_args.args[0]
+        self.assertIn('state { label value }', query)
+        self.assertIn('tags @optIn(to: "Townsquare")', query)
+        self.assertIn('updates(first: 1)', query)
 
     @patch('epm_home.fetch_goal_project_links')
     @patch('epm_home.resolve_sub_goal_for_scope')

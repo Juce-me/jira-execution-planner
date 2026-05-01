@@ -12,8 +12,8 @@ export function isEmptyCustomEpmProjectRow(row) {
     return !String(row?.name ?? '').trim() && !String(row?.label ?? '').trim();
 }
 
-const ACTIVE_EPM_PROJECT_STATES = new Set(['on track', 'at risk', 'off track']);
-const BACKLOG_EPM_PROJECT_STATES = new Set(['pending', 'paused']);
+const ACTIVE_EPM_PROJECT_STATES = new Set(['pending', 'on track', 'at risk', 'off track']);
+const BACKLOG_EPM_PROJECT_STATES = new Set(['paused']);
 const ARCHIVED_EPM_PROJECT_STATES = new Set(['completed', 'cancelled', 'archived', 'done', 'release', 'released']);
 
 function getEpmProjectLifecycleBucket(project) {

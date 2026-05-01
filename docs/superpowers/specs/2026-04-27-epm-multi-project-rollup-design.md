@@ -5,7 +5,7 @@
 
 ## Problem
 
-The shipped EPM view (per `docs/superpowers/plans/2026-04-21-epm-project-rollup.md`) requires the user to pick exactly one Project at a time. To compare work across the portfolio they must serially select each Project, wait for its rollup, and remember what they saw. EPMs need to see every accessible Project's Jira work on a tab without that drill-down.
+The shipped EPM view (per `docs/plans/2026-04-21-epm-project-rollup.md`) requires the user to pick exactly one Project at a time. To compare work across the portfolio they must serially select each Project, wait for its rollup, and remember what they saw. EPMs need to see every accessible Project's Jira work on a tab without that drill-down.
 
 ## Goal
 

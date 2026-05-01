@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the top-level Dashboard Settings tab as `EPM`, then add EPM-local sub-tabs: `Scope` for Atlassian site/root/sub-goal/prefix and `Projects` for Jira Home project label mapping. Cache sub-goals by root in the frontend so reopening settings does not refetch them, and split backend EPM project caching so Jira Home project records are cached by scope while label mappings are shaped from the latest config on every response. The Projects tab gives users an explicit `Refresh from Jira Home` recovery path when a newly linked Project is missing: refresh bypasses the Home-project cache, reconciles new/missing Home projects with existing configuration, and preserves saved/custom mappings until the user removes them. The sub-goal is the project-catalog root; configured project labels plus the selected sprint define the Jira structure fetched for EPM rollups. Jira teams and team groups must not participate in EPM rollup scope.
 
-**Spec:** No separate design spec exists for this settings-cache follow-up. It is a settings workflow correction related to `docs/superpowers/plans/2026-04-27-epm-active-sprint-visibility.md`; it is not the portfolio rollup implementation from `docs/superpowers/specs/2026-04-27-epm-multi-project-rollup-design.md`.
+**Spec:** No separate design spec exists for this settings-cache follow-up. It is a settings workflow correction related to `docs/plans/2026-04-27-epm-active-sprint-visibility.md`; it is not the portfolio rollup implementation from `docs/superpowers/specs/2026-04-27-epm-multi-project-rollup-design.md`.
 
 **Tech Stack:** React 19, esbuild, Node `node:test` source guards, Python `unittest`, Flask.
 
@@ -73,7 +73,7 @@ Tasks 2, 4, and 6 contain several related edits because they are anchored to exi
 
 ## Release Dependency
 
-Do not start this settings implementation until the EPM Active sprint visibility work is merged into the target branch, or include that work in the same release before this plan. The Active EPM view must visibly show the selected sprint value because the configured project labels plus that sprint value define the Jira rollup scope. The dependency implementation plan is `docs/superpowers/plans/2026-04-27-epm-active-sprint-visibility.md`.
+Do not start this settings implementation until the EPM Active sprint visibility work is merged into the target branch, or include that work in the same release before this plan. The Active EPM view must visibly show the selected sprint value because the configured project labels plus that sprint value define the Jira rollup scope. The dependency implementation plan is `docs/plans/2026-04-27-epm-active-sprint-visibility.md`.
 
 Before Task 1, verify:
 
@@ -83,7 +83,7 @@ node --test tests/test_epm_view_source_guards.js
 
 Expected: PASS with source guards proving the Active EPM controls expose the sprint picker/value and hide it outside Active.
 
-If this verification fails, stop this settings plan and complete `docs/superpowers/plans/2026-04-27-epm-active-sprint-visibility.md` first, including its build and visual verification steps. Do not weaken or delete the source guard to proceed with this settings work.
+If this verification fails, stop this settings plan and complete `docs/plans/2026-04-27-epm-active-sprint-visibility.md` first, including its build and visual verification steps. Do not weaken or delete the source guard to proceed with this settings work.
 
 Also verify the existing project learning before Task 1:
 

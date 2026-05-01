@@ -127,7 +127,7 @@ To avoid this class of issue:
   - `frontend/src/dashboard.jsx`
   - `frontend/src/epm/EpmRollupPanel.jsx`
   - `tests/test_epm_view_source_guards.js`
-  - `docs/superpowers/plans/2026-04-27-epm-view-extraction.md`
+  - `docs/plans/2026-04-27-epm-view-extraction.md`
 - Current diagnosis:
   - `renderSprintControl()` is ENG-only in the main and compact header branches
   - `EpmRollupPanel` receives `selectedSprint` but does not display the selected sprint value

@@ -16,9 +16,9 @@ When this plan says "Project" it means the dashboard entity unless prefixed with
 - **Repo:** `jira-execution-planner` (Flask + React/esbuild dashboard that queries Jira Cloud + Atlassian Home/Townsquare GraphQL).
 - **Branch:** `feature/epm-project-view-impl`. Plan is written against HEAD `1bd92f1` (author: Juce-me, 2026-04-21). Merge base is `main`.
 - **Prior plans on this branch (for context only — do not re-implement):**
-  - `docs/superpowers/plans/2026-04-20-epm-project-view.md` — introduced EPM view, Home client, config, and endpoints.
-  - `docs/superpowers/plans/2026-04-21-epm-settings-scope-and-linkage.md` — moved EPM scope into settings, added `customName` + free-text Jira label/epic fields.
-  - `docs/superpowers/plans/2026-04-21-epm-goal-picker.md` — replaced manual scope entry with root-goal + sub-goal pickers; fixed the Home container ARI (`ari:cloud:townsquare::site/<cloudId>`); added `/api/epm/scope`, `/api/epm/goals`.
+  - `docs/plans/2026-04-20-epm-project-view.md` — introduced EPM view, Home client, config, and endpoints.
+  - `docs/plans/2026-04-21-epm-settings-scope-and-linkage.md` — moved EPM scope into settings, added `customName` + free-text Jira label/epic fields.
+  - `docs/plans/2026-04-21-epm-goal-picker.md` — replaced manual scope entry with root-goal + sub-goal pickers; fixed the Home container ARI (`ari:cloud:townsquare::site/<cloudId>`); added `/api/epm/scope`, `/api/epm/goals`.
 - **What user feedback triggered THIS plan (reviewers should assume this is the authoritative description of the problem):**
   1. `POST /api/epm/projects/preview` takes **~78s**, `GET /api/epm/projects` takes **~45s** for a goal with ~20 Home projects. Cause: sequential per-project GraphQL fan-out, paginated `projects_byId.updates` with `first: 10` even though only the single latest update is used.
   2. The user-visible "projects dropdown is empty" symptom was actually "projects list has not loaded yet after 45s." Separate from the perf issue, this exposed a model mismatch: the user wants the dashboard to surface Jira Initiatives/Epics/Stories grouped by **Project**, where a Project is defined by a single Jira label (e.g., `rnd_project_bsw`), not by re-fetching Home metadata.

@@ -23,7 +23,7 @@ import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
-import { fetchEpmConfig, fetchEpmScope, fetchEpmGoals, fetchEpmProjects, fetchEpmConfigurationProjects, fetchEpmProjectRollup, fetchEpmAllProjectsRollup } from './epm/epmFetch.js';
+import { fetchEpmConfig, fetchEpmScope, fetchEpmGoals, fetchEpmProjects, fetchEpmConfigurationProjects, fetchEpmProjectRollup, fetchEpmAllProjectsRollup } from './api/epmApi.js';
 import { EpmRollupPanel } from './epm/EpmRollupPanel.jsx';
 import {
     buildAggregateRollupBoards,

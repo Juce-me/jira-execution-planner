@@ -290,6 +290,9 @@ Write set:
 - `frontend/src/api/epmApi.js`
 - `frontend/src/epm/epmFetch.js`
 - `frontend/src/dashboard.jsx`
+- generated `frontend/dist/dashboard.js`
+- generated `frontend/dist/dashboard.js.map`
+- `tests/test_epm_shell_source_guards.js`
 - `tests/test_epm_view_source_guards.js`
 - `tests/test_frontend_api_source_guards.js`
 

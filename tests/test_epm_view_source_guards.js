@@ -5,6 +5,7 @@ const test = require('node:test');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
 const dashboardCssPath = path.join(__dirname, '..', 'frontend', 'src', 'styles', 'dashboard.css');
+const epmApiPath = path.join(__dirname, '..', 'frontend', 'src', 'api', 'epmApi.js');
 const epmFetchPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmFetch.js');
 const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupPanel.jsx');
 const epmRollupTreePath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupTree.jsx');
@@ -12,6 +13,7 @@ const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProj
 
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 const dashboardCssSource = fs.existsSync(dashboardCssPath) ? fs.readFileSync(dashboardCssPath, 'utf8') : '';
+const epmApiSource = fs.existsSync(epmApiPath) ? fs.readFileSync(epmApiPath, 'utf8') : '';
 const epmFetchSource = fs.readFileSync(epmFetchPath, 'utf8');
 const epmRollupPanelSource = fs.existsSync(epmRollupPanelPath) ? fs.readFileSync(epmRollupPanelPath, 'utf8') : '';
 const epmRollupTreeSource = fs.existsSync(epmRollupTreePath) ? fs.readFileSync(epmRollupTreePath, 'utf8') : '';
@@ -252,8 +254,8 @@ test('epm helper file exists without ambiguous Active-only helper copy', () => {
 
 test('EPM module homes own rollup fetch and rendering while staying isolated from ENG concerns', () => {
     assert.ok(
-        epmFetchSource.includes('/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}') || epmFetchSource.includes('/api/epm/projects/'),
-        'Expected EPM fetch URLs to live in epmFetch.js'
+        epmApiSource.includes('/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}') || epmApiSource.includes('/api/epm/projects/'),
+        'Expected EPM fetch URLs to live in api/epmApi.js'
     );
     assert.ok(epmRollupPanelSource.includes('This rollup is truncated; narrow the label or Jira scope.'), 'Expected rollup truncation UI in EpmRollupPanel.jsx');
     assert.ok(epmRollupPanelSource.includes('No issues match this label in the current scope.'), 'Expected empty rollup UI in EpmRollupPanel.jsx');
@@ -261,7 +263,7 @@ test('EPM module homes own rollup fetch and rendering while staying isolated fro
     assert.ok(epmRollupTreeSource.includes('EpmEpicNode'), 'Expected reusable epic renderer in EpmRollupTree.jsx');
     assert.ok(epmRollupTreeSource.includes('EpmRollupIssue'), 'Expected reusable issue renderer in EpmRollupTree.jsx');
 
-    for (const source of [epmFetchSource, epmRollupPanelSource, epmRollupTreeSource]) {
+    for (const source of [epmApiSource, epmFetchSource, epmRollupPanelSource, epmRollupTreeSource]) {
         assert.ok(!source.includes('/api/tasks-with-team-name'), 'EPM modules must not fetch ENG tasks');
         assert.ok(!source.includes('/api/backlog-epics'), 'EPM modules must not fetch ENG backlog epics');
         assert.ok(!source.includes('showPlanning'), 'EPM modules must not own planning state');
@@ -282,15 +284,15 @@ test('EPM board fetches rollup with tab and sprint params while preserving activ
     assert.ok(dashboardSource.includes('fetchEpmAllProjectsRollup(BACKEND_URL'), 'Expected EPM all-projects mode to fetch the aggregate rollup endpoint through wrapper');
     assert.ok(dashboardSource.includes('tab: epmTab'), 'Expected EPM rollup wrapper call to include current tab');
     assert.ok(dashboardSource.includes('sprint: selectedSprint'), 'Expected EPM rollup wrapper call to include selected sprint');
-    assert.ok(epmFetchSource.includes("const params = new URLSearchParams({ tab: effectiveTab })"), 'Expected EPM rollup request to include tab parameter');
-    assert.ok(epmFetchSource.includes("params.set('sprint', String(sprint))"), 'Expected EPM rollup request to include selected sprint');
-    assert.ok(epmFetchSource.includes('/api/epm/projects/rollup/all?${params.toString()}'), 'Expected aggregate EPM rollup request wrapper');
+    assert.ok(epmApiSource.includes("const params = new URLSearchParams({ tab: effectiveTab })"), 'Expected EPM rollup request to include tab parameter');
+    assert.ok(epmApiSource.includes("params.set('sprint', String(sprint))"), 'Expected EPM rollup request to include selected sprint');
+    assert.ok(epmApiSource.includes('/api/epm/projects/rollup/all?${params.toString()}'), 'Expected aggregate EPM rollup request wrapper');
     assert.ok(dashboardSource.includes("epmTab === 'active' && !selectedSprint"), 'Expected active tab to require selectedSprint before rollup fetch');
 });
 
 test('EPM project metadata fetch is scoped to the current lifecycle tab', () => {
     assert.ok(
-        epmFetchSource.includes('new URLSearchParams()') && epmFetchSource.includes("params.set('tab', String(tab))"),
+        epmApiSource.includes('new URLSearchParams()') && epmApiSource.includes("params.set('tab', String(tab))"),
         'Expected EPM projects wrapper to add tab query parameter when provided'
     );
     assert.ok(
@@ -425,7 +427,7 @@ test('EPM project identity positions use project id only', () => {
     );
     assert.ok(rollupFetchSnippet.includes('getEpmProjectIdentity(currentProject)'), 'Expected rollup URL id to come from project id identity helper');
     assert.ok(rollupFetchSnippet.includes('fetchEpmProjectRollup(BACKEND_URL, currentProjectId'), 'Expected rollup request to use current project id');
-    assert.ok(epmFetchSource.includes('encodeURIComponent(projectId)}/rollup'), 'Expected rollup URL wrapper to encode current project id');
+    assert.ok(epmApiSource.includes('encodeURIComponent(projectId)}/rollup'), 'Expected rollup URL wrapper to encode current project id');
     assert.ok(!rollupFetchSnippet.includes('homeProjectId'), 'Expected rollup URL path logic not to reference homeProjectId');
 
     const pickerSnippet = getSnippetBetween(

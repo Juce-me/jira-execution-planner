@@ -30,6 +30,7 @@ Postmortems serve to:
 | [MRT012](./MRT012-epm-active-sprint-value-hidden.md) | EPM Active Sprint Value Hidden | 2026-04-27 | High | In Progress | EPM Active used hidden sprint state without showing the selected sprint value or selector |
 | [MRT013](./MRT013-epm-active-home-projects-hidden.md) | EPM Active Home Projects Hidden | 2026-04-30 | High | Resolved | Home project pagination and status-label normalization hid Active projects before rollup rendering |
 | [MRT014](./MRT014-epm-cold-load-cache-race.md) | EPM Cold Load Cache Race | 2026-04-30 | Medium | Resolved | EPM cold load could race Home project discovery with all-project rollup and lacked timing visibility |
+| [MRT015](./MRT015-epm-first-load-home-fanout-overfetch.md) | EPM First Load Home Fan-Out and Overfetch | 2026-05-01 | High | Resolved | Slow first EPM load came from per-project Home enrichment fan-out and unscoped all-project metadata fetches |
 
 ## Postmortem Template
 

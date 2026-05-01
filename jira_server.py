@@ -1829,7 +1829,7 @@ def find_epm_config_row(projects, project_id):
     return None
 
 
-def build_epm_projects_payload(epm_config, force_refresh=False):
+def build_epm_projects_payload(epm_config, force_refresh=False, tab=None):
     normalized_config = normalize_epm_config(epm_config or {})
     projects = []
     epm_scope = normalized_config.get('scope') or {}
@@ -1853,8 +1853,9 @@ def build_epm_projects_payload(epm_config, force_refresh=False):
             projects.append(missing_home_row)
             continue
         projects.append(build_custom_project_payload(row))
+    filtered_projects = filter_epm_projects_for_tab(projects, tab) if normalize_epm_text(tab) else projects
     return {
-        'projects': projects,
+        'projects': filtered_projects,
         'cacheHit': home_state['cacheHit'],
         'fetchedAt': home_state['fetchedAt'],
         'homeProjectCount': home_state['homeProjectCount'],
@@ -1927,7 +1928,7 @@ def build_all_epm_projects_rollup(tab, sprint):
 
     epm_config = get_epm_config()
     projects_started = time.perf_counter()
-    projects_payload = build_epm_projects_payload(epm_config)
+    projects_payload = build_epm_projects_payload(epm_config, tab=tab)
     projects_ms = round((time.perf_counter() - projects_started) * 1000, 1)
     visible_projects = filter_epm_projects_for_tab(projects_payload.get('projects') or [], tab)
     dependencies = build_epm_rollup_dependencies()
@@ -7063,14 +7064,25 @@ def get_epm_goals_endpoint():
 def get_epm_projects_endpoint():
     epm_config = get_epm_config()
     force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
-    return jsonify(build_epm_projects_payload(epm_config, force_refresh=force_refresh))
+    tab = normalize_epm_text(request.args.get('tab'))
+    started = time.perf_counter()
+    payload = build_epm_projects_payload(epm_config, force_refresh=force_refresh, tab=tab)
+    total_ms = round((time.perf_counter() - started) * 1000, 1)
+    response = jsonify(payload)
+    response.headers['Server-Timing'] = f'home-projects;dur={total_ms}, total;dur={total_ms}'
+    return response
 
 
 @app.route('/api/epm/projects/configuration', methods=['POST'])
 def configure_epm_projects_endpoint():
     payload = normalize_epm_config(request.get_json(silent=True) or {})
     force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
-    return jsonify(build_epm_projects_payload(payload, force_refresh=force_refresh))
+    started = time.perf_counter()
+    projects_payload = build_epm_projects_payload(payload, force_refresh=force_refresh)
+    total_ms = round((time.perf_counter() - started) * 1000, 1)
+    response = jsonify(projects_payload)
+    response.headers['Server-Timing'] = f'home-projects;dur={total_ms}, total;dur={total_ms}'
+    return response
 
 
 @app.route('/api/epm/projects/preview', methods=['POST'])

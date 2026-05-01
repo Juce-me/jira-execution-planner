@@ -234,6 +234,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - EPM project board headers must keep the collapse button separate from links, label pills, and long update text; never nest anchors or metadata inside the toggle.
 - EPM Active visibility must be validated from Home project lifecycle labels as well as enum values, and Home project pagination caps must exceed current scoped Home goal sizes.
 - EPM cold loads must warm project metadata before all-project rollups, and aggregate EPM endpoints must expose `Server-Timing` before performance tuning.
+- EPM first-load project metadata must be scoped to the active lifecycle; Active includes pending, on-track, at-risk, and off-track Home projects, while Backlog is paused only.
 - In EPM settings Projects, keep rows compact: project name plus Home status on one line, no Home update snippets, and Jira label search hidden behind explicit Choose/Change actions.
 - In EPM settings Projects, blank custom rows, including legacy rows with missing Home linkage, are draft-only: show an explicit delete action and drop fully empty rows before saving.
 - In EPM settings Projects, put project name, Home status, Home link, and Jira label in stable cells so variable statuses do not distort the row.

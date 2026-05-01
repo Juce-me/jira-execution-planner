@@ -2,8 +2,8 @@
 
 Use the header `ENG | EPM` switch to move between team delivery and project delivery.
 
-- `Active` uses both the selected project and the selected sprint.
-- `Backlog` ignores sprint and shows pending or paused project work.
+- `Active` uses both the selected project and the selected sprint, and includes pending, on-track, at-risk, and off-track Home projects.
+- `Backlog` ignores sprint and shows paused project work.
 - `Archived` ignores sprint and shows completed, cancelled, or archived project work.
 
 If `Active` has no sprint selected, the dashboard keeps the EPM project selected but does not request Jira issues until you choose a sprint.

@@ -288,7 +288,27 @@ test('EPM board fetches rollup with tab and sprint params while preserving activ
     assert.ok(dashboardSource.includes("epmTab === 'active' && !selectedSprint"), 'Expected active tab to require selectedSprint before rollup fetch');
 });
 
-test('EPM initial all-project load fetches rollup before background project metadata refresh', () => {
+test('EPM project metadata fetch is scoped to the current lifecycle tab', () => {
+    assert.ok(
+        epmFetchSource.includes('new URLSearchParams()') && epmFetchSource.includes("params.set('tab', String(tab))"),
+        'Expected EPM projects wrapper to add tab query parameter when provided'
+    );
+    assert.ok(
+        dashboardSource.includes('fetchEpmProjects(BACKEND_URL, { tab })'),
+        'Expected dashboard project metadata fetches to pass the current EPM tab'
+    );
+    assert.ok(
+        dashboardSource.includes('const refreshEpmProjects = async (options = {}) => {') &&
+            dashboardSource.includes('const tab = options.tab || epmTab;'),
+        'Expected refreshEpmProjects to default to the current EPM tab'
+    );
+    assert.ok(
+        dashboardSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab]);'),
+        'Expected EPM view refresh effect to reload project metadata when the EPM tab changes'
+    );
+});
+
+test('EPM initial all-project load warms project metadata before all-project rollup', () => {
     const functions = getConstFunctionBodies(dashboardSource);
     const refreshEpmViewSource = functions.get('refreshEpmView') || '';
     const refreshEpmRollupSource = functions.get('refreshEpmRollup') || '';
@@ -308,17 +328,14 @@ test('EPM initial all-project load fetches rollup before background project meta
         refreshEpmViewSource.includes("if (epmSelectedProjectId === '') {"),
         'Expected explicit all-project branch in EPM view refresh'
     );
+    const projectsIndex = refreshEpmViewSource.indexOf('await refreshEpmProjects();');
+    const rollupIndex = refreshEpmViewSource.indexOf("await refreshEpmRollup(null, '');");
+    assert.ok(projectsIndex !== -1, 'Expected all-project branch to fetch project metadata first');
+    assert.ok(rollupIndex !== -1, 'Expected all-project branch to fetch aggregate rollup after metadata');
+    assert.ok(projectsIndex < rollupIndex, 'Expected project metadata to warm cache before aggregate rollup');
     assert.ok(
-        refreshEpmViewSource.includes("await refreshEpmRollup(null, '');"),
-        'Expected all-project branch to fetch rollup without waiting for the project picker list'
-    );
-    assert.ok(
-        refreshEpmViewSource.includes('void refreshEpmProjects({ background: true });'),
-        'Expected all-project branch to refresh Home project metadata in the background'
-    );
-    assert.ok(
-        dashboardSource.includes("if (epmSelectedProjectId === '') {\n                    void refreshEpmProjects({ background: true });"),
-        'Expected EPM bootstrap effect to refresh project metadata in the background for all-project mode'
+        !dashboardSource.includes("if (epmSelectedProjectId === '') {\n                    void refreshEpmProjects({ background: true });"),
+        'EPM bootstrap must not start a background project fetch that races aggregate rollup'
     );
 });
 
@@ -350,8 +367,8 @@ test('EPM board bootstraps saved config from initial user config before loading 
         'Expected EPM view load effect to wait for saved EPM config bootstrap'
     );
     assert.ok(
-        dashboardSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId]);'),
-        'Expected EPM view load effect to rerun after config bootstrap'
+        dashboardSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab]);'),
+        'Expected EPM view load effect to rerun after config bootstrap and tab changes'
     );
 });
 
@@ -543,7 +560,8 @@ test('EPM rollup helper dedupes by issue key before rendering', () => {
 
 test('EPM project helper uses strict backlog and archived lifecycle buckets', () => {
     assert.ok(helperSource.includes("normalizedTab === 'active'"), 'Expected active tab to own custom all project visibility');
-    assert.ok(helperSource.includes("BACKLOG_EPM_PROJECT_STATES"), 'Expected backlog tab to be limited to paused/pending states');
+    assert.ok(helperSource.includes("ACTIVE_EPM_PROJECT_STATES = new Set(['pending', 'on track', 'at risk', 'off track'])"), 'Expected active tab to include pending and active Home states');
+    assert.ok(helperSource.includes("BACKLOG_EPM_PROJECT_STATES = new Set(['paused'])"), 'Expected backlog tab to be limited to paused states');
     assert.ok(helperSource.includes("ARCHIVED_EPM_PROJECT_STATES"), 'Expected archived tab to be limited to archived/completed states');
     assert.ok(helperSource.includes('filterEpmRollupBoardsForSearch'), 'Expected EPM board search helper');
 });

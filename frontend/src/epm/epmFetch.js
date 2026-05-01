@@ -19,8 +19,15 @@ export const fetchEpmGoals = (backendUrl, rootGoalKey = '') => {
     return fetch(url, { cache: 'no-cache' }).then(response => json(response, 'EPM goals'));
 };
 
-export const fetchEpmProjects = (backendUrl) =>
-    fetch(`${backendUrl}/api/epm/projects`, { cache: 'no-cache' }).then(response => json(response, 'EPM projects'));
+export const fetchEpmProjects = (backendUrl, { tab } = {}) => {
+    const params = new URLSearchParams();
+    if (tab) {
+        params.set('tab', String(tab));
+    }
+    const query = params.toString();
+    const url = query ? `${backendUrl}/api/epm/projects?${query}` : `${backendUrl}/api/epm/projects`;
+    return fetch(url, { cache: 'no-cache' }).then(response => json(response, 'EPM projects'));
+};
 
 export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {}) {
     const forceRefresh = Boolean(options.forceRefresh);

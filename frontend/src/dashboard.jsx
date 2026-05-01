@@ -11,6 +11,8 @@ import ControlField from './ui/ControlField.jsx';
 import IconButton from './ui/IconButton.jsx';
 import LoadingRows from './ui/LoadingRows.jsx';
 import EmptyState from './ui/EmptyState.jsx';
+import StatusPill from './ui/StatusPill.jsx';
+import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
 import {
     aggregateCohortSummary,
     buildCohortGridModel,
@@ -9879,30 +9881,17 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return num.toFixed(1);
             };
 
-            const formatPriorityShort = (value) => {
-                const name = String(value || '').toLowerCase();
-                if (!name) return 'NONE';
-                if (name.includes('blocker')) return 'BLKR';
-                if (name.includes('critical')) return 'CRIT';
-                if (name.includes('highest')) return 'HIGH';
-                if (name.includes('high')) return 'HIGH';
-                if (name.includes('major')) return 'MAJR';
-                if (name.includes('medium')) return 'MED';
-                if (name.includes('minor')) return 'MIN';
-                if (name.includes('lowest')) return 'LOW';
-                if (name.includes('low')) return 'LOW';
-                return name.slice(0, 4).toUpperCase();
-            };
-
             const renderPriorityIcon = (priority, idSeed) => {
                 const name = String(priority || '').toLowerCase();
                 const label = priority || 'None';
+                const shortLabel = formatPriorityShort(priority);
+                const priorityAttrs = { 'data-priority': label, 'data-priority-short': shortLabel, 'aria-label': label };
                 const iconClass = name.replace(/\s+/g, '-') || 'none';
                 const safeId = String(idSeed || 'priority').replace(/[^a-z0-9_-]/gi, '') || 'priority';
                 const gradientId = `priority-grad-${safeId}`;
                 if (!name) {
                     return (
-                        <span className="task-priority-icon none" data-priority="None" aria-label="None">
+                        <span className="task-priority-icon none" {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <circle cx="8" cy="8" r="5" fill="none" stroke="#7a8699" strokeWidth="2"/>
                             </svg>
@@ -9911,7 +9900,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 if (name.includes('blocker')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <path d="M8 15c-3.9 0-7-3.1-7-7s3.1-7 7-7 7 3.1 7 7-3.1 7-7 7zM4 7c-.6 0-1 .4-1 1s.4 1 1 1h8c.6 0 1-.4 1-1s-.4-1-1-1H4z" fill="#ff5630"/>
                             </svg>
@@ -9920,7 +9909,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 if (name.includes('critical')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <defs>
                                     <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1="-46.25" y1="65.1105" x2="-46.25" y2="64.1105" gradientTransform="matrix(12 0 0 -13.1121 563 854.7415)">
@@ -9935,7 +9924,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 if (name.includes('highest') || name.includes('high') || name.includes('major')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <path d="M7.984436 3.200867l-4.5 2.7c-.5.3-1.1.1-1.3-.4s-.2-1.1.3-1.3l5-3c.3-.2.7-.2 1 0l5 3c.5.3.6.9.3 1.4-.3.5-.9.6-1.4.3l-4.4-2.7z" fill="#ff5630"/>
                                 <path d="M3.484436 10.200867c-.5.3-1.1.1-1.3-.3s-.2-1.1.3-1.4l5-3c.3-.2.7-.2 1 0l5 3c.5.3.6.9.3 1.4-.3.5-.9.6-1.4.3l-4.4-2.7-4.5 2.7z" fill="#ff7452"/>
@@ -9946,7 +9935,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 if (name.includes('medium')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <circle cx="8" cy="8" r="5" fill="none" stroke="#7a8699" strokeWidth="2"/>
                             </svg>
@@ -9955,7 +9944,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 if (name.includes('minor') || name.includes('lowest')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <path d="M8.045319 12.806152l4.5-2.7c.5-.3 1.1-.1 1.3.4s.2 1.1-.3 1.3l-5 3c-.3.2-.7.2-1 0l-5-3c-.5-.3-.6-.9-.3-1.4.3-.5.9-.6 1.4-.3l4.4 2.7z" fill="#0065ff"/>
                                 <path d="M12.545319 5.806152c.5-.3 1.1-.1 1.3.3s.2 1.1-.3 1.4l-5 3c-.3.2-.7.2-1 0l-5-3c-.5-.3-.6-.9-.3-1.4.3-.5.9-.6 1.4-.3l4.4 2.7 4.5-2.7z" fill="#2684ff"/>
@@ -9966,7 +9955,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 if (name.includes('low')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <path d="M12.5 6.1c.5-.3 1.1-.1 1.4.4.3.5.1 1.1-.3 1.3l-5 3c-.3.2-.7.2-1 0l-5-3c-.6-.2-.7-.9-.4-1.3.2-.5.9-.7 1.3-.4L8 8.8l4.5-2.7z" fill="#0065ff"/>
                             </svg>
@@ -9974,7 +9963,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     );
                 }
                 return (
-                    <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                    <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                         <svg viewBox="0 0 16 16">
                             <circle cx="8" cy="8" r="5" fill="none" stroke="#7a8699" strokeWidth="2"/>
                         </svg>
@@ -11366,10 +11355,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                 </div>
                                             </div>
                                             <div className="task-meta">
-                                                <span className={`task-status ${task.fields.status?.name.toLowerCase().replace(/\s+/g, '-')}`}>
-                                                    {task.fields.status?.name}
-                                                </span>
-                                                <span className="task-team">{teamInfo.name}</span>
+                                                <StatusPill
+                                                    className={getIssueStatusClassName(task.fields.status?.name)}
+                                                    label={task.fields.status?.name}
+                                                />
+                                                <span className="task-team">{getIssueTeamLabel(teamInfo)}</span>
                                                 {task.fields.assignee && (
                                                     <span className="task-assignee">
                                                         <span className="task-assignee-icon" aria-hidden="true">
@@ -15580,9 +15570,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                         </div>
                                                                     </div>
                                                                     <div className="task-meta">
-                                                                        <span className={`task-status mapping-preview-dimmable ${story.statusClass || story.status.toLowerCase().replace(/\s+/g, '-')}`}>
-                                                                            {story.status}
-                                                                        </span>
+                                                                        <StatusPill
+                                                                            className={getIssueStatusClassName(story.status, `mapping-preview-dimmable ${story.statusClass || ''}`)}
+                                                                            label={story.status}
+                                                                        />
                                                                         <span
                                                                             className={`task-team mapping-preview-dimmable mapping-preview-task-team mapping-preview-linkable mapping-preview-link-team ${mappingHoverKey === 'team' ? 'is-linked-hover' : ''}`}
                                                                             onMouseEnter={() => setMappingHoverKey('team')}
@@ -16277,9 +16268,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                     </div>
                                                                     <div className="epm-project-status-cell" role="cell" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
                                                                         {projectStatus && (
-                                                                            <span className="epm-home-status-pill" title="Jira Home status" style={{ maxWidth: '100%', border: '1px solid var(--border)', borderRadius: '999px', padding: '0.16rem 0.45rem', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.58rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', background: '#fbfaf7', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                                {projectStatus}
-                                                                            </span>
+                                                                            <StatusPill className="epm-home-status-pill" title="Jira Home status" label={projectStatus} style={{ maxWidth: '100%', border: '1px solid var(--border)', borderRadius: '999px', padding: '0.16rem 0.45rem', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.58rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', background: '#fbfaf7', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} />
                                                                         )}
                                                                     </div>
                                                                     <div className="epm-project-label-cell" role="cell" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, maxWidth: '100%', flexWrap: 'wrap' }}>

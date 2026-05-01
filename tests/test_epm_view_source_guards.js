@@ -15,6 +15,7 @@ const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'Co
 const iconButtonPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'IconButton.jsx');
 const loadingRowsPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'LoadingRows.jsx');
 const emptyStatePath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'EmptyState.jsx');
+const statusPillPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'StatusPill.jsx');
 
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 const segmentedControlSource = fs.existsSync(segmentedControlPath) ? fs.readFileSync(segmentedControlPath, 'utf8') : '';
@@ -22,6 +23,7 @@ const controlFieldSource = fs.existsSync(controlFieldPath) ? fs.readFileSync(con
 const iconButtonSource = fs.existsSync(iconButtonPath) ? fs.readFileSync(iconButtonPath, 'utf8') : '';
 const loadingRowsSource = fs.existsSync(loadingRowsPath) ? fs.readFileSync(loadingRowsPath, 'utf8') : '';
 const emptyStateSource = fs.existsSync(emptyStatePath) ? fs.readFileSync(emptyStatePath, 'utf8') : '';
+const statusPillSource = fs.existsSync(statusPillPath) ? fs.readFileSync(statusPillPath, 'utf8') : '';
 const dashboardCssSource = fs.existsSync(dashboardCssPath) ? fs.readFileSync(dashboardCssPath, 'utf8') : '';
 const epmApiSource = fs.existsSync(epmApiPath) ? fs.readFileSync(epmApiPath, 'utf8') : '';
 const epmFetchSource = fs.readFileSync(epmFetchPath, 'utf8');
@@ -230,6 +232,17 @@ test('dashboard source uses shared basic UI primitives for representative contro
     assert.ok(loadingRowsSource.includes('Array.from({ length: rows }') && loadingRowsSource.includes('Array.from({ length: columns }'), 'Expected LoadingRows to generate the requested row and column skeleton spans');
     assert.ok(emptyStateSource.includes("['empty-state', className]"), 'Expected EmptyState to preserve the empty-state wrapper class');
     assert.ok(emptyStateSource.includes('<h2>{title}</h2>'), 'Expected EmptyState to preserve the heading structure');
+});
+
+test('EPM status and label chips use the shared StatusPill primitive', () => {
+    assert.ok(fs.existsSync(statusPillPath), 'Expected shared StatusPill primitive');
+    assert.ok(statusPillSource.includes("['status-pill', className]"), 'Expected StatusPill to preserve a stable base class');
+    assert.ok(statusPillSource.includes('title={title || label}'), 'Expected StatusPill to default the title to the rendered label');
+    assert.ok(epmRollupPanelSource.includes("import StatusPill from '../ui/StatusPill.jsx';"), 'Expected EpmRollupPanel to import StatusPill');
+    assert.ok(epmRollupPanelSource.includes('<StatusPill') && epmRollupPanelSource.includes('className="epm-project-board-label-pill"'), 'Expected EPM project board labels to render through StatusPill');
+    assert.ok(epmRollupPanelSource.includes('<StatusPill') && epmRollupPanelSource.includes('className="epm-duplicates-project-label"'), 'Expected EPM duplicate project labels to render through StatusPill');
+    assert.ok(dashboardSource.includes("import StatusPill from './ui/StatusPill.jsx';"), 'Expected dashboard to import StatusPill for settings status chips');
+    assert.ok(dashboardSource.includes('<StatusPill') && dashboardSource.includes('className="epm-home-status-pill"'), 'Expected EPM settings Home statuses to render through StatusPill');
 });
 
 test('EPM project picker uses the sprint-style custom dropdown', () => {

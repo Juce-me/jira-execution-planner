@@ -413,6 +413,10 @@ Write set:
 - `frontend/src/styles/dashboard.css`
 - `frontend/src/dashboard.jsx`
 - `frontend/src/epm/EpmRollupPanel.jsx`
+- generated `frontend/dist/dashboard.js`
+- generated `frontend/dist/dashboard.js.map`
+- `tests/test_epm_view_source_guards.js`
+- `tests/test_dashboard_alert_source_guards.js`
 
 Steps:
 

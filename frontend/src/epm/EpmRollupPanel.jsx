@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import StatusPill from '../ui/StatusPill.jsx';
 import { buildEpmEngEpicGroup, buildEpmProjectUpdateLine, getEpmProjectDisplayName, toEpmEngTask } from './epmProjectUtils.mjs';
 
 export function EpmRollupPanel({
@@ -104,7 +105,7 @@ export function EpmRollupPanel({
                     </button>
                     <div className="epm-project-board-meta">
                         {project?.label && (
-                            <span className="epm-project-board-label-pill">{project.label}</span>
+                            <StatusPill className="epm-project-board-label-pill" label={project.label} />
                         )}
                         {project?.homeUrl && (
                             <a
@@ -174,7 +175,7 @@ export function EpmRollupPanel({
                                     <span className="epm-duplicates-project-chip" key={project.id || getEpmProjectDisplayName(project)}>
                                         <span className="epm-duplicates-project-name">{getEpmProjectDisplayName(project)}</span>
                                         {project.label && (
-                                            <span className="epm-duplicates-project-label">{project.label}</span>
+                                            <StatusPill className="epm-duplicates-project-label" label={project.label} />
                                         )}
                                     </span>
                                 ))}

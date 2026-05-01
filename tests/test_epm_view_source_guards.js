@@ -8,6 +8,8 @@ const dashboardCssPath = path.join(__dirname, '..', 'frontend', 'src', 'styles',
 const epmApiPath = path.join(__dirname, '..', 'frontend', 'src', 'api', 'epmApi.js');
 const epmFetchPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmFetch.js');
 const epmViewDataPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'useEpmViewData.js');
+const epmControlsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmControls.jsx');
+const epmViewPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmView.jsx');
 const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupPanel.jsx');
 const epmRollupTreePath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupTree.jsx');
 const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs');
@@ -29,6 +31,8 @@ const dashboardCssSource = fs.existsSync(dashboardCssPath) ? fs.readFileSync(das
 const epmApiSource = fs.existsSync(epmApiPath) ? fs.readFileSync(epmApiPath, 'utf8') : '';
 const epmFetchSource = fs.readFileSync(epmFetchPath, 'utf8');
 const epmViewDataSource = fs.existsSync(epmViewDataPath) ? fs.readFileSync(epmViewDataPath, 'utf8') : '';
+const epmControlsSource = fs.existsSync(epmControlsPath) ? fs.readFileSync(epmControlsPath, 'utf8') : '';
+const epmViewSource = fs.existsSync(epmViewPath) ? fs.readFileSync(epmViewPath, 'utf8') : '';
 const epmRollupPanelSource = fs.existsSync(epmRollupPanelPath) ? fs.readFileSync(epmRollupPanelPath, 'utf8') : '';
 const epmRollupTreeSource = fs.existsSync(epmRollupTreePath) ? fs.readFileSync(epmRollupTreePath, 'utf8') : '';
 const helperSource = fs.existsSync(helperPath) ? fs.readFileSync(helperPath, 'utf8') : '';
@@ -200,10 +204,15 @@ test('dashboard source keeps the ENG and EPM switch contract', () => {
     assert.ok(!dashboardSource.includes('view-switch'), 'Did not expect view-switch in dashboard.jsx');
 });
 
-test('dashboard source renders mutually exclusive EPM controls as segmented radio groups', () => {
+test('dashboard source renders mutually exclusive view controls and delegates EPM tab controls', () => {
+    assert.ok(fs.existsSync(epmControlsPath), 'Expected EPM controls component');
     assert.ok(dashboardSource.includes('<SegmentedControl'), 'Expected dashboard selectors to use the shared segmented primitive');
     assert.ok(dashboardSource.includes('className="view-mode-control"'), 'Expected ENG/EPM selector to keep the view-mode-control class');
-    assert.ok(dashboardSource.includes('className="epm-state-control"'), 'Expected EPM project-state selector to keep the epm-state-control class');
+    assert.ok(dashboardSource.includes("import { EpmControls } from './epm/EpmControls.jsx';"), 'Expected dashboard to import EpmControls');
+    assert.ok(dashboardSource.includes('<EpmControls'), 'Expected dashboard to render EpmControls');
+    assert.ok(!dashboardSource.includes('const renderEpmTabs = () =>'), 'Expected dashboard not to own EPM tabs renderer');
+    assert.ok(epmControlsSource.includes('className="epm-state-control"'), 'Expected EPM project-state selector to keep the epm-state-control class');
+    assert.ok(epmControlsSource.includes('ariaLabel="EPM project state"'), 'Expected EPM tabs to preserve their accessible label');
     assert.ok(segmentedControlSource.includes("['segmented-control', className]"), 'Expected SegmentedControl to preserve the segmented-control wrapper class');
     assert.ok(segmentedControlSource.includes('role="radiogroup"'), 'Expected SegmentedControl to expose radio group semantics');
     assert.ok(segmentedControlSource.includes('role="radio"'), 'Expected segmented options to expose radio semantics');
@@ -211,6 +220,8 @@ test('dashboard source renders mutually exclusive EPM controls as segmented radi
 });
 
 test('dashboard source uses shared basic UI primitives for representative controls and states', () => {
+    assert.ok(fs.existsSync(epmControlsPath), 'Expected EPM controls component');
+    assert.ok(fs.existsSync(epmViewPath), 'Expected EPM view component');
     assert.ok(fs.existsSync(segmentedControlPath), 'Expected shared SegmentedControl primitive');
     assert.ok(fs.existsSync(controlFieldPath), 'Expected shared ControlField primitive');
     assert.ok(fs.existsSync(iconButtonPath), 'Expected shared IconButton primitive');
@@ -225,7 +236,10 @@ test('dashboard source uses shared basic UI primitives for representative contro
     assert.ok(dashboardSource.includes('<ControlField') && dashboardSource.includes('label="Search"'), 'Expected header search control to use ControlField');
     assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="refresh-icon"'), 'Expected compact refresh action to use IconButton');
     assert.ok(dashboardSource.includes('<LoadingRows') && dashboardSource.includes('className="epm-project-skeleton-list"'), 'Expected EPM project loading rows to use LoadingRows');
-    assert.ok(dashboardSource.includes('<EmptyState') && dashboardSource.includes('title="Loading EPM settings"'), 'Expected EPM loading empty state to use EmptyState');
+    assert.ok(epmViewSource.includes('<EmptyState') && epmViewSource.includes('title="Loading EPM settings"'), 'Expected EPM loading empty state to use EmptyState');
+    assert.ok(epmControlsSource.includes("import SegmentedControl from '../ui/SegmentedControl.jsx';"), 'Expected EpmControls to import SegmentedControl');
+    assert.ok(epmControlsSource.includes("import ControlField from '../ui/ControlField.jsx';"), 'Expected EpmControls to import ControlField');
+    assert.ok(epmViewSource.includes("import EmptyState from '../ui/EmptyState.jsx';"), 'Expected EpmView to import EmptyState');
     assert.ok(controlFieldSource.includes("['control-field', className]"), 'Expected ControlField to preserve the control-field wrapper class');
     assert.ok(controlFieldSource.includes('data-label={dataLabel}'), 'Expected ControlField to preserve compact data-label behavior');
     assert.ok(controlFieldSource.includes('<span className="control-label">{label}</span>'), 'Expected ControlField to preserve visible control labels');
@@ -248,11 +262,9 @@ test('EPM status and label chips use the shared StatusPill primitive', () => {
 });
 
 test('EPM project picker uses the sprint-style custom dropdown', () => {
-    const pickerStart = dashboardSource.indexOf('const renderEpmProjectPicker = () => {');
-    const pickerEnd = dashboardSource.indexOf('const renderSprintControl = (surface) =>', pickerStart);
-    assert.notStrictEqual(pickerStart, -1, 'Expected EPM project picker renderer');
-    assert.notStrictEqual(pickerEnd, -1, 'Expected EPM project picker before sprint control');
-    const pickerSource = dashboardSource.slice(pickerStart, pickerEnd);
+    assert.ok(fs.existsSync(epmControlsPath), 'Expected EPM controls component');
+    const pickerSource = getConstFunctionBodies(epmControlsSource).get('renderEpmProjectPicker') || '';
+    assert.ok(pickerSource, 'Expected EPM project picker renderer');
 
     assert.ok(pickerSource.includes('className="sprint-dropdown epm-project-dropdown"'), 'Expected Project to use the same dropdown shell as Sprint');
     assert.ok(pickerSource.includes('className={`sprint-dropdown-toggle ${showEpmProjectDropdown ? \'open\' : \'\'}`}'), 'Expected Project toggle to use sprint dropdown toggle styling');
@@ -279,6 +291,8 @@ test('dashboard source omits view and project selectors from compact sticky cont
     );
     assert.ok(!compactControlsSource.includes('renderViewSwitch()'), 'Did not expect ENG/EPM switch in compact sticky controls');
     assert.ok(!compactControlsSource.includes('renderEpmProjectPicker()'), 'Did not expect Project selector in compact sticky controls');
+    assert.ok(!compactControlsSource.includes('showProjectPicker={true}'), 'Did not expect Project selector in compact sticky controls');
+    assert.ok(compactControlsSource.includes("renderEpmControls('compact', false)"), 'Expected compact EPM controls to disable the Project selector');
     assert.ok(
         compactControlsSource.includes("shouldUseEpmSprint(epmTab) && renderSprintControl('compact')"),
         'Expected compact EPM Active controls to keep the sprint selector'
@@ -305,6 +319,7 @@ test('epm helper file exists without ambiguous Active-only helper copy', () => {
 });
 
 test('EPM module homes own rollup fetch and rendering while staying isolated from ENG concerns', () => {
+    assert.ok(fs.existsSync(epmViewPath), 'Expected EPM view component');
     assert.ok(
         epmApiSource.includes('/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}') || epmApiSource.includes('/api/epm/projects/'),
         'Expected EPM fetch URLs to live in api/epmApi.js'
@@ -315,7 +330,7 @@ test('EPM module homes own rollup fetch and rendering while staying isolated fro
     assert.ok(epmRollupTreeSource.includes('EpmEpicNode'), 'Expected reusable epic renderer in EpmRollupTree.jsx');
     assert.ok(epmRollupTreeSource.includes('EpmRollupIssue'), 'Expected reusable issue renderer in EpmRollupTree.jsx');
 
-    for (const source of [epmApiSource, epmFetchSource, epmRollupPanelSource, epmRollupTreeSource]) {
+    for (const source of [epmApiSource, epmFetchSource, epmViewSource, epmRollupPanelSource, epmRollupTreeSource]) {
         assert.ok(!source.includes('/api/tasks-with-team-name'), 'EPM modules must not fetch ENG tasks');
         assert.ok(!source.includes('/api/backlog-epics'), 'EPM modules must not fetch ENG backlog epics');
         assert.ok(!source.includes('showPlanning'), 'EPM modules must not own planning state');
@@ -431,11 +446,9 @@ test('EPM board bootstraps saved config from initial user config before loading 
 });
 
 test('EPM defaults to all projects and exposes sprint controls in Active', () => {
-    const pickerSnippet = getSnippetBetween(
-        dashboardSource,
-        'const renderEpmProjectPicker = () =>',
-        'const renderSprintControl ='
-    );
+    assert.ok(fs.existsSync(epmControlsPath), 'Expected EPM controls component');
+    const pickerSnippet = getConstFunctionBodies(epmControlsSource).get('renderEpmProjectPicker') || '';
+    assert.ok(pickerSnippet, 'Expected EPM project picker renderer');
     assert.ok(pickerSnippet.includes('All projects'), 'Expected blank EPM project selection to mean All projects');
     assert.ok(!pickerSnippet.includes('Select project...'), 'Did not expect single-project placeholder copy');
     assert.ok(epmViewDataSource.includes("epmSelectedProjectId === ''"), 'Expected explicit all-projects branch for blank EPM project selection');
@@ -465,6 +478,7 @@ test('EPM defaults to all projects and exposes sprint controls in Active', () =>
 });
 
 test('EPM project identity positions use project id only', () => {
+    assert.ok(fs.existsSync(epmControlsPath), 'Expected EPM controls component');
     assert.ok(helperSource.includes("return String(project?.id || '').trim()"), 'Expected project identity helper to use project.id only');
     assert.ok(!helperSource.includes('project?.id || project?.homeProjectId'), 'Expected no homeProjectId fallback in identity helper');
 
@@ -486,11 +500,8 @@ test('EPM project identity positions use project id only', () => {
     assert.ok(epmApiSource.includes('encodeURIComponent(projectId)}/rollup'), 'Expected rollup URL wrapper to encode current project id');
     assert.ok(!rollupFetchSnippet.includes('homeProjectId'), 'Expected rollup URL path logic not to reference homeProjectId');
 
-    const pickerSnippet = getSnippetBetween(
-        dashboardSource,
-        'const renderEpmProjectPicker = () =>',
-        'const renderSprintControl ='
-    );
+    const pickerSnippet = getConstFunctionBodies(epmControlsSource).get('renderEpmProjectPicker') || '';
+    assert.ok(pickerSnippet, 'Expected EPM project picker renderer');
     assert.ok(epmViewDataSource.includes('const projects = visibleEpmProjects.filter(project => getEpmProjectIdentity(project));'), 'Expected picker source to omit projects with no project.id');
     assert.ok(pickerSnippet.includes('const projectId = getEpmProjectIdentity(project)'), 'Expected picker option key/value to use project id identity helper');
     assert.ok(pickerSnippet.includes('key={projectId}'), 'Expected picker option key to use project id');

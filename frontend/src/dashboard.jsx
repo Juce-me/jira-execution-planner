@@ -78,13 +78,12 @@ import {
     searchEpics as requestEpicSearch,
     fetchFields as requestJiraFields,
 } from './api/jiraCatalogApi.js';
-import { EpmRollupPanel } from './epm/EpmRollupPanel.jsx';
+import { EpmControls } from './epm/EpmControls.jsx';
+import { EpmView } from './epm/EpmView.jsx';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     filterEpmSettingsProjectsForView,
     flattenEpmRollupBoardsForDependencies,
-    getEpmProjectDisplayName,
-    getEpmProjectIdentity,
     getEpmProjectPrerequisites,
     getEpmSettingsProjectsCacheKey,
     hydrateEpmProjectDraft,
@@ -10521,11 +10520,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 '--scenario-sticky-top': `${epicStickyTop}px`
             };
             const showGroupControl = (groupsConfig.groups || []).length > 1;
-            const epmTabOptions = [
-                { value: 'active', label: 'Active' },
-                { value: 'backlog', label: 'Backlog' },
-                { value: 'archived', label: 'Archived' }
-            ];
 
             const renderSearchControl = (surface, extraClassName = '') => (
                 <ControlField label="Search" className={`control-search ${extraClassName}`.trim()}>
@@ -10566,102 +10560,27 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 />
             );
 
-            const renderEpmTabs = () => {
-                if (selectedView !== 'epm') return null;
-                return (
-                    <SegmentedControl
-                        className="epm-state-control"
-                        ariaLabel="EPM project state"
-                        value={epmTab}
-                        onChange={setEpmTab}
-                        options={epmTabOptions}
-                    />
-                );
-            };
-
-            const renderEpmProjectPicker = () => {
-                if (selectedView !== 'epm') return null;
-                const surface = 'main';
-                const isDisabled = epmProjectsLoading || visibleEpmProjects.length === 0;
-                const selectedProjectName = selectedEpmProject
-                    ? getEpmProjectDisplayName(selectedEpmProject)
-                    : 'All projects';
-                return (
-                    <ControlField label="Project">
-                        <div className="sprint-dropdown epm-project-dropdown" ref={(node) => { epmProjectDropdownRefs.current[surface] = node; }}>
-                            <div
-                                className={`sprint-dropdown-toggle ${showEpmProjectDropdown ? 'open' : ''}`}
-                                role="button"
-                                aria-label="Select Project"
-                                tabIndex={isDisabled ? -1 : 0}
-                                onClick={() => {
-                                    if (isDisabled) return;
-                                    applyExclusiveDropdownState('project', showEpmProjectDropdown);
-                                }}
-                                onKeyDown={(event) => {
-                                    if (isDisabled) return;
-                                    if (event.key === 'Enter' || event.key === ' ') {
-                                        event.preventDefault();
-                                        applyExclusiveDropdownState('project', showEpmProjectDropdown);
-                                    }
-                                }}
-                                aria-disabled={isDisabled}
-                            >
-                                <span>{epmProjectsLoading ? 'Loading...' : selectedProjectName}</span>
-                                <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                    <path d="M6 9L1 4h10z"/>
-                                </svg>
-                            </div>
-                            {showEpmProjectDropdown && surface === activeControlSurface && (
-                                <div className="sprint-dropdown-panel">
-                                    <input
-                                        type="text"
-                                        className="sprint-dropdown-search"
-                                        placeholder="Filter..."
-                                        value={epmProjectSearch}
-                                        onChange={(event) => setEpmProjectSearch(event.target.value)}
-                                        aria-label="Filter Projects"
-                                    />
-                                    <div className="sprint-dropdown-list">
-                                        <div
-                                            className="sprint-dropdown-option"
-                                            data-project-id=""
-                                            onClick={() => {
-                                                setEpmSelectedProjectId('');
-                                                setShowEpmProjectDropdown(false);
-                                                setEpmProjectSearch('');
-                                            }}
-                                        >
-                                            All projects
-                                        </div>
-                                        {filteredEpmProjects.length === 0 ? (
-                                            <div className="sprint-dropdown-option">No projects available</div>
-                                        ) : (
-                                            filteredEpmProjects.map((project) => {
-                                                const projectId = getEpmProjectIdentity(project);
-                                                return (
-                                                    <div
-                                                        key={projectId}
-                                                        className="sprint-dropdown-option"
-                                                        data-project-id={projectId}
-                                                        onClick={() => {
-                                                            setEpmSelectedProjectId(projectId);
-                                                            setShowEpmProjectDropdown(false);
-                                                            setEpmProjectSearch('');
-                                                        }}
-                                                    >
-                                                        {getEpmProjectDisplayName(project)}
-                                                    </div>
-                                                );
-                                            })
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </ControlField>
-                );
-            };
+            const renderEpmControls = (surface, showProjectPicker = true) => (
+                <EpmControls
+                    selectedView={selectedView}
+                    epmTab={epmTab}
+                    setEpmTab={setEpmTab}
+                    surface={surface}
+                    showProjectPicker={showProjectPicker}
+                    epmProjectsLoading={epmProjectsLoading}
+                    visibleEpmProjects={visibleEpmProjects}
+                    selectedEpmProject={selectedEpmProject}
+                    filteredEpmProjects={filteredEpmProjects}
+                    showEpmProjectDropdown={showEpmProjectDropdown}
+                    activeControlSurface={activeControlSurface}
+                    applyExclusiveDropdownState={applyExclusiveDropdownState}
+                    epmProjectDropdownRefs={epmProjectDropdownRefs}
+                    epmProjectSearch={epmProjectSearch}
+                    setEpmProjectSearch={setEpmProjectSearch}
+                    setEpmSelectedProjectId={setEpmSelectedProjectId}
+                    setShowEpmProjectDropdown={setShowEpmProjectDropdown}
+                />
+            );
 
             const renderSprintControl = (surface) => (
                 <ControlField label="Sprint">
@@ -11356,8 +11275,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 {selectedView === 'epm' && (
                                     <>
                                         {shouldUseEpmSprint(epmTab) && renderSprintControl('main')}
-                                        {renderEpmTabs()}
-                                        {renderEpmProjectPicker()}
+                                        {renderEpmControls('main')}
                                     </>
                                 )}
                                 {selectedView === 'eng' && (
@@ -11413,7 +11331,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     ) : (
                                         <>
                                             {shouldUseEpmSprint(epmTab) && renderSprintControl('compact')}
-                                            {renderEpmTabs()}
+                                            {renderEpmControls('compact', false)}
                                             <button
                                                 className="group-gear-button"
                                                 onClick={openEpmSettingsTab}
@@ -14819,48 +14737,29 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             </div>
                             )}
 
-                            {selectedView === 'epm' && (
-                                <>
-                                    {!epmConfigLoaded && (
-                                        <EmptyState title="Loading EPM settings">
-                                            <p>Loading saved project configuration.</p>
-                                        </EmptyState>
-                                    )}
-
-                                    {epmConfigLoaded && epmProjectsLoading && !epmRollupBoards && !epmRollupTree && (
-                                        <EmptyState title="Loading EPM projects">
-                                            <p>Refreshing Atlassian Home project metadata.</p>
-                                        </EmptyState>
-                                    )}
-
-                                    {epmConfigLoaded && epmSelectedProjectId && !epmProjectsLoading && !selectedEpmProject && (
-                                        <EmptyState title="Project unavailable">
-                                            <p>This project is not available in the current EPM tab.</p>
-                                        </EmptyState>
-                                    )}
-
-                                    {epmConfigLoaded && (!epmProjectsLoading || epmRollupBoards || epmRollupTree) && (!epmSelectedProjectId || selectedEpmProject) && (
-                                        <EpmRollupPanel
-                                            selectedEpmProject={selectedEpmProject}
-                                            selectedEpmProjectUpdateLine={selectedEpmProjectUpdateLine}
-                                            epmTab={epmTab}
-                                            selectedSprint={selectedSprint}
-                                            epmRollupLoading={epmRollupLoading}
-                                            epmRollupTree={epmRollupTree}
-                                            epmRollupBoards={visibleEpmRollupBoards}
-                                            epmDuplicates={epmDuplicates}
-                                            epmAggregateTruncated={epmAggregateTruncated}
-                                            epmProjectRollupLoadingIds={epmProjectRollupLoadingIds}
-                                            searchQuery={searchQuery}
-                                            onProjectExpand={loadArchivedEpmProjectRollup}
-                                            renderEpicBlock={renderEpicBlock}
-                                            openEpmSettingsTab={openEpmSettingsTab}
-                                            jiraUrl={jiraUrl}
-                                            InitiativeIcon={InitiativeIcon}
-                                        />
-                                    )}
-                                </>
-                            )}
+                            <EpmView
+                                selectedView={selectedView}
+                                epmConfigLoaded={epmConfigLoaded}
+                                epmProjectsLoading={epmProjectsLoading}
+                                epmRollupBoards={epmRollupBoards}
+                                epmRollupTree={epmRollupTree}
+                                epmSelectedProjectId={epmSelectedProjectId}
+                                selectedEpmProject={selectedEpmProject}
+                                selectedEpmProjectUpdateLine={selectedEpmProjectUpdateLine}
+                                epmTab={epmTab}
+                                selectedSprint={selectedSprint}
+                                epmRollupLoading={epmRollupLoading}
+                                visibleEpmRollupBoards={visibleEpmRollupBoards}
+                                epmDuplicates={epmDuplicates}
+                                epmAggregateTruncated={epmAggregateTruncated}
+                                epmProjectRollupLoadingIds={epmProjectRollupLoadingIds}
+                                searchQuery={searchQuery}
+                                loadArchivedEpmProjectRollup={loadArchivedEpmProjectRollup}
+                                renderEpicBlock={renderEpicBlock}
+                                openEpmSettingsTab={openEpmSettingsTab}
+                                jiraUrl={jiraUrl}
+                                InitiativeIcon={InitiativeIcon}
+                            />
 
                             {selectedView === 'eng' && (
                                 <>

@@ -9,8 +9,10 @@ const iconButtonPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'Icon
 const loadingRowsPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'LoadingRows.jsx');
 const emptyStatePath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'EmptyState.jsx');
 const epmViewDataPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'useEpmViewData.js');
+const epmControlsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmControls.jsx');
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 const epmViewDataSource = fs.existsSync(epmViewDataPath) ? fs.readFileSync(epmViewDataPath, 'utf8') : '';
+const epmControlsSource = fs.existsSync(epmControlsPath) ? fs.readFileSync(epmControlsPath, 'utf8') : '';
 
 test('dashboard source includes the EPM settings tab and lazy-load flow', () => {
     assert.ok(dashboardSource.includes("groupManageTab === 'epm'"), 'Expected an EPM settings tab branch');
@@ -36,7 +38,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const removeEpmProjectDraft = (projectId) => {'), 'Expected EPM project draft removal');
     assert.ok(epmViewDataSource.includes('getEpmProjectIdentity(project) === epmSelectedProjectId'), 'Expected main EPM selected project lookup to use the shared project identity');
     assert.ok(epmViewDataSource.includes('const currentProjectId = projectIdOverride || getEpmProjectIdentity(currentProject);'), 'Expected EPM issue fetch to use the shared project identity');
-    assert.ok(dashboardSource.includes('const projectId = getEpmProjectIdentity(project);'), 'Expected EPM project picker options to use the shared project identity');
+    assert.ok(epmControlsSource.includes('const projectId = getEpmProjectIdentity(project);'), 'Expected EPM project picker options to use the shared project identity');
     assert.ok(dashboardSource.includes('const openEpmSettingsTab = () => {'), 'Expected helper that opens the EPM settings tab without flashing stale project rows');
     assert.ok(dashboardSource.includes("const [epmSettingsProjects, setEpmSettingsProjects] = useState([]);"), 'Expected settings-scoped EPM project preview state');
     assert.ok(dashboardSource.includes("const [epmSettingsProjectsLoading, setEpmSettingsProjectsLoading] = useState(false);"), 'Expected settings-scoped EPM project preview loading state');
@@ -138,7 +140,7 @@ test('EPM settings source uses shared basic UI primitives for representative row
     assert.ok(dashboardSource.includes("import LoadingRows from './ui/LoadingRows.jsx';"), 'Expected dashboard to import LoadingRows');
     assert.ok(dashboardSource.includes("import EmptyState from './ui/EmptyState.jsx';"), 'Expected dashboard to import EmptyState');
     assert.ok(dashboardSource.includes('<ControlField label="Search"'), 'Expected header search control to use ControlField');
-    assert.ok(dashboardSource.includes('<ControlField label="Project"'), 'Expected EPM project picker control to use ControlField');
+    assert.ok(epmControlsSource.includes('<ControlField label="Project"'), 'Expected EPM project picker control to use ControlField');
     assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="epm-label-change-shortcut"'), 'Expected selected-label change action to use IconButton');
     assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="epm-project-home-shortcut"'), 'Expected Home project shortcut to use IconButton');
     assert.ok(dashboardSource.includes('<LoadingRows') && dashboardSource.includes('ariaLabel="Loading EPM projects"'), 'Expected EPM project skeleton rows to use LoadingRows');

@@ -209,6 +209,7 @@ Write set:
 - `frontend/src/dashboard.jsx`
 - `package.json`
 - `tests/test_dashboard_css_extraction.py`
+- `tests/test_epm_view_source_guards.js`
 - generated `frontend/dist/dashboard.css`
 - generated `frontend/dist/dashboard.js`
 - generated `frontend/dist/dashboard.js.map`

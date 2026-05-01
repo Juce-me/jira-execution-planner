@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
-from flask import Flask, abort, jsonify, request, send_file, send_from_directory
-from flask_cors import CORS
+from flask import abort, jsonify, request, send_file, send_from_directory
 import requests
 import argparse
 import base64
@@ -33,12 +32,10 @@ from epm_home import fetch_epm_home_projects, merge_epm_linkage
 from epm_rollup import EpmRollupDependencies, build_per_project_rollup
 from epm_scope import build_epm_scope_clause, normalize_epm_sprint_field, should_apply_epm_sprint
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
+from backend.app import app
 
 # Load environment variables from .env file
 load_dotenv()
-
-app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
 
 # Reuse a single HTTP session to avoid reconnect overhead on repeated calls
 HTTP_SESSION = Session()

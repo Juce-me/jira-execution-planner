@@ -7,6 +7,10 @@ const dashboardSource = fs.readFileSync(
     path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'),
     'utf8'
 );
+const engViewSource = fs.readFileSync(
+    path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngView.jsx'),
+    'utf8'
+);
 
 const dashboardCss = fs.readFileSync(
     path.join(__dirname, '..', 'frontend', 'dist', 'dashboard.css'),
@@ -15,40 +19,40 @@ const dashboardCss = fs.readFileSync(
 
 test('dashboard uses compact task filter labels without repeated show/hide verbs', () => {
     assert.ok(
-        dashboardSource.includes('`Tech (${techTasksCount})`'),
-        'Expected compact Tech toggle label in dashboard.jsx'
+        engViewSource.includes('`Tech (${techTasksCount})`'),
+        'Expected compact Tech toggle label in EngView.jsx'
     );
     assert.ok(
-        dashboardSource.includes('`Product (${productTasksCount})`'),
-        'Expected compact Product toggle label in dashboard.jsx'
+        engViewSource.includes('`Product (${productTasksCount})`'),
+        'Expected compact Product toggle label in EngView.jsx'
     );
     assert.ok(
-        dashboardSource.includes('`Done / Incomplete (${doneTasks.length + incompleteTasks.length})`'),
-        'Expected compact Done / Incomplete toggle label in dashboard.jsx'
+        engViewSource.includes('`Done / Incomplete (${doneTasks.length + incompleteTasks.length})`'),
+        'Expected compact Done / Incomplete toggle label in EngView.jsx'
     );
     assert.ok(
-        dashboardSource.includes('`Killed (${killedTasks.length})`'),
-        'Expected compact Killed toggle label in dashboard.jsx'
+        engViewSource.includes('`Killed (${killedTasks.length})`'),
+        'Expected compact Killed toggle label in EngView.jsx'
     );
     assert.equal(
-        dashboardSource.includes('Hide Tech Tasks'),
+        `${dashboardSource}\n${engViewSource}`.includes('Hide Tech Tasks'),
         false,
-        'Did not expect old Hide Tech Tasks copy in dashboard.jsx'
+        'Did not expect old Hide Tech Tasks copy'
     );
     assert.equal(
-        dashboardSource.includes('Show Product Tasks'),
+        `${dashboardSource}\n${engViewSource}`.includes('Show Product Tasks'),
         false,
-        'Did not expect old Show Product Tasks copy in dashboard.jsx'
+        'Did not expect old Show Product Tasks copy'
     );
     assert.equal(
-        dashboardSource.includes('Hide Done/Incomplete'),
+        `${dashboardSource}\n${engViewSource}`.includes('Hide Done/Incomplete'),
         false,
-        'Did not expect old Hide Done/Incomplete copy in dashboard.jsx'
+        'Did not expect old Hide Done/Incomplete copy'
     );
     assert.equal(
-        dashboardSource.includes('Hide Killed Tasks'),
+        `${dashboardSource}\n${engViewSource}`.includes('Hide Killed Tasks'),
         false,
-        'Did not expect old Hide Killed Tasks copy in dashboard.jsx'
+        'Did not expect old Hide Killed Tasks copy'
     );
 });
 

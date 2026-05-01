@@ -1,4 +1,5 @@
 import unittest
+import re
 from pathlib import Path
 
 try:
@@ -7,6 +8,15 @@ try:
 except ModuleNotFoundError as exc:  # pragma: no cover
     jira_server = None
     _IMPORT_ERROR = exc
+
+
+def _css_block(css, selector):
+    match = re.search(r'(?m)^' + re.escape(selector) + r'\s*\{', css)
+    if not match:
+        raise AssertionError(f'CSS selector not found: {selector}')
+    block_start = match.start()
+    block_end = css.index('}', match.end()) + 1
+    return css[block_start:block_end]
 
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
@@ -44,6 +54,10 @@ class TestDashboardCssExtraction(unittest.TestCase):
 
 
 class TestDashboardCssFileContract(unittest.TestCase):
+    def test_dashboard_css_source_exists_under_frontend_src_styles(self):
+        css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'src' / 'styles' / 'dashboard.css'
+        self.assertTrue(css_path.is_file())
+
     def test_dashboard_css_includes_compact_sticky_header_contract(self):
         css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'dist' / 'dashboard.css'
         css = css_path.read_text(encoding='utf-8')
@@ -101,9 +115,7 @@ class TestDashboardCssFileContract(unittest.TestCase):
     def test_select_controls_share_rounded_control_shape(self):
         css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'dist' / 'dashboard.css'
         css = css_path.read_text(encoding='utf-8')
-        select_start = css.index('        select {')
-        select_end = css.index('        select:focus', select_start)
-        select_block = css[select_start:select_end]
+        select_block = _css_block(css, 'select')
         self.assertIn('border-radius: 10px;', select_block)
 
     def test_epm_project_board_timeline_and_update_bubble_contract(self):
@@ -112,9 +124,7 @@ class TestDashboardCssFileContract(unittest.TestCase):
         self.assertIn('.epm-project-board::before', css)
         self.assertIn('.epm-project-board.is-collapsed::before', css)
         self.assertNotIn('.epm-project-board-body::before', css)
-        update_start = css.index('        .epm-project-board-update {')
-        update_end = css.index('        .epm-project-board-update-date', update_start)
-        update_block = css[update_start:update_end]
+        update_block = _css_block(css, '.epm-project-board-update')
         self.assertIn('background-color: var(--bg-secondary);', update_block)
         self.assertIn('border: 1px solid var(--border);', update_block)
         self.assertNotIn('background-image:', update_block)

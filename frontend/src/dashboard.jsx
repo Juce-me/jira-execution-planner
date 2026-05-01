@@ -1,10 +1,22 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
+import './styles/dashboard.css';
 import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, createUndoStack, validateDependencies, splitAtSprintBoundaries, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
 import ScenarioBar from './scenario/ScenarioBar.jsx';
 import { buildLaneIssues } from './scenario/scenarioLaneUtils.js';
 import CohortGrid from './cohort/CohortGrid.jsx';
 import OpenEpicsChart from './cohort/OpenEpicsChart.jsx';
+import SegmentedControl from './ui/SegmentedControl.jsx';
+import ControlField from './ui/ControlField.jsx';
+import IconButton from './ui/IconButton.jsx';
+import LoadingRows from './ui/LoadingRows.jsx';
+import EmptyState from './ui/EmptyState.jsx';
+import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
+import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
+import EngView from './eng/EngView.jsx';
+import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
+import { useEngSprintData } from './eng/useEngSprintData.js';
+import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam } from './eng/engTaskUtils.js';
 import {
     aggregateCohortSummary,
     buildCohortGridModel,
@@ -22,17 +34,62 @@ import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
-import { fetchEpmConfig, fetchEpmScope, fetchEpmGoals, fetchEpmProjects, fetchEpmConfigurationProjects, fetchEpmProjectRollup, fetchEpmAllProjectsRollup } from './epm/epmFetch.js';
-import { EpmRollupPanel } from './epm/EpmRollupPanel.jsx';
 import {
-    buildAggregateRollupBoards,
+    fetchMissingPlanningInfo as requestMissingPlanningInfo,
+    fetchSprints as requestSprints,
+    fetchCapacity as requestCapacity,
+    fetchDependencies as requestDependencies,
+} from './api/engApi.js';
+import {
+    fetchAppConfig,
+    fetchVersionInfo,
+    testJiraConnection,
+    fetchGroupsConfig as requestGroupsConfig,
+    saveGroupsConfig as requestSaveGroupsConfig,
+    fetchSelectedProjects as requestSelectedProjects,
+    saveSelectedProjects as requestSaveSelectedProjects,
+    fetchBoardConfig as requestBoardConfig,
+    saveBoardConfig as requestSaveBoardConfig,
+    fetchPriorityWeightsConfig as requestPriorityWeightsConfig,
+    savePriorityWeightsConfig as requestSavePriorityWeightsConfig,
+    fetchCapacityConfig as requestCapacityConfig,
+    saveCapacityConfig as requestSaveCapacityConfig,
+    fetchFieldConfig as requestFieldConfig,
+    saveFieldConfig as requestSaveFieldConfig,
+    fetchIssueTypesConfig as requestIssueTypesConfig,
+    saveIssueTypesConfig as requestSaveIssueTypesConfig,
+    fetchAvailableIssueTypes as requestAvailableIssueTypes,
+} from './api/configApi.js';
+import {
+    fetchEpmConfig,
+    fetchEpmScope,
+    fetchEpmGoals,
+    fetchEpmConfigurationProjects,
+} from './api/epmApi.js';
+import {
+    fetchJiraLabels as requestJiraLabels,
+    fetchTeamCatalog as requestTeamCatalog,
+    saveTeamCatalog as requestSaveTeamCatalog,
+    fetchAllTeams as requestAllTeams,
+    resolveTeams as requestResolveTeams,
+    fetchProjects as requestJiraProjects,
+    fetchBoards as requestJiraBoards,
+    searchProjects as requestProjectSearch,
+    searchBoards as requestBoardSearch,
+    searchComponents as requestComponentSearch,
+    searchEpics as requestEpicSearch,
+    fetchFields as requestJiraFields,
+} from './api/jiraCatalogApi.js';
+import { EpmControls } from './epm/EpmControls.jsx';
+import { EpmView } from './epm/EpmView.jsx';
+import EpmSettings from './epm/EpmSettings.jsx';
+import SettingsModal from './settings/SettingsModal.jsx';
+import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';
+import JiraFieldSettings from './settings/JiraFieldSettings.jsx';
+import { useEpmViewData } from './epm/useEpmViewData.js';
+import {
     filterEpmSettingsProjectsForView,
-    buildRollupTree,
-    filterEpmProjectsForTab,
-    filterEpmRollupBoardsForSearch,
     flattenEpmRollupBoardsForDependencies,
-    getEpmProjectDisplayName,
-    getEpmProjectIdentity,
     getEpmProjectPrerequisites,
     getEpmSettingsProjectsCacheKey,
     hydrateEpmProjectDraft,
@@ -215,11 +272,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [sprintName, setSprintName] = useState('Sprint');
             const [statusFilter, setStatusFilter] = useState(savedPrefsRef.current.statusFilter ?? null); // null = show all, 'in-progress', 'todo-accepted', 'done', 'high-priority'
             const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
-            const [epmTab, setEpmTab] = useState(savedPrefsRef.current.epmTab ?? 'active');
-            const [epmProjects, setEpmProjects] = useState([]);
-            const [epmProjectsLoading, setEpmProjectsLoading] = useState(false);
-            const [epmProjectsError, setEpmProjectsError] = useState('');
-            const [epmSelectedProjectId, setEpmSelectedProjectId] = useState(savedPrefsRef.current.epmSelectedProjectId ?? '');
             const [epmProjectSearch, setEpmProjectSearch] = useState('');
             const [showEpmProjectDropdown, setShowEpmProjectDropdown] = useState(false);
             const epmProjectDropdownRefs = useRef({ main: null, compact: null });
@@ -261,13 +313,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmSubGoalOpen, setEpmSubGoalOpen] = useState(false);
             const [epmRootGoalIndex, setEpmRootGoalIndex] = useState(0);
             const [epmSubGoalIndex, setEpmSubGoalIndex] = useState(0);
-            const [epmRollupTree, setEpmRollupTree] = useState(null);
-            const [epmRollupBoards, setEpmRollupBoards] = useState(null);
-            const [epmDuplicates, setEpmDuplicates] = useState({});
-            const [epmAggregateTruncated, setEpmAggregateTruncated] = useState(false);
-            const [epmAggregateFallback, setEpmAggregateFallback] = useState(false);
-            const [epmRollupLoading, setEpmRollupLoading] = useState(false);
-            const [epmProjectRollupLoadingIds, setEpmProjectRollupLoadingIds] = useState(() => new Set());
             const [availableSprints, setAvailableSprints] = useState([]);
             const [sprintsLoading, setSprintsLoading] = useState(true);
             const [groupsConfig, setGroupsConfig] = useState({
@@ -592,12 +637,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const lastLoadedSprintRef = useRef(null);
             const sprintLoadRef = useRef({ sprintId: null, product: false, tech: false });
             const readyToCloseLoadRef = useRef('');
-            const epmProjectsPendingSelectionRef = useRef(false);
-            const epmProjectsRequestIdRef = useRef(0);
             const epmSettingsProjectsRequestIdRef = useRef(0);
             const epmSettingsProjectsCacheRef = useRef(new Map());
             const epmDraftIdCounterRef = useRef(0);
-            const epmRollupRequestIdRef = useRef(0);
             const epmSubGoalsRequestIdRef = useRef(0);
             const epmSubGoalsCacheRef = useRef(new Map());
             const pendingConfigRefreshRef = useRef(0);
@@ -617,28 +659,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 if (!selectedSprint) return null;
                 return (availableSprints || []).find(sprint => String(sprint.id) === String(selectedSprint)) || null;
             }, [availableSprints, selectedSprint]);
-            // filterEpmProjectsForTab owns the `project.tabBucket === epmTab` check.
-            const visibleEpmProjects = React.useMemo(() => filterEpmProjectsForTab(epmProjects, epmTab), [epmProjects, epmTab]);
-            const selectedEpmProject = visibleEpmProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;
-            const filteredEpmProjects = React.useMemo(() => {
-                const query = epmProjectSearch.trim().toLowerCase();
-                const projects = visibleEpmProjects.filter(project => getEpmProjectIdentity(project));
-                if (!query) return projects;
-                return projects.filter(project => {
-                    const projectId = getEpmProjectIdentity(project).toLowerCase();
-                    const name = getEpmProjectDisplayName(project).toLowerCase();
-                    const label = String(project?.label || '').toLowerCase();
-                    return projectId.includes(query) || name.includes(query) || label.includes(query);
-                });
-            }, [visibleEpmProjects, epmProjectSearch]);
-            const visibleEpmRollupBoards = React.useMemo(() => {
-                if (!Array.isArray(epmRollupBoards)) return epmRollupBoards;
-                return filterEpmRollupBoardsForSearch(epmRollupBoards, searchQuery);
-            }, [epmRollupBoards, searchQuery]);
             const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);
             const loadEpmScopeMeta = () => fetchEpmScope(BACKEND_URL);
             const loadEpmGoals = (rootGoalKey = '') => fetchEpmGoals(BACKEND_URL, rootGoalKey);
-            const loadEpmProjects = (tab = epmTab) => fetchEpmProjects(BACKEND_URL, { tab });
             const loadEpmConfigurationProjects = async (draftConfig, options = {}) => {
                 return fetchEpmConfigurationProjects(BACKEND_URL, draftConfig, options);
             };
@@ -657,14 +680,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     : [];
             };
             const renderEpmProjectSkeletonRows = () => (
-                <div className="epm-project-skeleton-list" aria-label="Loading EPM projects">
-                    {[0, 1, 2].map((item) => (
-                        <div key={item} className="epm-project-skeleton-row">
-                            <span />
-                            <span />
-                        </div>
-                    ))}
-                </div>
+                <LoadingRows
+                    className="epm-project-skeleton-list"
+                    rowClassName="epm-project-skeleton-row"
+                    ariaLabel="Loading EPM projects"
+                    rows={3}
+                    columns={2}
+                />
             );
             const ensureEpmSettingsProjectsLoaded = async (options = {}) => {
                 const forceRefresh = Boolean(options.forceRefresh);
@@ -733,43 +755,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     if (epmSettingsProjectsRequestIdRef.current === requestId) {
                         setEpmSettingsProjectsLoading(false);
                         setEpmSettingsProjectsRefreshing(false);
-                    }
-                }
-            };
-            const refreshEpmProjects = async (options = {}) => {
-                const background = Boolean(options.background);
-                const tab = options.tab || epmTab;
-                epmProjectsRequestIdRef.current += 1;
-                const requestId = epmProjectsRequestIdRef.current;
-                if (!background) {
-                    epmProjectsPendingSelectionRef.current = true;
-                }
-                setEpmProjectsLoading(true);
-                setEpmProjectsError('');
-                try {
-                    const payload = await loadEpmProjects(tab);
-                    if (epmProjectsRequestIdRef.current !== requestId) {
-                        return [];
-                    }
-                    const nextProjects = Array.isArray(payload.projects) ? payload.projects : [];
-                    setEpmProjects(nextProjects);
-                    return nextProjects;
-                } catch (err) {
-                    if (epmProjectsRequestIdRef.current !== requestId) {
-                        return [];
-                    }
-                    console.error('Failed to fetch EPM projects:', err);
-                    if (!background) {
-                        setEpmProjects([]);
-                    }
-                    setEpmProjectsError(err?.message || 'Failed to load EPM projects.');
-                    return [];
-                } finally {
-                    if (epmProjectsRequestIdRef.current === requestId) {
-                        if (!background) {
-                            epmProjectsPendingSelectionRef.current = false;
-                        }
-                        setEpmProjectsLoading(false);
                     }
                 }
             };
@@ -904,13 +889,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setLabelSearchLoading(prev => ({ ...prev, [key]: true }));
                 try {
                     const prefix = String(epmConfigDraft.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX).trim();
-                    const response = showAll || !prefix
-                        ? await fetch(`${BACKEND_URL}/api/jira/labels?limit=200`, { cache: 'no-cache' })
-                        : await fetch(`${BACKEND_URL}/api/jira/labels?prefix=${encodeURIComponent(prefix)}&limit=200`, { cache: 'no-cache' });
-                    if (!response.ok) {
-                        throw new Error(`Labels error ${response.status}`);
-                    }
-                    const payload = await response.json();
+                    const payload = await requestJiraLabels(BACKEND_URL, showAll || !prefix
+                        ? { limit: 200 }
+                        : { prefix, limit: 200 });
                     const nextResults = Array.isArray(payload.labels) ? payload.labels : [];
                     if (labelSearchRequestIdRef.current[key] === requestId) {
                         setLabelSearchResults(prev => ({ ...prev, [key]: nextResults }));
@@ -1156,196 +1137,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setEpmSubGoalOpen(false);
                 setEpmSubGoalIndex(0);
             };
-            const refreshEpmRollup = async (projectOverride = selectedEpmProject, projectIdOverride = epmSelectedProjectId) => {
-                epmRollupRequestIdRef.current += 1;
-                const requestId = epmRollupRequestIdRef.current;
-                const currentProject = projectOverride || null;
-                const currentProjectId = projectIdOverride || getEpmProjectIdentity(currentProject);
-                setEpmProjectRollupLoadingIds(new Set());
-                if (selectedView !== 'epm') {
-                    setEpmRollupTree(null);
-                    setEpmRollupBoards(null);
-                    setEpmDuplicates({});
-                    setEpmAggregateTruncated(false);
-                    setEpmAggregateFallback(false);
-                    setEpmRollupLoading(false);
-                    return;
-                }
-                if (!epmConfigLoaded) {
-                    setEpmRollupLoading(false);
-                    return;
-                }
-                if (!hasSavedEpmScope) {
-                    setEpmRollupTree(null);
-                    setEpmRollupBoards(null);
-                    setEpmDuplicates({});
-                    setEpmAggregateTruncated(false);
-                    setEpmAggregateFallback(false);
-                    setEpmRollupLoading(false);
-                    return;
-                }
-                if (epmProjectsPendingSelectionRef.current) {
-                    return;
-                }
-                if (epmTab === 'active' && !selectedSprint) {
-                    setEpmRollupTree(null);
-                    setEpmRollupBoards(null);
-                    setEpmDuplicates({});
-                    setEpmAggregateTruncated(false);
-                    setEpmAggregateFallback(false);
-                    setEpmRollupLoading(false);
-                    return;
-                }
-                if (epmSelectedProjectId === '' && currentProjectId === '') {
-                    setEpmRollupLoading(true);
-                    setEpmRollupTree(null);
-                    setEpmRollupBoards(null);
-                    setEpmDuplicates({});
-                    setEpmAggregateTruncated(false);
-                    setEpmAggregateFallback(false);
-                    try {
-                        const payload = await fetchEpmAllProjectsRollup(BACKEND_URL, {
-                            tab: epmTab,
-                            sprint: selectedSprint,
-                        });
-                        if (epmRollupRequestIdRef.current !== requestId) {
-                            return;
-                        }
-                        const aggregate = buildAggregateRollupBoards(payload);
-                        setEpmRollupBoards(aggregate.boards);
-                        setEpmDuplicates(aggregate.duplicates);
-                        setEpmAggregateTruncated(aggregate.truncated);
-                        setEpmAggregateFallback(aggregate.fallback);
-                    } catch (err) {
-                        if (epmRollupRequestIdRef.current !== requestId) {
-                            return;
-                        }
-                        console.error('Failed to fetch EPM all-projects rollup:', err);
-                        setEpmRollupBoards(null);
-                        setEpmDuplicates({});
-                        setEpmAggregateTruncated(false);
-                        setEpmAggregateFallback(false);
-                    } finally {
-                        if (epmRollupRequestIdRef.current === requestId) {
-                            setEpmRollupLoading(false);
-                        }
-                    }
-                    return;
-                }
-                if (!currentProject) {
-                    setEpmRollupTree(null);
-                    setEpmRollupBoards(null);
-                    setEpmDuplicates({});
-                    setEpmAggregateTruncated(false);
-                    setEpmAggregateFallback(false);
-                    setEpmRollupLoading(false);
-                    return;
-                }
-                if (currentProject.matchState === 'metadata-only' && !currentProject.label) {
-                    setEpmRollupTree(buildRollupTree({ metadataOnly: true }));
-                    setEpmRollupBoards(null);
-                    setEpmDuplicates({});
-                    setEpmAggregateTruncated(false);
-                    setEpmAggregateFallback(false);
-                    setEpmRollupLoading(false);
-                    return;
-                }
-                setEpmRollupLoading(true);
-                setEpmRollupTree(null);
-                setEpmRollupBoards(null);
-                setEpmDuplicates({});
-                setEpmAggregateTruncated(false);
-                setEpmAggregateFallback(false);
-                try {
-                    const payload = await fetchEpmProjectRollup(BACKEND_URL, currentProjectId, {
-                        tab: epmTab,
-                        sprint: selectedSprint,
-                    });
-                    if (epmRollupRequestIdRef.current !== requestId) {
-                        return;
-                    }
-                    setEpmRollupTree(buildRollupTree(payload));
-                } catch (err) {
-                    if (epmRollupRequestIdRef.current !== requestId) {
-                        return;
-                    }
-                    console.error('Failed to fetch EPM rollup:', err);
-                    setEpmRollupTree(null);
-                } finally {
-                    if (epmRollupRequestIdRef.current === requestId) {
-                        setEpmRollupLoading(false);
-                    }
-                }
-            };
-            const loadArchivedEpmProjectRollup = async (project) => {
-                if (epmTab !== 'archived') return;
-                const projectId = getEpmProjectIdentity(project);
-                if (!projectId || !project?.label) return;
-                const currentBoard = (epmRollupBoards || []).find((board) => getEpmProjectIdentity(board?.project) === projectId);
-                if (currentBoard?.tree?.kind === 'tree' || currentBoard?.tree?.kind === 'emptyRollup') return;
-                if (epmProjectRollupLoadingIds.has(projectId)) return;
-                const requestId = epmRollupRequestIdRef.current;
-                setEpmProjectRollupLoadingIds((prev) => {
-                    const next = new Set(prev);
-                    next.add(projectId);
-                    return next;
-                });
-                try {
-                    const payload = await fetchEpmProjectRollup(BACKEND_URL, projectId, {
-                        tab: epmTab,
-                        sprint: selectedSprint,
-                    });
-                    if (epmRollupRequestIdRef.current !== requestId) {
-                        return;
-                    }
-                    const tree = buildRollupTree(payload);
-                    setEpmRollupBoards((prev) => Array.isArray(prev)
-                        ? prev.map((board) => (
-                            getEpmProjectIdentity(board?.project) === projectId
-                                ? { ...board, tree }
-                                : board
-                        ))
-                        : prev);
-                } catch (err) {
-                    if (epmRollupRequestIdRef.current === requestId) {
-                        console.error('Failed to fetch archived EPM project rollup:', err);
-                    }
-                } finally {
-                    if (epmRollupRequestIdRef.current === requestId) {
-                        setEpmProjectRollupLoadingIds((prev) => {
-                            const next = new Set(prev);
-                            next.delete(projectId);
-                            return next;
-                        });
-                    }
-                }
-            };
-            const refreshEpmView = async () => {
-                if (!epmConfigLoaded) {
-                    setEpmProjectsLoading(false);
-                    setEpmRollupLoading(false);
-                    return;
-                }
-                if (!hasSavedEpmScope) {
-                    setEpmProjects([]);
-                    setEpmRollupTree(null);
-                    setEpmRollupBoards(null);
-                    setEpmDuplicates({});
-                    setEpmAggregateTruncated(false);
-                    setEpmAggregateFallback(false);
-                    setEpmRollupLoading(false);
-                    return;
-                }
-                if (epmSelectedProjectId === '') {
-                    await refreshEpmProjects();
-                    await refreshEpmRollup(null, '');
-                    return;
-                }
-                const nextProjects = await refreshEpmProjects();
-                const nextVisibleProjects = filterEpmProjectsForTab(nextProjects, epmTab);
-                const nextSelectedProject = nextVisibleProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;
-                await refreshEpmRollup(nextSelectedProject, epmSelectedProjectId);
-            };
             const filteredSprints = React.useMemo(() => {
                 if (!sprintSearch.trim()) return availableSprints;
                 const query = sprintSearch.trim().toLowerCase();
@@ -1456,9 +1247,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 let cancelled = false;
                 const fetchVersion = async () => {
                     try {
-                        const response = await fetch(`${BACKEND_URL}/api/version`, { cache: 'no-cache' });
-                        if (!response.ok) return;
-                        const data = await response.json();
+                        const data = await fetchVersionInfo(BACKEND_URL);
                         if (!cancelled) {
                             setUpdateInfo(data);
                         }
@@ -1918,11 +1707,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setGroupsLoading(true);
                 setGroupsError('');
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/groups-config`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestGroupsConfig(BACKEND_URL);
                     if (!response.ok) {
                         throw new Error(`Groups config error ${response.status}`);
                     }
@@ -1987,7 +1772,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadTeamCatalog = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/team-catalog?t=${Date.now()}`);
+                    const response = await requestTeamCatalog(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     setTeamCatalogState({
@@ -2005,11 +1790,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const saveTeamCatalog = async (catalog, meta, merge = false) => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/team-catalog`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ catalog, meta, merge })
-                    });
+                    const response = await requestSaveTeamCatalog(BACKEND_URL, { catalog, meta, merge });
                     if (!response.ok) return;
                     const data = await response.json();
                     setTeamCatalogState({
@@ -2042,10 +1823,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setGroupDraftError('');
 
                 try {
-                    const sprintParam = selectedSprint || '';
-                    const url = `${BACKEND_URL}/api/teams?_t=${Date.now()}&sprint=${sprintParam}&all=true`;
-
-                    const response = await fetch(url);
+                    const response = await requestAllTeams(BACKEND_URL, { sprint: selectedSprint });
 
                     if (!response.ok) {
                         const errorText = await response.text();
@@ -2087,11 +1865,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const resolveMissingTeamNames = async (teamIds) => {
                 if (!teamIds.length) return;
                 try {
-                    const params = new URLSearchParams({
-                        teamIds: teamIds.join(','),
-                        t: Date.now().toString()
-                    });
-                    const response = await fetch(`${BACKEND_URL}/api/teams/resolve?${params.toString()}`);
+                    const response = await requestResolveTeams(BACKEND_URL, teamIds);
                     if (!response.ok) return;
                     const data = await response.json();
                     const resolvedTeams = data.teams || [];
@@ -2201,6 +1975,38 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     return false;
                 }
             }, [epmConfigDraft]);
+            const {
+                epmTab,
+                setEpmTab,
+                setEpmProjects,
+                epmProjectsLoading,
+                setEpmProjectsError,
+                epmSelectedProjectId,
+                setEpmSelectedProjectId,
+                visibleEpmProjects,
+                selectedEpmProject,
+                filteredEpmProjects,
+                visibleEpmRollupBoards,
+                epmRollupTree,
+                epmRollupBoards,
+                epmDuplicates,
+                epmAggregateTruncated,
+                epmRollupLoading,
+                epmProjectRollupLoadingIds,
+                refreshEpmProjects,
+                refreshEpmView,
+                loadArchivedEpmProjectRollup,
+            } = useEpmViewData({
+                backendUrl: BACKEND_URL,
+                initialEpmTab: savedPrefsRef.current.epmTab ?? 'active',
+                initialEpmSelectedProjectId: savedPrefsRef.current.epmSelectedProjectId ?? '',
+                selectedView,
+                epmConfigLoaded,
+                hasSavedEpmScope,
+                selectedSprint,
+                epmProjectSearch,
+                searchQuery,
+            });
             const hasDraftEpmScope = React.useMemo(() => {
                 return hasSavedEpmScopeConfig(epmConfigDraft);
             }, [epmConfigDraft]);
@@ -2754,7 +2560,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setGroupTesting(true);
                 setGroupTestMessage('');
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/test`);
+                    const response = await testJiraConnection(BACKEND_URL);
                     const payload = await response.json().catch(() => ({}));
                     if (!response.ok) {
                         throw new Error(payload.error || `Test failed (${response.status})`);
@@ -2819,14 +2625,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     const currentActiveGroup = activeGroupId ? (groupsConfig.groups || []).find(g => g.id === activeGroupId) : null;
                     const currentTeamSignature = currentActiveGroup ? (currentActiveGroup.teamIds || []).join('|') : null;
 
-                    const response = await fetch(`${BACKEND_URL}/api/groups-config`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            version: groupDraft.version || 1,
-                            groups: groupDraft.groups || [],
-                            defaultGroupId: groupDraft.defaultGroupId || '',
-                        })
+                    const response = await requestSaveGroupsConfig(BACKEND_URL, {
+                        version: groupDraft.version || 1,
+                        groups: groupDraft.groups || [],
+                        defaultGroupId: groupDraft.defaultGroupId || '',
                     });
                     if (!response.ok) {
                         const errorPayload = await response.json().catch(() => ({}));
@@ -2868,13 +2670,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
                     // Re-fetch config to update capacityEnabled and other derived state
                     try {
-                        const cfgResp = await fetch(`${BACKEND_URL}/api/config`);
-                        if (cfgResp.ok) {
-                            const cfg = await cfgResp.json();
-                            setCapacityEnabled(Boolean(cfg.capacityProject));
-                            setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
-                            setUserCanEditSettings(cfg.userCanEditSettings !== false);
-                        }
+                        const cfg = await fetchAppConfig(BACKEND_URL);
+                        setCapacityEnabled(Boolean(cfg.capacityProject));
+                        setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
+                        setUserCanEditSettings(cfg.userCanEditSettings !== false);
                     } catch (_) { /* best-effort */ }
 
                     invalidateSprintDataForConfigSave(refreshTarget);
@@ -2930,11 +2729,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const fetchJiraProjects = async () => {
                 setLoadingProjects(true);
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/projects`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestJiraProjects(BACKEND_URL);
                     if (!response.ok) throw new Error(`Projects fetch error ${response.status}`);
                     const data = await response.json();
                     setJiraProjects(data.projects || []);
@@ -2948,11 +2743,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const fetchJiraBoards = async () => {
                 setLoadingBoards(true);
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/boards`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestJiraBoards(BACKEND_URL);
                     if (!response.ok) throw new Error(`Boards fetch error ${response.status}`);
                     const data = await response.json();
                     setJiraBoards(data.boards || []);
@@ -2975,15 +2766,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 const timeoutId = window.setTimeout(async () => {
                     setProjectSearchRemoteLoading(true);
                     try {
-                        const params = new URLSearchParams();
-                        params.set('query', query);
-                        params.set('limit', '25');
-                        const response = await fetch(`${BACKEND_URL}/api/projects?${params.toString()}`, {
-                            method: 'GET',
-                            headers: { 'Content-Type': 'application/json' },
-                            cache: 'no-cache',
-                            signal: controller.signal
-                        });
+                        const response = await requestProjectSearch(BACKEND_URL, { query, signal: controller.signal });
                         if (!response.ok) throw new Error(`Projects search error ${response.status}`);
                         const data = await response.json();
                         setProjectSearchRemoteResults(data.projects || []);
@@ -3017,15 +2800,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 const timeoutId = window.setTimeout(async () => {
                     setBoardSearchRemoteLoading(true);
                     try {
-                        const params = new URLSearchParams();
-                        params.set('query', query);
-                        params.set('limit', '25');
-                        const response = await fetch(`${BACKEND_URL}/api/boards?${params.toString()}`, {
-                            method: 'GET',
-                            headers: { 'Content-Type': 'application/json' },
-                            cache: 'no-cache',
-                            signal: controller.signal
-                        });
+                        const response = await requestBoardSearch(BACKEND_URL, { query, signal: controller.signal });
                         if (!response.ok) throw new Error(`Boards search error ${response.status}`);
                         const data = await response.json();
                         setBoardSearchRemoteResults(data.boards || []);
@@ -3060,15 +2835,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 const timeoutId = window.setTimeout(async () => {
                     setComponentSearchLoading(true);
                     try {
-                        const params = new URLSearchParams();
-                        params.set('query', query);
-                        params.set('limit', '15');
-                        const response = await fetch(`${BACKEND_URL}/api/components?${params.toString()}`, {
-                            method: 'GET',
-                            headers: { 'Content-Type': 'application/json' },
-                            cache: 'no-cache',
-                            signal: controller.signal
-                        });
+                        const response = await requestComponentSearch(BACKEND_URL, { query, signal: controller.signal });
                         if (!response.ok) throw new Error(`Components search error ${response.status}`);
                         const data = await response.json();
                         setComponentSearchResults(data.components || []);
@@ -3103,15 +2870,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 const timeoutId = window.setTimeout(async () => {
                     setExcludedEpicSearchLoading(true);
                     try {
-                        const params = new URLSearchParams();
-                        params.set('query', query);
-                        params.set('limit', '15');
-                        const response = await fetch(`${BACKEND_URL}/api/epics/search?${params.toString()}`, {
-                            method: 'GET',
-                            headers: { 'Content-Type': 'application/json' },
-                            cache: 'no-cache',
-                            signal: controller.signal
-                        });
+                        const response = await requestEpicSearch(BACKEND_URL, { query, signal: controller.signal });
                         if (!response.ok) throw new Error(`Excluded epics search error ${response.status}`);
                         const data = await response.json();
                         setExcludedEpicSearchResults(data.epics || []);
@@ -3303,11 +3062,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadSelectedProjects = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/projects/selected`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestSelectedProjects(BACKEND_URL);
                     if (!response.ok) throw new Error(`Selected projects fetch error ${response.status}`);
                     const data = await response.json();
                     const selected = data.selected || [];
@@ -3321,11 +3076,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadBoardConfig = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/board-config`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestBoardConfig(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     const nextBoardId = String(data.boardId || '');
@@ -3340,11 +3091,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadPriorityWeightsConfig = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/stats/priority-weights-config`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestPriorityWeightsConfig(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     const rows = clonePriorityWeightRows(data.weights);
@@ -3358,11 +3105,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             };
 
             const saveBoardConfig = async () => {
-                const response = await fetch(`${BACKEND_URL}/api/board-config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft })
-                });
+                const response = await requestSaveBoardConfig(BACKEND_URL, { boardId: boardIdDraft, boardName: boardNameDraft });
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
                     throw new Error(err.error || `Save failed (${response.status})`);
@@ -3371,16 +3114,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             };
 
             const savePriorityWeightsConfig = async () => {
-                const response = await fetch(`${BACKEND_URL}/api/stats/priority-weights-config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        weights: (priorityWeightsDraft || []).map((row) => ({
-                            priority: String(row.priority || '').trim(),
-                            weight: Number(row.weight)
-                        }))
-                    })
-                });
+                const response = await requestSavePriorityWeightsConfig(BACKEND_URL, (priorityWeightsDraft || []).map((row) => ({
+                    priority: String(row.priority || '').trim(),
+                    weight: Number(row.weight)
+                })));
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
                     throw new Error(err.error || `Save failed (${response.status})`);
@@ -3519,11 +3256,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setGroupSaving(true);
                 setGroupDraftError('');
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/projects/selected`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ selected: selectedProjectsDraft })
-                    });
+                    const response = await requestSaveSelectedProjects(BACKEND_URL, selectedProjectsDraft);
                     if (!response.ok) {
                         const errorPayload = await response.json().catch(() => ({}));
                         throw new Error(errorPayload.error || `Save failed (${response.status})`);
@@ -3540,11 +3273,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadCapacityConfig = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/capacity/config`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestCapacityConfig(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     setCapacityProjectDraft(data.project || '');
@@ -3557,11 +3286,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             };
 
             const saveCapacityConfig = async () => {
-                const response = await fetch(`${BACKEND_URL}/api/capacity/config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft })
-                });
+                const response = await requestSaveCapacityConfig(BACKEND_URL, { project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
                     throw new Error(err.error || `Save failed (${response.status})`);
@@ -3572,7 +3297,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             // Generic load/save helpers for custom field pickers
             const loadFieldConfig = async (endpoint, setId, setName, baselineRef) => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/${endpoint}/config`, { method: 'GET', headers: { 'Content-Type': 'application/json' }, cache: 'no-cache' });
+                    const response = await requestFieldConfig(BACKEND_URL, endpoint);
                     if (!response.ok) return;
                     const data = await response.json();
                     setId(data.fieldId || '');
@@ -3583,11 +3308,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
             };
             const saveFieldConfig = async (endpoint, fieldId, fieldName, baselineRef) => {
-                const response = await fetch(`${BACKEND_URL}/api/${endpoint}/config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fieldId, fieldName })
-                });
+                const response = await requestSaveFieldConfig(BACKEND_URL, endpoint, { fieldId, fieldName });
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
                     throw new Error(err.error || `Save failed (${response.status})`);
@@ -3606,11 +3327,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadIssueTypesConfig = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/issue-types/config`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestIssueTypesConfig(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     const types = data.issueTypes || ['Story'];
@@ -3622,11 +3339,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             };
 
             const saveIssueTypesConfig = async () => {
-                const response = await fetch(`${BACKEND_URL}/api/issue-types/config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ issueTypes: issueTypesDraft })
-                });
+                const response = await requestSaveIssueTypesConfig(BACKEND_URL, issueTypesDraft);
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
                     throw new Error(err.error || `Save failed (${response.status})`);
@@ -3636,11 +3349,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const fetchAvailableIssueTypes = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/issue-types`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestAvailableIssueTypes(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     setAvailableIssueTypes(data.issueTypes || []);
@@ -3698,12 +3407,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const fetchJiraFields = async (projectKey) => {
                 setLoadingFields(true);
                 try {
-                    const params = projectKey ? `?project=${encodeURIComponent(projectKey)}` : '';
-                    const response = await fetch(`${BACKEND_URL}/api/fields${params}`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestJiraFields(BACKEND_URL, { projectKey });
                     if (!response.ok) throw new Error(`Fields fetch error ${response.status}`);
                     const data = await response.json();
                     setJiraFields(data.fields || []);
@@ -4022,11 +3726,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 labelSearchRequestIdRef.current[key] = requestId;
                 setLabelSearchLoading(prev => ({ ...prev, [key]: true }));
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/jira/labels?query=${encodeURIComponent(query)}&limit=20`, { cache: 'no-cache' });
-                    if (!response.ok) {
-                        throw new Error(`Labels error ${response.status}`);
-                    }
-                    const payload = await response.json();
+                    const payload = await requestJiraLabels(BACKEND_URL, { query, limit: 20 });
                     const nextResults = Array.isArray(payload.labels) ? payload.labels : [];
                     labelSearchCacheRef.current[cacheKey] = nextResults;
                     if (labelSearchRequestIdRef.current[key] === requestId) {
@@ -4946,18 +4646,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadConfig = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/config`);
-                    if (response.ok) {
-                        const config = await response.json();
-                        setJiraUrl(config.jiraUrl || '');
-                        setCapacityEnabled(Boolean(config.capacityProject));
-                        setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
-                        setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
-                        setUserCanEditSettings(config.userCanEditSettings !== false);
-                        applySavedEpmConfig(config.epm);
-                    } else {
-                        applySavedEpmConfig(createEmptyEpmConfigDraft());
-                    }
+                    const config = await fetchAppConfig(BACKEND_URL);
+                    setJiraUrl(config.jiraUrl || '');
+                    setCapacityEnabled(Boolean(config.capacityProject));
+                    setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
+                    setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
+                    setUserCanEditSettings(config.userCanEditSettings !== false);
+                    applySavedEpmConfig(config.epm);
                 } catch (err) {
                     console.error('Failed to load config:', err);
                     applySavedEpmConfig(createEmptyEpmConfigDraft());
@@ -5017,18 +4712,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         setMissingPlanningInfoTasks([]);
                         return;
                     }
-                    const params = new URLSearchParams({ sprint: String(sprintId), t: Date.now().toString() });
-                    if (activeGroupTeamIds.length) {
-                        params.set('teamIds', activeGroupTeamIds.join(','));
-                    }
                     const groupComponents = activeGroup?.missingInfoComponents || [];
-                    if (groupComponents.length) {
-                        params.set('components', groupComponents.join(','));
-                    }
-                    const response = await fetch(`${BACKEND_URL}/api/missing-info?${params.toString()}`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache',
+                    const response = await requestMissingPlanningInfo(BACKEND_URL, {
+                        sprintId,
+                        teamIds: activeGroupTeamIds,
+                        components: groupComponents,
                         signal: controller.signal
                     });
 	                    if (!response.ok) return;
@@ -5061,19 +4749,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const loadSprints = async (forceRefresh = false) => {
                 setSprintsLoading(true);
                 try {
-                    const params = new URLSearchParams({
-                        t: Date.now().toString()
-                    });
-                    if (forceRefresh) {
-                        params.append('refresh', 'true');
-                    }
-                    const response = await fetch(`${BACKEND_URL}/api/sprints?${params}`, {
-                        method: 'GET',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestSprints(BACKEND_URL, { forceRefresh });
 
                     if (!response.ok) {
                         throw new Error(`Error ${response.status}`);
@@ -5113,36 +4789,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
             };
 
-            const priorityOrder = {
-                'Blocker': 0,
-                'Highest': 1,
-                'Critical': 2,
-                'High': 3,
-                'Major': 4,
-                'Medium': 5,
-                'Minor': 6,
-                'Low': 7,
-                'Trivial': 8,
-                'Lowest': 9
-            };
+            const priorityOrder = PRIORITY_ORDER;
 
             const fetchCapacity = async (sprintName) => {
                 if (!capacityEnabled || !sprintName) return;
                 setCapacityLoading(true);
                 try {
                     const teams = capacityTeamNames;
-                    const params = new URLSearchParams({
-                        sprint: sprintName,
-                        t: Date.now().toString()
-                    });
-                    if (teams.length) {
-                        params.append('teams', teams.join(','));
-                    }
-                    const response = await fetch(`${BACKEND_URL}/api/capacity?${params.toString()}`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestCapacity(BACKEND_URL, { sprintName, teams });
                     if (!response.ok) {
                         setCapacityByTeam({});
                         return;
@@ -5206,249 +4860,48 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return radarPalette[index];
             };
 
-            const getTeamInfo = (task) => {
-                const team = task.fields?.team;
-                const teamName = task.fields?.teamName || team?.name || team?.displayName || team?.teamName || 'Unknown Team';
-                const teamId = task.fields?.teamId || team?.id || team?.teamId || team?.key || teamName;
-                return { id: teamId, name: teamName };
-            };
+            const getTeamInfo = getTaskTeamInfo;
 
-            const getEpicTeamInfo = (epic) => {
-                const teamName = epic?.teamName || epic?.team?.name || epic?.team?.displayName || 'Unknown Team';
-                const teamId = epic?.teamId || epic?.team?.id || teamName;
-                return { id: teamId, name: teamName };
-            };
-
-            const groupTasksByTeam = (tasks) => {
-                const groups = new Map();
-                (tasks || []).forEach(task => {
-                    const teamName = getTeamInfo(task).name;
-                    const items = groups.get(teamName) || [];
-                    items.push(task);
-                    groups.set(teamName, items);
-                });
-                return Array.from(groups.entries()).map(([teamName, items]) => ({ teamName, items }));
-            };
-
-            const filterTasksForActiveGroup = (items) => {
-                if (!activeGroupTeamIds.length) return [];
-                return (items || []).filter(task => activeGroupTeamSet.has(getTeamInfo(task).id));
-            };
-
-            const fetchTasks = async (project, options = {}) => {
-                const useLoading = options.useLoading !== false;
-                const setErrors = options.setErrorOnFailure !== false;
-                if (useLoading) {
-                    setLoading(true);
-                }
-                if (setErrors && options.clearError !== false) {
-                    setError('');
-                }
-
-                const controller = registerSprintFetch();
-                try {
-                    const sprintParam = options.sprintOverride !== undefined ? options.sprintOverride : (selectedSprint || '');
-                    const groupTeamIds = activeGroupTeamIds;
-                    const useGroupTemplate = groupQueryTemplateEnabled && groupTeamIds.length > 0;
-                    // Add cache busting parameter and sprint parameter
-                    const params = new URLSearchParams({
-                        t: Date.now().toString(),
-                        sprint: sprintParam,
-                        team: 'all',
-                        project: project || 'all',
-                        groupId: activeGroupId || ''
-                    });
-                    // Bypass server cache on page load or explicit refresh
-                    if (pageLoadRefreshRef.current || options.forceRefresh) {
-                        params.set('refresh', 'true');
-                        pageLoadRefreshRef.current = false;
-                    }
-                    // If group has teams configured, always filter by them (overrides ENV filter)
-                    if (groupTeamIds.length > 0) {
-                        params.set('teamIds', groupTeamIds.join(','));
-                    }
-                    if (options.purpose) {
-                        params.set('purpose', String(options.purpose));
-                    }
-                    if (options.epicKeys && options.epicKeys.length) {
-                        const epicKeys = Array.from(new Set(options.epicKeys.filter(Boolean)));
-                        if (epicKeys.length) {
-                            params.set('epicKeys', epicKeys.join(','));
-                        }
-                    }
-                    const response = await fetch(`${BACKEND_URL}/api/tasks-with-team-name?${params}`, {
-                        method: 'GET',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        cache: 'no-cache',
-                        signal: controller.signal
-                    });
-
-                    console.log('Response status:', response.status);
-                    console.log('Response ok:', response.ok);
-
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({ 
-                            error: `HTTP ${response.status}` 
-                        }));
-                        console.error('Error data:', errorData);
-                        throw new Error(errorData.error || `Error ${response.status}`);
-                    }
-
-                    const data = await response.json();
-                    console.log('Success! Received data:', data);
-
-                    // Sort by priority
-                    const sortedTasks = (data.issues || []).sort((a, b) => {
-                        const priorityA = priorityOrder[a.fields.priority?.name] || 999;
-                        const priorityB = priorityOrder[b.fields.priority?.name] || 999;
-                        return priorityA - priorityB;
-                    });
-
-                    const filteredTasks = filterTasksForActiveGroup(sortedTasks);
-                    const filteredEpicsInScope = activeGroupTeamIds.length
-                        ? (data.epicsInScope || []).filter(epic => !epic?.teamId || activeGroupTeamSet.has(epic.teamId))
-                        : [];
-                    const epicKeys = new Set(
-                        filteredTasks
-                            .map(task => task.fields?.epicKey)
-                            .filter(Boolean)
-                    );
-                    const filteredEpics = {};
-                    Object.entries(data.epics || {}).forEach(([key, epic]) => {
-                        if (epicKeys.has(key)) {
-                            filteredEpics[key] = epic;
-                        }
-                    });
-
-	                    if (options.updateEpics !== false) {
-	                        setEpicDetails(prev => ({ ...prev, ...filteredEpics }));
-	                        if (project === 'product') {
-	                            setProductEpicsInScope(filteredEpicsInScope);
-	                        } else if (project === 'tech') {
-	                            setTechEpicsInScope(filteredEpicsInScope);
-	                        }
-	                    }
-	                    if (options.epicsInScopeSetter) {
-	                        options.epicsInScopeSetter(filteredEpicsInScope);
-	                    }
-	                    return filteredTasks;
-                } catch (err) {
-                    if (err.name === 'AbortError') {
-                        return [];
-                    }
-                    if (setErrors) {
-                        const errorMsg = `Failed to load tasks: ${err.message}. Make sure the Python server is running on ${BACKEND_URL}`;
-                        setError(errorMsg);
-                    }
-                    console.error('Full error details:', err);
-                    return [];
-                } finally {
-                    cleanupSprintFetch(controller);
-                    if (useLoading) {
-                        setLoading(false);
-                    }
-                }
-            };
-
-            const fetchBacklogEpics = async (project) => {
-                if (!isFutureSprintSelected) return [];
-                if (activeGroupId && activeGroupTeamIds.length === 0) return [];
-                const params = new URLSearchParams({
-                    t: Date.now().toString(),
-                    project: project || 'all'
-                });
-                if (activeGroupTeamIds.length > 0) {
-                    params.set('teamIds', activeGroupTeamIds.join(','));
-                }
-                const response = await fetch(`${BACKEND_URL}/api/backlog-epics?${params.toString()}`, {
-                    method: 'GET',
-                    headers: { 'Content-Type': 'application/json' },
-                    cache: 'no-cache'
-                });
-                if (!response.ok) {
-                    throw new Error(`Backlog epics error ${response.status}`);
-                }
-                const payload = await response.json();
-                return Array.isArray(payload.epics) ? payload.epics : [];
-            };
-
-            const loadProductTasks = async ({ forceRefresh = false } = {}) => {
-                const sprintId = selectedSprint;
-                setProductTasksLoading(true);
-                try {
-                    if (activeGroupId && activeGroupTeamIds.length === 0) {
-                        setProductTasks([]);
-                        setLoadedProductTasks([]);
-                        setTasksFetched(true);
-                        const current = sprintLoadRef.current;
-                        sprintLoadRef.current = {
-                            sprintId,
-                            product: true,
-                            tech: current.sprintId === sprintId ? current.tech : false
-                        };
-                        if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
-                            lastLoadedSprintRef.current = sprintId;
-                        }
-                        return;
-                    }
-                    const data = await fetchTasks('product', { forceRefresh });
-                    setProductTasks(data);
-                    setLoadedProductTasks(data);
-                    setTasksFetched(true);
-                    const current = sprintLoadRef.current;
-                    sprintLoadRef.current = {
-                        sprintId,
-                        product: true,
-                        tech: current.sprintId === sprintId ? current.tech : false
-                    };
-                    if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
-                        lastLoadedSprintRef.current = sprintId;
-                    }
-                } finally {
-                    setProductTasksLoading(false);
-                }
-            };
-
-            const loadTechTasks = async ({ forceRefresh = false } = {}) => {
-                const sprintId = selectedSprint;
-                setTechTasksLoading(true);
-                try {
-                    if (activeGroupId && activeGroupTeamIds.length === 0) {
-                        setTechTasks([]);
-                        setLoadedTechTasks([]);
-                        setTechLoaded(true);
-                        setTasksFetched(true);
-                        const current = sprintLoadRef.current;
-                        sprintLoadRef.current = {
-                            sprintId,
-                            product: current.sprintId === sprintId ? current.product : false,
-                            tech: true
-                        };
-                        if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
-                            lastLoadedSprintRef.current = sprintId;
-                        }
-                        return;
-                    }
-                    const data = await fetchTasks('tech', { forceRefresh });
-                    setTechTasks(data);
-                    setLoadedTechTasks(data);
-                    setTechLoaded(true);
-                    setTasksFetched(true);
-                    const current = sprintLoadRef.current;
-                    sprintLoadRef.current = {
-                        sprintId,
-                        product: current.sprintId === sprintId ? current.product : false,
-                        tech: true
-                    };
-                    if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
-                        lastLoadedSprintRef.current = sprintId;
-                    }
-                } finally {
-                    setTechTasksLoading(false);
-                }
-            };
+            const {
+                fetchTasks,
+                fetchBacklogEpics,
+                loadProductTasks,
+                loadTechTasks,
+                loadReadyToCloseProductTasks,
+                loadReadyToCloseTechTasks,
+            } = useEngSprintData({
+                backendUrl: BACKEND_URL,
+                selectedSprint,
+                activeGroupId,
+                activeGroupTeamIds,
+                activeGroupTeamSet,
+                pageLoadRefreshRef,
+                sprintLoadRef,
+                lastLoadedSprintRef,
+                registerSprintFetch,
+                cleanupSprintFetch,
+                isFutureSprintSelected,
+                priorityOrder,
+                loadedProductTasks,
+                loadedTechTasks,
+                setLoading,
+                setError,
+                setEpicDetails,
+                setProductTasks,
+                setTechTasks,
+                setLoadedProductTasks,
+                setLoadedTechTasks,
+                setTasksFetched,
+                setTechLoaded,
+                setProductTasksLoading,
+                setTechTasksLoading,
+                setProductEpicsInScope,
+                setTechEpicsInScope,
+                setReadyToCloseProductTasks,
+                setReadyToCloseTechTasks,
+                setReadyToCloseProductEpicsInScope,
+                setReadyToCloseTechEpicsInScope,
+            });
 
             const fetchDependencies = async (keys) => {
                 if (!keys.length) {
@@ -5457,12 +4910,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 const controller = registerSprintFetch();
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/dependencies`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ keys }),
-                        signal: controller.signal
-                    });
+                    const response = await requestDependencies(BACKEND_URL, keys, { signal: controller.signal });
                     if (!response.ok) {
                         console.error('Dependencies fetch failed:', response.status);
                         return;
@@ -5598,65 +5046,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 scenarioWasDraggedRef.current = false;
                 setScenarioDragState(dragState);
             };
-
-            const loadReadyToCloseProductTasks = async ({ forceRefresh = false } = {}) => {
-                if (activeGroupId && activeGroupTeamIds.length === 0) {
-                    setReadyToCloseProductTasks([]);
-                    setReadyToCloseProductEpicsInScope([]);
-                    return;
-                }
-                const epicKeys = Array.from(new Set(
-                    (loadedProductTasks || [])
-                        .map(task => task.fields?.epicKey)
-                        .filter(Boolean)
-                ));
-                if (!epicKeys.length) {
-                    setReadyToCloseProductTasks([]);
-                    setReadyToCloseProductEpicsInScope([]);
-                    return;
-                }
-                const data = await fetchTasks('product', {
-                    sprintOverride: '',
-                    purpose: 'ready-to-close',
-                    epicKeys,
-                    updateEpics: false,
-                    epicsInScopeSetter: setReadyToCloseProductEpicsInScope,
-                    useLoading: false,
-                    setErrorOnFailure: false,
-                    forceRefresh
-                });
-                setReadyToCloseProductTasks(data);
-            };
-
-            const loadReadyToCloseTechTasks = async ({ forceRefresh = false } = {}) => {
-                if (activeGroupId && activeGroupTeamIds.length === 0) {
-                    setReadyToCloseTechTasks([]);
-                    setReadyToCloseTechEpicsInScope([]);
-                    return;
-                }
-                const epicKeys = Array.from(new Set(
-                    (loadedTechTasks || [])
-                        .map(task => task.fields?.epicKey)
-                        .filter(Boolean)
-                ));
-                if (!epicKeys.length) {
-                    setReadyToCloseTechTasks([]);
-                    setReadyToCloseTechEpicsInScope([]);
-                    return;
-                }
-                const data = await fetchTasks('tech', {
-                    sprintOverride: '',
-                    purpose: 'ready-to-close',
-                    epicKeys,
-                    updateEpics: false,
-                    epicsInScopeSetter: setReadyToCloseTechEpicsInScope,
-                    useLoading: false,
-                    setErrorOnFailure: false,
-                    forceRefresh
-                });
-                setReadyToCloseTechTasks(data);
-            };
-
 
             useEffect(() => {
                 if (selectedView !== 'eng') return;
@@ -9141,29 +8530,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
             }, [showDependencies]);
 
-            useEffect(() => {
-                if (selectedView !== 'epm') return;
-                if (!epmConfigLoaded) return;
-                if (!hasSavedEpmScope) {
-                    setEpmProjects([]);
-                    return;
-                }
-                void refreshEpmView();
-            }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab]);
-
-            useEffect(() => {
-                if (selectedView !== 'epm') return;
-                if (!epmSelectedProjectId) return;
-                if (epmProjectsPendingSelectionRef.current) return;
-                if (!selectedEpmProject) {
-                    setEpmSelectedProjectId('');
-                }
-            }, [selectedView, epmSelectedProjectId, selectedEpmProject]);
-
-            useEffect(() => {
-                void refreshEpmRollup();
-            }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, selectedEpmProject, epmTab, selectedSprint]);
-
             const issueByKey = React.useMemo(() => {
                 const map = new Map();
                 dependencyTasks.forEach(task => {
@@ -10024,30 +9390,17 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return num.toFixed(1);
             };
 
-            const formatPriorityShort = (value) => {
-                const name = String(value || '').toLowerCase();
-                if (!name) return 'NONE';
-                if (name.includes('blocker')) return 'BLKR';
-                if (name.includes('critical')) return 'CRIT';
-                if (name.includes('highest')) return 'HIGH';
-                if (name.includes('high')) return 'HIGH';
-                if (name.includes('major')) return 'MAJR';
-                if (name.includes('medium')) return 'MED';
-                if (name.includes('minor')) return 'MIN';
-                if (name.includes('lowest')) return 'LOW';
-                if (name.includes('low')) return 'LOW';
-                return name.slice(0, 4).toUpperCase();
-            };
-
             const renderPriorityIcon = (priority, idSeed) => {
                 const name = String(priority || '').toLowerCase();
                 const label = priority || 'None';
+                const shortLabel = formatPriorityShort(priority);
+                const priorityAttrs = { 'data-priority': label, 'data-priority-short': shortLabel, 'aria-label': label };
                 const iconClass = name.replace(/\s+/g, '-') || 'none';
                 const safeId = String(idSeed || 'priority').replace(/[^a-z0-9_-]/gi, '') || 'priority';
                 const gradientId = `priority-grad-${safeId}`;
                 if (!name) {
                     return (
-                        <span className="task-priority-icon none" data-priority="None" aria-label="None">
+                        <span className="task-priority-icon none" {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <circle cx="8" cy="8" r="5" fill="none" stroke="#7a8699" strokeWidth="2"/>
                             </svg>
@@ -10056,7 +9409,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 if (name.includes('blocker')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <path d="M8 15c-3.9 0-7-3.1-7-7s3.1-7 7-7 7 3.1 7 7-3.1 7-7 7zM4 7c-.6 0-1 .4-1 1s.4 1 1 1h8c.6 0 1-.4 1-1s-.4-1-1-1H4z" fill="#ff5630"/>
                             </svg>
@@ -10065,7 +9418,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 if (name.includes('critical')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <defs>
                                     <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1="-46.25" y1="65.1105" x2="-46.25" y2="64.1105" gradientTransform="matrix(12 0 0 -13.1121 563 854.7415)">
@@ -10080,7 +9433,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 if (name.includes('highest') || name.includes('high') || name.includes('major')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <path d="M7.984436 3.200867l-4.5 2.7c-.5.3-1.1.1-1.3-.4s-.2-1.1.3-1.3l5-3c.3-.2.7-.2 1 0l5 3c.5.3.6.9.3 1.4-.3.5-.9.6-1.4.3l-4.4-2.7z" fill="#ff5630"/>
                                 <path d="M3.484436 10.200867c-.5.3-1.1.1-1.3-.3s-.2-1.1.3-1.4l5-3c.3-.2.7-.2 1 0l5 3c.5.3.6.9.3 1.4-.3.5-.9.6-1.4.3l-4.4-2.7-4.5 2.7z" fill="#ff7452"/>
@@ -10091,7 +9444,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 if (name.includes('medium')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <circle cx="8" cy="8" r="5" fill="none" stroke="#7a8699" strokeWidth="2"/>
                             </svg>
@@ -10100,7 +9453,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 if (name.includes('minor') || name.includes('lowest')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <path d="M8.045319 12.806152l4.5-2.7c.5-.3 1.1-.1 1.3.4s.2 1.1-.3 1.3l-5 3c-.3.2-.7.2-1 0l-5-3c-.5-.3-.6-.9-.3-1.4.3-.5.9-.6 1.4-.3l4.4 2.7z" fill="#0065ff"/>
                                 <path d="M12.545319 5.806152c.5-.3 1.1-.1 1.3.3s.2 1.1-.3 1.4l-5 3c-.3.2-.7.2-1 0l-5-3c-.5-.3-.6-.9-.3-1.4.3-.5.9-.6 1.4-.3l4.4 2.7 4.5-2.7z" fill="#2684ff"/>
@@ -10111,7 +9464,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 if (name.includes('low')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <path d="M12.5 6.1c.5-.3 1.1-.1 1.4.4.3.5.1 1.1-.3 1.3l-5 3c-.3.2-.7.2-1 0l-5-3c-.6-.2-.7-.9-.4-1.3.2-.5.9-.7 1.3-.4L8 8.8l4.5-2.7z" fill="#0065ff"/>
                             </svg>
@@ -10119,7 +9472,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     );
                 }
                 return (
-                    <span className={`task-priority-icon ${iconClass}`} data-priority={label} aria-label={label}>
+                    <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                         <svg viewBox="0 0 16 16">
                             <circle cx="8" cy="8" r="5" fill="none" stroke="#7a8699" strokeWidth="2"/>
                         </svg>
@@ -10935,15 +10288,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 '--scenario-sticky-top': `${epicStickyTop}px`
             };
             const showGroupControl = (groupsConfig.groups || []).length > 1;
-            const epmTabOptions = [
-                { value: 'active', label: 'Active' },
-                { value: 'backlog', label: 'Backlog' },
-                { value: 'archived', label: 'Archived' }
-            ];
 
             const renderSearchControl = (surface, extraClassName = '') => (
-                <div className={`control-field control-search ${extraClassName}`.trim()} data-label="Search">
-                    <span className="control-label">Search</span>
+                <ControlField label="Search" className={`control-search ${extraClassName}`.trim()}>
                     <div className="search-wrap">
                         <input
                             type="text"
@@ -10965,140 +10312,46 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             </button>
                         )}
                     </div>
-                </div>
+                </ControlField>
             );
 
             const renderViewSwitch = () => (
-                <div className="segmented-control view-mode-control" role="radiogroup" aria-label="Dashboard view">
-                    <button
-                        className={`segmented-control-button ${selectedView === 'eng' ? 'active' : ''}`}
-                        onClick={() => setSelectedView('eng')}
-                        role="radio"
-                        aria-checked={selectedView === 'eng'}
-                        type="button"
-                    >
-                        ENG
-                    </button>
-                    <button
-                        className={`segmented-control-button ${selectedView === 'epm' ? 'active' : ''}`}
-                        onClick={() => setSelectedView('epm')}
-                        role="radio"
-                        aria-checked={selectedView === 'epm'}
-                        type="button"
-                    >
-                        EPM
-                    </button>
-                </div>
+                <SegmentedControl
+                    className="view-mode-control"
+                    ariaLabel="Dashboard view"
+                    value={selectedView}
+                    onChange={setSelectedView}
+                    options={[
+                        { value: 'eng', label: 'ENG' },
+                        { value: 'epm', label: 'EPM' }
+                    ]}
+                />
             );
 
-            const renderEpmTabs = () => {
-                if (selectedView !== 'epm') return null;
-                return (
-                    <div className="segmented-control epm-state-control" role="radiogroup" aria-label="EPM project state">
-                        {epmTabOptions.map((tab) => (
-                            <button
-                                key={tab.value}
-                                className={`segmented-control-button ${epmTab === tab.value ? 'active' : ''}`}
-                                onClick={() => setEpmTab(tab.value)}
-                                role="radio"
-                                aria-checked={epmTab === tab.value}
-                                type="button"
-                            >
-                                {tab.label}
-                            </button>
-                        ))}
-                    </div>
-                );
-            };
-
-            const renderEpmProjectPicker = () => {
-                if (selectedView !== 'epm') return null;
-                const surface = 'main';
-                const isDisabled = epmProjectsLoading || visibleEpmProjects.length === 0;
-                const selectedProjectName = selectedEpmProject
-                    ? getEpmProjectDisplayName(selectedEpmProject)
-                    : 'All projects';
-                return (
-                    <div className="control-field" data-label="Project">
-                        <span className="control-label">Project</span>
-                        <div className="sprint-dropdown epm-project-dropdown" ref={(node) => { epmProjectDropdownRefs.current[surface] = node; }}>
-                            <div
-                                className={`sprint-dropdown-toggle ${showEpmProjectDropdown ? 'open' : ''}`}
-                                role="button"
-                                aria-label="Select Project"
-                                tabIndex={isDisabled ? -1 : 0}
-                                onClick={() => {
-                                    if (isDisabled) return;
-                                    applyExclusiveDropdownState('project', showEpmProjectDropdown);
-                                }}
-                                onKeyDown={(event) => {
-                                    if (isDisabled) return;
-                                    if (event.key === 'Enter' || event.key === ' ') {
-                                        event.preventDefault();
-                                        applyExclusiveDropdownState('project', showEpmProjectDropdown);
-                                    }
-                                }}
-                                aria-disabled={isDisabled}
-                            >
-                                <span>{epmProjectsLoading ? 'Loading...' : selectedProjectName}</span>
-                                <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                    <path d="M6 9L1 4h10z"/>
-                                </svg>
-                            </div>
-                            {showEpmProjectDropdown && surface === activeControlSurface && (
-                                <div className="sprint-dropdown-panel">
-                                    <input
-                                        type="text"
-                                        className="sprint-dropdown-search"
-                                        placeholder="Filter..."
-                                        value={epmProjectSearch}
-                                        onChange={(event) => setEpmProjectSearch(event.target.value)}
-                                        aria-label="Filter Projects"
-                                    />
-                                    <div className="sprint-dropdown-list">
-                                        <div
-                                            className="sprint-dropdown-option"
-                                            data-project-id=""
-                                            onClick={() => {
-                                                setEpmSelectedProjectId('');
-                                                setShowEpmProjectDropdown(false);
-                                                setEpmProjectSearch('');
-                                            }}
-                                        >
-                                            All projects
-                                        </div>
-                                        {filteredEpmProjects.length === 0 ? (
-                                            <div className="sprint-dropdown-option">No projects available</div>
-                                        ) : (
-                                            filteredEpmProjects.map((project) => {
-                                                const projectId = getEpmProjectIdentity(project);
-                                                return (
-                                                    <div
-                                                        key={projectId}
-                                                        className="sprint-dropdown-option"
-                                                        data-project-id={projectId}
-                                                        onClick={() => {
-                                                            setEpmSelectedProjectId(projectId);
-                                                            setShowEpmProjectDropdown(false);
-                                                            setEpmProjectSearch('');
-                                                        }}
-                                                    >
-                                                        {getEpmProjectDisplayName(project)}
-                                                    </div>
-                                                );
-                                            })
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                );
-            };
+            const renderEpmControls = (surface, showProjectPicker = true) => (
+                <EpmControls
+                    selectedView={selectedView}
+                    epmTab={epmTab}
+                    setEpmTab={setEpmTab}
+                    surface={surface}
+                    showProjectPicker={showProjectPicker}
+                    epmProjectsLoading={epmProjectsLoading}
+                    visibleEpmProjects={visibleEpmProjects}
+                    selectedEpmProject={selectedEpmProject}
+                    filteredEpmProjects={filteredEpmProjects}
+                    showEpmProjectDropdown={showEpmProjectDropdown}
+                    activeControlSurface={activeControlSurface}
+                    applyExclusiveDropdownState={applyExclusiveDropdownState}
+                    epmProjectDropdownRefs={epmProjectDropdownRefs}
+                    epmProjectSearch={epmProjectSearch}
+                    setEpmProjectSearch={setEpmProjectSearch}
+                    setEpmSelectedProjectId={setEpmSelectedProjectId}
+                    setShowEpmProjectDropdown={setShowEpmProjectDropdown}
+                />
+            );
 
             const renderSprintControl = (surface) => (
-                <div className="control-field" data-label="Sprint">
-                    <span className="control-label">Sprint</span>
+                <ControlField label="Sprint">
                     <div className="sprint-dropdown" ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
                         <div
                             className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
@@ -11162,15 +10415,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             </div>
                         )}
                     </div>
-                </div>
+                </ControlField>
             );
 
             const renderGroupControl = (surface) => {
                 if (!showGroupControl) return null;
                 return (
                     <div className="group-control">
-                        <div className="control-field" data-label="Group">
-                            <span className="control-label">Group</span>
+                        <ControlField label="Group">
                             <div className="group-dropdown" ref={(node) => { groupDropdownRefs.current[surface] = node; }}>
                                 <div
                                     className={`group-dropdown-toggle ${showGroupDropdown ? 'open' : ''}`}
@@ -11226,14 +10478,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     </div>
                                 )}
                             </div>
-                        </div>
+                        </ControlField>
                     </div>
                 );
             };
 
             const renderTeamControl = (surface) => (
-                <div className="control-field" data-label="Teams">
-                    <span className="control-label">Teams</span>
+                <ControlField label="Teams">
                     <div className="team-dropdown" ref={(node) => { teamDropdownRefs.current[surface] = node; }}>
                         <div
                             className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''}`}
@@ -11276,15 +10527,42 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             </div>
                         )}
                     </div>
-                </div>
+                </ControlField>
             );
+
+            const shouldRenderIssueDependencies = (selectedView === 'eng' || selectedView === 'epm') && showDependencies;
+            const issueDependencyContext = {
+                dependencyData,
+                dependencyFocus,
+                dependencyHover,
+                activeDependencyFocus,
+                focusRelatedSet,
+                issueByKey,
+                visibleTaskKeySet,
+                dependencyLookupCache,
+                dependencyLookupLoading,
+                normalizeStatus,
+                getTeamInfo,
+                onHoverEnter: handleDependencyHoverEnter,
+                onHoverLeave: handleDependencyHoverLeave,
+            };
+            const issueCardContext = {
+                jiraUrl,
+                renderPriorityIcon,
+                allowSelection: showPlanning,
+                selectedTasks,
+                onToggleSelection: toggleTaskSelection,
+                onRemove: removeTask,
+                shouldRenderIssueDependencies,
+                dependencyContext: issueDependencyContext,
+                onDependencyFocusClick: handleDependencyFocusClick,
+            };
 
             const renderEpicBlock = (epicGroup) => {
                         const epicInfo = epicGroup.epic;
                         const epicTitle = epicInfo?.summary || epicGroup.parentSummary ||
                             (epicGroup.key === 'NO_EPIC' ? 'No Epic Linked' : epicGroup.key);
                         const epicTotalSp = epicGroup.storyPoints || 0;
-                        const shouldRenderIssueDependencies = (selectedView === 'eng' || selectedView === 'epm') && showDependencies;
                         return (
                             <div
                                 key={epicGroup.key}
@@ -11368,322 +10646,63 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 	                                    </div>
 	                                </div>
                                 {epicGroup.tasks.map(task => {
-                                    const isKilled = task.fields.status?.name === 'Killed';
-                                    const isDone = task.fields.status?.name === 'Done';
-                                    const isIncomplete = normalizeStatus(task.fields.status?.name) === 'incomplete';
                                     const teamInfo = getTeamInfo(task);
-                                    const rawDeps = showDependencies
-                                        ? (dependencyData[task.key] || []).filter(dep => dep.key && dep.category === 'dependency')
-                                        : [];
-                                    const rawBlockDeps = showDependencies
-                                        ? (dependencyData[task.key] || []).filter(dep => dep.key && dep.category === 'block')
-                                        : [];
-                                    const uniqueDeps = (() => {
-                                        const seen = new Set();
-                                        return rawDeps.filter(dep => {
-                                            const key = `${dep.key}-${dep.direction}`;
-                                            if (seen.has(key)) return false;
-                                            seen.add(key);
-                                            return true;
-                                        });
-                                    })();
-                                    const dependsOnAll = uniqueDeps.filter(dep => dep.direction === 'outward');
-                                    const dependentsAll = uniqueDeps.filter(dep => dep.direction === 'inward');
-                                    const dependsOnIds = dependsOnAll.map(dep => dep.key).filter(Boolean);
-                                    const dependentIds = dependentsAll.map(dep => dep.key).filter(Boolean);
-                                    const { blockedBy: blockedByIds, blocks: blocksIds } = getBlockLinkBuckets(rawBlockDeps, task.key);
-                                    const hasBlockLinks = blockedByIds.length > 0 || blocksIds.length > 0;
-                                    const hasDependencyLinks = dependsOnIds.length > 0 || dependentIds.length > 0;
-                                    const hasDeps = hasDependencyLinks || hasBlockLinks;
-                                    const hasCycle = dependsOnIds.some(id => dependentIds.includes(id) && issueByKey.has(id));
-                                    const isDependsFocusActive = dependencyFocus &&
-                                        dependencyFocus.taskKey === task.key &&
-                                        dependencyFocus.action === 'depends-on';
-                                    const isDependentsFocusActive = dependencyFocus &&
-                                        dependencyFocus.taskKey === task.key &&
-                                        dependencyFocus.action === 'dependents';
-                                    const isBlockedByFocusActive = dependencyFocus &&
-                                        dependencyFocus.taskKey === task.key &&
-                                        dependencyFocus.action === 'blocked-by';
-                                    const isBlocksFocusActive = dependencyFocus &&
-                                        dependencyFocus.taskKey === task.key &&
-                                        dependencyFocus.action === 'blocks';
-                                    const isDependsHoverActive = dependencyHover &&
-                                        dependencyHover.taskKey === task.key &&
-                                        dependencyHover.action === 'depends-on';
-                                    const isDependentsHoverActive = dependencyHover &&
-                                        dependencyHover.taskKey === task.key &&
-                                        dependencyHover.action === 'dependents';
-                                    const isBlockedByHoverActive = dependencyHover &&
-                                        dependencyHover.taskKey === task.key &&
-                                        dependencyHover.action === 'blocked-by';
-                                    const isBlocksHoverActive = dependencyHover &&
-                                        dependencyHover.taskKey === task.key &&
-                                        dependencyHover.action === 'blocks';
-                                    const isFocusActive = !!activeDependencyFocus;
-                                    const isRelated = !isFocusActive || focusRelatedSet.has(task.key);
-                                    const isFocused = isFocusActive && activeDependencyFocus.taskKey === task.key;
-                                    const isUpstream = isFocusActive &&
-                                        (activeDependencyFocus.action === 'depends-on' || activeDependencyFocus.action === 'blocked-by') &&
-                                        !isFocused &&
-                                        focusRelatedSet.has(task.key);
-                                    const isDownstream = isFocusActive &&
-                                        (activeDependencyFocus.action === 'dependents' || activeDependencyFocus.action === 'blocks') &&
-                                        !isFocused &&
-                                        focusRelatedSet.has(task.key);
-                                    const missingKeys = isFocused ? (dependencyFocus?.missingKeys || []) : [];
-                                    const dependencyKeyList = dependencyFocus?.dependencyKeys
-                                        || (dependencyFocus?.relatedKeys || []).filter(key => key !== task.key);
-                                    const hiddenKeys = isFocused
-                                        ? dependencyKeyList.filter(key => issueByKey.has(key) && !visibleTaskKeySet.has(key))
-                                        : [];
-                                    const missingInfoByKey = {};
-                                    uniqueDeps.forEach(dep => {
-                                        if (dep.key) {
-                                            missingInfoByKey[dep.key] = dep;
-                                        }
-                                    });
-                                    const missingLines = missingKeys.map(key => {
-                                        const lookup = dependencyLookupCache[key];
-                                        const info = missingInfoByKey[key] || {};
-                                        const status = lookup?.status || info.status || 'Unknown';
-                                        const summary = lookup?.summary || info.summary || 'Unknown summary';
-                                        const teamName = lookup?.teamName || info.teamName || 'Unknown team';
-                                        const assignee = lookup?.assignee || info.assignee || 'Unassigned';
-                                        const isDone = normalizeStatus(status) === 'done';
-                                        return { key, status, summary, teamName, assignee, isDone };
-                                    });
-                                    const hiddenLines = hiddenKeys.map(key => {
-                                        const lookup = issueByKey.get(key);
-                                        const info = missingInfoByKey[key] || {};
-                                        const status = lookup?.fields?.status?.name || lookup?.status?.name || lookup?.status || info.status || 'Unknown';
-                                        const summary = lookup?.fields?.summary || lookup?.summary || info.summary || 'Unknown summary';
-                                        const teamName = lookup?.fields
-                                            ? getTeamInfo(lookup).name
-                                            : (lookup?.teamName || info.teamName || 'Unknown team');
-                                        const assignee = lookup?.fields?.assignee?.displayName || lookup?.assignee?.displayName || info.assignee || 'Unassigned';
-                                        const isDone = normalizeStatus(status) === 'done';
-                                        return { key, status, summary, teamName, assignee, isDone };
-                                    });
+                                    const teamLabel = getIssueTeamLabel(teamInfo);
+                                    const statusClassName = getIssueStatusClassName(task.fields.status?.name);
                                     return (
-                                        <div
+                                        <IssueCard
                                             key={task.key}
-                                            className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isIncomplete ? 'status-incomplete' : ''} ${isFocusActive && !isRelated ? 'is-dimmed' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''}`}
-                                            data-task-key={task.key}
-                                            data-task-id={task.id || task.key}
-                                            data-issue-key={task.key}
-                                        >
-                                            <div className="task-header">
-                                                <button
-                                                    className="task-remove"
-                                                    onClick={() => removeTask(task)}
-                                                    title="Remove task from view"
-                                                >
-                                                    ×
-                                                </button>
-                                            <div className="task-headline">
-                                                <span className="story-icon" aria-hidden="true" title="STORY">
-                                                        <svg viewBox="0 0 24 24" fill="none">
-                                                    <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
-                                                </svg>
-                                                </span>
-                                                {renderPriorityIcon(task.fields.priority?.name, task.key)}
-                                                <h3 className="task-title">
-                                                    {isIncomplete && <span className="task-incomplete-icon" title="Incomplete — work started but not finished this sprint">◐</span>}
-                                                    <a href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'} target="_blank" rel="noopener noreferrer">
-                                                        {task.fields.summary}
-                                                    </a>
-                                                </h3>
-                                                    <span className="task-inline-meta">
-                                                        <a
-                                                            className="task-key-link"
-                                                            href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                        >
-                                                            {task.key}
-                                                        </a>
-                                                        {task.fields.customfield_10004 && (
-                                                            <span className="task-inline-sp">
-                                                                {task.fields.customfield_10004} SP
-                                                            </span>
-                                                        )}
-                                                    </span>
-                                                    {showPlanning && (
-                                                        <input
-                                                            type="checkbox"
-                                                            className="task-checkbox"
-                                                            checked={!!selectedTasks[task.key]}
-                                                            onChange={() => toggleTaskSelection(task.key)}
-                                                            title="Select for sprint planning"
-                                                        />
-                                                    )}
-                                                </div>
-                                                <div className="task-header-right">
-                                                    {shouldRenderIssueDependencies && hasDependencyLinks && (
-                                                        <div className="dependency-pill-stack">
-                                                            {dependsOnIds.length > 0 && (
-                                                                <span className="dependency-pill blocked">← BLOCKED BY</span>
-                                                            )}
-                                                            {dependentIds.length > 0 && (
-                                                                <span className="dependency-pill blocker">BLOCKS →</span>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="task-meta">
-                                                <span className={`task-status ${task.fields.status?.name.toLowerCase().replace(/\s+/g, '-')}`}>
-                                                    {task.fields.status?.name}
-                                                </span>
-                                                <span className="task-team">{teamInfo.name}</span>
-                                                {task.fields.assignee && (
-                                                    <span className="task-assignee">
-                                                        <span className="task-assignee-icon" aria-hidden="true">
-                                                            <svg viewBox="0 0 24 24" fill="none">
-                                                                <path d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Z" stroke="currentColor" strokeWidth="1.6"/>
-                                                                <path d="M4 20c1.8-4 6-5.5 8-5.5S18.2 16 20 20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                                                            </svg>
-                                                        </span>
-                                                        {task.fields.assignee.displayName}
-                                                    </span>
-                                                )}
-                                                {task.fields.updated && (
-                                                    <span className="task-updated">
-                                                        Last Update: {new Date(task.fields.updated).toLocaleDateString('en-CA')}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            {shouldRenderIssueDependencies && hasDeps && (
-                                                <div className="dependency-strip">
-                                                    {blockedByIds.length > 0 && (
-                                                        <button
-                                                            type="button"
-                                                            className={`dependency-count ${(isBlockedByFocusActive || isBlockedByHoverActive) ? 'active' : ''}`}
-                                                            data-dep-chip="blocked-by"
-                                                            data-task-id={task.id || task.key}
-                                                            data-task-key={task.key}
-                                                            aria-label={`Blocked by ${blockedByIds.length} tasks`}
-                                                            onMouseEnter={() => handleDependencyHoverEnter(task.key, 'blocked-by')}
-                                                            onMouseLeave={() => handleDependencyHoverLeave(task.key, 'blocked-by')}
-                                                        >
-                                                            BLOCKED BY {blockedByIds.length}
-                                                        </button>
-                                                    )}
-                                                    {blocksIds.length > 0 && (
-                                                        <button
-                                                            type="button"
-                                                            className={`dependency-count ${(isBlocksFocusActive || isBlocksHoverActive) ? 'active' : ''}`}
-                                                            data-dep-chip="blocks"
-                                                            data-task-id={task.id || task.key}
-                                                            data-task-key={task.key}
-                                                            aria-label={`Blocks ${blocksIds.length} tasks`}
-                                                            onMouseEnter={() => handleDependencyHoverEnter(task.key, 'blocks')}
-                                                            onMouseLeave={() => handleDependencyHoverLeave(task.key, 'blocks')}
-                                                        >
-                                                            BLOCKS {blocksIds.length}
-                                                        </button>
-                                                    )}
-                                                    {dependsOnIds.length > 0 && (
-                                                        <button
-                                                            type="button"
-                                                            className={`dependency-count ${(isDependsFocusActive || isDependsHoverActive) ? 'active' : ''}`}
-                                                            data-dep-chip="depends-on"
-                                                            data-task-id={task.id || task.key}
-                                                            data-task-key={task.key}
-                                                            aria-label={`Depends on ${dependsOnIds.length} tasks`}
-                                                            onMouseEnter={() => handleDependencyHoverEnter(task.key, 'depends-on')}
-                                                            onMouseLeave={() => handleDependencyHoverLeave(task.key, 'depends-on')}
-                                                        >
-                                                            DEPENDS ON {dependsOnIds.length}
-                                                        </button>
-                                                    )}
-                                                    {dependentIds.length > 0 && (
-                                                        <button
-                                                            type="button"
-                                                            className={`dependency-count ${(isDependentsFocusActive || isDependentsHoverActive) ? 'active' : ''}`}
-                                                            data-dep-chip="dependents"
-                                                            data-task-id={task.id || task.key}
-                                                            data-task-key={task.key}
-                                                            aria-label={`Dependents ${dependentIds.length} tasks`}
-                                                            onMouseEnter={() => handleDependencyHoverEnter(task.key, 'dependents')}
-                                                            onMouseLeave={() => handleDependencyHoverLeave(task.key, 'dependents')}
-                                                        >
-                                                            DEPENDENTS {dependentIds.length}
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )}
-                                            {shouldRenderIssueDependencies && isFocused && (missingLines.length > 0 || hiddenLines.length > 0) && (
-                                                <div className="dependency-missing">
-                                                    {hiddenLines.length > 0 && (
-                                                        <>
-                                                            <div className="dependency-missing-label hidden">Hidden by filter</div>
-                                                            {hiddenLines.map(item => (
-                                                                <div className="dependency-missing-item" key={`hidden-${item.key}`}>
-                                                                    <span>{item.teamName}</span>
-                                                                    <span className="dependency-missing-sep">·</span>
-                                                                    <span>{item.assignee}</span>
-                                                                    <span className="dependency-missing-sep">·</span>
-                                                                    <span>{item.summary}</span>
-                                                                    <span className="dependency-missing-sep">·</span>
-                                                                    <span>{item.key}</span>
-                                                                    <span className="dependency-missing-sep">·</span>
-                                                                    <span className={`dependency-missing-status ${item.isDone ? 'done' : ''}`}>{item.status}</span>
-                                                                </div>
-                                                            ))}
-                                                        </>
-                                                    )}
-                                                    {missingLines.length > 0 && (
-                                                        <>
-                                                            <div className="dependency-missing-label">Not loaded</div>
-                                                            {missingLines.map(item => (
-                                                                (jiraUrl ? (
-                                                                    <a
-                                                                        className="dependency-missing-item"
-                                                                        key={`missing-${item.key}`}
-                                                                        href={`${jiraUrl}/browse/${item.key}`}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        title={`Open ${item.key} in Jira`}
-                                                                    >
-                                                                        <span>{item.teamName}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span>{item.assignee}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span>{item.summary}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span>{item.key}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span className={`dependency-missing-status ${item.isDone ? 'done' : ''}`}>{item.status}</span>
-                                                                    </a>
-                                                                ) : (
-                                                                    <div className="dependency-missing-item" key={`missing-${item.key}`}>
-                                                                        <span>{item.teamName}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span>{item.assignee}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span>{item.summary}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span>{item.key}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span className={`dependency-missing-status ${item.isDone ? 'done' : ''}`}>{item.status}</span>
-                                                                    </div>
-                                                                ))
-                                                            ))}
-                                                            {dependencyLookupLoading && (
-                                                                <div className="dependency-missing-item">Loading issue details...</div>
-                                                            )}
-                                                        </>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
+                                            task={task}
+                                            jiraUrl={jiraUrl}
+                                            teamInfo={teamInfo}
+                                            teamLabel={teamLabel}
+                                            statusClassName={statusClassName}
+                                            renderPriorityIcon={renderPriorityIcon}
+                                            showPlanning={showPlanning}
+                                            isSelected={!!selectedTasks[task.key]}
+                                            onToggleSelection={toggleTaskSelection}
+                                            onRemove={removeTask}
+                                            shouldRenderIssueDependencies={shouldRenderIssueDependencies}
+                                            dependencyContext={issueDependencyContext}
+                                        />
                                     );
                                 })}
                             </div>
                         );
             };
+
+            const settingsModalTabs = [
+                { id: 'scope', label: 'Scope projects', onClick: () => setGroupManageTab('scope') },
+                { id: 'source', label: 'Jira source', onClick: () => setGroupManageTab('source') },
+                { id: 'mapping', label: 'Field mapping', onClick: () => setGroupManageTab('mapping') },
+                { id: 'capacity', label: 'Capacity', onClick: () => setGroupManageTab('capacity') },
+                {
+                    id: 'teams',
+                    label: 'Team groups',
+                    onClick: () => savedSelectedProjects.length > 0 && setGroupManageTab('teams'),
+                    disabled: savedSelectedProjects.length === 0,
+                    title: savedSelectedProjects.length === 0 ? 'Configure data sources first' : ''
+                },
+                {
+                    id: 'labels',
+                    label: 'Group labels',
+                    onClick: () => labelsTabEnabled && setGroupManageTab('labels'),
+                    disabled: !labelsTabEnabled,
+                    title: labelsTabEnabled ? '' : 'Save at least one group first'
+                },
+                { id: 'priorityWeights', label: 'Priority weights', onClick: () => setGroupManageTab('priorityWeights') },
+                { id: 'epm', label: 'EPM', onClick: openEpmSettingsTab }
+            ];
+            const settingsSaveHandler = groupManageTab === 'epm'
+                ? () => { void saveEpmConfig().catch(() => {}); }
+                : saveGroupsConfig;
+            const settingsSaveDisabled = groupManageTab === 'epm'
+                ? (epmConfigLoading || epmConfigSaving)
+                : Boolean(saveBlockedReason);
+            const settingsSaveTitle = groupManageTab === 'epm' ? '' : (saveBlockedReason || '');
+            const settingsSaveLabel = groupManageTab === 'epm'
+                ? (epmConfigSaving ? 'Saving EPM...' : 'Save EPM settings')
+                : (groupSaving ? 'Saving...' : 'Save');
 
             return (
                 <div className="container" style={containerStyle}>
@@ -11708,8 +10727,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 <div className="header-actions-row">
                                     {renderViewSwitch()}
                                     {renderSearchControl('main')}
-                                    <button
-                                        className={`secondary compact refresh-icon ${selectedView === 'epm' && epmProjectsLoading ? 'is-loading' : ''}`}
+                                    <IconButton
+                                        variant="secondary compact"
+                                        className="refresh-icon"
+                                        isLoading={selectedView === 'epm' && epmProjectsLoading}
                                         onClick={() => {
                                             if (selectedView === 'epm') {
                                                 void refreshEpmView();
@@ -11729,13 +10750,12 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         disabled={selectedView === 'eng' ? (loading || selectedSprint === null) : (epmProjectsLoading || epmRollupLoading)}
                                         title={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
                                         aria-label={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
-                                        type="button"
                                     >
                                         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                             <path d="M19 7.5a7.5 7.5 0 1 0 2 5.1" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"/>
                                             <path d="M19 3v4h-4" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
                                         </svg>
-                                    </button>
+                                    </IconButton>
                                 </div>
                             </div>
                         </div>
@@ -11790,8 +10810,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 {selectedView === 'epm' && (
                                     <>
                                         {shouldUseEpmSprint(epmTab) && renderSprintControl('main')}
-                                        {renderEpmTabs()}
-                                        {renderEpmProjectPicker()}
+                                        {renderEpmControls('main')}
                                     </>
                                 )}
                                 {selectedView === 'eng' && (
@@ -11847,7 +10866,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     ) : (
                                         <>
                                             {shouldUseEpmSprint(epmTab) && renderSprintControl('compact')}
-                                            {renderEpmTabs()}
+                                            {renderEpmControls('compact', false)}
                                             <button
                                                 className="group-gear-button"
                                                 onClick={openEpmSettingsTab}
@@ -14107,2895 +13126,460 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 </button>
                             )}
 
-                            {(productTasksLoading || techTasksLoading) && (
-                                <div className="loading-status" style={{
-                                    padding: '0.5rem 1rem',
-                                    background: 'rgba(59, 130, 246, 0.08)',
-                                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                                    borderRadius: '0.5rem',
-                                    marginBottom: '1rem',
-                                    fontSize: '0.85rem',
-                                    color: 'var(--text-secondary)'
-                                }}>
-                                    {productTasksLoading && <div>⏳ Loading product tasks...</div>}
-                                    {techTasksLoading && <div>⏳ Loading tech tasks...</div>}
-                                </div>
-                            )}
-
-                            {loading ? (
-                                <div className="loading">Loading tasks...</div>
-                            ) : error ? (
-                                <div className="error">
-                                    {error}
-                                    <div style={{ marginTop: '1rem' }}>
-                                        <button onClick={fetchTasks}>Retry</button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <>
-                                {alertCelebrationPieces.length > 0 && (
-                                    <div className="alert-celebration" aria-hidden="true">
-                                        {alertCelebrationPieces.map(piece => (
-                                            <span
-                                                key={piece.id}
-                                                className="alert-confetti"
-                                                style={{
-                                                    '--confetti-left': `${piece.left}%`,
-                                                    '--confetti-size': `${piece.size}px`,
-                                                    '--confetti-height': `${piece.height}px`,
-                                                    '--confetti-color': piece.color,
-                                                    '--confetti-rot': `${piece.rotate}deg`,
-                                                    '--confetti-drift': `${piece.drift}px`,
-                                                    '--confetti-fall': `${piece.duration}s`,
-                                                    '--confetti-delay': `${piece.delay}s`,
-                                                    borderRadius: piece.shape === 'round' ? '999px' : '2px',
-                                                    clipPath: piece.shape === 'triangle' ? 'polygon(50% 0%, 0% 100%, 100% 100%)' : 'none'
-                                                }}
-                                            />
-                                        ))}
-                                    </div>
+                            <EngView
+                                selectedView={selectedView}
+                                productTasksLoading={productTasksLoading}
+                                techTasksLoading={techTasksLoading}
+                                loading={loading}
+                                error={error}
+                                onRetry={fetchTasks}
+                                alertCelebrationPieces={alertCelebrationPieces}
+                                alertsPanel={(
+                                    <EngAlertsPanel
+                                        selectedView={selectedView}
+                                        alertItemCount={alertItemCount}
+                                        showAlertsPanel={showAlertsPanel}
+                                        setShowAlertsPanel={setShowAlertsPanel}
+                                        collapsed={!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert}
+                                        alertProps={{
+                                            analysisEpicTeams,
+                                            backlogEpicTeams,
+                                            backlogEpics,
+                                            blockedAlertTeams,
+                                            blockedTasks,
+                                            buildKeyListLink,
+                                            buildTeamStatusLink,
+                                            consolidatedMissingStories,
+                                            dismissAlertItem,
+                                            doneEpicTeams,
+                                            doneStoryEpics,
+                                            emptyEpicTeams,
+                                            emptyEpics,
+                                            emptyEpicsForAlert,
+                                            futureRoutedEpics,
+                                            getBlockedAlertStatusLabel,
+                                            getFuturePlanningNeedsStoriesReasonText,
+                                            handleAlertStoryClick,
+                                            isFutureSprintSelected,
+                                            jiraUrl,
+                                            missingAlertTeams,
+                                            missingLabelEpicTeams,
+                                            missingLabelEpics,
+                                            missingTeamEpicTeams,
+                                            missingTeamEpics,
+                                            needsStoriesEntries,
+                                            needsStoriesTeams,
+                                            postponedAlertTeams,
+                                            postponedEpicTeams,
+                                            postponedTasks,
+                                            setShowBacklogAlert,
+                                            setShowBlockedAlert,
+                                            setShowDoneEpicAlert,
+                                            setShowEmptyEpicAlert,
+                                            setShowMissingAlert,
+                                            setShowMissingLabelsAlert,
+                                            setShowMissingTeamAlert,
+                                            setShowNeedsStoriesAlert,
+                                            setShowPostponedAlert,
+                                            setShowWaitingAlert,
+                                            showBacklogAlert,
+                                            showBlockedAlert,
+                                            showDoneEpicAlert,
+                                            showEmptyEpicAlert,
+                                            showMissingAlert,
+                                            showMissingLabelsAlert,
+                                            showMissingTeamAlert,
+                                            showNeedsStoriesAlert,
+                                            showPostponedAlert,
+                                            showWaitingAlert,
+                                            waitingForStoriesEpics,
+                                        }}
+                                    />
                                 )}
-		                            {selectedView === 'eng' && alertItemCount > 0 && (
-                                                <div className="alerts-panel-shell">
-                                                    <div className="alerts-panel-toolbar">
-                                                        <button
-                                                            className="alerts-panel-toggle"
-                                                            onClick={() => setShowAlertsPanel(prev => !prev)}
-                                                            title={showAlertsPanel ? 'Hide the alerts section' : 'Show the alerts section'}
-                                                            type="button"
-                                                        >
-                                                            <span className="alerts-panel-toggle-icon" aria-hidden="true">
-                                                                <svg className={`alerts-panel-toggle-chevron ${showAlertsPanel ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-                                                                    <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                                </svg>
-                                                            </span>
-                                                            <span className="alerts-panel-toggle-label">
-                                                                {showAlertsPanel ? 'Hide Alerts' : 'Show Alerts'}
-                                                            </span>
-                                                        </button>
-                                                    </div>
-                                                    {showAlertsPanel && (
-		                                <div className={`alert-panels ${(!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert) ? 'collapsed' : ''}`}>
-		                                    {consolidatedMissingStories.length > 0 && (
-		                                        <div className={`alert-card missing ${showMissingAlert ? '' : 'collapsed'}`}>
-	                                            <div className="alert-card-header">
-	                                                <button
-	                                                    className="alert-toggle"
-	                                                    onClick={() => setShowMissingAlert(prev => !prev)}
-	                                                    title={showMissingAlert ? 'Collapse missing info panel' : 'Expand missing info panel'}
-	                                                >
-	                                                    <span className="alert-toggle-icon" aria-hidden="true">
-	                                                        <svg className={`alert-toggle-chevron ${showMissingAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-	                                                            <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-	                                                        </svg>
-	                                                    </span>
-	                                                    <span className="alert-toggle-label">
-	                                                        {showMissingAlert ? 'Hide' : 'Show'}
-	                                                    </span>
-	                                                </button>
-	                                                <div className="alert-title">🧾 Missing Info</div>
-	                                                <div className="alert-subtitle">These stories are missing planning essentials—fill the fields so they can be scheduled and estimated.</div>
-		                                                <a
-		                                                    className="alert-chip"
-		                                                    href={buildKeyListLink(consolidatedMissingStories.map(item => item.task.key))}
-		                                                    target="_blank"
-		                                                    rel="noopener noreferrer"
-		                                                    title="Open these stories in Jira"
-		                                                >
-		                                                    {consolidatedMissingStories.length} {consolidatedMissingStories.length === 1 ? 'story' : 'stories'}
-		                                                </a>
-		                                            </div>
-                                            <div className={`alert-card-body ${showMissingAlert ? '' : 'collapsed'}`}>
-                                                    {missingAlertTeams.map(group => {
-                                                        const keys = group.items.map(item => item.task.key);
-                                                        const teamLink = buildKeyListLink(keys);
-                                                        return (
-                                                            <div key={group.id} className="alert-team-group">
-                                                                <div className="alert-team-header">
-                                                                    {teamLink ? (
-                                                                        <a
-                                                                            className="alert-team-link"
-                                                                            href={teamLink}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                        >
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'} not ready</span>
-                                                                        </a>
-                                                                    ) : (
-                                                                        <div className="alert-team-title">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'} not ready</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <div className="alert-stories">
-                                                                    {group.items.map(({ task, missingFields }) => (
-                                                                        <div key={task.key} className="alert-story">
-                                                                            <div
-                                                                                className="alert-story-main"
-                                                                                role="button"
-                                                                                tabIndex={0}
-                                                                                onClick={() => handleAlertStoryClick(task.key)}
-                                                                                onKeyDown={(event) => {
-                                                                                    if (event.key === 'Enter' || event.key === ' ') {
-                                                                                        event.preventDefault();
-                                                                                        handleAlertStoryClick(task.key);
-                                                                                    }
-                                                                                }}
-                                                                            >
-                                                                                <a
-                                                                                    className="alert-story-link"
-                                                                                    href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-                                                                                    target="_blank"
-                                                                                    rel="noopener noreferrer"
-                                                                                    onClick={(event) => {
-                                                                                        event.preventDefault();
-                                                                                        event.stopPropagation();
-                                                                                        handleAlertStoryClick(task.key);
-                                                                                    }}
-                                                                                >
-                                                                                    {task.key} · {task.fields.summary}
-                                                                                </a>
-                                                                            </div>
-                                                                            <span className="alert-pill status">Missing: {missingFields.join(', ')}</span>
-                                                                            <a
-                                                                                className="alert-action"
-                                                                                href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                            >
-                                                                                Fix fields →
-                                                                            </a>
-                                                                            <button
-                                                                                className="task-remove alert-remove"
-                                                                                onClick={(event) => {
-                                                                                    event.stopPropagation();
-                                                                                    dismissAlertItem(task.key);
-                                                                                }}
-                                                                                title="Dismiss from alerts"
-                                                                                type="button"
-                                                                            >
-                                                                                ×
-                                                                            </button>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                            </div>
-	                                        </div>
-	                                    )}
+                                statusFilter={statusFilter}
+                                setStatusFilter={setStatusFilter}
+                                baseFilteredTasks={baseFilteredTasks}
+                                totalStoryPoints={totalStoryPoints}
+                                doneTasksCount={doneTasksCount}
+                                doneStoryPoints={doneStoryPoints}
+                                highPriorityCount={highPriorityCount}
+                                highPriorityStoryPoints={highPriorityStoryPoints}
+                                minorPriorityCount={minorPriorityCount}
+                                minorPriorityStoryPoints={minorPriorityStoryPoints}
+                                inProgressTasksCount={inProgressTasksCount}
+                                inProgressStoryPoints={inProgressStoryPoints}
+                                todoAcceptedTasksCount={todoAcceptedTasksCount}
+                                todoAcceptedStoryPoints={todoAcceptedStoryPoints}
+                                showTech={showTech}
+                                setShowTech={setShowTech}
+                                techTasksCount={techTasksCount}
+                                showProduct={showProduct}
+                                setShowProduct={setShowProduct}
+                                productTasksCount={productTasksCount}
+                                doneTasks={doneTasks}
+                                incompleteTasks={incompleteTasks}
+                                showDone={showDone}
+                                setShowDone={setShowDone}
+                                killedTasks={killedTasks}
+                                showKilled={showKilled}
+                                setShowKilled={setShowKilled}
+                                hasInitiativeData={hasInitiativeData}
+                                groupByInitiative={groupByInitiative}
+                                setGroupByInitiative={setGroupByInitiative}
+                                InitiativeIcon={InitiativeIcon}
+                                visibleTasksForList={visibleTasksForList}
+                                activeDependencyFocus={activeDependencyFocus}
+                                handleDependencyFocusClick={handleDependencyFocusClick}
+                                initiativeGroups={initiativeGroups}
+                                epicGroups={epicGroups}
+                                renderEpicBlock={renderEpicBlock}
+                                jiraUrl={jiraUrl}
+                            />
 
-	                                    {blockedTasks.length > 0 && (
-	                                        <div className={`alert-card blocked ${showBlockedAlert ? '' : 'collapsed'}`}>
-                                            <div className="alert-card-header">
-                                                <button
-                                                    className="alert-toggle"
-                                                    onClick={() => setShowBlockedAlert(prev => !prev)}
-                                                    title={showBlockedAlert ? 'Collapse blocked panel' : 'Expand blocked panel'}
-                                                >
-                                                    <span className="alert-toggle-icon" aria-hidden="true">
-                                                        <svg className={`alert-toggle-chevron ${showBlockedAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-                                                            <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                        </svg>
-                                                    </span>
-                                                    <span className="alert-toggle-label">
-                                                        {showBlockedAlert ? 'Hide' : 'Show'}
-                                                    </span>
-                                                </button>
-                                                <div className="alert-title">⛔️ Blocked</div>
-                                                <div className="alert-subtitle">Let’s unblock these fast—call out what’s stuck, who’s needed, and what “done” looks like.</div>
-	                                                <a
-	                                                    className="alert-chip"
-	                                                    href={buildKeyListLink(blockedTasks.map(t => t.key), { addSprint: true })}
-	                                                    target="_blank"
-	                                                    rel="noopener noreferrer"
-	                                                    title="Open blocked stories in Jira"
-	                                                >
-	                                                    {blockedTasks.length} blocked
-	                                                </a>
-	                                            </div>
-                                            <div className={`alert-card-body ${showBlockedAlert ? '' : 'collapsed'}`}>
-                                                    {blockedAlertTeams.map(group => {
-                                                        const keys = group.items.map(item => item.key);
-                                                        const teamLink = buildKeyListLink(keys, { addSprint: true });
-                                                        return (
-                                                            <div key={group.id} className="alert-team-group">
-                                                                <div className="alert-team-header">
-                                                                    {teamLink ? (
-                                                                        <a
-                                                                            className="alert-team-link"
-                                                                            href={teamLink}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                        >
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'} blocked</span>
-                                                                        </a>
-                                                                    ) : (
-                                                                        <div className="alert-team-title">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'} blocked</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <div className="alert-stories">
-                                                                    {group.items.map(task => {
-                                                                        return (
-                                                                            <div key={task.key} className="alert-story alert-story-jump">
-                                                                                <div
-                                                                                    className="alert-story-main"
-                                                                                    role="button"
-                                                                                    tabIndex={0}
-                                                                                    onClick={() => handleAlertStoryClick(task.key)}
-                                                                                    onKeyDown={(event) => {
-                                                                                        if (event.key === 'Enter' || event.key === ' ') {
-                                                                                            event.preventDefault();
-                                                                                            handleAlertStoryClick(task.key);
-                                                                                        }
-                                                                                    }}
-                                                                                >
-                                                                                    <a
-                                                                                        className="alert-story-link"
-                                                                                        href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-                                                                                        target="_blank"
-                                                                                        rel="noopener noreferrer"
-                                                                                        onClick={(event) => {
-                                                                                            event.preventDefault();
-                                                                                            event.stopPropagation();
-                                                                                            handleAlertStoryClick(task.key);
-                                                                                        }}
-                                                                                    >
-                                                                                        {task.key} · {task.fields.summary}
-                                                                                    </a>
-                                                                                </div>
-                                                                                <button
-                                                                                    className="task-remove alert-remove"
-                                                                                    onClick={(event) => {
-                                                                                        event.stopPropagation();
-                                                                                        dismissAlertItem(task.key);
-                                                                                    }}
-                                                                                    title="Dismiss from alerts"
-                                                                                    type="button"
-                                                                                >
-                                                                                    ×
-                                                                                </button>
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                            </div>
-	                                        </div>
-	                                    )}
-
-                                        {(postponedTasks.length > 0 || futureRoutedEpics.length > 0) && (
-                                            <div className={`alert-card following ${showPostponedAlert ? '' : 'collapsed'}`}>
-                                                <div className="alert-card-header">
-                                                    <button
-                                                        className="alert-toggle"
-                                                        onClick={() => setShowPostponedAlert(prev => !prev)}
-                                                        title={showPostponedAlert ? 'Collapse postponed stories panel' : 'Expand postponed stories panel'}
-                                                    >
-                                                        <span className="alert-toggle-icon" aria-hidden="true">
-                                                            <svg className={`alert-toggle-chevron ${showPostponedAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-                                                                <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                            </svg>
-                                                        </span>
-                                                        <span className="alert-toggle-label">
-                                                            {showPostponedAlert ? 'Hide' : 'Show'}
-                                                        </span>
-                                                    </button>
-                                                    <div className="alert-title">⏭️ Postponed Work</div>
-                                                    <div className="alert-subtitle">Items that should be handled in a future sprint.</div>
-                                                    <div className="alert-chip">
-                                                        {postponedTasks.length + futureRoutedEpics.length} {(postponedTasks.length + futureRoutedEpics.length) === 1 ? 'item' : 'items'}
-                                                    </div>
-                                                </div>
-                                                <div className={`alert-card-body ${showPostponedAlert ? '' : 'collapsed'}`}>
-                                                    {postponedAlertTeams.map(group => {
-                                                        const keys = group.items.map(item => item.key);
-                                                        const teamLink = buildKeyListLink(keys, { addSprint: true });
-                                                        return (
-                                                            <div key={group.id} className="alert-team-group">
-                                                                <div className="alert-team-header">
-                                                                    {teamLink ? (
-                                                                        <a
-                                                                            className="alert-team-link"
-                                                                            href={teamLink}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                        >
-                                                                    <span className="alert-pill team">{group.name}</span>
-                                                                    <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
-                                                                </a>
-                                                            ) : (
-                                                                <div className="alert-team-title">
-                                                                    <span className="alert-pill team">{group.name}</span>
-                                                                    <span>{group.items.length} {group.items.length === 1 ? 'story' : 'stories'}</span>
-                                                                </div>
-                                                            )}
-                                                                </div>
-                                                                <div className="alert-stories">
-                                                                    {group.items.map(task => (
-                                                                        <div key={task.key} className="alert-story">
-                                                                            <div
-                                                                                className="alert-story-main"
-                                                                                role="button"
-                                                                                tabIndex={0}
-                                                                                onClick={() => handleAlertStoryClick(task.key)}
-                                                                                onKeyDown={(event) => {
-                                                                                    if (event.key === 'Enter' || event.key === ' ') {
-                                                                                        event.preventDefault();
-                                                                                        handleAlertStoryClick(task.key);
-                                                                                    }
-                                                                                }}
-                                                                            >
-                                                                                <a
-                                                                                    className="alert-story-link"
-                                                                                    href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-                                                                                    target="_blank"
-                                                                                    rel="noopener noreferrer"
-                                                                                    onClick={(event) => {
-                                                                                        event.preventDefault();
-                                                                                        event.stopPropagation();
-                                                                                        handleAlertStoryClick(task.key);
-                                                                                    }}
-                                                                                >
-                                                                                    {task.key} · {task.fields.summary}
-                                                                                </a>
-                                                                            </div>
-                                                                            <span className="alert-pill status">Postponed</span>
-                                                                            <a
-                                                                                className="alert-action"
-                                                                                href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                            >
-                                                                                Move to next sprint →
-                                                                            </a>
-                                                                            <button
-                                                                                className="task-remove alert-remove"
-                                                                                onClick={(event) => {
-                                                                                    event.stopPropagation();
-                                                                                    dismissAlertItem(task.key);
-                                                                                }}
-                                                                                title="Dismiss from alerts"
-                                                                                type="button"
-                                                                            >
-                                                                                ×
-                                                                            </button>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                            );
-                                                        })}
-                                                    {futureRoutedEpics.length > 0 && (
-                                                        <>
-                                                            <div className="alert-section-title">Epics with only future-sprint stories</div>
-                                                            {postponedEpicTeams.map(group => (
-                                                                <div key={`future-epic-${group.id}`} className="alert-team-group">
-                                                                    <div className="alert-team-header">
-                                                                        {jiraUrl ? (
-                                                                            <a
-                                                                                className="alert-team-link"
-                                                                                href={buildTeamStatusLink({
-                                                                                    teamId: group.id !== 'unknown' ? group.id : undefined,
-                                                                                    issueType: 'Epic',
-                                                                                    statuses: ['Accepted', 'To Do', 'Pending']
-                                                                                })}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                            >
-                                                                                <span className="alert-pill team">{group.name}</span>
-                                                                                <span>{group.items.length} epics</span>
-                                                                            </a>
-                                                                        ) : (
-                                                                            <div className="alert-team-title">
-                                                                                <span className="alert-pill team">{group.name}</span>
-                                                                                <span>{group.items.length} epics</span>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="alert-stories">
-                                                                        {group.items.map(epic => (
-                                                                            <div key={epic.key} className="alert-story">
-                                                                                <div className="alert-story-main" onClick={() => handleAlertStoryClick(epic.key)}>
-                                                                                    {jiraUrl ? (
-                                                                                        <a
-                                                                                            className="alert-story-link"
-                                                                                            href={`${jiraUrl}/browse/${epic.key}`}
-                                                                                            target="_blank"
-                                                                                            rel="noopener noreferrer"
-                                                                                            onClick={(event) => event.stopPropagation()}
-                                                                                        >
-                                                                                            {epic.key}: {epic.summary}
-                                                                                        </a>
-                                                                                    ) : (
-                                                                                        <div className="alert-story-link">{epic.key}: {epic.summary}</div>
-                                                                                    )}
-                                                                                    <div className="alert-story-note">Move epic sprint to a future sprint (not in current scope).</div>
-                                                                                </div>
-                                                                                <span className="alert-pill status">Move to future sprint</span>
-                                                                                <button
-                                                                                    className="task-remove alert-remove"
-                                                                                    onClick={(event) => {
-                                                                                        event.preventDefault();
-                                                                                        event.stopPropagation();
-                                                                                        dismissAlertItem(epic.key);
-                                                                                    }}
-                                                                                    title="Dismiss from alerts"
-                                                                                >
-                                                                                    ×
-                                                                                </button>
-                                                                            </div>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {backlogEpics.length > 0 && (
-                                            <div className={`alert-card following ${showBacklogAlert ? '' : 'collapsed'}`}>
-                                                <div className="alert-card-header">
-                                                    <button className="alert-toggle" onClick={() => setShowBacklogAlert(prev => !prev)} title={showBacklogAlert ? 'Collapse backlog panel' : 'Expand backlog panel'}>
-                                                        <span className="alert-toggle-icon" aria-hidden="true">
-                                                            <svg className={`alert-toggle-chevron ${showBacklogAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-                                                                <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                            </svg>
-                                                        </span>
-                                                        <span className="alert-toggle-label">{showBacklogAlert ? 'Hide' : 'Show'}</span>
-                                                    </button>
-                                                    <div className="alert-title">📥 Backlog</div>
-                                                    <div className="alert-subtitle">These epics are still backlog work. Keep child stories unsprinted unless they are already closed out.</div>
-                                                    {buildKeyListLink(backlogEpics.map(e => e.key)) ? (
-                                                        <a
-                                                            className="alert-chip"
-                                                            href={buildKeyListLink(backlogEpics.map(e => e.key))}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            title="Open these backlog epics in Jira"
-                                                        >
-                                                            {backlogEpics.length} {backlogEpics.length === 1 ? 'epic' : 'epics'}
-                                                        </a>
-                                                    ) : (
-                                                        <div className="alert-chip">{backlogEpics.length} {backlogEpics.length === 1 ? 'epic' : 'epics'}</div>
-                                                    )}
-                                                </div>
-                                                <div className={`alert-card-body ${showBacklogAlert ? '' : 'collapsed'}`}>
-                                                    {backlogEpicTeams.map(group => {
-                                                        const keys = group.items.map(item => item.key);
-                                                        const teamLink = buildKeyListLink(keys);
-                                                        return (
-                                                            <div key={`backlog-${group.id}`} className="alert-team-group">
-                                                                <div className="alert-team-header">
-                                                                    {teamLink ? (
-                                                                        <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </a>
-                                                                    ) : (
-                                                                        <div className="alert-team-title">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <div className="alert-stories">
-                                                                    {group.items.map(epic => (
-                                                                        <div key={epic.key} className="alert-story">
-                                                                            <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
-                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>
-                                                                                    {epic.key} · {epic.summary}
-                                                                                </a>
-                                                                                <div className="alert-story-note">
-                                                                                    {epic.cleanupStoryCount > 0 ? `${epic.cleanupStoryCount} child stor${epic.cleanupStoryCount === 1 ? 'y is' : 'ies are'} still sprinted.` : 'No sprinted child stories to clean up.'}
-                                                                                </div>
-                                                                            </div>
-                                                                            <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer">Clean backlog stories →</a>
-                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {missingTeamEpics.length > 0 && (
-                                            <div className={`alert-card following ${showMissingTeamAlert ? '' : 'collapsed'}`}>
-                                                <div className="alert-card-header">
-                                                    <button className="alert-toggle" onClick={() => setShowMissingTeamAlert(prev => !prev)} title={showMissingTeamAlert ? 'Collapse missing team panel' : 'Expand missing team panel'}>
-                                                        <span className="alert-toggle-icon" aria-hidden="true">
-                                                            <svg className={`alert-toggle-chevron ${showMissingTeamAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-                                                                <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                            </svg>
-                                                        </span>
-                                                        <span className="alert-toggle-label">{showMissingTeamAlert ? 'Hide' : 'Show'}</span>
-                                                    </button>
-                                                    <div className="alert-title">👥 Missing Team</div>
-                                                    <div className="alert-subtitle">Open epics that still need a Jira Team before planning labels can be evaluated.</div>
-                                                    <div className="alert-chip">{missingTeamEpics.length} {missingTeamEpics.length === 1 ? 'epic' : 'epics'}</div>
-                                                </div>
-                                                <div className={`alert-card-body ${showMissingTeamAlert ? '' : 'collapsed'}`}>
-                                                    {missingTeamEpicTeams.map(group => {
-                                                        const keys = group.items.map(item => item.key);
-                                                        const teamLink = buildKeyListLink(keys);
-                                                        return (
-                                                            <div key={`missing-team-${group.id}`} className="alert-team-group">
-                                                                <div className="alert-team-header">
-                                                                    {teamLink ? (
-                                                                        <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </a>
-                                                                    ) : (
-                                                                        <div className="alert-team-title">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <div className="alert-stories">
-                                                                    {group.items.map(epic => (
-                                                                        <div key={epic.key} className="alert-story">
-                                                                            <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
-                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
-                                                                                <div className="alert-story-note">Add the Jira Team field before planning labels can be applied.</div>
-                                                                            </div>
-                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {missingLabelEpics.length > 0 && (
-                                            <div className={`alert-card following ${showMissingLabelsAlert ? '' : 'collapsed'}`}>
-                                                <div className="alert-card-header">
-                                                    <button className="alert-toggle" onClick={() => setShowMissingLabelsAlert(prev => !prev)} title={showMissingLabelsAlert ? 'Collapse missing labels panel' : 'Expand missing labels panel'}>
-                                                        <span className="alert-toggle-icon" aria-hidden="true">
-                                                            <svg className={`alert-toggle-chevron ${showMissingLabelsAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-                                                                <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                            </svg>
-                                                        </span>
-                                                        <span className="alert-toggle-label">{showMissingLabelsAlert ? 'Hide' : 'Show'}</span>
-                                                    </button>
-                                                    <div className="alert-title">🏷️ Missing Labels</div>
-                                                    <div className="alert-subtitle">These epics need both the selected sprint label and the mapped team label.</div>
-                                                    <div className="alert-chip">{missingLabelEpics.length} {missingLabelEpics.length === 1 ? 'epic' : 'epics'}</div>
-                                                </div>
-                                                <div className={`alert-card-body ${showMissingLabelsAlert ? '' : 'collapsed'}`}>
-                                                    {missingLabelEpicTeams.map(group => {
-                                                        const keys = group.items.map(item => item.key);
-                                                        const teamLink = buildKeyListLink(keys);
-                                                        return (
-                                                            <div key={`missing-labels-${group.id}`} className="alert-team-group">
-                                                                <div className="alert-team-header">
-                                                                    {teamLink ? (
-                                                                        <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </a>
-                                                                    ) : (
-                                                                        <div className="alert-team-title">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <div className="alert-stories">
-                                                                    {group.items.map(epic => (
-                                                                        <div key={epic.key} className="alert-story">
-                                                                            <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
-                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
-                                                                                <div className="alert-story-note">Add the selected sprint label and the mapped team label on the epic.</div>
-                                                                            </div>
-                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {isFutureSprintSelected && needsStoriesEntries.length > 0 && (
-                                            <div className={`alert-card following ${showNeedsStoriesAlert ? '' : 'collapsed'}`}>
-                                                <div className="alert-card-header">
-                                                    <button className="alert-toggle" onClick={() => setShowNeedsStoriesAlert(prev => !prev)} title={showNeedsStoriesAlert ? 'Collapse needs stories panel' : 'Expand needs stories panel'}>
-                                                        <span className="alert-toggle-icon" aria-hidden="true">
-                                                            <svg className={`alert-toggle-chevron ${showNeedsStoriesAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-                                                                <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                            </svg>
-                                                        </span>
-                                                        <span className="alert-toggle-label">{showNeedsStoriesAlert ? 'Hide' : 'Show'}</span>
-                                                    </button>
-                                                    <div className="alert-title">📝 Needs Stories</div>
-                                                    <div className="alert-subtitle">These epics are labeled correctly but still are not sprint-ready for the selected future sprint.</div>
-                                                    <div className="alert-chip">{needsStoriesEntries.length} {needsStoriesEntries.length === 1 ? 'epic' : 'epics'}</div>
-                                                </div>
-                                                <div className={`alert-card-body ${showNeedsStoriesAlert ? '' : 'collapsed'}`}>
-                                                    {needsStoriesTeams.map(group => {
-                                                        const keys = group.items.map(item => item.epic.key);
-                                                        const teamLink = buildKeyListLink(keys);
-                                                        return (
-                                                            <div key={`needs-stories-${group.id}`} className="alert-team-group">
-                                                                <div className="alert-team-header">
-                                                                    {teamLink ? (
-                                                                        <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </a>
-                                                                    ) : (
-                                                                        <div className="alert-team-title">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <div className="alert-stories">
-                                                                    {group.items.map(entry => {
-                                                                        const epic = entry.epic;
-                                                                        return (
-                                                                        <div key={epic.key} className="alert-story">
-                                                                            <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
-                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
-                                                                                <div className="alert-story-note">{getFuturePlanningNeedsStoriesReasonText(entry.reason)}</div>
-                                                                            </div>
-                                                                            <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer">Open epic →</a>
-                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
-                                                                        </div>
-                                                                    )})}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {!isFutureSprintSelected && waitingForStoriesEpics.length > 0 && (
-                                            <div className={`alert-card following ${showWaitingAlert ? '' : 'collapsed'}`}>
-                                                <div className="alert-card-header">
-                                                    <button
-                                                        className="alert-toggle"
-                                                        onClick={() => setShowWaitingAlert(prev => !prev)}
-                                                        title={showWaitingAlert ? 'Collapse waiting for stories panel' : 'Expand waiting for stories panel'}
-                                                    >
-                                                        <span className="alert-toggle-icon" aria-hidden="true">
-                                                            <svg className={`alert-toggle-chevron ${showWaitingAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-                                                                <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                            </svg>
-                                                        </span>
-                                                        <span className="alert-toggle-label">
-                                                            {showWaitingAlert ? 'Hide' : 'Show'}
-                                                        </span>
-                                                    </button>
-                                                    <div className="alert-title">⏳ Waiting for Stories</div>
-                                                    <div className="alert-subtitle">Analysis epics are waiting for stories next quarter.</div>
-                                                    <div className="alert-chip">
-                                                        {waitingForStoriesEpics.length} {waitingForStoriesEpics.length === 1 ? 'item' : 'items'}
-                                                    </div>
-                                                </div>
-                                                <div className={`alert-card-body ${showWaitingAlert ? '' : 'collapsed'}`}>
-                                                    {analysisEpicTeams.map(group => {
-                                                        const keys = group.items.map(item => item.key);
-                                                        const teamLink = buildKeyListLink(keys);
-                                                        return (
-                                                            <div key={group.id} className="alert-team-group">
-                                                                <div className="alert-team-header">
-                                                                    {teamLink ? (
-                                                                        <a
-                                                                            className="alert-team-link"
-                                                                            href={teamLink}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                        >
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </a>
-                                                                    ) : (
-                                                                        <div className="alert-team-title">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <div className="alert-stories">
-                                                                    {group.items.map(epic => (
-                                                                        <div key={epic.key} className="alert-story">
-                                                                            <div
-                                                                                className="alert-story-main"
-                                                                                role="button"
-                                                                                tabIndex={0}
-                                                                                onClick={() => handleAlertStoryClick(epic.key)}
-                                                                                onKeyDown={(event) => {
-                                                                                    if (event.key === 'Enter' || event.key === ' ') {
-                                                                                        event.preventDefault();
-                                                                                        handleAlertStoryClick(epic.key);
-                                                                                    }
-                                                                                }}
-                                                                            >
-                                                                                <a
-                                                                                    className="alert-story-link"
-                                                                                    href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
-                                                                                    target="_blank"
-                                                                                    rel="noopener noreferrer"
-                                                                                    onClick={(event) => {
-                                                                                        event.preventDefault();
-                                                                                        event.stopPropagation();
-                                                                                        handleAlertStoryClick(epic.key);
-                                                                                    }}
-                                                                                >
-                                                                                    {epic.key} · {epic.summary}
-                                                                                </a>
-                                                                                <div className="alert-story-note">Waiting for description to create stories.</div>
-                                                                            </div>
-                                                                            <span className="alert-pill status">{epic.status?.name || 'Waiting'}</span>
-                                                                            <a
-                                                                                className="alert-action"
-                                                                                href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                            >
-                                                                                Open epic →
-                                                                            </a>
-                                                                            <button
-                                                                                className="task-remove alert-remove"
-                                                                                onClick={(event) => {
-                                                                                    event.stopPropagation();
-                                                                                    dismissAlertItem(epic.key);
-                                                                                }}
-                                                                                title="Dismiss from alerts"
-                                                                                type="button"
-                                                                            >
-                                                                                ×
-                                                                            </button>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
-
-		                                    {emptyEpicsForAlert.length > 0 && (
-		                                        <div className={`alert-card empty-epic ${showEmptyEpicAlert ? '' : 'collapsed'}`}>
-	                                            <div className="alert-card-header">
-	                                                <button
-	                                                    className="alert-toggle"
-	                                                    onClick={() => setShowEmptyEpicAlert(prev => !prev)}
-	                                                    title={showEmptyEpicAlert ? 'Collapse empty epic panel' : 'Expand empty epic panel'}
-	                                                >
-	                                                    <span className="alert-toggle-icon" aria-hidden="true">
-	                                                        <svg className={`alert-toggle-chevron ${showEmptyEpicAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-	                                                            <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-	                                                        </svg>
-	                                                    </span>
-	                                                    <span className="alert-toggle-label">
-	                                                        {showEmptyEpicAlert ? 'Hide' : 'Show'}
-	                                                    </span>
-	                                                </button>
-	                                                <div className="alert-title">🧺 Empty Epic</div>
-	                                                <div className="alert-subtitle">These epics have zero stories—please review and create at least one story to make them actionable.</div>
-	                                                <a
-	                                                    className="alert-chip"
-	                                                    href={buildKeyListLink(emptyEpics.map(e => e.key))}
-	                                                    target="_blank"
-	                                                    rel="noopener noreferrer"
-	                                                    title="Open these epics in Jira"
-	                                                >
-                                                        {emptyEpicsForAlert.length} {emptyEpicsForAlert.length === 1 ? 'epic' : 'epics'}
-                                                    </a>
-                                                </div>
-                                            <div className={`alert-card-body ${showEmptyEpicAlert ? '' : 'collapsed'}`}>
-                                                    {emptyEpicTeams.map(group => {
-                                                        const keys = group.items.map(item => item.key);
-                                                        const teamLink = buildKeyListLink(keys);
-                                                        return (
-                                                            <div key={group.id} className="alert-team-group">
-                                                                <div className="alert-team-header">
-                                                                    {teamLink ? (
-                                                                        <a
-                                                                            className="alert-team-link"
-                                                                            href={teamLink}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                        >
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </a>
-                                                                    ) : (
-                                                                        <div className="alert-team-title">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <div className="alert-stories">
-                                                                    {group.items.map(epic => (
-                                                                        <div key={epic.key} className="alert-story">
-                                                                            <div
-                                                                                className="alert-story-main"
-                                                                                role="button"
-                                                                                tabIndex={0}
-                                                                                onClick={() => handleAlertStoryClick(epic.key)}
-                                                                                onKeyDown={(event) => {
-                                                                                    if (event.key === 'Enter' || event.key === ' ') {
-                                                                                        event.preventDefault();
-                                                                                        handleAlertStoryClick(epic.key);
-                                                                                    }
-                                                                                }}
-                                                                            >
-                                                                                <a
-                                                                                    className="alert-story-link"
-                                                                                    href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
-                                                                                    target="_blank"
-                                                                                    rel="noopener noreferrer"
-                                                                                    onClick={(event) => {
-                                                                                        event.preventDefault();
-                                                                                        event.stopPropagation();
-                                                                                        handleAlertStoryClick(epic.key);
-                                                                                    }}
-                                                                                >
-                                                                                    {epic.key} · {epic.summary}
-                                                                                </a>
-                                                                            </div>
-                                                                            {epic.status?.name && (
-                                                                                <span className="alert-pill status">{epic.status.name}</span>
-                                                                            )}
-                                                                            <a
-                                                                                className="alert-action"
-                                                                                href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                            >
-                                                                                Create story →
-                                                                            </a>
-                                                                            <button
-                                                                                className="task-remove alert-remove"
-                                                                                onClick={(event) => {
-                                                                                    event.stopPropagation();
-                                                                                    dismissAlertItem(epic.key);
-                                                                                }}
-                                                                                title="Dismiss from alerts"
-                                                                                type="button"
-                                                                            >
-                                                                                ×
-                                                                            </button>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                            </div>
-		                                        </div>
-		                                    )}
-
-		                                    {doneStoryEpics.length > 0 && (
-		                                        <div className={`alert-card done-epic ${showDoneEpicAlert ? '' : 'collapsed'}`}>
-	                                            <div className="alert-card-header">
-	                                                <button
-	                                                    className="alert-toggle"
-	                                                    onClick={() => setShowDoneEpicAlert(prev => !prev)}
-	                                                    title={showDoneEpicAlert ? 'Collapse ready-to-close epics panel' : 'Expand ready-to-close epics panel'}
-	                                                >
-	                                                    <span className="alert-toggle-icon" aria-hidden="true">
-	                                                        <svg className={`alert-toggle-chevron ${showDoneEpicAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
-	                                                            <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-	                                                        </svg>
-	                                                    </span>
-	                                                    <span className="alert-toggle-label">
-	                                                        {showDoneEpicAlert ? 'Hide' : 'Show'}
-	                                                    </span>
-	                                                </button>
-	                                                <div className="alert-title">✅ Epic Ready to Close</div>
-	                                                <div className="alert-subtitle">All stories are done, killed, or incomplete, but the epic is still open—time to close the loop.</div>
-	                                                <a
-	                                                    className="alert-chip"
-	                                                    href={buildKeyListLink(doneStoryEpics.map(e => e.key))}
-	                                                    target="_blank"
-	                                                    rel="noopener noreferrer"
-	                                                    title="Open these epics in Jira"
-	                                                >
-	                                                    {doneStoryEpics.length} {doneStoryEpics.length === 1 ? 'epic' : 'epics'}
-	                                                </a>
-	                                            </div>
-                                            <div className={`alert-card-body ${showDoneEpicAlert ? '' : 'collapsed'}`}>
-                                                    {doneEpicTeams.map(group => {
-                                                        const keys = group.items.map(item => item.key);
-                                                        const teamLink = buildKeyListLink(keys);
-                                                        return (
-                                                            <div key={group.id} className="alert-team-group">
-                                                                <div className="alert-team-header">
-                                                                    {teamLink ? (
-                                                                        <a
-                                                                            className="alert-team-link"
-                                                                            href={teamLink}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                        >
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </a>
-                                                                    ) : (
-                                                                        <div className="alert-team-title">
-                                                                            <span className="alert-pill team">{group.name}</span>
-                                                                            <span>{group.items.length} {group.items.length === 1 ? 'epic' : 'epics'}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <div className="alert-stories">
-                                                                    {group.items.map(epic => (
-                                                                        <div key={epic.key} className="alert-story">
-                                                                            <div
-                                                                                className="alert-story-main"
-                                                                                role="button"
-                                                                                tabIndex={0}
-                                                                                onClick={() => handleAlertStoryClick(epic.key)}
-                                                                                onKeyDown={(event) => {
-                                                                                    if (event.key === 'Enter' || event.key === ' ') {
-                                                                                        event.preventDefault();
-                                                                                        handleAlertStoryClick(epic.key);
-                                                                                    }
-                                                                                }}
-                                                                            >
-                                                                                <a
-                                                                                    className="alert-story-link"
-                                                                                    href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
-                                                                                    target="_blank"
-                                                                                    rel="noopener noreferrer"
-                                                                                    onClick={(event) => {
-                                                                                        event.preventDefault();
-                                                                                        event.stopPropagation();
-                                                                                        handleAlertStoryClick(epic.key);
-                                                                                    }}
-                                                                                >
-                                                                                    {epic.key} · {epic.summary}
-                                                                                </a>
-                                                                            </div>
-                                                                            {epic.assignee?.displayName && (
-                                                                                <span className="alert-pill status">{epic.assignee.displayName}</span>
-                                                                            )}
-                                                                            <a
-                                                                                className="alert-action"
-                                                                                href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                            >
-                                                                                Close epic →
-                                                                            </a>
-                                                                            <button
-                                                                                className="task-remove alert-remove"
-                                                                                onClick={(event) => {
-                                                                                    event.stopPropagation();
-                                                                                    dismissAlertItem(epic.key);
-                                                                                }}
-                                                                                title="Dismiss from alerts"
-                                                                                type="button"
-                                                                            >
-                                                                                ×
-                                                                            </button>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                            </div>
-		                                        </div>
-		                                    )}
-
-	                                </div>
-                                                    )}
-                                                </div>
-	                            )}
-                            {selectedView === 'eng' && (
-                            <div className="filters-strip">
-                                <div className="filters-group">
-                                    <div className="filters-label">Show only</div>
-                                    <div className="stats">
-                                        <div
-                                            className={`stat-card total ${statusFilter === null ? 'active' : ''} ${baseFilteredTasks.length === 0 ? 'disabled' : ''}`}
-                                            onClick={() => {
-                                                if (baseFilteredTasks.length === 0) return;
-                                                setStatusFilter(null);
-                                            }}
-                                        >
-                                            <div className="stat-value">{baseFilteredTasks.length}</div>
-                                            <div className="stat-label">Total Tasks</div>
-                                            <div className="stats-note">{totalStoryPoints.toFixed(1)} SP</div>
-                                        </div>
-                                        <div
-                                            className={`stat-card done ${statusFilter === 'done' ? 'active' : ''} ${doneTasksCount === 0 ? 'disabled' : ''}`}
-                                            onClick={() => {
-                                                if (doneTasksCount === 0) return;
-                                                setStatusFilter(statusFilter === 'done' ? null : 'done');
-                                            }}
-                                        >
-                                            <div className="stat-value">{doneTasksCount}</div>
-                                            <div className="stat-label">Done Tasks</div>
-                                            <div className="stats-note">{doneStoryPoints.toFixed(1)} SP</div>
-                                        </div>
-                                        <div
-                                            className={`stat-card high-priority ${statusFilter === 'high-priority' ? 'active' : ''} ${highPriorityCount === 0 ? 'disabled' : ''}`}
-                                            onClick={() => {
-                                                if (highPriorityCount === 0) return;
-                                                setStatusFilter(statusFilter === 'high-priority' ? null : 'high-priority');
-                                            }}
-                                        >
-                                            <div className="stat-value">{highPriorityCount}</div>
-                                            <div className="stat-label">High Priority</div>
-                                            <div className="stats-note">{highPriorityStoryPoints.toFixed(1)} SP</div>
-                                        </div>
-                                        <div
-                                            className={`stat-card minor ${statusFilter === 'minor-priority' ? 'active' : ''} ${minorPriorityCount === 0 ? 'disabled' : ''}`}
-                                            onClick={() => {
-                                                if (minorPriorityCount === 0) return;
-                                                setStatusFilter(statusFilter === 'minor-priority' ? null : 'minor-priority');
-                                            }}
-                                        >
-                                            <div className="stat-value">{minorPriorityCount}</div>
-                                            <div className="stat-label">Minor + Lower</div>
-                                            <div className="stats-note">{minorPriorityStoryPoints.toFixed(1)} SP</div>
-                                        </div>
-                                        <div
-                                            className={`stat-card in-progress ${statusFilter === 'in-progress' ? 'active' : ''} ${inProgressTasksCount === 0 ? 'disabled' : ''}`}
-                                            onClick={() => {
-                                                if (inProgressTasksCount === 0) return;
-                                                setStatusFilter(statusFilter === 'in-progress' ? null : 'in-progress');
-                                            }}
-                                        >
-                                            <div className="stat-value">{inProgressTasksCount}</div>
-                                            <div className="stat-label">In Progress</div>
-                                            <div className="stats-note">{inProgressStoryPoints.toFixed(1)} SP</div>
-                                        </div>
-                                        <div
-                                            className={`stat-card todo-accepted ${statusFilter === 'todo-accepted' ? 'active' : ''} ${todoAcceptedTasksCount === 0 ? 'disabled' : ''}`}
-                                            onClick={() => {
-                                                if (todoAcceptedTasksCount === 0) return;
-                                                setStatusFilter(statusFilter === 'todo-accepted' ? null : 'todo-accepted');
-                                            }}
-                                        >
-                                            <div className="stat-value">{todoAcceptedTasksCount}</div>
-                                            <div className="stat-label">To Do / Pending / Accepted</div>
-                                            <div className="stats-note">{todoAcceptedStoryPoints.toFixed(1)} SP</div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="filters-group">
-                                    <div className="filters-label">Display</div>
-                                    <div className="toggle-container">
-                                        <button
-                                            className={`toggle ${showTech ? 'active' : ''}`}
-                                            onClick={() => {
-                                                setShowTech(!showTech);
-                                            }}
-                                        >
-                                            {`Tech (${techTasksCount})`}
-                                        </button>
-                                        <button
-                                            className={`toggle ${showProduct ? 'active' : ''}`}
-                                            onClick={() => setShowProduct(!showProduct)}
-                                        >
-                                            {`Product (${productTasksCount})`}
-                                        </button>
-                                        {(doneTasks.length > 0 || incompleteTasks.length > 0) && (
-                                            <button
-                                                className={`toggle ${showDone ? 'active' : ''}`}
-                                                onClick={() => setShowDone(!showDone)}
-                                            >
-                                                {`Done / Incomplete (${doneTasks.length + incompleteTasks.length})`}
-                                            </button>
-                                        )}
-                                        {killedTasks.length > 0 && (
-                                            <button
-                                                className={`toggle ${showKilled ? 'active' : ''}`}
-                                                onClick={() => setShowKilled(!showKilled)}
-                                            >
-                                                {`Killed (${killedTasks.length})`}
-                                            </button>
-                                        )}
-                                        {hasInitiativeData && (
-                                            <button
-                                                className={`toggle initiative-toggle ${groupByInitiative ? 'active' : ''}`}
-                                                onClick={() => setGroupByInitiative(prev => !prev)}
-                                                title={groupByInitiative ? 'Switch to flat epic view' : 'Group epics by initiative'}
-                                                type="button"
-                                            >
-                                                <InitiativeIcon className="initiative-toggle-icon" size={12} />
-                                                Initiatives
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                            )}
-
-                            {selectedView === 'epm' && (
-                                <>
-                                    {!epmConfigLoaded && (
-                                        <div className="empty-state">
-                                            <h2>Loading EPM settings</h2>
-                                            <p>Loading saved project configuration.</p>
-                                        </div>
-                                    )}
-
-                                    {epmConfigLoaded && epmProjectsLoading && !epmRollupBoards && !epmRollupTree && (
-                                        <div className="empty-state">
-                                            <h2>Loading EPM projects</h2>
-                                            <p>Refreshing Atlassian Home project metadata.</p>
-                                        </div>
-                                    )}
-
-                                    {epmConfigLoaded && epmSelectedProjectId && !epmProjectsLoading && !selectedEpmProject && (
-                                        <div className="empty-state">
-                                            <h2>Project unavailable</h2>
-                                            <p>This project is not available in the current EPM tab.</p>
-                                        </div>
-                                    )}
-
-                                    {epmConfigLoaded && (!epmProjectsLoading || epmRollupBoards || epmRollupTree) && (!epmSelectedProjectId || selectedEpmProject) && (
-                                        <EpmRollupPanel
-                                            selectedEpmProject={selectedEpmProject}
-                                            selectedEpmProjectUpdateLine={selectedEpmProjectUpdateLine}
-                                            epmTab={epmTab}
-                                            selectedSprint={selectedSprint}
-                                            epmRollupLoading={epmRollupLoading}
-                                            epmRollupTree={epmRollupTree}
-                                            epmRollupBoards={visibleEpmRollupBoards}
-                                            epmDuplicates={epmDuplicates}
-                                            epmAggregateTruncated={epmAggregateTruncated}
-                                            epmProjectRollupLoadingIds={epmProjectRollupLoadingIds}
-                                            searchQuery={searchQuery}
-                                            onProjectExpand={loadArchivedEpmProjectRollup}
-                                            renderEpicBlock={renderEpicBlock}
-                                            openEpmSettingsTab={openEpmSettingsTab}
-                                            jiraUrl={jiraUrl}
-                                            InitiativeIcon={InitiativeIcon}
-                                        />
-                                    )}
-                                </>
-                            )}
-
-                            {selectedView === 'eng' && (
-                                <>
-                                    {visibleTasksForList.length === 0 ? (
-                                        <div className="empty-state">
-                                            <h2>No tasks found</h2>
-                                            <p>There are no tasks matching the current criteria</p>
-                                        </div>
-                                    ) : (
-                                        <div
-                                            className={`task-list ${activeDependencyFocus ? 'focus-mode' : ''}`}
-                                            onClick={handleDependencyFocusClick}
-                                        >
-                                            {initiativeGroups ? (
-                                                initiativeGroups.map(ig => {
-                                                    const ini = ig.initiative;
-                                                    const isMultiEpic = ini && ig.epicGroups.length > 1;
-                                                    return (
-                                                        <div
-                                                            key={ini ? ini.key : 'no-initiative'}
-                                                            className={ini ? (isMultiEpic ? 'initiative-group' : 'initiative-group initiative-single') : ''}
-                                                        >
-                                                            {ini && (
-                                                                <>
-                                                                    <div className="initiative-header">
-                                                                        <InitiativeIcon className="initiative-header-icon" />
-                                                                        <div className={`initiative-label ${isMultiEpic ? '' : 'initiative-label-only'}`}>
-                                                                            <span className="initiative-label-name">{ini.summary}</span>
-                                                                            <a
-                                                                                className="initiative-label-key"
-                                                                                href={jiraUrl ? `${jiraUrl}/browse/${ini.key}` : '#'}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                            >
-                                                                                {ini.key} ↗
-                                                                            </a>
-                                                                            <span className="initiative-divider" />
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="initiative-body">
-                                                                        {ig.epicGroups.map(epicGroup => renderEpicBlock(epicGroup))}
-                                                                    </div>
-                                                                </>
-                                                            )}
-                                                            {!ini && ig.epicGroups.map(epicGroup => renderEpicBlock(epicGroup))}
-                                                        </div>
-                                                    );
-                                                })
-                                            ) : (
-                                                epicGroups.map(epicGroup => renderEpicBlock(epicGroup))
-                                            )}
-                                        </div>
-                                    )}
-
-                                    <div style={{marginTop: '3rem', textAlign: 'center'}}>
-                                        <button onClick={fetchTasks}>
-                                            Refresh
-                                        </button>
-                                    </div>
-                                </>
-                            )}
+                            <IssueCardContext.Provider value={issueCardContext}>
+                                <EpmView
+                                    selectedView={selectedView}
+                                    epmConfigLoaded={epmConfigLoaded}
+                                    epmProjectsLoading={epmProjectsLoading}
+                                    epmRollupBoards={epmRollupBoards}
+                                    epmRollupTree={epmRollupTree}
+                                    epmSelectedProjectId={epmSelectedProjectId}
+                                    selectedEpmProject={selectedEpmProject}
+                                    selectedEpmProjectUpdateLine={selectedEpmProjectUpdateLine}
+                                    epmTab={epmTab}
+                                    selectedSprint={selectedSprint}
+                                    epmRollupLoading={epmRollupLoading}
+                                    visibleEpmRollupBoards={visibleEpmRollupBoards}
+                                    epmDuplicates={epmDuplicates}
+                                    epmAggregateTruncated={epmAggregateTruncated}
+                                    epmProjectRollupLoadingIds={epmProjectRollupLoadingIds}
+                                    searchQuery={searchQuery}
+                                    loadArchivedEpmProjectRollup={loadArchivedEpmProjectRollup}
+                                    openEpmSettingsTab={openEpmSettingsTab}
+                                    jiraUrl={jiraUrl}
+                                    InitiativeIcon={InitiativeIcon}
+                                />
+                            </IssueCardContext.Provider>
                         </>
                     )}
 
                     {showGroupManage && (
-                        <div
-                            className="group-modal-backdrop"
-                            role="dialog"
-                            aria-modal="true"
-                            onClick={requestCloseGroupManage}
+                        <SettingsModal
+                            activeTab={groupManageTab}
+                            tabs={settingsModalTabs}
+                            isDirty={isGroupDraftDirty}
+                            unsavedSectionsCount={unsavedSectionsCount}
+                            onRequestClose={requestCloseGroupManage}
+                            validationMessages={groupConfigValidationErrors}
+                            showTestConfiguration={groupManageTab !== 'epm'}
+                            onTestConfiguration={testGroupsConfigConnection}
+                            testConfigurationDisabled={groupTesting}
+                            testConfigurationLabel={groupTesting ? 'Testing...' : 'Test configuration'}
+                            testConfigurationMessage={groupTestMessage}
+                            onCancel={requestCloseGroupManage}
+                            onSave={settingsSaveHandler}
+                            saveDisabled={settingsSaveDisabled}
+                            saveTitle={settingsSaveTitle}
+                            saveLabel={settingsSaveLabel}
+                            showDiscardConfirm={showGroupDiscardConfirm}
+                            onDiscard={discardGroupDraftChanges}
+                            onKeepEditing={() => setShowGroupDiscardConfirm(false)}
                         >
-                            <div className="group-modal" onClick={(event) => event.stopPropagation()}>
-                                <div className="group-modal-header">
-                                    <div className="group-modal-title-wrap">
-                                        <div>
-                                            <div className="group-modal-title">Dashboard Settings</div>
-                                            <div className="group-modal-subtitle">Configure data sources and field mapping so planning metrics are calculated correctly.</div>
-                                        </div>
-                                    </div>
-                                    {isGroupDraftDirty && (
-                                        <div className="group-modal-dirty">Unsaved changes{unsavedSectionsCount > 0 ? ` · ${unsavedSectionsCount}` : ''}</div>
-                                    )}
-                                </div>
-                                <div className="group-modal-tabs">
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'scope' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('scope')}
-                                        type="button"
-                                    >Scope projects</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'source' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('source')}
-                                        type="button"
-                                    >Jira source</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'mapping' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('mapping')}
-                                        type="button"
-                                    >Field mapping</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'capacity' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('capacity')}
-                                        type="button"
-                                    >Capacity</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'teams' ? 'active' : ''}`}
-                                        onClick={() => savedSelectedProjects.length > 0 && setGroupManageTab('teams')}
-                                        type="button"
-                                        disabled={savedSelectedProjects.length === 0}
-                                        title={savedSelectedProjects.length === 0 ? 'Configure data sources first' : ''}
-                                    >Team groups</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'labels' ? 'active' : ''}`}
-                                        onClick={() => labelsTabEnabled && setGroupManageTab('labels')}
-                                        type="button"
-                                        disabled={!labelsTabEnabled}
-                                        title={labelsTabEnabled ? '' : 'Save at least one group first'}
-                                    >Group labels</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'priorityWeights' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('priorityWeights')}
-                                        type="button"
-                                    >Priority weights</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'epm' ? 'active' : ''}`}
-                                        onClick={openEpmSettingsTab}
-                                        type="button"
-                                    >EPM</button>
-                                </div>
                                 {(groupManageTab === 'scope' || groupManageTab === 'source' || groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
-                                    <div className="group-modal-body group-modal-split group-projects-layout">
-                                        {(groupManageTab === 'source' || groupManageTab === 'scope') && (
-                                        <>
-                                        {groupManageTab === 'source' && (
-                                        <div className="group-pane group-projects-pane-left group-single-pane" style={{ borderRight: 'none' }}>
-                                            <div className="group-pane-tools group-pane-tools-right" style={{ padding: '0.8rem 1rem 0 1rem' }}>
-                                                <button
-                                                    className={`secondary compact ${showTechnicalFieldIds ? 'active' : ''}`}
-                                                    onClick={() => setShowTechnicalFieldIds((prev) => !prev)}
-                                                    type="button"
-                                                >
-                                                    {showTechnicalFieldIds ? 'Hide Jira technical IDs' : 'Show Jira technical IDs'}
-                                                </button>
-                                            </div>
-                                            <div className="group-projects-subsection" style={{padding: '12px 16px 0'}}>
-                                                <div className="group-pane-title">Jira Source</div>
-                                                <div className="group-field-helper">Configure how sprint data is discovered and read from Jira.</div>
-                                            </div>
-                                            <div className="settings-two-col-grid settings-source-grid" style={{ padding: '12px 16px 12px' }}>
-                                                <div className="group-projects-subsection" style={{marginTop: 0}}>
-                                                    <div className="team-selector-label">Sprint Field</div>
-                                                    <div className="group-field-helper">Used to determine which sprint each ticket belongs to.</div>
-                                                    <div className="capacity-inline-row">
-                                                        {sprintFieldNameDraft ? (
-                                                            <div className="selected-team-chip" title={sprintFieldIdDraft || ''}>
-                                                                <span className="team-name"><strong>{sprintFieldNameDraft}</strong>{showTechnicalFieldIds && sprintFieldIdDraft && <span className="field-id-hint">({sprintFieldIdDraft})</span>}</span>
-                                                                <button className="remove-btn" onClick={() => { setSprintFieldIdDraft(''); setSprintFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove sprint field">&times;</button>
-                                                            </div>
-                                                        ) : (
-                                                        <div className="team-search-wrapper capacity-inline-search">
-                                                            <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={sprintFieldSearchQuery} onChange={(e) => { setSprintFieldSearchQuery(e.target.value); setSprintFieldSearchOpen(true); setSprintFieldSearchIndex(0); }} onFocus={() => setSprintFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setSprintFieldSearchOpen(false), 120); }} onKeyDown={handleSprintFieldSearchKeyDown} ref={sprintFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
-                                                            {sprintFieldSearchOpen && sprintFieldSearchResults.length > 0 && (
-                                                                <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                    {sprintFieldSearchResults.map((f, index) => (
-                                                                        <div key={f.id} className={`team-search-result-item ${index === sprintFieldSearchIndex ? 'active' : ''}`} onClick={() => { setSprintFieldIdDraft(f.id); setSprintFieldNameDraft(f.name); setSprintFieldSearchQuery(''); setSprintFieldSearchOpen(false); }}>
-                                                                            <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <div className="group-projects-subsection" style={{marginTop: 0}}>
-                                                    <div className="team-selector-label">Sprint Board (optional)</div>
-                                                    <div className="group-field-helper">Used for faster sprint loading. If empty, the server falls back to env/default issue-based sprint discovery.</div>
-                                                    {!boardIdDraft && (
-                                                        <div className="capacity-inline-row">
-                                                            <div className="team-search-wrapper capacity-inline-search">
-                                                                    <input
-                                                                        type="text"
-                                                                        className="team-search-input"
-                                                                        placeholder={boardSearchRemoteLoading ? 'Searching boards...' : 'Search boards...'}
-                                                                        value={boardSearchQuery}
-                                                                        onChange={(e) => { setBoardSearchQuery(e.target.value); setBoardSearchOpen(true); setBoardSearchIndex(0); }}
-                                                                        onFocus={() => { setBoardSearchOpen(true); }}
-                                                                        onBlur={() => { window.setTimeout(() => setBoardSearchOpen(false), 120); }}
-                                                                        onKeyDown={handleBoardSearchKeyDown}
-                                                                        ref={boardSearchInputRef}
-                                                                        disabled={false}
-                                                                    />
-                                                                {boardSearchOpen && boardSearchQuery.trim() && (
-                                                                    <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                        {boardSearchRemoteLoading ? (
-                                                                            <div className="team-search-result-item is-empty">Searching boards...</div>
-                                                                        ) : boardSearchResults.length === 0 ? (
-                                                                            <div className="team-search-result-item is-empty">No boards found</div>
-                                                                        ) : boardSearchResults.map((b, index) => (
-                                                                            <div
-                                                                                key={b.id}
-                                                                                className={`team-search-result-item ${index === boardSearchIndex ? 'active' : ''}`}
-                                                                                onClick={() => {
-                                                                                    setBoardIdDraft(String(b.id || ''));
-                                                                                    setBoardNameDraft(String(b.name || ''));
-                                                                                    setBoardSearchQuery('');
-                                                                                    setBoardSearchOpen(false);
-                                                                            }}
-                                                                        >
-                                                                                <strong>{b.name || `Board ${b.id}`}</strong> <span style={{opacity: 0.55}}>({b.id}{b.type ? ` · ${b.type}` : ''})</span>
-                                                                            </div>
-                                                                        ))}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {boardIdDraft ? (
-                                                        <div className="selected-teams-list" style={{ marginTop: '0.45rem' }}>
-                                                            <div className="selected-team-chip" title={boardIdDraft}>
-                                                                <span className="team-name">
-                                                                    <strong>{boardNameDraft || `Board ${boardIdDraft}`}</strong>
-                                                                    {showTechnicalFieldIds && boardNameDraft ? ` (${boardIdDraft})` : ''}
-                                                                </span>
-                                                                <button className="remove-btn" onClick={clearBoardSelection} type="button" title="Clear board" aria-label="Clear sprint board">&times;</button>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="team-selector-empty">No board selected (fallback mode).</div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        )}
-                                        {groupManageTab === 'scope' && (
-                                        <div className={`group-pane group-projects-pane-right group-single-pane ${groupManageTab === 'mapping' ? 'mapping-config-pane' : ''}`}>
-                                            <div className="group-pane-header group-projects-pane-header">
-                                                <div className="group-pane-title">Dashboard Projects</div>
-                                                <div className="group-projects-desc">
-                                                    Select which Jira projects to include in dashboard queries and assign each to Product or Tech for the planning split.
-                                                </div>
-                                                <div className="team-search-wrapper">
-                                                    <input
-                                                        type="text"
-                                                        className="team-search-input"
-                                                        placeholder={loadingProjects ? 'Loading projects...' : 'Search projects to add...'}
-                                                        value={projectSearchQuery}
-                                                        onChange={(e) => { setProjectSearchQuery(e.target.value); setProjectSearchOpen(true); setProjectSearchIndex(0); }}
-                                                        onFocus={() => setProjectSearchOpen(true)}
-                                                        onBlur={() => { window.setTimeout(() => setProjectSearchOpen(false), 120); }}
-                                                        onKeyDown={handleProjectSearchKeyDown}
-                                                        ref={projectSearchInputRef}
-                                                        disabled={loadingProjects && !jiraProjects.length}
-                                                    />
-                                                    {projectSearchOpen && projectSearchQuery.trim() && (
-                                                        <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                            {projectSearchRemoteLoading ? (
-                                                                <div className="team-search-result-item is-empty">Searching Jira projects...</div>
-                                                            ) : projectSearchResults.length === 0 ? (
-                                                                <div className="team-search-result-item is-empty">No projects found</div>
-                                                            ) : projectSearchResults.map((p, index) => (
-                                                                <div
-                                                                    key={p.key}
-                                                                    className={`team-search-result-item ${index === projectSearchIndex ? 'active' : ''}`}
-                                                                >
-                                                                    <span className="project-result-label"><strong>{p.key}</strong> &mdash; {p.name}</span>
-                                                                    <span className="project-result-actions">
-                                                                        <button type="button" className="project-type-btn product" onClick={() => addProjectSelection(p.key, 'product')}>Product</button>
-                                                                        <button type="button" className="project-type-btn tech" onClick={() => addProjectSelection(p.key, 'tech')}>Tech</button>
-                                                                    </span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="group-pane-list group-projects-pane-list">
-                                                <div className="settings-two-col-grid settings-scope-grid">
-                                                <div className="group-projects-subsection">
-                                                    <div className="team-selector-label">Product</div>
-                                                    <div className="group-field-helper">Projects counted as Product work in planning and stats.</div>
-                                                    {selectedProjectsDraft.filter(p => p.type === 'product').length === 0 ? (
-                                                        <div className="team-selector-empty">No product projects.</div>
-                                                    ) : (
-                                                        <div className="selected-teams-list">
-                                                            {selectedProjectsDraft.filter(p => p.type === 'product').map(p => (
-                                                                <div key={p.key} className="selected-team-chip product-chip">
-                                                                    <span className="team-name"><strong>{p.key}</strong>{resolveProjectName(p.key) !== p.key ? ` \u2014 ${resolveProjectName(p.key)}` : ''}</span>
-                                                                    <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project" aria-label={`Remove product project ${p.key}`}>&times;</button>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div className="group-projects-subsection">
-                                                    <div className="team-selector-label">Tech</div>
-                                                    <div className="group-field-helper">Projects counted as Tech work in planning and stats.</div>
-                                                    {selectedProjectsDraft.filter(p => p.type === 'tech').length === 0 ? (
-                                                        <div className="team-selector-empty">No tech projects.</div>
-                                                    ) : (
-                                                        <div className="selected-teams-list">
-                                                            {selectedProjectsDraft.filter(p => p.type === 'tech').map(p => (
-                                                                <div key={p.key} className="selected-team-chip tech-chip">
-                                                                    <span className="team-name"><strong>{p.key}</strong>{resolveProjectName(p.key) !== p.key ? ` \u2014 ${resolveProjectName(p.key)}` : ''}</span>
-                                                                    <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project" aria-label={`Remove tech project ${p.key}`}>&times;</button>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        )}
-                                        </>
-                                        )}
-                                        {(groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
-                                        <div className="group-pane group-projects-pane-right group-single-pane">
-                                            <div className="group-pane-tools group-pane-tools-right">
-                                                {(groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
-                                                    <button
-                                                        className={`secondary compact ${showTechnicalFieldIds ? 'active' : ''}`}
-                                                        onClick={() => setShowTechnicalFieldIds((prev) => !prev)}
-                                                        type="button"
-                                                    >
-                                                        {showTechnicalFieldIds ? 'Hide Jira technical IDs' : 'Show Jira technical IDs'}
-                                                    </button>
-                                                )}
-                                            </div>
-                                            {groupManageTab === 'mapping' && (
-                                            <>
-                                            <div className="mapping-preview-section group-config-card">
-                                                <div className="group-pane-title">Preview</div>
-                                                <div className="group-field-helper">This is how a story will be shown with your current mapping.</div>
-                                                {(() => {
-                                                    const previewIssueType = issueTypesDraft[0] || 'Issue Type';
-                                                    const previewParentFieldName = parentNameFieldNameDraft || 'Parent Name Field';
-                                                    const previewStoryPointsFieldName = storyPointsFieldNameDraft || 'Story Points Field';
-                                                    const previewTeamFieldName = teamFieldNameDraft || 'Team Field';
-                                                    const previewParentFieldId = parentNameFieldIdDraft || '';
-                                                    const previewStoryPointsFieldId = storyPointsFieldIdDraft || '';
-                                                    const previewTeamFieldId = teamFieldIdDraft || '';
-                                                    const previewEpic = {
-                                                        key: 'Parent-Key',
-                                                        parentValue: parentNameFieldNameDraft || 'Parent Name Field'
-                                                    };
-                                                    const previewStories = [
-                                                        {
-                                                            key: 'STORY-KEY',
-                                                            summary: 'Story Summary',
-                                                            status: 'Status',
-                                                            statusClass: 'accepted',
-                                                            updated: 'Last Updated Date',
-                                                            storyPoints: storyPointsFieldNameDraft ? 'Story Points' : 'Story Points Field',
-                                                            team: teamFieldNameDraft ? 'Team Name' : 'Team Field'
-                                                        }
-                                                    ];
-                                                    const renderFieldLabel = (label, id) => (
-                                                        <>
-                                                            {label}
-                                                            {showTechnicalFieldIds && id && <span className="field-id-hint">({id})</span>}
-                                                        </>
-                                                    );
-                                                    return (
-                                                            <div className={`epic-block mapping-preview-card ${mappingHoverKey ? 'mapping-hover-active' : ''}`}>
-                                                                <div className="epic-header">
-                                                                    <div className="epic-title">
-                                                                        <div className="epic-title-row">
-                                                                            <span className="epic-icon" aria-hidden="true" title="EPIC">
-                                                                                <svg viewBox="0 0 16 16" fill="none">
-                                                                                    <path
-                                                                                        clipRule="evenodd"
-                                                                                        d="m10.271.050656c.2887.111871.479.38969.479.699344v4.63515l3.1471.62941c.2652.05303.4812.24469.5655.50161s.0238.53933-.1584.73914l-7.74997 8.49999c-.20863.2288-.53644.3059-.82517.194-.28874-.1118-.47905-.3896-.47905-.6993v-4.6351l-3.14708-.62947c-.26515-.05303-.48123-.24468-.56553-.5016-.08431-.25692-.02379-.53933.1584-.73915l7.75-8.499996c.20863-.2288201.53643-.305899.8252-.194028zm-6.57276 8.724134 3.05177.61036v3.92915l5.55179-6.08909-3.05179-.61036v-3.9291z"
-                                                                                        fill="#bf63f3"
-                                                                                        fillRule="evenodd"
-                                                                                    />
-                                                                                </svg>
-                                                                            </span>
-                                                                        <a
-                                                                            className={`epic-link mapping-preview-dimmable mapping-preview-linkable mapping-preview-link-parent ${mappingHoverKey === 'parent' ? 'is-linked-hover' : ''}`}
-                                                                            href="#"
-                                                                            onClick={(e) => e.preventDefault()}
-                                                                            onMouseEnter={() => setMappingHoverKey('parent')}
-                                                                            onMouseLeave={() => setMappingHoverKey(null)}
-                                                                            data-map-key="parent"
-                                                                        >
-                                                                            <span className="epic-name mapping-preview-parent-value">{previewEpic.parentValue}</span>
-                                                                            <span className="epic-key">{previewEpic.key}</span>
-                                                                        </a>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="epic-meta mapping-preview-epic-meta">
-                                                                    <span
-                                                                        className={`mapping-preview-dimmable mapping-preview-linkable mapping-preview-link-story-points ${mappingHoverKey === 'storyPoints' ? 'is-linked-hover' : ''}`}
-                                                                        onMouseEnter={() => setMappingHoverKey('storyPoints')}
-                                                                        onMouseLeave={() => setMappingHoverKey(null)}
-                                                                        data-map-key="storyPoints"
-                                                                    >
-                                                                        SP: Story Points Total
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                            {previewStories.map((story) => (
-                                                                <div
-                                                                    key={story.key}
-                                                                    className="task-item priority-major"
-                                                                    data-task-key={`preview-${story.key}`}
-                                                                >
-                                                                    <div className="task-header">
-                                                                        <div className="task-headline">
-                                                                            <span className="story-icon" aria-hidden="true" title="STORY">
-                                                                                <svg viewBox="0 0 24 24" fill="none">
-                                                                                    <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
-                                                                                </svg>
-                                                                            </span>
-                                                                            <h3 className="task-title">
-                                                                                <a
-                                                                                    href="#"
-                                                                                    onClick={(e) => e.preventDefault()}
-                                                                                    className={`mapping-preview-dimmable mapping-preview-linkable mapping-preview-link-issue ${mappingHoverKey === 'issueType' ? 'is-linked-hover' : ''}`}
-                                                                                    onMouseEnter={() => setMappingHoverKey('issueType')}
-                                                                                    onMouseLeave={() => setMappingHoverKey(null)}
-                                                                                    data-map-key="issueType"
-                                                                                    title={showTechnicalFieldIds ? `Issue Type: ${previewIssueType}` : undefined}
-                                                                                >
-                                                                                    {story.summary}
-                                                                                </a>
-                                                                            </h3>
-                                                                            <span className="task-inline-meta">
-                                                                                <a
-                                                                                    className={`task-key-link mapping-preview-dimmable mapping-preview-linkable mapping-preview-link-issue ${mappingHoverKey === 'issueType' ? 'is-linked-hover' : ''}`}
-                                                                                    href="#"
-                                                                                    onClick={(e) => e.preventDefault()}
-                                                                                    onMouseEnter={() => setMappingHoverKey('issueType')}
-                                                                                    onMouseLeave={() => setMappingHoverKey(null)}
-                                                                                    data-map-key="issueType"
-                                                                                    title={showTechnicalFieldIds ? `Issue Type: ${previewIssueType}` : undefined}
-                                                                                >
-                                                                                    {story.key}
-                                                                                </a>
-                                                                                <span
-                                                                                    className={`task-inline-sp mapping-preview-dimmable mapping-preview-linkable mapping-preview-link-story-points ${mappingHoverKey === 'storyPoints' ? 'is-linked-hover' : ''}`}
-                                                                                    onMouseEnter={() => setMappingHoverKey('storyPoints')}
-                                                                                    onMouseLeave={() => setMappingHoverKey(null)}
-                                                                                    data-map-key="storyPoints"
-                                                                                >
-                                                                                    {storyPointsFieldNameDraft ? 'Story Points' : 'SP Value'}
-                                                                                </span>
-                                                                            </span>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="task-meta">
-                                                                        <span className={`task-status mapping-preview-dimmable ${story.statusClass || story.status.toLowerCase().replace(/\s+/g, '-')}`}>
-                                                                            {story.status}
-                                                                        </span>
-                                                                        <span
-                                                                            className={`task-team mapping-preview-dimmable mapping-preview-task-team mapping-preview-linkable mapping-preview-link-team ${mappingHoverKey === 'team' ? 'is-linked-hover' : ''}`}
-                                                                            onMouseEnter={() => setMappingHoverKey('team')}
-                                                                            onMouseLeave={() => setMappingHoverKey(null)}
-                                                                            data-map-key="team"
-                                                                        >
-                                                                            {story.team}
-                                                                        </span>
-                                                                        <span className="task-updated mapping-preview-dimmable">
-                                                                            Last Update: {story.updated}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    );
-                                                })()}
-                                            </div>
-                                            <div className="mapping-config-grid">
-                                            <div
-                                                className={`group-projects-section group-config-card ${mappingHoverKey === 'issueType' ? 'is-linked-hover' : ''}`}
-                                                onMouseEnter={() => setMappingHoverKey('issueType')}
-                                                onMouseLeave={() => setMappingHoverKey(null)}
-                                                data-map-key="issueType"
-                                            >
-                                                <div className="group-pane-title">Issue Type</div>
-                                                <div className="group-field-helper">Only these issue types are loaded into the dashboard.</div>
-                                                <div className="capacity-inline-row">
-                                                    {issueTypesDraft.length > 0 ? (
-                                                        <div className="selected-team-chip issue-type-chip">
-                                                            <span className="team-name">{issueTypesDraft[0]}</span>
-                                                            <button className="remove-btn" onClick={() => removeIssueType(issueTypesDraft[0])} type="button" title="Remove" aria-label={`Remove issue type ${issueTypesDraft[0]}`}>&times;</button>
-                                                        </div>
-                                                    ) : (
-                                                    <div className="team-search-wrapper capacity-inline-search">
-                                                        <input
-                                                            type="text"
-                                                            className="team-search-input"
-                                                            placeholder="Search issue types..."
-                                                            value={issueTypeSearchQuery}
-                                                            onChange={(e) => { setIssueTypeSearchQuery(e.target.value); setIssueTypeSearchOpen(true); setIssueTypeSearchIndex(0); }}
-                                                            onFocus={() => setIssueTypeSearchOpen(true)}
-                                                            onBlur={() => { window.setTimeout(() => setIssueTypeSearchOpen(false), 120); }}
-                                                            onKeyDown={handleIssueTypeSearchKeyDown}
-                                                            ref={issueTypeSearchInputRef}
-                                                        />
-                                                        {issueTypeSearchOpen && issueTypeSearchQuery.trim() && (
-                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                {issueTypeSearchResults.length === 0 ? (
-                                                                    <div className="team-search-result-item is-empty">No issue types found</div>
-                                                                ) : issueTypeSearchResults.map((it, index) => (
-                                                                    <div
-                                                                        key={it.name}
-                                                                        className={`team-search-result-item ${index === issueTypeSearchIndex ? 'active' : ''}`}
-                                                                        onClick={() => addIssueType(it.name)}
-                                                                    >
-                                                                        {it.name}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    )}
-                                                </div>
-                                                {issueTypesDraft.length === 0 && (
-                                                    <div className="team-selector-empty">No filter — all issue types will be included.</div>
-                                                )}
-                                            </div>
-                                            <div
-                                                className={`group-projects-subsection ${mappingHoverKey === 'parent' ? 'is-linked-hover' : ''}`}
-                                                onMouseEnter={() => setMappingHoverKey('parent')}
-                                                onMouseLeave={() => setMappingHoverKey(null)}
-                                                data-map-key="parent"
-                                            >
-                                                <div className="team-selector-label">Parent Name Field</div>
-                                                <div className="group-field-helper">Field used to map stories back to their parent epic name.</div>
-                                                <div className="capacity-inline-row">
-                                                    {parentNameFieldNameDraft ? (
-                                                        <div className="selected-team-chip mapping-parent-chip" title={parentNameFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{parentNameFieldNameDraft}</strong>{showTechnicalFieldIds && parentNameFieldIdDraft && <span className="field-id-hint">({parentNameFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setParentNameFieldIdDraft(''); setParentNameFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove parent name field">&times;</button>
-                                                        </div>
-                                                    ) : (
-                                                    <div className="team-search-wrapper capacity-inline-search">
-                                                        <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={parentNameFieldSearchQuery} onChange={(e) => { setParentNameFieldSearchQuery(e.target.value); setParentNameFieldSearchOpen(true); setParentNameFieldSearchIndex(0); }} onFocus={() => setParentNameFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setParentNameFieldSearchOpen(false), 120); }} onKeyDown={handleParentNameFieldSearchKeyDown} ref={parentNameFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
-                                                        {parentNameFieldSearchOpen && parentNameFieldSearchResults.length > 0 && (
-                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                {parentNameFieldSearchResults.map((f, index) => (
-                                                                    <div key={f.id} className={`team-search-result-item ${index === parentNameFieldSearchIndex ? 'active' : ''}`} onClick={() => { setParentNameFieldIdDraft(f.id); setParentNameFieldNameDraft(f.name); setParentNameFieldSearchQuery(''); setParentNameFieldSearchOpen(false); }}>
-                                                                        <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div
-                                                className={`group-projects-subsection ${mappingHoverKey === 'storyPoints' ? 'is-linked-hover' : ''}`}
-                                                onMouseEnter={() => setMappingHoverKey('storyPoints')}
-                                                onMouseLeave={() => setMappingHoverKey(null)}
-                                                data-map-key="storyPoints"
-                                            >
-                                                <div className="team-selector-label">Story Points Field</div>
-                                                <div className="group-field-helper">Field used for effort, velocity, and capacity comparisons.</div>
-                                                <div className="capacity-inline-row">
-                                                    {storyPointsFieldNameDraft ? (
-                                                        <div className="selected-team-chip mapping-sp-chip" title={storyPointsFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong>{showTechnicalFieldIds && storyPointsFieldIdDraft && <span className="field-id-hint">({storyPointsFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove story points field">&times;</button>
-                                                        </div>
-                                                    ) : (
-                                                    <div className="team-search-wrapper capacity-inline-search">
-                                                        <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={storyPointsFieldSearchQuery} onChange={(e) => { setStoryPointsFieldSearchQuery(e.target.value); setStoryPointsFieldSearchOpen(true); setStoryPointsFieldSearchIndex(0); }} onFocus={() => setStoryPointsFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setStoryPointsFieldSearchOpen(false), 120); }} onKeyDown={handleStoryPointsFieldSearchKeyDown} ref={storyPointsFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
-                                                        {storyPointsFieldSearchOpen && storyPointsFieldSearchResults.length > 0 && (
-                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                {storyPointsFieldSearchResults.map((f, index) => (
-                                                                    <div key={f.id} className={`team-search-result-item ${index === storyPointsFieldSearchIndex ? 'active' : ''}`} onClick={() => { setStoryPointsFieldIdDraft(f.id); setStoryPointsFieldNameDraft(f.name); setStoryPointsFieldSearchQuery(''); setStoryPointsFieldSearchOpen(false); }}>
-                                                                        <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div
-                                                className={`group-projects-subsection ${mappingHoverKey === 'team' ? 'is-linked-hover' : ''}`}
-                                                onMouseEnter={() => setMappingHoverKey('team')}
-                                                onMouseLeave={() => setMappingHoverKey(null)}
-                                                data-map-key="team"
-                                            >
-                                                <div className="team-selector-label">Team Field</div>
-                                                <div className="group-field-helper">Field used to assign each ticket to a team.</div>
-                                                <div className="capacity-inline-row">
-                                                    {teamFieldNameDraft ? (
-                                                        <div className="selected-team-chip mapping-team-chip" title={teamFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{teamFieldNameDraft}</strong>{showTechnicalFieldIds && teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove team field">&times;</button>
-                                                        </div>
-                                                    ) : (
-                                                    <div className="team-search-wrapper capacity-inline-search">
-                                                        <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={teamFieldSearchQuery} onChange={(e) => { setTeamFieldSearchQuery(e.target.value); setTeamFieldSearchOpen(true); setTeamFieldSearchIndex(0); }} onFocus={() => setTeamFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setTeamFieldSearchOpen(false), 120); }} onKeyDown={handleTeamFieldSearchKeyDown} ref={teamFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
-                                                        {teamFieldSearchOpen && teamFieldSearchResults.length > 0 && (
-                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                {teamFieldSearchResults.map((f, index) => (
-                                                                    <div key={f.id} className={`team-search-result-item ${index === teamFieldSearchIndex ? 'active' : ''}`} onClick={() => { setTeamFieldIdDraft(f.id); setTeamFieldNameDraft(f.name); setTeamFieldSearchQuery(''); setTeamFieldSearchOpen(false); }}>
-                                                                        <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            </div>
-                                            </>
-                                            )}
-                                            {groupManageTab === 'capacity' && (
-                                            <div className="group-projects-section group-config-card">
-                                                <div className="group-pane-title">Capacity Project</div>
-                                                <div className="group-projects-desc">
-                                                    Select one Jira project that stores team capacity entries, and the numeric field used for estimated capacity (used by the <strong>Planning</strong> module).
-                                                </div>
-                                                <div className="capacity-inline-row">
-                                                    {capacityProjectDraft ? (
-                                                        <div className="selected-team-chip">
-                                                            <span className="team-name"><strong>{capacityProjectDraft}</strong>{resolveCapacityProjectName(capacityProjectDraft) ? ` \u2014 ${resolveCapacityProjectName(capacityProjectDraft)}` : ''}</span>
-                                                            <button className="remove-btn" onClick={() => setCapacityProjectDraft('')} type="button" title="Remove" aria-label="Remove capacity project">&times;</button>
-                                                        </div>
-                                                    ) : (
-                                                    <div className="team-search-wrapper capacity-inline-search">
-                                                        <input
-                                                            type="text"
-                                                            className="team-search-input"
-                                                            placeholder="Search projects..."
-                                                            value={capacityProjectSearchQuery}
-                                                            onChange={(e) => { setCapacityProjectSearchQuery(e.target.value); setCapacityProjectSearchOpen(true); setCapacityProjectSearchIndex(0); }}
-                                                            onFocus={() => setCapacityProjectSearchOpen(true)}
-                                                            onBlur={() => { window.setTimeout(() => setCapacityProjectSearchOpen(false), 120); }}
-                                                            onKeyDown={handleCapacityProjectSearchKeyDown}
-                                                            ref={capacityProjectSearchInputRef}
-                                                        />
-                                                        {capacityProjectSearchOpen && capacityProjectSearchQuery.trim() && (
-                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                {capacityProjectSearchResults.length === 0 ? (
-                                                                    <div className="team-search-result-item is-empty">No projects found</div>
-                                                                ) : capacityProjectSearchResults.map((p, index) => (
-                                                                    <div
-                                                                        key={p.key}
-                                                                        className={`team-search-result-item ${index === capacityProjectSearchIndex ? 'active' : ''}`}
-                                                                        onClick={() => { setCapacityProjectDraft(p.key); setCapacityProjectSearchQuery(''); setCapacityProjectSearchOpen(false); }}
-                                                                    >
-                                                                        <strong>{p.key}</strong> &mdash; {p.name}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    )}
-                                                </div>
-                                                <div className="group-projects-subsection">
-                                                    <div className="team-selector-label">Capacity Field</div>
-                                                    <div className="group-field-helper">Numeric field that stores each team capacity entry.</div>
-                                                    <div className="capacity-inline-row">
-                                                        {capacityFieldNameDraft ? (
-                                                            <div className="selected-team-chip" title={capacityFieldIdDraft || ''}>
-                                                                <span className="team-name"><strong>{capacityFieldNameDraft}</strong>{showTechnicalFieldIds && capacityFieldIdDraft && <span className="field-id-hint">({capacityFieldIdDraft})</span>}</span>
-                                                                <button className="remove-btn" onClick={() => { setCapacityFieldIdDraft(''); setCapacityFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove capacity field">&times;</button>
-                                                            </div>
-                                                        ) : (
-                                                        <div className="team-search-wrapper capacity-inline-search">
-                                                            <input
-                                                                type="text"
-                                                                className="team-search-input"
-                                                                placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'}
-                                                                value={capacityFieldSearchQuery}
-                                                                onChange={(e) => { setCapacityFieldSearchQuery(e.target.value); setCapacityFieldSearchOpen(true); setCapacityFieldSearchIndex(0); }}
-                                                                onFocus={() => setCapacityFieldSearchOpen(true)}
-                                                                onBlur={() => { window.setTimeout(() => setCapacityFieldSearchOpen(false), 120); }}
-                                                                onKeyDown={handleCapacityFieldSearchKeyDown}
-                                                                ref={capacityFieldSearchInputRef}
-                                                                disabled={loadingFields && !jiraFields.length}
-                                                            />
-                                                            {capacityFieldSearchOpen && capacityFieldSearchResults.length > 0 && (
-                                                                <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                    {capacityFieldSearchResults.map((f, index) => (
-                                                                        <div
-                                                                            key={f.id}
-                                                                            className={`team-search-result-item ${index === capacityFieldSearchIndex ? 'active' : ''}`}
-                                                                            onClick={() => { setCapacityFieldIdDraft(f.id); setCapacityFieldNameDraft(f.name); setCapacityFieldSearchQuery(''); setCapacityFieldSearchOpen(false); }}
-                                                                        >
-                                                                            <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            )}
-                                            {groupManageTab === 'priorityWeights' && (
-                                            <div className="group-projects-section group-config-card">
-                                                <div className="group-pane-title">Priority Weights</div>
-                                                <div className="group-field-helper">
-                                                    Used for the weighted delivery metric in Statistics. Source: <strong>{priorityWeightsSource}</strong>.
-                                                </div>
-                                                <div className="group-field-helper">
-                                                    Higher values increase the impact of that priority on weighted completion rate.
-                                                </div>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.25rem', alignItems: 'flex-start', marginTop: '0.35rem' }}>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', minWidth: '320px', flex: '0 1 420px' }}>
-                                                        {(priorityWeightsDraft || []).map((row) => (
-                                                            <div key={row.priority} style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 220px) 120px', gap: '0.6rem', alignItems: 'center' }}>
-                                                                <label className="team-selector-label" style={{ margin: 0 }}>{row.priority}</label>
-                                                                <input
-                                                                    type="number"
-                                                                    min="0"
-                                                                    step="0.01"
-                                                                    className="team-search-input"
-                                                                    value={row.weight}
-                                                                    onChange={(e) => updatePriorityWeightDraft(row.priority, e.target.value)}
-                                                                    aria-label={`${row.priority} weight`}
-                                                                />
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                    <div style={{ flex: '1 1 260px', minWidth: '240px', border: '1px solid var(--border)', borderRadius: '12px', background: '#fbfaf7', padding: '0.8rem 0.9rem' }}>
-                                                        <div className="team-selector-label" style={{ margin: 0 }}>Weights Sum</div>
-                                                        <div style={{ marginTop: '0.35rem', fontFamily: '\'IBM Plex Mono\', monospace', fontSize: '1.1rem', color: '#111827' }}>
-                                                            {priorityWeightsSum.toFixed(2)}
-                                                        </div>
-                                                        <div className="group-field-helper" style={{ marginTop: '0.25rem' }}>
-                                                            Recommended target: <strong>1.00</strong>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div className="group-pane-tools" style={{ marginTop: '0.55rem' }}>
-                                                    <button
-                                                        type="button"
-                                                        className="secondary compact"
-                                                        onClick={resetPriorityWeightsDraft}
-                                                    >
-                                                        Reset to defaults
-                                                    </button>
-                                                </div>
-                                                {priorityWeightsValidationError && (
-                                                    <div className="group-test-message error" style={{ marginTop: '0.35rem' }}>
-                                                        {priorityWeightsValidationError}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            )}
-                                        </div>
-                                        )}
-                                    </div>
+                                <JiraFieldSettings
+                                    {...{
+                                        groupManageTab,
+                                        showTechnicalFieldIds,
+                                        setShowTechnicalFieldIds,
+                                        sprintFieldNameDraft,
+                                        sprintFieldIdDraft,
+                                        setSprintFieldIdDraft,
+                                        setSprintFieldNameDraft,
+                                        loadingFields,
+                                        sprintFieldSearchQuery,
+                                        setSprintFieldSearchQuery,
+                                        setSprintFieldSearchOpen,
+                                        setSprintFieldSearchIndex,
+                                        handleSprintFieldSearchKeyDown,
+                                        sprintFieldSearchInputRef,
+                                        jiraFields,
+                                        sprintFieldSearchOpen,
+                                        sprintFieldSearchResults,
+                                        sprintFieldSearchIndex,
+                                        boardIdDraft,
+                                        boardSearchRemoteLoading,
+                                        boardSearchQuery,
+                                        setBoardSearchQuery,
+                                        setBoardSearchOpen,
+                                        setBoardSearchIndex,
+                                        handleBoardSearchKeyDown,
+                                        boardSearchInputRef,
+                                        boardSearchOpen,
+                                        boardSearchResults,
+                                        boardSearchIndex,
+                                        setBoardIdDraft,
+                                        setBoardNameDraft,
+                                        boardNameDraft,
+                                        clearBoardSelection,
+                                        loadingProjects,
+                                        jiraProjects,
+                                        projectSearchQuery,
+                                        setProjectSearchQuery,
+                                        setProjectSearchOpen,
+                                        setProjectSearchIndex,
+                                        handleProjectSearchKeyDown,
+                                        projectSearchInputRef,
+                                        projectSearchOpen,
+                                        projectSearchRemoteLoading,
+                                        projectSearchResults,
+                                        projectSearchIndex,
+                                        addProjectSelection,
+                                        selectedProjectsDraft,
+                                        resolveProjectName,
+                                        removeProjectSelection,
+                                        mappingHoverKey,
+                                        setMappingHoverKey,
+                                        issueTypesDraft,
+                                        parentNameFieldNameDraft,
+                                        storyPointsFieldNameDraft,
+                                        teamFieldNameDraft,
+                                        parentNameFieldIdDraft,
+                                        storyPointsFieldIdDraft,
+                                        teamFieldIdDraft,
+                                        issueTypeSearchQuery,
+                                        setIssueTypeSearchQuery,
+                                        setIssueTypeSearchOpen,
+                                        setIssueTypeSearchIndex,
+                                        handleIssueTypeSearchKeyDown,
+                                        issueTypeSearchInputRef,
+                                        issueTypeSearchOpen,
+                                        issueTypeSearchResults,
+                                        issueTypeSearchIndex,
+                                        addIssueType,
+                                        removeIssueType,
+                                        setParentNameFieldIdDraft,
+                                        setParentNameFieldNameDraft,
+                                        parentNameFieldSearchQuery,
+                                        setParentNameFieldSearchQuery,
+                                        setParentNameFieldSearchOpen,
+                                        setParentNameFieldSearchIndex,
+                                        handleParentNameFieldSearchKeyDown,
+                                        parentNameFieldSearchInputRef,
+                                        parentNameFieldSearchOpen,
+                                        parentNameFieldSearchResults,
+                                        parentNameFieldSearchIndex,
+                                        setStoryPointsFieldIdDraft,
+                                        setStoryPointsFieldNameDraft,
+                                        storyPointsFieldSearchQuery,
+                                        setStoryPointsFieldSearchQuery,
+                                        setStoryPointsFieldSearchOpen,
+                                        setStoryPointsFieldSearchIndex,
+                                        handleStoryPointsFieldSearchKeyDown,
+                                        storyPointsFieldSearchInputRef,
+                                        storyPointsFieldSearchOpen,
+                                        storyPointsFieldSearchResults,
+                                        storyPointsFieldSearchIndex,
+                                        teamFieldSearchQuery,
+                                        setTeamFieldSearchQuery,
+                                        setTeamFieldSearchOpen,
+                                        setTeamFieldSearchIndex,
+                                        handleTeamFieldSearchKeyDown,
+                                        teamFieldSearchInputRef,
+                                        teamFieldSearchOpen,
+                                        teamFieldSearchResults,
+                                        teamFieldSearchIndex,
+                                        setTeamFieldIdDraft,
+                                        setTeamFieldNameDraft,
+                                        capacityProjectDraft,
+                                        resolveCapacityProjectName,
+                                        setCapacityProjectDraft,
+                                        capacityProjectSearchQuery,
+                                        setCapacityProjectSearchQuery,
+                                        setCapacityProjectSearchOpen,
+                                        setCapacityProjectSearchIndex,
+                                        handleCapacityProjectSearchKeyDown,
+                                        capacityProjectSearchInputRef,
+                                        capacityProjectSearchOpen,
+                                        capacityProjectSearchResults,
+                                        capacityProjectSearchIndex,
+                                        capacityFieldNameDraft,
+                                        capacityFieldIdDraft,
+                                        setCapacityFieldIdDraft,
+                                        setCapacityFieldNameDraft,
+                                        capacityFieldSearchQuery,
+                                        setCapacityFieldSearchQuery,
+                                        setCapacityFieldSearchOpen,
+                                        setCapacityFieldSearchIndex,
+                                        handleCapacityFieldSearchKeyDown,
+                                        capacityFieldSearchInputRef,
+                                        capacityFieldSearchOpen,
+                                        capacityFieldSearchResults,
+                                        capacityFieldSearchIndex,
+                                        priorityWeightsSource,
+                                        priorityWeightsDraft,
+                                        updatePriorityWeightDraft,
+                                        priorityWeightsSum,
+                                        resetPriorityWeightsDraft,
+                                        priorityWeightsValidationError,
+                                    }}
+                                />
                                 )}
                                 {groupManageTab === 'epm' && (
-                                <div className="group-modal-body group-projects-layout">
-                                    <div className="group-pane group-single-pane">
-                                        <div
-                                            className="group-modal-tabs epm-settings-tabs"
-                                            role="tablist"
-                                            aria-label="EPM settings sections"
-                                            onKeyDown={handleEpmSettingsTabKeyDown}
-                                        >
-                                            <button
-                                                className={`group-modal-tab ${epmSettingsTab === 'scope' ? 'active' : ''}`}
-                                                onClick={() => setEpmSettingsTab('scope')}
-                                                role="tab"
-                                                aria-selected={epmSettingsTab === 'scope'}
-                                                aria-controls="epm-settings-scope-panel"
-                                                id="epm-settings-scope-tab"
-                                                type="button"
-                                            >Scope</button>
-                                            <button
-                                                className={`group-modal-tab ${epmSettingsTab === 'projects' ? 'active' : ''}`}
-                                                onClick={() => setEpmSettingsTab('projects')}
-                                                role="tab"
-                                                aria-selected={epmSettingsTab === 'projects'}
-                                                aria-controls="epm-settings-projects-panel"
-                                                id="epm-settings-projects-tab"
-                                                type="button"
-                                            >Projects</button>
-                                        </div>
-                                        {epmSettingsTab === 'scope' && (
-                                            <div
-                                                id="epm-settings-scope-panel"
-                                                className="group-pane-list epm-settings-tab-panel"
-                                                role="tabpanel"
-                                                aria-labelledby="epm-settings-scope-tab"
-                                            >
-                                                <div className="group-pane-header" style={{ paddingLeft: 0, paddingRight: 0 }}>
-                                                    <div className="group-pane-title">EPM scope</div>
-                                                    <div className="group-pane-subtitle">Choose the Jira Home goal scope and label prefix used for EPM project mapping.</div>
-                                                </div>
-                                                <div className="group-config-card" style={{ marginBottom: '0.9rem' }}>
-                                                    <div className="group-projects-subsection">
-                                                        <div className="team-selector-label">Atlassian site</div>
-                                                        <div className="group-field-helper">
-                                                            {epmScopeMeta.cloudId
-                                                                ? `Detected from Jira tenant_info: ${epmScopeMeta.cloudId}`
-                                                                : (epmScopeMeta.error || 'The Jira Home site will be detected automatically from your Atlassian credentials.')}
-                                                        </div>
-                                                    </div>
-                                                    <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
-                                                        <div className="team-selector-label">Root goal</div>
-                                                        <div className="group-field-helper">Choose the Jira Home parent goal that owns the EPM project catalog.</div>
-                                                        {selectedEpmRootGoal && (
-                                                            <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
-                                                                <span className="team-name">
-                                                                    {selectedEpmRootGoal.name || selectedEpmRootGoal.key}
-                                                                    {selectedEpmRootGoal.key ? ` (${selectedEpmRootGoal.key})` : ''}
-                                                                </span>
-                                                                <button
-                                                                    className="remove-btn"
-                                                                    onClick={clearEpmRootGoal}
-                                                                    type="button"
-                                                                    title="Clear root goal"
-                                                                >
-                                                                    ×
-                                                                </button>
-                                                            </div>
-                                                        )}
-                                                        {!selectedEpmRootGoal && (
-                                                            <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
-                                                                <input
-                                                                    type="text"
-                                                                    className="team-search-input"
-                                                                    value={epmRootGoalQuery}
-                                                                    onChange={(event) => {
-                                                                        setEpmRootGoalQuery(event.target.value);
-                                                                        setEpmRootGoalOpen(true);
-                                                                        setEpmRootGoalIndex(0);
-                                                                    }}
-                                                                    onFocus={() => setEpmRootGoalOpen(true)}
-                                                                    onBlur={() => { window.setTimeout(() => setEpmRootGoalOpen(false), 120); }}
-                                                                    onKeyDown={handleEpmRootGoalSearchKeyDown}
-                                                                    placeholder={epmRootGoalsLoading ? 'Loading root goals...' : 'Search root goals...'}
-                                                                />
-                                                                {showEpmRootGoalResults && (
-                                                                    <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
-                                                                        {epmRootGoalsLoading ? (
-                                                                            <div className="team-search-result-item is-empty">Loading root goals...</div>
-                                                                        ) : epmRootGoalsError ? (
-                                                                            <div className="team-search-result-item is-empty">{epmRootGoalsError}</div>
-                                                                        ) : !filteredEpmRootGoals.length ? (
-                                                                            <div className="team-search-result-item is-empty">No root goals found</div>
-                                                                        ) : (
-                                                                            visibleEpmRootGoals.map((goal, index) => (
-                                                                                <div
-                                                                                    key={goal.id || goal.key}
-                                                                                    className={`team-search-result-item ${activeEpmRootGoalIndex === index ? 'active' : ''}`}
-                                                                                    onClick={() => { void selectEpmRootGoal(goal); }}
-                                                                                >
-                                                                                    <strong>{goal.name || goal.key}</strong>
-                                                                                    {goal.key ? ` (${goal.key})` : ''}
-                                                                                </div>
-                                                                            ))
-                                                                        )}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
-                                                        <div className="team-selector-label">Sub-goal</div>
-                                                        <div className="group-field-helper">
-                                                            {!epmConfigDraft.scope?.rootGoalKey
-                                                                ? 'Select a root goal before choosing a sub-goal.'
-                                                                : 'Choose the Jira Home child goal that owns the direct EPM projects.'}
-                                                        </div>
-                                                        {selectedEpmSubGoal && (
-                                                            <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
-                                                                <span className="team-name">
-                                                                    {selectedEpmSubGoal.name || selectedEpmSubGoal.key}
-                                                                    {selectedEpmSubGoal.key ? ` (${selectedEpmSubGoal.key})` : ''}
-                                                                </span>
-                                                                <button
-                                                                    className="remove-btn"
-                                                                    onClick={clearEpmSubGoal}
-                                                                    type="button"
-                                                                    title="Clear sub-goal"
-                                                                    data-epm-scope-field="subGoal"
-                                                                >
-                                                                    ×
-                                                                </button>
-                                                            </div>
-                                                        )}
-                                                        {!selectedEpmSubGoal && (
-                                                            <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
-                                                                <input
-                                                                    type="text"
-                                                                    className="team-search-input"
-                                                                    value={epmSubGoalQuery}
-                                                                    onChange={(event) => {
-                                                                        setEpmSubGoalQuery(event.target.value);
-                                                                        setEpmSubGoalOpen(true);
-                                                                        setEpmSubGoalIndex(0);
-                                                                    }}
-                                                                    onFocus={() => {
-                                                                        if (!epmConfigDraft.scope?.rootGoalKey) return;
-                                                                        setEpmSubGoalOpen(true);
-                                                                        void loadEpmSubGoalsForRoot(epmConfigDraft.scope.rootGoalKey);
-                                                                    }}
-                                                                    onBlur={() => { window.setTimeout(() => setEpmSubGoalOpen(false), 120); }}
-                                                                    onKeyDown={handleEpmSubGoalSearchKeyDown}
-                                                                    placeholder={epmSubGoalsLoading ? 'Loading sub-goals...' : 'Search sub-goals...'}
-                                                                    disabled={!epmConfigDraft.scope?.rootGoalKey}
-                                                                    data-epm-scope-field="subGoal"
-                                                                />
-                                                                {showEpmSubGoalResults && (
-                                                                    <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
-                                                                        {epmSubGoalsLoading ? (
-                                                                            <div className="team-search-result-item is-empty">Loading sub-goals...</div>
-                                                                        ) : epmSubGoalsError ? (
-                                                                            <div className="team-search-result-item is-empty">{epmSubGoalsError}</div>
-                                                                        ) : !filteredEpmSubGoals.length ? (
-                                                                            <div className="team-search-result-item is-empty">No sub-goals found</div>
-                                                                        ) : (
-                                                                            visibleEpmSubGoals.map((goal, index) => (
-                                                                                <div
-                                                                                    key={goal.id || goal.key}
-                                                                                    className={`team-search-result-item ${activeEpmSubGoalIndex === index ? 'active' : ''}`}
-                                                                                    onClick={() => selectEpmSubGoal(goal)}
-                                                                                >
-                                                                                    <strong>{goal.name || goal.key}</strong>
-                                                                                    {goal.key ? ` (${goal.key})` : ''}
-                                                                                </div>
-                                                                            ))
-                                                                        )}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
-                                                    <div className="team-selector-label">Label prefix</div>
-                                                    <input
-                                                        type="text"
-                                                        className="team-search-input"
-                                                        value={epmConfigDraft.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX}
-                                                        onChange={(event) => updateEpmLabelPrefixDraft(event.target.value)}
-                                                        placeholder={DEFAULT_EPM_LABEL_PREFIX}
-                                                        data-epm-scope-field="labelPrefix"
-                                                    />
-                                                </div>
-                                            </div>
-                                        )}
-                                        {epmSettingsTab === 'projects' && (
-                                            <div
-                                                id="epm-settings-projects-panel"
-                                                className="group-pane-list epm-settings-tab-panel epm-projects-tab-panel"
-                                                role="tabpanel"
-                                                aria-labelledby="epm-settings-projects-tab"
-                                            >
-                                                <div className="group-pane-header" style={{ paddingLeft: 0, paddingRight: 0 }}>
-                                                    <div className="group-pane-header-row">
-                                                        <div>
-                                                            <div className="group-pane-title">EPM projects</div>
-                                                            <div className="group-pane-subtitle">Map direct Jira Home projects under the selected sub-goal to exact Jira labels.</div>
-                                                        </div>
-                                                        <div className="epm-projects-header-actions">
-                                                            {canLoadEpmProjects && (
-                                                                <span className="group-modal-meta" aria-live="polite">
-                                                                    {epmSettingsProjectsRefreshing
-                                                                        ? 'Refreshing...'
-                                                                        : epmSettingsProjectsLoadedAt
-                                                                            ? `${epmSettingsProjectsFetchMeta.homeProjectCount} Home projects · fetched ${epmSettingsProjectsLoadedAt}${epmSettingsProjectsFetchMeta.cacheHit ? ' · cached' : ''}`
-                                                                            : 'Not loaded'}
-                                                                    {epmSettingsProjectsFetchMeta.possiblyTruncated && epmSettingsProjectsFetchMeta.homeProjectLimit
-                                                                        ? ` · reached ${epmSettingsProjectsFetchMeta.homeProjectLimit} project limit`
-                                                                        : ''}
-                                                                </span>
-                                                            )}
-                                                            <button
-                                                                className="secondary compact"
-                                                                onClick={() => { void ensureEpmSettingsProjectsLoaded({ forceRefresh: true }).catch(() => {}); }}
-                                                                disabled={epmConfigLoading || epmConfigSaving || epmSettingsProjectsLoading || epmSettingsProjectsRefreshing || !canLoadEpmProjects}
-                                                                type="button"
-                                                            >
-                                                                {epmSettingsProjectsRefreshing ? 'Refreshing...' : 'Refresh from Jira Home'}
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div className="epm-projects-scroll-region">
-                                                {epmProjectPrerequisites.length > 0 && (
-                                                    <div className="epm-prerequisite-panel">
-                                                        <div className="group-pane-title">Setup required</div>
-                                                        <div className="group-pane-subtitle">Choose the Jira Home sub-goal and label prefix before loading project configuration.</div>
-                                                        <div className="epm-prerequisite-actions">
-                                                            {epmProjectPrerequisites.includes('subGoal') && (
-                                                                <button className="secondary compact" type="button" onClick={() => focusEpmScopeField('subGoal')}>
-                                                                    Set sub-goal
-                                                                </button>
-                                                            )}
-                                                            {epmProjectPrerequisites.includes('labelPrefix') && (
-                                                                <button className="secondary compact" type="button" onClick={() => focusEpmScopeField('labelPrefix')}>
-                                                                    Set label prefix
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                <div className="group-pane-tools" style={{ marginTop: '0.8rem', justifyContent: 'space-between', gap: '0.7rem' }}>
-                                                    <div className="epm-project-view-control" role="group" aria-label="EPM project view" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
-                                                        {['current', 'archived', 'all'].map((view) => (
-                                                            <button
-                                                                key={view}
-                                                                className={`secondary compact ${epmSettingsProjectView === view ? 'active' : ''}`}
-                                                                onClick={() => setEpmSettingsProjectView(view)}
-                                                                type="button"
-                                                                aria-pressed={epmSettingsProjectView === view}
-                                                                style={{ padding: '0.26rem 0.55rem', fontSize: '0.62rem' }}
-                                                            >
-                                                                {view === 'current' ? 'Current' : view === 'archived' ? 'Archived' : 'All'}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                    <button
-                                                        className="secondary compact"
-                                                        onClick={addCustomEpmProjectDraft}
-                                                        type="button"
-                                                    >
-                                                        Add custom Project
-                                                    </button>
-                                                </div>
-                                                {epmConfigLoading ? (
-                                                    renderEpmProjectSkeletonRows()
-                                                ) : epmProjectPrerequisites.length > 0 ? null
-                                                : (epmSettingsProjectsLoading && epmSettingsProjectRows.length === 0) ? (
-                                                    renderEpmProjectSkeletonRows()
-                                                ) : (epmSettingsProjectsError && epmSettingsProjectRows.length === 0) ? (
-                                                    <div className="epm-project-load-error">
-                                                        <div className="group-pane-subtitle">Failed to load EPM projects: {epmSettingsProjectsError}</div>
-                                                        <div className="epm-project-state-actions">
-                                                            <button
-                                                                className="secondary compact"
-                                                                onClick={() => { void ensureEpmSettingsProjectsLoaded({ forceRefresh: true }).catch(() => {}); }}
-                                                                type="button"
-                                                            >Retry</button>
-                                                            <button
-                                                                className="secondary compact"
-                                                                onClick={addCustomEpmProjectDraft}
-                                                                type="button"
-                                                            >Add custom Project</button>
-                                                        </div>
-                                                    </div>
-                                                ) : epmSettingsProjectRows.length > 0 ? (
-                                                    <div className="epm-project-settings-table" role="table" aria-label="EPM project labels" style={{ display: 'grid', rowGap: 0 }}>
-                                                        {epmSettingsProjectsError && (
-                                                            <div className="group-field-helper epm-project-load-error">
-                                                                Failed to refresh: {epmSettingsProjectsError}
-                                                                <button
-                                                                    className="secondary compact"
-                                                                    onClick={() => { void ensureEpmSettingsProjectsLoaded({ forceRefresh: true }).catch(() => {}); }}
-                                                                    type="button"
-                                                                >Retry</button>
-                                                            </div>
-                                                        )}
-                                                        <div className="epm-project-table-header" role="row" style={{ display: 'grid', gridTemplateColumns: 'minmax(18rem, 1.35fr) 7rem minmax(18rem, 1fr) auto', alignItems: 'center', columnGap: '0.65rem', padding: '0.4rem 0', borderBottom: '1px solid rgba(148,163,184,0.24)' }}>
-                                                            <button
-                                                                className="epm-project-table-sort"
-                                                                onClick={() => setEpmSettingsProjectSort('name')}
-                                                                type="button"
-                                                                aria-pressed={epmSettingsProjectSort === 'name'}
-                                                                style={{ justifySelf: 'start', padding: 0, border: 0, background: 'transparent', color: 'var(--text-muted)', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', cursor: 'pointer' }}
-                                                            >
-                                                                Project{epmSettingsProjectSort === 'name' ? ' ↑' : ''}
-                                                            </button>
-                                                            <button
-                                                                className="epm-project-table-sort"
-                                                                onClick={() => setEpmSettingsProjectSort('status')}
-                                                                type="button"
-                                                                aria-pressed={epmSettingsProjectSort === 'status'}
-                                                                style={{ justifySelf: 'start', padding: 0, border: 0, background: 'transparent', color: 'var(--text-muted)', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', cursor: 'pointer' }}
-                                                            >
-                                                                Status{epmSettingsProjectSort === 'status' ? ' ↑' : ''}
-                                                            </button>
-                                                            <button
-                                                                className="epm-project-table-sort"
-                                                                onClick={() => setEpmSettingsProjectSort('label')}
-                                                                type="button"
-                                                                aria-pressed={epmSettingsProjectSort === 'label'}
-                                                                style={{ justifySelf: 'start', padding: 0, border: 0, background: 'transparent', color: 'var(--text-muted)', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', cursor: 'pointer' }}
-                                                            >
-                                                                Jira label{epmSettingsProjectSort === 'label' ? ' ↑' : ''}
-                                                            </button>
-                                                            <span aria-hidden="true" />
-                                                        </div>
-                                                        {epmSettingsProjectRows.map((project) => {
-                                                            const rowKey = getEpmLabelRowKey(project.id);
-                                                            const currentLabel = project.label || '';
-                                                            const results = getEpmLabelSearchResults(project.id);
-                                                            const isSearching = Boolean(labelSearchLoading[rowKey]);
-                                                            const showAllLabels = Boolean(epmLabelShowAll[rowKey]);
-                                                            const isChangingLabel = Boolean(epmLabelChanging[rowKey]);
-                                                            const activeIndex = Math.min(labelSearchIndex[rowKey] || 0, Math.max(results.length - 1, 0));
-                                                            const projectStatus = String(project.stateLabel || project.stateValue || '').trim();
-                                                            const canRemoveProject = project.homeProjectId === null || project.missingFromHomeFetch;
-                                                            const isEmptyCustomProject = isEmptyCustomEpmProjectRow(project);
-                                                            const openEpmLabelSearchFromButton = (event) => {
-                                                                setEpmLabelChanging(prev => ({ ...prev, [rowKey]: true }));
-                                                                window.setTimeout(() => {
-                                                                    const wrapper = event.target.closest('.epm-project-settings-row');
-                                                                    const input = wrapper ? wrapper.querySelector('.team-search-input[placeholder*="Search Jira labels"]') : null;
-                                                                    if (input) {
-                                                                        input.focus();
-                                                                        openEpmLabelMenu(project.id, input, showAllLabels);
-                                                                    } else {
-                                                                        setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                        void loadEpmProjectLabels(project.id, showAllLabels);
-                                                                    }
-                                                                }, 0);
-                                                            };
-                                                            return (
-                                                                <div key={project.id} className="epm-project-settings-row" role="row" style={{ display: 'grid', gridTemplateColumns: 'minmax(18rem, 1.35fr) 7rem minmax(18rem, 1fr) auto', alignItems: 'center', columnGap: '0.65rem', rowGap: '0.35rem', padding: '0.55rem 0', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
-                                                                    <div className="epm-project-name-cell" role="cell" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0, maxWidth: '100%' }}>
-                                                                        <input
-                                                                            type="text"
-                                                                            className="team-search-input"
-                                                                            value={project.name || ''}
-                                                                            onChange={(event) => updateEpmProjectDraft(project.id, 'name', event.target.value)}
-                                                                            placeholder={project.homeName || project.name || 'Project name'}
-                                                                            aria-label={`Project name for ${project.displayName || project.homeName || project.id}`}
-                                                                            style={{ height: '2rem', minWidth: 0, width: '100%', padding: '0.3rem 0.55rem', fontSize: '0.82rem' }}
-                                                                        />
-                                                                        {project.homeUrl && (
-                                                                            <a
-                                                                                className="epm-project-home-shortcut"
-                                                                                href={project.homeUrl}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                                title="Open Jira Home project"
-                                                                                aria-label={`Open Jira Home project for ${project.displayName || project.homeName || project.id}`}
-                                                                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '1.75rem', height: '1.75rem', border: '1px solid var(--border)', borderRadius: '999px', background: '#fff', color: 'var(--accent)', textDecoration: 'none' }}
-                                                                            >
-                                                                                <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" focusable="false">
-                                                                                    <path d="M7 17L17 7" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                                                                                    <path d="M9 7h8v8" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                                                                                </svg>
-                                                                            </a>
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="epm-project-status-cell" role="cell" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-                                                                        {projectStatus && (
-                                                                            <span className="epm-home-status-pill" title="Jira Home status" style={{ maxWidth: '100%', border: '1px solid var(--border)', borderRadius: '999px', padding: '0.16rem 0.45rem', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.58rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', background: '#fbfaf7', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                                {projectStatus}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="epm-project-label-cell" role="cell" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, maxWidth: '100%', flexWrap: 'wrap' }}>
-                                                                        {currentLabel ? (
-                                                                            <div className="epm-label-selected-chip" title={currentLabel} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, maxWidth: '100%', border: '1px solid var(--border)', borderRadius: '999px', background: '#f8f9fa', padding: '0.18rem 0.25rem 0.18rem 0.55rem' }}>
-                                                                                <span className="team-name" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>{currentLabel}</span>
-                                                                                <button
-                                                                                    className="epm-label-change-shortcut"
-                                                                                    onClick={openEpmLabelSearchFromButton}
-                                                                                    type="button"
-                                                                                    title="Change label"
-                                                                                    aria-label={`Change Jira label for ${project.displayName || project.homeName || project.id}`}
-                                                                                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '1.35rem', height: '1.35rem', flex: '0 0 auto', border: '1px solid var(--border)', borderRadius: '999px', background: '#fff', color: 'var(--text-muted)', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.8rem', lineHeight: 1, padding: 0, cursor: 'pointer' }}
-                                                                                >
-                                                                                    &times;
-                                                                                </button>
-                                                                            </div>
-                                                                        ) : (
-                                                                            <div className="epm-label-choice-actions" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flexWrap: 'wrap' }}>
-                                                                                <div className="group-field-helper" style={{ margin: 0, whiteSpace: 'nowrap' }}>No Jira label selected.</div>
-                                                                                {!isChangingLabel && !isEmptyCustomProject && (
-                                                                                    <button
-                                                                                        className="secondary compact"
-                                                                                        onClick={openEpmLabelSearchFromButton}
-                                                                                        type="button"
-                                                                                        style={{ padding: '0.22rem 0.55rem', fontSize: '0.62rem', whiteSpace: 'nowrap' }}
-                                                                                    >
-                                                                                        Choose label
-                                                                                    </button>
-                                                                                )}
-                                                                                {isEmptyCustomProject && (
-                                                                                    <button
-                                                                                        className="secondary compact"
-                                                                                        onClick={() => removeEpmProjectDraft(project.id)}
-                                                                                        type="button"
-                                                                                        title="Delete empty project"
-                                                                                        aria-label="Delete empty project"
-                                                                                        style={{ padding: '0.22rem 0.55rem', fontSize: '0.62rem', whiteSpace: 'nowrap' }}
-                                                                                    >
-                                                                                        Delete
-                                                                                    </button>
-                                                                                )}
-                                                                            </div>
-                                                                        )}
-                                                                        {isChangingLabel && (
-                                                                        <div className="team-search-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: '1 1 260px', minWidth: 0 }}>
-                                                                            <input
-                                                                                type="text"
-                                                                                className="team-search-input"
-                                                                                placeholder={isSearching ? 'Searching labels...' : 'Search Jira labels...'}
-                                                                                value={labelSearchQuery[rowKey] || ''}
-                                                                                onChange={(event) => {
-                                                                                    const value = event.target.value;
-                                                                                    setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
-                                                                                    openEpmLabelMenu(project.id, event.currentTarget, showAllLabels);
-                                                                                    setLabelSearchIndex(prev => ({ ...prev, [rowKey]: 0 }));
-                                                                                }}
-                                                                                onFocus={(event) => {
-                                                                                    openEpmLabelMenu(project.id, event.currentTarget, showAllLabels);
-                                                                                }}
-                                                                                onBlur={() => window.setTimeout(() => {
-                                                                                    setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false }));
-                                                                                    setEpmLabelMenuAnchor(prev => (prev && prev.rowKey === rowKey ? null : prev));
-                                                                                    if (epmLabelMenuInputRef.current && !document.body.contains(epmLabelMenuInputRef.current)) {
-                                                                                        epmLabelMenuInputRef.current = null;
-                                                                                    }
-                                                                                }, 120)}
-                                                                                onKeyDown={(event) => handleEpmLabelSearchKeyDown(project.id, event, results)}
-                                                                                style={{ height: '2rem', minWidth: '10rem', flex: '1 1 180px', padding: '0.3rem 0.55rem', fontSize: '0.82rem' }}
-                                                                            />
-                                                                            <button
-                                                                                className="secondary compact"
-                                                                                onClick={(event) => {
-                                                                                    const nextShowAll = !showAllLabels;
-                                                                                    setEpmLabelShowAll(prev => ({ ...prev, [rowKey]: nextShowAll }));
-                                                                                    const wrapper = event.target.closest('.team-search-wrapper');
-                                                                                    const input = wrapper ? wrapper.querySelector('.team-search-input') : null;
-                                                                                    if (input) {
-                                                                                        openEpmLabelMenu(project.id, input, nextShowAll);
-                                                                                    } else {
-                                                                                        setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                                        void loadEpmProjectLabels(project.id, nextShowAll);
-                                                                                    }
-                                                                                }}
-                                                                                type="button"
-                                                                                style={{ padding: '0.28rem 0.55rem', whiteSpace: 'nowrap' }}
-                                                                            >
-                                                                                {showAllLabels ? 'Use prefix' : 'Show all labels'}
-                                                                            </button>
-                                                                        </div>
-                                                                        )}
-                                                                    </div>
-                                                                    {canRemoveProject && !isEmptyCustomProject && (
-                                                                        <button
-                                                                            className="secondary compact"
-                                                                            onClick={() => removeEpmProjectDraft(project.id)}
-                                                                            type="button"
-                                                                            title="Remove Project"
-                                                                            aria-label={`Remove ${project.displayName || project.homeName || project.id}`}
-                                                                            style={{ padding: '0.28rem 0.55rem', flex: '0 0 auto' }}
-                                                                        >
-                                                                            Remove
-                                                                        </button>
-                                                                    )}
-                                                                    {project.missingFromHomeFetch && (
-                                                                        <div className="group-field-helper epm-project-row-warning" style={{ gridColumn: '1 / -1', margin: 0 }}>
-                                                                            Not returned by latest Jira Home refresh.
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                ) : (epmSettingsProjects.length > 0 && epmSettingsProjectsLoaded && !epmSettingsProjectsLoading && !epmSettingsProjectsError) ? (
-                                                    <div className="epm-project-empty-state">
-                                                        <div className="group-pane-subtitle">No projects in this view.</div>
-                                                    </div>
-                                                ) : (epmSettingsProjects.length === 0 && epmSettingsProjectsLoaded && !epmSettingsProjectsLoading && !epmSettingsProjectsError) ? (
-                                                    <div className="epm-project-empty-state">
-                                                        <div className="group-pane-subtitle">No Home projects under the configured sub-goal.</div>
-                                                        <div className="group-pane-subtitle">This sub-goal has no direct Jira Home projects. Choose a different child goal.</div>
-                                                        <div className="epm-project-state-actions">
-                                                            <button
-                                                                className="secondary compact"
-                                                                onClick={addCustomEpmProjectDraft}
-                                                                type="button"
-                                                            >Add custom Project</button>
-                                                        </div>
-                                                    </div>
-                                                ) : (epmSettingsProjectsLoading || epmSettingsProjectsRefreshing) ? (
-                                                    renderEpmProjectSkeletonRows()
-                                                ) : null}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                    {epmLabelMenuAnchor && labelSearchOpen[epmLabelMenuAnchor.rowKey] && (
-                                        <div
-                                            className="team-search-results epm-label-menu-layer"
-                                            style={{
-                                                top: epmLabelMenuAnchor.top,
-                                                left: epmLabelMenuAnchor.left,
-                                                width: epmLabelMenuAnchor.width,
-                                            }}
-                                            onMouseDown={(event) => event.preventDefault()}
-                                        >
-                                            {getEpmLabelSearchResults(epmLabelMenuAnchor.projectId).length === 0 ? (
-                                                <div className="team-search-result-item is-empty">
-                                                    {labelSearchLoading[epmLabelMenuAnchor.rowKey] ? 'Searching labels...' : 'No labels found'}
-                                                </div>
-                                            ) : getEpmLabelSearchResults(epmLabelMenuAnchor.projectId).map((label, index) => (
-                                                <div
-                                                    key={`${epmLabelMenuAnchor.rowKey}-${label}`}
-                                                    className={`team-search-result-item ${(labelSearchIndex[epmLabelMenuAnchor.rowKey] || 0) === index ? 'active' : ''}`}
-                                                    onMouseEnter={() => setLabelSearchIndex(prev => ({ ...prev, [epmLabelMenuAnchor.rowKey]: index }))}
-                                                    onClick={() => selectEpmProjectLabel(epmLabelMenuAnchor.projectId, label)}
-                                                >
-                                                    {label}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
+                                <EpmSettings
+                                    {...{
+                                        DEFAULT_EPM_LABEL_PREFIX,
+                                        epmSettingsTab,
+                                        setEpmSettingsTab,
+                                        handleEpmSettingsTabKeyDown,
+                                        epmScopeMeta,
+                                        selectedEpmRootGoal,
+                                        clearEpmRootGoal,
+                                        epmRootGoalQuery,
+                                        setEpmRootGoalQuery,
+                                        setEpmRootGoalOpen,
+                                        setEpmRootGoalIndex,
+                                        handleEpmRootGoalSearchKeyDown,
+                                        epmRootGoalsLoading,
+                                        showEpmRootGoalResults,
+                                        epmRootGoalsError,
+                                        filteredEpmRootGoals,
+                                        visibleEpmRootGoals,
+                                        activeEpmRootGoalIndex,
+                                        selectEpmRootGoal,
+                                        selectedEpmSubGoal,
+                                        clearEpmSubGoal,
+                                        epmConfigDraft,
+                                        epmSubGoalQuery,
+                                        setEpmSubGoalQuery,
+                                        setEpmSubGoalOpen,
+                                        setEpmSubGoalIndex,
+                                        loadEpmSubGoalsForRoot,
+                                        handleEpmSubGoalSearchKeyDown,
+                                        epmSubGoalsLoading,
+                                        showEpmSubGoalResults,
+                                        epmSubGoalsError,
+                                        filteredEpmSubGoals,
+                                        visibleEpmSubGoals,
+                                        activeEpmSubGoalIndex,
+                                        selectEpmSubGoal,
+                                        updateEpmLabelPrefixDraft,
+                                        epmProjectPrerequisites,
+                                        canLoadEpmProjects,
+                                        epmConfigLoading,
+                                        epmConfigSaving,
+                                        epmSettingsProjectsError,
+                                        epmSettingsProjectsRefreshing,
+                                        ensureEpmSettingsProjectsLoaded,
+                                        epmSettingsProjectsLoadedAt,
+                                        epmSettingsProjectsFetchMeta,
+                                        epmSettingsProjectView,
+                                        setEpmSettingsProjectView,
+                                        focusEpmScopeField,
+                                        addCustomEpmProjectDraft,
+                                        epmSettingsProjectsLoading,
+                                        renderEpmProjectSkeletonRows,
+                                        epmSettingsProjectsLoaded,
+                                        epmSettingsProjectRows,
+                                        epmSettingsProjectSort,
+                                        setEpmSettingsProjectSort,
+                                        epmSettingsProjects,
+                                        getEpmLabelRowKey,
+                                        getEpmLabelSearchResults,
+                                        labelSearchLoading,
+                                        epmLabelShowAll,
+                                        epmLabelChanging,
+                                        labelSearchIndex,
+                                        isEmptyCustomEpmProjectRow,
+                                        setEpmLabelChanging,
+                                        openEpmLabelMenu,
+                                        loadEpmProjectLabels,
+                                        updateEpmProjectDraft,
+                                        labelSearchQuery,
+                                        setLabelSearchQuery,
+                                        setLabelSearchIndex,
+                                        setLabelSearchOpen,
+                                        setEpmLabelMenuAnchor,
+                                        epmLabelMenuInputRef,
+                                        handleEpmLabelSearchKeyDown,
+                                        setEpmLabelShowAll,
+                                        removeEpmProjectDraft,
+                                        epmLabelMenuAnchor,
+                                        labelSearchOpen,
+                                        selectEpmProjectLabel,
+                                    }}
+                                />
                                 )}
                                 {groupManageTab === 'teams' && (
-                                <div className="group-modal-body group-modal-split">
-                                    <div className={`group-pane group-pane-left ${showGroupListMobile ? 'is-mobile-active' : ''}`}>
-                                        <div className="group-pane-header">
-                                            <div className="group-pane-header-row">
-                                                <div className="group-pane-title">Groups</div>
-                                                <button className="secondary compact group-add-button" onClick={addGroupDraftRow} type="button">
-                                                    + Add group
-                                                </button>
-                                            </div>
-                                            <div className="group-pane-search">
-                                                <input
-                                                    type="text"
-                                                    className="group-filter-input"
-                                                    placeholder="Search groups or teams..."
-                                                    value={groupSearchQuery}
-                                                    onChange={(event) => setGroupSearchQuery(event.target.value)}
-                                                />
-                                            </div>
-                                            <div className="group-pane-count">
-                                                {filteredGroupDrafts.length} group{filteredGroupDrafts.length !== 1 ? 's' : ''}
-                                            </div>
-                                            <button
-                                                className="group-pane-mobile-close"
-                                                onClick={() => setShowGroupListMobile(false)}
-                                                type="button"
-                                            >
-                                                Back
-                                            </button>
-                                        </div>
-                                        <div className="group-pane-list">
-                                            {filteredGroupDrafts.length === 0 ? (
-                                                <div className="group-pane-empty">No groups match this search.</div>
-                                            ) : filteredGroupDrafts.map(group => {
-                                                const teamCount = (group.teamIds || []).length;
-                                                const isActive = activeGroupDraft?.id === group.id;
-                                                const isDefault = groupDraft?.defaultGroupId === group.id;
-                                                return (
-                                                    <button
-                                                        key={group.id}
-                                                        className={`group-list-item ${isActive ? 'active' : ''}`}
-                                                        onClick={() => {
-                                                            setActiveGroupDraftId(group.id);
-                                                            setShowGroupListMobile(false);
-                                                        }}
-                                                        type="button"
-                                                    >
-                                                        <div className="group-list-line">
-                                                            <span className="group-list-name">{group.name || 'Untitled group'}</span>
-                                                            <span className="group-list-dot">·</span>
-                                                            <span className="group-list-meta">{teamCount} team{teamCount !== 1 ? 's' : ''}</span>
-                                                        </div>
-                                                        <div className="group-list-star" aria-hidden="true">
-                                                            {isDefault ? '★' : '☆'}
-                                                        </div>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                    <div className="group-pane group-pane-right">
-                                        <div className="group-pane-mobile-header">
-                                            <button
-                                                className="secondary compact"
-                                                onClick={() => setShowGroupListMobile(true)}
-                                                type="button"
-                                            >
-                                                Groups
-                                            </button>
-                                            <div className="group-pane-mobile-title">
-                                                {activeGroupDraft ? (activeGroupDraft.name || 'Untitled group') : 'No group selected'}
-                                            </div>
-                                        </div>
-                                        {groupsError && (
-                                            <div className="group-modal-warning">{groupsError}</div>
-                                        )}
-                                        {(groupWarnings || []).length > 0 && (
-                                            <div className="group-modal-warning">
-                                                {(groupWarnings || []).join(' ')}
-                                            </div>
-                                        )}
-                                        {groupDraftError && (
-                                            <div className="group-modal-warning">{groupDraftError}</div>
-                                        )}
-                                        <div className="group-pane-tools">
-                                            <button
-                                                className="secondary compact"
-                                                onClick={fetchAllTeamsFromJira}
-                                                type="button"
-                                                disabled={loadingTeams}
-                                            >
-                                                {loadingTeams ? 'Refreshing...' : 'Refresh teams'}
-                                            </button>
-                                            <span className="group-modal-meta">{teamCacheLabel}</span>
-                                            <span className="group-modal-helper" title="Team list is scoped to the currently selected sprint.">
-                                                Scoped to sprint
-                                            </span>
-                                        </div>
-                                        {loadingTeams && (
-                                            <div className="group-modal-meta">Loading teams...</div>
-                                        )}
-                                        {(groupDraft?.groups || []).length === 0 && (
-                                            <div className="group-pane-empty">No groups yet. Click "Add group" to create one.</div>
-                                        )}
-                                        {activeGroupDraft ? (
-                                            <div className="group-editor">
-                                                <div className="group-editor-header">
-                                                    <input
-                                                        type="text"
-                                                        value={activeGroupDraft.name}
-                                                        onChange={(event) => updateGroupDraftName(activeGroupDraft.id, event.target.value)}
-                                                        placeholder="Group name"
-                                                        className="group-name-input"
-                                                    />
-                                                    <button
-                                                        className={`group-star-button ${groupDraft?.defaultGroupId === activeGroupDraft.id ? 'active' : ''}`}
-                                                        onClick={() => toggleDefaultGroupDraft(activeGroupDraft.id)}
-                                                        title="Set as default group"
-                                                        aria-label={groupDraft?.defaultGroupId === activeGroupDraft.id ? 'Unset default group' : 'Set as default group'}
-                                                        type="button"
-                                                    >
-                                                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                                                            <path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.6 9.6l5.8-.8L12 3.5z"/>
-                                                        </svg>
-                                                    </button>
-                                                    <button
-                                                        className="secondary compact"
-                                                        onClick={() => duplicateGroupDraft(activeGroupDraft.id)}
-                                                        type="button"
-                                                    >
-                                                        Duplicate
-                                                    </button>
-                                                </div>
-                                                <div className="team-selector">
-                                                    <div className="team-selector-header">
-                                                        <div className="team-selector-label">
-                                                            Teams {(activeGroupDraft.teamIds || []).length}/12
-                                                        </div>
-                                                        {(activeGroupDraft.teamIds || []).length >= 12 && (
-                                                            <div className="team-selector-limit">Limit reached (12 max)</div>
-                                                        )}
-                                                    </div>
-                                                    {(activeGroupDraft.teamIds || []).length === 0 ? (
-                                                        <div className="team-selector-empty">
-                                                            No teams selected. Search and add teams below.
-                                                        </div>
-                                                    ) : (
-                                                        <div className="selected-teams-list is-capped">
-                                                            {(activeGroupDraft.teamIds || []).map((teamId, index) => {
-                                                                const teamName = resolveTeamName(teamId);
-                                                                const isLast = index === (activeGroupDraft.teamIds || []).length - 1;
-                                                                return (
-                                                                    <div key={teamId} className="selected-team-chip">
-                                                                        <span className="team-name">{teamName}</span>
-                                                                        <button
-                                                                            className="remove-btn"
-                                                                            onClick={() => removeTeamFromGroup(activeGroupDraft.id, teamId)}
-                                                                            type="button"
-                                                                            title="Remove team"
-                                                                            ref={isLast ? (node) => { teamChipLastRef.current[activeGroupDraft.id] = node; } : null}
-                                                                        >
-                                                                            ×
-                                                                        </button>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    )}
-                                                    {availableTeams.length === 0 && !loadingTeams ? (
-                                                        <div className="team-selector-empty">
-                                                            No teams available. Load tasks first or refresh teams above.
-                                                        </div>
-                                                    ) : (activeGroupDraft.teamIds || []).length < 12 && (
-                                                        <div className="team-search-wrapper">
-                                                            <input
-                                                                type="text"
-                                                                className="team-search-input"
-                                                                placeholder="Search teams to add..."
-                                                                value={activeTeamQuery}
-                                                                onChange={(event) => handleTeamSearchChange(activeGroupDraft.id, event.target.value)}
-                                                                onFocus={() => handleTeamSearchFocus(activeGroupDraft.id)}
-                                                                onBlur={() => handleTeamSearchBlur(activeGroupDraft.id)}
-                                                                onKeyDown={(event) => handleTeamSearchKeyDown(activeGroupDraft.id, event, activeTeamResultsLimited)}
-                                                                ref={(node) => { teamSearchInputRefs.current[activeGroupDraft.id] = node; }}
-                                                            />
-                                                            {teamSearchOpen[activeGroupDraft.id] && activeTeamQuery.trim() && (
-                                                                <div
-                                                                    className={`team-search-results ${(activeGroupDraft.teamIds || []).length >= 12 ? 'disabled' : ''}`}
-                                                                    onMouseDown={(event) => event.preventDefault()}
-                                                                >
-                                                                    {activeTeamResultsLimited.length === 0 ? (
-                                                                        <div className="team-search-result-item is-empty">
-                                                                            No teams found
-                                                                        </div>
-                                                                    ) : activeTeamResultsLimited.map((team, index) => (
-                                                                        <div
-                                                                            key={team.id}
-                                                                            className={`team-search-result-item ${index === activeTeamIndex ? 'active' : ''}`}
-                                                                            onClick={() => addTeamToGroup(activeGroupDraft.id, team.id)}
-                                                                        >
-                                                                            {team.name}
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                            {teamSearchFeedback[activeGroupDraft.id] && (
-                                                                <div className={`team-search-feedback ${teamSearchFeedback[activeGroupDraft.id].tone || ''}`}>
-                                                                    {teamSearchFeedback[activeGroupDraft.id].message}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div className="component-selector">
-                                                    <label className="component-selector-label">Components for missing info</label>
-                                                    {(activeGroupDraft?.missingInfoComponents || []).length > 0 && (
-                                                        <div className="selected-components-list">
-                                                            {activeGroupDraft.missingInfoComponents.map(comp => (
-                                                                <div key={comp} className="component-chip">
-                                                                    <span className="component-name">{comp}</span>
-                                                                    <button
-                                                                        className="remove-btn"
-                                                                        onClick={() => removeGroupMissingInfoComponent(activeGroupDraft.id, comp)}
-                                                                        title={`Remove ${comp}`}
-                                                                        type="button"
-                                                                    >×</button>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                    <div className="component-search-wrapper">
-                                                        <input
-                                                            type="text"
-                                                            className="component-search-input"
-                                                            placeholder="Search components..."
-                                                            value={componentSearchQuery}
-                                                            onChange={(e) => {
-                                                                setComponentSearchQuery(e.target.value);
-                                                                setComponentSearchOpen(true);
-                                                            }}
-                                                            onFocus={() => setComponentSearchOpen(true)}
-                                                            onBlur={() => window.setTimeout(() => setComponentSearchOpen(false), 200)}
-                                                            onKeyDown={handleComponentSearchKeyDown}
-                                                        />
-                                                        {componentSearchOpen && componentSearchQuery.trim() && (
-                                                            <div className="component-search-results">
-                                                                {componentSearchLoading ? (
-                                                                    <div className="component-search-result-item is-empty">Searching...</div>
-                                                                ) : filteredComponentSearchResults.length === 0 ? (
-                                                                    <div className="component-search-result-item is-empty">No components found</div>
-                                                                ) : filteredComponentSearchResults.map((comp, index) => (
-                                                                    <div
-                                                                        key={comp.id || comp.name}
-                                                                        className={`component-search-result-item ${index === componentSearchIndex ? 'active' : ''}`}
-                                                                        onMouseDown={(e) => {
-                                                                            e.preventDefault();
-                                                                            addGroupMissingInfoComponent(activeGroupDraft.id, comp.name);
-                                                                        }}
-                                                                    >
-                                                                        {comp.name}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <div className="component-selector">
-                                                    <label className="component-selector-label">Epics for excluded capacity</label>
-                                                    {(activeGroupDraft?.excludedCapacityEpics || []).length > 0 && (
-                                                        <div className="selected-components-list">
-                                                            {(activeGroupDraft.excludedCapacityEpics || []).map((epicKey, index) => (
-                                                                <div key={epicKey} className="component-chip">
-                                                                    <span className="component-name">{epicKey}</span>
-                                                                    <button
-                                                                        className="remove-btn"
-                                                                        onClick={() => removeGroupExcludedCapacityEpic(activeGroupDraft.id, epicKey)}
-                                                                        title={`Remove ${epicKey}`}
-                                                                        type="button"
-                                                                        ref={index === (activeGroupDraft.excludedCapacityEpics || []).length - 1 ? excludedEpicChipLastRef : null}
-                                                                    >×</button>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                    <div className="component-search-wrapper">
-                                                        <input
-                                                            type="text"
-                                                            className="component-search-input"
-                                                            placeholder="Search epics by key or summary..."
-                                                            value={excludedEpicSearchQuery}
-                                                            onChange={(e) => handleExcludedEpicSearchChange(e.target.value)}
-                                                            onFocus={handleExcludedEpicSearchFocus}
-                                                            onBlur={handleExcludedEpicSearchBlur}
-                                                            onKeyDown={handleExcludedEpicSearchKeyDown}
-                                                            ref={excludedEpicSearchInputRef}
-                                                        />
-                                                        {excludedEpicSearchOpen && excludedEpicSearchQuery.trim() && (
-                                                            <div className="component-search-results">
-                                                                {excludedEpicSearchLoading ? (
-                                                                    <div className="component-search-result-item is-empty">Searching...</div>
-                                                                ) : filteredExcludedEpicSearchResults.length === 0 ? (
-                                                                    <div className="component-search-result-item is-empty">No epics found</div>
-                                                                ) : filteredExcludedEpicSearchResults.map((epic, index) => (
-                                                                    <div
-                                                                        key={epic.key}
-                                                                        className={`component-search-result-item ${index === excludedEpicSearchIndex ? 'active' : ''}`}
-                                                                        onMouseDown={(e) => {
-                                                                            e.preventDefault();
-                                                                            addGroupExcludedCapacityEpic(activeGroupDraft.id, epic.key);
-                                                                        }}
-                                                                    >
-                                                                        <span>{epic.key}</span>
-                                                                        {epic.summary ? <span className="component-result-meta"> · {epic.summary}</span> : null}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <details className="group-advanced" open={showGroupAdvanced}>
-                                                    <summary onClick={(event) => {
-                                                        event.preventDefault();
-                                                        setShowGroupAdvanced(prev => {
-                                                            const next = !prev;
-                                                            if (!next) {
-                                                                setShowGroupImport(false);
-                                                            }
-                                                            return next;
-                                                        });
-                                                    }}>
-                                                        Advanced
-                                                    </summary>
-                                                    <div className="group-advanced-body">
-                                                        <div className="group-advanced-row">
-                                                            <button className="secondary compact" onClick={exportGroupsConfig} type="button">
-                                                                Export JSON
-                                                            </button>
-                                                        </div>
-                                                        <div className="group-advanced-row">
-                                                            <button
-                                                                className="secondary compact"
-                                                                onClick={() => {
-                                                                    setShowGroupAdvanced(true);
-                                                                    setShowGroupImport(true);
-                                                                }}
-                                                                type="button"
-                                                            >
-                                                                Import JSON
-                                                            </button>
-                                                            <span className="group-modal-meta">Import overwrites current draft.</span>
-                                                        </div>
-                                                        {showGroupImport && (
-                                                            <>
-                                                                <textarea
-                                                                    value={groupImportText}
-                                                                    onChange={(event) => setGroupImportText(event.target.value)}
-                                                                    placeholder='{"version":1,"groups":[...]}'
-                                                                />
-                                                                <div className="group-advanced-row">
-                                                                    <button className="secondary compact" onClick={importGroupsConfig} type="button">
-                                                                        Apply Import
-                                                                    </button>
-                                                                </div>
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                </details>
-                                                <div className="group-danger-zone">
-                                                    <div className="group-danger-title">Danger zone</div>
-                                                    <button
-                                                        className="secondary compact danger"
-                                                        onClick={() => removeGroupDraft(activeGroupDraft.id)}
-                                                        type="button"
-                                                    >
-                                                        Delete group
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="group-pane-empty">Select a group to edit, or add a new one.</div>
-                                        )}
-                                    </div>
-                                </div>
+                                <TeamGroupsSettings
+                                    {...{
+                                        groupManageTab,
+                                        showGroupListMobile,
+                                        setShowGroupListMobile,
+                                        addGroupDraftRow,
+                                        groupSearchQuery,
+                                        setGroupSearchQuery,
+                                        filteredGroupDrafts,
+                                        activeGroupDraft,
+                                        groupDraft,
+                                        setActiveGroupDraftId,
+                                        groupsError,
+                                        groupWarnings,
+                                        groupDraftError,
+                                        fetchAllTeamsFromJira,
+                                        loadingTeams,
+                                        teamCacheLabel,
+                                        updateGroupDraftName,
+                                        toggleDefaultGroupDraft,
+                                        duplicateGroupDraft,
+                                        resolveTeamName,
+                                        removeTeamFromGroup,
+                                        teamChipLastRef,
+                                        availableTeams,
+                                        activeTeamQuery,
+                                        handleTeamSearchChange,
+                                        handleTeamSearchFocus,
+                                        handleTeamSearchBlur,
+                                        handleTeamSearchKeyDown,
+                                        activeTeamResultsLimited,
+                                        teamSearchInputRefs,
+                                        teamSearchOpen,
+                                        activeTeamIndex,
+                                        addTeamToGroup,
+                                        teamSearchFeedback,
+                                        componentSearchQuery,
+                                        setComponentSearchQuery,
+                                        setComponentSearchOpen,
+                                        componentSearchOpen,
+                                        componentSearchLoading,
+                                        filteredComponentSearchResults,
+                                        componentSearchIndex,
+                                        handleComponentSearchKeyDown,
+                                        addGroupMissingInfoComponent,
+                                        removeGroupMissingInfoComponent,
+                                        excludedEpicSearchQuery,
+                                        handleExcludedEpicSearchChange,
+                                        handleExcludedEpicSearchFocus,
+                                        handleExcludedEpicSearchBlur,
+                                        handleExcludedEpicSearchKeyDown,
+                                        excludedEpicSearchInputRef,
+                                        excludedEpicSearchOpen,
+                                        excludedEpicSearchLoading,
+                                        filteredExcludedEpicSearchResults,
+                                        excludedEpicSearchIndex,
+                                        addGroupExcludedCapacityEpic,
+                                        removeGroupExcludedCapacityEpic,
+                                        excludedEpicChipLastRef,
+                                        showGroupAdvanced,
+                                        setShowGroupAdvanced,
+                                        showGroupImport,
+                                        setShowGroupImport,
+                                        exportGroupsConfig,
+                                        groupImportText,
+                                        setGroupImportText,
+                                        importGroupsConfig,
+                                        removeGroupDraft,
+                                    }}
+                                />
                                 )}
                                 {groupManageTab === 'labels' && (
                                 <div className="group-modal-body group-modal-split">
@@ -17111,67 +13695,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     </div>
                                 </div>
                                 )}
-                                {groupConfigValidationErrors.length > 0 && (
-                                    <div className="group-modal-validation" role="alert" aria-live="polite">
-                                        {groupConfigValidationErrors.map((message) => (
-                                            <div key={message}>• {message}</div>
-                                        ))}
-                                    </div>
-                                )}
-                                <div className="group-modal-footer">
-                                    {groupManageTab !== 'epm' && (
-                                        <div className="group-modal-button-row">
-                                            <button
-                                                className="secondary compact"
-                                                onClick={testGroupsConfigConnection}
-                                                disabled={groupTesting}
-                                                type="button"
-                                            >
-                                                {groupTesting ? 'Testing...' : 'Test configuration'}
-                                            </button>
-                                            {groupTestMessage && (
-                                                <span className="group-modal-meta" aria-live="polite">{groupTestMessage}</span>
-                                            )}
-                                        </div>
-                                    )}
-                                    <div className="group-modal-button-row">
-                                        <button className="secondary compact lift-hover" onClick={requestCloseGroupManage} type="button">
-                                            Cancel
-                                        </button>
-                                    </div>
-                                    <div className="group-modal-button-row">
-                                        <button
-                                            className="compact"
-                                            onClick={groupManageTab === 'epm'
-                                                ? () => { void saveEpmConfig().catch(() => {}); }
-                                                : saveGroupsConfig}
-                                            disabled={groupManageTab === 'epm' ? (epmConfigLoading || epmConfigSaving) : Boolean(saveBlockedReason)}
-                                            title={groupManageTab === 'epm' ? '' : (saveBlockedReason || '')}
-                                            type="button"
-                                        >
-                                            {groupManageTab === 'epm'
-                                                ? (epmConfigSaving ? 'Saving EPM...' : 'Save EPM settings')
-                                                : (groupSaving ? 'Saving...' : 'Save')}
-                                        </button>
-                                    </div>
-                                </div>
-                                {showGroupDiscardConfirm && (
-                                    <div className="group-confirm-backdrop" role="dialog" aria-modal="true" onClick={() => setShowGroupDiscardConfirm(false)}>
-                                        <div className="group-confirm" onClick={(event) => event.stopPropagation()}>
-                                            <div className="group-confirm-title">Discard changes?</div>
-                                    <div className="group-confirm-actions">
-                                                <button className="secondary compact danger lift-hover" onClick={discardGroupDraftChanges} type="button">
-                                                    Discard
-                                                </button>
-                                                <button className="compact" onClick={() => setShowGroupDiscardConfirm(false)} type="button">
-                                                    Keep editing
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                        </SettingsModal>
                     )}
                     {showUpdateModal && updateNoticeVisible && (
                         <div
@@ -17199,8 +13723,6 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 </div>
                             </div>
                         </div>
-                    )}
-                    </>
                     )}
                 </div>
             );

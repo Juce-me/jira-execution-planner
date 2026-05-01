@@ -7,6 +7,10 @@ const jsxSource = fs.readFileSync(
     path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'),
     'utf8'
 );
+const engViewSource = fs.readFileSync(
+    path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngView.jsx'),
+    'utf8'
+);
 
 const cssSource = fs.readFileSync(
     path.join(__dirname, '..', 'frontend', 'dist', 'dashboard.css'),
@@ -19,20 +23,20 @@ test('dashboard renders Jira-aligned initiative icon hooks', () => {
         'Expected initiative icon title in dashboard.jsx'
     );
     assert.ok(
-        jsxSource.includes('initiative-header'),
-        'Expected initiative header wrapper in dashboard.jsx'
+        engViewSource.includes('initiative-header'),
+        'Expected initiative header wrapper in EngView.jsx'
     );
     assert.ok(
-        jsxSource.includes('initiative-header-icon'),
-        'Expected initiative header icon class in dashboard.jsx'
+        engViewSource.includes('initiative-header-icon'),
+        'Expected initiative header icon class in EngView.jsx'
     );
     assert.ok(
-        jsxSource.includes('initiative-toggle-icon'),
-        'Expected initiative toggle icon class in dashboard.jsx'
+        engViewSource.includes('initiative-toggle-icon'),
+        'Expected initiative toggle icon class in EngView.jsx'
     );
     assert.ok(
-        jsxSource.includes('initiative-body'),
-        'Expected initiative body wrapper in dashboard.jsx'
+        engViewSource.includes('initiative-body'),
+        'Expected initiative body wrapper in EngView.jsx'
     );
 });
 

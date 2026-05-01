@@ -154,6 +154,7 @@ Write set:
 
 - `tests/test_epm_view_source_guards.js`
 - `tests/test_epm_shell_source_guards.js`
+- `tests/test_epm_settings_source_guards.js`
 - `tests/test_frontend_api_source_guards.js`
 - `tests/test_backend_route_source_guards.py`
 
@@ -208,6 +209,7 @@ Write set:
 - `frontend/src/dashboard.jsx`
 - `package.json`
 - `tests/test_dashboard_css_extraction.py`
+- `tests/test_epm_view_source_guards.js`
 - generated `frontend/dist/dashboard.css`
 - generated `frontend/dist/dashboard.js`
 - generated `frontend/dist/dashboard.js.map`
@@ -288,6 +290,9 @@ Write set:
 - `frontend/src/api/epmApi.js`
 - `frontend/src/epm/epmFetch.js`
 - `frontend/src/dashboard.jsx`
+- generated `frontend/dist/dashboard.js`
+- generated `frontend/dist/dashboard.js.map`
+- `tests/test_epm_shell_source_guards.js`
 - `tests/test_epm_view_source_guards.js`
 - `tests/test_frontend_api_source_guards.js`
 
@@ -321,6 +326,8 @@ Write set:
 - `frontend/src/api/configApi.js`
 - `frontend/src/api/jiraCatalogApi.js`
 - `frontend/src/dashboard.jsx`
+- generated `frontend/dist/dashboard.js`
+- generated `frontend/dist/dashboard.js.map`
 - `tests/test_dashboard_alert_source_guards.js`
 - `tests/test_frontend_api_source_guards.js`
 
@@ -360,6 +367,8 @@ Write set:
 - `frontend/src/ui/EmptyState.jsx`
 - `frontend/src/styles/dashboard.css`
 - `frontend/src/dashboard.jsx`
+- generated `frontend/dist/dashboard.js`
+- generated `frontend/dist/dashboard.js.map`
 
 Steps:
 
@@ -404,6 +413,10 @@ Write set:
 - `frontend/src/styles/dashboard.css`
 - `frontend/src/dashboard.jsx`
 - `frontend/src/epm/EpmRollupPanel.jsx`
+- generated `frontend/dist/dashboard.js`
+- generated `frontend/dist/dashboard.js.map`
+- `tests/test_epm_view_source_guards.js`
+- `tests/test_dashboard_alert_source_guards.js`
 
 Steps:
 
@@ -426,6 +439,9 @@ Write set:
 
 - `frontend/src/epm/useEpmViewData.js`
 - `frontend/src/dashboard.jsx`
+- `frontend/dist/dashboard.js`
+- `frontend/dist/dashboard.js.map`
+- `tests/test_epm_settings_source_guards.js`
 - `tests/test_epm_view_source_guards.js`
 - `tests/test_epm_shell_source_guards.js`
 
@@ -469,9 +485,12 @@ Write set:
 
 - `frontend/src/epm/EpmView.jsx`
 - `frontend/src/epm/EpmControls.jsx`
-- `frontend/src/epm/EpmRollupPanel.jsx`
 - `frontend/src/dashboard.jsx`
+- `frontend/dist/dashboard.js`
+- `frontend/dist/dashboard.js.map`
 - `tests/test_epm_view_source_guards.js`
+- `tests/test_epm_shell_source_guards.js`
+- `tests/test_epm_settings_source_guards.js`
 
 Steps:
 
@@ -506,7 +525,11 @@ Write set:
 
 - `frontend/src/epm/EpmSettings.jsx`
 - `frontend/src/dashboard.jsx`
+- `frontend/dist/dashboard.js`
+- `frontend/dist/dashboard.js.map`
 - `tests/test_epm_settings_source_guards.js`
+- `tests/test_epm_view_source_guards.js`
+- `docs/plans/2026-05-01-codebase-structure-optimization.md`
 
 Steps:
 
@@ -539,7 +562,11 @@ Write set:
 - `frontend/src/issues/issueViewUtils.js`
 - `frontend/src/dashboard.jsx`
 - `frontend/src/epm/EpmRollupPanel.jsx`
+- `frontend/src/epm/EpmView.jsx`
+- `frontend/dist/dashboard.js`
+- `frontend/dist/dashboard.js.map`
 - `tests/test_epm_view_source_guards.js`
+- `docs/plans/2026-05-01-codebase-structure-optimization.md`
 
 Steps:
 
@@ -577,7 +604,11 @@ Write set:
 - `frontend/src/eng/engTaskUtils.js`
 - `frontend/src/eng/EngAlertsPanel.jsx`
 - `frontend/src/dashboard.jsx`
+- `frontend/dist/dashboard.js`
+- `frontend/dist/dashboard.js.map`
 - `tests/test_dashboard_alert_source_guards.js`
+- `tests/test_epm_view_source_guards.js`
+- `docs/plans/2026-05-01-codebase-structure-optimization.md`
 
 Steps:
 
@@ -594,7 +625,8 @@ Verification gate:
 ```bash
 npm run build
 node --test tests/test_dashboard_alert_source_guards.js tests/test_epm_view_source_guards.js
-.venv/bin/python -m unittest tests.test_backlog_alert_sprint_filter tests.test_epic_cohort_api tests.test_burnout_stats_api
+node --test tests/test_backlog_alert_sprint_filter.js
+.venv/bin/python -m unittest tests.test_epic_cohort_api tests.test_burnout_stats_api
 ```
 
 Manual/network check:
@@ -610,7 +642,10 @@ Write set:
 
 - `frontend/src/settings/SettingsModal.jsx`
 - `frontend/src/dashboard.jsx`
+- `frontend/dist/dashboard.js`
+- `frontend/dist/dashboard.js.map`
 - `tests/test_epm_settings_source_guards.js`
+- `docs/plans/2026-05-01-codebase-structure-optimization.md`
 
 Steps:
 
@@ -641,9 +676,12 @@ Write set:
 - `frontend/src/settings/JiraFieldSettings.jsx`
 - `frontend/src/epm/EpmSettings.jsx`
 - `frontend/src/dashboard.jsx`
+- `frontend/dist/dashboard.js`
+- `frontend/dist/dashboard.js.map`
 - `tests/test_epm_settings_source_guards.js`
 - `tests/test_team_selection_utils.js`
 - `tests/test_team_selection_persistence.js`
+- `docs/plans/2026-05-01-codebase-structure-optimization.md`
 
 Steps:
 

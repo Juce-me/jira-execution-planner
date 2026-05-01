@@ -789,7 +789,7 @@ class TestEpmRollupApi(unittest.TestCase):
         from pathlib import Path
 
         repo_root = Path(__file__).resolve().parents[1]
-        source = (repo_root / 'epm_rollup.py').read_text(encoding='utf-8')
+        source = (repo_root / 'backend' / 'epm' / 'rollup.py').read_text(encoding='utf-8')
 
         for forbidden in (
             'teamGroups',

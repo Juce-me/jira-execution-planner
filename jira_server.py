@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 
-from flask import Flask, abort, jsonify, request, send_file, send_from_directory
-from flask_cors import CORS
+from flask import abort, jsonify, request, send_file, send_from_directory
 import requests
 import argparse
 import base64
 import csv
 import logging
 import os
-import random
 import re
 import json
 import hashlib
@@ -33,12 +31,13 @@ from epm_home import fetch_epm_home_projects, merge_epm_linkage
 from epm_rollup import EpmRollupDependencies, build_per_project_rollup
 from epm_scope import build_epm_scope_clause, normalize_epm_sprint_field, should_apply_epm_sprint
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
+from backend.app import app
+from backend import config_store as _config_store
+from backend import jira_client as _jira_client
+from backend.epm import projects as epm_projects
 
 # Load environment variables from .env file
 load_dotenv()
-
-app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
 
 # Reuse a single HTTP session to avoid reconnect overhead on repeated calls
 HTTP_SESSION = Session()
@@ -208,74 +207,9 @@ def utc_now_iso(timespec=None):
     return value.replace('+00:00', 'Z')
 
 
-RETRYABLE_JIRA_STATUS_CODES = {429, 500, 502, 503, 504}
-
-
-class SyntheticJiraResponse:
-    """Small response-like object for fast-fail and retry exhaustion paths."""
-    def __init__(self, status_code, payload):
-        self.status_code = int(status_code)
-        self._payload = payload if isinstance(payload, dict) else {'message': str(payload)}
-        self.text = json.dumps(self._payload)
-
-    def json(self):
-        return self._payload
-
-
-class JiraCircuitBreaker:
-    def __init__(self, failure_threshold=5, open_seconds=30.0):
-        self.failure_threshold = max(1, int(failure_threshold))
-        self.open_seconds = max(1.0, float(open_seconds))
-        self._lock = threading.RLock()
-        self._state = 'closed'
-        self._failure_count = 0
-        self._opened_until = 0.0
-
-    def before_request(self, now):
-        with self._lock:
-            if self._state == 'open':
-                if now >= self._opened_until:
-                    self._state = 'half-open'
-                    return True, {'state': self._state, 'failureCount': self._failure_count}
-                return False, {
-                    'state': 'open',
-                    'failureCount': self._failure_count,
-                    'retryAfterSeconds': max(0.0, round(self._opened_until - now, 3))
-                }
-            return True, {'state': self._state, 'failureCount': self._failure_count}
-
-    def record_success(self):
-        with self._lock:
-            self._state = 'closed'
-            self._failure_count = 0
-            self._opened_until = 0.0
-
-    def record_failure(self, now):
-        with self._lock:
-            if self._state == 'half-open':
-                self._state = 'open'
-                self._failure_count = max(1, self._failure_count)
-                self._opened_until = now + self.open_seconds
-                return {'state': self._state, 'failureCount': self._failure_count, 'openedForSeconds': self.open_seconds}
-
-            self._failure_count += 1
-            if self._failure_count >= self.failure_threshold:
-                self._state = 'open'
-                self._opened_until = now + self.open_seconds
-            return {'state': self._state, 'failureCount': self._failure_count, 'openedForSeconds': self.open_seconds if self._state == 'open' else 0.0}
-
-    def force_open(self, now=None):
-        now_value = time.monotonic() if now is None else float(now)
-        with self._lock:
-            self._state = 'open'
-            self._failure_count = max(self._failure_count, self.failure_threshold)
-            self._opened_until = now_value + self.open_seconds
-
-    def reset(self):
-        with self._lock:
-            self._state = 'closed'
-            self._failure_count = 0
-            self._opened_until = 0.0
+RETRYABLE_JIRA_STATUS_CODES = _jira_client.RETRYABLE_JIRA_STATUS_CODES
+SyntheticJiraResponse = _jira_client.SyntheticJiraResponse
+JiraCircuitBreaker = _jira_client.JiraCircuitBreaker
 
 
 JIRA_SEARCH_CIRCUIT_BREAKER = JiraCircuitBreaker(
@@ -285,17 +219,14 @@ JIRA_SEARCH_CIRCUIT_BREAKER = JiraCircuitBreaker(
 
 
 def _build_jira_unavailable_response(message, attempts=0, elapsed_seconds=0.0, upstream_status=None, circuit=None):
-    payload = {
-        'error': 'Jira temporarily unavailable',
-        'message': message,
-        'attempts': int(attempts),
-        'retryElapsedSeconds': round(float(elapsed_seconds), 2)
-    }
-    if upstream_status is not None:
-        payload['upstreamStatus'] = int(upstream_status)
-    if circuit:
-        payload['circuit'] = circuit
-    return SyntheticJiraResponse(503, payload)
+    return _jira_client._build_jira_unavailable_response(
+        message,
+        attempts=attempts,
+        elapsed_seconds=elapsed_seconds,
+        upstream_status=upstream_status,
+        circuit=circuit,
+        response_cls=SyntheticJiraResponse
+    )
 
 
 def resilient_jira_get(url, *, params=None, headers=None, timeout=30, session=None, breaker=None,
@@ -303,90 +234,26 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, session=No
                        max_attempts=None, max_elapsed_seconds=None,
                        base_delay_seconds=None, max_delay_seconds=None):
     """GET with bounded retries + circuit breaker for Jira upstream calls."""
-    session = session or HTTP_SESSION
-    breaker = breaker or JIRA_SEARCH_CIRCUIT_BREAKER
-    now_fn = now_fn or time.monotonic
-    sleep_fn = sleep_fn or time.sleep
-    rand_fn = rand_fn or random.random
-    max_attempts = max(1, int(max_attempts if max_attempts is not None else JIRA_RETRY_MAX_ATTEMPTS))
-    max_elapsed_seconds = float(max_elapsed_seconds if max_elapsed_seconds is not None else JIRA_RETRY_MAX_ELAPSED_SECONDS)
-    base_delay_seconds = float(base_delay_seconds if base_delay_seconds is not None else JIRA_RETRY_BASE_DELAY_SECONDS)
-    max_delay_seconds = float(max_delay_seconds if max_delay_seconds is not None else JIRA_RETRY_MAX_DELAY_SECONDS)
-
-    started_at = now_fn()
-    allowed, breaker_state = breaker.before_request(started_at)
-    if not allowed:
-        log_warning(
-            f'Jira circuit open; fast-failing request retry_after_s={breaker_state.get("retryAfterSeconds", 0)}'
-        )
-        return _build_jira_unavailable_response(
-            'Jira is temporarily unavailable. Please retry shortly.',
-            attempts=0,
-            elapsed_seconds=0.0,
-            circuit=breaker_state
-        )
-
-    last_status = None
-    last_exception = None
-    attempts = 0
-
-    while attempts < max_attempts:
-        attempts += 1
-        attempt_started = now_fn()
-        try:
-            response = session.get(url, params=params, headers=headers, timeout=timeout)
-            latency_ms = round((now_fn() - attempt_started) * 1000, 1)
-            last_status = getattr(response, 'status_code', None)
-            if last_status not in RETRYABLE_JIRA_STATUS_CODES:
-                breaker.record_success()
-                log_debug(f'Jira GET ok status={last_status} attempt={attempts} latency_ms={latency_ms}')
-                return response
-            log_warning(f'Jira GET retryable status={last_status} attempt={attempts} latency_ms={latency_ms}')
-        except (requests.Timeout, requests.ConnectionError) as exc:
-            last_exception = exc
-            latency_ms = round((now_fn() - attempt_started) * 1000, 1)
-            log_warning(f'Jira GET transient exception type={type(exc).__name__} attempt={attempts} latency_ms={latency_ms}')
-        except Exception:
-            # Unknown exceptions are not retried; keep existing behavior predictable.
-            breaker.record_failure(now_fn())
-            raise
-
-        elapsed = now_fn() - started_at
-        if attempts >= max_attempts or elapsed >= max_elapsed_seconds:
-            state = breaker.record_failure(now_fn())
-            message = (
-                f'Jira server may be unavailable. Retried for {int(round(elapsed))} seconds and failed.'
-                if elapsed >= max_elapsed_seconds else
-                'Jira request failed after retry attempts.'
-            )
-            if state.get('state') == 'open':
-                log_error(f'Jira circuit opened after failed request failures={state.get("failureCount")}')
-            return _build_jira_unavailable_response(
-                message,
-                attempts=attempts,
-                elapsed_seconds=elapsed,
-                upstream_status=last_status,
-                circuit=state
-            )
-
-        delay = min(max_delay_seconds, base_delay_seconds * (2 ** (attempts - 1)))
-        jitter = min(0.25, delay * 0.25) * rand_fn()
-        total_delay = delay + jitter
-        if elapsed + total_delay > max_elapsed_seconds:
-            total_delay = max(0.0, max_elapsed_seconds - elapsed)
-        if total_delay <= 0:
-            continue
-        log_info(f'Jira GET retry scheduled attempt={attempts + 1} sleep_s={round(total_delay, 2)}')
-        sleep_fn(total_delay)
-
-    # Defensive fallback (loop should return above)
-    state = breaker.record_failure(now_fn())
-    return _build_jira_unavailable_response(
-        f'Jira request failed after {attempts} attempts.',
-        attempts=attempts,
-        elapsed_seconds=(now_fn() - started_at),
-        upstream_status=last_status,
-        circuit=state
+    return _jira_client.resilient_jira_get(
+        url,
+        params=params,
+        headers=headers,
+        timeout=timeout,
+        session=session or HTTP_SESSION,
+        breaker=breaker or JIRA_SEARCH_CIRCUIT_BREAKER,
+        now_fn=now_fn,
+        sleep_fn=sleep_fn,
+        rand_fn=rand_fn,
+        max_attempts=JIRA_RETRY_MAX_ATTEMPTS if max_attempts is None else max_attempts,
+        max_elapsed_seconds=JIRA_RETRY_MAX_ELAPSED_SECONDS if max_elapsed_seconds is None else max_elapsed_seconds,
+        base_delay_seconds=JIRA_RETRY_BASE_DELAY_SECONDS if base_delay_seconds is None else base_delay_seconds,
+        max_delay_seconds=JIRA_RETRY_MAX_DELAY_SECONDS if max_delay_seconds is None else max_delay_seconds,
+        log_debug_fn=log_debug,
+        log_info_fn=log_info,
+        log_warning_fn=log_warning,
+        log_error_fn=log_error,
+        unavailable_response_fn=_build_jira_unavailable_response,
+        retryable_status_codes=RETRYABLE_JIRA_STATUS_CODES
     )
 
 def parse_args():
@@ -738,25 +605,19 @@ def build_team_value(raw_team):
 
 def jira_search_request(headers, payload):
     """Call Jira search endpoint using query parameters for /search/jql."""
-    url = f'{JIRA_URL}/rest/api/3/search/jql'
-    params = {}
+    def request_fn(url, **kwargs):
+        return resilient_jira_get(
+            url,
+            session=HTTP_SESSION,
+            breaker=JIRA_SEARCH_CIRCUIT_BREAKER,
+            **kwargs
+        )
 
-    def to_csv(value):
-        if isinstance(value, list):
-            return ','.join(value)
-        return value
-
-    for key in ('jql', 'startAt', 'maxResults', 'expand', 'fields', 'fieldsByKeys', 'nextPageToken'):
-        if key in payload and payload[key] is not None:
-            params[key] = to_csv(payload[key])
-
-    return resilient_jira_get(
-        url,
-        params=params,
-        headers=headers,
-        timeout=30,
-        session=HTTP_SESSION,
-        breaker=JIRA_SEARCH_CIRCUIT_BREAKER
+    return _jira_client.jira_search_request(
+        JIRA_URL,
+        headers,
+        payload,
+        request_fn=request_fn
     )
 
 
@@ -1164,91 +1025,53 @@ def normalize_epic_keys(epic_keys):
 
 
 def resolve_groups_config_path():
-    return GROUPS_CONFIG_PATH or './team-groups.json'
+    return _config_store.resolve_groups_config_path(GROUPS_CONFIG_PATH)
 
 
 def load_groups_config_file(path):
-    if not path or not os.path.exists(path):
-        return None
-    try:
-        with open(path, 'r') as handle:
-            return json.load(handle)
-    except Exception as e:
-        log_warning(f'Failed to read groups config: {e}')
-        return None
+    return _config_store.load_groups_config_file(path, log_warning_fn=log_warning)
 
 
 def resolve_dashboard_config_path():
-    return DASHBOARD_CONFIG_PATH or './dashboard-config.json'
+    return _config_store.resolve_dashboard_config_path(DASHBOARD_CONFIG_PATH)
 
 
 def load_dashboard_config():
     """Load the unified dashboard config, migrating from legacy team-groups.json if needed."""
-    path = resolve_dashboard_config_path()
-    if os.path.exists(path):
-        try:
-            with open(path, 'r') as handle:
-                return json.load(handle)
-        except Exception as e:
-            log_warning(f'Failed to read dashboard config: {e}')
-            return None
-    # Migrate from legacy team-groups.json
-    legacy = load_groups_config_file(resolve_groups_config_path())
-    if legacy:
-        config = {
-            'version': 1,
-            'projects': {'selected': []},
-            'teamGroups': legacy
-        }
-        save_dashboard_config(config)
-        return config
-    return None
+    return _config_store.load_dashboard_config(
+        resolve_dashboard_config_path(),
+        resolve_groups_config_path(),
+        load_groups_config_file,
+        save_dashboard_config,
+        log_warning_fn=log_warning
+    )
 
 
 def save_dashboard_config(config):
     """Write the unified dashboard config to disk."""
-    path = resolve_dashboard_config_path()
-    directory = os.path.dirname(path)
-    if directory:
-        os.makedirs(directory, exist_ok=True)
-    with open(path, 'w') as handle:
-        json.dump(config, handle, indent=2)
+    return _config_store.save_dashboard_config(config, resolve_dashboard_config_path())
 
 
 def resolve_team_catalog_path():
-    return TEAM_CATALOG_PATH or './team-catalog.json'
+    return _config_store.resolve_team_catalog_path(TEAM_CATALOG_PATH)
 
 
 def load_team_catalog():
-    path = resolve_team_catalog_path()
-    if not os.path.exists(path):
-        return {'catalog': {}, 'meta': {}}
-    try:
-        with open(path, 'r') as handle:
-            data = json.load(handle)
-        if not isinstance(data, dict):
-            return {'catalog': {}, 'meta': {}}
-        return {
-            'catalog': normalize_team_catalog(data.get('catalog') or {}),
-            'meta': normalize_team_catalog_meta(data.get('meta') or {})
-        }
-    except Exception as e:
-        log_warning(f'Failed to read team catalog: {e}')
-        return {'catalog': {}, 'meta': {}}
+    return _config_store.load_team_catalog(
+        resolve_team_catalog_path(),
+        normalize_team_catalog_fn=normalize_team_catalog,
+        normalize_team_catalog_meta_fn=normalize_team_catalog_meta,
+        log_warning_fn=log_warning
+    )
 
 
 def save_team_catalog_file(catalog_data):
-    path = resolve_team_catalog_path()
-    directory = os.path.dirname(path)
-    if directory:
-        os.makedirs(directory, exist_ok=True)
-    normalized = {
-        'catalog': normalize_team_catalog(catalog_data.get('catalog') or {}),
-        'meta': normalize_team_catalog_meta(catalog_data.get('meta') or {})
-    }
-    with open(path, 'w') as handle:
-        json.dump(normalized, handle, indent=2)
-    return normalized
+    return _config_store.save_team_catalog_file(
+        catalog_data,
+        resolve_team_catalog_path(),
+        normalize_team_catalog_fn=normalize_team_catalog,
+        normalize_team_catalog_meta_fn=normalize_team_catalog_meta
+    )
 
 
 def migrate_team_catalog_from_config():
@@ -1381,11 +1204,7 @@ def get_effective_board_id():
 
 
 def build_epm_home_projects_cache_key(epm_scope):
-    scope = epm_scope if isinstance(epm_scope, dict) else {}
-    return json.dumps({
-        'rootGoalKey': normalize_epm_upper_text(scope.get('rootGoalKey')),
-        'subGoalKey': normalize_epm_upper_text(scope.get('subGoalKey')),
-    }, sort_keys=True)
+    return epm_projects.build_epm_home_projects_cache_key(epm_scope)
 
 
 def clear_epm_project_cache():
@@ -1406,45 +1225,35 @@ def clear_epm_caches():
         EPM_ROLLUP_CACHE.clear()
 
 
-def build_epm_home_projects_state(epm_scope, force_refresh=False):
-    cache_key = build_epm_home_projects_cache_key(epm_scope)
-    if not force_refresh:
-        with _epm_cache_lock:
-            cached = EPM_PROJECTS_CACHE.get(cache_key)
-            if cached and (time.time() - cached['timestamp']) < EPM_PROJECTS_CACHE_TTL_SECONDS:
-                return {
-                    'homeProjects': cached.get('homeProjects', []),
-                    'cacheHit': True,
-                    'fetchedAt': cached.get('fetchedAt', ''),
-                    'homeProjectCount': len(cached.get('homeProjects', [])),
-                    'homeProjectLimit': cached.get('homeProjectLimit'),
-                    'possiblyTruncated': bool(cached.get('possiblyTruncated')),
-                }
+def build_epm_projects_dependencies():
+    return epm_projects.EpmProjectsDependencies(
+        fetch_epm_home_projects=fetch_epm_home_projects,
+        merge_epm_linkage=merge_epm_linkage,
+        normalize_epm_config=normalize_epm_config,
+        utc_now_iso=utc_now_iso,
+        cache=EPM_PROJECTS_CACHE,
+        cache_lock=_epm_cache_lock,
+        cache_ttl_seconds=EPM_PROJECTS_CACHE_TTL_SECONDS,
+        home_project_limit=epm_home.HOME_MAX_PROJECTS_PER_GOAL,
+        get_epm_config=get_epm_config,
+        abort_not_found=abort,
+    )
 
-    home_projects = fetch_epm_home_projects(epm_scope)
-    home_project_limit = epm_home.HOME_MAX_PROJECTS_PER_GOAL
-    possibly_truncated = bool(home_project_limit and len(home_projects) >= home_project_limit)
-    fetched_at = utc_now_iso(timespec='seconds')
-    with _epm_cache_lock:
-        EPM_PROJECTS_CACHE[cache_key] = {
-            'timestamp': time.time(),
-            'fetchedAt': fetched_at,
-            'homeProjects': home_projects,
-            'homeProjectLimit': home_project_limit,
-            'possiblyTruncated': possibly_truncated,
-        }
-    return {
-        'homeProjects': home_projects,
-        'cacheHit': False,
-        'fetchedAt': fetched_at,
-        'homeProjectCount': len(home_projects),
-        'homeProjectLimit': home_project_limit,
-        'possiblyTruncated': possibly_truncated,
-    }
+
+def build_epm_home_projects_state(epm_scope, force_refresh=False):
+    return epm_projects.build_epm_home_projects_state(
+        epm_scope,
+        build_epm_projects_dependencies(),
+        force_refresh=force_refresh,
+    )
 
 
 def get_cached_epm_home_projects(epm_scope, force_refresh=False):
-    return build_epm_home_projects_state(epm_scope, force_refresh=force_refresh)['homeProjects']
+    return epm_projects.get_cached_epm_home_projects(
+        epm_scope,
+        build_epm_projects_dependencies(),
+        force_refresh=force_refresh,
+    )
 
 
 def build_jira_headers():
@@ -1671,214 +1480,45 @@ def build_epm_rollup_dependencies():
 
 
 def normalize_epm_label_prefix_mask(label_prefix):
-    prefix = normalize_epm_text(label_prefix)
-    while prefix.endswith('*'):
-        prefix = prefix[:-1].strip()
-    return prefix
+    return epm_projects.normalize_epm_label_prefix_mask(label_prefix)
 
 
 def filter_epm_home_tag_matches(home_project, label_prefix):
-    prefix = normalize_epm_label_prefix_mask(label_prefix)
-    home_tags = home_project.get('homeTags') if isinstance(home_project, dict) else []
-    if not isinstance(home_tags, list):
-        home_tags = []
-    if not prefix:
-        return []
-    normalized_prefix = prefix.lower()
-    matches = []
-    seen = set()
-    for tag in home_tags:
-        tag_text = normalize_epm_text(tag)
-        if not tag_text or not tag_text.lower().startswith(normalized_prefix):
-            continue
-        dedupe_key = tag_text.lower()
-        if dedupe_key in seen:
-            continue
-        seen.add(dedupe_key)
-        matches.append(tag_text)
-    return matches
+    return epm_projects.filter_epm_home_tag_matches(home_project, label_prefix)
 
 
 def resolve_epm_project_label(home_project, config_row, label_prefix):
-    row = config_row or {}
-    manual_label = normalize_epm_text(row.get('label') if 'label' in row else row.get('jiraLabel'))
-    home_tags = home_project.get('homeTags') if isinstance(home_project, dict) else []
-    has_home_tags_field = isinstance(home_tags, list)
-    home_tags = [normalize_epm_text(tag) for tag in (home_tags if has_home_tags_field else []) if normalize_epm_text(tag)]
-    home_tag_matches = filter_epm_home_tag_matches({'homeTags': home_tags}, label_prefix)
-
-    if not has_home_tags_field:
-        legacy_labels = list(((home_project or {}).get('resolvedLinkage') or {}).get('labels') or [])
-        home_tag_matches = [normalize_epm_text(label) for label in legacy_labels if normalize_epm_text(label)]
-
-    if manual_label:
-        if not has_home_tags_field and manual_label in home_tag_matches:
-            return {
-                'label': manual_label,
-                'labelSource': 'home-tag',
-                'labelStatus': 'auto',
-                'homeTags': home_tags,
-                'homeTagMatches': home_tag_matches,
-            }
-        return {
-            'label': manual_label,
-            'labelSource': 'manual',
-            'labelStatus': 'manual',
-            'homeTags': home_tags,
-            'homeTagMatches': home_tag_matches,
-        }
-
-    if len(home_tag_matches) == 1:
-        return {
-            'label': home_tag_matches[0],
-            'labelSource': 'home-tag',
-            'labelStatus': 'auto',
-            'homeTags': home_tags,
-            'homeTagMatches': home_tag_matches,
-        }
-
-    if len(home_tag_matches) > 1:
-        return {
-            'label': '',
-            'labelSource': '',
-            'labelStatus': 'ambiguous',
-            'homeTags': home_tags,
-            'homeTagMatches': home_tag_matches,
-        }
-
-    status = 'unavailable' if (home_project or {}).get('homeTagsUnavailable') else 'missing'
-    return {
-        'label': '',
-        'labelSource': '',
-        'labelStatus': status,
-        'homeTags': home_tags,
-        'homeTagMatches': [],
-    }
+    return epm_projects.resolve_epm_project_label(home_project, config_row, label_prefix)
 
 
 def build_epm_project_payload(home_project, config_row, label_prefix=None):
-    row = config_row or {}
-    linkage_row = dict(row)
-    if 'jiraLabel' not in linkage_row and 'label' in row:
-        linkage_row['jiraLabel'] = row.get('label')
-    linkage, match_state = merge_epm_linkage(home_project, linkage_row)
-    label_resolution = resolve_epm_project_label(home_project, row, label_prefix)
-    resolved_label = label_resolution['label']
-    custom_name = normalize_epm_text(row.get('name') if 'name' in row else row.get('customName'))
-    resolved_epics = sorted(set(linkage.get('epicKeys') or []))
-    resolved_labels = [resolved_label] if resolved_label else []
-    if resolved_label:
-        match_state = 'home-linked' if label_resolution['labelSource'] == 'home-tag' else 'jep-fallback'
-    elif resolved_epics:
-        match_state = 'home-linked'
-    else:
-        match_state = 'metadata-only'
-    return {
-        **home_project,
-        'id': normalize_epm_text(row.get('id')) or home_project.get('homeProjectId', ''),
-        'name': custom_name or home_project.get('name', ''),
-        'label': resolved_label,
-        'customName': custom_name,
-        'displayName': custom_name or home_project.get('name', ''),
-        'resolvedLinkage': {'labels': resolved_labels, 'epicKeys': resolved_epics},
-        'matchState': match_state,
-        **label_resolution,
-    }
+    return epm_projects.build_epm_project_payload(
+        home_project,
+        config_row,
+        label_prefix,
+        merge_epm_linkage=merge_epm_linkage,
+    )
 
 
 def build_custom_project_payload(row):
-    label = normalize_epm_text(row.get('label'))
-    name = normalize_epm_text(row.get('name'))
-    return {
-        'id': normalize_epm_text(row.get('id')),
-        'homeProjectId': None,
-        'homeUrl': '',
-        'stateValue': '',
-        'stateLabel': '',
-        'tabBucket': 'all',
-        'latestUpdateDate': '',
-        'latestUpdateSnippet': '',
-        'latestUpdateHtml': '',
-        'name': name,
-        'label': label,
-        'customName': name,
-        'displayName': name,
-        'resolvedLinkage': {'labels': [label] if label else [], 'epicKeys': []},
-        'matchState': 'jep-fallback' if label else 'metadata-only',
-        'labelSource': 'manual' if label else '',
-        'labelStatus': 'manual' if label else 'missing',
-        'homeTags': [],
-        'homeTagMatches': [],
-    }
+    return epm_projects.build_custom_project_payload(row)
 
 
 def find_epm_config_row(projects, project_id):
-    normalized_project_id = normalize_epm_text(project_id)
-    if not normalized_project_id or not isinstance(projects, dict):
-        return None
-    for key, row in projects.items():
-        if not isinstance(row, dict):
-            continue
-        candidates = [
-            normalize_epm_text(key),
-            normalize_epm_text(row.get('id')),
-            normalize_epm_text(row.get('homeProjectId')),
-        ]
-        if normalized_project_id in candidates:
-            return row
-    return None
+    return epm_projects.find_epm_config_row(projects, project_id)
 
 
 def build_epm_projects_payload(epm_config, force_refresh=False, tab=None):
-    normalized_config = normalize_epm_config(epm_config or {})
-    projects = []
-    epm_scope = normalized_config.get('scope') or {}
-    home_state = build_epm_home_projects_state(epm_scope, force_refresh=force_refresh)
-    returned_home_project_ids = set()
-    for home_project in home_state['homeProjects']:
-        project_id = home_project.get('homeProjectId')
-        if project_id:
-            returned_home_project_ids.add(project_id)
-        config_row = find_epm_config_row(normalized_config['projects'], project_id)
-        projects.append(build_epm_project_payload(home_project, config_row, normalized_config.get('labelPrefix')))
-    for row in normalized_config['projects'].values():
-        home_project_id = normalize_epm_text(row.get('homeProjectId'))
-        if home_project_id and home_project_id in returned_home_project_ids:
-            continue
-        if home_project_id:
-            missing_home_row = build_custom_project_payload(row)
-            missing_home_row['homeProjectId'] = home_project_id
-            missing_home_row['missingFromHomeFetch'] = True
-            missing_home_row['matchState'] = 'missing-home-project'
-            projects.append(missing_home_row)
-            continue
-        projects.append(build_custom_project_payload(row))
-    filtered_projects = filter_epm_projects_for_tab(projects, tab) if normalize_epm_text(tab) else projects
-    return {
-        'projects': filtered_projects,
-        'cacheHit': home_state['cacheHit'],
-        'fetchedAt': home_state['fetchedAt'],
-        'homeProjectCount': home_state['homeProjectCount'],
-        'homeProjectLimit': home_state['homeProjectLimit'],
-        'possiblyTruncated': home_state['possiblyTruncated'],
-    }
+    return epm_projects.build_epm_projects_payload(
+        epm_config,
+        build_epm_projects_dependencies(),
+        force_refresh=force_refresh,
+        tab=tab,
+    )
 
 
 def filter_epm_projects_for_tab(projects, tab):
-    normalized_tab = normalize_epm_text(tab or 'active').lower()
-    visible = []
-    for project in projects or []:
-        tab_bucket = normalize_epm_text((project or {}).get('tabBucket')).lower()
-        if tab_bucket not in {'active', 'backlog', 'archived', 'all'}:
-            state_value = normalize_epm_text((project or {}).get('stateValue') or (project or {}).get('stateLabel'))
-            tab_bucket = epm_home.bucket_epm_state(state_value) if state_value else ''
-        if normalized_tab == 'active':
-            matches_tab = tab_bucket == 'active' or tab_bucket == 'all'
-        else:
-            matches_tab = tab_bucket == normalized_tab
-        if matches_tab:
-            visible.append(project)
-    return visible
+    return epm_projects.filter_epm_projects_for_tab(projects, tab)
 
 
 def _epm_collection_values(collection):
@@ -2000,28 +1640,11 @@ def build_all_epm_projects_rollup(tab, sprint):
 
 
 def find_epm_project_or_404(project_id):
-    epm_config = get_epm_config()
-    epm_scope = epm_config.get('scope') or {}
-    config_row = find_epm_config_row(epm_config['projects'], project_id)
-
-    if config_row is not None:
-        home_project_id = normalize_epm_text(config_row.get('homeProjectId'))
-        if not home_project_id:
-            return build_custom_project_payload(config_row)
-        for home_project in get_cached_epm_home_projects(epm_scope):
-            if home_project.get('homeProjectId') == home_project_id:
-                return build_epm_project_payload(home_project, config_row, epm_config.get('labelPrefix'))
-
-    for home_project in get_cached_epm_home_projects(epm_scope):
-        if home_project.get('homeProjectId') == project_id:
-            config_row = find_epm_config_row(epm_config['projects'], project_id)
-            return build_epm_project_payload(home_project, config_row, epm_config.get('labelPrefix'))
-
-    abort(404)
+    return epm_projects.find_epm_project_or_404(project_id, build_epm_projects_dependencies())
 
 
 def get_epm_project_payload_identity(project):
-    return normalize_epm_text((project or {}).get('id'))
+    return epm_projects.get_epm_project_payload_identity(project)
 
 
 def normalize_epm_text(value):
@@ -3958,102 +3581,6 @@ def collect_dependencies(keys, headers):
     return dependencies
 
 
-@app.route('/api/dependencies', methods=['POST'])
-def get_dependencies():
-    """Fetch dependency links for a set of issues."""
-    try:
-        payload = request.get_json(silent=True) or {}
-        keys = payload.get('keys') or []
-        if not keys:
-            return jsonify({'dependencies': {}})
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        dependencies = collect_dependencies(keys, headers)
-        return jsonify({'dependencies': dependencies})
-    except Exception as e:
-        logger.exception('Dependencies endpoint error')
-        return jsonify({'error': 'Failed to fetch dependencies', 'message': str(e)}), 500
-
-
-@app.route('/api/issues/lookup', methods=['GET'])
-def lookup_issues():
-    """Lookup issues by key/id for dependency popovers."""
-    try:
-        keys_param = request.args.get('keys', '') or ''
-        ids_param = request.args.get('ids', '') or ''
-        keys = [k.strip() for k in keys_param.split(',') if k.strip()]
-        ids = [i.strip() for i in ids_param.split(',') if i.strip()]
-        if not keys and not ids:
-            return jsonify({'issues': []})
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        team_field_id = resolve_team_field_id(headers)
-        epic_link_field_id = resolve_epic_link_field_id(headers)
-
-        fields_list = [
-            'summary',
-            'status',
-            'issuetype',
-            'assignee',
-            get_story_points_field_id(),
-            'parent'
-        ]
-        if epic_link_field_id and epic_link_field_id not in fields_list:
-            fields_list.append(epic_link_field_id)
-        if team_field_id and team_field_id not in fields_list:
-            fields_list.append(team_field_id)
-
-        issues = []
-        if keys:
-            unique_keys = sorted({str(k).strip() for k in keys if str(k).strip()})
-            issues.extend(fetch_issues_by_keys(unique_keys, headers, fields_list))
-
-        if ids:
-            unique_ids = sorted({str(i).strip() for i in ids if str(i).strip()})
-            jql = f'id in ({",".join(unique_ids)})'
-            payload = {
-                'jql': jql,
-                'startAt': 0,
-                'maxResults': len(unique_ids),
-                'fields': fields_list
-            }
-            response = jira_search_request(headers, payload)
-            if response.status_code == 200:
-                data = response.json() or {}
-                issues.extend(data.get('issues', []) or [])
-            else:
-                log_warning(f'Lookup fetch error: status={response.status_code}')
-
-        snapshots = []
-        for issue in issues:
-            snapshot = build_issue_snapshot(issue, team_field_id, epic_link_field_id)
-            snapshot['id'] = issue.get('id')
-            snapshots.append(snapshot)
-
-        return jsonify({'issues': snapshots})
-    except Exception as e:
-        logger.exception('Issue lookup error')
-        return jsonify({'error': 'Failed to lookup issues', 'message': str(e)}), 500
-
-
 @app.route('/api/scenario', methods=['GET', 'POST'])
 def scenario_planner():
     """Scenario planner endpoint."""
@@ -5436,540 +4963,6 @@ def build_missing_info_scope_clause(team_ids, component_names, team_field_name='
     return f"({ ' OR '.join(clauses) })"
 
 
-@app.route('/api/missing-info', methods=['GET'])
-def get_missing_info():
-    """Find stories under epics in a given sprint that are missing key planning fields (sprint/SP/team)."""
-    try:
-        sprint = request.args.get('sprint', '').strip()
-        team_ids_param = request.args.get('teamIds', '').strip()
-        team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
-        components_param = [c.strip() for c in request.args.get('components', '').split(',') if c.strip()]
-        if not sprint:
-            return jsonify({'error': 'Missing required query param: sprint'}), 400
-
-        # Prepare authorization
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        # Resolve fields
-        team_field_id = resolve_team_field_id(headers)
-        epic_link_field_id = resolve_epic_link_field_id(headers)
-
-        effective_components = components_param or ([MISSING_INFO_COMPONENT] if MISSING_INFO_COMPONENT else [])
-        scope_clause = build_missing_info_scope_clause(team_ids or MISSING_INFO_TEAM_IDS, effective_components)
-
-        # 1) Fetch epics that are in the sprint (future sprint planning), scoped by component/team.
-        epic_jql = f'Sprint = {sprint} AND issuetype = Epic'
-        if scope_clause:
-            epic_jql = add_clause_to_jql(epic_jql, scope_clause)
-        epic_jql = add_clause_to_jql(epic_jql, 'status not in ("Killed","Done","Incomplete")')
-        epic_jql = add_clause_to_jql(epic_jql, f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")')
-
-        epic_fields = ['summary', 'status', 'assignee', 'parent', 'components']
-        if team_field_id:
-            epic_fields.append(team_field_id)
-
-        epics_resp = jira_search_request(headers, {
-            'jql': epic_jql,
-            'startAt': 0,
-            'maxResults': 250,
-            'fields': epic_fields
-        })
-        if epics_resp.status_code != 200:
-            return jsonify({'error': 'Failed to fetch epics for missing-info scan', 'details': epics_resp.text}), 502
-
-        epics_data = epics_resp.json() or {}
-        epic_issues = epics_data.get('issues', []) or []
-        epic_keys = [e.get('key') for e in epic_issues if e.get('key')]
-        if not epic_keys:
-            return jsonify({'issues': [], 'epics': [], 'count': 0})
-
-        # Build epics summary for the response
-        epics_summary = []
-        for epic in epic_issues:
-            ef = epic.get('fields', {}) or {}
-            epic_status = (ef.get('status') or {}).get('name') or ''
-            epic_components = [c.get('name', '') for c in (ef.get('components') or []) if c.get('name')]
-            raw_team = None
-            if team_field_id and ef.get(team_field_id) is not None:
-                raw_team = ef.get(team_field_id)
-            epic_team_name = extract_team_name(raw_team) if raw_team else ''
-            epic_team_id = None
-            if raw_team:
-                tv = build_team_value(raw_team)
-                epic_team_id = tv.get('id') if isinstance(tv, dict) else None
-            epics_summary.append({
-                'key': epic.get('key'),
-                'summary': ef.get('summary', ''),
-                'status': epic_status,
-                'components': epic_components,
-                'teamName': epic_team_name,
-                'teamId': epic_team_id
-            })
-
-        # 2) Fetch stories under those epics, regardless of story sprint (to catch missing Sprint field).
-        story_fields = [
-            'summary',
-            'status',
-            'priority',
-            'issuetype',
-            'assignee',
-            'updated',
-            get_story_points_field_id(),  # Story Points
-            get_sprint_field_id(),  # Sprint
-            'parent'
-        ]
-        if epic_link_field_id and epic_link_field_id not in story_fields:
-            story_fields.append(epic_link_field_id)
-        if team_field_id and team_field_id not in story_fields:
-            story_fields.append(team_field_id)
-
-        missing = []
-        batch_size = 40
-        for start in range(0, len(epic_keys), batch_size):
-            batch = epic_keys[start:start + batch_size]
-
-            link_clause = f'"Epic Link" in ({",".join(batch)})'
-            parent_clause = f'parent in ({",".join(batch)})'
-            # Important: do NOT scope stories by component/team here because the whole point is to
-            # find stories missing those fields. We only scope epics, then pull every story under them.
-            story_jql = f'({link_clause} OR {parent_clause}) AND issuetype = Story AND status not in (Killed, Done, Postponed)'
-
-            start_at = 0
-            while True:
-                resp = jira_search_request(headers, {
-                    'jql': story_jql,
-                    'startAt': start_at,
-                    'maxResults': 250,
-                    'fields': story_fields
-                })
-                if resp.status_code != 200:
-                    break
-
-                data = resp.json() or {}
-                issues = data.get('issues', []) or []
-                if not issues:
-                    break
-
-                for issue in issues:
-                    fields = issue.get('fields', {}) or {}
-                    status = (fields.get('status') or {}).get('name') or ''
-                    if str(status).strip().lower() == 'postponed':
-                        continue
-
-                    # team enrichment
-                    raw_team = None
-                    if team_field_id and fields.get(team_field_id) is not None:
-                        raw_team = fields.get(team_field_id)
-                    if raw_team is not None:
-                        team_name = extract_team_name(raw_team)
-                        fields['team'] = build_team_value(raw_team)
-                        fields['teamName'] = team_name
-                        fields['teamId'] = fields['team'].get('id') if isinstance(fields['team'], dict) else None
-
-                    # epic link
-                    epic_key = None
-                    if epic_link_field_id and fields.get(epic_link_field_id):
-                        epic_key = fields.get(epic_link_field_id)
-                    elif fields.get('parent') and fields['parent'].get('key') and \
-                            fields['parent'].get('fields', {}).get('issuetype', {}).get('name', '').lower() == 'epic':
-                        epic_key = fields['parent'].get('key')
-                    if epic_key:
-                        fields['epicKey'] = epic_key
-
-                    sp = fields.get(get_story_points_field_id())
-                    try:
-                        sp_num = float(sp) if sp not in (None, '', []) else 0.0
-                    except Exception:
-                        sp_num = 0.0
-                    has_sp = sp_num > 0
-
-                    sprint_value = fields.get(get_sprint_field_id())
-                    has_sprint = bool(sprint_value)
-                    has_team = bool(fields.get('teamName'))
-
-                    missing_fields = []
-                    if not has_sprint:
-                        missing_fields.append('Sprint')
-                    if not has_sp:
-                        missing_fields.append('Story Points')
-                    if not has_team:
-                        missing_fields.append('Team')
-
-                    if not missing_fields:
-                        continue
-
-                    assignee = fields.get('assignee') or {}
-                    priority = fields.get('priority') or {}
-                    issuetype = fields.get('issuetype') or {}
-                    missing.append({
-                        'id': issue.get('id'),
-                        'key': issue.get('key'),
-                        'fields': {
-                            'summary': fields.get('summary'),
-                            'status': {'name': status} if status else None,
-                            'priority': {'name': priority.get('name')} if priority else None,
-                            'issuetype': {'name': issuetype.get('name')} if issuetype else None,
-                            'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
-                            'updated': fields.get('updated'),
-                            'customfield_10004': fields.get(get_story_points_field_id()),
-                            'customfield_10101': fields.get(get_sprint_field_id()),
-                            'team': fields.get('team'),
-                            'teamName': fields.get('teamName'),
-                            'teamId': fields.get('teamId'),
-                            'epicKey': fields.get('epicKey'),
-                            'missingFields': missing_fields
-                        }
-                    })
-
-                start_at += len(issues)
-                total = data.get('total')
-                if total is not None and start_at >= total:
-                    break
-                if len(issues) < 250:
-                    break
-
-        response = jsonify({'issues': missing, 'epics': epics_summary, 'count': len(missing), 'epicCount': len(epic_keys)})
-        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '0'
-        return response
-    except Exception as e:
-        logger.exception('Missing-info error')
-        return jsonify({'error': 'Failed to compute missing-info', 'message': str(e)}), 500
-
-
-@app.route('/api/tasks', methods=['GET'])
-def get_tasks():
-    """Fetch tasks from Jira API."""
-    return fetch_tasks(include_team_name=False)
-
-
-@app.route('/api/tasks-with-team-name', methods=['GET'])
-def get_tasks_with_team_name():
-    """Fetch tasks with team name derived from Jira Team field."""
-    return fetch_tasks(include_team_name=True)
-
-
-@app.route('/api/teams', methods=['GET'])
-def get_teams():
-    """Fetch all unique teams from the current sprint."""
-    try:
-        sprint = request.args.get('sprint', '')
-        team_ids_param = request.args.get('teamIds', '').strip()
-        fetch_all = request.args.get('all', '').lower() == 'true'
-        team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
-        use_template = bool(team_ids and JQL_QUERY_TEMPLATE) and not fetch_all
-
-        # Prepare authorization
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        # Build JQL query from env or dashboard config
-        if use_template:
-            jql = apply_team_ids_to_template(team_ids)
-            if not jql:
-                jql = build_base_jql()
-        else:
-            jql = build_base_jql()
-
-        if not jql:
-            return jsonify({'error': 'No projects configured', 'teams': []}), 400
-
-        # If fetching all teams, remove team filter but keep sprint scope
-        if fetch_all:
-            jql = remove_team_filter_from_jql(jql)
-            if sprint:
-                jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
-        elif sprint:
-            jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
-
-        team_field_id = resolve_team_field_id(headers)
-
-        # Fetch tasks - paginate through all issues
-        fields_list = ['summary', 'status']
-        if team_field_id:
-            fields_list.append(team_field_id)
-
-        max_results = 100
-        max_pages = 30  # Cap at ~3000 issues for team discovery
-        page_count = 0
-        next_page_token = None
-        all_issues = []
-
-        while True:
-            payload = {
-                'jql': jql,
-                'maxResults': max_results,
-                'fields': fields_list
-            }
-            if next_page_token:
-                payload['nextPageToken'] = next_page_token
-
-            response = jira_search_request(headers, payload)
-            if response.status_code != 200:
-                return jsonify({'error': 'Failed to fetch teams', 'details': response.text}), response.status_code
-
-            data = response.json()
-            issues = data.get('issues', [])
-
-            if not issues:
-                break
-
-            all_issues.extend(issues)
-            page_count += 1
-            if page_count >= max_pages:
-                break
-
-            # Check if we've fetched everything (using new pagination API)
-            is_last = data.get('isLast', True)
-            if is_last:
-                break
-
-            next_page_token = data.get('nextPageToken')
-            if not next_page_token:
-                break
-
-        names_map = data.get('names', {}) or {}
-
-        if not team_field_id:
-            team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
-
-        # Extract unique teams (no filtering - return all teams)
-        teams_map = {}
-        for issue in all_issues:
-            fields = issue.get('fields', {})
-            raw_team = None
-
-            if team_field_id and fields.get(team_field_id) is not None:
-                raw_team = fields.get(team_field_id)
-
-            if raw_team is not None:
-                team_value = build_team_value(raw_team)
-                team_id = team_value.get('id') if isinstance(team_value, dict) else None
-                team_name = extract_team_name(raw_team)
-
-                if team_id and team_name:
-                    teams_map[team_id] = {
-                        'id': team_id,
-                        'name': team_name
-                    }
-
-        # When fetching all teams, also query Jira Teams API directly
-        # to catch teams that have no issues in PRODUCT/TECH projects
-        if fetch_all:
-            api_teams = fetch_teams_from_jira_api(headers)
-            for tid, tval in api_teams.items():
-                if tid not in teams_map:
-                    teams_map[tid] = tval
-
-        # Sort teams by name
-        teams_list = sorted(teams_map.values(), key=lambda t: t['name'].lower())
-
-        return jsonify({'teams': teams_list})
-
-    except Exception as e:
-        return jsonify({'error': 'Failed to fetch teams', 'details': str(e)}), 500
-
-
-@app.route('/api/teams/resolve', methods=['GET'])
-def resolve_team_names():
-    """Resolve team names for a list of team IDs."""
-    try:
-        team_ids_param = request.args.get('teamIds', '').strip()
-        team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
-        if not team_ids:
-            return jsonify({'error': 'teamIds is required'}), 400
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        team_field_id = resolve_team_field_id(headers)
-        if not team_field_id:
-            team_field_id = TEAM_FIELD_DEFAULT
-
-        base_jql = remove_team_filter_from_jql(build_base_jql())
-        quoted = ', '.join(f'"{team_id}"' for team_id in team_ids)
-        jql = add_clause_to_jql(base_jql, f'"Team[Team]" in ({quoted})')
-
-        fields_list = ['summary']
-        if team_field_id and team_field_id not in fields_list:
-            fields_list.append(team_field_id)
-
-        max_results = 250
-        start_at = 0
-        teams_map = {}
-
-        while True:
-            payload = {
-                'jql': jql,
-                'startAt': start_at,
-                'maxResults': max_results,
-                'fields': fields_list
-            }
-            response = jira_search_request(headers, payload)
-            if response.status_code != 200:
-                return jsonify({'error': 'Failed to resolve teams', 'details': response.text}), response.status_code
-            data = response.json() or {}
-            issues = data.get('issues', []) or []
-            if not issues:
-                break
-
-            for issue in issues:
-                fields = issue.get('fields', {}) or {}
-                raw_team = None
-                if team_field_id and fields.get(team_field_id) is not None:
-                    raw_team = fields.get(team_field_id)
-                if raw_team is None:
-                    continue
-                team_value = build_team_value(raw_team)
-                team_id = team_value.get('id') if isinstance(team_value, dict) else None
-                team_name = extract_team_name(raw_team)
-                if team_id and team_name and team_id in team_ids:
-                    teams_map[team_id] = {'id': team_id, 'name': team_name}
-
-            if len(teams_map) >= len(team_ids):
-                break
-
-            start_at += len(issues)
-            total = data.get('total')
-            if total is not None and start_at >= total:
-                break
-            if len(issues) < max_results:
-                break
-
-        missing = [team_id for team_id in team_ids if team_id not in teams_map]
-        return jsonify({'teams': list(teams_map.values()), 'missing': missing})
-
-    except Exception as e:
-        return jsonify({'error': 'Failed to resolve teams', 'details': str(e)}), 500
-
-
-@app.route('/api/teams/all', methods=['GET'])
-def get_all_teams_list():
-    """Fetch ALL teams from Jira for debugging - no filtering, simple list format."""
-    try:
-        sprint = request.args.get('sprint', '')
-
-        # Prepare authorization
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        # Build JQL query - remove team filter to get ALL teams
-        jql = remove_team_filter_from_jql(build_base_jql())
-        if sprint:
-            jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
-
-        team_field_id = resolve_team_field_id(headers)
-
-        # Fetch tasks
-        fields_list = ['summary', 'status']
-        if team_field_id:
-            fields_list.append(team_field_id)
-
-        # Paginate through ALL issues using new API
-        max_results = 100
-        next_page_token = None
-        all_issues = []
-
-        while True:
-            payload = {
-                'jql': jql,
-                'maxResults': max_results,
-                'fields': fields_list
-            }
-            if next_page_token:
-                payload['nextPageToken'] = next_page_token
-
-            response = jira_search_request(headers, payload)
-            if response.status_code != 200:
-                return jsonify({'error': 'Failed to fetch teams', 'details': response.text}), response.status_code
-
-            data = response.json()
-            issues = data.get('issues', [])
-
-            if not issues:
-                break
-
-            all_issues.extend(issues)
-
-            # Check if we've fetched everything (using new pagination API)
-            is_last = data.get('isLast', True)
-            if is_last:
-                break
-
-            next_page_token = data.get('nextPageToken')
-            if not next_page_token:
-                break
-
-        names_map = data.get('names', {}) or {}
-        if not team_field_id:
-            team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
-
-        # Extract unique teams - NO FILTERING
-        teams_map = {}
-        for issue in all_issues:
-            fields = issue.get('fields', {})
-            raw_team = None
-
-            if team_field_id and fields.get(team_field_id) is not None:
-                raw_team = fields.get(team_field_id)
-
-            if raw_team is not None:
-                team_value = build_team_value(raw_team)
-                team_id = team_value.get('id') if isinstance(team_value, dict) else None
-                team_name = extract_team_name(raw_team)
-
-                if team_id and team_name:
-                    teams_map[team_id] = {
-                        'id': team_id,
-                        'name': team_name
-                    }
-
-        # Sort teams by name
-        teams_list = sorted(teams_map.values(), key=lambda t: t['name'].lower())
-
-        # Return simple format
-        return jsonify({
-            'total_teams': len(teams_list),
-            'issues_fetched': len(all_issues),
-            'sprint': sprint,
-            'jql': jql,
-            'teams': teams_list
-        })
-
-    except Exception as e:
-        return jsonify({'error': 'Failed to fetch all teams', 'details': str(e)}), 500
-
-
 @app.route('/api/stats', methods=['GET'])
 def get_completed_sprint_stats():
     """Fetch cached delivery stats for a completed sprint."""
@@ -6160,238 +5153,6 @@ def get_epic_cohort_stats():
     })
 
 
-@app.route('/api/boards', methods=['GET'])
-def get_boards():
-    """Fetch available boards from Jira API"""
-    try:
-        query = (request.args.get('query') or '').strip()
-        limit_raw = request.args.get('limit') or ''
-        try:
-            limit = int(limit_raw) if limit_raw else 200
-        except ValueError:
-            limit = 200
-        limit = max(1, min(limit, 500))
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        log_info(
-            f'Fetching boards mode={"search" if query else "all"} '
-            f'limit={limit} queryLen={len(query)}'
-        )
-
-        # Get boards from Jira Agile API (paginated)
-        boards = []
-        seen_board_ids = set()
-        start_at = 0
-        page_size = 100
-        max_pages = 50  # safety cap (up to 5000 boards)
-        pages_fetched = 0
-
-        # Fast path: direct board-id lookup for numeric search terms.
-        if query and query.isdigit():
-            direct_resp = requests.get(
-                f'{JIRA_URL}/rest/agile/1.0/board/{query}',
-                headers=headers,
-                timeout=30
-            )
-            log_debug(f'Board direct lookup status={direct_resp.status_code} boardId={query}')
-            if direct_resp.status_code == 200:
-                board = direct_resp.json() or {}
-                board_id = board.get('id')
-                if board_id is not None and board_id not in seen_board_ids:
-                    boards.append(board)
-                    seen_board_ids.add(board_id)
-            elif direct_resp.status_code not in (400, 401, 403, 404):
-                error_text = direct_resp.text
-                log_error(f'Board direct lookup failed: status={direct_resp.status_code}')
-                return jsonify({
-                    'error': f'Jira API error: {direct_resp.status_code}',
-                    'details': error_text
-                }), direct_resp.status_code
-
-        while pages_fetched < max_pages:
-            params = {'maxResults': page_size, 'startAt': start_at}
-            if query:
-                params['name'] = query
-            response = requests.get(
-                f'{JIRA_URL}/rest/agile/1.0/board',
-                headers=headers,
-                params=params,
-                timeout=30
-            )
-
-            log_debug(f'Boards response status={response.status_code} startAt={start_at}')
-
-            if response.status_code != 200:
-                error_text = response.text
-                log_error(f'Boards fetch failed: status={response.status_code} startAt={start_at}')
-                return jsonify({
-                    'error': f'Jira API error: {response.status_code}',
-                    'details': error_text
-                }), response.status_code
-
-            data = response.json() or {}
-            page_boards = data.get('values', []) or []
-            for board in page_boards:
-                board_id = board.get('id')
-                if board_id is None or board_id in seen_board_ids:
-                    continue
-                boards.append(board)
-                seen_board_ids.add(board_id)
-            pages_fetched += 1
-
-            if query and len(boards) >= limit:
-                break
-
-            is_last = bool(data.get('isLast'))
-            if is_last:
-                break
-
-            if not page_boards:
-                break
-
-            # Jira Agile board API typically returns paging metadata;
-            # fall back to page length progression if absent.
-            start_at = int(data.get('startAt', start_at)) + len(page_boards)
-            total = data.get('total')
-            if isinstance(total, int) and start_at >= total:
-                break
-
-        # Format boards
-        formatted_boards = []
-        query_lower = query.lower()
-        for board in boards:
-            formatted = {
-                'id': board.get('id'),
-                'name': board.get('name'),
-                'type': board.get('type'),
-                'location': board.get('location', {})
-            }
-            if query:
-                board_id = str(formatted.get('id') or '')
-                board_name = str(formatted.get('name') or '').lower()
-                if not (
-                    query_lower in board_id.lower()
-                    or query_lower in board_name
-                ):
-                    continue
-            formatted_boards.append(formatted)
-
-        if query:
-            formatted_boards = formatted_boards[:limit]
-
-        log_info(
-            f'Found {len(formatted_boards)} boards pages={pages_fetched} '
-            f'mode={"search" if query else "all"}'
-        )
-
-        success_response = jsonify({'boards': formatted_boards})
-        success_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        success_response.headers['Pragma'] = 'no-cache'
-        success_response.headers['Expires'] = '0'
-        return success_response
-
-    except Exception as e:
-        logger.exception('Boards endpoint error')
-        error_response = jsonify({
-            'error': 'Failed to fetch boards from Jira',
-            'message': str(e)
-        })
-        error_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        return error_response, 500
-
-
-@app.route('/api/sprints', methods=['GET'])
-def get_sprints():
-    """Fetch available sprints - uses cache if valid, otherwise fetches from Jira"""
-    try:
-        force_refresh = request.args.get('refresh', '').lower() == 'true'
-
-        formatted_sprints = []
-
-        # Check if we should use cache
-        if not force_refresh and is_cache_valid():
-            cache_data = load_sprints_cache()
-            if cache_data and 'sprints' in cache_data:
-                formatted_sprints = cache_data['sprints']
-                log_info(f'Loaded {len(formatted_sprints)} sprints from cache')
-
-        # If no valid cache or force refresh, fetch from Jira
-        if not formatted_sprints or force_refresh:
-            if force_refresh:
-                log_info('Force refresh requested')
-
-            formatted_sprints = fetch_sprints_from_jira()
-
-            # Save to cache
-            if formatted_sprints:
-                save_sprints_cache(formatted_sprints)
-
-        log_info(f'Total quarterly sprints: {len(formatted_sprints)}')
-
-        success_response = jsonify({'sprints': formatted_sprints})
-        success_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        success_response.headers['Pragma'] = 'no-cache'
-        success_response.headers['Expires'] = '0'
-        return success_response
-
-    except Exception as e:
-        logger.exception('Sprints endpoint error')
-        error_response = jsonify({
-            'error': 'Failed to fetch sprints from Jira',
-            'message': str(e)
-        })
-        error_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        return error_response, 500
-
-
-@app.route('/api/config', methods=['GET'])
-def get_config():
-    """Get public configuration"""
-    board_cfg = get_board_config()
-    return jsonify({
-        'jiraUrl': JIRA_URL,
-        'capacityProject': get_effective_capacity_project(),
-        'boardId': board_cfg.get('boardId', ''),
-        'boardName': board_cfg.get('boardName', ''),
-        'boardConfigSource': board_cfg.get('source', 'default'),
-        'settingsAdminOnly': bool(SETTINGS_ADMIN_ONLY),
-        'userCanEditSettings': True,  # Placeholder until SSO/admin roles are implemented
-        'groupsConfigPath': resolve_groups_config_path(),
-        'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),
-        'projectsConfigured': bool(get_selected_projects()),
-        'epm': get_epm_config()
-    })
-
-
-@app.route('/api/version', methods=['GET'])
-def get_version():
-    """Return local/remote version info for update checks."""
-    if not UPDATE_CHECK_ENABLED:
-        return jsonify({'enabled': False})
-
-    now = time.time()
-    with _cache_lock:
-        cached = UPDATE_CHECK_CACHE.get('data')
-        cached_ts = UPDATE_CHECK_CACHE.get('ts', 0)
-    if cached and (now - cached_ts) < UPDATE_CHECK_TTL_SECONDS:
-        return jsonify(cached)
-
-    payload = build_update_check_payload()
-    with _cache_lock:
-        UPDATE_CHECK_CACHE['data'] = payload
-        UPDATE_CHECK_CACHE['ts'] = now
-    return jsonify(payload)
-
-
 @app.route('/favicon.ico')
 def get_favicon():
     favicon_path = os.path.join(os.path.dirname(__file__), 'favicon.ico')
@@ -6428,94 +5189,6 @@ def serve_frontend_dist(filename):
     return send_from_directory(dist_dir, filename)
 
 
-@app.route('/api/groups-config', methods=['GET'])
-def get_groups_config():
-    """Return the saved team groups configuration."""
-    warnings = []
-    config_source = 'auto'
-
-    # Try unified dashboard config first
-    dashboard_config = load_dashboard_config()
-    if dashboard_config and 'teamGroups' in dashboard_config:
-        config = dashboard_config['teamGroups']
-        config_source = 'file'
-    else:
-        # Fall back to legacy file / env
-        config_path = resolve_groups_config_path()
-        config = load_groups_config_file(config_path)
-        if config:
-            config_source = 'file'
-        else:
-            config = parse_groups_config_env()
-            if config:
-                config_source = 'env'
-
-    if not config:
-        config, auto_warnings = build_default_groups_config()
-        warnings.extend(auto_warnings)
-    else:
-        normalized, errors, validate_warnings = validate_groups_config(config, allow_empty=True)
-        warnings.extend(validate_warnings)
-        if errors:
-            warnings.append('Invalid groups config; falling back to auto Default group.')
-            warnings.extend(errors)
-            normalized, auto_warnings = build_default_groups_config()
-            warnings.extend(auto_warnings)
-        config = normalized
-
-    if warnings:
-        config['warnings'] = warnings
-    config['source'] = config_source
-    return jsonify(config)
-
-
-@app.route('/api/groups-config', methods=['POST'])
-def save_groups_config():
-    """Persist team groups configuration to disk."""
-    payload = request.get_json(silent=True) or {}
-    normalized, errors, warnings = validate_groups_config(payload, allow_empty=False)
-    if errors:
-        return jsonify({'errors': errors}), 400
-
-    # Save into unified dashboard config, preserving other sections
-    try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}}
-        dashboard_config['teamGroups'] = normalized
-        save_dashboard_config(dashboard_config)
-    except Exception as e:
-        return jsonify({'error': 'Failed to save groups config', 'message': str(e)}), 500
-
-    if warnings:
-        normalized['warnings'] = warnings
-    normalized['source'] = 'file'
-    return jsonify(normalized)
-
-
-@app.route('/api/team-catalog', methods=['GET'])
-def get_team_catalog():
-    """Return the team name catalog."""
-    migrate_team_catalog_from_config()
-    data = load_team_catalog()
-    return jsonify(data)
-
-
-@app.route('/api/team-catalog', methods=['POST'])
-def post_team_catalog():
-    """Save the team name catalog."""
-    payload = request.get_json(silent=True) or {}
-    merge = payload.get('merge', False)
-    incoming = {
-        'catalog': normalize_team_catalog(payload.get('catalog') or {}),
-        'meta': normalize_team_catalog_meta(payload.get('meta') or {})
-    }
-    if merge:
-        existing = load_team_catalog()
-        merged_catalog = {**existing['catalog'], **incoming['catalog']}
-        incoming['catalog'] = merged_catalog
-    saved = save_team_catalog_file(incoming)
-    return jsonify(saved)
-
-
 PROJECTS_CACHE = {'data': None, 'timestamp': 0}
 PROJECTS_CACHE_TTL = 60 * 60  # 1 hour
 
@@ -6527,703 +5200,6 @@ EPICS_SEARCH_CACHE_TTL = 60 * 5  # 5 minutes
 
 LABELS_CACHE = {'data': None, 'timestamp': 0}
 LABELS_CACHE_TTL = 15 * 60  # 15 minutes
-
-@app.route('/api/projects', methods=['GET'])
-def get_jira_projects():
-    """Fetch available Jira projects via project search API with caching."""
-    try:
-        query = request.args.get('query', '').strip()
-        limit_raw = request.args.get('limit', '').strip()
-        refresh = request.args.get('refresh', '').strip().lower() in ('1', 'true', 'yes')
-
-        # Return cached data only for full-list requests (no query/limit), unless refresh requested.
-        with _cache_lock:
-            if (not refresh and not query and not limit_raw and
-                    PROJECTS_CACHE['data'] and (time.time() - PROJECTS_CACHE['timestamp']) < PROJECTS_CACHE_TTL):
-                return jsonify({'projects': PROJECTS_CACHE['data']})
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        limit = None
-        if limit_raw:
-            try:
-                limit = max(1, min(int(limit_raw), 500))
-            except ValueError:
-                return jsonify({'error': 'limit must be an integer'}), 400
-
-        all_projects = []
-        start_at = 0
-        max_results = 200
-        while True:
-            params = {
-                'startAt': start_at,
-                'maxResults': max_results,
-                'orderBy': 'key'
-            }
-            if query:
-                params['query'] = query
-
-            response = HTTP_SESSION.get(
-                f'{JIRA_URL}/rest/api/3/project/search',
-                params=params,
-                headers=headers,
-                timeout=15
-            )
-            if response.status_code != 200:
-                return jsonify({'error': 'Failed to fetch projects', 'details': response.text}), response.status_code
-            data = response.json()
-            values = data.get('values', [])
-            for proj in values:
-                all_projects.append({
-                    'key': proj.get('key', ''),
-                    'name': proj.get('name', ''),
-                    'id': proj.get('id', '')
-                })
-                if limit and len(all_projects) >= limit:
-                    break
-
-            if limit and len(all_projects) >= limit:
-                all_projects = all_projects[:limit]
-                break
-
-            if data.get('isLast', True):
-                break
-
-            next_start = None
-            next_page = data.get('nextPage')
-            if next_page:
-                parsed = parse_qs(urlparse(next_page).query)
-                start_at_values = parsed.get('startAt') or parsed.get('startat')
-                if start_at_values:
-                    try:
-                        next_start = int(start_at_values[0])
-                    except (TypeError, ValueError):
-                        next_start = None
-
-            if next_start is None:
-                response_page_size = data.get('maxResults')
-                try:
-                    response_page_size = int(response_page_size)
-                except (TypeError, ValueError):
-                    response_page_size = 0
-                step = response_page_size if response_page_size > 0 else len(values)
-                if step <= 0:
-                    break
-                next_start = start_at + step
-
-            if next_start <= start_at:
-                next_start = start_at + max(1, len(values))
-            start_at = next_start
-
-        # Cache results (only for unfiltered full list)
-        if not query:
-            with _cache_lock:
-                PROJECTS_CACHE['data'] = all_projects
-                PROJECTS_CACHE['timestamp'] = time.time()
-
-        return jsonify({'projects': all_projects})
-    except Exception as e:
-        return jsonify({'error': 'Failed to fetch projects', 'details': str(e)}), 500
-
-
-@app.route('/api/components', methods=['GET'])
-def get_jira_components():
-    """Fetch Jira components across selected projects with caching."""
-    try:
-        query = request.args.get('query', '').strip().lower()
-        limit_raw = request.args.get('limit', '').strip()
-
-        limit = 25
-        if limit_raw:
-            try:
-                limit = max(1, min(int(limit_raw), 200))
-            except ValueError:
-                return jsonify({'error': 'limit must be an integer'}), 400
-
-        # Return cached data when no query is specified and cache is fresh
-        with _cache_lock:
-            if (not query and COMPONENTS_CACHE['data'] and
-                    (time.time() - COMPONENTS_CACHE['timestamp']) < COMPONENTS_CACHE_TTL):
-                return jsonify({'components': COMPONENTS_CACHE['data'][:limit]})
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        projects = get_selected_projects()
-        if not projects:
-            return jsonify({'components': []})
-
-        seen_names = set()
-        all_components = []
-        for project_key in projects:
-            try:
-                resp = HTTP_SESSION.get(
-                    f'{JIRA_URL}/rest/api/3/project/{project_key}/components',
-                    headers=headers,
-                    timeout=10
-                )
-                if resp.status_code != 200:
-                    continue
-                for comp in (resp.json() or []):
-                    name = (comp.get('name') or '').strip()
-                    if not name:
-                        continue
-                    name_lower = name.lower()
-                    if name_lower in seen_names:
-                        continue
-                    seen_names.add(name_lower)
-                    all_components.append({
-                        'id': comp.get('id', ''),
-                        'name': name,
-                        'projectKey': project_key
-                    })
-            except Exception:
-                continue
-
-        all_components.sort(key=lambda c: c['name'].lower())
-
-        # Cache the full unfiltered list
-        if not query:
-            with _cache_lock:
-                COMPONENTS_CACHE['data'] = all_components
-                COMPONENTS_CACHE['timestamp'] = time.time()
-
-        # Apply query filter
-        if query:
-            all_components = [c for c in all_components if query in c['name'].lower()]
-
-        return jsonify({'components': all_components[:limit]})
-    except Exception as e:
-        return jsonify({'error': 'Failed to fetch components', 'details': str(e)}), 500
-
-@app.route('/api/epics/search', methods=['GET'])
-def search_epics():
-    """Search epics by key or summary across selected projects."""
-    try:
-        query = str(request.args.get('query') or '').strip()
-        if not query:
-            return jsonify({'epics': []})
-
-        limit_raw = str(request.args.get('limit') or '').strip()
-        limit = 15
-        if limit_raw:
-            try:
-                limit = max(1, min(int(limit_raw), 100))
-            except ValueError:
-                return jsonify({'error': 'limit must be an integer'}), 400
-
-        projects = get_selected_projects()
-        if not projects:
-            return jsonify({'epics': []})
-
-        normalized_projects = sorted({str(project or '').strip() for project in projects if str(project or '').strip()})
-        cache_key = f'{"|".join(normalized_projects)}::{query.lower()}::{limit}'
-        now_ts = time.time()
-        with _cache_lock:
-            cached = EPICS_SEARCH_CACHE.get(cache_key)
-            if cached and (now_ts - float(cached.get('timestamp') or 0)) < EPICS_SEARCH_CACHE_TTL:
-                return jsonify({'epics': cached.get('data') or []})
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-        escaped_projects = ', '.join(f'"{_escape_jql_literal(project)}"' for project in normalized_projects)
-        escaped_query = _escape_jql_literal(query)
-        escaped_key = _escape_jql_literal(query.upper())
-        key_like = re.match(r'^[A-Za-z][A-Za-z0-9_]+-\d+$', query) is not None
-
-        if key_like:
-            query_clause = f'key = "{escaped_key}"'
-        else:
-            query_clause = f'(summary ~ "\\"{escaped_query}\\"" OR key ~ "{escaped_key}*")'
-
-        jql = (
-            f'issuetype = Epic AND project in ({escaped_projects}) '
-            f'AND {query_clause} ORDER BY updated DESC'
-        )
-
-        response = jira_search_request(headers, {
-            'jql': jql,
-            'maxResults': limit,
-            'fields': ['summary', 'status', 'project', 'issuetype']
-        })
-        if response.status_code != 200:
-            return jsonify({
-                'error': f'Jira API error: {response.status_code}',
-                'details': response.text
-            }), response.status_code
-
-        issues = (response.json() or {}).get('issues') or []
-        selected_project_set = set(normalized_projects)
-        epics = []
-        for issue in issues:
-            key = str(issue.get('key') or '').strip().upper()
-            fields = issue.get('fields') or {}
-            summary = str(fields.get('summary') or '').strip()
-            project_key = str((fields.get('project') or {}).get('key') or '').strip()
-            issue_type = fields.get('issuetype') or {}
-            issue_type_name = str(issue_type.get('name') or '').strip().lower()
-            hierarchy_level = issue_type.get('hierarchyLevel')
-            is_epic_type = issue_type_name == 'epic' or str(hierarchy_level) == '1'
-            if not key:
-                continue
-            # Defensive filtering: keep only selected projects + actual epic type.
-            # Jira search should already enforce this via JQL, but we re-check to
-            # avoid leaking stories/tasks if Jira returns mixed issue types.
-            if project_key and project_key not in selected_project_set:
-                continue
-            if not is_epic_type:
-                continue
-            epics.append({
-                'key': key,
-                'summary': summary,
-                'status': ((fields.get('status') or {}).get('name') or ''),
-                'projectKey': project_key
-            })
-
-        with _cache_lock:
-            EPICS_SEARCH_CACHE[cache_key] = {
-                'timestamp': now_ts,
-                'data': epics
-            }
-
-        return jsonify({'epics': epics})
-    except Exception as e:
-        return jsonify({'error': 'Failed to search epics', 'details': str(e)}), 500
-
-
-@app.route('/api/jira/labels', methods=['GET'])
-def get_jira_labels():
-    """Fetch Jira labels for autocomplete."""
-    try:
-        query = request.args.get('query', '').strip().lower()
-        prefix = request.args.get('prefix', '').strip().lower()
-        limit_raw = request.args.get('limit', '').strip()
-        refresh = request.args.get('refresh', '').strip().lower() in ('1', 'true', 'yes')
-
-        limit = 50
-        if limit_raw.isdigit():
-            limit = max(1, min(int(limit_raw), 200))
-
-        with _cache_lock:
-            cached_labels = LABELS_CACHE.get('data')
-            cached_ts = LABELS_CACHE.get('timestamp', 0)
-
-        if cached_labels and not refresh and (time.time() - cached_ts) < LABELS_CACHE_TTL:
-            labels = cached_labels
-        else:
-            auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-            auth_bytes = auth_string.encode('ascii')
-            auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-            headers = {
-                'Authorization': f'Basic {auth_base64}',
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            }
-            labels = []
-            start_at = 0
-            max_results = 1000
-            while True:
-                response = requests.get(
-                    f'{JIRA_URL}/rest/api/3/label',
-                    headers=headers,
-                    params={'maxResults': max_results, 'startAt': start_at},
-                    timeout=30
-                )
-                if response.status_code != 200:
-                    return jsonify({'error': 'Failed to fetch labels from Jira'}), response.status_code
-                payload = response.json() or {}
-                values = [str(label).strip() for label in (payload.get('values') or []) if str(label).strip()]
-                labels.extend(values)
-                if payload.get('isLast', True) or not values:
-                    break
-                next_start = payload.get('startAt')
-                if isinstance(next_start, int):
-                    start_at = next_start + len(values)
-                else:
-                    start_at += len(values)
-            labels = sorted(dict.fromkeys(labels), key=str.lower)
-            with _cache_lock:
-                LABELS_CACHE['data'] = labels
-                LABELS_CACHE['timestamp'] = time.time()
-
-        if query:
-            labels = [label for label in labels if query in label.lower()]
-        if prefix:
-            labels = [label for label in labels if label.lower().startswith(prefix)]
-
-        return jsonify({'labels': labels[:limit]})
-    except Exception as e:
-        return jsonify({'error': 'Failed to fetch labels', 'details': str(e)}), 500
-
-
-@app.route('/api/backlog-epics', methods=['GET'])
-def get_backlog_epics():
-    """Fetch backlog epics for future-planning alerts."""
-    try:
-        project_filter = request.args.get('project', '').strip().lower()
-        team_ids_param = request.args.get('teamIds', '').strip()
-        team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        if team_ids and JQL_QUERY_TEMPLATE:
-            jql = apply_team_ids_to_template(team_ids) or build_base_jql()
-        elif team_ids:
-            jql = remove_team_filter_from_jql(build_base_jql())
-            if len(team_ids) == 1:
-                jql = add_clause_to_jql(jql, f'"Team[Team]" = "{team_ids[0]}"')
-            else:
-                quoted_teams = ', '.join(f'"{tid}"' for tid in team_ids)
-                jql = add_clause_to_jql(jql, f'"Team[Team]" in ({quoted_teams})')
-        else:
-            jql = build_base_jql()
-
-        if project_filter in ('product', 'tech'):
-            typed = get_selected_projects_typed()
-            if typed:
-                matching_keys = [item['key'] for item in typed if item['type'] == project_filter]
-                if matching_keys:
-                    jql = remove_project_filter_from_jql(jql)
-                    if len(matching_keys) == 1:
-                        jql = add_clause_to_jql(jql, f'project = "{matching_keys[0]}"')
-                    else:
-                        quoted = ', '.join(f'"{key}"' for key in matching_keys)
-                        jql = add_clause_to_jql(jql, f'project in ({quoted})')
-
-        issue_types = get_configured_issue_types()
-        if issue_types:
-            if len(issue_types) == 1:
-                jql = add_clause_to_jql(jql, f'type = "{issue_types[0]}"')
-            else:
-                quoted_types = ', '.join(f'"{issue_type}"' for issue_type in issue_types)
-                jql = add_clause_to_jql(jql, f'type in ({quoted_types})')
-
-        team_field_id = resolve_team_field_id(headers)
-        epic_link_field_id = resolve_epic_link_field_id(headers)
-        sprint_field_id = get_sprint_field_id()
-        epics = fetch_backlog_epics_for_alert(
-            jql,
-            headers=headers,
-            team_field_id=team_field_id,
-            sprint_field_id=sprint_field_id,
-            epic_link_field=epic_link_field_id
-        )
-        return jsonify({'epics': epics})
-    except Exception as e:
-        return jsonify({'error': 'Failed to fetch backlog epics', 'details': str(e)}), 500
-
-
-@app.route('/api/projects/selected', methods=['GET'])
-def get_selected_projects_endpoint():
-    """Return the list of selected projects with type from dashboard config."""
-    selected = get_selected_projects_typed()
-    return jsonify({'selected': selected})
-
-
-@app.route('/api/projects/selected', methods=['POST'])
-def save_selected_projects():
-    """Save selected projects with type to dashboard config."""
-    payload = request.get_json(silent=True) or {}
-    selected = payload.get('selected', [])
-    if not isinstance(selected, list):
-        return jsonify({'error': 'selected must be an array'}), 400
-    # Sanitize: accept both {key, type} objects and plain strings
-    sanitized = []
-    for item in selected:
-        if isinstance(item, dict) and item.get('key'):
-            sanitized.append({'key': str(item['key']).strip(), 'type': item.get('type', 'product')})
-        elif isinstance(item, str) and item.strip():
-            sanitized.append({'key': item.strip(), 'type': 'product'})
-
-    try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        dashboard_config.setdefault('projects', {})['selected'] = sanitized
-        save_dashboard_config(dashboard_config)
-    except Exception as e:
-        return jsonify({'error': 'Failed to save project selection', 'message': str(e)}), 500
-
-    # Invalidate tasks cache since project scope changed
-    with _cache_lock:
-        TASKS_CACHE.clear()
-
-    return jsonify({'selected': sanitized})
-
-
-@app.route('/api/capacity/config', methods=['GET'])
-def get_capacity_config_endpoint():
-    """Return current capacity configuration."""
-    cap = get_capacity_config()
-    return jsonify(cap)
-
-
-@app.route('/api/board-config', methods=['GET'])
-def get_board_config_endpoint():
-    """Return current Jira board configuration."""
-    board_cfg = get_board_config()
-    return jsonify({
-        'boardId': board_cfg.get('boardId', ''),
-        'boardName': board_cfg.get('boardName', ''),
-        'source': board_cfg.get('source', 'default')
-    })
-
-
-@app.route('/api/board-config', methods=['POST'])
-def save_board_config_endpoint():
-    """Save Jira board configuration used for sprint loading."""
-    payload = request.get_json(silent=True) or {}
-    board_id = str(payload.get('boardId', '') or '').strip()
-    board_name = str(payload.get('boardName', '') or '').strip()
-
-    if board_id and not re.match(r'^\d+$', board_id):
-        return jsonify({'error': 'boardId must be numeric'}), 400
-
-    try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        dashboard_config['board'] = {
-            'boardId': board_id,
-            'boardName': board_name,
-        }
-        save_dashboard_config(dashboard_config)
-        with _cache_lock:
-            TASKS_CACHE.clear()
-        invalidate_sprints_cache()
-    except Exception as e:
-        return jsonify({'error': 'Failed to save board config', 'message': str(e)}), 500
-
-    return jsonify({'boardId': board_id, 'boardName': board_name, 'source': 'config'})
-
-
-@app.route('/api/epm/config', methods=['GET'])
-def get_epm_config_endpoint():
-    return jsonify(get_epm_config())
-
-
-@app.route('/api/epm/scope', methods=['GET'])
-def get_epm_scope_endpoint():
-    scope = (get_epm_config().get('scope') or {})
-    try:
-        cloud_id = fetch_home_site_cloud_id()
-        error = ''
-    except RuntimeError as exc:
-        cloud_id = ''
-        error = str(exc)
-    return jsonify({
-        'cloudId': cloud_id,
-        'error': error,
-        'scope': {
-            'rootGoalKey': normalize_epm_upper_text(scope.get('rootGoalKey')),
-            'subGoalKey': normalize_epm_upper_text(scope.get('subGoalKey')),
-        },
-    })
-
-
-@app.route('/api/epm/goals', methods=['GET'])
-def get_epm_goals_endpoint():
-    root_goal_key = normalize_epm_upper_text(request.args.get('rootGoalKey'))
-    try:
-        goals = fetch_epm_sub_goals(root_goal_key) if root_goal_key else fetch_epm_goal_catalog()
-        error = ''
-    except (
-        RuntimeError,
-        epm_home.HomeAuthenticationError,
-        epm_home.HomeRateLimitError,
-        epm_home.HomeGraphQLError,
-    ) as exc:
-        goals = []
-        error = str(exc)
-    return jsonify({'goals': goals, 'error': error})
-
-
-@app.route('/api/epm/projects', methods=['GET'])
-def get_epm_projects_endpoint():
-    epm_config = get_epm_config()
-    force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
-    tab = normalize_epm_text(request.args.get('tab'))
-    started = time.perf_counter()
-    payload = build_epm_projects_payload(epm_config, force_refresh=force_refresh, tab=tab)
-    total_ms = round((time.perf_counter() - started) * 1000, 1)
-    response = jsonify(payload)
-    response.headers['Server-Timing'] = f'home-projects;dur={total_ms}, total;dur={total_ms}'
-    return response
-
-
-@app.route('/api/epm/projects/configuration', methods=['POST'])
-def configure_epm_projects_endpoint():
-    payload = normalize_epm_config(request.get_json(silent=True) or {})
-    force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
-    started = time.perf_counter()
-    projects_payload = build_epm_projects_payload(payload, force_refresh=force_refresh)
-    total_ms = round((time.perf_counter() - started) * 1000, 1)
-    response = jsonify(projects_payload)
-    response.headers['Server-Timing'] = f'home-projects;dur={total_ms}, total;dur={total_ms}'
-    return response
-
-
-@app.route('/api/epm/projects/preview', methods=['POST'])
-def preview_epm_projects_endpoint():
-    return configure_epm_projects_endpoint()
-
-
-@app.route('/api/epm/projects/rollup/all', methods=['GET'])
-def get_all_epm_projects_rollup_endpoint():
-    tab = str(request.args.get('tab') or 'active').strip().lower()
-    sprint = str(request.args.get('sprint') or '').strip()
-    payload, status, headers = build_all_epm_projects_rollup(tab, sprint)
-    response = jsonify(payload)
-    for key, value in headers.items():
-        response.headers[key] = value
-    return response, status
-
-
-@app.route('/api/epm/projects/<home_project_id>/issues', methods=['GET'])
-def get_epm_project_issues_endpoint(home_project_id):
-    tab = str(request.args.get('tab') or 'active').strip().lower()
-    sprint = str(request.args.get('sprint') or '').strip()
-    validation_error = validate_epm_tab_sprint(tab, sprint)
-    if validation_error:
-        error_payload, status = validation_error
-        return jsonify(error_payload), status
-
-    project = find_epm_project_or_404(home_project_id)
-    linkage = project['resolvedLinkage']
-    scope_clause = build_epm_scope_clause(linkage)
-    if not scope_clause:
-        return jsonify({'project': project, 'issues': [], 'epics': {}, 'metadataOnly': True})
-
-    base_jql = build_base_jql()
-    cache_key = f"{home_project_id}::{tab}::{sprint}::{base_jql}::{json.dumps(linkage, sort_keys=True)}"
-    with _epm_cache_lock:
-        cached = EPM_ISSUES_CACHE.get(cache_key)
-    if cached and (time.time() - cached['timestamp']) < EPM_ISSUES_CACHE_TTL_SECONDS:
-        response = jsonify(cached['data'])
-        response.headers['Server-Timing'] = 'cache;dur=1'
-        return response
-
-    started = time.perf_counter()
-    jql = add_clause_to_jql(base_jql, scope_clause)
-    if should_apply_epm_sprint(tab):
-        jql = add_clause_to_jql(jql, f'Sprint = {sprint}')
-    issues = fetch_issues_by_jql(jql, build_jira_headers(), build_epm_fields_list())
-    slim_issues, epic_details = shape_epm_issue_payload(issues)
-    payload = {
-        'project': project,
-        'issues': dedupe_issues_by_key(slim_issues),
-        'epics': epic_details,
-        'metadataOnly': False,
-    }
-    with _epm_cache_lock:
-        EPM_ISSUES_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
-    response = jsonify(payload)
-    response.headers['Server-Timing'] = f'jira-search;dur={round((time.perf_counter() - started) * 1000, 1)}'
-    return response
-
-
-@app.route('/api/epm/projects/<project_id>/rollup', methods=['GET'])
-def get_epm_project_rollup_endpoint(project_id):
-    tab = str(request.args.get('tab') or 'active').strip().lower()
-    sprint = str(request.args.get('sprint') or '').strip()
-    payload, status, headers = build_per_project_rollup(
-        project_id,
-        tab,
-        sprint,
-        build_epm_rollup_dependencies(),
-    )
-    response = jsonify(payload)
-    for key, value in headers.items():
-        response.headers[key] = value
-    return response, status
-
-
-@app.route('/api/epm/config', methods=['POST'])
-# TODO(SETTINGS_ADMIN_ONLY): gate this route when the admin flag ships.
-def save_epm_config_endpoint():
-    raw_payload = request.get_json(silent=True) or {}
-    raw_projects = raw_payload.get('projects') if isinstance(raw_payload, dict) else {}
-    if isinstance(raw_projects, dict):
-        rewritten_projects = {}
-        for _, row in raw_projects.items():
-            if not isinstance(row, dict):
-                continue
-            rewritten_row = dict(row)
-            home_project_id = normalize_epm_text(rewritten_row.get('homeProjectId'))
-            row_id = normalize_epm_text(rewritten_row.get('id'))
-            if home_project_id:
-                rewritten_row['id'] = home_project_id
-                rewritten_projects[home_project_id] = rewritten_row
-                continue
-            if not row_id or row_id.startswith('draft-'):
-                row_id = uuid.uuid4().hex
-            rewritten_row['id'] = row_id
-            rewritten_row['homeProjectId'] = None
-            rewritten_projects[row_id] = rewritten_row
-        raw_payload = dict(raw_payload)
-        raw_payload['projects'] = rewritten_projects
-    payload = normalize_epm_config(raw_payload)
-    try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        previous_epm_config = normalize_epm_config(dashboard_config.get('epm') or {})
-        previous_scope_key = build_epm_home_projects_cache_key(previous_epm_config.get('scope') or {})
-        next_scope_key = build_epm_home_projects_cache_key(payload.get('scope') or {})
-        dashboard_config['epm'] = payload
-        save_dashboard_config(dashboard_config)
-        if previous_scope_key != next_scope_key:
-            clear_epm_project_cache()
-        clear_epm_rollup_caches()
-    except Exception as e:
-        return jsonify({'error': 'Failed to save EPM config', 'message': str(e)}), 500
-    return jsonify(payload)
-
-
-@app.route('/api/capacity/config', methods=['POST'])
-def save_capacity_config_endpoint():
-    """Save capacity project and field configuration."""
-    payload = request.get_json(silent=True) or {}
-    project = str(payload.get('project', '')).strip()
-    field_id = str(payload.get('fieldId', '')).strip()
-    field_name = str(payload.get('fieldName', '')).strip()
-
-    try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        dashboard_config['capacity'] = {
-            'project': project,
-            'fieldId': field_id,
-            'fieldName': field_name,
-        }
-        save_dashboard_config(dashboard_config)
-        # Reset the field cache since config changed
-        global CAPACITY_FIELD_CACHE
-        with _cache_lock:
-            CAPACITY_FIELD_CACHE = None
-    except Exception as e:
-        return jsonify({'error': 'Failed to save capacity config', 'message': str(e)}), 500
-
-    return jsonify({'project': project, 'fieldId': field_id, 'fieldName': field_name})
 
 
 # --- Custom Field Config Endpoints ---
@@ -7250,209 +5226,9 @@ def _save_field_config(config_key, cache_name=None):
     return jsonify({'fieldId': field_id, 'fieldName': field_name})
 
 
-@app.route('/api/sprint-field/config', methods=['GET'])
-def get_sprint_field_config_endpoint():
-    return jsonify(get_sprint_field_config())
-
-
-@app.route('/api/sprint-field/config', methods=['POST'])
-def save_sprint_field_config_endpoint():
-    return _save_field_config('sprintField')
-
-
-@app.route('/api/story-points-field/config', methods=['GET'])
-def get_story_points_field_config_endpoint():
-    return jsonify(get_story_points_field_config())
-
-
-@app.route('/api/story-points-field/config', methods=['POST'])
-def save_story_points_field_config_endpoint():
-    return _save_field_config('storyPointsField')
-
-
-@app.route('/api/parent-name-field/config', methods=['GET'])
-def get_parent_name_field_config_endpoint():
-    return jsonify(get_parent_name_field_config())
-
-
-@app.route('/api/parent-name-field/config', methods=['POST'])
-def save_parent_name_field_config_endpoint():
-    return _save_field_config('parentNameField', 'PARENT_NAME_FIELD_CACHE')
-
-
-@app.route('/api/team-field/config', methods=['GET'])
-def get_team_field_config_endpoint():
-    return jsonify(get_team_field_config())
-
-
-@app.route('/api/team-field/config', methods=['POST'])
-def save_team_field_config_endpoint():
-    return _save_field_config('teamField', 'TEAM_FIELD_CACHE')
-
-
-@app.route('/api/stats/priority-weights-config', methods=['GET'])
-def get_stats_priority_weights_config_endpoint():
-    payload = get_priority_weights_config()
-    return jsonify(payload)
-
-
-@app.route('/api/stats/priority-weights-config', methods=['POST'])
-def save_stats_priority_weights_config_endpoint():
-    payload = request.get_json(silent=True) or {}
-    raw_weights = payload.get('weights', [])
-    try:
-        normalized = normalize_priority_weight_rows(raw_weights)
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
-
-    try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        dashboard_config['statsPriorityWeights'] = normalized
-        save_dashboard_config(dashboard_config)
-    except Exception as e:
-        return jsonify({'error': 'Failed to save stats priority weights', 'message': str(e)}), 500
-
-    return jsonify({'weights': normalized, 'source': 'config'})
-
-
 # --- Issue Types ---
 ISSUE_TYPES_CACHE = {'data': None, 'timestamp': 0}
 ISSUE_TYPES_CACHE_TTL = 60 * 60  # 1 hour
-
-
-@app.route('/api/issue-types', methods=['GET'])
-def get_jira_issue_types():
-    """Fetch available Jira issue types with caching."""
-    try:
-        with _cache_lock:
-            if ISSUE_TYPES_CACHE['data'] and (time.time() - ISSUE_TYPES_CACHE['timestamp']) < ISSUE_TYPES_CACHE_TTL:
-                return jsonify({'issueTypes': ISSUE_TYPES_CACHE['data']})
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-        }
-
-        url = f'{JIRA_URL}/rest/api/3/issuetype'
-        response = HTTP_SESSION.get(url, headers=headers, timeout=15)
-        if response.status_code != 200:
-            return jsonify({'error': 'Failed to fetch issue types', 'details': response.text}), response.status_code
-        data = response.json()
-        result = []
-        seen = set()
-        for it in data:
-            name = it.get('name', '')
-            if name and name not in seen:
-                seen.add(name)
-                result.append({
-                    'name': name,
-                    'subtask': it.get('subtask', False),
-                    'iconUrl': it.get('iconUrl', ''),
-                })
-        result.sort(key=lambda x: x['name'])
-
-        with _cache_lock:
-            ISSUE_TYPES_CACHE['data'] = result
-            ISSUE_TYPES_CACHE['timestamp'] = time.time()
-
-        return jsonify({'issueTypes': result})
-    except Exception as e:
-        return jsonify({'error': 'Failed to fetch issue types', 'details': str(e)}), 500
-
-
-@app.route('/api/issue-types/config', methods=['GET'])
-def get_issue_types_config_endpoint():
-    """Return configured issue types from dashboard config."""
-    types = get_configured_issue_types()
-    return jsonify({'issueTypes': types})
-
-
-@app.route('/api/issue-types/config', methods=['POST'])
-def save_issue_types_config_endpoint():
-    """Save issue types configuration."""
-    payload = request.get_json(silent=True) or {}
-    raw = payload.get('issueTypes', [])
-    if not isinstance(raw, list):
-        return jsonify({'error': 'issueTypes must be an array'}), 400
-    sanitized = [str(t).strip() for t in raw if str(t).strip()]
-
-    try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        dashboard_config['issueTypes'] = sanitized
-        save_dashboard_config(dashboard_config)
-    except Exception as e:
-        return jsonify({'error': 'Failed to save issue types config', 'message': str(e)}), 500
-
-    # Invalidate tasks cache since query scope changed
-    with _cache_lock:
-        TASKS_CACHE.clear()
-
-    return jsonify({'issueTypes': sanitized})
-
-
-@app.route('/api/fields', methods=['GET'])
-def get_jira_fields():
-    """Fetch available Jira fields, optionally scoped to a project."""
-    project_key = request.args.get('project', '').strip()
-    try:
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-        }
-
-        if project_key:
-            # Fetch fields scoped to a specific project via createmeta
-            seen = {}
-            url = f'{JIRA_URL}/rest/api/3/issue/createmeta/{project_key}/issuetypes'
-            resp = HTTP_SESSION.get(url, headers=headers, timeout=15)
-            if resp.status_code == 200:
-                issue_types = (resp.json() or {}).get('issueTypes', resp.json() if isinstance(resp.json(), list) else [])
-                if isinstance(issue_types, list):
-                    for it in issue_types[:5]:  # sample a few issue types
-                        it_id = it.get('id', '')
-                        if not it_id:
-                            continue
-                        fields_url = f'{JIRA_URL}/rest/api/3/issue/createmeta/{project_key}/issuetypes/{it_id}'
-                        fields_resp = HTTP_SESSION.get(fields_url, headers=headers, timeout=15)
-                        if fields_resp.status_code == 200:
-                            field_values = (fields_resp.json() or {}).get('fields', fields_resp.json() if isinstance(fields_resp.json(), list) else [])
-                            if isinstance(field_values, list):
-                                for fv in field_values:
-                                    fid = fv.get('fieldId', fv.get('key', ''))
-                                    fname = fv.get('name', '')
-                                    if fid and fid not in seen:
-                                        seen[fid] = {'id': fid, 'name': fname, 'custom': fid.startswith('customfield_')}
-                            elif isinstance(field_values, dict):
-                                for fid, fv in field_values.items():
-                                    fname = fv.get('name', '') if isinstance(fv, dict) else ''
-                                    if fid and fid not in seen:
-                                        seen[fid] = {'id': fid, 'name': fname, 'custom': fid.startswith('customfield_')}
-            if seen:
-                result = sorted(seen.values(), key=lambda f: f['name'].lower())
-                return jsonify({'fields': result, 'scoped': True})
-            # Fallback to global fields if createmeta didn't work
-
-        response = HTTP_SESSION.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=15)
-        if response.status_code != 200:
-            return jsonify({'error': 'Failed to fetch fields', 'details': response.text}), response.status_code
-        fields = response.json() or []
-        result = []
-        for field in fields:
-            result.append({
-                'id': field.get('id', ''),
-                'name': field.get('name', ''),
-                'custom': field.get('custom', False),
-            })
-        result.sort(key=lambda f: f['name'].lower())
-        return jsonify({'fields': result, 'scoped': False})
-    except Exception as e:
-        return jsonify({'error': 'Failed to fetch fields', 'details': str(e)}), 500
 
 
 @app.route('/api/capacity', methods=['GET'])
@@ -7736,8 +5512,6 @@ def export_excel():
 def index():
     """Serve the dashboard HTML."""
     return send_file('jira-dashboard.html')
-
-
 
 
 if __name__ == '__main__':

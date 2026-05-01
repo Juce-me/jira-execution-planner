@@ -7,8 +7,12 @@
     "node": "20.x"
   },
   "scripts": {
-    "build": "esbuild frontend/src/dashboard.jsx --bundle --minify --sourcemap --format=iife --outfile=frontend/dist/dashboard.js --define:process.env.NODE_ENV='\"production\"'",
-    "watch": "esbuild frontend/src/dashboard.jsx --bundle --sourcemap --format=iife --outfile=frontend/dist/dashboard.js --define:process.env.NODE_ENV='\"development\"' --watch"
+    "build": "npm run build:js && npm run build:css",
+    "build:js": "esbuild frontend/src/dashboard.jsx --bundle --minify --sourcemap --format=iife --outfile=frontend/dist/dashboard.js --loader:.css=empty --define:process.env.NODE_ENV='\"production\"'",
+    "build:css": "esbuild frontend/src/styles/dashboard.css --bundle --outfile=frontend/dist/dashboard.css",
+    "watch": "node -e \"const { spawn } = require('child_process'); const children = [['npm', ['run', 'watch:js']], ['npm', ['run', 'watch:css']]].map(([cmd, args]) => spawn(cmd, args, { stdio: 'inherit' })); const stop = () => children.forEach((child) => child.kill('SIGTERM')); process.on('SIGINT', () => { stop(); process.exit(130); }); process.on('SIGTERM', () => { stop(); process.exit(143); }); children.forEach((child) => child.on('exit', (code) => { if (code) { stop(); process.exit(code); } }));\"",
+    "watch:js": "esbuild frontend/src/dashboard.jsx --bundle --sourcemap --format=iife --outfile=frontend/dist/dashboard.js --loader:.css=empty --define:process.env.NODE_ENV='\"development\"' --watch",
+    "watch:css": "esbuild frontend/src/styles/dashboard.css --bundle --outfile=frontend/dist/dashboard.css --watch"
   },
   "dependencies": {
     "react": "^19.2.4",

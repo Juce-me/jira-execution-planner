@@ -23,7 +23,57 @@ import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
-import { fetchEpmConfig, fetchEpmScope, fetchEpmGoals, fetchEpmProjects, fetchEpmConfigurationProjects, fetchEpmProjectRollup, fetchEpmAllProjectsRollup } from './api/epmApi.js';
+import {
+    fetchMissingPlanningInfo as requestMissingPlanningInfo,
+    fetchSprints as requestSprints,
+    fetchCapacity as requestCapacity,
+    fetchEngTasks,
+    fetchBacklogEpics as requestBacklogEpics,
+    fetchDependencies as requestDependencies,
+} from './api/engApi.js';
+import {
+    fetchAppConfig,
+    fetchVersionInfo,
+    testJiraConnection,
+    fetchGroupsConfig as requestGroupsConfig,
+    saveGroupsConfig as requestSaveGroupsConfig,
+    fetchSelectedProjects as requestSelectedProjects,
+    saveSelectedProjects as requestSaveSelectedProjects,
+    fetchBoardConfig as requestBoardConfig,
+    saveBoardConfig as requestSaveBoardConfig,
+    fetchPriorityWeightsConfig as requestPriorityWeightsConfig,
+    savePriorityWeightsConfig as requestSavePriorityWeightsConfig,
+    fetchCapacityConfig as requestCapacityConfig,
+    saveCapacityConfig as requestSaveCapacityConfig,
+    fetchFieldConfig as requestFieldConfig,
+    saveFieldConfig as requestSaveFieldConfig,
+    fetchIssueTypesConfig as requestIssueTypesConfig,
+    saveIssueTypesConfig as requestSaveIssueTypesConfig,
+    fetchAvailableIssueTypes as requestAvailableIssueTypes,
+} from './api/configApi.js';
+import {
+    fetchEpmConfig,
+    fetchEpmScope,
+    fetchEpmGoals,
+    fetchEpmProjects,
+    fetchEpmConfigurationProjects,
+    fetchEpmProjectRollup,
+    fetchEpmAllProjectsRollup,
+} from './api/epmApi.js';
+import {
+    fetchJiraLabels as requestJiraLabels,
+    fetchTeamCatalog as requestTeamCatalog,
+    saveTeamCatalog as requestSaveTeamCatalog,
+    fetchAllTeams as requestAllTeams,
+    resolveTeams as requestResolveTeams,
+    fetchProjects as requestJiraProjects,
+    fetchBoards as requestJiraBoards,
+    searchProjects as requestProjectSearch,
+    searchBoards as requestBoardSearch,
+    searchComponents as requestComponentSearch,
+    searchEpics as requestEpicSearch,
+    fetchFields as requestJiraFields,
+} from './api/jiraCatalogApi.js';
 import { EpmRollupPanel } from './epm/EpmRollupPanel.jsx';
 import {
     buildAggregateRollupBoards,
@@ -905,13 +955,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setLabelSearchLoading(prev => ({ ...prev, [key]: true }));
                 try {
                     const prefix = String(epmConfigDraft.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX).trim();
-                    const response = showAll || !prefix
-                        ? await fetch(`${BACKEND_URL}/api/jira/labels?limit=200`, { cache: 'no-cache' })
-                        : await fetch(`${BACKEND_URL}/api/jira/labels?prefix=${encodeURIComponent(prefix)}&limit=200`, { cache: 'no-cache' });
-                    if (!response.ok) {
-                        throw new Error(`Labels error ${response.status}`);
-                    }
-                    const payload = await response.json();
+                    const payload = await requestJiraLabels(BACKEND_URL, showAll || !prefix
+                        ? { limit: 200 }
+                        : { prefix, limit: 200 });
                     const nextResults = Array.isArray(payload.labels) ? payload.labels : [];
                     if (labelSearchRequestIdRef.current[key] === requestId) {
                         setLabelSearchResults(prev => ({ ...prev, [key]: nextResults }));
@@ -1457,9 +1503,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 let cancelled = false;
                 const fetchVersion = async () => {
                     try {
-                        const response = await fetch(`${BACKEND_URL}/api/version`, { cache: 'no-cache' });
-                        if (!response.ok) return;
-                        const data = await response.json();
+                        const data = await fetchVersionInfo(BACKEND_URL);
                         if (!cancelled) {
                             setUpdateInfo(data);
                         }
@@ -1919,11 +1963,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setGroupsLoading(true);
                 setGroupsError('');
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/groups-config`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestGroupsConfig(BACKEND_URL);
                     if (!response.ok) {
                         throw new Error(`Groups config error ${response.status}`);
                     }
@@ -1988,7 +2028,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadTeamCatalog = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/team-catalog?t=${Date.now()}`);
+                    const response = await requestTeamCatalog(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     setTeamCatalogState({
@@ -2006,11 +2046,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const saveTeamCatalog = async (catalog, meta, merge = false) => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/team-catalog`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ catalog, meta, merge })
-                    });
+                    const response = await requestSaveTeamCatalog(BACKEND_URL, { catalog, meta, merge });
                     if (!response.ok) return;
                     const data = await response.json();
                     setTeamCatalogState({
@@ -2043,10 +2079,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setGroupDraftError('');
 
                 try {
-                    const sprintParam = selectedSprint || '';
-                    const url = `${BACKEND_URL}/api/teams?_t=${Date.now()}&sprint=${sprintParam}&all=true`;
-
-                    const response = await fetch(url);
+                    const response = await requestAllTeams(BACKEND_URL, { sprint: selectedSprint });
 
                     if (!response.ok) {
                         const errorText = await response.text();
@@ -2088,11 +2121,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const resolveMissingTeamNames = async (teamIds) => {
                 if (!teamIds.length) return;
                 try {
-                    const params = new URLSearchParams({
-                        teamIds: teamIds.join(','),
-                        t: Date.now().toString()
-                    });
-                    const response = await fetch(`${BACKEND_URL}/api/teams/resolve?${params.toString()}`);
+                    const response = await requestResolveTeams(BACKEND_URL, teamIds);
                     if (!response.ok) return;
                     const data = await response.json();
                     const resolvedTeams = data.teams || [];
@@ -2755,7 +2784,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setGroupTesting(true);
                 setGroupTestMessage('');
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/test`);
+                    const response = await testJiraConnection(BACKEND_URL);
                     const payload = await response.json().catch(() => ({}));
                     if (!response.ok) {
                         throw new Error(payload.error || `Test failed (${response.status})`);
@@ -2820,14 +2849,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     const currentActiveGroup = activeGroupId ? (groupsConfig.groups || []).find(g => g.id === activeGroupId) : null;
                     const currentTeamSignature = currentActiveGroup ? (currentActiveGroup.teamIds || []).join('|') : null;
 
-                    const response = await fetch(`${BACKEND_URL}/api/groups-config`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            version: groupDraft.version || 1,
-                            groups: groupDraft.groups || [],
-                            defaultGroupId: groupDraft.defaultGroupId || '',
-                        })
+                    const response = await requestSaveGroupsConfig(BACKEND_URL, {
+                        version: groupDraft.version || 1,
+                        groups: groupDraft.groups || [],
+                        defaultGroupId: groupDraft.defaultGroupId || '',
                     });
                     if (!response.ok) {
                         const errorPayload = await response.json().catch(() => ({}));
@@ -2869,13 +2894,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
                     // Re-fetch config to update capacityEnabled and other derived state
                     try {
-                        const cfgResp = await fetch(`${BACKEND_URL}/api/config`);
-                        if (cfgResp.ok) {
-                            const cfg = await cfgResp.json();
-                            setCapacityEnabled(Boolean(cfg.capacityProject));
-                            setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
-                            setUserCanEditSettings(cfg.userCanEditSettings !== false);
-                        }
+                        const cfg = await fetchAppConfig(BACKEND_URL);
+                        setCapacityEnabled(Boolean(cfg.capacityProject));
+                        setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
+                        setUserCanEditSettings(cfg.userCanEditSettings !== false);
                     } catch (_) { /* best-effort */ }
 
                     invalidateSprintDataForConfigSave(refreshTarget);
@@ -2931,11 +2953,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const fetchJiraProjects = async () => {
                 setLoadingProjects(true);
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/projects`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestJiraProjects(BACKEND_URL);
                     if (!response.ok) throw new Error(`Projects fetch error ${response.status}`);
                     const data = await response.json();
                     setJiraProjects(data.projects || []);
@@ -2949,11 +2967,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const fetchJiraBoards = async () => {
                 setLoadingBoards(true);
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/boards`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestJiraBoards(BACKEND_URL);
                     if (!response.ok) throw new Error(`Boards fetch error ${response.status}`);
                     const data = await response.json();
                     setJiraBoards(data.boards || []);
@@ -2976,15 +2990,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 const timeoutId = window.setTimeout(async () => {
                     setProjectSearchRemoteLoading(true);
                     try {
-                        const params = new URLSearchParams();
-                        params.set('query', query);
-                        params.set('limit', '25');
-                        const response = await fetch(`${BACKEND_URL}/api/projects?${params.toString()}`, {
-                            method: 'GET',
-                            headers: { 'Content-Type': 'application/json' },
-                            cache: 'no-cache',
-                            signal: controller.signal
-                        });
+                        const response = await requestProjectSearch(BACKEND_URL, { query, signal: controller.signal });
                         if (!response.ok) throw new Error(`Projects search error ${response.status}`);
                         const data = await response.json();
                         setProjectSearchRemoteResults(data.projects || []);
@@ -3018,15 +3024,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 const timeoutId = window.setTimeout(async () => {
                     setBoardSearchRemoteLoading(true);
                     try {
-                        const params = new URLSearchParams();
-                        params.set('query', query);
-                        params.set('limit', '25');
-                        const response = await fetch(`${BACKEND_URL}/api/boards?${params.toString()}`, {
-                            method: 'GET',
-                            headers: { 'Content-Type': 'application/json' },
-                            cache: 'no-cache',
-                            signal: controller.signal
-                        });
+                        const response = await requestBoardSearch(BACKEND_URL, { query, signal: controller.signal });
                         if (!response.ok) throw new Error(`Boards search error ${response.status}`);
                         const data = await response.json();
                         setBoardSearchRemoteResults(data.boards || []);
@@ -3061,15 +3059,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 const timeoutId = window.setTimeout(async () => {
                     setComponentSearchLoading(true);
                     try {
-                        const params = new URLSearchParams();
-                        params.set('query', query);
-                        params.set('limit', '15');
-                        const response = await fetch(`${BACKEND_URL}/api/components?${params.toString()}`, {
-                            method: 'GET',
-                            headers: { 'Content-Type': 'application/json' },
-                            cache: 'no-cache',
-                            signal: controller.signal
-                        });
+                        const response = await requestComponentSearch(BACKEND_URL, { query, signal: controller.signal });
                         if (!response.ok) throw new Error(`Components search error ${response.status}`);
                         const data = await response.json();
                         setComponentSearchResults(data.components || []);
@@ -3104,15 +3094,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 const timeoutId = window.setTimeout(async () => {
                     setExcludedEpicSearchLoading(true);
                     try {
-                        const params = new URLSearchParams();
-                        params.set('query', query);
-                        params.set('limit', '15');
-                        const response = await fetch(`${BACKEND_URL}/api/epics/search?${params.toString()}`, {
-                            method: 'GET',
-                            headers: { 'Content-Type': 'application/json' },
-                            cache: 'no-cache',
-                            signal: controller.signal
-                        });
+                        const response = await requestEpicSearch(BACKEND_URL, { query, signal: controller.signal });
                         if (!response.ok) throw new Error(`Excluded epics search error ${response.status}`);
                         const data = await response.json();
                         setExcludedEpicSearchResults(data.epics || []);
@@ -3304,11 +3286,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadSelectedProjects = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/projects/selected`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestSelectedProjects(BACKEND_URL);
                     if (!response.ok) throw new Error(`Selected projects fetch error ${response.status}`);
                     const data = await response.json();
                     const selected = data.selected || [];
@@ -3322,11 +3300,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadBoardConfig = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/board-config`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestBoardConfig(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     const nextBoardId = String(data.boardId || '');
@@ -3341,11 +3315,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadPriorityWeightsConfig = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/stats/priority-weights-config`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestPriorityWeightsConfig(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     const rows = clonePriorityWeightRows(data.weights);
@@ -3359,11 +3329,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             };
 
             const saveBoardConfig = async () => {
-                const response = await fetch(`${BACKEND_URL}/api/board-config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft })
-                });
+                const response = await requestSaveBoardConfig(BACKEND_URL, { boardId: boardIdDraft, boardName: boardNameDraft });
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
                     throw new Error(err.error || `Save failed (${response.status})`);
@@ -3372,16 +3338,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             };
 
             const savePriorityWeightsConfig = async () => {
-                const response = await fetch(`${BACKEND_URL}/api/stats/priority-weights-config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        weights: (priorityWeightsDraft || []).map((row) => ({
-                            priority: String(row.priority || '').trim(),
-                            weight: Number(row.weight)
-                        }))
-                    })
-                });
+                const response = await requestSavePriorityWeightsConfig(BACKEND_URL, (priorityWeightsDraft || []).map((row) => ({
+                    priority: String(row.priority || '').trim(),
+                    weight: Number(row.weight)
+                })));
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
                     throw new Error(err.error || `Save failed (${response.status})`);
@@ -3520,11 +3480,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setGroupSaving(true);
                 setGroupDraftError('');
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/projects/selected`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ selected: selectedProjectsDraft })
-                    });
+                    const response = await requestSaveSelectedProjects(BACKEND_URL, selectedProjectsDraft);
                     if (!response.ok) {
                         const errorPayload = await response.json().catch(() => ({}));
                         throw new Error(errorPayload.error || `Save failed (${response.status})`);
@@ -3541,11 +3497,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadCapacityConfig = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/capacity/config`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestCapacityConfig(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     setCapacityProjectDraft(data.project || '');
@@ -3558,11 +3510,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             };
 
             const saveCapacityConfig = async () => {
-                const response = await fetch(`${BACKEND_URL}/api/capacity/config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft })
-                });
+                const response = await requestSaveCapacityConfig(BACKEND_URL, { project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
                     throw new Error(err.error || `Save failed (${response.status})`);
@@ -3573,7 +3521,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             // Generic load/save helpers for custom field pickers
             const loadFieldConfig = async (endpoint, setId, setName, baselineRef) => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/${endpoint}/config`, { method: 'GET', headers: { 'Content-Type': 'application/json' }, cache: 'no-cache' });
+                    const response = await requestFieldConfig(BACKEND_URL, endpoint);
                     if (!response.ok) return;
                     const data = await response.json();
                     setId(data.fieldId || '');
@@ -3584,11 +3532,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
             };
             const saveFieldConfig = async (endpoint, fieldId, fieldName, baselineRef) => {
-                const response = await fetch(`${BACKEND_URL}/api/${endpoint}/config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fieldId, fieldName })
-                });
+                const response = await requestSaveFieldConfig(BACKEND_URL, endpoint, { fieldId, fieldName });
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
                     throw new Error(err.error || `Save failed (${response.status})`);
@@ -3607,11 +3551,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadIssueTypesConfig = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/issue-types/config`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestIssueTypesConfig(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     const types = data.issueTypes || ['Story'];
@@ -3623,11 +3563,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             };
 
             const saveIssueTypesConfig = async () => {
-                const response = await fetch(`${BACKEND_URL}/api/issue-types/config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ issueTypes: issueTypesDraft })
-                });
+                const response = await requestSaveIssueTypesConfig(BACKEND_URL, issueTypesDraft);
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
                     throw new Error(err.error || `Save failed (${response.status})`);
@@ -3637,11 +3573,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const fetchAvailableIssueTypes = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/issue-types`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestAvailableIssueTypes(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     setAvailableIssueTypes(data.issueTypes || []);
@@ -3699,12 +3631,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const fetchJiraFields = async (projectKey) => {
                 setLoadingFields(true);
                 try {
-                    const params = projectKey ? `?project=${encodeURIComponent(projectKey)}` : '';
-                    const response = await fetch(`${BACKEND_URL}/api/fields${params}`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestJiraFields(BACKEND_URL, { projectKey });
                     if (!response.ok) throw new Error(`Fields fetch error ${response.status}`);
                     const data = await response.json();
                     setJiraFields(data.fields || []);
@@ -4023,11 +3950,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 labelSearchRequestIdRef.current[key] = requestId;
                 setLabelSearchLoading(prev => ({ ...prev, [key]: true }));
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/jira/labels?query=${encodeURIComponent(query)}&limit=20`, { cache: 'no-cache' });
-                    if (!response.ok) {
-                        throw new Error(`Labels error ${response.status}`);
-                    }
-                    const payload = await response.json();
+                    const payload = await requestJiraLabels(BACKEND_URL, { query, limit: 20 });
                     const nextResults = Array.isArray(payload.labels) ? payload.labels : [];
                     labelSearchCacheRef.current[cacheKey] = nextResults;
                     if (labelSearchRequestIdRef.current[key] === requestId) {
@@ -4947,18 +4870,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 
             const loadConfig = async () => {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/config`);
-                    if (response.ok) {
-                        const config = await response.json();
-                        setJiraUrl(config.jiraUrl || '');
-                        setCapacityEnabled(Boolean(config.capacityProject));
-                        setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
-                        setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
-                        setUserCanEditSettings(config.userCanEditSettings !== false);
-                        applySavedEpmConfig(config.epm);
-                    } else {
-                        applySavedEpmConfig(createEmptyEpmConfigDraft());
-                    }
+                    const config = await fetchAppConfig(BACKEND_URL);
+                    setJiraUrl(config.jiraUrl || '');
+                    setCapacityEnabled(Boolean(config.capacityProject));
+                    setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
+                    setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
+                    setUserCanEditSettings(config.userCanEditSettings !== false);
+                    applySavedEpmConfig(config.epm);
                 } catch (err) {
                     console.error('Failed to load config:', err);
                     applySavedEpmConfig(createEmptyEpmConfigDraft());
@@ -5018,18 +4936,11 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         setMissingPlanningInfoTasks([]);
                         return;
                     }
-                    const params = new URLSearchParams({ sprint: String(sprintId), t: Date.now().toString() });
-                    if (activeGroupTeamIds.length) {
-                        params.set('teamIds', activeGroupTeamIds.join(','));
-                    }
                     const groupComponents = activeGroup?.missingInfoComponents || [];
-                    if (groupComponents.length) {
-                        params.set('components', groupComponents.join(','));
-                    }
-                    const response = await fetch(`${BACKEND_URL}/api/missing-info?${params.toString()}`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache',
+                    const response = await requestMissingPlanningInfo(BACKEND_URL, {
+                        sprintId,
+                        teamIds: activeGroupTeamIds,
+                        components: groupComponents,
                         signal: controller.signal
                     });
 	                    if (!response.ok) return;
@@ -5062,19 +4973,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const loadSprints = async (forceRefresh = false) => {
                 setSprintsLoading(true);
                 try {
-                    const params = new URLSearchParams({
-                        t: Date.now().toString()
-                    });
-                    if (forceRefresh) {
-                        params.append('refresh', 'true');
-                    }
-                    const response = await fetch(`${BACKEND_URL}/api/sprints?${params}`, {
-                        method: 'GET',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestSprints(BACKEND_URL, { forceRefresh });
 
                     if (!response.ok) {
                         throw new Error(`Error ${response.status}`);
@@ -5132,18 +5031,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setCapacityLoading(true);
                 try {
                     const teams = capacityTeamNames;
-                    const params = new URLSearchParams({
-                        sprint: sprintName,
-                        t: Date.now().toString()
-                    });
-                    if (teams.length) {
-                        params.append('teams', teams.join(','));
-                    }
-                    const response = await fetch(`${BACKEND_URL}/api/capacity?${params.toString()}`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' },
-                        cache: 'no-cache'
-                    });
+                    const response = await requestCapacity(BACKEND_URL, { sprintName, teams });
                     if (!response.ok) {
                         setCapacityByTeam({});
                         return;
@@ -5251,38 +5139,20 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     const sprintParam = options.sprintOverride !== undefined ? options.sprintOverride : (selectedSprint || '');
                     const groupTeamIds = activeGroupTeamIds;
                     const useGroupTemplate = groupQueryTemplateEnabled && groupTeamIds.length > 0;
-                    // Add cache busting parameter and sprint parameter
-                    const params = new URLSearchParams({
-                        t: Date.now().toString(),
-                        sprint: sprintParam,
-                        team: 'all',
-                        project: project || 'all',
-                        groupId: activeGroupId || ''
-                    });
                     // Bypass server cache on page load or explicit refresh
+                    let refresh = false;
                     if (pageLoadRefreshRef.current || options.forceRefresh) {
-                        params.set('refresh', 'true');
+                        refresh = true;
                         pageLoadRefreshRef.current = false;
                     }
-                    // If group has teams configured, always filter by them (overrides ENV filter)
-                    if (groupTeamIds.length > 0) {
-                        params.set('teamIds', groupTeamIds.join(','));
-                    }
-                    if (options.purpose) {
-                        params.set('purpose', String(options.purpose));
-                    }
-                    if (options.epicKeys && options.epicKeys.length) {
-                        const epicKeys = Array.from(new Set(options.epicKeys.filter(Boolean)));
-                        if (epicKeys.length) {
-                            params.set('epicKeys', epicKeys.join(','));
-                        }
-                    }
-                    const response = await fetch(`${BACKEND_URL}/api/tasks-with-team-name?${params}`, {
-                        method: 'GET',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        cache: 'no-cache',
+                    const response = await fetchEngTasks(BACKEND_URL, {
+                        project,
+                        sprint: sprintParam,
+                        groupId: activeGroupId,
+                        teamIds: groupTeamIds,
+                        refresh,
+                        purpose: options.purpose,
+                        epicKeys: options.epicKeys,
                         signal: controller.signal
                     });
 
@@ -5356,22 +5226,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const fetchBacklogEpics = async (project) => {
                 if (!isFutureSprintSelected) return [];
                 if (activeGroupId && activeGroupTeamIds.length === 0) return [];
-                const params = new URLSearchParams({
-                    t: Date.now().toString(),
-                    project: project || 'all'
-                });
-                if (activeGroupTeamIds.length > 0) {
-                    params.set('teamIds', activeGroupTeamIds.join(','));
-                }
-                const response = await fetch(`${BACKEND_URL}/api/backlog-epics?${params.toString()}`, {
-                    method: 'GET',
-                    headers: { 'Content-Type': 'application/json' },
-                    cache: 'no-cache'
-                });
-                if (!response.ok) {
-                    throw new Error(`Backlog epics error ${response.status}`);
-                }
-                const payload = await response.json();
+                const payload = await requestBacklogEpics(BACKEND_URL, { project, teamIds: activeGroupTeamIds });
                 return Array.isArray(payload.epics) ? payload.epics : [];
             };
 
@@ -5458,12 +5313,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 }
                 const controller = registerSprintFetch();
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/dependencies`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ keys }),
-                        signal: controller.signal
-                    });
+                    const response = await requestDependencies(BACKEND_URL, keys, { signal: controller.signal });
                     if (!response.ok) {
                         console.error('Dependencies fetch failed:', response.status);
                         return;

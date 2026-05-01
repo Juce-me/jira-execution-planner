@@ -326,6 +326,8 @@ Write set:
 - `frontend/src/api/configApi.js`
 - `frontend/src/api/jiraCatalogApi.js`
 - `frontend/src/dashboard.jsx`
+- generated `frontend/dist/dashboard.js`
+- generated `frontend/dist/dashboard.js.map`
 - `tests/test_dashboard_alert_source_guards.js`
 - `tests/test_frontend_api_source_guards.js`
 

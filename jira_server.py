@@ -34,6 +34,7 @@ from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, sched
 from backend.app import app
 from backend import config_store as _config_store
 from backend import jira_client as _jira_client
+from backend.epm import projects as epm_projects
 
 # Load environment variables from .env file
 load_dotenv()
@@ -1203,11 +1204,7 @@ def get_effective_board_id():
 
 
 def build_epm_home_projects_cache_key(epm_scope):
-    scope = epm_scope if isinstance(epm_scope, dict) else {}
-    return json.dumps({
-        'rootGoalKey': normalize_epm_upper_text(scope.get('rootGoalKey')),
-        'subGoalKey': normalize_epm_upper_text(scope.get('subGoalKey')),
-    }, sort_keys=True)
+    return epm_projects.build_epm_home_projects_cache_key(epm_scope)
 
 
 def clear_epm_project_cache():
@@ -1228,45 +1225,35 @@ def clear_epm_caches():
         EPM_ROLLUP_CACHE.clear()
 
 
-def build_epm_home_projects_state(epm_scope, force_refresh=False):
-    cache_key = build_epm_home_projects_cache_key(epm_scope)
-    if not force_refresh:
-        with _epm_cache_lock:
-            cached = EPM_PROJECTS_CACHE.get(cache_key)
-            if cached and (time.time() - cached['timestamp']) < EPM_PROJECTS_CACHE_TTL_SECONDS:
-                return {
-                    'homeProjects': cached.get('homeProjects', []),
-                    'cacheHit': True,
-                    'fetchedAt': cached.get('fetchedAt', ''),
-                    'homeProjectCount': len(cached.get('homeProjects', [])),
-                    'homeProjectLimit': cached.get('homeProjectLimit'),
-                    'possiblyTruncated': bool(cached.get('possiblyTruncated')),
-                }
+def build_epm_projects_dependencies():
+    return epm_projects.EpmProjectsDependencies(
+        fetch_epm_home_projects=fetch_epm_home_projects,
+        merge_epm_linkage=merge_epm_linkage,
+        normalize_epm_config=normalize_epm_config,
+        utc_now_iso=utc_now_iso,
+        cache=EPM_PROJECTS_CACHE,
+        cache_lock=_epm_cache_lock,
+        cache_ttl_seconds=EPM_PROJECTS_CACHE_TTL_SECONDS,
+        home_project_limit=epm_home.HOME_MAX_PROJECTS_PER_GOAL,
+        get_epm_config=get_epm_config,
+        abort_not_found=abort,
+    )
 
-    home_projects = fetch_epm_home_projects(epm_scope)
-    home_project_limit = epm_home.HOME_MAX_PROJECTS_PER_GOAL
-    possibly_truncated = bool(home_project_limit and len(home_projects) >= home_project_limit)
-    fetched_at = utc_now_iso(timespec='seconds')
-    with _epm_cache_lock:
-        EPM_PROJECTS_CACHE[cache_key] = {
-            'timestamp': time.time(),
-            'fetchedAt': fetched_at,
-            'homeProjects': home_projects,
-            'homeProjectLimit': home_project_limit,
-            'possiblyTruncated': possibly_truncated,
-        }
-    return {
-        'homeProjects': home_projects,
-        'cacheHit': False,
-        'fetchedAt': fetched_at,
-        'homeProjectCount': len(home_projects),
-        'homeProjectLimit': home_project_limit,
-        'possiblyTruncated': possibly_truncated,
-    }
+
+def build_epm_home_projects_state(epm_scope, force_refresh=False):
+    return epm_projects.build_epm_home_projects_state(
+        epm_scope,
+        build_epm_projects_dependencies(),
+        force_refresh=force_refresh,
+    )
 
 
 def get_cached_epm_home_projects(epm_scope, force_refresh=False):
-    return build_epm_home_projects_state(epm_scope, force_refresh=force_refresh)['homeProjects']
+    return epm_projects.get_cached_epm_home_projects(
+        epm_scope,
+        build_epm_projects_dependencies(),
+        force_refresh=force_refresh,
+    )
 
 
 def build_jira_headers():
@@ -1493,214 +1480,45 @@ def build_epm_rollup_dependencies():
 
 
 def normalize_epm_label_prefix_mask(label_prefix):
-    prefix = normalize_epm_text(label_prefix)
-    while prefix.endswith('*'):
-        prefix = prefix[:-1].strip()
-    return prefix
+    return epm_projects.normalize_epm_label_prefix_mask(label_prefix)
 
 
 def filter_epm_home_tag_matches(home_project, label_prefix):
-    prefix = normalize_epm_label_prefix_mask(label_prefix)
-    home_tags = home_project.get('homeTags') if isinstance(home_project, dict) else []
-    if not isinstance(home_tags, list):
-        home_tags = []
-    if not prefix:
-        return []
-    normalized_prefix = prefix.lower()
-    matches = []
-    seen = set()
-    for tag in home_tags:
-        tag_text = normalize_epm_text(tag)
-        if not tag_text or not tag_text.lower().startswith(normalized_prefix):
-            continue
-        dedupe_key = tag_text.lower()
-        if dedupe_key in seen:
-            continue
-        seen.add(dedupe_key)
-        matches.append(tag_text)
-    return matches
+    return epm_projects.filter_epm_home_tag_matches(home_project, label_prefix)
 
 
 def resolve_epm_project_label(home_project, config_row, label_prefix):
-    row = config_row or {}
-    manual_label = normalize_epm_text(row.get('label') if 'label' in row else row.get('jiraLabel'))
-    home_tags = home_project.get('homeTags') if isinstance(home_project, dict) else []
-    has_home_tags_field = isinstance(home_tags, list)
-    home_tags = [normalize_epm_text(tag) for tag in (home_tags if has_home_tags_field else []) if normalize_epm_text(tag)]
-    home_tag_matches = filter_epm_home_tag_matches({'homeTags': home_tags}, label_prefix)
-
-    if not has_home_tags_field:
-        legacy_labels = list(((home_project or {}).get('resolvedLinkage') or {}).get('labels') or [])
-        home_tag_matches = [normalize_epm_text(label) for label in legacy_labels if normalize_epm_text(label)]
-
-    if manual_label:
-        if not has_home_tags_field and manual_label in home_tag_matches:
-            return {
-                'label': manual_label,
-                'labelSource': 'home-tag',
-                'labelStatus': 'auto',
-                'homeTags': home_tags,
-                'homeTagMatches': home_tag_matches,
-            }
-        return {
-            'label': manual_label,
-            'labelSource': 'manual',
-            'labelStatus': 'manual',
-            'homeTags': home_tags,
-            'homeTagMatches': home_tag_matches,
-        }
-
-    if len(home_tag_matches) == 1:
-        return {
-            'label': home_tag_matches[0],
-            'labelSource': 'home-tag',
-            'labelStatus': 'auto',
-            'homeTags': home_tags,
-            'homeTagMatches': home_tag_matches,
-        }
-
-    if len(home_tag_matches) > 1:
-        return {
-            'label': '',
-            'labelSource': '',
-            'labelStatus': 'ambiguous',
-            'homeTags': home_tags,
-            'homeTagMatches': home_tag_matches,
-        }
-
-    status = 'unavailable' if (home_project or {}).get('homeTagsUnavailable') else 'missing'
-    return {
-        'label': '',
-        'labelSource': '',
-        'labelStatus': status,
-        'homeTags': home_tags,
-        'homeTagMatches': [],
-    }
+    return epm_projects.resolve_epm_project_label(home_project, config_row, label_prefix)
 
 
 def build_epm_project_payload(home_project, config_row, label_prefix=None):
-    row = config_row or {}
-    linkage_row = dict(row)
-    if 'jiraLabel' not in linkage_row and 'label' in row:
-        linkage_row['jiraLabel'] = row.get('label')
-    linkage, match_state = merge_epm_linkage(home_project, linkage_row)
-    label_resolution = resolve_epm_project_label(home_project, row, label_prefix)
-    resolved_label = label_resolution['label']
-    custom_name = normalize_epm_text(row.get('name') if 'name' in row else row.get('customName'))
-    resolved_epics = sorted(set(linkage.get('epicKeys') or []))
-    resolved_labels = [resolved_label] if resolved_label else []
-    if resolved_label:
-        match_state = 'home-linked' if label_resolution['labelSource'] == 'home-tag' else 'jep-fallback'
-    elif resolved_epics:
-        match_state = 'home-linked'
-    else:
-        match_state = 'metadata-only'
-    return {
-        **home_project,
-        'id': normalize_epm_text(row.get('id')) or home_project.get('homeProjectId', ''),
-        'name': custom_name or home_project.get('name', ''),
-        'label': resolved_label,
-        'customName': custom_name,
-        'displayName': custom_name or home_project.get('name', ''),
-        'resolvedLinkage': {'labels': resolved_labels, 'epicKeys': resolved_epics},
-        'matchState': match_state,
-        **label_resolution,
-    }
+    return epm_projects.build_epm_project_payload(
+        home_project,
+        config_row,
+        label_prefix,
+        merge_epm_linkage=merge_epm_linkage,
+    )
 
 
 def build_custom_project_payload(row):
-    label = normalize_epm_text(row.get('label'))
-    name = normalize_epm_text(row.get('name'))
-    return {
-        'id': normalize_epm_text(row.get('id')),
-        'homeProjectId': None,
-        'homeUrl': '',
-        'stateValue': '',
-        'stateLabel': '',
-        'tabBucket': 'all',
-        'latestUpdateDate': '',
-        'latestUpdateSnippet': '',
-        'latestUpdateHtml': '',
-        'name': name,
-        'label': label,
-        'customName': name,
-        'displayName': name,
-        'resolvedLinkage': {'labels': [label] if label else [], 'epicKeys': []},
-        'matchState': 'jep-fallback' if label else 'metadata-only',
-        'labelSource': 'manual' if label else '',
-        'labelStatus': 'manual' if label else 'missing',
-        'homeTags': [],
-        'homeTagMatches': [],
-    }
+    return epm_projects.build_custom_project_payload(row)
 
 
 def find_epm_config_row(projects, project_id):
-    normalized_project_id = normalize_epm_text(project_id)
-    if not normalized_project_id or not isinstance(projects, dict):
-        return None
-    for key, row in projects.items():
-        if not isinstance(row, dict):
-            continue
-        candidates = [
-            normalize_epm_text(key),
-            normalize_epm_text(row.get('id')),
-            normalize_epm_text(row.get('homeProjectId')),
-        ]
-        if normalized_project_id in candidates:
-            return row
-    return None
+    return epm_projects.find_epm_config_row(projects, project_id)
 
 
 def build_epm_projects_payload(epm_config, force_refresh=False, tab=None):
-    normalized_config = normalize_epm_config(epm_config or {})
-    projects = []
-    epm_scope = normalized_config.get('scope') or {}
-    home_state = build_epm_home_projects_state(epm_scope, force_refresh=force_refresh)
-    returned_home_project_ids = set()
-    for home_project in home_state['homeProjects']:
-        project_id = home_project.get('homeProjectId')
-        if project_id:
-            returned_home_project_ids.add(project_id)
-        config_row = find_epm_config_row(normalized_config['projects'], project_id)
-        projects.append(build_epm_project_payload(home_project, config_row, normalized_config.get('labelPrefix')))
-    for row in normalized_config['projects'].values():
-        home_project_id = normalize_epm_text(row.get('homeProjectId'))
-        if home_project_id and home_project_id in returned_home_project_ids:
-            continue
-        if home_project_id:
-            missing_home_row = build_custom_project_payload(row)
-            missing_home_row['homeProjectId'] = home_project_id
-            missing_home_row['missingFromHomeFetch'] = True
-            missing_home_row['matchState'] = 'missing-home-project'
-            projects.append(missing_home_row)
-            continue
-        projects.append(build_custom_project_payload(row))
-    filtered_projects = filter_epm_projects_for_tab(projects, tab) if normalize_epm_text(tab) else projects
-    return {
-        'projects': filtered_projects,
-        'cacheHit': home_state['cacheHit'],
-        'fetchedAt': home_state['fetchedAt'],
-        'homeProjectCount': home_state['homeProjectCount'],
-        'homeProjectLimit': home_state['homeProjectLimit'],
-        'possiblyTruncated': home_state['possiblyTruncated'],
-    }
+    return epm_projects.build_epm_projects_payload(
+        epm_config,
+        build_epm_projects_dependencies(),
+        force_refresh=force_refresh,
+        tab=tab,
+    )
 
 
 def filter_epm_projects_for_tab(projects, tab):
-    normalized_tab = normalize_epm_text(tab or 'active').lower()
-    visible = []
-    for project in projects or []:
-        tab_bucket = normalize_epm_text((project or {}).get('tabBucket')).lower()
-        if tab_bucket not in {'active', 'backlog', 'archived', 'all'}:
-            state_value = normalize_epm_text((project or {}).get('stateValue') or (project or {}).get('stateLabel'))
-            tab_bucket = epm_home.bucket_epm_state(state_value) if state_value else ''
-        if normalized_tab == 'active':
-            matches_tab = tab_bucket == 'active' or tab_bucket == 'all'
-        else:
-            matches_tab = tab_bucket == normalized_tab
-        if matches_tab:
-            visible.append(project)
-    return visible
+    return epm_projects.filter_epm_projects_for_tab(projects, tab)
 
 
 def _epm_collection_values(collection):
@@ -1822,28 +1640,11 @@ def build_all_epm_projects_rollup(tab, sprint):
 
 
 def find_epm_project_or_404(project_id):
-    epm_config = get_epm_config()
-    epm_scope = epm_config.get('scope') or {}
-    config_row = find_epm_config_row(epm_config['projects'], project_id)
-
-    if config_row is not None:
-        home_project_id = normalize_epm_text(config_row.get('homeProjectId'))
-        if not home_project_id:
-            return build_custom_project_payload(config_row)
-        for home_project in get_cached_epm_home_projects(epm_scope):
-            if home_project.get('homeProjectId') == home_project_id:
-                return build_epm_project_payload(home_project, config_row, epm_config.get('labelPrefix'))
-
-    for home_project in get_cached_epm_home_projects(epm_scope):
-        if home_project.get('homeProjectId') == project_id:
-            config_row = find_epm_config_row(epm_config['projects'], project_id)
-            return build_epm_project_payload(home_project, config_row, epm_config.get('labelPrefix'))
-
-    abort(404)
+    return epm_projects.find_epm_project_or_404(project_id, build_epm_projects_dependencies())
 
 
 def get_epm_project_payload_identity(project):
-    return normalize_epm_text((project or {}).get('id'))
+    return epm_projects.get_epm_project_payload_identity(project)
 
 
 def normalize_epm_text(value):

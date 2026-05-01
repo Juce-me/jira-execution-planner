@@ -40,8 +40,10 @@ test('dashboard source includes the EPM shell project picker and ENG gating hook
 
 test('dashboard source wires EPM rollup loading and metadata-only rendering', () => {
     assert.ok(dashboardSource.includes("if (selectedView !== 'epm') return;"), 'Expected EPM-only project loading effect');
-    assert.ok(dashboardSource.includes('const loadEpmProjects = () => fetchEpmProjects(BACKEND_URL);'), 'Expected dashboard.jsx to load EPM projects through wrapper');
-    assert.ok(epmFetchSource.includes("fetch(`${backendUrl}/api/epm/projects`, { cache: 'no-cache' })"), 'Expected EPM projects fetch in epmFetch.js');
+    assert.ok(dashboardSource.includes('const loadEpmProjects = (tab = epmTab) => fetchEpmProjects(BACKEND_URL, { tab });'), 'Expected dashboard.jsx to load EPM projects through tab-scoped wrapper');
+    assert.ok(epmFetchSource.includes('const query = params.toString();'), 'Expected EPM projects wrapper to build tab query string');
+    assert.ok(epmFetchSource.includes('const url = query ? `${backendUrl}/api/epm/projects?${query}` : `${backendUrl}/api/epm/projects`;'), 'Expected EPM projects wrapper to preserve scoped and unscoped project URLs');
+    assert.ok(epmFetchSource.includes("fetch(url, { cache: 'no-cache' })"), 'Expected EPM projects fetch to use the tab-scoped wrapper URL');
     assert.ok(epmFetchSource.includes('export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {}) {'), 'Expected EPM configuration project loader');
     assert.ok(epmFetchSource.includes('const refreshParam = forceRefresh ? \'?refresh=true\' : \'\';'), 'Expected project configuration refresh query support');
     assert.ok(epmFetchSource.includes('fetch(`${backendUrl}/api/epm/projects/configuration${refreshParam}`'), 'Expected configuration fetch endpoint');

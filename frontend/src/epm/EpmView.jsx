@@ -20,7 +20,6 @@ export function EpmView({
     epmProjectRollupLoadingIds,
     searchQuery,
     loadArchivedEpmProjectRollup,
-    renderEpicBlock,
     openEpmSettingsTab,
     jiraUrl,
     InitiativeIcon,
@@ -61,7 +60,6 @@ export function EpmView({
                     epmProjectRollupLoadingIds={epmProjectRollupLoadingIds}
                     searchQuery={searchQuery}
                     onProjectExpand={loadArchivedEpmProjectRollup}
-                    renderEpicBlock={renderEpicBlock}
                     openEpmSettingsTab={openEpmSettingsTab}
                     jiraUrl={jiraUrl}
                     InitiativeIcon={InitiativeIcon}

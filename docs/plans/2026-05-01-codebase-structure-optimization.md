@@ -562,7 +562,11 @@ Write set:
 - `frontend/src/issues/issueViewUtils.js`
 - `frontend/src/dashboard.jsx`
 - `frontend/src/epm/EpmRollupPanel.jsx`
+- `frontend/src/epm/EpmView.jsx`
+- `frontend/dist/dashboard.js`
+- `frontend/dist/dashboard.js.map`
 - `tests/test_epm_view_source_guards.js`
+- `docs/plans/2026-05-01-codebase-structure-optimization.md`
 
 Steps:
 

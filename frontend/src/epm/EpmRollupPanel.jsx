@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
+import IssueCard, { IssueCardContext } from '../issues/IssueCard.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
-import { buildEpmEngEpicGroup, buildEpmProjectUpdateLine, getEpmProjectDisplayName, toEpmEngTask } from './epmProjectUtils.mjs';
+import { buildEpmProjectUpdateLine, getEpmProjectDisplayName, toEpmEngTask } from './epmProjectUtils.mjs';
 
 export function EpmRollupPanel({
     selectedEpmProject,
@@ -15,11 +16,11 @@ export function EpmRollupPanel({
     epmProjectRollupLoadingIds,
     searchQuery = '',
     onProjectExpand,
-    renderEpicBlock,
     openEpmSettingsTab,
     jiraUrl,
     InitiativeIcon,
 }) {
+    const issueCardContext = useContext(IssueCardContext);
     const [collapsedProjectIds, setCollapsedProjectIds] = useState(() => new Set());
 
     const getProjectKey = (project) => project?.id || getEpmProjectDisplayName(project) || '';
@@ -219,28 +220,126 @@ export function EpmRollupPanel({
         </div>
     );
 
+    const getTaskTeamInfo = issueCardContext?.dependencyContext?.getTeamInfo || ((task) => {
+        const team = task.fields?.team;
+        const teamName = task.fields?.teamName || team?.name || team?.displayName || team?.teamName || 'Unknown Team';
+        const teamId = task.fields?.teamId || team?.id || team?.teamId || team?.key || teamName;
+        return { id: teamId, name: teamName };
+    });
+
+    const renderEpmIssueCard = (task) => {
+        const teamInfo = getTaskTeamInfo(task);
+        return (
+            <IssueCard
+                key={task.key}
+                task={task}
+                jiraUrl={jiraUrl}
+                teamInfo={teamInfo}
+                renderPriorityIcon={issueCardContext.renderPriorityIcon || (() => null)}
+                allowSelection={issueCardContext.allowSelection}
+                isSelected={!!issueCardContext.selectedTasks?.[task.key]}
+                onToggleSelection={issueCardContext.onToggleSelection}
+                onRemove={issueCardContext.onRemove}
+                shouldRenderIssueDependencies={issueCardContext.shouldRenderIssueDependencies}
+                dependencyContext={issueCardContext.dependencyContext}
+            />
+        );
+    };
+
+    const renderEpmIssueGroup = ({ key, renderKey, epic, tasks, storyPoints, parentSummary }) => {
+        const epicTitle = epic?.summary || parentSummary || (key === 'NO_EPIC' ? 'No Epic Linked' : key);
+        const epicTotalSp = storyPoints || 0;
+        return (
+            <div key={renderKey || key} className="epic-block">
+                <div className="epic-header">
+                    <div className="epic-title">
+                        <div className="epic-title-row">
+                            <span className="epic-icon" aria-hidden="true" title="EPIC">
+                                <svg viewBox="0 0 16 16" fill="none">
+                                    <path
+                                        clipRule="evenodd"
+                                        d="m10.271.050656c.2887.111871.479.38969.479.699344v4.63515l3.1471.62941c.2652.05303.4812.24469.5655.50161s.0238.53933-.1584.73914l-7.74997 8.49999c-.20863.2288-.53644.3059-.82517.194-.28874-.1118-.47905-.3896-.47905-.6993v-4.6351l-3.14708-.62947c-.26515-.05303-.48123-.24468-.56553-.5016-.08431-.25692-.02379-.53933.1584-.73915l7.75-8.499996c.20863-.2288201.53643-.305899.8252-.194028zm-6.57276 8.724134 3.05177.61036v3.92915l5.55179-6.08909-3.05179-.61036v-3.9291z"
+                                        fill="#bf63f3"
+                                        fillRule="evenodd"
+                                    />
+                                </svg>
+                            </span>
+                            {key !== 'NO_EPIC' ? (
+                                <a
+                                    className="epic-link"
+                                    href={jiraUrl ? `${jiraUrl}/browse/${key}` : '#'}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    <span className="epic-name">{epicTitle}</span>
+                                    <span className="epic-key">{key}</span>
+                                </a>
+                            ) : (
+                                <>
+                                    <span className="epic-name">{epicTitle}</span>
+                                    <span className="epic-key">Unassigned</span>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                    <div className="epic-meta">
+                        <span>SP: {epicTotalSp.toFixed(1)}</span>
+                        {epic?.assignee?.displayName && (
+                            <span className="task-assignee epic-assignee">
+                                <span className="task-assignee-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none">
+                                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" stroke="currentColor" strokeWidth="2" />
+                                        <path d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                    </svg>
+                                </span>
+                                <span>{epic.assignee.displayName}</span>
+                            </span>
+                        )}
+                    </div>
+                </div>
+                {tasks.map(renderEpmIssueCard)}
+            </div>
+        );
+    };
+
+    const renderEpmEpicBlock = (epicNode = {}) => {
+        const epicIssue = epicNode.issue || {};
+        const tasks = (epicNode.stories || []).map(toEpmEngTask);
+        return renderEpmIssueGroup({
+            key: epicIssue.key || 'NO_EPIC',
+            epic: {
+                key: epicIssue.key,
+                summary: epicIssue.summary || epicIssue.key || '',
+                assignee: epicIssue.assignee ? { displayName: epicIssue.assignee } : null,
+            },
+            tasks,
+            storyPoints: tasks.reduce((sum, task) => {
+                const value = parseFloat(task.fields.customfield_10004 || 0);
+                return Number.isNaN(value) ? sum : sum + value;
+            }, 0),
+            parentSummary: epicIssue.summary || '',
+        });
+    };
+
     const renderStoryOnlyGroup = (stories, key, parentSummary) => {
         if (!Array.isArray(stories) || stories.length === 0) {
             return null;
         }
         const tasks = stories.map(toEpmEngTask);
-        return (
-            <React.Fragment key={key}>
-                {renderEpicBlock({
-                    key: 'NO_EPIC',
-                    epic: null,
-                    tasks,
-                    storyPoints: tasks.reduce((sum, task) => {
-                        const value = Number(task.fields?.customfield_10004 || 0);
-                        return Number.isFinite(value) ? sum + value : sum;
-                    }, 0),
-                    parentSummary
-                })}
-            </React.Fragment>
-        );
+        return renderEpmIssueGroup({
+            key: 'NO_EPIC',
+            renderKey: key,
+            epic: null,
+            tasks,
+            storyPoints: tasks.reduce((sum, task) => {
+                const value = Number(task.fields?.customfield_10004 || 0);
+                return Number.isFinite(value) ? sum + value : sum;
+            }, 0),
+            parentSummary
+        });
     };
 
-    const renderEpmTreeWithEngCards = (project, tree) => (
+    const renderEpmTreeWithIssueCards = (project, tree) => (
         <>
             {tree.initiatives.map(initiativeNode => (
                 <div key={initiativeNode.issue.key} className="initiative-group">
@@ -255,12 +354,12 @@ export function EpmRollupPanel({
                         </div>
                     </div>
                     <div className="initiative-body">
-                        {initiativeNode.epics.map(epicNode => renderEpicBlock(buildEpmEngEpicGroup(epicNode)))}
+                        {initiativeNode.epics.map(epicNode => renderEpmEpicBlock(epicNode))}
                         {renderStoryOnlyGroup(initiativeNode.looseStories, `${initiativeNode.issue.key}-loose`, 'Initiative stories')}
                     </div>
                 </div>
             ))}
-            {tree.rootEpics.map(epicNode => renderEpicBlock(buildEpmEngEpicGroup(epicNode)))}
+            {tree.rootEpics.map(epicNode => renderEpmEpicBlock(epicNode))}
             {renderStoryOnlyGroup(tree.orphanStories, `${project?.id || 'project'}-orphan`, 'Project stories')}
         </>
     );
@@ -284,7 +383,10 @@ export function EpmRollupPanel({
             );
         }
         return (
-            <div className="task-list epm-issue-board epm-portfolio-board">
+            <div
+                className={`task-list epm-issue-board epm-portfolio-board ${issueCardContext.dependencyContext?.activeDependencyFocus ? 'focus-mode' : ''}`}
+                onClick={issueCardContext.onDependencyFocusClick}
+            >
                 {renderDuplicatesCallout()}
                 {epmAggregateTruncated && (
                     <div className="group-field-helper">
@@ -315,7 +417,7 @@ export function EpmRollupPanel({
                                 {tree?.kind === 'emptyRollup' && (
                                     <div className="group-field-helper">No issues in this scope.</div>
                                 )}
-                                {!projectLoading && tree?.kind === 'tree' && renderEpmTreeWithEngCards(project, tree)}
+                                {!projectLoading && tree?.kind === 'tree' && renderEpmTreeWithIssueCards(project, tree)}
                             </div>
                         </section>
                     );
@@ -351,13 +453,16 @@ export function EpmRollupPanel({
     if (epmRollupTree?.kind !== 'tree') return null;
 
     return (
-        <div className="task-list epm-issue-board">
+        <div
+            className={`task-list epm-issue-board ${issueCardContext.dependencyContext?.activeDependencyFocus ? 'focus-mode' : ''}`}
+            onClick={issueCardContext.onDependencyFocusClick}
+        >
             {epmRollupTree.truncated && (
                 <div className="group-field-helper">
                     This rollup is truncated; narrow the label or Jira scope.
                 </div>
             )}
-            {renderEpmTreeWithEngCards(selectedEpmProject, epmRollupTree)}
+            {renderEpmTreeWithIssueCards(selectedEpmProject, epmRollupTree)}
         </div>
     );
 }

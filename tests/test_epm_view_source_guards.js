@@ -13,6 +13,8 @@ const epmViewPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmVie
 const epmSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmSettings.jsx');
 const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupPanel.jsx');
 const epmRollupTreePath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupTree.jsx');
+const issueCardPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'IssueCard.jsx');
+const issueDependenciesPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'IssueDependencies.jsx');
 const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs');
 const segmentedControlPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'SegmentedControl.jsx');
 const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'ControlField.jsx');
@@ -37,6 +39,8 @@ const epmViewSource = fs.existsSync(epmViewPath) ? fs.readFileSync(epmViewPath, 
 const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
 const epmRollupPanelSource = fs.existsSync(epmRollupPanelPath) ? fs.readFileSync(epmRollupPanelPath, 'utf8') : '';
 const epmRollupTreeSource = fs.existsSync(epmRollupTreePath) ? fs.readFileSync(epmRollupTreePath, 'utf8') : '';
+const issueCardSource = fs.existsSync(issueCardPath) ? fs.readFileSync(issueCardPath, 'utf8') : '';
+const issueDependenciesSource = fs.existsSync(issueDependenciesPath) ? fs.readFileSync(issueDependenciesPath, 'utf8') : '';
 const helperSource = fs.existsSync(helperPath) ? fs.readFileSync(helperPath, 'utf8') : '';
 
 function countOccurrences(source, needle) {
@@ -470,13 +474,31 @@ test('EPM defaults to all projects and exposes sprint controls in Active', () =>
         'Expected EPM rollup issues to feed the dependency lookup task list'
     );
     assert.ok(
-        epmRollupPanelSource.includes('renderEpicBlock'),
-        'Expected EPM rollup panel to reuse the ENG Epic/Story task renderer'
+        epmRollupPanelSource.includes("from '../issues/IssueCard.jsx';"),
+        'Expected EPM rollup panel to render the shared issue card directly'
     );
+    assert.ok(!epmRollupPanelSource.includes('renderEpicBlock'), 'EPM rollup panel must not depend on dashboard ENG render callbacks');
     assert.ok(
         dashboardSource.includes("const shouldRenderIssueDependencies = (selectedView === 'eng' || selectedView === 'epm') && showDependencies"),
         'Expected EPM to show the same dependency pills, strips, and focus details as ENG'
     );
+});
+
+test('ENG and EPM issue cards use shared issue components without EPM importing dashboard code', () => {
+    assert.ok(fs.existsSync(issueCardPath), 'Expected shared IssueCard component');
+    assert.ok(fs.existsSync(issueDependenciesPath), 'Expected shared IssueDependencies component');
+    assert.ok(issueCardSource.includes("from './IssueDependencies.jsx';"), 'Expected IssueCard to compose IssueDependencies');
+    assert.ok(issueCardSource.includes('<StatusPill'), 'Expected IssueCard to preserve status pill rendering');
+    assert.ok(issueCardSource.includes('className="task-header"'), 'Expected IssueCard to preserve task header structure');
+    assert.ok(issueCardSource.includes('className="task-team"'), 'Expected IssueCard to preserve team label structure');
+    assert.ok(issueDependenciesSource.includes('dependency-pill-stack'), 'Expected dependency pills in IssueDependencies');
+    assert.ok(issueDependenciesSource.includes('dependency-strip'), 'Expected dependency strips in IssueDependencies');
+    assert.ok(issueDependenciesSource.includes('dependency-missing'), 'Expected dependency focus details in IssueDependencies');
+    assert.ok(dashboardSource.includes("from './issues/IssueCard.jsx';"), 'Expected dashboard ENG renderer to import shared IssueCard');
+    assert.ok(epmRollupPanelSource.includes("from '../issues/IssueCard.jsx';"), 'Expected EPM renderer to import shared IssueCard');
+    assert.ok(!epmRollupPanelSource.includes("from '../dashboard"), 'EPM must not import dashboard modules');
+    assert.ok(!epmRollupPanelSource.includes('buildEpmEngEpicGroup'), 'EPM must not adapt rollups through ENG epic groups');
+    assert.ok(!epmViewSource.includes('renderEpicBlock'), 'EPM view shell must not pass dashboard ENG render callbacks');
 });
 
 test('EPM project identity positions use project id only', () => {
@@ -523,10 +545,11 @@ test('EPM rollup renderer branches on metadata, empty, truncated, and tree state
 test('EPM rollup renderer groups Initiative to Epic to Story and keeps orphans under Project', () => {
     assert.ok(epmRollupPanelSource.includes('tree.initiatives.map'), 'Expected initiatives to be rendered from rollup tree');
     assert.ok(epmRollupPanelSource.includes('initiativeNode.epics.map'), 'Expected epics to be rendered under initiatives');
-    assert.ok(epmRollupPanelSource.includes('renderEpicBlock(buildEpmEngEpicGroup(epicNode))'), 'Expected EPM epics to use ENG Epic/Story renderer');
+    assert.ok(epmRollupPanelSource.includes('renderEpmEpicBlock(epicNode)'), 'Expected EPM epics to use shared issue card renderer');
     assert.ok(epmRollupPanelSource.includes('tree.rootEpics.map'), 'Expected root epics to render directly under Project');
     assert.ok(epmRollupPanelSource.includes('tree.orphanStories'), 'Expected orphan stories to render directly under Project');
     assert.ok(epmRollupPanelSource.includes('Project stories'), 'Expected orphan stories section under Project');
+    assert.ok(epmRollupPanelSource.includes("key: 'NO_EPIC'") && epmRollupPanelSource.includes('renderKey: key'), 'Expected story-only groups to keep unique React keys without linking synthetic Jira issue keys');
 });
 
 test('EPM portfolio project header separates collapse control from metadata', () => {

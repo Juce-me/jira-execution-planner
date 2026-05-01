@@ -12,6 +12,7 @@ import IconButton from './ui/IconButton.jsx';
 import LoadingRows from './ui/LoadingRows.jsx';
 import EmptyState from './ui/EmptyState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
+import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
 import {
     aggregateCohortSummary,
@@ -10763,12 +10764,39 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 </ControlField>
             );
 
+            const shouldRenderIssueDependencies = (selectedView === 'eng' || selectedView === 'epm') && showDependencies;
+            const issueDependencyContext = {
+                dependencyData,
+                dependencyFocus,
+                dependencyHover,
+                activeDependencyFocus,
+                focusRelatedSet,
+                issueByKey,
+                visibleTaskKeySet,
+                dependencyLookupCache,
+                dependencyLookupLoading,
+                normalizeStatus,
+                getTeamInfo,
+                onHoverEnter: handleDependencyHoverEnter,
+                onHoverLeave: handleDependencyHoverLeave,
+            };
+            const issueCardContext = {
+                jiraUrl,
+                renderPriorityIcon,
+                allowSelection: showPlanning,
+                selectedTasks,
+                onToggleSelection: toggleTaskSelection,
+                onRemove: removeTask,
+                shouldRenderIssueDependencies,
+                dependencyContext: issueDependencyContext,
+                onDependencyFocusClick: handleDependencyFocusClick,
+            };
+
             const renderEpicBlock = (epicGroup) => {
                         const epicInfo = epicGroup.epic;
                         const epicTitle = epicInfo?.summary || epicGroup.parentSummary ||
                             (epicGroup.key === 'NO_EPIC' ? 'No Epic Linked' : epicGroup.key);
                         const epicTotalSp = epicGroup.storyPoints || 0;
-                        const shouldRenderIssueDependencies = (selectedView === 'eng' || selectedView === 'epm') && showDependencies;
                         return (
                             <div
                                 key={epicGroup.key}
@@ -10852,318 +10880,25 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 	                                    </div>
 	                                </div>
                                 {epicGroup.tasks.map(task => {
-                                    const isKilled = task.fields.status?.name === 'Killed';
-                                    const isDone = task.fields.status?.name === 'Done';
-                                    const isIncomplete = normalizeStatus(task.fields.status?.name) === 'incomplete';
                                     const teamInfo = getTeamInfo(task);
-                                    const rawDeps = showDependencies
-                                        ? (dependencyData[task.key] || []).filter(dep => dep.key && dep.category === 'dependency')
-                                        : [];
-                                    const rawBlockDeps = showDependencies
-                                        ? (dependencyData[task.key] || []).filter(dep => dep.key && dep.category === 'block')
-                                        : [];
-                                    const uniqueDeps = (() => {
-                                        const seen = new Set();
-                                        return rawDeps.filter(dep => {
-                                            const key = `${dep.key}-${dep.direction}`;
-                                            if (seen.has(key)) return false;
-                                            seen.add(key);
-                                            return true;
-                                        });
-                                    })();
-                                    const dependsOnAll = uniqueDeps.filter(dep => dep.direction === 'outward');
-                                    const dependentsAll = uniqueDeps.filter(dep => dep.direction === 'inward');
-                                    const dependsOnIds = dependsOnAll.map(dep => dep.key).filter(Boolean);
-                                    const dependentIds = dependentsAll.map(dep => dep.key).filter(Boolean);
-                                    const { blockedBy: blockedByIds, blocks: blocksIds } = getBlockLinkBuckets(rawBlockDeps, task.key);
-                                    const hasBlockLinks = blockedByIds.length > 0 || blocksIds.length > 0;
-                                    const hasDependencyLinks = dependsOnIds.length > 0 || dependentIds.length > 0;
-                                    const hasDeps = hasDependencyLinks || hasBlockLinks;
-                                    const hasCycle = dependsOnIds.some(id => dependentIds.includes(id) && issueByKey.has(id));
-                                    const isDependsFocusActive = dependencyFocus &&
-                                        dependencyFocus.taskKey === task.key &&
-                                        dependencyFocus.action === 'depends-on';
-                                    const isDependentsFocusActive = dependencyFocus &&
-                                        dependencyFocus.taskKey === task.key &&
-                                        dependencyFocus.action === 'dependents';
-                                    const isBlockedByFocusActive = dependencyFocus &&
-                                        dependencyFocus.taskKey === task.key &&
-                                        dependencyFocus.action === 'blocked-by';
-                                    const isBlocksFocusActive = dependencyFocus &&
-                                        dependencyFocus.taskKey === task.key &&
-                                        dependencyFocus.action === 'blocks';
-                                    const isDependsHoverActive = dependencyHover &&
-                                        dependencyHover.taskKey === task.key &&
-                                        dependencyHover.action === 'depends-on';
-                                    const isDependentsHoverActive = dependencyHover &&
-                                        dependencyHover.taskKey === task.key &&
-                                        dependencyHover.action === 'dependents';
-                                    const isBlockedByHoverActive = dependencyHover &&
-                                        dependencyHover.taskKey === task.key &&
-                                        dependencyHover.action === 'blocked-by';
-                                    const isBlocksHoverActive = dependencyHover &&
-                                        dependencyHover.taskKey === task.key &&
-                                        dependencyHover.action === 'blocks';
-                                    const isFocusActive = !!activeDependencyFocus;
-                                    const isRelated = !isFocusActive || focusRelatedSet.has(task.key);
-                                    const isFocused = isFocusActive && activeDependencyFocus.taskKey === task.key;
-                                    const isUpstream = isFocusActive &&
-                                        (activeDependencyFocus.action === 'depends-on' || activeDependencyFocus.action === 'blocked-by') &&
-                                        !isFocused &&
-                                        focusRelatedSet.has(task.key);
-                                    const isDownstream = isFocusActive &&
-                                        (activeDependencyFocus.action === 'dependents' || activeDependencyFocus.action === 'blocks') &&
-                                        !isFocused &&
-                                        focusRelatedSet.has(task.key);
-                                    const missingKeys = isFocused ? (dependencyFocus?.missingKeys || []) : [];
-                                    const dependencyKeyList = dependencyFocus?.dependencyKeys
-                                        || (dependencyFocus?.relatedKeys || []).filter(key => key !== task.key);
-                                    const hiddenKeys = isFocused
-                                        ? dependencyKeyList.filter(key => issueByKey.has(key) && !visibleTaskKeySet.has(key))
-                                        : [];
-                                    const missingInfoByKey = {};
-                                    uniqueDeps.forEach(dep => {
-                                        if (dep.key) {
-                                            missingInfoByKey[dep.key] = dep;
-                                        }
-                                    });
-                                    const missingLines = missingKeys.map(key => {
-                                        const lookup = dependencyLookupCache[key];
-                                        const info = missingInfoByKey[key] || {};
-                                        const status = lookup?.status || info.status || 'Unknown';
-                                        const summary = lookup?.summary || info.summary || 'Unknown summary';
-                                        const teamName = lookup?.teamName || info.teamName || 'Unknown team';
-                                        const assignee = lookup?.assignee || info.assignee || 'Unassigned';
-                                        const isDone = normalizeStatus(status) === 'done';
-                                        return { key, status, summary, teamName, assignee, isDone };
-                                    });
-                                    const hiddenLines = hiddenKeys.map(key => {
-                                        const lookup = issueByKey.get(key);
-                                        const info = missingInfoByKey[key] || {};
-                                        const status = lookup?.fields?.status?.name || lookup?.status?.name || lookup?.status || info.status || 'Unknown';
-                                        const summary = lookup?.fields?.summary || lookup?.summary || info.summary || 'Unknown summary';
-                                        const teamName = lookup?.fields
-                                            ? getTeamInfo(lookup).name
-                                            : (lookup?.teamName || info.teamName || 'Unknown team');
-                                        const assignee = lookup?.fields?.assignee?.displayName || lookup?.assignee?.displayName || info.assignee || 'Unassigned';
-                                        const isDone = normalizeStatus(status) === 'done';
-                                        return { key, status, summary, teamName, assignee, isDone };
-                                    });
+                                    const teamLabel = getIssueTeamLabel(teamInfo);
+                                    const statusClassName = getIssueStatusClassName(task.fields.status?.name);
                                     return (
-                                        <div
+                                        <IssueCard
                                             key={task.key}
-                                            className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isIncomplete ? 'status-incomplete' : ''} ${isFocusActive && !isRelated ? 'is-dimmed' : ''} ${isFocused ? 'is-focused' : ''} ${isUpstream ? 'is-upstream' : ''} ${isDownstream ? 'is-downstream' : ''}`}
-                                            data-task-key={task.key}
-                                            data-task-id={task.id || task.key}
-                                            data-issue-key={task.key}
-                                        >
-                                            <div className="task-header">
-                                                <button
-                                                    className="task-remove"
-                                                    onClick={() => removeTask(task)}
-                                                    title="Remove task from view"
-                                                >
-                                                    ×
-                                                </button>
-                                            <div className="task-headline">
-                                                <span className="story-icon" aria-hidden="true" title="STORY">
-                                                        <svg viewBox="0 0 24 24" fill="none">
-                                                    <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
-                                                </svg>
-                                                </span>
-                                                {renderPriorityIcon(task.fields.priority?.name, task.key)}
-                                                <h3 className="task-title">
-                                                    {isIncomplete && <span className="task-incomplete-icon" title="Incomplete — work started but not finished this sprint">◐</span>}
-                                                    <a href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'} target="_blank" rel="noopener noreferrer">
-                                                        {task.fields.summary}
-                                                    </a>
-                                                </h3>
-                                                    <span className="task-inline-meta">
-                                                        <a
-                                                            className="task-key-link"
-                                                            href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                        >
-                                                            {task.key}
-                                                        </a>
-                                                        {task.fields.customfield_10004 && (
-                                                            <span className="task-inline-sp">
-                                                                {task.fields.customfield_10004} SP
-                                                            </span>
-                                                        )}
-                                                    </span>
-                                                    {showPlanning && (
-                                                        <input
-                                                            type="checkbox"
-                                                            className="task-checkbox"
-                                                            checked={!!selectedTasks[task.key]}
-                                                            onChange={() => toggleTaskSelection(task.key)}
-                                                            title="Select for sprint planning"
-                                                        />
-                                                    )}
-                                                </div>
-                                                <div className="task-header-right">
-                                                    {shouldRenderIssueDependencies && hasDependencyLinks && (
-                                                        <div className="dependency-pill-stack">
-                                                            {dependsOnIds.length > 0 && (
-                                                                <span className="dependency-pill blocked">← BLOCKED BY</span>
-                                                            )}
-                                                            {dependentIds.length > 0 && (
-                                                                <span className="dependency-pill blocker">BLOCKS →</span>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="task-meta">
-                                                <StatusPill
-                                                    className={getIssueStatusClassName(task.fields.status?.name)}
-                                                    label={task.fields.status?.name}
-                                                />
-                                                <span className="task-team">{getIssueTeamLabel(teamInfo)}</span>
-                                                {task.fields.assignee && (
-                                                    <span className="task-assignee">
-                                                        <span className="task-assignee-icon" aria-hidden="true">
-                                                            <svg viewBox="0 0 24 24" fill="none">
-                                                                <path d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Z" stroke="currentColor" strokeWidth="1.6"/>
-                                                                <path d="M4 20c1.8-4 6-5.5 8-5.5S18.2 16 20 20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                                                            </svg>
-                                                        </span>
-                                                        {task.fields.assignee.displayName}
-                                                    </span>
-                                                )}
-                                                {task.fields.updated && (
-                                                    <span className="task-updated">
-                                                        Last Update: {new Date(task.fields.updated).toLocaleDateString('en-CA')}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            {shouldRenderIssueDependencies && hasDeps && (
-                                                <div className="dependency-strip">
-                                                    {blockedByIds.length > 0 && (
-                                                        <button
-                                                            type="button"
-                                                            className={`dependency-count ${(isBlockedByFocusActive || isBlockedByHoverActive) ? 'active' : ''}`}
-                                                            data-dep-chip="blocked-by"
-                                                            data-task-id={task.id || task.key}
-                                                            data-task-key={task.key}
-                                                            aria-label={`Blocked by ${blockedByIds.length} tasks`}
-                                                            onMouseEnter={() => handleDependencyHoverEnter(task.key, 'blocked-by')}
-                                                            onMouseLeave={() => handleDependencyHoverLeave(task.key, 'blocked-by')}
-                                                        >
-                                                            BLOCKED BY {blockedByIds.length}
-                                                        </button>
-                                                    )}
-                                                    {blocksIds.length > 0 && (
-                                                        <button
-                                                            type="button"
-                                                            className={`dependency-count ${(isBlocksFocusActive || isBlocksHoverActive) ? 'active' : ''}`}
-                                                            data-dep-chip="blocks"
-                                                            data-task-id={task.id || task.key}
-                                                            data-task-key={task.key}
-                                                            aria-label={`Blocks ${blocksIds.length} tasks`}
-                                                            onMouseEnter={() => handleDependencyHoverEnter(task.key, 'blocks')}
-                                                            onMouseLeave={() => handleDependencyHoverLeave(task.key, 'blocks')}
-                                                        >
-                                                            BLOCKS {blocksIds.length}
-                                                        </button>
-                                                    )}
-                                                    {dependsOnIds.length > 0 && (
-                                                        <button
-                                                            type="button"
-                                                            className={`dependency-count ${(isDependsFocusActive || isDependsHoverActive) ? 'active' : ''}`}
-                                                            data-dep-chip="depends-on"
-                                                            data-task-id={task.id || task.key}
-                                                            data-task-key={task.key}
-                                                            aria-label={`Depends on ${dependsOnIds.length} tasks`}
-                                                            onMouseEnter={() => handleDependencyHoverEnter(task.key, 'depends-on')}
-                                                            onMouseLeave={() => handleDependencyHoverLeave(task.key, 'depends-on')}
-                                                        >
-                                                            DEPENDS ON {dependsOnIds.length}
-                                                        </button>
-                                                    )}
-                                                    {dependentIds.length > 0 && (
-                                                        <button
-                                                            type="button"
-                                                            className={`dependency-count ${(isDependentsFocusActive || isDependentsHoverActive) ? 'active' : ''}`}
-                                                            data-dep-chip="dependents"
-                                                            data-task-id={task.id || task.key}
-                                                            data-task-key={task.key}
-                                                            aria-label={`Dependents ${dependentIds.length} tasks`}
-                                                            onMouseEnter={() => handleDependencyHoverEnter(task.key, 'dependents')}
-                                                            onMouseLeave={() => handleDependencyHoverLeave(task.key, 'dependents')}
-                                                        >
-                                                            DEPENDENTS {dependentIds.length}
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )}
-                                            {shouldRenderIssueDependencies && isFocused && (missingLines.length > 0 || hiddenLines.length > 0) && (
-                                                <div className="dependency-missing">
-                                                    {hiddenLines.length > 0 && (
-                                                        <>
-                                                            <div className="dependency-missing-label hidden">Hidden by filter</div>
-                                                            {hiddenLines.map(item => (
-                                                                <div className="dependency-missing-item" key={`hidden-${item.key}`}>
-                                                                    <span>{item.teamName}</span>
-                                                                    <span className="dependency-missing-sep">·</span>
-                                                                    <span>{item.assignee}</span>
-                                                                    <span className="dependency-missing-sep">·</span>
-                                                                    <span>{item.summary}</span>
-                                                                    <span className="dependency-missing-sep">·</span>
-                                                                    <span>{item.key}</span>
-                                                                    <span className="dependency-missing-sep">·</span>
-                                                                    <span className={`dependency-missing-status ${item.isDone ? 'done' : ''}`}>{item.status}</span>
-                                                                </div>
-                                                            ))}
-                                                        </>
-                                                    )}
-                                                    {missingLines.length > 0 && (
-                                                        <>
-                                                            <div className="dependency-missing-label">Not loaded</div>
-                                                            {missingLines.map(item => (
-                                                                (jiraUrl ? (
-                                                                    <a
-                                                                        className="dependency-missing-item"
-                                                                        key={`missing-${item.key}`}
-                                                                        href={`${jiraUrl}/browse/${item.key}`}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        title={`Open ${item.key} in Jira`}
-                                                                    >
-                                                                        <span>{item.teamName}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span>{item.assignee}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span>{item.summary}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span>{item.key}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span className={`dependency-missing-status ${item.isDone ? 'done' : ''}`}>{item.status}</span>
-                                                                    </a>
-                                                                ) : (
-                                                                    <div className="dependency-missing-item" key={`missing-${item.key}`}>
-                                                                        <span>{item.teamName}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span>{item.assignee}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span>{item.summary}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span>{item.key}</span>
-                                                                        <span className="dependency-missing-sep">·</span>
-                                                                        <span className={`dependency-missing-status ${item.isDone ? 'done' : ''}`}>{item.status}</span>
-                                                                    </div>
-                                                                ))
-                                                            ))}
-                                                            {dependencyLookupLoading && (
-                                                                <div className="dependency-missing-item">Loading issue details...</div>
-                                                            )}
-                                                        </>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
+                                            task={task}
+                                            jiraUrl={jiraUrl}
+                                            teamInfo={teamInfo}
+                                            teamLabel={teamLabel}
+                                            statusClassName={statusClassName}
+                                            renderPriorityIcon={renderPriorityIcon}
+                                            showPlanning={showPlanning}
+                                            isSelected={!!selectedTasks[task.key]}
+                                            onToggleSelection={toggleTaskSelection}
+                                            onRemove={removeTask}
+                                            shouldRenderIssueDependencies={shouldRenderIssueDependencies}
+                                            dependencyContext={issueDependencyContext}
+                                        />
                                     );
                                 })}
                             </div>
@@ -14738,29 +14473,30 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             </div>
                             )}
 
-                            <EpmView
-                                selectedView={selectedView}
-                                epmConfigLoaded={epmConfigLoaded}
-                                epmProjectsLoading={epmProjectsLoading}
-                                epmRollupBoards={epmRollupBoards}
-                                epmRollupTree={epmRollupTree}
-                                epmSelectedProjectId={epmSelectedProjectId}
-                                selectedEpmProject={selectedEpmProject}
-                                selectedEpmProjectUpdateLine={selectedEpmProjectUpdateLine}
-                                epmTab={epmTab}
-                                selectedSprint={selectedSprint}
-                                epmRollupLoading={epmRollupLoading}
-                                visibleEpmRollupBoards={visibleEpmRollupBoards}
-                                epmDuplicates={epmDuplicates}
-                                epmAggregateTruncated={epmAggregateTruncated}
-                                epmProjectRollupLoadingIds={epmProjectRollupLoadingIds}
-                                searchQuery={searchQuery}
-                                loadArchivedEpmProjectRollup={loadArchivedEpmProjectRollup}
-                                renderEpicBlock={renderEpicBlock}
-                                openEpmSettingsTab={openEpmSettingsTab}
-                                jiraUrl={jiraUrl}
-                                InitiativeIcon={InitiativeIcon}
-                            />
+                            <IssueCardContext.Provider value={issueCardContext}>
+                                <EpmView
+                                    selectedView={selectedView}
+                                    epmConfigLoaded={epmConfigLoaded}
+                                    epmProjectsLoading={epmProjectsLoading}
+                                    epmRollupBoards={epmRollupBoards}
+                                    epmRollupTree={epmRollupTree}
+                                    epmSelectedProjectId={epmSelectedProjectId}
+                                    selectedEpmProject={selectedEpmProject}
+                                    selectedEpmProjectUpdateLine={selectedEpmProjectUpdateLine}
+                                    epmTab={epmTab}
+                                    selectedSprint={selectedSprint}
+                                    epmRollupLoading={epmRollupLoading}
+                                    visibleEpmRollupBoards={visibleEpmRollupBoards}
+                                    epmDuplicates={epmDuplicates}
+                                    epmAggregateTruncated={epmAggregateTruncated}
+                                    epmProjectRollupLoadingIds={epmProjectRollupLoadingIds}
+                                    searchQuery={searchQuery}
+                                    loadArchivedEpmProjectRollup={loadArchivedEpmProjectRollup}
+                                    openEpmSettingsTab={openEpmSettingsTab}
+                                    jiraUrl={jiraUrl}
+                                    InitiativeIcon={InitiativeIcon}
+                                />
+                            </IssueCardContext.Provider>
 
                             {selectedView === 'eng' && (
                                 <>

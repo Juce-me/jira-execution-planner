@@ -676,9 +676,12 @@ Write set:
 - `frontend/src/settings/JiraFieldSettings.jsx`
 - `frontend/src/epm/EpmSettings.jsx`
 - `frontend/src/dashboard.jsx`
+- `frontend/dist/dashboard.js`
+- `frontend/dist/dashboard.js.map`
 - `tests/test_epm_settings_source_guards.js`
 - `tests/test_team_selection_utils.js`
 - `tests/test_team_selection_persistence.js`
+- `docs/plans/2026-05-01-codebase-structure-optimization.md`
 
 Steps:
 

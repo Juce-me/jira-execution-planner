@@ -6,6 +6,8 @@ const test = require('node:test');
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
 const epmSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmSettings.jsx');
 const settingsModalPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'SettingsModal.jsx');
+const teamGroupsSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'TeamGroupsSettings.jsx');
+const jiraFieldSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'JiraFieldSettings.jsx');
 const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'ControlField.jsx');
 const iconButtonPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'IconButton.jsx');
 const loadingRowsPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'LoadingRows.jsx');
@@ -16,12 +18,44 @@ const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngVie
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
 const settingsModalSource = fs.existsSync(settingsModalPath) ? fs.readFileSync(settingsModalPath, 'utf8') : '';
+const teamGroupsSettingsSource = fs.existsSync(teamGroupsSettingsPath) ? fs.readFileSync(teamGroupsSettingsPath, 'utf8') : '';
+const jiraFieldSettingsSource = fs.existsSync(jiraFieldSettingsPath) ? fs.readFileSync(jiraFieldSettingsPath, 'utf8') : '';
 const epmSettingsUiSource = epmSettingsSource || dashboardSource;
 const epmViewDataSource = fs.existsSync(epmViewDataPath) ? fs.readFileSync(epmViewDataPath, 'utf8') : '';
 const epmControlsSource = fs.existsSync(epmControlsPath) ? fs.readFileSync(epmControlsPath, 'utf8') : '';
 const engViewSource = fs.existsSync(engViewPath) ? fs.readFileSync(engViewPath, 'utf8') : '';
 
-test('settings modal shell is extracted while dashboard keeps settings state and tab content ownership', () => {
+function extractShorthandSpreadProps(source) {
+    const spreadStart = source.indexOf('{...{');
+    const spreadEnd = source.lastIndexOf('}}');
+    assert.notStrictEqual(spreadStart, -1, 'Expected JSX shorthand spread props');
+    assert.notStrictEqual(spreadEnd, -1, 'Expected JSX shorthand spread props end');
+    return source
+        .slice(spreadStart + '{...{'.length, spreadEnd)
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => line.replace(/,$/, ''))
+        .filter((line) => /^[A-Za-z_$][\w$]*$/.test(line))
+        .sort();
+}
+
+function extractDestructuredProps(source) {
+    const destructureStart = source.indexOf('const {');
+    const destructureEnd = source.indexOf('} = props;', destructureStart);
+    assert.notStrictEqual(destructureStart, -1, 'Expected props destructuring');
+    assert.notStrictEqual(destructureEnd, -1, 'Expected props destructuring end');
+    return source
+        .slice(destructureStart + 'const {'.length, destructureEnd)
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => line.replace(/,$/, ''))
+        .filter((line) => /^[A-Za-z_$][\w$]*$/.test(line))
+        .sort();
+}
+
+test('settings modal shell and tab bodies are extracted while dashboard keeps settings state ownership', () => {
     const settingsModalCallStart = dashboardSource.indexOf('<SettingsModal');
     const settingsModalOpenTagEndMarker = '\n                        >';
     const settingsModalCallEnd = dashboardSource.indexOf(settingsModalOpenTagEndMarker, settingsModalCallStart);
@@ -40,6 +74,16 @@ test('settings modal shell is extracted while dashboard keeps settings state and
     const epmSettingsCallSource = epmSettingsCallStart === -1 || epmSettingsCallEnd === -1
         ? ''
         : dashboardSource.slice(epmSettingsCallStart, epmSettingsCallEnd);
+    const teamGroupsSettingsCallStart = dashboardSource.indexOf('<TeamGroupsSettings');
+    const teamGroupsSettingsCallEnd = dashboardSource.indexOf('/>', teamGroupsSettingsCallStart);
+    const teamGroupsSettingsCallSource = teamGroupsSettingsCallStart === -1 || teamGroupsSettingsCallEnd === -1
+        ? ''
+        : dashboardSource.slice(teamGroupsSettingsCallStart, teamGroupsSettingsCallEnd);
+    const jiraFieldSettingsCallStart = dashboardSource.indexOf('<JiraFieldSettings');
+    const jiraFieldSettingsCallEnd = dashboardSource.indexOf('/>', jiraFieldSettingsCallStart);
+    const jiraFieldSettingsCallSource = jiraFieldSettingsCallStart === -1 || jiraFieldSettingsCallEnd === -1
+        ? ''
+        : dashboardSource.slice(jiraFieldSettingsCallStart, jiraFieldSettingsCallEnd);
     const epmSettingsPropsStart = epmSettingsSource.indexOf('const {');
     const epmSettingsPropsEnd = epmSettingsSource.indexOf('} = props;', epmSettingsPropsStart);
     const epmSettingsPropsSource = epmSettingsPropsStart === -1 || epmSettingsPropsEnd === -1
@@ -73,9 +117,52 @@ test('settings modal shell is extracted while dashboard keeps settings state and
     assert.ok(settingsModalSource.includes('onClick={onDiscard}'), 'Expected discard button to call the provided discard handler');
     assert.ok(settingsModalSource.includes('onClick={onKeepEditing}'), 'Expected keep-editing actions to hide the discard confirmation');
     assert.ok(!dashboardSource.includes('className="group-modal-backdrop"'), 'Dashboard should delegate backdrop markup to SettingsModal');
-    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'source'"), 'Expected Jira source tab content to stay in dashboard');
-    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'teams'"), 'Expected team group tab content to stay in dashboard');
+    assert.ok(fs.existsSync(teamGroupsSettingsPath), 'Expected extracted TeamGroupsSettings component');
+    assert.ok(fs.existsSync(jiraFieldSettingsPath), 'Expected extracted JiraFieldSettings component');
+    assert.ok(teamGroupsSettingsSource.includes('export default function TeamGroupsSettings'), 'Expected TeamGroupsSettings default component export');
+    assert.ok(jiraFieldSettingsSource.includes('export default function JiraFieldSettings'), 'Expected JiraFieldSettings default component export');
+    assert.ok(dashboardSource.includes("import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';"), 'Expected dashboard to import TeamGroupsSettings');
+    assert.ok(dashboardSource.includes("import JiraFieldSettings from './settings/JiraFieldSettings.jsx';"), 'Expected dashboard to import JiraFieldSettings');
+    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'teams'") && settingsModalChildrenSource.includes('<TeamGroupsSettings'), 'Expected dashboard to delegate team group tab content');
+    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'source'") && settingsModalChildrenSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate Jira source tab content');
+    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'scope'") && settingsModalChildrenSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate Jira scope tab content');
+    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'mapping'") && settingsModalChildrenSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate Jira mapping tab content');
+    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'capacity'") && settingsModalChildrenSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate Jira capacity tab content');
+    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'priorityWeights'") && settingsModalChildrenSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate priority weights tab content');
     assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'labels'"), 'Expected group label tab content to stay in dashboard');
+    assert.ok(!teamGroupsSettingsSource.includes('useState('), 'TeamGroupsSettings must not own settings state');
+    assert.ok(!jiraFieldSettingsSource.includes('useState('), 'JiraFieldSettings must not own settings state');
+    assert.ok(dashboardSource.includes("const [teamSearchQuery, setTeamSearchQuery] = useState({});"), 'Expected dashboard to keep team search state ownership');
+    assert.ok(dashboardSource.includes('const handleTeamSearchChange = (groupId, value) => {'), 'Expected dashboard to keep team search handler ownership');
+    assert.ok(dashboardSource.includes("const [projectSearchQuery, setProjectSearchQuery] = useState('');"), 'Expected dashboard to keep project search state ownership');
+    assert.ok(dashboardSource.includes("const [boardSearchQuery, setBoardSearchQuery] = useState('');"), 'Expected dashboard to keep board search state ownership');
+    assert.ok(dashboardSource.includes('const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));'), 'Expected dashboard to keep priority weight draft ownership');
+    assert.deepStrictEqual(
+        extractShorthandSpreadProps(teamGroupsSettingsCallSource),
+        extractDestructuredProps(teamGroupsSettingsSource),
+        'Expected TeamGroupsSettings passed props to match received props exactly'
+    );
+    assert.deepStrictEqual(
+        extractShorthandSpreadProps(jiraFieldSettingsCallSource),
+        extractDestructuredProps(jiraFieldSettingsSource),
+        'Expected JiraFieldSettings passed props to match received props exactly'
+    );
+    ['activeGroupDraft', 'teamSearchOpen', 'activeTeamQuery', 'removeTeamFromGroup', 'showGroupAdvanced', 'groupImportText'].forEach((propName) => {
+        assert.ok(teamGroupsSettingsCallSource.includes(`${propName},`), `Expected dashboard to pass ${propName} into TeamGroupsSettings`);
+        assert.ok(teamGroupsSettingsSource.includes(`${propName},`), `Expected TeamGroupsSettings to receive ${propName}`);
+    });
+    ['groupManageTab', 'selectedProjectsDraft', 'jiraProjects', 'projectSearchQuery', 'boardSearchQuery', 'parentNameFieldSearchQuery', 'storyPointsFieldSearchQuery', 'capacityProjectSearchQuery', 'capacityFieldSearchQuery', 'priorityWeightsDraft'].forEach((propName) => {
+        assert.ok(jiraFieldSettingsCallSource.includes(`${propName},`), `Expected dashboard to pass ${propName} into JiraFieldSettings`);
+        assert.ok(jiraFieldSettingsSource.includes(`${propName},`), `Expected JiraFieldSettings to receive ${propName}`);
+    });
+    assert.ok(teamGroupsSettingsSource.includes('className="selected-team-chip"'), 'Expected selected team chip markup in TeamGroupsSettings');
+    assert.ok(teamGroupsSettingsSource.includes('removeTeamFromGroup(activeGroupDraft.id, teamId)'), 'Expected selected team remove behavior in TeamGroupsSettings');
+    assert.ok(teamGroupsSettingsSource.includes('teamSearchOpen[activeGroupDraft.id] && activeTeamQuery.trim()'), 'Expected team search result gating in TeamGroupsSettings');
+    assert.ok(jiraFieldSettingsSource.includes('className="selected-team-chip"'), 'Expected selected Jira source chips in JiraFieldSettings');
+    assert.ok(jiraFieldSettingsSource.includes('removeProjectSelection(p.key)'), 'Expected selected project remove behavior in JiraFieldSettings');
+    assert.ok(jiraFieldSettingsSource.includes('onClick={clearBoardSelection}'), 'Expected board selected-chip remove behavior in JiraFieldSettings');
+    assert.ok(jiraFieldSettingsSource.includes("setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft('');"), 'Expected story points field remove behavior in JiraFieldSettings');
+    assert.ok(jiraFieldSettingsSource.includes("setCapacityFieldIdDraft(''); setCapacityFieldNameDraft('');"), 'Expected capacity field remove behavior in JiraFieldSettings');
     assert.ok(fs.existsSync(epmSettingsPath), 'Expected extracted EpmSettings component');
     assert.ok(epmSettingsSource.includes('export default function EpmSettings'), 'Expected EpmSettings default component export');
     assert.ok(dashboardSource.includes("import EpmSettings from './epm/EpmSettings.jsx';"), 'Expected dashboard to import extracted EPM settings');

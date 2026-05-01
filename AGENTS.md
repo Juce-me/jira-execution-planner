@@ -170,7 +170,7 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 Prefer single-file or single-test runs during iteration. Run the full suite before push.
 
 ### Layout
-- Backend/API: `jira_server.py`, `epm_home.py`, `epm_scope.py`, `planning/`
+- Backend/API: `jira_server.py`, `backend/epm/`, `backend/routes/`, `planning/`
 - Frontend source: `frontend/src/`, `jira-dashboard.html`
 - Generated frontend output: `frontend/dist/`
 - Tests: `tests/`, `tests/ui/`

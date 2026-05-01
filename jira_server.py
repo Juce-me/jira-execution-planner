@@ -26,10 +26,10 @@ from openpyxl.styles import Font, PatternFill, Alignment
 import io
 from requests import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
-import epm_home
-from epm_home import fetch_epm_home_projects, merge_epm_linkage
-from epm_rollup import EpmRollupDependencies, build_per_project_rollup
-from epm_scope import build_epm_scope_clause, normalize_epm_sprint_field, should_apply_epm_sprint
+from backend.epm import home as epm_home
+from backend.epm.home import fetch_epm_home_projects, merge_epm_linkage
+from backend.epm.rollup import EpmRollupDependencies, build_per_project_rollup
+from backend.epm.scope import build_epm_scope_clause, normalize_epm_sprint_field, should_apply_epm_sprint
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
 from backend.app import app
 from backend import config_store as _config_store
@@ -5520,6 +5520,7 @@ if __name__ == '__main__':
     # Apply CLI overrides while keeping env defaults as fallbacks
     if args.jira_url:
         JIRA_URL = args.jira_url
+        os.environ['JIRA_URL'] = args.jira_url
     if args.jira_email:
         JIRA_EMAIL = args.jira_email
     if args.jira_token:

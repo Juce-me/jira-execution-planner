@@ -483,15 +483,7 @@ def build_teamwork_graph_client() -> HomeGraphQLClient:
         raise RuntimeError(
             "ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (or JIRA_EMAIL/JIRA_TOKEN) must be set to use the EPM view"
         )
-    jira_url = ""
-    try:
-        import jira_server
-
-        jira_url = str(getattr(jira_server, "JIRA_URL", "") or "").rstrip("/")
-    except Exception:
-        jira_url = ""
-    if not jira_url:
-        jira_url = str(os.environ.get("JIRA_URL") or "").rstrip("/")
+    jira_url = get_configured_jira_url()
     if not jira_url:
         raise RuntimeError("JIRA_URL must be set to query Atlassian project tags")
     return HomeGraphQLClient(email, token, f"{jira_url}/gateway/api/graphql/twg")
@@ -629,16 +621,12 @@ def _container_id_from_cloud(cloud_id: str) -> str:
     return f"ari:cloud:townsquare::site/{cloud_id}"
 
 
-def fetch_home_site_cloud_id() -> str:
-    jira_url = ""
-    try:
-        import jira_server  # local import avoids circular import at module load time
+def get_configured_jira_url() -> str:
+    return str(os.environ.get("JIRA_URL") or "").rstrip("/")
 
-        jira_url = str(getattr(jira_server, "JIRA_URL", "") or "").rstrip("/")
-    except Exception:
-        jira_url = ""
-    if not jira_url:
-        jira_url = str(os.environ.get("JIRA_URL") or "").rstrip("/")
+
+def fetch_home_site_cloud_id() -> str:
+    jira_url = get_configured_jira_url()
     if not jira_url:
         raise RuntimeError("JIRA_URL must be set to detect the Atlassian site cloud ID")
     if jira_url in _CLOUD_ID_CACHE:

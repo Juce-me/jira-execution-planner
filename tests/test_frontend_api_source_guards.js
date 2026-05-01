@@ -174,20 +174,18 @@ test('shared API HTTP helpers preserve caller options and headers', async () => 
     }
 });
 
-test('EPM API module owns endpoint construction while epmFetch remains a compatibility re-export', () => {
+test('EPM API module owns endpoint construction without EPM compatibility wrappers', () => {
     const epmApiPath = path.join(frontendSrcPath, 'api', 'epmApi.js');
     const epmFetchPath = path.join(frontendSrcPath, 'epm', 'epmFetch.js');
     assert.ok(fs.existsSync(epmApiPath), 'Expected frontend/src/api/epmApi.js to exist');
+    assert.ok(!fs.existsSync(epmFetchPath), 'Did not expect frontend/src/epm/epmFetch.js compatibility wrapper');
 
     const epmApiSource = readSource(epmApiPath);
-    const epmFetchSource = readSource(epmFetchPath);
 
     assert.ok(epmApiSource.includes("from './http.js'"), 'Expected EPM API module to use shared HTTP helpers');
     assert.ok(epmApiSource.includes('/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}'), 'Expected project rollup URL construction in epmApi.js');
     assert.ok(epmApiSource.includes('/api/epm/projects/rollup/all?${params.toString()}'), 'Expected aggregate rollup URL construction in epmApi.js');
     assert.ok(epmApiSource.includes("fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {})"), 'Expected configuration project wrapper in epmApi.js');
-    assert.ok(epmFetchSource.includes("export * from '../api/epmApi.js';"), 'Expected epmFetch.js to re-export the EPM API module');
-    assert.ok(!/\/api\/epm(?:\/|\b)/.test(epmFetchSource), 'Did not expect EPM endpoint literals in compatibility wrapper');
 });
 
 test('ENG API module owns ENG task, backlog, and dependency endpoint construction', () => {

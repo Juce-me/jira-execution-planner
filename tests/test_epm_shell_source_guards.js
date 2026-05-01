@@ -5,7 +5,6 @@ const test = require('node:test');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
 const epmApiPath = path.join(__dirname, '..', 'frontend', 'src', 'api', 'epmApi.js');
-const epmFetchPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmFetch.js');
 const epmViewDataPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'useEpmViewData.js');
 const epmControlsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmControls.jsx');
 const epmViewPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmView.jsx');
@@ -13,7 +12,6 @@ const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 
 const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs');
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 const epmApiSource = fs.existsSync(epmApiPath) ? fs.readFileSync(epmApiPath, 'utf8') : '';
-const epmFetchSource = fs.readFileSync(epmFetchPath, 'utf8');
 const epmViewDataSource = fs.existsSync(epmViewDataPath) ? fs.readFileSync(epmViewDataPath, 'utf8') : '';
 const epmControlsSource = fs.existsSync(epmControlsPath) ? fs.readFileSync(epmControlsPath, 'utf8') : '';
 const epmViewSource = fs.existsSync(epmViewPath) ? fs.readFileSync(epmViewPath, 'utf8') : '';
@@ -65,7 +63,6 @@ test('dashboard source wires EPM rollup loading and metadata-only rendering', ()
     assert.ok(epmApiSource.includes('const refreshParam = forceRefresh ? \'?refresh=true\' : \'\';'), 'Expected project configuration refresh query support');
     assert.ok(epmApiSource.includes('postJson(`${backendUrl}/api/epm/projects/configuration${refreshParam}`'), 'Expected configuration fetch endpoint');
     assert.ok(!epmApiSource.includes('/api/epm/projects/preview'), 'EPM settings must not call preview endpoint');
-    assert.ok(epmFetchSource.includes("export * from '../api/epmApi.js';"), 'Expected epmFetch.js compatibility re-export');
     assert.ok(epmViewDataSource.includes("if (epmTab === 'active' && !selectedSprint) {"), 'Expected Active EPM sprint guard in useEpmViewData.js');
     assert.ok(epmViewDataSource.includes('setEpmRollupTree(null);'), 'Expected Active EPM sprint guard to clear rollup tree');
     assert.ok(epmViewDataSource.includes('setEpmRollupLoading(false);'), 'Expected Active EPM sprint guard to stop rollup loading');

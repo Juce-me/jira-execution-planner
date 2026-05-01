@@ -439,6 +439,9 @@ Write set:
 
 - `frontend/src/epm/useEpmViewData.js`
 - `frontend/src/dashboard.jsx`
+- `frontend/dist/dashboard.js`
+- `frontend/dist/dashboard.js.map`
+- `tests/test_epm_settings_source_guards.js`
 - `tests/test_epm_view_source_guards.js`
 - `tests/test_epm_shell_source_guards.js`
 

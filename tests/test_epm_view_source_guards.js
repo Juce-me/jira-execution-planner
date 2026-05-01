@@ -7,6 +7,7 @@ const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.j
 const dashboardCssPath = path.join(__dirname, '..', 'frontend', 'src', 'styles', 'dashboard.css');
 const epmApiPath = path.join(__dirname, '..', 'frontend', 'src', 'api', 'epmApi.js');
 const epmFetchPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmFetch.js');
+const epmViewDataPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'useEpmViewData.js');
 const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupPanel.jsx');
 const epmRollupTreePath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupTree.jsx');
 const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs');
@@ -27,6 +28,7 @@ const statusPillSource = fs.existsSync(statusPillPath) ? fs.readFileSync(statusP
 const dashboardCssSource = fs.existsSync(dashboardCssPath) ? fs.readFileSync(dashboardCssPath, 'utf8') : '';
 const epmApiSource = fs.existsSync(epmApiPath) ? fs.readFileSync(epmApiPath, 'utf8') : '';
 const epmFetchSource = fs.readFileSync(epmFetchPath, 'utf8');
+const epmViewDataSource = fs.existsSync(epmViewDataPath) ? fs.readFileSync(epmViewDataPath, 'utf8') : '';
 const epmRollupPanelSource = fs.existsSync(epmRollupPanelPath) ? fs.readFileSync(epmRollupPanelPath, 'utf8') : '';
 const epmRollupTreeSource = fs.existsSync(epmRollupTreePath) ? fs.readFileSync(epmRollupTreePath, 'utf8') : '';
 const helperSource = fs.existsSync(helperPath) ? fs.readFileSync(helperPath, 'utf8') : '';
@@ -73,7 +75,7 @@ function getUseEffectBodies(source) {
 
 function getConstFunctionBodies(source) {
     const bodies = new Map();
-    const functionPattern = /const\s+([A-Za-z0-9_]+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{/g;
+    const functionPattern = /const\s+([A-Za-z0-9_]+)\s*=\s*(?:React\.useCallback\(\s*)?(?:async\s*)?\([^)]*\)\s*=>\s*\{/g;
     let match;
     while ((match = functionPattern.exec(source)) !== null) {
         const openBraceIndex = match.index + match[0].length - 1;
@@ -299,7 +301,7 @@ test('epm helper file exists without ambiguous Active-only helper copy', () => {
     assert.ok(!helperSource.includes('Active only'), 'Did not expect ambiguous Active only copy');
     assert.ok(!dashboardSource.includes('getEpmSprintHelper'), 'Did not expect dashboard.jsx to render ambiguous Active only copy');
     assert.ok(dashboardSource.includes('shouldUseEpmSprint'), 'Expected dashboard.jsx to reference shouldUseEpmSprint');
-    assert.ok(dashboardSource.includes('buildRollupTree'), 'Expected dashboard.jsx to reference buildRollupTree');
+    assert.ok(epmViewDataSource.includes('buildRollupTree'), 'Expected useEpmViewData.js to reference buildRollupTree');
 });
 
 test('EPM module homes own rollup fetch and rendering while staying isolated from ENG concerns', () => {
@@ -330,14 +332,15 @@ test('ENG task fetching effects are unreachable in EPM view', () => {
 });
 
 test('EPM board fetches rollup with tab and sprint params while preserving active sprint gating', () => {
-    assert.ok(dashboardSource.includes('fetchEpmProjectRollup(BACKEND_URL, currentProjectId'), 'Expected EPM board to fetch the rollup endpoint through wrapper');
-    assert.ok(dashboardSource.includes('fetchEpmAllProjectsRollup(BACKEND_URL'), 'Expected EPM all-projects mode to fetch the aggregate rollup endpoint through wrapper');
-    assert.ok(dashboardSource.includes('tab: epmTab'), 'Expected EPM rollup wrapper call to include current tab');
-    assert.ok(dashboardSource.includes('sprint: selectedSprint'), 'Expected EPM rollup wrapper call to include selected sprint');
+    assert.ok(fs.existsSync(epmViewDataPath), 'Expected useEpmViewData.js to own EPM view data fetching');
+    assert.ok(epmViewDataSource.includes('fetchEpmProjectRollup(backendUrl, currentProjectId'), 'Expected EPM hook to fetch the rollup endpoint through wrapper');
+    assert.ok(epmViewDataSource.includes('fetchEpmAllProjectsRollup(backendUrl'), 'Expected EPM hook to fetch the aggregate rollup endpoint through wrapper');
+    assert.ok(epmViewDataSource.includes('tab: epmTab'), 'Expected EPM rollup wrapper call to include current tab');
+    assert.ok(epmViewDataSource.includes('sprint: selectedSprint'), 'Expected EPM rollup wrapper call to include selected sprint');
     assert.ok(epmApiSource.includes("const params = new URLSearchParams({ tab: effectiveTab })"), 'Expected EPM rollup request to include tab parameter');
     assert.ok(epmApiSource.includes("params.set('sprint', String(sprint))"), 'Expected EPM rollup request to include selected sprint');
     assert.ok(epmApiSource.includes('/api/epm/projects/rollup/all?${params.toString()}'), 'Expected aggregate EPM rollup request wrapper');
-    assert.ok(dashboardSource.includes("epmTab === 'active' && !selectedSprint"), 'Expected active tab to require selectedSprint before rollup fetch');
+    assert.ok(epmViewDataSource.includes("epmTab === 'active' && !selectedSprint"), 'Expected active tab to require selectedSprint before rollup fetch');
 });
 
 test('EPM project metadata fetch is scoped to the current lifecycle tab', () => {
@@ -346,22 +349,23 @@ test('EPM project metadata fetch is scoped to the current lifecycle tab', () => 
         'Expected EPM projects wrapper to add tab query parameter when provided'
     );
     assert.ok(
-        dashboardSource.includes('fetchEpmProjects(BACKEND_URL, { tab })'),
-        'Expected dashboard project metadata fetches to pass the current EPM tab'
+        epmViewDataSource.includes('fetchEpmProjects(backendUrl, { tab })'),
+        'Expected EPM hook project metadata fetches to pass the current EPM tab'
     );
     assert.ok(
-        dashboardSource.includes('const refreshEpmProjects = async (options = {}) => {') &&
-            dashboardSource.includes('const tab = options.tab || epmTab;'),
+        epmViewDataSource.includes('const refreshEpmProjects = React.useCallback(async (options = {}) => {') &&
+            epmViewDataSource.includes('const tab = options.tab || epmTab;'),
         'Expected refreshEpmProjects to default to the current EPM tab'
     );
     assert.ok(
-        dashboardSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab]);'),
+        epmViewDataSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab]);'),
         'Expected EPM view refresh effect to reload project metadata when the EPM tab changes'
     );
 });
 
 test('EPM initial all-project load warms project metadata before all-project rollup', () => {
-    const functions = getConstFunctionBodies(dashboardSource);
+    assert.ok(fs.existsSync(epmViewDataPath), 'Expected useEpmViewData.js to own EPM cold-load sequencing');
+    const functions = getConstFunctionBodies(epmViewDataSource);
     const refreshEpmViewSource = functions.get('refreshEpmView') || '';
     const refreshEpmRollupSource = functions.get('refreshEpmRollup') || '';
     assert.ok(
@@ -373,7 +377,7 @@ test('EPM initial all-project load warms project metadata before all-project rol
         'Expected EPM rollup refresh to wait while project metadata is loading'
     );
     assert.ok(
-        dashboardSource.includes('void refreshEpmView();'),
+        epmViewDataSource.includes('void refreshEpmView();'),
         'Expected EPM view load effect to enter the combined refresh workflow'
     );
     assert.ok(
@@ -386,7 +390,7 @@ test('EPM initial all-project load warms project metadata before all-project rol
     assert.ok(rollupIndex !== -1, 'Expected all-project branch to fetch aggregate rollup after metadata');
     assert.ok(projectsIndex < rollupIndex, 'Expected project metadata to warm cache before aggregate rollup');
     assert.ok(
-        !dashboardSource.includes("if (epmSelectedProjectId === '') {\n                    void refreshEpmProjects({ background: true });"),
+        !epmViewDataSource.includes("if (epmSelectedProjectId === '') {\n                    void refreshEpmProjects({ background: true });"),
         'EPM bootstrap must not start a background project fetch that races aggregate rollup'
     );
 });
@@ -394,9 +398,11 @@ test('EPM initial all-project load warms project metadata before all-project rol
 test('EPM board bootstraps saved config from initial user config before loading projects', () => {
     const functions = getConstFunctionBodies(dashboardSource);
     const loadConfigSource = functions.get('loadConfig') || '';
-    const refreshEpmRollupSource = functions.get('refreshEpmRollup') || '';
+    const hookFunctions = getConstFunctionBodies(epmViewDataSource);
+    const refreshEpmRollupSource = hookFunctions.get('refreshEpmRollup') || '';
     const effects = getUseEffectBodies(dashboardSource);
-    const epmViewLoadEffect = effects.find(body => body.includes("if (selectedView !== 'epm') return;") && body.includes('void refreshEpmView();')) || '';
+    const hookEffects = getUseEffectBodies(epmViewDataSource);
+    const epmViewLoadEffect = hookEffects.find(body => body.includes("if (selectedView !== 'epm') return;") && body.includes('void refreshEpmView();')) || '';
 
     assert.ok(
         dashboardSource.includes('const [epmConfigLoaded, setEpmConfigLoaded] = useState(false);'),
@@ -419,7 +425,7 @@ test('EPM board bootstraps saved config from initial user config before loading 
         'Expected EPM view load effect to wait for saved EPM config bootstrap'
     );
     assert.ok(
-        dashboardSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab]);'),
+        epmViewDataSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab]);'),
         'Expected EPM view load effect to rerun after config bootstrap and tab changes'
     );
 });
@@ -432,16 +438,16 @@ test('EPM defaults to all projects and exposes sprint controls in Active', () =>
     );
     assert.ok(pickerSnippet.includes('All projects'), 'Expected blank EPM project selection to mean All projects');
     assert.ok(!pickerSnippet.includes('Select project...'), 'Did not expect single-project placeholder copy');
-    assert.ok(dashboardSource.includes("epmSelectedProjectId === ''"), 'Expected explicit all-projects branch for blank EPM project selection');
+    assert.ok(epmViewDataSource.includes("epmSelectedProjectId === ''"), 'Expected explicit all-projects branch for blank EPM project selection');
     assert.ok(dashboardSource.includes("shouldUseEpmSprint(epmTab) && renderSprintControl('main')"), 'Expected EPM Active main controls to render the sprint selector');
     assert.ok(dashboardSource.includes("shouldUseEpmSprint(epmTab) && renderSprintControl('compact')"), 'Expected EPM Active compact controls to render the sprint selector');
     assert.ok(
-        dashboardSource.includes("currentProject.matchState === 'metadata-only' && !currentProject.label"),
+        epmViewDataSource.includes("currentProject.matchState === 'metadata-only' && !currentProject.label"),
         'Expected metadata-only shortcut to apply only when no label is present'
     );
     assert.ok(
-        dashboardSource.indexOf("epmTab === 'active' && !selectedSprint") <
-            dashboardSource.indexOf("currentProject.matchState === 'metadata-only' && !currentProject.label"),
+        epmViewDataSource.indexOf("epmTab === 'active' && !selectedSprint") <
+            epmViewDataSource.indexOf("currentProject.matchState === 'metadata-only' && !currentProject.label"),
         'Expected sprint-required guard to run before metadata-only rendering'
     );
     assert.ok(
@@ -463,20 +469,20 @@ test('EPM project identity positions use project id only', () => {
     assert.ok(!helperSource.includes('project?.id || project?.homeProjectId'), 'Expected no homeProjectId fallback in identity helper');
 
     const selectedLookupSnippet = getSnippetBetween(
-        dashboardSource,
+        epmViewDataSource,
         'const selectedEpmProject = visibleEpmProjects.find',
-        'const loadEpmConfig'
+        'const filteredEpmProjects'
     );
     assert.ok(selectedLookupSnippet.includes('getEpmProjectIdentity(project) === epmSelectedProjectId'), 'Expected selected lookup to use project id identity helper');
     assert.ok(!selectedLookupSnippet.includes('homeProjectId'), 'Expected selected lookup not to reference homeProjectId');
 
     const rollupFetchSnippet = getSnippetBetween(
-        dashboardSource,
-        'const refreshEpmRollup = async',
-        'const refreshEpmView = async'
+        epmViewDataSource,
+        'const refreshEpmRollup = React.useCallback',
+        'const loadArchivedEpmProjectRollup = React.useCallback'
     );
     assert.ok(rollupFetchSnippet.includes('getEpmProjectIdentity(currentProject)'), 'Expected rollup URL id to come from project id identity helper');
-    assert.ok(rollupFetchSnippet.includes('fetchEpmProjectRollup(BACKEND_URL, currentProjectId'), 'Expected rollup request to use current project id');
+    assert.ok(rollupFetchSnippet.includes('fetchEpmProjectRollup(backendUrl, currentProjectId'), 'Expected rollup request to use current project id');
     assert.ok(epmApiSource.includes('encodeURIComponent(projectId)}/rollup'), 'Expected rollup URL wrapper to encode current project id');
     assert.ok(!rollupFetchSnippet.includes('homeProjectId'), 'Expected rollup URL path logic not to reference homeProjectId');
 
@@ -485,7 +491,7 @@ test('EPM project identity positions use project id only', () => {
         'const renderEpmProjectPicker = () =>',
         'const renderSprintControl ='
     );
-    assert.ok(dashboardSource.includes('const projects = visibleEpmProjects.filter(project => getEpmProjectIdentity(project));'), 'Expected picker source to omit projects with no project.id');
+    assert.ok(epmViewDataSource.includes('const projects = visibleEpmProjects.filter(project => getEpmProjectIdentity(project));'), 'Expected picker source to omit projects with no project.id');
     assert.ok(pickerSnippet.includes('const projectId = getEpmProjectIdentity(project)'), 'Expected picker option key/value to use project id identity helper');
     assert.ok(pickerSnippet.includes('key={projectId}'), 'Expected picker option key to use project id');
     assert.ok(pickerSnippet.includes('data-project-id={projectId}'), 'Expected picker option value to use project id');
@@ -622,5 +628,5 @@ test('EPM archived portfolio boards lazy-load Jira rollups on expand', () => {
     assert.ok(epmRollupPanelSource.includes("epmTab === 'archived'"), 'Expected archived boards to initialize collapsed');
     assert.ok(epmRollupPanelSource.includes('onProjectExpand(project)'), 'Expected project expand callback in EpmRollupPanel.jsx');
     assert.ok(dashboardSource.includes('loadArchivedEpmProjectRollup'), 'Expected archived lazy rollup loader in dashboard.jsx');
-    assert.ok(dashboardSource.includes('fetchEpmProjectRollup(BACKEND_URL, projectId'), 'Expected archived expand to fetch the per-project rollup');
+    assert.ok(epmViewDataSource.includes('fetchEpmProjectRollup(backendUrl, projectId'), 'Expected archived expand to fetch the per-project rollup');
 });

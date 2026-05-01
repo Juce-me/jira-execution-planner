@@ -4,6 +4,7 @@ const path = require('path');
 const test = require('node:test');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
+const epmSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmSettings.jsx');
 const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'ControlField.jsx');
 const iconButtonPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'IconButton.jsx');
 const loadingRowsPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'LoadingRows.jsx');
@@ -11,8 +12,37 @@ const emptyStatePath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'Empt
 const epmViewDataPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'useEpmViewData.js');
 const epmControlsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmControls.jsx');
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
+const epmSettingsUiSource = epmSettingsSource || dashboardSource;
 const epmViewDataSource = fs.existsSync(epmViewDataPath) ? fs.readFileSync(epmViewDataPath, 'utf8') : '';
 const epmControlsSource = fs.existsSync(epmControlsPath) ? fs.readFileSync(epmControlsPath, 'utf8') : '';
+
+test('EPM settings UI is extracted while dashboard keeps settings state and shell ownership', () => {
+    const epmSettingsCallStart = dashboardSource.indexOf('<EpmSettings');
+    const epmSettingsCallEnd = dashboardSource.indexOf('/>', epmSettingsCallStart);
+    const epmSettingsCallSource = epmSettingsCallStart === -1 || epmSettingsCallEnd === -1
+        ? ''
+        : dashboardSource.slice(epmSettingsCallStart, epmSettingsCallEnd);
+    const epmSettingsPropsStart = epmSettingsSource.indexOf('const {');
+    const epmSettingsPropsEnd = epmSettingsSource.indexOf('} = props;', epmSettingsPropsStart);
+    const epmSettingsPropsSource = epmSettingsPropsStart === -1 || epmSettingsPropsEnd === -1
+        ? ''
+        : epmSettingsSource.slice(epmSettingsPropsStart, epmSettingsPropsEnd);
+
+    assert.ok(fs.existsSync(epmSettingsPath), 'Expected extracted EpmSettings component');
+    assert.ok(epmSettingsSource.includes('export default function EpmSettings'), 'Expected EpmSettings default component export');
+    assert.ok(dashboardSource.includes("import EpmSettings from './epm/EpmSettings.jsx';"), 'Expected dashboard to import extracted EPM settings');
+    assert.ok(dashboardSource.includes("groupManageTab === 'epm'") && dashboardSource.includes('<EpmSettings'), 'Expected dashboard shell to render EpmSettings for the EPM tab');
+    assert.ok(dashboardSource.includes("const [epmSettingsTab, setEpmSettingsTab] = useState('scope');"), 'Expected dashboard to keep EPM settings tab state ownership');
+    assert.ok(dashboardSource.includes('const saveEpmConfig = async () => {'), 'Expected dashboard to keep EPM save ownership');
+    ['epmConfigLoading', 'epmConfigSaving', 'focusEpmScopeField'].forEach((propName) => {
+        assert.ok(epmSettingsCallSource.includes(`${propName},`), `Expected dashboard to pass ${propName} into EpmSettings`);
+        assert.ok(epmSettingsPropsSource.includes(`${propName},`), `Expected EpmSettings to receive ${propName}`);
+    });
+    assert.ok(epmSettingsSource.includes('id="epm-settings-scope-panel"'), 'Expected scope panel markup in EpmSettings');
+    assert.ok(epmSettingsSource.includes('id="epm-settings-projects-panel"'), 'Expected projects panel markup in EpmSettings');
+    assert.ok(epmSettingsSource.includes('epm-label-menu-layer'), 'Expected EPM label menu layer in EpmSettings');
+});
 
 test('dashboard source includes the EPM settings tab and lazy-load flow', () => {
     assert.ok(dashboardSource.includes("groupManageTab === 'epm'"), 'Expected an EPM settings tab branch');
@@ -66,15 +96,15 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('void saveEpmConfig().catch(() => {});'), 'Expected direct EPM save callers to consume rejections');
     assert.ok(dashboardSource.includes('if (isEpmConfigDirty) {') && dashboardSource.includes('await saveEpmConfig();'), 'Expected shared save path to persist EPM settings when dirty');
     assert.ok(dashboardSource.includes("setGroupDraftError(message);") && dashboardSource.includes('throw err;'), 'Expected EPM save failures to surface and block shared save');
-    assert.ok(dashboardSource.includes('Atlassian site'), 'Expected Atlassian site copy');
-    assert.ok(dashboardSource.includes('Root goal'), 'Expected Root goal copy');
-    assert.ok(dashboardSource.includes('Sub-goal'), 'Expected Sub-goal copy');
-    assert.ok(dashboardSource.includes('Label prefix'), 'Expected Label prefix copy');
-    assert.ok(dashboardSource.includes('Project name'), 'Expected Project name copy');
-    assert.ok(dashboardSource.includes('Select a root goal before choosing a sub-goal.'), 'Expected root-goal prerequisite helper copy');
-    assert.ok(dashboardSource.includes('This sub-goal has no direct Jira Home projects. Choose a different child goal.'), 'Expected empty child-goal helper copy');
-    assert.ok(dashboardSource.includes('Loading root goals...'), 'Expected root goal loading copy');
-    assert.ok(dashboardSource.includes('Loading sub-goals...'), 'Expected sub-goal loading copy');
+    assert.ok(epmSettingsUiSource.includes('Atlassian site'), 'Expected Atlassian site copy');
+    assert.ok(epmSettingsUiSource.includes('Root goal'), 'Expected Root goal copy');
+    assert.ok(epmSettingsUiSource.includes('Sub-goal'), 'Expected Sub-goal copy');
+    assert.ok(epmSettingsUiSource.includes('Label prefix'), 'Expected Label prefix copy');
+    assert.ok(epmSettingsUiSource.includes('Project name'), 'Expected Project name copy');
+    assert.ok(epmSettingsUiSource.includes('Select a root goal before choosing a sub-goal.'), 'Expected root-goal prerequisite helper copy');
+    assert.ok(epmSettingsUiSource.includes('This sub-goal has no direct Jira Home projects. Choose a different child goal.'), 'Expected empty child-goal helper copy');
+    assert.ok(epmSettingsUiSource.includes('Loading root goals...'), 'Expected root goal loading copy');
+    assert.ok(epmSettingsUiSource.includes('Loading sub-goals...'), 'Expected sub-goal loading copy');
     assert.ok(dashboardSource.includes('setShowGroupManage(true);') && dashboardSource.includes('setGroupManageTab(\'epm\');'), 'Expected EPM settings open action to switch tabs without mutating main EPM project state');
     assert.ok(epmViewDataSource.includes("setEpmProjectsError(err?.message || 'Failed to load EPM projects.');"), 'Expected EPM project refresh failures to surface distinct settings-state copy');
     assert.ok(dashboardSource.includes('setEpmRootGoalsError(String(rootGoalsPayload?.error || \'\').trim());'), 'Expected handled root-goal discovery errors to surface in picker state');
@@ -82,25 +112,25 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes("setGroupDraftError('Failed to load EPM settings.');"), 'Expected config-load failures to clear stale EPM draft state and surface an error');
     assert.ok(epmViewDataSource.includes('if (!hasSavedEpmScope) {') && epmViewDataSource.includes('void refreshEpmView();'), 'Expected main EPM view fetch gating on saved scope');
     assert.ok(epmViewDataSource.includes('const refreshEpmView = React.useCallback(async () => {') && epmViewDataSource.includes('if (!hasSavedEpmScope) {') && epmViewDataSource.includes('setEpmProjects([]);') && epmViewDataSource.includes('setEpmRollupTree(null);') && epmViewDataSource.includes('setEpmRollupLoading(false);'), 'Expected manual EPM refresh gating to clear stale project and rollup state without fetching');
-    assert.ok(dashboardSource.includes('EPM projects'), 'Expected EPM projects copy');
-    assert.ok(dashboardSource.includes('Add custom Project'), 'Expected Add custom Project button copy');
-    assert.ok(dashboardSource.includes('Jira label'), 'Expected Jira label copy');
-    assert.ok(!dashboardSource.includes('data-field="jiraEpicKey"'), 'Did not expect Jira epic key input field');
-    assert.ok(!dashboardSource.includes('Jira epic'), 'Did not expect Jira Epic copy in EPM settings');
+    assert.ok(epmSettingsUiSource.includes('EPM projects'), 'Expected EPM projects copy');
+    assert.ok(epmSettingsUiSource.includes('Add custom Project'), 'Expected Add custom Project button copy');
+    assert.ok(epmSettingsUiSource.includes('Jira label'), 'Expected Jira label copy');
+    assert.ok(!epmSettingsUiSource.includes('data-field="jiraEpicKey"'), 'Did not expect Jira epic key input field');
+    assert.ok(!epmSettingsUiSource.includes('Jira epic'), 'Did not expect Jira Epic copy in EPM settings');
     assert.ok(dashboardSource.includes("const EPM_LABEL_SEARCH_GROUP_ID = 'epm-project';"), 'Expected dedicated EPM label search namespace constant');
     assert.ok(dashboardSource.includes('const getEpmLabelRowKey = (projectId) => getLabelRowKey(EPM_LABEL_SEARCH_GROUP_ID, projectId);'), 'Expected EPM label picker reads to use the dedicated shared key helper');
-    assert.ok(dashboardSource.includes('void loadEpmProjectLabels(project.id, showAllLabels);'), 'Expected EPM label picker focus to load prefix-scoped labels');
+    assert.ok(epmSettingsUiSource.includes('void loadEpmProjectLabels(project.id, showAllLabels);'), 'Expected EPM label picker focus to load prefix-scoped labels');
     assert.ok(!dashboardSource.includes("scheduleJiraLabelSearch('epm', homeProjectId, rawQuery);"), 'Did not expect the legacy EPM label search namespace');
-    assert.ok(dashboardSource.includes('Search Jira labels...'), 'Expected EPM Jira label search placeholder copy');
+    assert.ok(epmSettingsUiSource.includes('Search Jira labels...'), 'Expected EPM Jira label search placeholder copy');
     assert.ok(dashboardSource.includes('requestJiraLabels(BACKEND_URL, showAll || !prefix'), 'Expected EPM label autocomplete to use the Jira label request wrapper');
     assert.ok(dashboardSource.includes('? { limit: 200 }') && dashboardSource.includes(': { prefix, limit: 200 }'), 'Expected EPM label autocomplete to preserve prefix/show-all limit=200 behavior');
-    assert.ok(dashboardSource.includes('Show all labels'), 'Expected Show all labels toggle copy');
-    assert.ok(dashboardSource.includes('Change label'), 'Expected selected labels to expose an explicit Change action');
-    assert.ok(dashboardSource.includes('Choose label'), 'Expected unlabeled rows to expose an explicit Choose label action');
-    assert.ok(dashboardSource.includes('const isChangingLabel = Boolean(epmLabelChanging[rowKey]);'), 'Expected label search field to be gated behind explicit Change state');
-    assert.ok(dashboardSource.includes('{isChangingLabel && ('), 'Expected label search field to render only after explicit Choose or Change');
-    assert.ok(dashboardSource.includes('No Jira label selected.'), 'Expected EPM empty Jira label state copy');
-    assert.ok(dashboardSource.includes('placeholder={project.homeName || project.name || \'Project name\'}'), 'Expected name placeholder to default from the Home project name');
+    assert.ok(epmSettingsUiSource.includes('Show all labels'), 'Expected Show all labels toggle copy');
+    assert.ok(epmSettingsUiSource.includes('Change label'), 'Expected selected labels to expose an explicit Change action');
+    assert.ok(epmSettingsUiSource.includes('Choose label'), 'Expected unlabeled rows to expose an explicit Choose label action');
+    assert.ok(epmSettingsUiSource.includes('const isChangingLabel = Boolean(epmLabelChanging[rowKey]);'), 'Expected label search field to be gated behind explicit Change state');
+    assert.ok(epmSettingsUiSource.includes('{isChangingLabel && ('), 'Expected label search field to render only after explicit Choose or Change');
+    assert.ok(epmSettingsUiSource.includes('No Jira label selected.'), 'Expected EPM empty Jira label state copy');
+    assert.ok(epmSettingsUiSource.includes('placeholder={project.homeName || project.name || \'Project name\'}'), 'Expected name placeholder to default from the Home project name');
     assert.ok(dashboardSource.includes("name: String(row?.name ?? ''),"), 'Expected name field to be persisted exactly as typed');
     assert.ok(dashboardSource.includes("label: String(row?.label ?? ''),"), 'Expected label field to be persisted exactly as typed');
     assert.ok(dashboardSource.includes("const draftId = `draft-${Date.now().toString(36)}-${epmDraftIdCounterRef.current}`;"), 'Expected custom Project draft rows to use stable draft-* ids');
@@ -115,15 +145,15 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('cacheKey: cacheKeySnapshot'), 'Expected Projects tab load to pass the matching cache key');
     assert.ok(!dashboardSource.includes('Run Test Configuration to preview projects for the selected draft scope.'), 'Project tab must not require manual preview before showing rows');
     assert.ok(!dashboardSource.includes("groupManageTab === 'epm' && epmSettingsTab === 'projects' && (\\n    <div className=\"group-modal-button-row\">"), 'EPM project refresh must not live in modal footer');
-    assert.ok(dashboardSource.includes('className="epm-projects-header-actions"'), 'Expected Projects header actions for refresh/status');
-    assert.ok(dashboardSource.includes('Refresh from Jira Home'), 'Expected Projects header refresh action');
+    assert.ok(epmSettingsUiSource.includes('className="epm-projects-header-actions"'), 'Expected Projects header actions for refresh/status');
+    assert.ok(epmSettingsUiSource.includes('Refresh from Jira Home'), 'Expected Projects header refresh action');
     assert.ok(dashboardSource.includes('epmSettingsProjectsLoadedAt'), 'Expected cached/last-loaded status state');
     assert.ok(dashboardSource.includes('epmSettingsProjectsFetchMeta'), 'Expected Home project fetch metadata state');
     assert.ok(dashboardSource.includes('epmSettingsProjectsRefreshing'), 'Expected refresh state that preserves rows');
-    assert.ok(dashboardSource.includes('missingFromHomeFetch'), 'Expected missing Home project reconciliation state');
+    assert.ok(epmSettingsUiSource.includes('missingFromHomeFetch'), 'Expected missing Home project reconciliation state');
     assert.ok(dashboardSource.includes('const getHomeBackedEpmSettingsProjects = (projects) => {'), 'Expected settings project cache to exclude custom rows rendered from config');
     assert.ok(dashboardSource.includes('epm-project-skeleton-row'), 'Expected skeleton loading rows');
-    assert.ok(dashboardSource.includes('Retry'), 'Expected inline retry action for project load errors');
+    assert.ok(epmSettingsUiSource.includes('Retry'), 'Expected inline retry action for project load errors');
     assert.ok(!dashboardSource.includes('epmSettingsPreviewRequested'), 'EPM project configuration must not use preview-request state');
     assert.ok(!dashboardSource.includes('loadEpmProjectPreview'), 'EPM project configuration must not use preview-named loaders');
     assert.ok(dashboardSource.includes('const [epmSettingsProjectsLoaded, setEpmSettingsProjectsLoaded] = useState(false);'), 'Expected loaded-state for project configuration rows');
@@ -141,8 +171,8 @@ test('EPM settings source uses shared basic UI primitives for representative row
     assert.ok(dashboardSource.includes("import EmptyState from './ui/EmptyState.jsx';"), 'Expected dashboard to import EmptyState');
     assert.ok(dashboardSource.includes('<ControlField label="Search"'), 'Expected header search control to use ControlField');
     assert.ok(epmControlsSource.includes('<ControlField label="Project"'), 'Expected EPM project picker control to use ControlField');
-    assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="epm-label-change-shortcut"'), 'Expected selected-label change action to use IconButton');
-    assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="epm-project-home-shortcut"'), 'Expected Home project shortcut to use IconButton');
+    assert.ok(epmSettingsUiSource.includes('<IconButton') && epmSettingsUiSource.includes('className="epm-label-change-shortcut"'), 'Expected selected-label change action to use IconButton');
+    assert.ok(epmSettingsUiSource.includes('<IconButton') && epmSettingsUiSource.includes('className="epm-project-home-shortcut"'), 'Expected Home project shortcut to use IconButton');
     assert.ok(dashboardSource.includes('<LoadingRows') && dashboardSource.includes('ariaLabel="Loading EPM projects"'), 'Expected EPM project skeleton rows to use LoadingRows');
     assert.ok(dashboardSource.includes('<EmptyState') && dashboardSource.includes('title="No tasks found"'), 'Expected task empty state to use EmptyState');
 });
@@ -174,11 +204,11 @@ test('Open Settings CTA opens the EPM Projects label tab', () => {
 });
 
 test('EPM project rows stay compact and show Home status instead of update snippets', () => {
-    const projectsPanelStart = dashboardSource.indexOf('id="epm-settings-projects-panel"');
-    const projectsPanelEnd = dashboardSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
+    const projectsPanelStart = epmSettingsUiSource.indexOf('id="epm-settings-projects-panel"');
+    const projectsPanelEnd = epmSettingsUiSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
     assert.notStrictEqual(projectsPanelStart, -1, 'Expected EPM projects settings panel');
     assert.notStrictEqual(projectsPanelEnd, -1, 'Expected EPM projects row list before empty state');
-    const projectsPanelSource = dashboardSource.slice(projectsPanelStart, projectsPanelEnd);
+    const projectsPanelSource = epmSettingsUiSource.slice(projectsPanelStart, projectsPanelEnd);
 
     assert.ok(projectsPanelSource.includes('className="epm-project-settings-row"'), 'Expected compact one-row project layout');
     assert.ok(projectsPanelSource.includes('project.stateLabel || project.stateValue'), 'Expected Home project status beside the project name');
@@ -189,11 +219,11 @@ test('EPM project rows stay compact and show Home status instead of update snipp
 });
 
 test('EPM project rows use stable cells for variable statuses and labels', () => {
-    const projectsPanelStart = dashboardSource.indexOf('id="epm-settings-projects-panel"');
-    const projectsPanelEnd = dashboardSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
+    const projectsPanelStart = epmSettingsUiSource.indexOf('id="epm-settings-projects-panel"');
+    const projectsPanelEnd = epmSettingsUiSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
     assert.notStrictEqual(projectsPanelStart, -1, 'Expected EPM projects settings panel');
     assert.notStrictEqual(projectsPanelEnd, -1, 'Expected EPM projects row list before empty state');
-    const projectsPanelSource = dashboardSource.slice(projectsPanelStart, projectsPanelEnd);
+    const projectsPanelSource = epmSettingsUiSource.slice(projectsPanelStart, projectsPanelEnd);
 
     assert.ok(projectsPanelSource.includes('className="epm-project-settings-table"'), 'Expected table-style project settings layout');
     assert.ok(projectsPanelSource.includes('className="epm-project-table-header"'), 'Expected table-style project settings header');
@@ -204,11 +234,11 @@ test('EPM project rows use stable cells for variable statuses and labels', () =>
 });
 
 test('EPM project Home links render as compact shortcut icons', () => {
-    const projectsPanelStart = dashboardSource.indexOf('id="epm-settings-projects-panel"');
-    const projectsPanelEnd = dashboardSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
+    const projectsPanelStart = epmSettingsUiSource.indexOf('id="epm-settings-projects-panel"');
+    const projectsPanelEnd = epmSettingsUiSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
     assert.notStrictEqual(projectsPanelStart, -1, 'Expected EPM projects settings panel');
     assert.notStrictEqual(projectsPanelEnd, -1, 'Expected EPM projects row list before empty state');
-    const projectsPanelSource = dashboardSource.slice(projectsPanelStart, projectsPanelEnd);
+    const projectsPanelSource = epmSettingsUiSource.slice(projectsPanelStart, projectsPanelEnd);
 
     assert.ok(projectsPanelSource.includes('className="epm-project-home-shortcut"'), 'Expected Home project link to use compact shortcut styling');
     assert.ok(projectsPanelSource.includes('aria-label={`Open Jira Home project for ${project.displayName || project.homeName || project.id}`}'), 'Expected Home shortcut to keep an accessible project-specific label');
@@ -218,11 +248,11 @@ test('EPM project Home links render as compact shortcut icons', () => {
 });
 
 test('EPM project rows expose table header sorting and view controls', () => {
-    const projectsPanelStart = dashboardSource.indexOf('id="epm-settings-projects-panel"');
-    const projectsPanelEnd = dashboardSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
+    const projectsPanelStart = epmSettingsUiSource.indexOf('id="epm-settings-projects-panel"');
+    const projectsPanelEnd = epmSettingsUiSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
     assert.notStrictEqual(projectsPanelStart, -1, 'Expected EPM projects settings panel');
     assert.notStrictEqual(projectsPanelEnd, -1, 'Expected EPM projects row list before empty state');
-    const projectsPanelSource = dashboardSource.slice(projectsPanelStart, projectsPanelEnd);
+    const projectsPanelSource = epmSettingsUiSource.slice(projectsPanelStart, projectsPanelEnd);
 
     assert.ok(dashboardSource.includes('sortEpmSettingsProjects'), 'Expected dashboard to import the settings project sorter');
     assert.ok(dashboardSource.includes('filterEpmSettingsProjectsForView'), 'Expected dashboard to import the settings project view filter');
@@ -235,7 +265,7 @@ test('EPM project rows expose table header sorting and view controls', () => {
     assert.ok(projectsPanelSource.includes("setEpmSettingsProjectSort('name')"), 'Expected Project header sort action');
     assert.ok(projectsPanelSource.includes("setEpmSettingsProjectSort('status')"), 'Expected Status header sort action');
     assert.ok(projectsPanelSource.includes("setEpmSettingsProjectSort('label')"), 'Expected Jira label header sort action');
-    assert.ok(dashboardSource.includes('No projects in this view.'), 'Expected filtered-empty project views to show an empty state');
+    assert.ok(epmSettingsUiSource.includes('No projects in this view.'), 'Expected filtered-empty project views to show an empty state');
     assert.ok(!projectsPanelSource.includes('className="epm-project-sort-control"'), 'Sort dropdown must not stay in the panel header');
     assert.ok(!projectsPanelSource.includes('Home order'), 'Home must not be a sort option');
 });
@@ -249,11 +279,11 @@ test('EPM settings drops empty custom project rows and gives them an explicit de
 
     assert.ok(normalizeSource.includes('if (isEmptyCustomEpmProjectRow(normalizedRow)) return;'), 'Save normalization must skip fully empty custom project rows');
 
-    const projectsPanelStart = dashboardSource.indexOf('id="epm-settings-projects-panel"');
-    const projectsPanelEnd = dashboardSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
+    const projectsPanelStart = epmSettingsUiSource.indexOf('id="epm-settings-projects-panel"');
+    const projectsPanelEnd = epmSettingsUiSource.indexOf('className="epm-project-empty-state"', projectsPanelStart);
     assert.notStrictEqual(projectsPanelStart, -1, 'Expected EPM projects settings panel');
     assert.notStrictEqual(projectsPanelEnd, -1, 'Expected EPM projects row list before empty state');
-    const projectsPanelSource = dashboardSource.slice(projectsPanelStart, projectsPanelEnd);
+    const projectsPanelSource = epmSettingsUiSource.slice(projectsPanelStart, projectsPanelEnd);
 
     assert.ok(projectsPanelSource.includes('const isEmptyCustomProject = isEmptyCustomEpmProjectRow(project);'), 'Expected empty custom row detection in the row renderer');
     assert.ok(projectsPanelSource.includes('{!isChangingLabel && !isEmptyCustomProject && ('), 'Expected empty custom rows to prioritize Delete over Choose label');
@@ -262,11 +292,11 @@ test('EPM settings drops empty custom project rows and gives them an explicit de
 });
 
 test('EPM selected Jira label has one explicit change action', () => {
-    const selectedLabelStart = dashboardSource.indexOf('className="epm-label-selected-chip"');
-    const selectedLabelEnd = dashboardSource.indexOf('{isChangingLabel && (', selectedLabelStart);
+    const selectedLabelStart = epmSettingsUiSource.indexOf('className="epm-label-selected-chip"');
+    const selectedLabelEnd = epmSettingsUiSource.indexOf('{isChangingLabel && (', selectedLabelStart);
     assert.notStrictEqual(selectedLabelStart, -1, 'Expected compact selected label chip');
     assert.notStrictEqual(selectedLabelEnd, -1, 'Expected label search branch after selected chip');
-    const selectedLabelSource = dashboardSource.slice(selectedLabelStart, selectedLabelEnd);
+    const selectedLabelSource = epmSettingsUiSource.slice(selectedLabelStart, selectedLabelEnd);
 
     assert.ok(selectedLabelSource.includes('className="epm-label-change-shortcut"'), 'Expected selected label change to use a compact icon action');
     assert.ok(selectedLabelSource.includes('title="Change label"'), 'Expected compact label-change action to keep a readable title');
@@ -305,20 +335,20 @@ test('dashboard source clears EPM sub-goal only when root goal changes or user c
 test('dashboard source separates EPM scope and project mapping tabs', () => {
     assert.ok(dashboardSource.includes("const [epmSettingsTab, setEpmSettingsTab] = useState('scope');"), 'Expected EPM-local settings tab state');
     assert.ok(dashboardSource.includes('const epmProjectPrerequisites = React.useMemo(() => getEpmProjectPrerequisites(epmConfigDraft), [epmConfigDraft]);'), 'Expected Projects prerequisite state');
-    assert.ok(dashboardSource.includes("className={`group-modal-tab ${epmSettingsTab === 'scope' ? 'active' : ''}`"), 'Expected EPM Scope sub-tab button');
-    assert.ok(dashboardSource.includes("className={`group-modal-tab ${epmSettingsTab === 'projects' ? 'active' : ''}`"), 'Expected EPM Projects sub-tab button');
-    assert.ok(!dashboardSource.includes("disabled={!canOpenEpmProjectsTab}"), 'Projects tab must stay clickable and show prerequisites inside the panel');
-    assert.ok(dashboardSource.includes('role="tablist"'), 'Expected accessible EPM settings tablist');
-    assert.ok(dashboardSource.includes('role="tab"'), 'Expected accessible EPM settings tabs');
-    assert.match(dashboardSource, /aria-selected=\{epmSettingsTab === ['"]scope['"]\}/, 'Expected scope tab selected state');
-    assert.match(dashboardSource, /aria-selected=\{epmSettingsTab === ['"]projects['"]\}/, 'Expected projects tab selected state');
-    assert.ok(dashboardSource.includes('aria-controls="epm-settings-projects-panel"'), 'Expected projects tab panel relationship');
+    assert.ok(epmSettingsUiSource.includes("className={`group-modal-tab ${epmSettingsTab === 'scope' ? 'active' : ''}`"), 'Expected EPM Scope sub-tab button');
+    assert.ok(epmSettingsUiSource.includes("className={`group-modal-tab ${epmSettingsTab === 'projects' ? 'active' : ''}`"), 'Expected EPM Projects sub-tab button');
+    assert.ok(!epmSettingsUiSource.includes("disabled={!canOpenEpmProjectsTab}"), 'Projects tab must stay clickable and show prerequisites inside the panel');
+    assert.ok(epmSettingsUiSource.includes('role="tablist"'), 'Expected accessible EPM settings tablist');
+    assert.ok(epmSettingsUiSource.includes('role="tab"'), 'Expected accessible EPM settings tabs');
+    assert.match(epmSettingsUiSource, /aria-selected=\{epmSettingsTab === ['"]scope['"]\}/, 'Expected scope tab selected state');
+    assert.match(epmSettingsUiSource, /aria-selected=\{epmSettingsTab === ['"]projects['"]\}/, 'Expected projects tab selected state');
+    assert.ok(epmSettingsUiSource.includes('aria-controls="epm-settings-projects-panel"'), 'Expected projects tab panel relationship');
     assert.ok(dashboardSource.includes('const handleEpmSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for EPM sub-tabs');
     assert.ok(dashboardSource.includes('document.getElementById(`epm-settings-${tab}-tab`)'), 'Expected keyboard tab changes to preserve focus');
-    assert.ok(dashboardSource.includes("epmSettingsTab === 'scope'"), 'Expected scope-only render branch');
-    assert.ok(dashboardSource.includes("epmSettingsTab === 'projects'"), 'Expected projects-only render branch');
-    assert.ok(dashboardSource.includes('Set sub-goal'), 'Expected prerequisite action for missing sub-goal');
-    assert.ok(dashboardSource.includes('Set label prefix'), 'Expected prerequisite action for missing label prefix');
+    assert.ok(epmSettingsUiSource.includes("epmSettingsTab === 'scope'"), 'Expected scope-only render branch');
+    assert.ok(epmSettingsUiSource.includes("epmSettingsTab === 'projects'"), 'Expected projects-only render branch');
+    assert.ok(epmSettingsUiSource.includes('Set sub-goal'), 'Expected prerequisite action for missing sub-goal');
+    assert.ok(epmSettingsUiSource.includes('Set label prefix'), 'Expected prerequisite action for missing label prefix');
 });
 
 test('settings hotkey effect is declared after the save handlers it depends on', () => {

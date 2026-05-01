@@ -10,6 +10,7 @@ const epmFetchPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmFe
 const epmViewDataPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'useEpmViewData.js');
 const epmControlsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmControls.jsx');
 const epmViewPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmView.jsx');
+const epmSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmSettings.jsx');
 const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupPanel.jsx');
 const epmRollupTreePath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupTree.jsx');
 const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs');
@@ -33,6 +34,7 @@ const epmFetchSource = fs.readFileSync(epmFetchPath, 'utf8');
 const epmViewDataSource = fs.existsSync(epmViewDataPath) ? fs.readFileSync(epmViewDataPath, 'utf8') : '';
 const epmControlsSource = fs.existsSync(epmControlsPath) ? fs.readFileSync(epmControlsPath, 'utf8') : '';
 const epmViewSource = fs.existsSync(epmViewPath) ? fs.readFileSync(epmViewPath, 'utf8') : '';
+const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
 const epmRollupPanelSource = fs.existsSync(epmRollupPanelPath) ? fs.readFileSync(epmRollupPanelPath, 'utf8') : '';
 const epmRollupTreeSource = fs.existsSync(epmRollupTreePath) ? fs.readFileSync(epmRollupTreePath, 'utf8') : '';
 const helperSource = fs.existsSync(helperPath) ? fs.readFileSync(helperPath, 'utf8') : '';
@@ -257,8 +259,8 @@ test('EPM status and label chips use the shared StatusPill primitive', () => {
     assert.ok(epmRollupPanelSource.includes("import StatusPill from '../ui/StatusPill.jsx';"), 'Expected EpmRollupPanel to import StatusPill');
     assert.ok(epmRollupPanelSource.includes('<StatusPill') && epmRollupPanelSource.includes('className="epm-project-board-label-pill"'), 'Expected EPM project board labels to render through StatusPill');
     assert.ok(epmRollupPanelSource.includes('<StatusPill') && epmRollupPanelSource.includes('className="epm-duplicates-project-label"'), 'Expected EPM duplicate project labels to render through StatusPill');
-    assert.ok(dashboardSource.includes("import StatusPill from './ui/StatusPill.jsx';"), 'Expected dashboard to import StatusPill for settings status chips');
-    assert.ok(dashboardSource.includes('<StatusPill') && dashboardSource.includes('className="epm-home-status-pill"'), 'Expected EPM settings Home statuses to render through StatusPill');
+    assert.ok(epmSettingsSource.includes("import StatusPill from '../ui/StatusPill.jsx';"), 'Expected EpmSettings to import StatusPill for settings status chips');
+    assert.ok(epmSettingsSource.includes('<StatusPill') && epmSettingsSource.includes('className="epm-home-status-pill"'), 'Expected EPM settings Home statuses to render through StatusPill');
 });
 
 test('EPM project picker uses the sprint-style custom dropdown', () => {

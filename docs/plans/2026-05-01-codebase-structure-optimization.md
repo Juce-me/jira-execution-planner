@@ -525,7 +525,11 @@ Write set:
 
 - `frontend/src/epm/EpmSettings.jsx`
 - `frontend/src/dashboard.jsx`
+- `frontend/dist/dashboard.js`
+- `frontend/dist/dashboard.js.map`
 - `tests/test_epm_settings_source_guards.js`
+- `tests/test_epm_view_source_guards.js`
+- `docs/plans/2026-05-01-codebase-structure-optimization.md`
 
 Steps:
 

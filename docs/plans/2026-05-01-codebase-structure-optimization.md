@@ -604,7 +604,11 @@ Write set:
 - `frontend/src/eng/engTaskUtils.js`
 - `frontend/src/eng/EngAlertsPanel.jsx`
 - `frontend/src/dashboard.jsx`
+- `frontend/dist/dashboard.js`
+- `frontend/dist/dashboard.js.map`
 - `tests/test_dashboard_alert_source_guards.js`
+- `tests/test_epm_view_source_guards.js`
+- `docs/plans/2026-05-01-codebase-structure-optimization.md`
 
 Steps:
 
@@ -621,7 +625,8 @@ Verification gate:
 ```bash
 npm run build
 node --test tests/test_dashboard_alert_source_guards.js tests/test_epm_view_source_guards.js
-.venv/bin/python -m unittest tests.test_backlog_alert_sprint_filter tests.test_epic_cohort_api tests.test_burnout_stats_api
+node --test tests/test_backlog_alert_sprint_filter.js
+.venv/bin/python -m unittest tests.test_epic_cohort_api tests.test_burnout_stats_api
 ```
 
 Manual/network check:

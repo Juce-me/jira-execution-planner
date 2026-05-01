@@ -15,6 +15,7 @@ const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 
 const epmRollupTreePath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupTree.jsx');
 const issueCardPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'IssueCard.jsx');
 const issueDependenciesPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'IssueDependencies.jsx');
+const engSprintDataPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngSprintData.js');
 const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs');
 const segmentedControlPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'SegmentedControl.jsx');
 const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'ControlField.jsx');
@@ -41,6 +42,7 @@ const epmRollupPanelSource = fs.existsSync(epmRollupPanelPath) ? fs.readFileSync
 const epmRollupTreeSource = fs.existsSync(epmRollupTreePath) ? fs.readFileSync(epmRollupTreePath, 'utf8') : '';
 const issueCardSource = fs.existsSync(issueCardPath) ? fs.readFileSync(issueCardPath, 'utf8') : '';
 const issueDependenciesSource = fs.existsSync(issueDependenciesPath) ? fs.readFileSync(issueDependenciesPath, 'utf8') : '';
+const engSprintDataSource = fs.existsSync(engSprintDataPath) ? fs.readFileSync(engSprintDataPath, 'utf8') : '';
 const helperSource = fs.existsSync(helperPath) ? fs.readFileSync(helperPath, 'utf8') : '';
 
 function countOccurrences(source, needle) {
@@ -122,7 +124,11 @@ function getEngTaskFunctionNames() {
         'setProductTasksLoading(true)',
         'setTechTasksLoading(true)',
         'fetchTasks(',
-        'fetchBacklogEpics('
+        'fetchBacklogEpics(',
+        'loadProductTasks(',
+        'loadTechTasks(',
+        'loadReadyToCloseProductTasks(',
+        'loadReadyToCloseTechTasks('
     ];
     const engFunctions = new Set();
 
@@ -154,7 +160,11 @@ function firstEngTaskWorkIndex(body, engFunctions) {
         'setProductTasksLoading(true)',
         'setTechTasksLoading(true)',
         'fetchTasks(',
-        'fetchBacklogEpics('
+        'fetchBacklogEpics(',
+        'loadProductTasks(',
+        'loadTechTasks(',
+        'loadReadyToCloseProductTasks(',
+        'loadReadyToCloseTechTasks('
     ];
     const indexes = directMarkers
         .map(marker => body.indexOf(marker))
@@ -345,10 +355,13 @@ test('EPM module homes own rollup fetch and rendering while staying isolated fro
 });
 
 test('ENG task fetching effects are unreachable in EPM view', () => {
-    assert.ok(dashboardSource.includes('fetchEngTasks(BACKEND_URL'), 'Expected ENG task request wrapper in dashboard.jsx');
-    assert.ok(dashboardSource.includes('requestBacklogEpics(BACKEND_URL'), 'Expected ENG backlog request wrapper in dashboard.jsx');
-    assert.ok(dashboardSource.includes('setProductTasksLoading(true)'), 'Expected product task loading state in dashboard.jsx');
-    assert.ok(dashboardSource.includes('setTechTasksLoading(true)'), 'Expected tech task loading state in dashboard.jsx');
+    assert.ok(fs.existsSync(engSprintDataPath), 'Expected ENG sprint data hook');
+    assert.ok(engSprintDataSource.includes('fetchEngTasks(backendUrl'), 'Expected ENG task request wrapper in useEngSprintData.js');
+    assert.ok(engSprintDataSource.includes('requestBacklogEpics(backendUrl'), 'Expected ENG backlog request wrapper in useEngSprintData.js');
+    assert.ok(engSprintDataSource.includes('setProductTasksLoading(true)'), 'Expected product task loading state in useEngSprintData.js');
+    assert.ok(engSprintDataSource.includes('setTechTasksLoading(true)'), 'Expected tech task loading state in useEngSprintData.js');
+    assert.ok(!dashboardSource.includes('fetchEngTasks(BACKEND_URL'), 'Dashboard must not retain ENG task request wrapper markers');
+    assert.ok(!dashboardSource.includes('requestBacklogEpics(BACKEND_URL'), 'Dashboard must not retain ENG backlog request wrapper markers');
     assertAllEngTaskEffectsGuarded();
 });
 

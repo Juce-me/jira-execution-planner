@@ -84,6 +84,7 @@ import {
 import { EpmControls } from './epm/EpmControls.jsx';
 import { EpmView } from './epm/EpmView.jsx';
 import EpmSettings from './epm/EpmSettings.jsx';
+import SettingsModal from './settings/SettingsModal.jsx';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     filterEpmSettingsProjectsForView,
@@ -10669,6 +10670,39 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                         );
             };
 
+            const settingsModalTabs = [
+                { id: 'scope', label: 'Scope projects', onClick: () => setGroupManageTab('scope') },
+                { id: 'source', label: 'Jira source', onClick: () => setGroupManageTab('source') },
+                { id: 'mapping', label: 'Field mapping', onClick: () => setGroupManageTab('mapping') },
+                { id: 'capacity', label: 'Capacity', onClick: () => setGroupManageTab('capacity') },
+                {
+                    id: 'teams',
+                    label: 'Team groups',
+                    onClick: () => savedSelectedProjects.length > 0 && setGroupManageTab('teams'),
+                    disabled: savedSelectedProjects.length === 0,
+                    title: savedSelectedProjects.length === 0 ? 'Configure data sources first' : ''
+                },
+                {
+                    id: 'labels',
+                    label: 'Group labels',
+                    onClick: () => labelsTabEnabled && setGroupManageTab('labels'),
+                    disabled: !labelsTabEnabled,
+                    title: labelsTabEnabled ? '' : 'Save at least one group first'
+                },
+                { id: 'priorityWeights', label: 'Priority weights', onClick: () => setGroupManageTab('priorityWeights') },
+                { id: 'epm', label: 'EPM', onClick: openEpmSettingsTab }
+            ];
+            const settingsSaveHandler = groupManageTab === 'epm'
+                ? () => { void saveEpmConfig().catch(() => {}); }
+                : saveGroupsConfig;
+            const settingsSaveDisabled = groupManageTab === 'epm'
+                ? (epmConfigLoading || epmConfigSaving)
+                : Boolean(saveBlockedReason);
+            const settingsSaveTitle = groupManageTab === 'epm' ? '' : (saveBlockedReason || '');
+            const settingsSaveLabel = groupManageTab === 'epm'
+                ? (epmConfigSaving ? 'Saving EPM...' : 'Save EPM settings')
+                : (groupSaving ? 'Saving...' : 'Save');
+
             return (
                 <div className="container" style={containerStyle}>
                     <header ref={headerRef}>
@@ -13229,70 +13263,27 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     )}
 
                     {showGroupManage && (
-                        <div
-                            className="group-modal-backdrop"
-                            role="dialog"
-                            aria-modal="true"
-                            onClick={requestCloseGroupManage}
+                        <SettingsModal
+                            activeTab={groupManageTab}
+                            tabs={settingsModalTabs}
+                            isDirty={isGroupDraftDirty}
+                            unsavedSectionsCount={unsavedSectionsCount}
+                            onRequestClose={requestCloseGroupManage}
+                            validationMessages={groupConfigValidationErrors}
+                            showTestConfiguration={groupManageTab !== 'epm'}
+                            onTestConfiguration={testGroupsConfigConnection}
+                            testConfigurationDisabled={groupTesting}
+                            testConfigurationLabel={groupTesting ? 'Testing...' : 'Test configuration'}
+                            testConfigurationMessage={groupTestMessage}
+                            onCancel={requestCloseGroupManage}
+                            onSave={settingsSaveHandler}
+                            saveDisabled={settingsSaveDisabled}
+                            saveTitle={settingsSaveTitle}
+                            saveLabel={settingsSaveLabel}
+                            showDiscardConfirm={showGroupDiscardConfirm}
+                            onDiscard={discardGroupDraftChanges}
+                            onKeepEditing={() => setShowGroupDiscardConfirm(false)}
                         >
-                            <div className="group-modal" onClick={(event) => event.stopPropagation()}>
-                                <div className="group-modal-header">
-                                    <div className="group-modal-title-wrap">
-                                        <div>
-                                            <div className="group-modal-title">Dashboard Settings</div>
-                                            <div className="group-modal-subtitle">Configure data sources and field mapping so planning metrics are calculated correctly.</div>
-                                        </div>
-                                    </div>
-                                    {isGroupDraftDirty && (
-                                        <div className="group-modal-dirty">Unsaved changes{unsavedSectionsCount > 0 ? ` · ${unsavedSectionsCount}` : ''}</div>
-                                    )}
-                                </div>
-                                <div className="group-modal-tabs">
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'scope' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('scope')}
-                                        type="button"
-                                    >Scope projects</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'source' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('source')}
-                                        type="button"
-                                    >Jira source</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'mapping' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('mapping')}
-                                        type="button"
-                                    >Field mapping</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'capacity' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('capacity')}
-                                        type="button"
-                                    >Capacity</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'teams' ? 'active' : ''}`}
-                                        onClick={() => savedSelectedProjects.length > 0 && setGroupManageTab('teams')}
-                                        type="button"
-                                        disabled={savedSelectedProjects.length === 0}
-                                        title={savedSelectedProjects.length === 0 ? 'Configure data sources first' : ''}
-                                    >Team groups</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'labels' ? 'active' : ''}`}
-                                        onClick={() => labelsTabEnabled && setGroupManageTab('labels')}
-                                        type="button"
-                                        disabled={!labelsTabEnabled}
-                                        title={labelsTabEnabled ? '' : 'Save at least one group first'}
-                                    >Group labels</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'priorityWeights' ? 'active' : ''}`}
-                                        onClick={() => setGroupManageTab('priorityWeights')}
-                                        type="button"
-                                    >Priority weights</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'epm' ? 'active' : ''}`}
-                                        onClick={openEpmSettingsTab}
-                                        type="button"
-                                    >EPM</button>
-                                </div>
                                 {(groupManageTab === 'scope' || groupManageTab === 'source' || groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
                                     <div className="group-modal-body group-modal-split group-projects-layout">
                                         {(groupManageTab === 'source' || groupManageTab === 'scope') && (
@@ -14505,67 +14496,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     </div>
                                 </div>
                                 )}
-                                {groupConfigValidationErrors.length > 0 && (
-                                    <div className="group-modal-validation" role="alert" aria-live="polite">
-                                        {groupConfigValidationErrors.map((message) => (
-                                            <div key={message}>• {message}</div>
-                                        ))}
-                                    </div>
-                                )}
-                                <div className="group-modal-footer">
-                                    {groupManageTab !== 'epm' && (
-                                        <div className="group-modal-button-row">
-                                            <button
-                                                className="secondary compact"
-                                                onClick={testGroupsConfigConnection}
-                                                disabled={groupTesting}
-                                                type="button"
-                                            >
-                                                {groupTesting ? 'Testing...' : 'Test configuration'}
-                                            </button>
-                                            {groupTestMessage && (
-                                                <span className="group-modal-meta" aria-live="polite">{groupTestMessage}</span>
-                                            )}
-                                        </div>
-                                    )}
-                                    <div className="group-modal-button-row">
-                                        <button className="secondary compact lift-hover" onClick={requestCloseGroupManage} type="button">
-                                            Cancel
-                                        </button>
-                                    </div>
-                                    <div className="group-modal-button-row">
-                                        <button
-                                            className="compact"
-                                            onClick={groupManageTab === 'epm'
-                                                ? () => { void saveEpmConfig().catch(() => {}); }
-                                                : saveGroupsConfig}
-                                            disabled={groupManageTab === 'epm' ? (epmConfigLoading || epmConfigSaving) : Boolean(saveBlockedReason)}
-                                            title={groupManageTab === 'epm' ? '' : (saveBlockedReason || '')}
-                                            type="button"
-                                        >
-                                            {groupManageTab === 'epm'
-                                                ? (epmConfigSaving ? 'Saving EPM...' : 'Save EPM settings')
-                                                : (groupSaving ? 'Saving...' : 'Save')}
-                                        </button>
-                                    </div>
-                                </div>
-                                {showGroupDiscardConfirm && (
-                                    <div className="group-confirm-backdrop" role="dialog" aria-modal="true" onClick={() => setShowGroupDiscardConfirm(false)}>
-                                        <div className="group-confirm" onClick={(event) => event.stopPropagation()}>
-                                            <div className="group-confirm-title">Discard changes?</div>
-                                    <div className="group-confirm-actions">
-                                                <button className="secondary compact danger lift-hover" onClick={discardGroupDraftChanges} type="button">
-                                                    Discard
-                                                </button>
-                                                <button className="compact" onClick={() => setShowGroupDiscardConfirm(false)} type="button">
-                                                    Keep editing
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                        </SettingsModal>
                     )}
                     {showUpdateModal && updateNoticeVisible && (
                         <div

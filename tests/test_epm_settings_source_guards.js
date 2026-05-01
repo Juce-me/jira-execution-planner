@@ -5,19 +5,36 @@ const test = require('node:test');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
 const epmSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmSettings.jsx');
+const settingsModalPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'SettingsModal.jsx');
 const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'ControlField.jsx');
 const iconButtonPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'IconButton.jsx');
 const loadingRowsPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'LoadingRows.jsx');
 const emptyStatePath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'EmptyState.jsx');
 const epmViewDataPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'useEpmViewData.js');
 const epmControlsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmControls.jsx');
+const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngView.jsx');
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
+const settingsModalSource = fs.existsSync(settingsModalPath) ? fs.readFileSync(settingsModalPath, 'utf8') : '';
 const epmSettingsUiSource = epmSettingsSource || dashboardSource;
 const epmViewDataSource = fs.existsSync(epmViewDataPath) ? fs.readFileSync(epmViewDataPath, 'utf8') : '';
 const epmControlsSource = fs.existsSync(epmControlsPath) ? fs.readFileSync(epmControlsPath, 'utf8') : '';
+const engViewSource = fs.existsSync(engViewPath) ? fs.readFileSync(engViewPath, 'utf8') : '';
 
-test('EPM settings UI is extracted while dashboard keeps settings state and shell ownership', () => {
+test('settings modal shell is extracted while dashboard keeps settings state and tab content ownership', () => {
+    const settingsModalCallStart = dashboardSource.indexOf('<SettingsModal');
+    const settingsModalOpenTagEndMarker = '\n                        >';
+    const settingsModalCallEnd = dashboardSource.indexOf(settingsModalOpenTagEndMarker, settingsModalCallStart);
+    const settingsModalCallSource = settingsModalCallStart === -1 || settingsModalCallEnd === -1
+        ? ''
+        : dashboardSource.slice(settingsModalCallStart, settingsModalCallEnd);
+    const settingsModalChildrenStart = settingsModalCallEnd === -1
+        ? -1
+        : settingsModalCallEnd + settingsModalOpenTagEndMarker.length;
+    const settingsModalChildrenEnd = dashboardSource.indexOf('</SettingsModal>', settingsModalChildrenStart);
+    const settingsModalChildrenSource = settingsModalChildrenStart === -1 || settingsModalChildrenEnd === -1
+        ? ''
+        : dashboardSource.slice(settingsModalChildrenStart, settingsModalChildrenEnd);
     const epmSettingsCallStart = dashboardSource.indexOf('<EpmSettings');
     const epmSettingsCallEnd = dashboardSource.indexOf('/>', epmSettingsCallStart);
     const epmSettingsCallSource = epmSettingsCallStart === -1 || epmSettingsCallEnd === -1
@@ -29,6 +46,36 @@ test('EPM settings UI is extracted while dashboard keeps settings state and shel
         ? ''
         : epmSettingsSource.slice(epmSettingsPropsStart, epmSettingsPropsEnd);
 
+    assert.ok(fs.existsSync(settingsModalPath), 'Expected extracted SettingsModal shell component');
+    assert.ok(settingsModalSource.includes('export default function SettingsModal'), 'Expected SettingsModal default component export');
+    assert.ok(dashboardSource.includes("import SettingsModal from './settings/SettingsModal.jsx';"), 'Expected dashboard to import extracted SettingsModal shell');
+    assert.ok(settingsModalCallSource.includes('activeTab={groupManageTab}'), 'Expected dashboard to pass active settings tab into SettingsModal');
+    assert.ok(settingsModalCallSource.includes('tabs={settingsModalTabs}'), 'Expected dashboard to pass tab descriptors into SettingsModal');
+    assert.ok(settingsModalCallSource.includes('isDirty={isGroupDraftDirty}'), 'Expected dashboard to pass dirty state into SettingsModal');
+    assert.ok(settingsModalCallSource.includes('onRequestClose={requestCloseGroupManage}'), 'Expected backdrop close handling to stay wired through dashboard');
+    assert.ok(settingsModalCallSource.includes('showDiscardConfirm={showGroupDiscardConfirm}'), 'Expected discard-confirm state to stay owned by dashboard');
+    assert.ok(settingsModalCallSource.includes('onDiscard={discardGroupDraftChanges}'), 'Expected discard action to stay owned by dashboard');
+    assert.ok(settingsModalCallSource.includes('saveDisabled={settingsSaveDisabled}'), 'Expected dashboard to own save disabled state');
+    assert.ok(settingsModalCallSource.includes('saveTitle={settingsSaveTitle}'), 'Expected dashboard to own save title state');
+    assert.ok(settingsModalCallSource.includes('validationMessages={groupConfigValidationErrors}'), 'Expected validation messages to render through the shell');
+    assert.ok(settingsModalCallSource.includes('onCancel={requestCloseGroupManage}'), 'Expected dashboard to wire cancel through the shared close handler');
+    assert.ok(settingsModalCallSource.includes('onSave={settingsSaveHandler}'), 'Expected dashboard to wire save through the tab-aware save handler');
+    assert.ok(settingsModalCallSource.includes('onKeepEditing={() => setShowGroupDiscardConfirm(false)}'), 'Expected dashboard to hide discard confirmation from the shell');
+    assert.ok(settingsModalSource.includes('className="group-modal-backdrop"'), 'Expected SettingsModal to own the backdrop');
+    assert.ok(settingsModalSource.includes('className="group-modal-header"'), 'Expected SettingsModal to own the modal header');
+    assert.ok(settingsModalSource.includes('className="group-modal-tabs"'), 'Expected SettingsModal to own the tab bar');
+    assert.ok(settingsModalSource.includes('className="group-modal-footer"'), 'Expected SettingsModal to own the shared footer');
+    assert.ok(settingsModalSource.includes('className="group-confirm-backdrop"'), 'Expected SettingsModal to own the discard confirmation shell');
+    assert.ok(settingsModalSource.includes('onClick={onRequestClose}'), 'Expected backdrop click to call the dashboard close handler');
+    assert.ok(settingsModalSource.includes('const handleCancel = onCancel || onRequestClose;'), 'Expected cancel to fall back to the dashboard close handler');
+    assert.ok(settingsModalSource.includes('onClick={handleCancel}'), 'Expected cancel button to call the provided cancel handler');
+    assert.ok(settingsModalSource.includes('onClick={onSave}'), 'Expected save button to call the provided save handler');
+    assert.ok(settingsModalSource.includes('onClick={onDiscard}'), 'Expected discard button to call the provided discard handler');
+    assert.ok(settingsModalSource.includes('onClick={onKeepEditing}'), 'Expected keep-editing actions to hide the discard confirmation');
+    assert.ok(!dashboardSource.includes('className="group-modal-backdrop"'), 'Dashboard should delegate backdrop markup to SettingsModal');
+    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'source'"), 'Expected Jira source tab content to stay in dashboard');
+    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'teams'"), 'Expected team group tab content to stay in dashboard');
+    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'labels'"), 'Expected group label tab content to stay in dashboard');
     assert.ok(fs.existsSync(epmSettingsPath), 'Expected extracted EpmSettings component');
     assert.ok(epmSettingsSource.includes('export default function EpmSettings'), 'Expected EpmSettings default component export');
     assert.ok(dashboardSource.includes("import EpmSettings from './epm/EpmSettings.jsx';"), 'Expected dashboard to import extracted EPM settings');
@@ -174,7 +221,7 @@ test('EPM settings source uses shared basic UI primitives for representative row
     assert.ok(epmSettingsUiSource.includes('<IconButton') && epmSettingsUiSource.includes('className="epm-label-change-shortcut"'), 'Expected selected-label change action to use IconButton');
     assert.ok(epmSettingsUiSource.includes('<IconButton') && epmSettingsUiSource.includes('className="epm-project-home-shortcut"'), 'Expected Home project shortcut to use IconButton');
     assert.ok(dashboardSource.includes('<LoadingRows') && dashboardSource.includes('ariaLabel="Loading EPM projects"'), 'Expected EPM project skeleton rows to use LoadingRows');
-    assert.ok(dashboardSource.includes('<EmptyState') && dashboardSource.includes('title="No tasks found"'), 'Expected task empty state to use EmptyState');
+    assert.ok(engViewSource.includes('<EmptyState') && engViewSource.includes('title="No tasks found"'), 'Expected task empty state to use EmptyState');
 });
 
 test('EPM project utility hydrates display name without persisting Home fallback', () => {

@@ -10,8 +10,18 @@ const epmFetchPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmFe
 const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupPanel.jsx');
 const epmRollupTreePath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupTree.jsx');
 const helperPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'epmProjectUtils.mjs');
+const segmentedControlPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'SegmentedControl.jsx');
+const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'ControlField.jsx');
+const iconButtonPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'IconButton.jsx');
+const loadingRowsPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'LoadingRows.jsx');
+const emptyStatePath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'EmptyState.jsx');
 
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+const segmentedControlSource = fs.existsSync(segmentedControlPath) ? fs.readFileSync(segmentedControlPath, 'utf8') : '';
+const controlFieldSource = fs.existsSync(controlFieldPath) ? fs.readFileSync(controlFieldPath, 'utf8') : '';
+const iconButtonSource = fs.existsSync(iconButtonPath) ? fs.readFileSync(iconButtonPath, 'utf8') : '';
+const loadingRowsSource = fs.existsSync(loadingRowsPath) ? fs.readFileSync(loadingRowsPath, 'utf8') : '';
+const emptyStateSource = fs.existsSync(emptyStatePath) ? fs.readFileSync(emptyStatePath, 'utf8') : '';
 const dashboardCssSource = fs.existsSync(dashboardCssPath) ? fs.readFileSync(dashboardCssPath, 'utf8') : '';
 const epmApiSource = fs.existsSync(epmApiPath) ? fs.readFileSync(epmApiPath, 'utf8') : '';
 const epmFetchSource = fs.readFileSync(epmFetchPath, 'utf8');
@@ -187,12 +197,39 @@ test('dashboard source keeps the ENG and EPM switch contract', () => {
 });
 
 test('dashboard source renders mutually exclusive EPM controls as segmented radio groups', () => {
-    assert.ok(dashboardSource.includes('className="segmented-control view-mode-control"'), 'Expected ENG/EPM selector to use a segmented control wrapper');
-    assert.ok(dashboardSource.includes('className="segmented-control epm-state-control"'), 'Expected EPM project-state selector to use a segmented control wrapper');
-    assert.ok(countOccurrences(dashboardSource, 'role="radiogroup"') >= 2, 'Expected view and EPM state selectors to expose radio group semantics');
-    assert.ok(countOccurrences(dashboardSource, 'role="radio"') >= 2, 'Expected segmented options to expose radio semantics');
-    assert.ok(dashboardSource.includes('aria-checked={selectedView === \'eng\'}'), 'Expected ENG option to expose checked state');
-    assert.ok(dashboardSource.includes('aria-checked={epmTab === tab.value}'), 'Expected EPM state options to expose checked state');
+    assert.ok(dashboardSource.includes('<SegmentedControl'), 'Expected dashboard selectors to use the shared segmented primitive');
+    assert.ok(dashboardSource.includes('className="view-mode-control"'), 'Expected ENG/EPM selector to keep the view-mode-control class');
+    assert.ok(dashboardSource.includes('className="epm-state-control"'), 'Expected EPM project-state selector to keep the epm-state-control class');
+    assert.ok(segmentedControlSource.includes("['segmented-control', className]"), 'Expected SegmentedControl to preserve the segmented-control wrapper class');
+    assert.ok(segmentedControlSource.includes('role="radiogroup"'), 'Expected SegmentedControl to expose radio group semantics');
+    assert.ok(segmentedControlSource.includes('role="radio"'), 'Expected segmented options to expose radio semantics');
+    assert.ok(segmentedControlSource.includes('aria-checked={active}'), 'Expected segmented options to expose checked state');
+});
+
+test('dashboard source uses shared basic UI primitives for representative controls and states', () => {
+    assert.ok(fs.existsSync(segmentedControlPath), 'Expected shared SegmentedControl primitive');
+    assert.ok(fs.existsSync(controlFieldPath), 'Expected shared ControlField primitive');
+    assert.ok(fs.existsSync(iconButtonPath), 'Expected shared IconButton primitive');
+    assert.ok(fs.existsSync(loadingRowsPath), 'Expected shared LoadingRows primitive');
+    assert.ok(fs.existsSync(emptyStatePath), 'Expected shared EmptyState primitive');
+    assert.ok(dashboardSource.includes("import SegmentedControl from './ui/SegmentedControl.jsx';"), 'Expected dashboard to import SegmentedControl');
+    assert.ok(dashboardSource.includes("import ControlField from './ui/ControlField.jsx';"), 'Expected dashboard to import ControlField');
+    assert.ok(dashboardSource.includes("import IconButton from './ui/IconButton.jsx';"), 'Expected dashboard to import IconButton');
+    assert.ok(dashboardSource.includes("import LoadingRows from './ui/LoadingRows.jsx';"), 'Expected dashboard to import LoadingRows');
+    assert.ok(dashboardSource.includes("import EmptyState from './ui/EmptyState.jsx';"), 'Expected dashboard to import EmptyState');
+    assert.ok(dashboardSource.includes('<SegmentedControl') && dashboardSource.includes('className="view-mode-control"'), 'Expected ENG/EPM selector to use SegmentedControl');
+    assert.ok(dashboardSource.includes('<ControlField') && dashboardSource.includes('label="Search"'), 'Expected header search control to use ControlField');
+    assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="refresh-icon"'), 'Expected compact refresh action to use IconButton');
+    assert.ok(dashboardSource.includes('<LoadingRows') && dashboardSource.includes('className="epm-project-skeleton-list"'), 'Expected EPM project loading rows to use LoadingRows');
+    assert.ok(dashboardSource.includes('<EmptyState') && dashboardSource.includes('title="Loading EPM settings"'), 'Expected EPM loading empty state to use EmptyState');
+    assert.ok(controlFieldSource.includes("['control-field', className]"), 'Expected ControlField to preserve the control-field wrapper class');
+    assert.ok(controlFieldSource.includes('data-label={dataLabel}'), 'Expected ControlField to preserve compact data-label behavior');
+    assert.ok(controlFieldSource.includes('<span className="control-label">{label}</span>'), 'Expected ControlField to preserve visible control labels');
+    assert.ok(iconButtonSource.includes("[variant, className, isLoading ? 'is-loading' : '']"), 'Expected IconButton to preserve variant/class/loading composition order');
+    assert.ok(iconButtonSource.includes("if (Element === 'button')") && iconButtonSource.includes('elementProps.type = type'), 'Expected IconButton to keep button type handling off anchors');
+    assert.ok(loadingRowsSource.includes('Array.from({ length: rows }') && loadingRowsSource.includes('Array.from({ length: columns }'), 'Expected LoadingRows to generate the requested row and column skeleton spans');
+    assert.ok(emptyStateSource.includes("['empty-state', className]"), 'Expected EmptyState to preserve the empty-state wrapper class');
+    assert.ok(emptyStateSource.includes('<h2>{title}</h2>'), 'Expected EmptyState to preserve the heading structure');
 });
 
 test('EPM project picker uses the sprint-style custom dropdown', () => {
@@ -272,8 +309,8 @@ test('EPM module homes own rollup fetch and rendering while staying isolated fro
 });
 
 test('ENG task fetching effects are unreachable in EPM view', () => {
-    assert.ok(dashboardSource.includes('/api/tasks-with-team-name'), 'Expected ENG task endpoint in dashboard.jsx');
-    assert.ok(dashboardSource.includes('/api/backlog-epics'), 'Expected ENG backlog endpoint in dashboard.jsx');
+    assert.ok(dashboardSource.includes('fetchEngTasks(BACKEND_URL'), 'Expected ENG task request wrapper in dashboard.jsx');
+    assert.ok(dashboardSource.includes('requestBacklogEpics(BACKEND_URL'), 'Expected ENG backlog request wrapper in dashboard.jsx');
     assert.ok(dashboardSource.includes('setProductTasksLoading(true)'), 'Expected product task loading state in dashboard.jsx');
     assert.ok(dashboardSource.includes('setTechTasksLoading(true)'), 'Expected tech task loading state in dashboard.jsx');
     assertAllEngTaskEffectsGuarded();

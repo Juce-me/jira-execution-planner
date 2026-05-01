@@ -4,6 +4,10 @@ const path = require('path');
 const test = require('node:test');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
+const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'ControlField.jsx');
+const iconButtonPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'IconButton.jsx');
+const loadingRowsPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'LoadingRows.jsx');
+const emptyStatePath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'EmptyState.jsx');
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 
 test('dashboard source includes the EPM settings tab and lazy-load flow', () => {
@@ -83,8 +87,8 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('void loadEpmProjectLabels(project.id, showAllLabels);'), 'Expected EPM label picker focus to load prefix-scoped labels');
     assert.ok(!dashboardSource.includes("scheduleJiraLabelSearch('epm', homeProjectId, rawQuery);"), 'Did not expect the legacy EPM label search namespace');
     assert.ok(dashboardSource.includes('Search Jira labels...'), 'Expected EPM Jira label search placeholder copy');
-    assert.ok(dashboardSource.includes('fetch(`${BACKEND_URL}/api/jira/labels?prefix=${encodeURIComponent(prefix)}&limit=200`'), 'Expected EPM label autocomplete to use prefix and limit=200');
-    assert.ok(dashboardSource.includes('fetch(`${BACKEND_URL}/api/jira/labels?limit=200`'), 'Expected Show all labels to query without prefix and with limit=200');
+    assert.ok(dashboardSource.includes('requestJiraLabels(BACKEND_URL, showAll || !prefix'), 'Expected EPM label autocomplete to use the Jira label request wrapper');
+    assert.ok(dashboardSource.includes('? { limit: 200 }') && dashboardSource.includes(': { prefix, limit: 200 }'), 'Expected EPM label autocomplete to preserve prefix/show-all limit=200 behavior');
     assert.ok(dashboardSource.includes('Show all labels'), 'Expected Show all labels toggle copy');
     assert.ok(dashboardSource.includes('Change label'), 'Expected selected labels to expose an explicit Change action');
     assert.ok(dashboardSource.includes('Choose label'), 'Expected unlabeled rows to expose an explicit Choose label action');
@@ -119,6 +123,23 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(!dashboardSource.includes('loadEpmProjectPreview'), 'EPM project configuration must not use preview-named loaders');
     assert.ok(dashboardSource.includes('const [epmSettingsProjectsLoaded, setEpmSettingsProjectsLoaded] = useState(false);'), 'Expected loaded-state for project configuration rows');
     assert.ok(dashboardSource.includes('const updateEpmSettingsProjectRowsAfterSave = (savedConfig) => {'), 'Expected save path to reconcile settings rows after custom id rekeying');
+});
+
+test('EPM settings source uses shared basic UI primitives for representative rows and states', () => {
+    assert.ok(fs.existsSync(controlFieldPath), 'Expected shared ControlField primitive');
+    assert.ok(fs.existsSync(iconButtonPath), 'Expected shared IconButton primitive');
+    assert.ok(fs.existsSync(loadingRowsPath), 'Expected shared LoadingRows primitive');
+    assert.ok(fs.existsSync(emptyStatePath), 'Expected shared EmptyState primitive');
+    assert.ok(dashboardSource.includes("import ControlField from './ui/ControlField.jsx';"), 'Expected dashboard to import ControlField');
+    assert.ok(dashboardSource.includes("import IconButton from './ui/IconButton.jsx';"), 'Expected dashboard to import IconButton');
+    assert.ok(dashboardSource.includes("import LoadingRows from './ui/LoadingRows.jsx';"), 'Expected dashboard to import LoadingRows');
+    assert.ok(dashboardSource.includes("import EmptyState from './ui/EmptyState.jsx';"), 'Expected dashboard to import EmptyState');
+    assert.ok(dashboardSource.includes('<ControlField label="Search"'), 'Expected header search control to use ControlField');
+    assert.ok(dashboardSource.includes('<ControlField label="Project"'), 'Expected EPM project picker control to use ControlField');
+    assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="epm-label-change-shortcut"'), 'Expected selected-label change action to use IconButton');
+    assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="epm-project-home-shortcut"'), 'Expected Home project shortcut to use IconButton');
+    assert.ok(dashboardSource.includes('<LoadingRows') && dashboardSource.includes('ariaLabel="Loading EPM projects"'), 'Expected EPM project skeleton rows to use LoadingRows');
+    assert.ok(dashboardSource.includes('<EmptyState') && dashboardSource.includes('title="No tasks found"'), 'Expected task empty state to use EmptyState');
 });
 
 test('EPM project utility hydrates display name without persisting Home fallback', () => {

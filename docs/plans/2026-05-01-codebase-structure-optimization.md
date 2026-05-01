@@ -367,6 +367,8 @@ Write set:
 - `frontend/src/ui/EmptyState.jsx`
 - `frontend/src/styles/dashboard.css`
 - `frontend/src/dashboard.jsx`
+- generated `frontend/dist/dashboard.js`
+- generated `frontend/dist/dashboard.js.map`
 
 Steps:
 

@@ -6,6 +6,11 @@ import ScenarioBar from './scenario/ScenarioBar.jsx';
 import { buildLaneIssues } from './scenario/scenarioLaneUtils.js';
 import CohortGrid from './cohort/CohortGrid.jsx';
 import OpenEpicsChart from './cohort/OpenEpicsChart.jsx';
+import SegmentedControl from './ui/SegmentedControl.jsx';
+import ControlField from './ui/ControlField.jsx';
+import IconButton from './ui/IconButton.jsx';
+import LoadingRows from './ui/LoadingRows.jsx';
+import EmptyState from './ui/EmptyState.jsx';
 import {
     aggregateCohortSummary,
     buildCohortGridModel,
@@ -708,14 +713,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     : [];
             };
             const renderEpmProjectSkeletonRows = () => (
-                <div className="epm-project-skeleton-list" aria-label="Loading EPM projects">
-                    {[0, 1, 2].map((item) => (
-                        <div key={item} className="epm-project-skeleton-row">
-                            <span />
-                            <span />
-                        </div>
-                    ))}
-                </div>
+                <LoadingRows
+                    className="epm-project-skeleton-list"
+                    rowClassName="epm-project-skeleton-row"
+                    ariaLabel="Loading EPM projects"
+                    rows={3}
+                    columns={2}
+                />
             );
             const ensureEpmSettingsProjectsLoaded = async (options = {}) => {
                 const forceRefresh = Boolean(options.forceRefresh);
@@ -10793,8 +10797,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             ];
 
             const renderSearchControl = (surface, extraClassName = '') => (
-                <div className={`control-field control-search ${extraClassName}`.trim()} data-label="Search">
-                    <span className="control-label">Search</span>
+                <ControlField label="Search" className={`control-search ${extraClassName}`.trim()}>
                     <div className="search-wrap">
                         <input
                             type="text"
@@ -10816,49 +10819,32 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             </button>
                         )}
                     </div>
-                </div>
+                </ControlField>
             );
 
             const renderViewSwitch = () => (
-                <div className="segmented-control view-mode-control" role="radiogroup" aria-label="Dashboard view">
-                    <button
-                        className={`segmented-control-button ${selectedView === 'eng' ? 'active' : ''}`}
-                        onClick={() => setSelectedView('eng')}
-                        role="radio"
-                        aria-checked={selectedView === 'eng'}
-                        type="button"
-                    >
-                        ENG
-                    </button>
-                    <button
-                        className={`segmented-control-button ${selectedView === 'epm' ? 'active' : ''}`}
-                        onClick={() => setSelectedView('epm')}
-                        role="radio"
-                        aria-checked={selectedView === 'epm'}
-                        type="button"
-                    >
-                        EPM
-                    </button>
-                </div>
+                <SegmentedControl
+                    className="view-mode-control"
+                    ariaLabel="Dashboard view"
+                    value={selectedView}
+                    onChange={setSelectedView}
+                    options={[
+                        { value: 'eng', label: 'ENG' },
+                        { value: 'epm', label: 'EPM' }
+                    ]}
+                />
             );
 
             const renderEpmTabs = () => {
                 if (selectedView !== 'epm') return null;
                 return (
-                    <div className="segmented-control epm-state-control" role="radiogroup" aria-label="EPM project state">
-                        {epmTabOptions.map((tab) => (
-                            <button
-                                key={tab.value}
-                                className={`segmented-control-button ${epmTab === tab.value ? 'active' : ''}`}
-                                onClick={() => setEpmTab(tab.value)}
-                                role="radio"
-                                aria-checked={epmTab === tab.value}
-                                type="button"
-                            >
-                                {tab.label}
-                            </button>
-                        ))}
-                    </div>
+                    <SegmentedControl
+                        className="epm-state-control"
+                        ariaLabel="EPM project state"
+                        value={epmTab}
+                        onChange={setEpmTab}
+                        options={epmTabOptions}
+                    />
                 );
             };
 
@@ -10870,8 +10856,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     ? getEpmProjectDisplayName(selectedEpmProject)
                     : 'All projects';
                 return (
-                    <div className="control-field" data-label="Project">
-                        <span className="control-label">Project</span>
+                    <ControlField label="Project">
                         <div className="sprint-dropdown epm-project-dropdown" ref={(node) => { epmProjectDropdownRefs.current[surface] = node; }}>
                             <div
                                 className={`sprint-dropdown-toggle ${showEpmProjectDropdown ? 'open' : ''}`}
@@ -10943,13 +10928,12 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 </div>
                             )}
                         </div>
-                    </div>
+                    </ControlField>
                 );
             };
 
             const renderSprintControl = (surface) => (
-                <div className="control-field" data-label="Sprint">
-                    <span className="control-label">Sprint</span>
+                <ControlField label="Sprint">
                     <div className="sprint-dropdown" ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
                         <div
                             className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
@@ -11013,15 +10997,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             </div>
                         )}
                     </div>
-                </div>
+                </ControlField>
             );
 
             const renderGroupControl = (surface) => {
                 if (!showGroupControl) return null;
                 return (
                     <div className="group-control">
-                        <div className="control-field" data-label="Group">
-                            <span className="control-label">Group</span>
+                        <ControlField label="Group">
                             <div className="group-dropdown" ref={(node) => { groupDropdownRefs.current[surface] = node; }}>
                                 <div
                                     className={`group-dropdown-toggle ${showGroupDropdown ? 'open' : ''}`}
@@ -11077,14 +11060,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     </div>
                                 )}
                             </div>
-                        </div>
+                        </ControlField>
                     </div>
                 );
             };
 
             const renderTeamControl = (surface) => (
-                <div className="control-field" data-label="Teams">
-                    <span className="control-label">Teams</span>
+                <ControlField label="Teams">
                     <div className="team-dropdown" ref={(node) => { teamDropdownRefs.current[surface] = node; }}>
                         <div
                             className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''}`}
@@ -11127,7 +11109,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             </div>
                         )}
                     </div>
-                </div>
+                </ControlField>
             );
 
             const renderEpicBlock = (epicGroup) => {
@@ -11559,8 +11541,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 <div className="header-actions-row">
                                     {renderViewSwitch()}
                                     {renderSearchControl('main')}
-                                    <button
-                                        className={`secondary compact refresh-icon ${selectedView === 'epm' && epmProjectsLoading ? 'is-loading' : ''}`}
+                                    <IconButton
+                                        variant="secondary compact"
+                                        className="refresh-icon"
+                                        isLoading={selectedView === 'epm' && epmProjectsLoading}
                                         onClick={() => {
                                             if (selectedView === 'epm') {
                                                 void refreshEpmView();
@@ -11580,13 +11564,12 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         disabled={selectedView === 'eng' ? (loading || selectedSprint === null) : (epmProjectsLoading || epmRollupLoading)}
                                         title={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
                                         aria-label={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
-                                        type="button"
                                     >
                                         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                             <path d="M19 7.5a7.5 7.5 0 1 0 2 5.1" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"/>
                                             <path d="M19 3v4h-4" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
                                         </svg>
-                                    </button>
+                                    </IconButton>
                                 </div>
                             </div>
                         </div>
@@ -15107,24 +15090,21 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             {selectedView === 'epm' && (
                                 <>
                                     {!epmConfigLoaded && (
-                                        <div className="empty-state">
-                                            <h2>Loading EPM settings</h2>
+                                        <EmptyState title="Loading EPM settings">
                                             <p>Loading saved project configuration.</p>
-                                        </div>
+                                        </EmptyState>
                                     )}
 
                                     {epmConfigLoaded && epmProjectsLoading && !epmRollupBoards && !epmRollupTree && (
-                                        <div className="empty-state">
-                                            <h2>Loading EPM projects</h2>
+                                        <EmptyState title="Loading EPM projects">
                                             <p>Refreshing Atlassian Home project metadata.</p>
-                                        </div>
+                                        </EmptyState>
                                     )}
 
                                     {epmConfigLoaded && epmSelectedProjectId && !epmProjectsLoading && !selectedEpmProject && (
-                                        <div className="empty-state">
-                                            <h2>Project unavailable</h2>
+                                        <EmptyState title="Project unavailable">
                                             <p>This project is not available in the current EPM tab.</p>
-                                        </div>
+                                        </EmptyState>
                                     )}
 
                                     {epmConfigLoaded && (!epmProjectsLoading || epmRollupBoards || epmRollupTree) && (!epmSelectedProjectId || selectedEpmProject) && (
@@ -15153,10 +15133,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             {selectedView === 'eng' && (
                                 <>
                                     {visibleTasksForList.length === 0 ? (
-                                        <div className="empty-state">
-                                            <h2>No tasks found</h2>
+                                        <EmptyState title="No tasks found">
                                             <p>There are no tasks matching the current criteria</p>
-                                        </div>
+                                        </EmptyState>
                                     ) : (
                                         <div
                                             className={`task-list ${activeDependencyFocus ? 'focus-mode' : ''}`}
@@ -16279,7 +16258,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                             style={{ height: '2rem', minWidth: 0, width: '100%', padding: '0.3rem 0.55rem', fontSize: '0.82rem' }}
                                                                         />
                                                                         {project.homeUrl && (
-                                                                            <a
+                                                                            <IconButton
+                                                                                as="a"
                                                                                 className="epm-project-home-shortcut"
                                                                                 href={project.homeUrl}
                                                                                 target="_blank"
@@ -16292,7 +16272,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                                     <path d="M7 17L17 7" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
                                                                                     <path d="M9 7h8v8" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
                                                                                 </svg>
-                                                                            </a>
+                                                                            </IconButton>
                                                                         )}
                                                                     </div>
                                                                     <div className="epm-project-status-cell" role="cell" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
@@ -16306,16 +16286,15 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                                                         {currentLabel ? (
                                                                             <div className="epm-label-selected-chip" title={currentLabel} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, maxWidth: '100%', border: '1px solid var(--border)', borderRadius: '999px', background: '#f8f9fa', padding: '0.18rem 0.25rem 0.18rem 0.55rem' }}>
                                                                                 <span className="team-name" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>{currentLabel}</span>
-                                                                                <button
+                                                                                <IconButton
                                                                                     className="epm-label-change-shortcut"
                                                                                     onClick={openEpmLabelSearchFromButton}
-                                                                                    type="button"
                                                                                     title="Change label"
                                                                                     aria-label={`Change Jira label for ${project.displayName || project.homeName || project.id}`}
                                                                                     style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '1.35rem', height: '1.35rem', flex: '0 0 auto', border: '1px solid var(--border)', borderRadius: '999px', background: '#fff', color: 'var(--text-muted)', fontFamily: "'IBM Plex Mono', monospace", fontSize: '0.8rem', lineHeight: 1, padding: 0, cursor: 'pointer' }}
                                                                                 >
                                                                                     &times;
-                                                                                </button>
+                                                                                </IconButton>
                                                                             </div>
                                                                         ) : (
                                                                             <div className="epm-label-choice-actions" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flexWrap: 'wrap' }}>

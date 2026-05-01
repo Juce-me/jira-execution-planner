@@ -5,7 +5,7 @@ const path = require('node:path');
 
 test('epic alert team headers link their epic counts to Jira', () => {
     const source = fs.readFileSync(
-        path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'),
+        path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngAlertsPanel.jsx'),
         'utf8'
     );
 

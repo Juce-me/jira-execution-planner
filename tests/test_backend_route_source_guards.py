@@ -58,6 +58,16 @@ APPROVED_ROOT_EPM_SHIMS = {
 }
 
 
+class FakeJiraResponse:
+    def __init__(self, payload, status_code=200):
+        self._payload = payload
+        self.status_code = status_code
+        self.text = str(payload)
+
+    def json(self):
+        return self._payload
+
+
 def top_level_definitions(source):
     tree = ast.parse(source)
     return [
@@ -165,6 +175,89 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
             [],
             "approved root EPM shims must import or alias backend.epm.* after backend/epm/ exists",
         )
+
+    def test_epm_aggregate_route_forwards_rollup_headers_and_params(self):
+        if not BACKEND_EPM_ROUTES_PATH.exists():
+            return
+
+        import jira_server
+
+        payload = {"projects": [], "duplicates": {}, "truncated": False, "fallback": True}
+        headers = {"Server-Timing": "home-projects;dur=1, epm-rollups;dur=2, total;dur=3"}
+
+        with jira_server.app.test_client() as client, \
+             patch.object(jira_server, "build_all_epm_projects_rollup", return_value=(payload, 200, headers)) as mock_rollup:
+            response = client.get("/api/epm/projects/rollup/all?tab=active&sprint=42")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), payload)
+        self.assertEqual(response.headers.get("Server-Timing"), headers["Server-Timing"])
+        mock_rollup.assert_called_once_with("active", "42")
+
+    def test_moved_eng_task_route_delegates_to_shared_fetcher(self):
+        if not BACKEND_ENG_ROUTES_PATH.exists():
+            return
+
+        route_source = BACKEND_ENG_ROUTES_PATH.read_text(encoding="utf8")
+
+        self.assertIn("def get_tasks_with_team_name():", route_source)
+        self.assertIn("return fetch_tasks(include_team_name=True)", route_source)
+
+    def test_eng_task_endpoint_reports_server_timing_header(self):
+        import jira_server
+
+        issue = {
+            "id": "10001",
+            "key": "PROD-1",
+            "fields": {
+                "summary": "Synthetic task",
+                "status": {"name": "To Do"},
+                "priority": {"name": "Major"},
+                "issuetype": {"name": "Story"},
+                "assignee": {"displayName": "Synthetic Owner"},
+                "updated": "2026-05-01T00:00:00.000+0000",
+                "customfield_sp": 3,
+                "customfield_sprint": [{"id": 42, "name": "Sprint 42"}],
+                "customfield_epic": "PROD-EPIC",
+                "customfield_team": {"id": "team-alpha", "name": "Alpha Team"},
+                "parent": {},
+                "project": {"key": "PROD", "name": "Product"},
+            },
+        }
+
+        with jira_server.app.test_client() as client, \
+             patch.object(jira_server, "TASKS_CACHE", {}), \
+             patch.object(jira_server, "JQL_QUERY_TEMPLATE", ""), \
+             patch.object(jira_server, "build_base_jql", return_value='project = "PROD"'), \
+             patch.object(jira_server, "get_selected_projects_typed", return_value=[]), \
+             patch.object(jira_server, "get_configured_issue_types", return_value=[]), \
+             patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
+             patch.object(jira_server, "resolve_epic_link_field_id", return_value="customfield_epic"), \
+             patch.object(jira_server, "get_sprint_field_id", return_value="customfield_sprint"), \
+             patch.object(jira_server, "get_story_points_field_id", return_value="customfield_sp"), \
+             patch.object(jira_server, "jira_search_request", return_value=FakeJiraResponse({
+                 "issues": [issue],
+                 "names": {
+                     "customfield_team": "Team[Team]",
+                     "customfield_epic": "Epic Link",
+                     "customfield_sprint": "Sprint",
+                     "customfield_sp": "Story Points",
+                 },
+                 "total": 1,
+                 "isLast": True,
+             })), \
+             patch.object(jira_server, "fetch_epic_details_bulk", return_value={}), \
+             patch.object(jira_server, "fetch_epics_for_empty_alert", return_value=[]), \
+             patch.object(jira_server, "fetch_story_counts_for_epics", return_value={}), \
+             patch.object(jira_server, "fetch_story_distribution_for_epics", return_value={}):
+            response = client.get("/api/tasks-with-team-name?sprint=42&project=product&refresh=true")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        server_timing = response.headers.get("Server-Timing", "")
+        self.assertIn("jira-search;dur=", server_timing)
+        self.assertIn("normalize-tasks;dur=", server_timing)
+        self.assertIn("epic-enrichment;dur=", server_timing)
+        self.assertIn("build-response;dur=", server_timing)
 
 
 if __name__ == "__main__":

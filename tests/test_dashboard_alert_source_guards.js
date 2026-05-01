@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
+const issueCardPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'IssueCard.jsx');
 const issueViewUtilsPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'issueViewUtils.js');
 const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngView.jsx');
 const engSprintDataPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngSprintData.js');
@@ -119,12 +120,17 @@ test('ENG sprint data hook preserves startup request sequencing markers', () => 
 
 test('dashboard task display uses shared issue view helpers', () => {
     const source = fs.readFileSync(dashboardPath, 'utf8');
+    const issueCardSource = fs.existsSync(issueCardPath) ? fs.readFileSync(issueCardPath, 'utf8') : '';
     const helperSource = fs.existsSync(issueViewUtilsPath) ? fs.readFileSync(issueViewUtilsPath, 'utf8') : '';
 
+    assert.equal(fs.existsSync(issueCardPath), true, 'Expected shared IssueCard component module');
     assert.equal(fs.existsSync(issueViewUtilsPath), true, 'Expected shared issueViewUtils helper module');
+    assert.match(source, /import IssueCard, \{ IssueCardContext \} from '\.\/issues\/IssueCard\.jsx';/);
+    assert.match(source, /<IssueCard/);
     assert.match(source, /import \{\s*formatPriorityShort,\s*getIssueStatusClassName,\s*getIssueTeamLabel\s*\} from '\.\/issues\/issueViewUtils\.js';/);
     assert.match(source, /formatPriorityShort\(priority\)/);
-    assert.match(source, /<StatusPill/);
+    assert.match(issueCardSource, /import StatusPill from '\.\.\/ui\/StatusPill\.jsx';/);
+    assert.match(issueCardSource, /<StatusPill/);
     assert.match(source, /getIssueStatusClassName\(task\.fields\.status\?\.name\)/);
     assert.match(source, /getIssueTeamLabel\(teamInfo\)/);
     assert.match(helperSource, /export function formatPriorityShort/);

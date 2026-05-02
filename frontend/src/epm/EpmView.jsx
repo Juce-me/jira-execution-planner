@@ -1,5 +1,6 @@
 import * as React from 'react';
 import EmptyState from '../ui/EmptyState.jsx';
+import LoadingState from '../ui/LoadingState.jsx';
 import { EpmRollupPanel } from './EpmRollupPanel.jsx';
 
 export function EpmView({
@@ -29,15 +30,17 @@ export function EpmView({
     return (
         <>
             {!epmConfigLoaded && (
-                <EmptyState title="Loading EPM settings">
-                    <p>Loading saved project configuration.</p>
-                </EmptyState>
+                <LoadingState
+                    title="Loading EPM settings"
+                    message="Loading saved project configuration."
+                />
             )}
 
             {epmConfigLoaded && epmProjectsLoading && !epmRollupBoards && !epmRollupTree && (
-                <EmptyState title="Loading EPM projects">
-                    <p>Refreshing Atlassian Home project metadata.</p>
-                </EmptyState>
+                <LoadingState
+                    title="Loading EPM projects"
+                    message="Refreshing Atlassian Home project metadata."
+                />
             )}
 
             {epmConfigLoaded && epmSelectedProjectId && !epmProjectsLoading && !selectedEpmProject && (

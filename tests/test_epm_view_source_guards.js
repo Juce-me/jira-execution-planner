@@ -13,6 +13,7 @@ const epmViewPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmVie
 const epmSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmSettings.jsx');
 const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupPanel.jsx');
 const epmRollupTreePath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupTree.jsx');
+const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngView.jsx');
 const issueCardPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'IssueCard.jsx');
 const issueDependenciesPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'IssueDependencies.jsx');
 const engSprintDataPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngSprintData.js');
@@ -21,6 +22,7 @@ const segmentedControlPath = path.join(__dirname, '..', 'frontend', 'src', 'ui',
 const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'ControlField.jsx');
 const iconButtonPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'IconButton.jsx');
 const loadingRowsPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'LoadingRows.jsx');
+const loadingStatePath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'LoadingState.jsx');
 const emptyStatePath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'EmptyState.jsx');
 const statusPillPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'StatusPill.jsx');
 
@@ -29,6 +31,7 @@ const segmentedControlSource = fs.existsSync(segmentedControlPath) ? fs.readFile
 const controlFieldSource = fs.existsSync(controlFieldPath) ? fs.readFileSync(controlFieldPath, 'utf8') : '';
 const iconButtonSource = fs.existsSync(iconButtonPath) ? fs.readFileSync(iconButtonPath, 'utf8') : '';
 const loadingRowsSource = fs.existsSync(loadingRowsPath) ? fs.readFileSync(loadingRowsPath, 'utf8') : '';
+const loadingStateSource = fs.existsSync(loadingStatePath) ? fs.readFileSync(loadingStatePath, 'utf8') : '';
 const emptyStateSource = fs.existsSync(emptyStatePath) ? fs.readFileSync(emptyStatePath, 'utf8') : '';
 const statusPillSource = fs.existsSync(statusPillPath) ? fs.readFileSync(statusPillPath, 'utf8') : '';
 const dashboardCssSource = fs.existsSync(dashboardCssPath) ? fs.readFileSync(dashboardCssPath, 'utf8') : '';
@@ -40,6 +43,7 @@ const epmViewSource = fs.existsSync(epmViewPath) ? fs.readFileSync(epmViewPath, 
 const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
 const epmRollupPanelSource = fs.existsSync(epmRollupPanelPath) ? fs.readFileSync(epmRollupPanelPath, 'utf8') : '';
 const epmRollupTreeSource = fs.existsSync(epmRollupTreePath) ? fs.readFileSync(epmRollupTreePath, 'utf8') : '';
+const engViewSource = fs.existsSync(engViewPath) ? fs.readFileSync(engViewPath, 'utf8') : '';
 const issueCardSource = fs.existsSync(issueCardPath) ? fs.readFileSync(issueCardPath, 'utf8') : '';
 const issueDependenciesSource = fs.existsSync(issueDependenciesPath) ? fs.readFileSync(issueDependenciesPath, 'utf8') : '';
 const engSprintDataSource = fs.existsSync(engSprintDataPath) ? fs.readFileSync(engSprintDataPath, 'utf8') : '';
@@ -215,8 +219,10 @@ function assertAllEngTaskEffectsGuarded() {
 test('dashboard source keeps the ENG and EPM switch contract', () => {
     assert.ok(dashboardSource.includes('selectedView'), 'Expected selectedView state in dashboard.jsx');
     assert.ok(dashboardSource.includes('epmTab'), 'Expected epmTab state in dashboard.jsx');
-    assert.ok(dashboardSource.includes('mode-switch'), 'Expected mode-switch usage in dashboard.jsx');
-    assert.ok(dashboardSource.includes('mode-switch-button'), 'Expected mode-switch-button usage in dashboard.jsx');
+    assert.ok(dashboardSource.includes('renderEngModeControl'), 'Expected ENG mode control renderer in dashboard.jsx');
+    assert.ok(dashboardSource.includes('ariaLabel="ENG view mode"'), 'Expected ENG modes to use a segmented radiogroup');
+    assert.ok(dashboardSource.includes('className="eng-mode-control"'), 'Expected ENG modes to keep their control class');
+    assert.ok(!dashboardSource.includes('mode-switch-button'), 'Expected ENG modes to avoid independent toggle buttons');
     assert.ok(!dashboardSource.includes('view-switch'), 'Did not expect view-switch in dashboard.jsx');
 });
 
@@ -242,17 +248,22 @@ test('dashboard source uses shared basic UI primitives for representative contro
     assert.ok(fs.existsSync(controlFieldPath), 'Expected shared ControlField primitive');
     assert.ok(fs.existsSync(iconButtonPath), 'Expected shared IconButton primitive');
     assert.ok(fs.existsSync(loadingRowsPath), 'Expected shared LoadingRows primitive');
+    assert.ok(fs.existsSync(loadingStatePath), 'Expected shared LoadingState primitive');
     assert.ok(fs.existsSync(emptyStatePath), 'Expected shared EmptyState primitive');
     assert.ok(dashboardSource.includes("import SegmentedControl from './ui/SegmentedControl.jsx';"), 'Expected dashboard to import SegmentedControl');
     assert.ok(dashboardSource.includes("import ControlField from './ui/ControlField.jsx';"), 'Expected dashboard to import ControlField');
     assert.ok(dashboardSource.includes("import IconButton from './ui/IconButton.jsx';"), 'Expected dashboard to import IconButton');
     assert.ok(dashboardSource.includes("import LoadingRows from './ui/LoadingRows.jsx';"), 'Expected dashboard to import LoadingRows');
+    assert.ok(epmViewSource.includes("import LoadingState from '../ui/LoadingState.jsx';"), 'Expected EPM view to import LoadingState');
+    assert.ok(engViewSource.includes("import LoadingState from '../ui/LoadingState.jsx';"), 'Expected ENG view to import LoadingState');
     assert.ok(dashboardSource.includes("import EmptyState from './ui/EmptyState.jsx';"), 'Expected dashboard to import EmptyState');
     assert.ok(dashboardSource.includes('<SegmentedControl') && dashboardSource.includes('className="view-mode-control"'), 'Expected ENG/EPM selector to use SegmentedControl');
     assert.ok(dashboardSource.includes('<ControlField') && dashboardSource.includes('label="Search"'), 'Expected header search control to use ControlField');
     assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="refresh-icon"'), 'Expected compact refresh action to use IconButton');
     assert.ok(dashboardSource.includes('<LoadingRows') && dashboardSource.includes('className="epm-project-skeleton-list"'), 'Expected EPM project loading rows to use LoadingRows');
-    assert.ok(epmViewSource.includes('<EmptyState') && epmViewSource.includes('title="Loading EPM settings"'), 'Expected EPM loading empty state to use EmptyState');
+    assert.ok(loadingStateSource.includes('epm-burst.svg'), 'Expected LoadingState to use the EPM burst asset');
+    assert.ok(loadingStateSource.includes('loading-mark-spinner'), 'Expected LoadingState to expose a rotating spinner mark');
+    assert.ok(epmViewSource.includes('<LoadingState') && epmViewSource.includes('title="Loading EPM settings"'), 'Expected EPM loading states to use LoadingState');
     assert.ok(epmControlsSource.includes("import SegmentedControl from '../ui/SegmentedControl.jsx';"), 'Expected EpmControls to import SegmentedControl');
     assert.ok(epmControlsSource.includes("import ControlField from '../ui/ControlField.jsx';"), 'Expected EpmControls to import ControlField');
     assert.ok(epmViewSource.includes("import EmptyState from '../ui/EmptyState.jsx';"), 'Expected EpmView to import EmptyState');
@@ -264,6 +275,24 @@ test('dashboard source uses shared basic UI primitives for representative contro
     assert.ok(loadingRowsSource.includes('Array.from({ length: rows }') && loadingRowsSource.includes('Array.from({ length: columns }'), 'Expected LoadingRows to generate the requested row and column skeleton spans');
     assert.ok(emptyStateSource.includes("['empty-state', className]"), 'Expected EmptyState to preserve the empty-state wrapper class');
     assert.ok(emptyStateSource.includes('<h2>{title}</h2>'), 'Expected EmptyState to preserve the heading structure');
+});
+
+test('compact sticky header keeps search available for every dashboard view', () => {
+    const compactHeader = getSnippetBetween(
+        dashboardSource,
+        'className={`compact-sticky-header ${compactStickyVisible ?',
+        "{selectedView === 'eng' && !isCompletedSprintSelected && ("
+    );
+    assert.ok(compactHeader.includes('compact-sticky-header-search'), 'Expected compact header to render its search container');
+    assert.ok(compactHeader.includes("{renderSearchControl('compact', 'compact-sticky-header-search-field')}"), 'Expected compact header search to use the shared search control');
+    assert.ok(!compactHeader.includes("{selectedView === 'eng' && (\n                                    <div className=\"compact-sticky-header-search\">"), 'Expected compact search not to be ENG-only');
+});
+
+test('EPM rollup panel shows Jira Home project status and epic status pills', () => {
+    assert.ok(epmRollupPanelSource.includes("import { getIssueStatusClassName } from '../issues/issueViewUtils.js';"), 'Expected EPM rollup to use shared issue status classes');
+    assert.ok(epmRollupPanelSource.includes('epm-project-board-status-pill'), 'Expected EPM project board headers to render Jira Home status pills');
+    assert.ok(epmRollupPanelSource.includes('epic-status-pill'), 'Expected EPM epic headers to render epic status pills');
+    assert.ok(epmRollupPanelSource.includes('label={epic.status}'), 'Expected EPM epic status label to come from Jira issue status');
 });
 
 test('EPM status and label chips use the shared StatusPill primitive', () => {

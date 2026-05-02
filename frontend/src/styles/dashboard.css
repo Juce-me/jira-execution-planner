@@ -97,6 +97,16 @@
             margin-left: auto;
         }
 
+        .compact-sticky-header .eng-mode-control {
+            flex: 0 0 auto;
+        }
+
+        .compact-sticky-header .eng-mode-control .segmented-control-button {
+            padding: 0 0.52rem;
+            font-size: 0.62rem;
+            min-width: 2.4rem;
+        }
+
         .compact-sticky-header .control-field {
             min-width: 0;
             flex: 0 1 auto;
@@ -418,6 +428,7 @@
         }
 
         .view-mode-control,
+        .eng-mode-control,
         .epm-state-control {
             margin-left: 0;
         }
@@ -464,52 +475,6 @@
         .segmented-control-button:focus-visible {
             outline: 2px solid var(--accent);
             outline-offset: 2px;
-        }
-
-        .mode-switch {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.4rem;
-            margin-left: 0.4rem;
-            background: transparent;
-            height: var(--control-height);
-            margin-top: 0.4rem;
-            margin-bottom: 0;
-            align-self: flex-start;
-        }
-
-        .mode-switch-button {
-            padding: 0.35rem 0.7rem;
-            font-size: 0.7rem;
-            font-family: 'IBM Plex Mono', monospace;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            background: #fff;
-            border: 1px solid var(--border);
-            margin: 0;
-            color: var(--text-secondary);
-            height: 100%;
-            display: inline-flex;
-            align-items: center;
-            border-radius: 10px;
-        }
-
-        .mode-switch-button:hover {
-            background: #f7f5f0;
-            transform: none;
-            box-shadow: none;
-        }
-
-        .mode-switch-button.active {
-            background: var(--text-primary);
-            color: var(--bg-primary);
-            border-color: var(--text-primary);
-        }
-
-        .mode-switch-button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
         }
 
         .sprint-dropdown {
@@ -2234,16 +2199,6 @@
             transform: rotate(180deg);
         }
 
-        .mode-switch .mode-switch-button:hover {
-            background: #f7f5f0;
-            transform: none;
-            box-shadow: none;
-        }
-
-        .mode-switch .mode-switch-button.active:hover {
-            background: var(--text-primary);
-        }
-
         .team-dropdown-panel {
             position: absolute;
             top: calc(100% + 0.35rem);
@@ -3752,12 +3707,79 @@
             color: white;
         }
 
+        .epic-status-pill.task-status {
+            font-size: 0.58rem;
+            padding: 0.18rem 0.48rem;
+            white-space: nowrap;
+        }
+
         .loading {
             text-align: center;
             padding: 4rem 0;
             font-family: 'IBM Plex Mono', monospace;
             color: var(--text-secondary);
             animation: pulse 2s ease-in-out infinite;
+        }
+
+        .loading-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.85rem;
+            padding: 4rem 2rem;
+            text-align: center;
+            color: var(--text-secondary);
+        }
+
+        .loading-state-inline {
+            padding: 1rem 0 1.2rem;
+            gap: 0.45rem;
+        }
+
+        .loading-mark {
+            position: relative;
+            width: 4rem;
+            height: 4rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .loading-state-inline .loading-mark {
+            width: 2.5rem;
+            height: 2.5rem;
+        }
+
+        .loading-mark-spinner {
+            width: 100%;
+            height: 100%;
+            animation: epm-loading-spin 1.1s linear infinite;
+            filter: drop-shadow(0 8px 16px rgba(212, 56, 13, 0.18));
+        }
+
+        .loading-mark-signature {
+            position: absolute;
+            width: 1.35rem;
+            height: 1.35rem;
+            opacity: 0.9;
+        }
+
+        .loading-state-copy h2 {
+            margin: 0;
+            font-size: 1.2rem;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .loading-state-copy p {
+            margin: 0.35rem 0 0;
+            font-size: 0.82rem;
+        }
+
+        @keyframes epm-loading-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
 
         @keyframes pulse {
@@ -7083,6 +7105,18 @@
             flex: 0 1 auto;
         }
 
+        .epm-project-board-status-pill {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            padding: 0.1rem 0.42rem;
+            border: 1px solid rgba(22, 101, 52, 0.24);
+            background: rgba(22, 163, 74, 0.1);
+            color: #166534;
+            border-radius: 999px;
+            white-space: nowrap;
+            flex: 0 0 auto;
+        }
+
         .epm-project-board-link {
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.6rem;
@@ -7101,7 +7135,7 @@
             display: block;
             width: fit-content;
             max-width: min(48rem, calc(100% - 42px));
-            margin: 0 0 18px 42px;
+            margin: 8px 0 10px 42px;
         }
 
         .epm-project-board-update {

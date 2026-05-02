@@ -1,5 +1,7 @@
 import React, { useContext, useEffect, useState } from 'react';
 import IssueCard, { IssueCardContext } from '../issues/IssueCard.jsx';
+import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
+import LoadingState from '../ui/LoadingState.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import { buildEpmProjectUpdateLine, getEpmProjectDisplayName, toEpmEngTask } from './epmProjectUtils.mjs';
 
@@ -89,6 +91,7 @@ export function EpmRollupPanel({
     const renderPortfolioHeader = (project) => {
         const collapsed = isCollapsed(project);
         const updateLine = buildEpmProjectUpdateLine(project);
+        const projectStatus = String(project?.stateLabel || project?.stateValue || '').trim();
         return (
             <>
                 <div
@@ -105,6 +108,9 @@ export function EpmRollupPanel({
                         <span className="epm-project-board-name">{getEpmProjectDisplayName(project)}</span>
                     </button>
                     <div className="epm-project-board-meta">
+                        {projectStatus && (
+                            <StatusPill className="epm-project-board-status-pill" label={projectStatus} />
+                        )}
                         {project?.label && (
                             <StatusPill className="epm-project-board-label-pill" label={project.label} />
                         )}
@@ -249,6 +255,9 @@ export function EpmRollupPanel({
     const renderEpmIssueGroup = ({ key, renderKey, epic, tasks, storyPoints, parentSummary }) => {
         const epicTitle = epic?.summary || parentSummary || (key === 'NO_EPIC' ? 'No Epic Linked' : key);
         const epicTotalSp = storyPoints || 0;
+        const epicStatusClassName = epic?.status
+            ? getIssueStatusClassName(epic.status, 'epic-status-pill')
+            : '';
         return (
             <div key={renderKey || key} className="epic-block">
                 <div className="epic-header">
@@ -283,6 +292,12 @@ export function EpmRollupPanel({
                         </div>
                     </div>
                     <div className="epic-meta">
+                        {epic?.status && (
+                            <StatusPill
+                                className={epicStatusClassName}
+                                label={epic.status}
+                            />
+                        )}
                         <span>SP: {epicTotalSp.toFixed(1)}</span>
                         {epic?.assignee?.displayName && (
                             <span className="task-assignee epic-assignee">
@@ -310,6 +325,7 @@ export function EpmRollupPanel({
             epic: {
                 key: epicIssue.key,
                 summary: epicIssue.summary || epicIssue.key || '',
+                status: epicIssue.status || '',
                 assignee: epicIssue.assignee ? { displayName: epicIssue.assignee } : null,
             },
             tasks,
@@ -376,10 +392,10 @@ export function EpmRollupPanel({
     if (!selectedEpmProject && (Array.isArray(epmRollupBoards) || epmRollupLoading)) {
         if (epmRollupLoading) {
             return (
-                <div className="empty-state">
-                    <h2>Loading Jira issues</h2>
-                    <p>Refreshing all visible EPM project boards.</p>
-                </div>
+                <LoadingState
+                    title="Loading Jira issues"
+                    message="Refreshing all visible EPM project boards."
+                />
             );
         }
         return (
@@ -411,7 +427,11 @@ export function EpmRollupPanel({
                             {renderPortfolioHeader(project)}
                             <div className="epm-project-board-body">
                                 {projectLoading && (
-                                    <div className="group-field-helper">Loading Jira issues...</div>
+                                    <LoadingState
+                                        className="loading-state-inline"
+                                        title="Loading Jira issues"
+                                        message="Refreshing this project."
+                                    />
                                 )}
                                 {!projectLoading && tree?.kind === 'metadataOnly' && renderMetadataOnlyCard(project, buildEpmProjectUpdateLine(project).text || 'No updates yet', false)}
                                 {tree?.kind === 'emptyRollup' && (
@@ -434,10 +454,10 @@ export function EpmRollupPanel({
 
     if (epmRollupLoading) {
         return (
-            <div className="empty-state">
-                <h2>Loading Jira issues</h2>
-                <p>Refreshing the selected EPM project board.</p>
-            </div>
+            <LoadingState
+                title="Loading Jira issues"
+                message="Refreshing the selected EPM project board."
+            />
         );
     }
 

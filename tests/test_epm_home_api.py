@@ -5,10 +5,9 @@ import time
 from urllib.error import HTTPError
 from unittest.mock import Mock, patch
 
-import epm_home
-import jira_server
+from backend.epm import home as epm_home
 
-from epm_home import (
+from backend.epm.home import (
     HomeGraphQLClient,
     bucket_epm_state,
     build_home_project_record,
@@ -173,8 +172,8 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual(result, ['rnd_project_alpha', 'epm'])
         client.execute.assert_called_once_with(epm_home.QUERY_PROJECT_TAGS, {'projectId': 'proj-1'})
 
-    @patch('epm_home.fetch_home_site_cloud_id', return_value='cloud-123')
-    @patch('epm_home.build_teamwork_graph_client')
+    @patch('backend.epm.home.fetch_home_site_cloud_id', return_value='cloud-123')
+    @patch('backend.epm.home.build_teamwork_graph_client')
     def test_fetch_project_tags_falls_back_to_teamwork_graph_when_direct_tags_are_empty(self, mock_build_twg_client, mock_cloud_id):
         home_client = Mock()
         home_client.execute.return_value = {
@@ -216,8 +215,8 @@ class TestEpmHomeApi(unittest.TestCase):
         mock_cloud_id.assert_called_once_with()
         mock_build_twg_client.assert_called_once_with()
 
-    @patch('epm_home.fetch_home_site_cloud_id', return_value='cloud-123')
-    @patch('epm_home.build_teamwork_graph_client')
+    @patch('backend.epm.home.fetch_home_site_cloud_id', return_value='cloud-123')
+    @patch('backend.epm.home.build_teamwork_graph_client')
     def test_fetch_project_tags_falls_back_to_teamwork_graph_relationship(self, mock_build_twg_client, mock_cloud_id):
         home_client = Mock()
         home_client.execute.side_effect = epm_home.HomeGraphQLError('unknown field tags')
@@ -256,18 +255,18 @@ class TestEpmHomeApi(unittest.TestCase):
         with self.assertRaises(TypeError):
             fetch_epm_home_projects()
 
-    @patch('epm_home.logger.warning')
+    @patch('backend.epm.home.logger.warning')
     def test_fetch_epm_home_projects_returns_empty_when_scope_missing(self, mock_warning):
         self.assertEqual(fetch_epm_home_projects({}), [])
         mock_warning.assert_called_once_with('EPM home fetch skipped: subGoalKey is required')
 
-    @patch('epm_home.logger.warning')
+    @patch('backend.epm.home.logger.warning')
     def test_fetch_epm_home_projects_returns_empty_when_scope_is_malformed_truthy_value(self, mock_warning):
         self.assertEqual(fetch_epm_home_projects('bad-scope'), [])
         mock_warning.assert_called_once_with('EPM home fetch skipped: subGoalKey is required')
 
-    @patch('epm_home.build_home_graphql_client')
-    @patch('epm_home.logger.warning')
+    @patch('backend.epm.home.build_home_graphql_client')
+    @patch('backend.epm.home.logger.warning')
     def test_fetch_epm_home_projects_returns_empty_when_scope_values_are_non_string(self, mock_warning, mock_build_client):
         scope = {'subGoalKey': ['CHILD-200']}
 
@@ -276,9 +275,8 @@ class TestEpmHomeApi(unittest.TestCase):
         mock_warning.assert_called_once_with('EPM home fetch skipped: subGoalKey is required')
         mock_build_client.assert_not_called()
 
-    @patch.dict('os.environ', {'JIRA_URL': ''}, clear=False)
-    @patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net')
-    @patch('epm_home.urlopen')
+    @patch.dict('os.environ', {'JIRA_URL': 'https://example.atlassian.net'}, clear=False)
+    @patch('backend.epm.home.urlopen')
     def test_fetch_home_site_cloud_id_uses_jira_tenant_info(self, mock_urlopen):
         response = Mock()
         response.__enter__ = Mock(return_value=response)
@@ -289,9 +287,8 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual(fetch_home_site_cloud_id(), 'cloud-123')
         self.assertEqual(mock_urlopen.call_args[0][0].full_url, 'https://example.atlassian.net/_edge/tenant_info')
 
-    @patch.dict('os.environ', {'JIRA_URL': ''}, clear=False)
-    @patch.object(jira_server, 'JIRA_URL', 'https://cached.atlassian.net')
-    @patch('epm_home.urlopen')
+    @patch.dict('os.environ', {'JIRA_URL': 'https://cached.atlassian.net'}, clear=False)
+    @patch('backend.epm.home.urlopen')
     def test_fetch_home_site_cloud_id_is_cached_per_jira_url(self, mock_urlopen):
         response = Mock()
         response.__enter__ = Mock(return_value=response)
@@ -304,10 +301,9 @@ class TestEpmHomeApi(unittest.TestCase):
 
         self.assertEqual(mock_urlopen.call_count, 1)
 
-    @patch.dict('os.environ', {'JIRA_URL': ''}, clear=False)
-    @patch.object(jira_server, 'JIRA_URL', 'https://cli-override.atlassian.net')
-    @patch('epm_home.urlopen')
-    def test_fetch_home_site_cloud_id_prefers_jira_server_cli_override(self, mock_urlopen):
+    @patch.dict('os.environ', {'JIRA_URL': 'https://env-override.atlassian.net/'}, clear=False)
+    @patch('backend.epm.home.urlopen')
+    def test_fetch_home_site_cloud_id_strips_trailing_slash(self, mock_urlopen):
         response = Mock()
         response.__enter__ = Mock(return_value=response)
         response.__exit__ = Mock(return_value=False)
@@ -315,9 +311,9 @@ class TestEpmHomeApi(unittest.TestCase):
         mock_urlopen.return_value = response
 
         self.assertEqual(fetch_home_site_cloud_id(), 'cloud-456')
-        self.assertEqual(mock_urlopen.call_args[0][0].full_url, 'https://cli-override.atlassian.net/_edge/tenant_info')
+        self.assertEqual(mock_urlopen.call_args[0][0].full_url, 'https://env-override.atlassian.net/_edge/tenant_info')
 
-    @patch('epm_home.resolve_goal_by_key')
+    @patch('backend.epm.home.resolve_goal_by_key')
     def test_fetch_sub_goals_for_root_key_returns_non_archived_children(self, mock_resolve_goal):
         client = HomeGraphQLClient('user@example.com', 'token')
         client.execute_paginated = Mock(
@@ -332,11 +328,11 @@ class TestEpmHomeApi(unittest.TestCase):
 
         self.assertEqual(result, [{'id': 'goal-child', 'key': 'CHILD-200', 'name': 'Synthetic Child Goal', 'url': 'https://home/goal/child-200', 'isArchived': False}])
 
-    @patch('epm_home.extract_home_jira_linkage')
-    @patch('epm_home.fetch_latest_project_update')
-    @patch('epm_home.fetch_projects_for_goal')
-    @patch('epm_home.fetch_home_site_cloud_id')
-    @patch('epm_home.build_home_graphql_client')
+    @patch('backend.epm.home.extract_home_jira_linkage')
+    @patch('backend.epm.home.fetch_latest_project_update')
+    @patch('backend.epm.home.fetch_projects_for_goal')
+    @patch('backend.epm.home.fetch_home_site_cloud_id')
+    @patch('backend.epm.home.build_home_graphql_client')
     def test_fetch_epm_home_projects_resolves_child_sub_goal_from_root_children(
         self,
         mock_build_client,
@@ -382,12 +378,12 @@ class TestEpmHomeApi(unittest.TestCase):
         mock_fetch_projects.assert_called_once_with(client, 'goal-child')
         self.assertEqual(result[0]['name'], 'Synthetic Launch')
 
-    @patch('epm_home.extract_home_jira_linkage')
-    @patch('epm_home.fetch_latest_project_update')
-    @patch('epm_home.fetch_projects_for_goal')
-    @patch('epm_home.resolve_goal_by_key')
-    @patch('epm_home.fetch_home_site_cloud_id')
-    @patch('epm_home.build_home_graphql_client')
+    @patch('backend.epm.home.extract_home_jira_linkage')
+    @patch('backend.epm.home.fetch_latest_project_update')
+    @patch('backend.epm.home.fetch_projects_for_goal')
+    @patch('backend.epm.home.resolve_goal_by_key')
+    @patch('backend.epm.home.fetch_home_site_cloud_id')
+    @patch('backend.epm.home.build_home_graphql_client')
     def test_fetch_epm_home_projects_resolves_sub_goal_scope(
         self,
         mock_build_client,
@@ -469,8 +465,8 @@ class TestEpmHomeApi(unittest.TestCase):
         )
         self.assertEqual(result, [{'id': 'update-1', 'creationDate': '2026-04-12T10:00:00.000Z', 'summary': 'Latest status'}])
 
-    @patch('epm_home.fetch_latest_project_update')
-    @patch('epm_home.fetch_goal_project_links')
+    @patch('backend.epm.home.fetch_latest_project_update')
+    @patch('backend.epm.home.fetch_goal_project_links')
     def test_fetch_projects_for_goal_preserves_link_order_after_parallel_enrichment(self, mock_project_links, mock_fetch_update):
         client = Mock()
         mock_project_links.return_value = [
@@ -498,12 +494,12 @@ class TestEpmHomeApi(unittest.TestCase):
         client.execute.side_effect = execute
         mock_fetch_update.return_value = []
 
-        with patch('epm_home.fetch_project_tags', return_value=[]):
+        with patch('backend.epm.home.fetch_project_tags', return_value=[]):
             result = fetch_projects_for_goal(client, 'goal-1')
 
         self.assertEqual([row['homeProjectId'] for row in result], ['proj-slow', 'proj-fast', 'proj-medium'])
 
-    @patch('epm_home.fetch_goal_project_links')
+    @patch('backend.epm.home.fetch_goal_project_links')
     def test_fetch_projects_for_goal_uses_enriched_goal_project_rows_without_per_project_fetches(self, mock_project_links):
         client = Mock()
         client.execute.side_effect = AssertionError('enriched goal project rows should not need per-project Home calls')
@@ -536,8 +532,8 @@ class TestEpmHomeApi(unittest.TestCase):
             },
         ]
 
-        with patch('epm_home.fetch_latest_project_update') as mock_fetch_update, patch(
-            'epm_home.fetch_project_tags',
+        with patch('backend.epm.home.fetch_latest_project_update') as mock_fetch_update, patch(
+            'backend.epm.home.fetch_project_tags',
         ) as mock_fetch_tags:
             result = fetch_projects_for_goal(client, 'goal-1')
 
@@ -568,10 +564,10 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertIn('tags @optIn(to: "Townsquare")', query)
         self.assertIn('updates(first: 1)', query)
 
-    @patch('epm_home.fetch_goal_project_links')
-    @patch('epm_home.resolve_sub_goal_for_scope')
-    @patch('epm_home.fetch_home_site_cloud_id')
-    @patch('epm_home.build_home_graphql_client')
+    @patch('backend.epm.home.fetch_goal_project_links')
+    @patch('backend.epm.home.resolve_sub_goal_for_scope')
+    @patch('backend.epm.home.fetch_home_site_cloud_id')
+    @patch('backend.epm.home.build_home_graphql_client')
     def test_latest_update_fetches_share_bounded_fanout_and_home_projects_consumes_enriched_rows(
         self,
         mock_build_client,
@@ -617,8 +613,8 @@ class TestEpmHomeApi(unittest.TestCase):
                 release_updates.set()
             return [{'creationDate': '2026-04-12T10:00:00.000Z', 'summary': f'Update {project_id}'}]
 
-        with patch('epm_home.fetch_latest_project_update', side_effect=fetch_update) as mock_fetch_update, patch(
-            'epm_home.fetch_project_tags',
+        with patch('backend.epm.home.fetch_latest_project_update', side_effect=fetch_update) as mock_fetch_update, patch(
+            'backend.epm.home.fetch_project_tags',
             return_value=[],
         ):
             result = fetch_epm_home_projects({'subGoalKey': 'child-200'})
@@ -628,8 +624,8 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual([row['homeProjectId'] for row in result], ['proj-a', 'proj-b'])
         self.assertEqual([row['latestUpdateSnippet'] for row in result], ['Update proj-a', 'Update proj-b'])
 
-        with patch('epm_home.fetch_projects_for_goal') as mock_fetch_projects, patch(
-            'epm_home.fetch_latest_project_update',
+        with patch('backend.epm.home.fetch_projects_for_goal') as mock_fetch_projects, patch(
+            'backend.epm.home.fetch_latest_project_update',
             side_effect=AssertionError('fetch_epm_home_projects must not fetch updates sequentially'),
         ) as mock_late_update:
             mock_fetch_projects.return_value = [
@@ -653,7 +649,7 @@ class TestEpmHomeApi(unittest.TestCase):
         mock_late_update.assert_not_called()
         self.assertEqual(result[0]['homeProjectId'], 'proj-enriched')
 
-    @patch('epm_home.logger.warning')
+    @patch('backend.epm.home.logger.warning')
     def test_fetch_goal_project_links_reads_more_than_200_projects(self, mock_warning):
         client = Mock()
 
@@ -693,7 +689,7 @@ class TestEpmHomeApi(unittest.TestCase):
                 self.assertEqual(variables['after'], f'cursor-{call_index}')
         mock_warning.assert_not_called()
 
-    @patch('epm_home.logger.warning')
+    @patch('backend.epm.home.logger.warning')
     def test_fetch_goal_project_links_caps_large_goal_fetches(self, mock_warning):
         client = Mock()
 
@@ -722,18 +718,20 @@ class TestEpmHomeApi(unittest.TestCase):
         mock_warning.assert_called_once()
         self.assertIn('truncated', mock_warning.call_args.args[0])
 
-    @patch('epm_home.fetch_home_site_cloud_id', side_effect=RuntimeError('Jira tenant_info did not return cloudId'))
-    @patch('epm_home.logger.warning')
-    def test_fetch_epm_home_projects_returns_empty_when_tenant_info_lookup_fails(self, mock_warning, mock_fetch_cloud_id):
+    @patch('backend.epm.home.fetch_home_site_cloud_id', side_effect=RuntimeError('Jira tenant_info did not return cloudId'))
+    @patch('backend.epm.home.build_home_graphql_client', return_value=Mock())
+    @patch('backend.epm.home.logger.warning')
+    def test_fetch_epm_home_projects_returns_empty_when_tenant_info_lookup_fails(self, mock_warning, mock_build_client, mock_fetch_cloud_id):
         self.assertEqual(fetch_epm_home_projects({'subGoalKey': 'child-200'}), [])
+        mock_build_client.assert_called_once_with()
         mock_fetch_cloud_id.assert_called_once_with()
         mock_warning.assert_called_once()
         self.assertEqual(mock_warning.call_args[0][0], 'EPM home fetch failed: %s')
         self.assertIsInstance(mock_warning.call_args[0][1], RuntimeError)
         self.assertEqual(str(mock_warning.call_args[0][1]), 'Jira tenant_info did not return cloudId')
 
-    @patch('epm_home.time.sleep')
-    @patch('epm_home.urlopen')
+    @patch('backend.epm.home.time.sleep')
+    @patch('backend.epm.home.urlopen')
     def test_execute_retries_429_after_retry_after_before_success(self, mock_urlopen, mock_sleep):
         transient_error = HTTPError(
             'https://team.atlassian.com/gateway/api/graphql',

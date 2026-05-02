@@ -2,7 +2,7 @@ import threading
 import unittest
 
 import jira_server
-from epm_rollup import EpmRollupDependencies, build_per_project_rollup
+from backend.epm.rollup import EpmRollupDependencies, build_per_project_rollup
 
 
 class BuildPerProjectRollupTests(unittest.TestCase):

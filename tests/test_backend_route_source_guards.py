@@ -1,4 +1,3 @@
-import ast
 import re
 import sys
 import types
@@ -51,13 +50,6 @@ SETTINGS_ROUTE_PATHS = (
     "/api/boards",
     "/api/sprints",
 )
-APPROVED_ROOT_EPM_SHIMS = {
-    "epm_home.py",
-    "epm_scope.py",
-    "epm_rollup.py",
-}
-
-
 class FakeJiraResponse:
     def __init__(self, payload, status_code=200):
         self._payload = payload
@@ -66,15 +58,6 @@ class FakeJiraResponse:
 
     def json(self):
         return self._payload
-
-
-def top_level_definitions(source):
-    tree = ast.parse(source)
-    return [
-        node.name
-        for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-    ]
 
 
 def app_route_pattern(route_paths):
@@ -140,40 +123,15 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
             "jira_server.py must not retain root @app.route decorators for settings/config/catalog routes after backend/routes/settings_routes.py exists",
         )
 
-    def test_root_epm_helpers_become_import_shims_after_backend_epm_package_exists(self):
+    def test_root_epm_helpers_do_not_return_after_backend_epm_package_exists(self):
         if not BACKEND_EPM_PATH.exists():
             return
 
         root_epm_files = sorted(REPO_ROOT.glob("epm_*.py"))
-        unexpected_helpers = [
-            path.name for path in root_epm_files
-            if path.name not in APPROVED_ROOT_EPM_SHIMS
-        ]
         self.assertEqual(
-            unexpected_helpers,
+            [path.name for path in root_epm_files],
             [],
-            "new root epm_*.py helpers are not allowed after backend/epm/ exists",
-        )
-
-        real_definition_files = []
-        non_backend_import_files = []
-        for path in root_epm_files:
-            source = path.read_text(encoding="utf8")
-            definitions = top_level_definitions(source)
-            if definitions:
-                real_definition_files.append(f"{path.name}: {', '.join(definitions)}")
-            if "backend.epm." not in source:
-                non_backend_import_files.append(path.name)
-
-        self.assertEqual(
-            real_definition_files,
-            [],
-            "approved root EPM shims must not keep real def/class definitions after backend/epm/ exists",
-        )
-        self.assertEqual(
-            non_backend_import_files,
-            [],
-            "approved root EPM shims must import or alias backend.epm.* after backend/epm/ exists",
+            "root epm_*.py compatibility modules must not return after backend/epm/ exists",
         )
 
     def test_epm_aggregate_route_forwards_rollup_headers_and_params(self):

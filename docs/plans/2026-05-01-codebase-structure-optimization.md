@@ -30,8 +30,8 @@ cache behavior, and endpoint timing visibility.
 - `frontend/dist/dashboard.css` is treated as generated output, but it is also the
   only stylesheet source today.
 - Existing EPM extraction work is useful but incomplete:
-  `frontend/src/epm/*`, `epm_home.py`, `epm_scope.py`, and `epm_rollup.py`
-  should be expanded and then moved into the final backend package structure.
+  `frontend/src/epm/*` and `backend/epm/*` should be expanded into the final
+  frontend and backend package structure.
 
 ## Non-Goals
 
@@ -288,7 +288,6 @@ Owner: EPM frontend API worker.
 Write set:
 
 - `frontend/src/api/epmApi.js`
-- `frontend/src/epm/epmFetch.js`
 - `frontend/src/dashboard.jsx`
 - generated `frontend/dist/dashboard.js`
 - generated `frontend/dist/dashboard.js.map`
@@ -298,9 +297,8 @@ Write set:
 
 Steps:
 
-1. Move existing EPM wrapper logic from `frontend/src/epm/epmFetch.js` into
-   `frontend/src/api/epmApi.js`.
-2. Keep `frontend/src/epm/epmFetch.js` as a compatibility re-export for this phase.
+1. Ensure EPM wrapper logic lives in `frontend/src/api/epmApi.js`.
+2. Remove `frontend/src/epm/epmFetch.js` once imports use `frontend/src/api/epmApi.js`.
 3. Update dashboard imports if needed.
 4. Preserve URL construction, query params, `cache: 'no-cache'`, and error labels.
 
@@ -774,28 +772,19 @@ Write set:
 - `backend/epm/scope.py`
 - `backend/epm/rollup.py`
 - `backend/epm/projects.py`
-- root compatibility shims if retained:
-  - `epm_home.py`
-  - `epm_scope.py`
-  - `epm_rollup.py`
 - `jira_server.py`
 - EPM backend tests
 
 Shim strategy:
 
-Use one of these strategies and document the choice in the commit:
-
-- Preferred for lower churn: keep temporary root-level shim modules
-  (`epm_home.py`, `epm_scope.py`, `epm_rollup.py`) that re-export from
-  `backend.epm.*`, then remove shims in a later cleanup once imports are updated.
-- Preferred for a complete package move: update every import in one slice and add
-  source guards preventing root-level EPM modules from returning.
+Use the complete package move: update imports in one slice and keep source guards
+preventing root-level EPM modules from returning.
 
 Steps:
 
-1. Move `epm_home.py` to `backend/epm/home.py`.
-2. Move `epm_scope.py` to `backend/epm/scope.py`.
-3. Move `epm_rollup.py` to `backend/epm/rollup.py`.
+1. Ensure Home/Townsquare access lives in `backend/epm/home.py`.
+2. Ensure EPM JQL helpers live in `backend/epm/scope.py`.
+3. Ensure EPM rollup builders live in `backend/epm/rollup.py`.
 4. Extract EPM project payload/config resolution into `backend/epm/projects.py`.
 5. Preserve patch targets used by tests, either via shims or explicit test updates.
 

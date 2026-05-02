@@ -1,5 +1,6 @@
 import * as React from 'react';
 import EmptyState from '../ui/EmptyState.jsx';
+import LoadingState from '../ui/LoadingState.jsx';
 
 export default function EngView({
     selectedView,
@@ -71,7 +72,10 @@ export default function EngView({
             )}
 
             {loading ? (
-                <div className="loading">Loading tasks...</div>
+                <LoadingState
+                    title="Loading tasks"
+                    message="Refreshing Jira sprint work."
+                />
             ) : error ? (
                 <div className="error">
                     {error}

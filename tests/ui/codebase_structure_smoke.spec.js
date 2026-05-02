@@ -471,14 +471,15 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     expect(readyToCloseByProject.tech.params.sprint).toBe('');
     expect(readyToCloseByProject.tech.params.epicKeys).toBe('TECH-EPIC');
 
-    await page.getByRole('button', { name: 'Planning' }).click();
+    const stickyEngModes = page.locator('.compact-sticky-header .eng-mode-control');
+    await stickyEngModes.getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
     await page.waitForTimeout(700);
     await page.screenshot({ path: `${screenshotDir}/planning.png`, fullPage: true });
     await expectWindowSticky(page, '.planning-panel.open');
     await expectPlanningAboveEpic(page);
 
-    await page.getByRole('button', { name: 'Scenario' }).click();
+    await stickyEngModes.getByRole('radio', { name: 'Scenario' }).click();
     await expect(page.getByText('Scenario Planner')).toBeVisible();
     await page.getByRole('button', { name: 'Run Scenario' }).click();
     await expect(page.locator('.scenario-axis')).toBeVisible();

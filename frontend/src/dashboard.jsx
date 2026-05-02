@@ -10328,6 +10328,49 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 />
             );
 
+            const activeEngMode = showScenario
+                ? 'scenario'
+                : showStats
+                    ? 'statistics'
+                    : showPlanning
+                        ? 'planning'
+                        : 'catch-up';
+            const applyEngMode = (mode) => {
+                const nextMode = String(mode || 'catch-up');
+                setShowPlanning(nextMode === 'planning');
+                setShowStats(nextMode === 'statistics');
+                setShowScenario(nextMode === 'scenario');
+            };
+            const renderEngModeControl = () => (
+                <SegmentedControl
+                    className="eng-mode-control"
+                    ariaLabel="ENG view mode"
+                    value={activeEngMode}
+                    onChange={applyEngMode}
+                    options={[
+                        { value: 'catch-up', label: 'Catch Up', title: 'Return to default state' },
+                        {
+                            value: 'planning',
+                            label: 'Planning',
+                            disabled: !selectedSprint || isCompletedSprintSelected,
+                            title: 'Show sprint planning panel'
+                        },
+                        {
+                            value: 'statistics',
+                            label: 'Statistics',
+                            disabled: isFutureSprintSelected,
+                            title: 'Show sprint statistics'
+                        },
+                        {
+                            value: 'scenario',
+                            label: 'Scenario',
+                            disabled: !selectedSprint || isCompletedSprintSelected,
+                            title: 'Show scenario planner'
+                        }
+                    ]}
+                />
+            );
+
             const renderEpmControls = (surface, showProjectPicker = true) => (
                 <EpmControls
                     selectedView={selectedView}
@@ -10767,44 +10810,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         {renderSprintControl('main')}
                                         {renderGroupControl('main')}
                                         {renderTeamControl('main')}
-                                        <div className="mode-switch">
-                                            <button
-                                                className={`mode-switch-button ${(!showPlanning && !showStats && !showScenario) ? 'active' : ''}`}
-                                                onClick={() => {
-                                                    setShowPlanning(false);
-                                                    setShowStats(false);
-                                                    setShowScenario(false);
-                                                }}
-                                                title="Return to default state"
-                                                type="button"
-                                            >
-                                                Catch Up
-                                            </button>
-                                            <button
-                                                className={`mode-switch-button ${showPlanning ? 'active' : ''}`}
-                                                onClick={() => setShowPlanning(!showPlanning)}
-                                                title="Toggle sprint planning panel"
-                                                disabled={!selectedSprint || isCompletedSprintSelected}
-                                            >
-                                                Planning
-                                            </button>
-                                            <button
-                                                className={`mode-switch-button ${showStats ? 'active' : ''}`}
-                                                onClick={() => setShowStats(!showStats)}
-                                                title="Toggle sprint statistics"
-                                                disabled={isFutureSprintSelected}
-                                            >
-                                                Statistics
-                                            </button>
-                                            <button
-                                                className={`mode-switch-button ${showScenario ? 'active' : ''}`}
-                                                onClick={() => setShowScenario(!showScenario)}
-                                                title="Toggle scenario planner"
-                                                disabled={!selectedSprint || isCompletedSprintSelected}
-                                            >
-                                                Scenario
-                                            </button>
-                                        </div>
+                                        {renderEngModeControl()}
                                     </>
                                 )}
                                 {selectedView === 'epm' && (
@@ -10862,6 +10868,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             {renderSprintControl('compact')}
                                             {renderGroupControl('compact')}
                                             {renderTeamControl('compact')}
+                                            {renderEngModeControl()}
                                         </>
                                     ) : (
                                         <>
@@ -10882,11 +10889,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         </>
                                     )}
                                 </div>
-                                {selectedView === 'eng' && (
-                                    <div className="compact-sticky-header-search">
-                                        {renderSearchControl('compact', 'compact-sticky-header-search-field')}
-                                    </div>
-                                )}
+                                <div className="compact-sticky-header-search">
+                                    {renderSearchControl('compact', 'compact-sticky-header-search-field')}
+                                </div>
                             </>
                         )}
                     </div>

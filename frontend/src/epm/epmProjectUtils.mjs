@@ -418,19 +418,33 @@ export function normalizeEpmSettingsKeyPart(value) {
     return String(value || '').trim().toUpperCase();
 }
 
+export function normalizeEpmScopeSubGoalKeys(scope) {
+    const values = Array.isArray(scope?.subGoalKeys) ? scope.subGoalKeys : [];
+    const source = values.length ? values : [scope?.subGoalKey];
+    const seen = new Set();
+    const normalized = [];
+    source.forEach((value) => {
+        const key = normalizeEpmSettingsKeyPart(value);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        normalized.push(key);
+    });
+    return normalized;
+}
+
 function normalizeEpmLabelPrefix(config) {
     return String(config?.labelPrefix || '').trim();
 }
 
 export function isEpmProjectsConfigReady(config) {
-    const subGoalKey = normalizeEpmSettingsKeyPart(config?.scope?.subGoalKey);
+    const subGoalKeys = normalizeEpmScopeSubGoalKeys(config?.scope);
     const labelPrefix = normalizeEpmLabelPrefix(config);
-    return Boolean(subGoalKey && labelPrefix);
+    return Boolean(subGoalKeys.length && labelPrefix);
 }
 
 export function getEpmProjectPrerequisites(config) {
     const missing = [];
-    if (!normalizeEpmSettingsKeyPart(config?.scope?.subGoalKey)) {
+    if (normalizeEpmScopeSubGoalKeys(config?.scope).length === 0) {
         missing.push('subGoal');
     }
     if (!normalizeEpmLabelPrefix(config)) {
@@ -443,7 +457,7 @@ export function getEpmSettingsProjectsCacheKey(config) {
     if (!isEpmProjectsConfigReady(config)) return '';
     return [
         normalizeEpmSettingsKeyPart(config?.scope?.rootGoalKey),
-        normalizeEpmSettingsKeyPart(config?.scope?.subGoalKey),
+        normalizeEpmScopeSubGoalKeys(config?.scope).join(','),
         normalizeEpmLabelPrefix(config)
     ].join('::');
 }

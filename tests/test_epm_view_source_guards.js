@@ -410,7 +410,7 @@ test('EPM project metadata fetch is scoped to the current lifecycle tab', () => 
         'Expected EPM projects wrapper to add tab query parameter when provided'
     );
     assert.ok(
-        epmViewDataSource.includes('fetchEpmProjects(backendUrl, { tab })'),
+        epmViewDataSource.includes('fetchEpmProjects(backendUrl, { tab, subGoalKeys: runtimeEpmSubGoalKeys })'),
         'Expected EPM hook project metadata fetches to pass the current EPM tab'
     );
     assert.ok(
@@ -419,7 +419,7 @@ test('EPM project metadata fetch is scoped to the current lifecycle tab', () => 
         'Expected refreshEpmProjects to default to the current EPM tab'
     );
     assert.ok(
-        epmViewDataSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab]);'),
+        epmViewDataSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab, runtimeEpmSubGoalKeys]);'),
         'Expected EPM view refresh effect to reload project metadata when the EPM tab changes'
     );
 });
@@ -486,7 +486,7 @@ test('EPM board bootstraps saved config from initial user config before loading 
         'Expected EPM view load effect to wait for saved EPM config bootstrap'
     );
     assert.ok(
-        epmViewDataSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab]);'),
+        epmViewDataSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab, runtimeEpmSubGoalKeys]);'),
         'Expected EPM view load effect to rerun after config bootstrap and tab changes'
     );
 });

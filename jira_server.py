@@ -1455,9 +1455,9 @@ def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_quer
     return raw_issues
 
 
-def build_epm_rollup_dependencies():
+def build_epm_rollup_dependencies(sub_goal_keys=None):
     return EpmRollupDependencies(
-        find_epm_project_or_404=find_epm_project_or_404,
+        find_epm_project_or_404=lambda project_id: find_epm_project_or_404(project_id, sub_goal_keys=sub_goal_keys),
         normalize_epm_text=normalize_epm_text,
         validate_epm_tab_sprint=validate_epm_tab_sprint,
         build_empty_epm_rollup_payload=build_empty_epm_rollup_payload,
@@ -1508,12 +1508,13 @@ def find_epm_config_row(projects, project_id):
     return epm_projects.find_epm_config_row(projects, project_id)
 
 
-def build_epm_projects_payload(epm_config, force_refresh=False, tab=None):
+def build_epm_projects_payload(epm_config, force_refresh=False, tab=None, sub_goal_keys=None):
     return epm_projects.build_epm_projects_payload(
         epm_config,
         build_epm_projects_dependencies(),
         force_refresh=force_refresh,
         tab=tab,
+        sub_goal_keys=sub_goal_keys,
     )
 
 
@@ -1557,7 +1558,7 @@ def collect_epm_rollup_issue_keys(rollup):
     return keys
 
 
-def build_all_epm_projects_rollup(tab, sprint):
+def build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=None):
     started = time.perf_counter()
     tab = normalize_epm_text(tab or 'active').lower()
     sprint = normalize_epm_text(sprint)
@@ -1568,10 +1569,10 @@ def build_all_epm_projects_rollup(tab, sprint):
 
     epm_config = get_epm_config()
     projects_started = time.perf_counter()
-    projects_payload = build_epm_projects_payload(epm_config, tab=tab)
+    projects_payload = build_epm_projects_payload(epm_config, tab=tab, sub_goal_keys=sub_goal_keys)
     projects_ms = round((time.perf_counter() - projects_started) * 1000, 1)
     visible_projects = filter_epm_projects_for_tab(projects_payload.get('projects') or [], tab)
-    dependencies = build_epm_rollup_dependencies()
+    dependencies = build_epm_rollup_dependencies(sub_goal_keys=sub_goal_keys)
     entries_by_project_id = {}
     issue_memberships = {}
 
@@ -1639,7 +1640,19 @@ def build_all_epm_projects_rollup(tab, sprint):
     }
 
 
-def find_epm_project_or_404(project_id):
+def find_epm_project_or_404(project_id, sub_goal_keys=None):
+    requested_sub_goal_keys = epm_projects.normalize_epm_sub_goal_keys(sub_goal_keys)
+    if requested_sub_goal_keys:
+        epm_config = get_epm_config()
+        projects_payload = build_epm_projects_payload(epm_config, sub_goal_keys=requested_sub_goal_keys)
+        for project in projects_payload.get('projects') or []:
+            candidates = [
+                normalize_epm_text(project.get('id')),
+                normalize_epm_text(project.get('homeProjectId')),
+            ]
+            if normalize_epm_text(project_id) in candidates:
+                return project
+        abort(404)
     return epm_projects.find_epm_project_or_404(project_id, build_epm_projects_dependencies())
 
 
@@ -1655,6 +1668,18 @@ def normalize_epm_upper_text(value):
     return normalize_epm_text(value).upper()
 
 
+def normalize_epm_sub_goal_keys(values):
+    return epm_projects.normalize_epm_sub_goal_keys(values)
+
+
+def parse_epm_sub_goal_keys_param(value):
+    if isinstance(value, list):
+        raw_values = value
+    else:
+        raw_values = str(value or '').split(',')
+    return normalize_epm_sub_goal_keys(raw_values)
+
+
 DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_'
 
 DEFAULT_EPM_ISSUE_TYPES = {
@@ -1668,9 +1693,12 @@ def normalize_epm_scope(payload):
     scope = payload.get('scope') if isinstance(payload, dict) else {}
     if not isinstance(scope, dict):
         scope = {}
+    sub_goal_keys = normalize_epm_sub_goal_keys(scope.get('subGoalKeys'))
+    if not sub_goal_keys:
+        sub_goal_keys = normalize_epm_sub_goal_keys(scope.get('subGoalKey'))
     return {
         'rootGoalKey': normalize_epm_upper_text(scope.get('rootGoalKey')),
-        'subGoalKey': normalize_epm_upper_text(scope.get('subGoalKey')),
+        'subGoalKeys': sub_goal_keys,
     }
 
 

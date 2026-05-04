@@ -225,34 +225,43 @@ test('EPM settings project readiness and cache key use sub-goal plus prefix', as
         getEpmProjectPrerequisites,
         getEpmSettingsProjectsCacheKey,
         isEpmProjectsConfigReady,
+        normalizeEpmScopeSubGoalKeys,
         normalizeEpmSettingsKeyPart
     } = await import(helperUrl);
 
     assert.strictEqual(normalizeEpmSettingsKeyPart(' child-34 '), 'CHILD-34');
     assert.strictEqual(normalizeEpmSettingsKeyPart(null), '');
+    assert.deepStrictEqual(
+        normalizeEpmScopeSubGoalKeys({ subGoalKeys: [' child-34 ', 'CHILD-63', '', 'child-34'] }),
+        ['CHILD-34', 'CHILD-63']
+    );
+    assert.deepStrictEqual(
+        normalizeEpmScopeSubGoalKeys({ subGoalKey: ' child-34 ' }),
+        ['CHILD-34']
+    );
 
     const config = {
         labelPrefix: ' rnd_project_ ',
         scope: {
             rootGoalKey: ' root-223 ',
-            subGoalKey: ' child-34 '
+            subGoalKeys: [' child-34 ', 'child-63']
         }
     };
 
     assert.strictEqual(isEpmProjectsConfigReady(config), true);
     assert.strictEqual(
         getEpmSettingsProjectsCacheKey(config),
-        'ROOT-223::CHILD-34::rnd_project_'
+        'ROOT-223::CHILD-34,CHILD-63::rnd_project_'
     );
 
     assert.strictEqual(isEpmProjectsConfigReady({ ...config, labelPrefix: ' ' }), false);
     assert.deepStrictEqual(getEpmProjectPrerequisites({ ...config, labelPrefix: ' ' }), ['labelPrefix']);
     assert.strictEqual(
-        isEpmProjectsConfigReady({ ...config, scope: { rootGoalKey: 'ROOT-223', subGoalKey: '' } }),
+        isEpmProjectsConfigReady({ ...config, scope: { rootGoalKey: 'ROOT-223', subGoalKeys: [] } }),
         false
     );
     assert.deepStrictEqual(
-        getEpmProjectPrerequisites({ ...config, scope: { rootGoalKey: 'ROOT-223', subGoalKey: '' } }),
+        getEpmProjectPrerequisites({ ...config, scope: { rootGoalKey: 'ROOT-223', subGoalKeys: [] } }),
         ['subGoal']
     );
     assert.deepStrictEqual(getEpmProjectPrerequisites({}), ['subGoal', 'labelPrefix']);

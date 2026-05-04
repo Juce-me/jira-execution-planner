@@ -55,7 +55,7 @@ test('dashboard source includes the EPM shell project picker and ENG gating hook
 test('dashboard source wires EPM rollup loading and metadata-only rendering', () => {
     assert.ok(fs.existsSync(epmViewDataPath), 'Expected useEpmViewData.js to own EPM view data state');
     assert.ok(epmViewDataSource.includes("if (selectedView !== 'epm') return;"), 'Expected EPM-only project loading effect in useEpmViewData.js');
-    assert.ok(epmViewDataSource.includes('fetchEpmProjects(backendUrl, { tab });'), 'Expected EPM hook to load EPM projects through tab-scoped wrapper');
+    assert.ok(epmViewDataSource.includes('fetchEpmProjects(backendUrl, { tab, subGoalKeys: runtimeEpmSubGoalKeys });'), 'Expected EPM hook to load EPM projects through tab and sub-goal scoped wrapper');
     assert.ok(epmApiSource.includes('const query = params.toString();'), 'Expected EPM projects wrapper to build tab query string');
     assert.ok(epmApiSource.includes('const url = query ? `${backendUrl}/api/epm/projects?${query}` : `${backendUrl}/api/epm/projects`;'), 'Expected EPM projects wrapper to preserve scoped and unscoped project URLs');
     assert.ok(epmApiSource.includes("getJson(url, 'EPM projects', { cache: 'no-cache' })"), 'Expected EPM projects fetch to use the tab-scoped wrapper URL');
@@ -77,6 +77,17 @@ test('dashboard source wires EPM rollup loading and metadata-only rendering', ()
     assert.ok(epmRollupPanelSource.includes('Open Settings'), 'Expected settings CTA helper copy in EpmRollupPanel.jsx');
     assert.ok(dashboardSource.includes("selectedView === 'eng' && !isCompletedSprintSelected"), 'Expected capacity shell to stay ENG-only');
     assert.ok(dashboardSource.includes("selectedView === 'eng' ? ("), 'Expected compact sticky controls to branch by view');
+});
+
+test('dashboard source wires EPM runtime sub-goal narrowing through controls and API wrappers', () => {
+    assert.ok(helperSource.includes('export function normalizeEpmScopeSubGoalKeys'), 'Expected shared sub-goal key normalization');
+    assert.ok(epmControlsSource.includes('<ControlField label="Sub-goals"'), 'Expected EPM sub-goal narrowing control');
+    assert.ok(epmControlsSource.includes('selectedEpmSubGoalKeys'), 'Expected EPM controls to receive runtime selected sub-goal keys');
+    assert.ok(dashboardSource.includes('epmSubGoalFilterDropdownRefs'), 'Expected dashboard to own EPM sub-goal dropdown refs');
+    assert.ok(epmViewDataSource.includes('const [epmSelectedSubGoalKeys, setEpmSelectedSubGoalKeys] = useState([]);'), 'Expected hook to own runtime EPM sub-goal filter state');
+    assert.ok(epmViewDataSource.includes('const runtimeEpmSubGoalKeys = React.useMemo(') && epmViewDataSource.includes('getRuntimeEpmSubGoalKeys(epmSelectedSubGoalKeys, normalizedSavedEpmSubGoalKeys)'), 'Expected hook to compute narrowing keys');
+    assert.ok(epmApiSource.includes('appendEpmSubGoalKeysParam(params, subGoalKeys)'), 'Expected API wrappers to append subGoalKeys when narrowing');
+    assert.ok(epmViewDataSource.includes('subGoalKeys: runtimeEpmSubGoalKeys'), 'Expected project and rollup fetches to pass runtime sub-goal keys');
 });
 
 test('dashboard source protects EPM selection during project loads and refreshes EPM data after save', () => {

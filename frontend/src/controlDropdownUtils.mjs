@@ -3,7 +3,8 @@ export function getNextExclusiveDropdownState(kind, isOpen) {
         sprint: false,
         group: false,
         team: false,
-        project: false
+        project: false,
+        subGoal: false
     };
     if (!kind) {
         return next;

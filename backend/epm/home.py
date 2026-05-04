@@ -23,6 +23,7 @@ HOME_PAGE_SIZE = 50
 HOME_MAX_PROJECTS_PER_GOAL = 500
 
 _CLOUD_ID_CACHE: dict[str, str] = {}
+_GOAL_BY_KEY_CACHE: dict[str, dict] = {}
 
 ACTIVE_EPM_STATES = {"PENDING", "ON_TRACK", "AT_RISK", "OFF_TRACK"}
 BACKLOG_EPM_STATES = {"PAUSED", "TODO", "TO_DO"}
@@ -135,12 +136,20 @@ query GoalsSearch($containerId: ID!, $first: Int!, $after: String) {
 }
 """
 
+QUERY_GOAL_BY_KEY = """
+query GoalByKey($containerId: ID!, $goalKey: String!) {
+  goals_byKey(containerId: $containerId, goalKey: $goalKey) {
+    id key name url
+  }
+}
+"""
+
 QUERY_SUB_GOALS = """
 query SubGoals($goalId: ID!, $first: Int!, $after: String) {
   goals_byId(goalId: $goalId) {
-    subGoals(first: $first, after: $after) @optIn(to: "Townsquare") {
+    subGoals(first: $first, after: $after, archived: false) @optIn(to: "Townsquare") {
       pageInfo { hasNextPage endCursor }
-      edges { node { id key name url isArchived } }
+      edges { node { id key name url isArchived owner { id accountId name } } }
     }
   }
 }
@@ -650,7 +659,33 @@ def _normalize_goal_key(goal_key: str) -> str:
     return str(goal_key or "").strip().upper()
 
 
+def _goal_cache_key(container_id: str, goal_key: str) -> str:
+    return json.dumps({
+        "containerId": str(container_id or "").strip(),
+        "goalKey": _normalize_goal_key(goal_key),
+    }, sort_keys=True)
+
+
 def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: str) -> dict | None:
+    expected_key = _normalize_goal_key(goal_key)
+    if not expected_key:
+        return None
+    cache_key = _goal_cache_key(container_id, expected_key)
+    cached = _GOAL_BY_KEY_CACHE.get(cache_key)
+    if cached:
+        return dict(cached)
+    try:
+        response = client.execute(
+            QUERY_GOAL_BY_KEY,
+            {"containerId": container_id, "goalKey": expected_key},
+        )
+        goal = ((response.get("data") or {}).get("goals_byKey") or {})
+        if goal and _normalize_goal_key(goal.get("key")) == expected_key:
+            _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
+            return goal
+    except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
+        logger.warning("Goal by key lookup failed for %s: %s", expected_key, exc)
+
     try:
         goals = client.execute_paginated(
             QUERY_GOALS_SEARCH,
@@ -660,9 +695,9 @@ def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: 
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Goal search failed: %s", exc)
         return None
-    expected_key = _normalize_goal_key(goal_key)
     for goal in goals:
         if _normalize_goal_key(goal.get("key")) == expected_key:
+            _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
             return goal
     logger.warning("Goal %s not found among %d goals", goal_key, len(goals))
     return None
@@ -688,21 +723,53 @@ def fetch_sub_goals_for_root_key(client: HomeGraphQLClient, root_goal_key: str, 
     return fetch_sub_goals(client, root_goal["id"])
 
 
-def resolve_sub_goal_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str) -> dict | None:
+def _epm_scope_sub_goal_keys(scope: dict) -> list[str]:
+    values = scope.get("subGoalKeys") if isinstance(scope, dict) else []
+    raw_values = values if isinstance(values, list) else []
+    if not raw_values:
+        raw_sub_goal_key = scope.get("subGoalKey") if isinstance(scope, dict) else ""
+        raw_values = [raw_sub_goal_key] if isinstance(raw_sub_goal_key, str) and raw_sub_goal_key else []
+    normalized = []
+    seen = set()
+    for value in raw_values:
+        if not isinstance(value, str):
+            continue
+        key = _normalize_goal_key(value)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        normalized.append(key)
+    return normalized
+
+
+def resolve_sub_goals_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str) -> list[dict]:
     scope = epm_scope if isinstance(epm_scope, dict) else {}
-    raw_sub_goal_key = scope.get("subGoalKey")
-    sub_goal_key = raw_sub_goal_key.strip().upper() if isinstance(raw_sub_goal_key, str) else ""
-    if not sub_goal_key:
-        return None
-    raw_root_goal_key = scope.get("rootGoalKey")
-    root_goal_key = raw_root_goal_key.strip().upper() if isinstance(raw_root_goal_key, str) else ""
+    sub_goal_keys = _epm_scope_sub_goal_keys(scope)
+    if not sub_goal_keys:
+        return []
+    root_goal_key = _normalize_goal_key(scope.get("rootGoalKey"))
     if root_goal_key:
-        for goal in fetch_sub_goals_for_root_key(client, root_goal_key, container_id):
-            if _normalize_goal_key(goal.get("key")) == sub_goal_key:
-                return goal
-        logger.warning("Sub-goal %s not found under root %s", sub_goal_key, root_goal_key)
-        return None
-    return resolve_goal_by_key(client, sub_goal_key, container_id)
+        child_goals = fetch_sub_goals_for_root_key(client, root_goal_key, container_id)
+        goals_by_key = {_normalize_goal_key(goal.get("key")): goal for goal in child_goals}
+        resolved = []
+        for key in sub_goal_keys:
+            goal = goals_by_key.get(key)
+            if goal:
+                resolved.append(goal)
+            else:
+                logger.warning("Sub-goal %s not found under root %s", key, root_goal_key)
+        return resolved
+    resolved = []
+    for key in sub_goal_keys:
+        goal = resolve_goal_by_key(client, key, container_id)
+        if goal:
+            resolved.append(goal)
+    return resolved
+
+
+def resolve_sub_goal_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str) -> dict | None:
+    goals = resolve_sub_goals_for_scope(client, epm_scope, container_id)
+    return goals[0] if goals else None
 
 
 def fetch_goal_project_links(client: HomeGraphQLClient, goal_id: str) -> list[dict]:
@@ -833,10 +900,9 @@ def merge_epm_linkage(home_project, epm_config_row):
 
 def fetch_epm_home_projects(epm_scope):
     scope = epm_scope if isinstance(epm_scope, dict) else {}
-    raw_sub_goal_key = scope.get("subGoalKey")
-    sub_goal_key = raw_sub_goal_key.strip().upper() if isinstance(raw_sub_goal_key, str) else ""
-    if not sub_goal_key:
-        logger.warning("EPM home fetch skipped: subGoalKey is required")
+    sub_goal_keys = _epm_scope_sub_goal_keys(scope)
+    if not sub_goal_keys:
+        logger.warning("EPM home fetch skipped: subGoalKeys is required")
         return []
 
     try:
@@ -847,16 +913,33 @@ def fetch_epm_home_projects(epm_scope):
         return []
 
     container_id = _container_id_from_cloud(cloud_id)
-    sub_goal = resolve_sub_goal_for_scope(client, scope, container_id)
-    if not sub_goal:
+    sub_goals = resolve_sub_goals_for_scope(client, scope, container_id)
+    if not sub_goals:
         return []
 
     seen_project_ids: set[str] = set()
+    projects_by_id: dict[str, dict] = {}
     result: list[dict] = []
-    for home_project in fetch_projects_for_goal(client, sub_goal["id"]):
-        project_id = home_project.get("homeProjectId") or home_project.get("id")
-        if not project_id or project_id in seen_project_ids:
-            continue
-        seen_project_ids.add(project_id)
-        result.append(home_project)
+    for sub_goal in sub_goals:
+        sub_goal_key = _normalize_goal_key(sub_goal.get("key"))
+        sub_goal_record = {
+            "key": sub_goal_key,
+            "name": str(sub_goal.get("name") or "").strip(),
+        }
+        for home_project in fetch_projects_for_goal(client, sub_goal["id"]):
+            project_id = home_project.get("homeProjectId") or home_project.get("id")
+            if not project_id:
+                continue
+            if project_id in seen_project_ids:
+                existing = projects_by_id.get(project_id)
+                if existing is not None and sub_goal_key not in existing.get("subGoalKeys", []):
+                    existing.setdefault("subGoalKeys", []).append(sub_goal_key)
+                    existing.setdefault("subGoals", []).append(sub_goal_record)
+                continue
+            seen_project_ids.add(project_id)
+            shaped_project = dict(home_project)
+            shaped_project["subGoalKeys"] = [sub_goal_key]
+            shaped_project["subGoals"] = [sub_goal_record]
+            projects_by_id[project_id] = shaped_project
+            result.append(shaped_project)
     return result

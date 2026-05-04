@@ -32,7 +32,7 @@ def get_epm_scope_endpoint():
         'error': error,
         'scope': {
             'rootGoalKey': normalize_epm_upper_text(scope.get('rootGoalKey')),
-            'subGoalKey': normalize_epm_upper_text(scope.get('subGoalKey')),
+            'subGoalKeys': normalize_epm_sub_goal_keys(scope.get('subGoalKeys') or scope.get('subGoalKey')),
         },
     })
 
@@ -59,8 +59,9 @@ def get_epm_projects_endpoint():
     epm_config = get_epm_config()
     force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
     tab = normalize_epm_text(request.args.get('tab'))
+    sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
     started = time.perf_counter()
-    payload = build_epm_projects_payload(epm_config, force_refresh=force_refresh, tab=tab)
+    payload = build_epm_projects_payload(epm_config, force_refresh=force_refresh, tab=tab, sub_goal_keys=sub_goal_keys)
     total_ms = round((time.perf_counter() - started) * 1000, 1)
     response = jsonify(payload)
     response.headers['Server-Timing'] = f'home-projects;dur={total_ms}, total;dur={total_ms}'
@@ -88,7 +89,8 @@ def preview_epm_projects_endpoint():
 def get_all_epm_projects_rollup_endpoint():
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
-    payload, status, headers = build_all_epm_projects_rollup(tab, sprint)
+    sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
+    payload, status, headers = build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=sub_goal_keys)
     response = jsonify(payload)
     for key, value in headers.items():
         response.headers[key] = value
@@ -104,7 +106,8 @@ def get_epm_project_issues_endpoint(home_project_id):
         error_payload, status = validation_error
         return jsonify(error_payload), status
 
-    project = find_epm_project_or_404(home_project_id)
+    sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
+    project = find_epm_project_or_404(home_project_id, sub_goal_keys=sub_goal_keys)
     linkage = project['resolvedLinkage']
     scope_clause = build_epm_scope_clause(linkage)
     if not scope_clause:
@@ -146,7 +149,7 @@ def get_epm_project_rollup_endpoint(project_id):
         project_id,
         tab,
         sprint,
-        build_epm_rollup_dependencies(),
+        build_epm_rollup_dependencies(sub_goal_keys=parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))),
     )
     response = jsonify(payload)
     for key, value in headers.items():

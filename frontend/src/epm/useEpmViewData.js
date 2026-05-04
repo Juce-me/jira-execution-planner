@@ -11,9 +11,21 @@ import {
     filterEpmRollupBoardsForSearch,
     getEpmProjectDisplayName,
     getEpmProjectIdentity,
+    normalizeEpmScopeSubGoalKeys,
 } from './epmProjectUtils.mjs';
 
 const { useState, useEffect, useRef } = React;
+
+function getRuntimeEpmSubGoalKeys(selectedSubGoalKeys, savedSubGoalKeys) {
+    const savedKeys = normalizeEpmScopeSubGoalKeys({ subGoalKeys: savedSubGoalKeys });
+    const selectedKeys = normalizeEpmScopeSubGoalKeys({ subGoalKeys: selectedSubGoalKeys })
+        .filter(key => savedKeys.includes(key));
+    if (!selectedKeys.length) return [];
+    if (selectedKeys.length === savedKeys.length && selectedKeys.every(key => savedKeys.includes(key))) {
+        return [];
+    }
+    return selectedKeys;
+}
 
 export function useEpmViewData({
     backendUrl,
@@ -22,6 +34,7 @@ export function useEpmViewData({
     selectedView,
     epmConfigLoaded,
     hasSavedEpmScope,
+    savedEpmSubGoalKeys = [],
     selectedSprint,
     epmProjectSearch,
     searchQuery,
@@ -38,9 +51,18 @@ export function useEpmViewData({
     const [epmAggregateFallback, setEpmAggregateFallback] = useState(false);
     const [epmRollupLoading, setEpmRollupLoading] = useState(false);
     const [epmProjectRollupLoadingIds, setEpmProjectRollupLoadingIds] = useState(() => new Set());
+    const [epmSelectedSubGoalKeys, setEpmSelectedSubGoalKeys] = useState([]);
     const epmProjectsPendingSelectionRef = useRef(false);
     const epmProjectsRequestIdRef = useRef(0);
     const epmRollupRequestIdRef = useRef(0);
+    const normalizedSavedEpmSubGoalKeys = React.useMemo(
+        () => normalizeEpmScopeSubGoalKeys({ subGoalKeys: savedEpmSubGoalKeys }),
+        [savedEpmSubGoalKeys]
+    );
+    const runtimeEpmSubGoalKeys = React.useMemo(
+        () => getRuntimeEpmSubGoalKeys(epmSelectedSubGoalKeys, normalizedSavedEpmSubGoalKeys),
+        [epmSelectedSubGoalKeys, normalizedSavedEpmSubGoalKeys]
+    );
 
     // filterEpmProjectsForTab owns the `project.tabBucket === epmTab` check.
     const visibleEpmProjects = React.useMemo(() => filterEpmProjectsForTab(epmProjects, epmTab), [epmProjects, epmTab]);
@@ -72,7 +94,7 @@ export function useEpmViewData({
         setEpmProjectsLoading(true);
         setEpmProjectsError('');
         try {
-            const payload = await fetchEpmProjects(backendUrl, { tab });
+            const payload = await fetchEpmProjects(backendUrl, { tab, subGoalKeys: runtimeEpmSubGoalKeys });
             if (epmProjectsRequestIdRef.current !== requestId) {
                 return [];
             }
@@ -97,7 +119,7 @@ export function useEpmViewData({
                 setEpmProjectsLoading(false);
             }
         }
-    }, [backendUrl, epmTab]);
+    }, [backendUrl, epmTab, runtimeEpmSubGoalKeys]);
 
     const refreshEpmRollup = React.useCallback(async (projectOverride = selectedEpmProject, projectIdOverride = epmSelectedProjectId) => {
         epmRollupRequestIdRef.current += 1;
@@ -150,6 +172,7 @@ export function useEpmViewData({
                 const payload = await fetchEpmAllProjectsRollup(backendUrl, {
                     tab: epmTab,
                     sprint: selectedSprint,
+                    subGoalKeys: runtimeEpmSubGoalKeys,
                 });
                 if (epmRollupRequestIdRef.current !== requestId) {
                     return;
@@ -203,6 +226,7 @@ export function useEpmViewData({
             const payload = await fetchEpmProjectRollup(backendUrl, currentProjectId, {
                 tab: epmTab,
                 sprint: selectedSprint,
+                subGoalKeys: runtimeEpmSubGoalKeys,
             });
             if (epmRollupRequestIdRef.current !== requestId) {
                 return;
@@ -219,7 +243,7 @@ export function useEpmViewData({
                 setEpmRollupLoading(false);
             }
         }
-    }, [backendUrl, epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, selectedEpmProject, selectedSprint, selectedView]);
+    }, [backendUrl, epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, runtimeEpmSubGoalKeys, selectedEpmProject, selectedSprint, selectedView]);
 
     const loadArchivedEpmProjectRollup = React.useCallback(async (project) => {
         if (epmTab !== 'archived') return;
@@ -238,6 +262,7 @@ export function useEpmViewData({
             const payload = await fetchEpmProjectRollup(backendUrl, projectId, {
                 tab: epmTab,
                 sprint: selectedSprint,
+                subGoalKeys: runtimeEpmSubGoalKeys,
             });
             if (epmRollupRequestIdRef.current !== requestId) {
                 return;
@@ -263,7 +288,7 @@ export function useEpmViewData({
                 });
             }
         }
-    }, [backendUrl, epmProjectRollupLoadingIds, epmRollupBoards, epmTab, selectedSprint]);
+    }, [backendUrl, epmProjectRollupLoadingIds, epmRollupBoards, epmTab, runtimeEpmSubGoalKeys, selectedSprint]);
 
     const refreshEpmView = React.useCallback(async () => {
         if (!epmConfigLoaded) {
@@ -290,7 +315,18 @@ export function useEpmViewData({
         const nextVisibleProjects = filterEpmProjectsForTab(nextProjects, epmTab);
         const nextSelectedProject = nextVisibleProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;
         await refreshEpmRollup(nextSelectedProject, epmSelectedProjectId);
-    }, [epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, refreshEpmProjects, refreshEpmRollup]);
+    }, [epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, refreshEpmProjects, refreshEpmRollup, runtimeEpmSubGoalKeys]);
+
+    useEffect(() => {
+        setEpmSelectedSubGoalKeys((prev) => {
+            const next = normalizeEpmScopeSubGoalKeys({ subGoalKeys: prev })
+                .filter(key => normalizedSavedEpmSubGoalKeys.includes(key));
+            if (next.length === prev.length && next.every((key, index) => key === prev[index])) {
+                return prev;
+            }
+            return next;
+        });
+    }, [normalizedSavedEpmSubGoalKeys]);
 
     useEffect(() => {
         if (selectedView !== 'epm') return;
@@ -300,7 +336,7 @@ export function useEpmViewData({
             return;
         }
         void refreshEpmView();
-    }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab]);
+    }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab, runtimeEpmSubGoalKeys]);
 
     useEffect(() => {
         if (selectedView !== 'epm') return;
@@ -313,7 +349,7 @@ export function useEpmViewData({
 
     useEffect(() => {
         void refreshEpmRollup();
-    }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, selectedEpmProject, epmTab, selectedSprint]);
+    }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, selectedEpmProject, epmTab, runtimeEpmSubGoalKeys, selectedSprint]);
 
     return {
         epmTab,
@@ -336,6 +372,9 @@ export function useEpmViewData({
         epmAggregateFallback,
         epmRollupLoading,
         epmProjectRollupLoadingIds,
+        epmSelectedSubGoalKeys,
+        setEpmSelectedSubGoalKeys,
+        runtimeEpmSubGoalKeys,
         refreshEpmProjects,
         refreshEpmRollup,
         refreshEpmView,

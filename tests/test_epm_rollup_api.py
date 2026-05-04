@@ -203,6 +203,20 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertEqual(non_numeric.get_json(), {'error': 'sprint_not_numeric'})
         mock_projects.assert_not_called()
 
+    def test_all_projects_rollup_passes_runtime_sub_goal_keys_to_project_payload_without_mutating_config(self):
+        saved_config = {
+            'version': 2,
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-A', 'CHILD-B', 'CHILD-C']},
+            'projects': {},
+        }
+        with patch.object(jira_server, 'get_epm_config', return_value=saved_config), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': []}) as mock_projects:
+            response = self.client.get('/api/epm/projects/rollup/all?tab=active&sprint=42&subGoalKeys=child-a,CHILD-B')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        mock_projects.assert_called_once_with(saved_config, tab='active', sub_goal_keys=['CHILD-A', 'CHILD-B'])
+        self.assertEqual(saved_config['scope']['subGoalKeys'], ['CHILD-A', 'CHILD-B', 'CHILD-C'])
+
     def test_all_projects_rollup_filters_visible_projects_and_reports_duplicates(self):
         projects = [
             {

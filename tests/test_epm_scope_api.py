@@ -28,7 +28,7 @@ class TestEpmScopeApi(unittest.TestCase):
             {
                 'cloudId': 'cloud-123',
                 'error': '',
-                'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+                'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']},
             },
         )
 

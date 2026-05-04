@@ -254,6 +254,62 @@ class TestEpmProjectsApi(unittest.TestCase):
 
     @patch('jira_server.get_epm_config')
     @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_endpoint_can_return_backlog_lifecycle_subset(self, mock_fetch_projects, mock_get_epm_config):
+        mock_fetch_projects.return_value = [
+            {
+                'homeProjectId': 'todo-one',
+                'name': 'Todo One',
+                'stateValue': 'TODO',
+                'stateLabel': 'To do',
+                'tabBucket': 'backlog',
+                'homeTags': ['rnd_project_todo'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            },
+            {
+                'homeProjectId': 'paused-one',
+                'name': 'Paused One',
+                'stateValue': 'PAUSED',
+                'stateLabel': 'Paused',
+                'tabBucket': 'backlog',
+                'homeTags': ['rnd_project_paused'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            },
+            {
+                'homeProjectId': 'completed-one',
+                'name': 'Completed One',
+                'stateValue': 'DONE',
+                'stateLabel': 'Completed 🎉',
+                'tabBucket': 'backlog',
+                'homeTags': ['rnd_project_completed'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            },
+            {
+                'homeProjectId': 'unknown-one',
+                'name': 'Unknown One',
+                'stateValue': 'UNKNOWN',
+                'stateLabel': 'Unknown',
+                'tabBucket': 'backlog',
+                'homeTags': ['rnd_project_unknown'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            },
+        ]
+        mock_get_epm_config.return_value = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
+            'projects': {},
+        }
+
+        response = self.client.get('/api/epm/projects?tab=backlog')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(
+            [project['id'] for project in response.get_json()['projects']],
+            ['todo-one', 'paused-one'],
+        )
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
     def test_projects_endpoint_manual_label_overrides_home_tag(self, mock_fetch_projects, mock_get_epm_config):
         mock_fetch_projects.return_value = [
             {

@@ -13,17 +13,16 @@ export function isEmptyCustomEpmProjectRow(row) {
 }
 
 const ACTIVE_EPM_PROJECT_STATES = new Set(['pending', 'on track', 'at risk', 'off track']);
-const BACKLOG_EPM_PROJECT_STATES = new Set(['paused']);
+const BACKLOG_EPM_PROJECT_STATES = new Set(['paused', 'todo', 'to do']);
 const ARCHIVED_EPM_PROJECT_STATES = new Set(['completed', 'cancelled', 'archived', 'done', 'release', 'released']);
 
 function getEpmProjectLifecycleBucket(project) {
     const tabBucket = String(project?.tabBucket || '').trim().toLowerCase();
-    if (['active', 'backlog', 'archived', 'all'].includes(tabBucket)) return tabBucket;
     const status = normalizeEpmSettingsStatus(project?.stateValue || project?.stateLabel || '');
-    if (!status) return '';
     if (ACTIVE_EPM_PROJECT_STATES.has(status)) return 'active';
     if (BACKLOG_EPM_PROJECT_STATES.has(status)) return 'backlog';
     if (ARCHIVED_EPM_PROJECT_STATES.has(status)) return 'archived';
+    if (['active', 'backlog', 'archived', 'all'].includes(tabBucket) && !status) return tabBucket;
     return '';
 }
 

@@ -12,7 +12,10 @@ test('filterEpmProjectsForTab uses strict lifecycle buckets outside active', asy
         { id: 'active-project', tabBucket: 'active' },
         { id: 'backlog-project', tabBucket: 'backlog' },
         { id: 'pending-state-project', stateValue: 'PENDING' },
+        { id: 'todo-state-project', stateValue: 'TODO' },
         { id: 'paused-state-project', stateLabel: 'Paused' },
+        { id: 'stale-completed-project', tabBucket: 'backlog', stateValue: 'DONE', stateLabel: 'Completed 🎉' },
+        { id: 'stale-unknown-project', tabBucket: 'backlog', stateValue: 'UNKNOWN' },
         { id: 'archived-project', tabBucket: 'archived' },
         { id: 'completed-state-project', stateValue: 'COMPLETED' },
         { id: 'empty-project', tabBucket: '' },
@@ -25,11 +28,11 @@ test('filterEpmProjectsForTab uses strict lifecycle buckets outside active', asy
     );
     assert.deepStrictEqual(
         filterEpmProjectsForTab(projects, 'backlog').map(project => project.id),
-        ['backlog-project', 'paused-state-project']
+        ['backlog-project', 'todo-state-project', 'paused-state-project']
     );
     assert.deepStrictEqual(
         filterEpmProjectsForTab(projects, 'archived').map(project => project.id),
-        ['archived-project', 'completed-state-project']
+        ['stale-completed-project', 'archived-project', 'completed-state-project']
     );
 });
 

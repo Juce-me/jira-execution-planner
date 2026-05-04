@@ -25,8 +25,8 @@ HOME_MAX_PROJECTS_PER_GOAL = 500
 _CLOUD_ID_CACHE: dict[str, str] = {}
 
 ACTIVE_EPM_STATES = {"PENDING", "ON_TRACK", "AT_RISK", "OFF_TRACK"}
-BACKLOG_EPM_STATES = {"PAUSED"}
-ARCHIVED_EPM_STATES = {"COMPLETED", "CANCELLED", "ARCHIVED"}
+BACKLOG_EPM_STATES = {"PAUSED", "TODO", "TO_DO"}
+ARCHIVED_EPM_STATES = {"COMPLETED", "CANCELLED", "ARCHIVED", "DONE", "RELEASE", "RELEASED"}
 
 MATCH_STATE_HOME_LINKED = "home-linked"
 MATCH_STATE_JEP_FALLBACK = "jep-fallback"
@@ -374,7 +374,7 @@ def bucket_epm_state(state_value):
         return "backlog"
     if normalized in ARCHIVED_EPM_STATES:
         return "archived"
-    return "backlog"
+    return ""
 
 
 def extract_latest_update(updates):
@@ -578,13 +578,15 @@ def build_home_project_record(project, updates, linkage, home_tags=None, tags_un
     resolved_epics = sorted(set((linkage or {}).get("epicKeys") or []))
     match_state = MATCH_STATE_HOME_LINKED if (resolved_labels or resolved_epics) else MATCH_STATE_METADATA_ONLY
     state_value = project.get("stateValue") or project.get("status") or ""
+    state_label = project.get("stateLabel", "")
+    tab_bucket = bucket_epm_state(state_value) or bucket_epm_state(state_label)
     return {
         "homeProjectId": project["id"],
         "name": project.get("name", ""),
         "homeUrl": project.get("url", ""),
         "stateValue": state_value,
-        "stateLabel": project.get("stateLabel", ""),
-        "tabBucket": bucket_epm_state(state_value),
+        "stateLabel": state_label,
+        "tabBucket": tab_bucket,
         "latestUpdateDate": latest["date"],
         "latestUpdateSnippet": latest["snippet"],
         "latestUpdateHtml": latest.get("html", ""),

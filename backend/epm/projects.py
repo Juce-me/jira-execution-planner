@@ -283,9 +283,14 @@ def filter_epm_projects_for_tab(projects, tab):
     visible = []
     for project in projects or []:
         tab_bucket = normalize_epm_text((project or {}).get('tabBucket')).lower()
+        state_value = normalize_epm_text((project or {}).get('stateValue') or (project or {}).get('stateLabel'))
+        state_bucket = epm_home.bucket_epm_state(state_value) if state_value else ''
+        if state_bucket:
+            tab_bucket = state_bucket
+        elif state_value:
+            tab_bucket = ''
         if tab_bucket not in {'active', 'backlog', 'archived', 'all'}:
-            state_value = normalize_epm_text((project or {}).get('stateValue') or (project or {}).get('stateLabel'))
-            tab_bucket = epm_home.bucket_epm_state(state_value) if state_value else ''
+            tab_bucket = ''
         if normalized_tab == 'active':
             matches_tab = tab_bucket == 'active' or tab_bucket == 'all'
         else:

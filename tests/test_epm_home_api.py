@@ -35,6 +35,12 @@ class TestEpmHomeApi(unittest.TestCase):
 
     def test_bucket_completed_as_archived(self):
         self.assertEqual(bucket_epm_state('COMPLETED'), 'archived')
+        self.assertEqual(bucket_epm_state('DONE'), 'archived')
+        self.assertEqual(bucket_epm_state('Completed 🎉'), 'archived')
+
+    def test_bucket_todo_as_backlog(self):
+        self.assertEqual(bucket_epm_state('TODO'), 'backlog')
+        self.assertEqual(bucket_epm_state('To do'), 'backlog')
 
     def test_bucket_on_track_label_as_active(self):
         self.assertEqual(bucket_epm_state('On track'), 'active')

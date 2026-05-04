@@ -26,10 +26,13 @@ export function EpmRollupPanel({
     const [collapsedProjectIds, setCollapsedProjectIds] = useState(() => new Set());
 
     const getProjectKey = (project) => project?.id || getEpmProjectDisplayName(project) || '';
+    const projectBoards = Array.isArray(epmRollupBoards) ? epmRollupBoards : [];
+    const visibleProjectKeys = projectBoards.map(({ project }) => getProjectKey(project)).filter(Boolean);
     const projectKeysSignature = Array.isArray(epmRollupBoards)
-        ? epmRollupBoards.map(({ project }) => getProjectKey(project)).filter(Boolean).join('|')
+        ? visibleProjectKeys.join('|')
         : '';
     const isCollapsed = (project) => collapsedProjectIds.has(getProjectKey(project));
+    const allVisibleProjectsCollapsed = visibleProjectKeys.length > 0 && visibleProjectKeys.every((key) => collapsedProjectIds.has(key));
     const toggleCollapsed = (project) => {
         const key = getProjectKey(project);
         const willExpand = collapsedProjectIds.has(key);
@@ -41,6 +44,24 @@ export function EpmRollupPanel({
         if (willExpand && onProjectExpand) {
             onProjectExpand(project);
         }
+    };
+    const toggleAllProjectsCollapsed = () => {
+        if (allVisibleProjectsCollapsed) {
+            setCollapsedProjectIds((prev) => {
+                const next = new Set(prev);
+                visibleProjectKeys.forEach((key) => next.delete(key));
+                return next;
+            });
+            if (onProjectExpand) {
+                projectBoards.forEach(({ project }) => onProjectExpand(project));
+            }
+            return;
+        }
+        setCollapsedProjectIds((prev) => {
+            const next = new Set(prev);
+            visibleProjectKeys.forEach((key) => next.add(key));
+            return next;
+        });
     };
 
     useEffect(() => {
@@ -202,6 +223,22 @@ export function EpmRollupPanel({
                         </div>
                     ))}
                 </div>
+            </div>
+        );
+    };
+
+    const renderProjectBulkActions = () => {
+        if (projectBoards.length < 2) return null;
+        const buttonLabel = allVisibleProjectsCollapsed ? 'Expand all projects' : 'Collapse all projects';
+        return (
+            <div className="epm-project-bulk-actions">
+                <button
+                    type="button"
+                    className="secondary compact epm-project-collapse-all-button"
+                    onClick={toggleAllProjectsCollapsed}
+                >
+                    {buttonLabel}
+                </button>
             </div>
         );
     };
@@ -409,6 +446,7 @@ export function EpmRollupPanel({
                         This rollup is truncated; narrow the label or Jira scope.
                     </div>
                 )}
+                {renderProjectBulkActions()}
                 {epmRollupBoards.length === 0 && (
                     <div className="empty-state">
                         <h2>No EPM projects found</h2>

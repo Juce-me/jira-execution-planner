@@ -10,6 +10,7 @@ function project(tab, key, label) {
         archived: ['DONE', 'Done'],
     };
     const [stateValue, stateLabel] = stateByTab[tab] || stateByTab.active;
+    const subGoalName = key === 'CHILD-A' ? '[EPM] BidSwitch' : '[EPM] AI Labs';
     return {
         id: `${tab}-${key.toLowerCase()}`,
         homeProjectId: `${tab}-${key.toLowerCase()}`,
@@ -25,7 +26,7 @@ function project(tab, key, label) {
         resolvedLinkage: { labels: [`rnd_project_${tab}_${key.toLowerCase()}`], epicKeys: [] },
         matchState: 'home-linked',
         subGoalKeys: [key],
-        subGoals: [{ key, name: `Subgoal ${key}` }],
+        subGoals: [{ key, name: subGoalName }],
     };
 }
 
@@ -106,6 +107,10 @@ test('EPM multi sub-goal visual smoke', async ({ page }) => {
     await page.screenshot({ path: `${screenshotDir}/active-multiple-subgoals.png`, fullPage: true });
 
     await page.getByRole('button', { name: 'Filter EPM sub-goals' }).click();
+    await expect(page.locator('.epm-subgoal-option-name', { hasText: 'BidSwitch' })).toBeVisible();
+    await expect(page.locator('.epm-subgoal-option-key', { hasText: 'CHILD-A' })).toBeVisible();
+    await expect(page.locator('.epm-subgoal-option-name', { hasText: '[EPM]' })).toHaveCount(0);
+    await page.screenshot({ path: `${screenshotDir}/active-subgoal-dropdown-open.png`, fullPage: true });
     await page.locator('[data-sub-goal-key="CHILD-A"]').click();
     await expect(page.locator('.epm-project-board-name', { hasText: 'Active Alpha' })).toBeVisible();
     await expect(page.locator('.epm-project-board-name', { hasText: 'Active Beta' })).toHaveCount(0);

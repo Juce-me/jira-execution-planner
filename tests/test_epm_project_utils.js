@@ -268,6 +268,23 @@ test('EPM settings project readiness and cache key use sub-goal plus prefix', as
     assert.strictEqual(getEpmSettingsProjectsCacheKey({}), '');
 });
 
+test('EPM sub-goal display names remove the technical prefix and keep keys separate', async () => {
+    const { getEpmSubGoalDisplayParts } = await import(helperUrl);
+
+    assert.deepStrictEqual(
+        getEpmSubGoalDisplayParts({ key: 'CRITE-34', name: '[EPM] BidSwitch' }, 'ignored'),
+        { name: 'BidSwitch', key: 'CRITE-34' }
+    );
+    assert.deepStrictEqual(
+        getEpmSubGoalDisplayParts({ key: 'CRITE-63', name: '  [epm] AI Labs  ' }),
+        { name: 'AI Labs', key: 'CRITE-63' }
+    );
+    assert.deepStrictEqual(
+        getEpmSubGoalDisplayParts(null, 'crite-99'),
+        { name: 'CRITE-99', key: 'CRITE-99' }
+    );
+});
+
 test('hydrateEpmProjectDraft fills blank draft name and label from Home project', async () => {
     const { hydrateEpmProjectDraft } = await import(helperUrl);
 

@@ -2,6 +2,7 @@ import * as React from 'react';
 import ControlField from '../ui/ControlField.jsx';
 import SegmentedControl from '../ui/SegmentedControl.jsx';
 import {
+    getEpmSubGoalDisplayParts,
     getEpmProjectDisplayName,
     getEpmProjectIdentity,
     normalizeEpmScopeSubGoalKeys,
@@ -145,12 +146,21 @@ export function EpmControls({
             String(goal?.key || '').trim().toUpperCase(),
             goal,
         ]));
-        const formatSubGoal = (key) => {
-            const goal = optionByKey.get(key);
-            const name = String(goal?.name || '').trim();
-            return name && name !== key ? `${name} (${key})` : key;
-        };
-        const label = narrowed ? `${selectedSubGoalKeys.length} sub-goal${selectedSubGoalKeys.length === 1 ? '' : 's'}` : 'All sub-goals';
+        (visibleEpmProjects || []).forEach((project) => {
+            (Array.isArray(project?.subGoals) ? project.subGoals : []).forEach((goal) => {
+                const key = String(goal?.key || '').trim().toUpperCase();
+                if (key && !optionByKey.has(key)) {
+                    optionByKey.set(key, goal);
+                }
+            });
+        });
+        const getSubGoalDisplay = (key) => getEpmSubGoalDisplayParts(optionByKey.get(key), key);
+        const selectedSubGoalDisplay = selectedSubGoalKeys.length === 1 ? getSubGoalDisplay(selectedSubGoalKeys[0]) : null;
+        const label = selectedSubGoalDisplay
+            ? selectedSubGoalDisplay.name
+            : narrowed
+                ? `${selectedSubGoalKeys.length} sub-goals`
+                : 'All sub-goals';
         return (
             <ControlField label="Sub-goals">
                 <div className="sprint-dropdown epm-subgoal-dropdown" ref={(node) => { epmSubGoalFilterDropdownRefs.current[surface] = node; }}>
@@ -176,7 +186,7 @@ export function EpmControls({
                         <div className="sprint-dropdown-panel">
                             <div className="sprint-dropdown-list">
                                 <div
-                                    className="sprint-dropdown-option"
+                                    className="sprint-dropdown-option epm-subgoal-all-option"
                                     data-sub-goal-key=""
                                     onClick={() => {
                                         setEpmSelectedSubGoalKeys([]);
@@ -187,6 +197,7 @@ export function EpmControls({
                                 </div>
                                 {savedSubGoalKeys.map((key) => {
                                     const checked = selectedSet.has(key) || !narrowed;
+                                    const display = getSubGoalDisplay(key);
                                     return (
                                         <div
                                             key={key}
@@ -208,7 +219,12 @@ export function EpmControls({
                                             }}
                                         >
                                             <input type="checkbox" readOnly checked={checked} tabIndex={-1} />
-                                            <span>{formatSubGoal(key)}</span>
+                                            <span className="epm-subgoal-option-copy">
+                                                <span className="epm-subgoal-option-name">{display.name}</span>
+                                                {display.key && display.name !== display.key && (
+                                                    <span className="epm-subgoal-option-key">{display.key}</span>
+                                                )}
+                                            </span>
                                         </div>
                                     );
                                 })}
@@ -222,9 +238,9 @@ export function EpmControls({
 
     return (
         <>
-            {renderEpmTabs()}
             {renderEpmSubGoalPicker()}
             {renderEpmProjectPicker()}
+            {renderEpmTabs()}
         </>
     );
 }

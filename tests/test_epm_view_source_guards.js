@@ -237,6 +237,16 @@ test('dashboard source renders mutually exclusive view controls and delegates EP
     assert.ok(segmentedControlSource.includes('role="radiogroup"'), 'Expected SegmentedControl to expose radio group semantics');
     assert.ok(segmentedControlSource.includes('role="radio"'), 'Expected segmented options to expose radio semantics');
     assert.ok(segmentedControlSource.includes('aria-checked={active}'), 'Expected segmented options to expose checked state');
+    const epmControlsReturn = getSnippetBetween(
+        epmControlsSource,
+        'return (\n        <>',
+        '\n        </>\n    );'
+    );
+    const subGoalIndex = epmControlsReturn.indexOf('{renderEpmSubGoalPicker()}');
+    const projectIndex = epmControlsReturn.indexOf('{renderEpmProjectPicker()}');
+    const stateModeIndex = epmControlsReturn.indexOf('{renderEpmTabs()}');
+    assert.ok(subGoalIndex !== -1 && projectIndex !== -1 && stateModeIndex !== -1, 'Expected EPM sub-goal, project, and state-mode controls');
+    assert.ok(subGoalIndex < projectIndex && projectIndex < stateModeIndex, 'Expected EPM controls order to be sub-goals, projects, then view modes after Sprint');
 });
 
 test('dashboard source uses shared basic UI primitives for representative controls and states', () => {

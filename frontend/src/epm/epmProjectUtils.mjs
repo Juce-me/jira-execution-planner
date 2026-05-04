@@ -432,6 +432,14 @@ export function normalizeEpmScopeSubGoalKeys(scope) {
     return normalized;
 }
 
+export function getEpmSubGoalDisplayParts(goal, fallbackKey = '') {
+    const key = normalizeEpmSettingsKeyPart(goal?.key || fallbackKey);
+    const rawName = String(goal?.name || '').trim();
+    const prettyName = rawName.replace(/^\[EPM\]\s*/i, '').trim();
+    const name = prettyName && normalizeEpmSettingsKeyPart(prettyName) !== key ? prettyName : key;
+    return { name, key };
+}
+
 function normalizeEpmLabelPrefix(config) {
     return String(config?.labelPrefix || '').trim();
 }

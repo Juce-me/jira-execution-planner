@@ -1,6 +1,7 @@
 import * as React from 'react';
 import IconButton from '../ui/IconButton.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
+import { getEpmSubGoalDisplayParts } from './epmProjectUtils.mjs';
 
 export default function EpmSettings(props) {
     const {
@@ -202,23 +203,26 @@ export default function EpmSettings(props) {
                                                         </div>
                                                         {selectedEpmSubGoals.length > 0 && (
                                                             <div className="selected-team-chips" style={{ marginTop: '0.35rem' }}>
-                                                                {selectedEpmSubGoals.map((goal) => (
-                                                                    <div className="selected-team-chip" key={goal.key || goal.id}>
-                                                                        <span className="team-name">
-                                                                            {goal.name || goal.key}
-                                                                            {goal.key ? ` (${goal.key})` : ''}
-                                                                        </span>
-                                                                        <button
-                                                                            className="remove-btn"
-                                                                            onClick={() => clearEpmSubGoal(goal.key)}
-                                                                            type="button"
-                                                                            title="Remove sub-goal"
-                                                                            data-epm-scope-field="subGoal"
-                                                                        >
-                                                                            x
-                                                                        </button>
-                                                                    </div>
-                                                                ))}
+                                                                {selectedEpmSubGoals.map((goal) => {
+                                                                    const display = getEpmSubGoalDisplayParts(goal);
+                                                                    return (
+                                                                        <div className="selected-team-chip" key={goal.key || goal.id}>
+                                                                            <span className="team-name">
+                                                                                {display.name}
+                                                                                {display.key && display.name !== display.key ? ` (${display.key})` : ''}
+                                                                            </span>
+                                                                            <button
+                                                                                className="remove-btn"
+                                                                                onClick={() => clearEpmSubGoal(goal.key)}
+                                                                                type="button"
+                                                                                title="Remove sub-goal"
+                                                                                data-epm-scope-field="subGoal"
+                                                                            >
+                                                                                x
+                                                                            </button>
+                                                                        </div>
+                                                                    );
+                                                                })}
                                                             </div>
                                                         )}
                                                         <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
@@ -251,16 +255,19 @@ export default function EpmSettings(props) {
                                                                     ) : !visibleEpmSubGoals.length ? (
                                                                         <div className="team-search-result-item is-empty">No sub-goals found</div>
                                                                     ) : (
-                                                                        visibleEpmSubGoals.map((goal, index) => (
-                                                                            <div
-                                                                                key={goal.id || goal.key}
-                                                                                className={`team-search-result-item ${activeEpmSubGoalIndex === index ? 'active' : ''}`}
-                                                                                onClick={() => selectEpmSubGoal(goal)}
-                                                                            >
-                                                                                <strong>{goal.name || goal.key}</strong>
-                                                                                {goal.key ? ` (${goal.key})` : ''}
-                                                                            </div>
-                                                                        ))
+                                                                        visibleEpmSubGoals.map((goal, index) => {
+                                                                            const display = getEpmSubGoalDisplayParts(goal);
+                                                                            return (
+                                                                                <div
+                                                                                    key={goal.id || goal.key}
+                                                                                    className={`team-search-result-item ${activeEpmSubGoalIndex === index ? 'active' : ''}`}
+                                                                                    onClick={() => selectEpmSubGoal(goal)}
+                                                                                >
+                                                                                    <strong>{display.name}</strong>
+                                                                                    {display.key && display.name !== display.key ? ` (${display.key})` : ''}
+                                                                                </div>
+                                                                            );
+                                                                        })
                                                                     )}
                                                                 </div>
                                                             )}

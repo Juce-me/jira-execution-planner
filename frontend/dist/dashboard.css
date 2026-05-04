@@ -530,6 +530,41 @@ h1 {
 .sprint-dropdown-option + .sprint-dropdown-option {
   border-top: 1px dashed var(--border);
 }
+.epm-subgoal-dropdown .sprint-dropdown-panel {
+  min-width: 300px;
+}
+.epm-subgoal-dropdown .sprint-dropdown-option {
+  display: grid;
+  grid-template-columns: 0.85rem minmax(0, 1fr);
+  align-items: center;
+  column-gap: 0.45rem;
+  font-size: 0.62rem;
+}
+.epm-subgoal-dropdown .sprint-dropdown-option input {
+  margin: 0;
+  width: 0.75rem;
+  height: 0.75rem;
+  justify-self: start;
+}
+.epm-subgoal-dropdown .epm-subgoal-all-option {
+  display: block;
+}
+.epm-subgoal-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  min-width: 0;
+}
+.epm-subgoal-option-name,
+.epm-subgoal-option-key {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.epm-subgoal-option-key {
+  color: var(--text-secondary);
+  font-size: 0.52rem;
+}
 .group-dropdown {
   position: relative;
   width: 200px;

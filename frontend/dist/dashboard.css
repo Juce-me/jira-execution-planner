@@ -6347,7 +6347,7 @@ button.toggle.initiative-toggle.active {
 }
 .epm-project-board-update {
   position: relative;
-  min-width: 0;
+  min-width: min(18rem, calc(100vw - 7rem));
   font-family:
     -apple-system,
     BlinkMacSystemFont,

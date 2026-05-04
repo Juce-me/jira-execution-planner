@@ -125,6 +125,7 @@ class TestDashboardCssFileContract(unittest.TestCase):
         self.assertIn('.epm-project-board.is-collapsed::before', css)
         self.assertNotIn('.epm-project-board-body::before', css)
         update_block = _css_block(css, '.epm-project-board-update')
+        self.assertIn('min-width: min(18rem, calc(100vw - 7rem));', update_block)
         self.assertIn('background-color: var(--bg-secondary);', update_block)
         self.assertIn('border: 1px solid var(--border);', update_block)
         self.assertNotIn('background-image:', update_block)

@@ -242,6 +242,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - For UI screenshots, wait for CSS animations/transitions to settle or disable them before capturing visual proof.
 - In PR descriptions, never include secrets, token placeholders, credential env vars, or local absolute paths.
 - Store implementation plans in `docs/plans/` only.
+- Keep local task changes in the checkout the user is actively viewing; use a secondary worktree only when the user explicitly asks for one.
 
 ---
 

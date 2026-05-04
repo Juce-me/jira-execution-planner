@@ -7037,12 +7037,6 @@
             display: none;
         }
 
-        .epm-project-bulk-actions {
-            display: flex;
-            justify-content: flex-end;
-            margin: -0.2rem 0 0.35rem;
-        }
-
         .epm-project-collapse-all-button {
             color: var(--epm-project-accent);
             border-color: var(--epm-project-accent-soft);

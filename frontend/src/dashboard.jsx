@@ -90,6 +90,7 @@ import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     filterEpmSettingsProjectsForView,
     flattenEpmRollupBoardsForDependencies,
+    getEpmProjectDisplayName,
     getEpmProjectPrerequisites,
     getEpmSettingsProjectsCacheKey,
     hydrateEpmProjectDraft,
@@ -2045,6 +2046,51 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 epmProjectSearch,
                 searchQuery,
             });
+            const [epmCollapsedProjectIds, setEpmCollapsedProjectIds] = useState(() => new Set());
+            const epmVisibleProjectKeys = React.useMemo(() => {
+                if (selectedView !== 'epm' || epmSelectedProjectId) return [];
+                const boards = Array.isArray(visibleEpmRollupBoards) ? visibleEpmRollupBoards : [];
+                return boards
+                    .map(({ project }) => project?.id || getEpmProjectDisplayName(project) || '')
+                    .filter(Boolean);
+            }, [selectedView, epmSelectedProjectId, visibleEpmRollupBoards]);
+            const epmVisibleProjectKeysSignature = epmVisibleProjectKeys.join('|');
+            const showEpmProjectCollapseAllButton = selectedView === 'epm' && !epmSelectedProjectId && epmVisibleProjectKeys.length > 1;
+            const allVisibleEpmProjectsCollapsed = epmVisibleProjectKeys.length > 0 && epmVisibleProjectKeys.every((key) => epmCollapsedProjectIds.has(key));
+            const epmProjectCollapseAllLabel = allVisibleEpmProjectsCollapsed ? 'Expand all projects' : 'Collapse all projects';
+
+            useEffect(() => {
+                if (selectedView !== 'epm' || epmSelectedProjectId || !Array.isArray(visibleEpmRollupBoards)) return;
+                if (epmTab === 'archived') {
+                    setEpmCollapsedProjectIds((prev) => {
+                        const next = new Set(prev);
+                        epmVisibleProjectKeys.forEach((key) => next.add(key));
+                        return next;
+                    });
+                    return;
+                }
+                setEpmCollapsedProjectIds(new Set());
+            }, [selectedView, epmSelectedProjectId, epmTab, epmVisibleProjectKeysSignature]);
+
+            const toggleAllVisibleEpmProjectsCollapsed = () => {
+                if (!showEpmProjectCollapseAllButton) return;
+                if (allVisibleEpmProjectsCollapsed) {
+                    setEpmCollapsedProjectIds((prev) => {
+                        const next = new Set(prev);
+                        epmVisibleProjectKeys.forEach((key) => next.delete(key));
+                        return next;
+                    });
+                    if (epmTab === 'archived') {
+                        (visibleEpmRollupBoards || []).forEach(({ project }) => loadArchivedEpmProjectRollup(project));
+                    }
+                    return;
+                }
+                setEpmCollapsedProjectIds((prev) => {
+                    const next = new Set(prev);
+                    epmVisibleProjectKeys.forEach((key) => next.add(key));
+                    return next;
+                });
+            };
             const hasDraftEpmScope = React.useMemo(() => {
                 return hasSavedEpmScopeConfig(epmConfigDraft);
             }, [epmConfigDraft]);
@@ -10451,6 +10497,35 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 />
             );
 
+            const renderEpmProjectCollapseAllButton = (_surface) => {
+                if (!showEpmProjectCollapseAllButton) return null;
+                return (
+                    <button
+                        className="group-gear-button epm-project-collapse-all-button"
+                        onClick={toggleAllVisibleEpmProjectsCollapsed}
+                        title={epmProjectCollapseAllLabel}
+                        aria-label={epmProjectCollapseAllLabel}
+                        aria-pressed={allVisibleEpmProjectsCollapsed}
+                        type="button"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            {allVisibleEpmProjectsCollapsed ? (
+                                <>
+                                    <path d="M7 8l5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M7 16l5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                </>
+                            ) : (
+                                <>
+                                    <path d="M7 5l5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M7 19l5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                </>
+                            )}
+                            <path d="M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                        </svg>
+                    </button>
+                );
+            };
+
             const renderSprintControl = (surface) => (
                 <ControlField label="Sprint">
                     <div className="sprint-dropdown" ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
@@ -10896,18 +10971,21 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     </button>
                                 )}
                                 {selectedView === 'epm' && (
-                                    <button
-                                        className="group-gear-button"
-                                        onClick={openEpmSettingsTab}
-                                        title="Open EPM settings"
-                                        aria-label="Open EPM settings"
-                                        type="button"
-                                    >
-                                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                            <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
-                                            <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                                        </svg>
-                                    </button>
+                                    <>
+                                        {renderEpmProjectCollapseAllButton('main')}
+                                        <button
+                                            className="group-gear-button"
+                                            onClick={openEpmSettingsTab}
+                                            title="Open EPM settings"
+                                            aria-label="Open EPM settings"
+                                            type="button"
+                                        >
+                                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
+                                                <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                            </svg>
+                                        </button>
+                                    </>
                                 )}
                             </div>
                         </div>
@@ -10932,6 +11010,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         <>
                                             {shouldUseEpmSprint(epmTab) && renderSprintControl('compact')}
                                             {renderEpmControls('compact', false)}
+                                            {renderEpmProjectCollapseAllButton('compact')}
                                             <button
                                                 className="group-gear-button"
                                                 onClick={openEpmSettingsTab}
@@ -13316,6 +13395,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     epmDuplicates={epmDuplicates}
                                     epmAggregateTruncated={epmAggregateTruncated}
                                     epmProjectRollupLoadingIds={epmProjectRollupLoadingIds}
+                                    collapsedProjectIds={epmCollapsedProjectIds}
+                                    setCollapsedProjectIds={setEpmCollapsedProjectIds}
                                     searchQuery={searchQuery}
                                     loadArchivedEpmProjectRollup={loadArchivedEpmProjectRollup}
                                     openEpmSettingsTab={openEpmSettingsTab}

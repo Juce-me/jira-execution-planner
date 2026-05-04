@@ -360,6 +360,21 @@ test('dashboard source exposes EPM settings access in both header contexts', () 
     );
 });
 
+test('dashboard places compact EPM collapse-all control before settings gears', () => {
+    assert.ok(dashboardSource.includes('renderEpmProjectCollapseAllButton'), 'Expected shared EPM collapse-all header control');
+    assert.ok(dashboardSource.includes('className="group-gear-button epm-project-collapse-all-button"'), 'Expected compact icon-sized collapse-all button');
+    assert.ok(dashboardSource.includes('aria-label={epmProjectCollapseAllLabel}'), 'Expected collapse-all button to use the current action label');
+
+    const firstSettingsIndex = dashboardSource.indexOf('title="Open EPM settings"');
+    const secondSettingsIndex = dashboardSource.indexOf('title="Open EPM settings"', firstSettingsIndex + 1);
+    assert.ok(firstSettingsIndex > 0 && secondSettingsIndex > firstSettingsIndex, 'Expected full and compact EPM settings gears');
+
+    const firstCollapseIndex = dashboardSource.lastIndexOf("renderEpmProjectCollapseAllButton('main')", firstSettingsIndex);
+    const secondCollapseIndex = dashboardSource.lastIndexOf("renderEpmProjectCollapseAllButton('compact')", secondSettingsIndex);
+    assert.ok(firstCollapseIndex > 0 && firstCollapseIndex < firstSettingsIndex, 'Expected main collapse-all control immediately before the EPM settings gear');
+    assert.ok(secondCollapseIndex > firstSettingsIndex && secondCollapseIndex < secondSettingsIndex, 'Expected compact collapse-all control immediately before the EPM settings gear');
+});
+
 test('epm helper file exists without ambiguous Active-only helper copy', () => {
     assert.ok(fs.existsSync(helperPath), 'Expected frontend/src/epm/epmProjectUtils.mjs to exist');
     assert.ok(helperSource.includes('shouldUseEpmSprint'), 'Expected shouldUseEpmSprint in epmProjectUtils.mjs');
@@ -721,7 +736,7 @@ test('EPM project helper uses strict backlog and archived lifecycle buckets', ()
 });
 
 test('EPM archived portfolio boards lazy-load Jira rollups on expand', () => {
-    assert.ok(epmRollupPanelSource.includes("epmTab === 'archived'"), 'Expected archived boards to initialize collapsed');
+    assert.ok(dashboardSource.includes("epmTab === 'archived'") && dashboardSource.includes('setEpmCollapsedProjectIds'), 'Expected archived boards to initialize collapsed from dashboard state');
     assert.ok(epmRollupPanelSource.includes('onProjectExpand(project)'), 'Expected project expand callback in EpmRollupPanel.jsx');
     assert.ok(dashboardSource.includes('loadArchivedEpmProjectRollup'), 'Expected archived lazy rollup loader in dashboard.jsx');
     assert.ok(epmViewDataSource.includes('fetchEpmProjectRollup(backendUrl, projectId'), 'Expected archived expand to fetch the per-project rollup');

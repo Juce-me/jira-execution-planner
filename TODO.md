@@ -2,7 +2,8 @@
 
 ## Now
 - Scenario planner: add versioned draft history for saved overrides
-  - Store multiple named scenarios per sprint + team/group instead of a single override blob.
+  - Keep one active draft per sprint + team/group scope.
+  - Save prior draft snapshots so the user can reload or roll back.
   - Add rollback/reload from saved scenario history before any Jira write-back.
 
 ## Config / Admin Follow-ups

@@ -57,6 +57,16 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual(latest['date'], '2026-04-09')
         self.assertEqual(latest['snippet'], 'Latest update')
 
+    def test_extract_latest_update_includes_creator_name(self):
+        latest = extract_latest_update([
+            {
+                'creationDate': '2026-04-09T12:00:00.000Z',
+                'summary': 'Latest update',
+                'creator': {'accountId': 'account-1', 'name': 'Ada Lovelace'},
+            },
+        ])
+        self.assertEqual(latest['author'], 'Ada Lovelace')
+
     def test_extract_latest_update_preserves_adf_formatting_as_safe_html(self):
         latest = extract_latest_update([
             {
@@ -164,6 +174,7 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual(project['matchState'], 'metadata-only')
         self.assertEqual(project['latestUpdateDate'], '2026-04-12')
         self.assertEqual(project['latestUpdateSnippet'], 'Awaiting budget approval')
+        self.assertEqual(project['latestUpdateAuthor'], '')
 
     def test_build_home_project_record_keeps_string_home_tags_from_fetcher(self):
         project = build_home_project_record(
@@ -713,6 +724,7 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertIn('state { label value }', query)
         self.assertIn('tags @optIn(to: "Townsquare")', query)
         self.assertIn('updates(first: 1)', query)
+        self.assertIn('creator { accountId name }', query)
 
     @patch('backend.epm.home.fetch_goal_project_links')
     @patch('backend.epm.home.resolve_sub_goals_for_scope')

@@ -231,6 +231,7 @@ def build_custom_project_payload(row):
         'latestUpdateDate': '',
         'latestUpdateSnippet': '',
         'latestUpdateHtml': '',
+        'latestUpdateAuthor': '',
         'name': name,
         'label': label,
         'customName': name,

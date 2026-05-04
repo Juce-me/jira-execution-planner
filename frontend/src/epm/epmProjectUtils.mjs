@@ -400,14 +400,18 @@ export function buildEpmProjectUpdateLine(project, now = new Date()) {
     const relativeDate = formatEpmProjectRelativeDate(date, now);
     const snippet = String(project?.latestUpdateSnippet || '').trim();
     const messageHtml = String(project?.latestUpdateHtml || '').trim();
+    const author = String(project?.latestUpdateAuthor || '').trim();
     const status = getEpmProjectStatusText(project);
     const message = snippet || (status ? `Status is ${status}.` : 'No Home status update.');
     const line = {
-        text: [relativeDate, message].filter(Boolean).join(' · '),
-        title: date,
+        text: [relativeDate, author, message].filter(Boolean).join(' · '),
+        title: [date, author].filter(Boolean).join(' · '),
         relativeDate,
         message: message
     };
+    if (author) {
+        line.author = author;
+    }
     if (messageHtml) {
         line.messageHtml = messageHtml;
     }

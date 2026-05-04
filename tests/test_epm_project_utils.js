@@ -367,12 +367,14 @@ test('buildEpmProjectUpdateLine uses relative dates and status fallback', async 
         buildEpmProjectUpdateLine({
             latestUpdateDate: '2026-04-16',
             latestUpdateSnippet: '[on track] Work is progressing',
+            latestUpdateAuthor: 'Ada Lovelace',
             stateLabel: 'On track'
         }, now),
         {
-            text: '2 weeks ago · [on track] Work is progressing',
-            title: '2026-04-16',
+            text: '2 weeks ago · Ada Lovelace · [on track] Work is progressing',
+            title: '2026-04-16 · Ada Lovelace',
             relativeDate: '2 weeks ago',
+            author: 'Ada Lovelace',
             message: '[on track] Work is progressing'
         }
     );

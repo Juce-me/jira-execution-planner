@@ -98,7 +98,12 @@ export function EpmRollupPanel({
         return (
             <div className="epm-project-board-update-row" title={updateLine.title || undefined}>
                 <div className="epm-project-board-update">
-                    {updateLine.relativeDate && <span className="epm-project-board-update-date">{updateLine.relativeDate}</span>}
+                    {(updateLine.relativeDate || updateLine.author) && (
+                        <div className="epm-project-board-update-meta">
+                            {updateLine.relativeDate && <span className="epm-project-board-update-date">{updateLine.relativeDate}</span>}
+                            {updateLine.author && <span className="epm-project-board-update-author">{`${updateLine.relativeDate ? '· ' : ''}${updateLine.author}`}</span>}
+                        </div>
+                    )}
                     {updateLine.messageHtml ? (
                         <div className="epm-project-board-update-copy" dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }} />
                     ) : (

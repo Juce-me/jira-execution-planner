@@ -658,6 +658,16 @@ test('EPM portfolio update line preserves formatted Home update HTML safely', ()
         'Expected relative date label to render above the update copy'
     );
     assert.ok(helperSource.includes('messageHtml'), 'Expected shared update helper to expose formatted update HTML');
+    assert.ok(helperSource.includes('line.author = author'), 'Expected shared update helper to expose the Home update author');
+    assert.ok(updateRendererSource.includes('epm-project-board-update-author'), 'Expected Home update author beside the relative date');
+    assert.ok(
+        updateRendererSource.indexOf('epm-project-board-update-date') < updateRendererSource.indexOf('epm-project-board-update-author'),
+        'Expected author to render after the relative date label'
+    );
+    assert.ok(
+        updateRendererSource.indexOf('epm-project-board-update-author') < updateRendererSource.indexOf('epm-project-board-update-copy'),
+        'Expected author to render before the update copy'
+    );
     assert.ok(helperSource.includes('message:'), 'Expected shared update helper to expose plain message without the date');
 });
 

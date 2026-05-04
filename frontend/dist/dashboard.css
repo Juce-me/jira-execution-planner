@@ -6374,21 +6374,34 @@ button.toggle.initiative-toggle.active {
   border-radius: var(--epm-project-radius);
   box-shadow: 0 4px 12px var(--shadow);
 }
-.epm-project-board-update-date {
+.epm-project-board-update-meta {
   position: absolute;
   top: -0.38rem;
   left: 0.75rem;
   z-index: 1;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 0.5rem;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: calc(100% - 1.5rem);
   background: var(--bg-primary);
   white-space: nowrap;
   line-height: 1;
   padding: 0 0.3rem;
+}
+.epm-project-board-update-date,
+.epm-project-board-update-author {
+  min-width: 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.5rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.epm-project-board-update-date {
+  flex: 0 0 auto;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 .epm-project-board-update-copy {
   min-width: 0;

@@ -168,7 +168,7 @@ query GoalProjects($goalId: ID!, $first: Int!, $after: String) {
             edges { node { id name url } }
           }
           updates(first: 1) @optIn(to: "Townsquare") {
-            edges { node { id url creationDate editDate summary updateType } }
+            edges { node { id url creationDate editDate summary updateType creator { accountId name } } }
           }
         }
       }
@@ -191,7 +191,7 @@ query ProjectUpdates($projectId: String!, $first: Int!, $after: String) {
   projects_byId(projectId: $projectId) {
     updates(first: $first, after: $after) @optIn(to: "Townsquare") {
       pageInfo { hasNextPage endCursor }
-      edges { node { id url creationDate editDate summary updateType } }
+      edges { node { id url creationDate editDate summary updateType creator { accountId name } } }
     }
   }
 }
@@ -393,12 +393,14 @@ def extract_latest_update(updates):
         reverse=True,
     )
     if not ordered:
-        return {"date": "", "snippet": ""}
+        return {"date": "", "snippet": "", "author": ""}
     latest = ordered[0]
+    creator = latest.get("creator") if isinstance(latest.get("creator"), dict) else {}
     return {
         "date": str(latest["creationDate"])[:10],
         "snippet": adf_to_text(latest.get("summary")).strip(),
         "html": adf_to_html(latest.get("summary")).strip(),
+        "author": str(creator.get("name") or "").strip(),
     }
 
 
@@ -599,6 +601,7 @@ def build_home_project_record(project, updates, linkage, home_tags=None, tags_un
         "latestUpdateDate": latest["date"],
         "latestUpdateSnippet": latest["snippet"],
         "latestUpdateHtml": latest.get("html", ""),
+        "latestUpdateAuthor": latest.get("author", ""),
         "homeTags": normalize_project_tag_names(home_tags or []),
         "homeTagsUnavailable": bool(tags_unavailable),
         "resolvedLinkage": {"labels": resolved_labels, "epicKeys": resolved_epics},

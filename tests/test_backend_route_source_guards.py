@@ -150,7 +150,7 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json(), payload)
         self.assertEqual(response.headers.get("Server-Timing"), headers["Server-Timing"])
-        mock_rollup.assert_called_once_with("active", "42")
+        mock_rollup.assert_called_once_with("active", "42", sub_goal_keys=[])
 
     def test_moved_eng_task_route_delegates_to_shared_fetcher(self):
         if not BACKEND_ENG_ROUTES_PATH.exists():

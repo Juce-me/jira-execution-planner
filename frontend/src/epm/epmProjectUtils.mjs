@@ -400,14 +400,18 @@ export function buildEpmProjectUpdateLine(project, now = new Date()) {
     const relativeDate = formatEpmProjectRelativeDate(date, now);
     const snippet = String(project?.latestUpdateSnippet || '').trim();
     const messageHtml = String(project?.latestUpdateHtml || '').trim();
+    const author = String(project?.latestUpdateAuthor || '').trim();
     const status = getEpmProjectStatusText(project);
     const message = snippet || (status ? `Status is ${status}.` : 'No Home status update.');
     const line = {
-        text: [relativeDate, message].filter(Boolean).join(' · '),
-        title: date,
+        text: [relativeDate, author, message].filter(Boolean).join(' · '),
+        title: [date, author].filter(Boolean).join(' · '),
         relativeDate,
         message: message
     };
+    if (author) {
+        line.author = author;
+    }
     if (messageHtml) {
         line.messageHtml = messageHtml;
     }
@@ -418,19 +422,41 @@ export function normalizeEpmSettingsKeyPart(value) {
     return String(value || '').trim().toUpperCase();
 }
 
+export function normalizeEpmScopeSubGoalKeys(scope) {
+    const values = Array.isArray(scope?.subGoalKeys) ? scope.subGoalKeys : [];
+    const source = values.length ? values : [scope?.subGoalKey];
+    const seen = new Set();
+    const normalized = [];
+    source.forEach((value) => {
+        const key = normalizeEpmSettingsKeyPart(value);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        normalized.push(key);
+    });
+    return normalized;
+}
+
+export function getEpmSubGoalDisplayParts(goal, fallbackKey = '') {
+    const key = normalizeEpmSettingsKeyPart(goal?.key || fallbackKey);
+    const rawName = String(goal?.name || '').trim();
+    const prettyName = rawName.replace(/^\[EPM\]\s*/i, '').trim();
+    const name = prettyName && normalizeEpmSettingsKeyPart(prettyName) !== key ? prettyName : key;
+    return { name, key };
+}
+
 function normalizeEpmLabelPrefix(config) {
     return String(config?.labelPrefix || '').trim();
 }
 
 export function isEpmProjectsConfigReady(config) {
-    const subGoalKey = normalizeEpmSettingsKeyPart(config?.scope?.subGoalKey);
+    const subGoalKeys = normalizeEpmScopeSubGoalKeys(config?.scope);
     const labelPrefix = normalizeEpmLabelPrefix(config);
-    return Boolean(subGoalKey && labelPrefix);
+    return Boolean(subGoalKeys.length && labelPrefix);
 }
 
 export function getEpmProjectPrerequisites(config) {
     const missing = [];
-    if (!normalizeEpmSettingsKeyPart(config?.scope?.subGoalKey)) {
+    if (normalizeEpmScopeSubGoalKeys(config?.scope).length === 0) {
         missing.push('subGoal');
     }
     if (!normalizeEpmLabelPrefix(config)) {
@@ -443,7 +469,7 @@ export function getEpmSettingsProjectsCacheKey(config) {
     if (!isEpmProjectsConfigReady(config)) return '';
     return [
         normalizeEpmSettingsKeyPart(config?.scope?.rootGoalKey),
-        normalizeEpmSettingsKeyPart(config?.scope?.subGoalKey),
+        normalizeEpmScopeSubGoalKeys(config?.scope).join(','),
         normalizeEpmLabelPrefix(config)
     ].join('::');
 }

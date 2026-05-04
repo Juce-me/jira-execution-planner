@@ -14,11 +14,32 @@ export const fetchEpmGoals = (backendUrl, rootGoalKey = '') => {
     return getJson(url, 'EPM goals', { cache: 'no-cache' });
 };
 
-export const fetchEpmProjects = (backendUrl, { tab } = {}) => {
+const normalizeEpmSubGoalKeysParam = (subGoalKeys) => {
+    const values = Array.isArray(subGoalKeys) ? subGoalKeys : [];
+    const seen = new Set();
+    const normalized = [];
+    values.forEach((value) => {
+        const key = String(value || '').trim().toUpperCase();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        normalized.push(key);
+    });
+    return normalized.join(',');
+};
+
+const appendEpmSubGoalKeysParam = (params, subGoalKeys) => {
+    const value = normalizeEpmSubGoalKeysParam(subGoalKeys);
+    if (value) {
+        params.set('subGoalKeys', value);
+    }
+};
+
+export const fetchEpmProjects = (backendUrl, { tab, subGoalKeys } = {}) => {
     const params = new URLSearchParams();
     if (tab) {
         params.set('tab', String(tab));
     }
+    appendEpmSubGoalKeysParam(params, subGoalKeys);
     const query = params.toString();
     const url = query ? `${backendUrl}/api/epm/projects?${query}` : `${backendUrl}/api/epm/projects`;
     return getJson(url, 'EPM projects', { cache: 'no-cache' });
@@ -32,20 +53,22 @@ export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options =
     });
 }
 
-export const fetchEpmProjectRollup = (backendUrl, projectId, { tab, sprint } = {}) => {
+export const fetchEpmProjectRollup = (backendUrl, projectId, { tab, sprint, subGoalKeys } = {}) => {
     const effectiveTab = tab || 'active';
     const params = new URLSearchParams({ tab: effectiveTab });
     if (effectiveTab === 'active' && sprint) {
         params.set('sprint', String(sprint));
     }
+    appendEpmSubGoalKeysParam(params, subGoalKeys);
     return getJson(`${backendUrl}/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}`, 'EPM rollup', { cache: 'no-cache' });
 };
 
-export const fetchEpmAllProjectsRollup = (backendUrl, { tab, sprint } = {}) => {
+export const fetchEpmAllProjectsRollup = (backendUrl, { tab, sprint, subGoalKeys } = {}) => {
     const effectiveTab = tab || 'active';
     const params = new URLSearchParams({ tab: effectiveTab });
     if (effectiveTab === 'active' && sprint) {
         params.set('sprint', String(sprint));
     }
+    appendEpmSubGoalKeysParam(params, subGoalKeys);
     return getJson(`${backendUrl}/api/epm/projects/rollup/all?${params.toString()}`, 'EPM all-projects rollup', { cache: 'no-cache' });
 };

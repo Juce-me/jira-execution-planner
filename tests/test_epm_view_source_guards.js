@@ -237,6 +237,16 @@ test('dashboard source renders mutually exclusive view controls and delegates EP
     assert.ok(segmentedControlSource.includes('role="radiogroup"'), 'Expected SegmentedControl to expose radio group semantics');
     assert.ok(segmentedControlSource.includes('role="radio"'), 'Expected segmented options to expose radio semantics');
     assert.ok(segmentedControlSource.includes('aria-checked={active}'), 'Expected segmented options to expose checked state');
+    const epmControlsReturn = getSnippetBetween(
+        epmControlsSource,
+        'return (\n        <>',
+        '\n        </>\n    );'
+    );
+    const subGoalIndex = epmControlsReturn.indexOf('{renderEpmSubGoalPicker()}');
+    const projectIndex = epmControlsReturn.indexOf('{renderEpmProjectPicker()}');
+    const stateModeIndex = epmControlsReturn.indexOf('{renderEpmTabs()}');
+    assert.ok(subGoalIndex !== -1 && projectIndex !== -1 && stateModeIndex !== -1, 'Expected EPM sub-goal, project, and state-mode controls');
+    assert.ok(subGoalIndex < projectIndex && projectIndex < stateModeIndex, 'Expected EPM controls order to be sub-goals, projects, then view modes after Sprint');
 });
 
 test('dashboard source uses shared basic UI primitives for representative controls and states', () => {
@@ -350,6 +360,21 @@ test('dashboard source exposes EPM settings access in both header contexts', () 
     );
 });
 
+test('dashboard places compact EPM collapse-all control before settings gears', () => {
+    assert.ok(dashboardSource.includes('renderEpmProjectCollapseAllButton'), 'Expected shared EPM collapse-all header control');
+    assert.ok(dashboardSource.includes('className="group-gear-button epm-project-collapse-all-button"'), 'Expected compact icon-sized collapse-all button');
+    assert.ok(dashboardSource.includes('aria-label={epmProjectCollapseAllLabel}'), 'Expected collapse-all button to use the current action label');
+
+    const firstSettingsIndex = dashboardSource.indexOf('title="Open EPM settings"');
+    const secondSettingsIndex = dashboardSource.indexOf('title="Open EPM settings"', firstSettingsIndex + 1);
+    assert.ok(firstSettingsIndex > 0 && secondSettingsIndex > firstSettingsIndex, 'Expected full and compact EPM settings gears');
+
+    const firstCollapseIndex = dashboardSource.lastIndexOf("renderEpmProjectCollapseAllButton('main')", firstSettingsIndex);
+    const secondCollapseIndex = dashboardSource.lastIndexOf("renderEpmProjectCollapseAllButton('compact')", secondSettingsIndex);
+    assert.ok(firstCollapseIndex > 0 && firstCollapseIndex < firstSettingsIndex, 'Expected main collapse-all control immediately before the EPM settings gear');
+    assert.ok(secondCollapseIndex > firstSettingsIndex && secondCollapseIndex < secondSettingsIndex, 'Expected compact collapse-all control immediately before the EPM settings gear');
+});
+
 test('epm helper file exists without ambiguous Active-only helper copy', () => {
     assert.ok(fs.existsSync(helperPath), 'Expected frontend/src/epm/epmProjectUtils.mjs to exist');
     assert.ok(helperSource.includes('shouldUseEpmSprint'), 'Expected shouldUseEpmSprint in epmProjectUtils.mjs');
@@ -410,7 +435,7 @@ test('EPM project metadata fetch is scoped to the current lifecycle tab', () => 
         'Expected EPM projects wrapper to add tab query parameter when provided'
     );
     assert.ok(
-        epmViewDataSource.includes('fetchEpmProjects(backendUrl, { tab })'),
+        epmViewDataSource.includes('fetchEpmProjects(backendUrl, { tab, subGoalKeys: runtimeEpmSubGoalKeys })'),
         'Expected EPM hook project metadata fetches to pass the current EPM tab'
     );
     assert.ok(
@@ -419,7 +444,7 @@ test('EPM project metadata fetch is scoped to the current lifecycle tab', () => 
         'Expected refreshEpmProjects to default to the current EPM tab'
     );
     assert.ok(
-        epmViewDataSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab]);'),
+        epmViewDataSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab, runtimeEpmSubGoalKeys]);'),
         'Expected EPM view refresh effect to reload project metadata when the EPM tab changes'
     );
 });
@@ -486,7 +511,7 @@ test('EPM board bootstraps saved config from initial user config before loading 
         'Expected EPM view load effect to wait for saved EPM config bootstrap'
     );
     assert.ok(
-        epmViewDataSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab]);'),
+        epmViewDataSource.includes('}, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab, runtimeEpmSubGoalKeys]);'),
         'Expected EPM view load effect to rerun after config bootstrap and tab changes'
     );
 });
@@ -648,6 +673,16 @@ test('EPM portfolio update line preserves formatted Home update HTML safely', ()
         'Expected relative date label to render above the update copy'
     );
     assert.ok(helperSource.includes('messageHtml'), 'Expected shared update helper to expose formatted update HTML');
+    assert.ok(helperSource.includes('line.author = author'), 'Expected shared update helper to expose the Home update author');
+    assert.ok(updateRendererSource.includes('epm-project-board-update-author'), 'Expected Home update author beside the relative date');
+    assert.ok(
+        updateRendererSource.indexOf('epm-project-board-update-date') < updateRendererSource.indexOf('epm-project-board-update-author'),
+        'Expected author to render after the relative date label'
+    );
+    assert.ok(
+        updateRendererSource.indexOf('epm-project-board-update-author') < updateRendererSource.indexOf('epm-project-board-update-copy'),
+        'Expected author to render before the update copy'
+    );
     assert.ok(helperSource.includes('message:'), 'Expected shared update helper to expose plain message without the date');
 });
 
@@ -701,7 +736,7 @@ test('EPM project helper uses strict backlog and archived lifecycle buckets', ()
 });
 
 test('EPM archived portfolio boards lazy-load Jira rollups on expand', () => {
-    assert.ok(epmRollupPanelSource.includes("epmTab === 'archived'"), 'Expected archived boards to initialize collapsed');
+    assert.ok(dashboardSource.includes("epmTab === 'archived'") && dashboardSource.includes('setEpmCollapsedProjectIds'), 'Expected archived boards to initialize collapsed from dashboard state');
     assert.ok(epmRollupPanelSource.includes('onProjectExpand(project)'), 'Expected project expand callback in EpmRollupPanel.jsx');
     assert.ok(dashboardSource.includes('loadArchivedEpmProjectRollup'), 'Expected archived lazy rollup loader in dashboard.jsx');
     assert.ok(epmViewDataSource.includes('fetchEpmProjectRollup(backendUrl, projectId'), 'Expected archived expand to fetch the per-project rollup');

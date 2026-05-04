@@ -1,6 +1,7 @@
 import * as React from 'react';
 import IconButton from '../ui/IconButton.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
+import { getEpmSubGoalDisplayParts } from './epmProjectUtils.mjs';
 
 export default function EpmSettings(props) {
     const {
@@ -23,7 +24,7 @@ export default function EpmSettings(props) {
         visibleEpmRootGoals,
         activeEpmRootGoalIndex,
         selectEpmRootGoal,
-        selectedEpmSubGoal,
+        selectedEpmSubGoals = [],
         clearEpmSubGoal,
         epmConfigDraft,
         epmSubGoalQuery,
@@ -194,75 +195,83 @@ export default function EpmSettings(props) {
                                                         )}
                                                     </div>
                                                     <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
-                                                        <div className="team-selector-label">Sub-goal</div>
+                                                        <div className="team-selector-label">Sub-goals</div>
                                                         <div className="group-field-helper">
                                                             {!epmConfigDraft.scope?.rootGoalKey
-                                                                ? 'Select a root goal before choosing a sub-goal.'
-                                                                : 'Choose the Jira Home child goal that owns the direct EPM projects.'}
+                                                                ? 'Select a root goal before choosing sub-goals.'
+                                                                : 'Choose the Jira Home child goals that own direct EPM projects.'}
                                                         </div>
-                                                        {selectedEpmSubGoal && (
-                                                            <div className="selected-team-chip" style={{ marginTop: '0.35rem' }}>
-                                                                <span className="team-name">
-                                                                    {selectedEpmSubGoal.name || selectedEpmSubGoal.key}
-                                                                    {selectedEpmSubGoal.key ? ` (${selectedEpmSubGoal.key})` : ''}
-                                                                </span>
-                                                                <button
-                                                                    className="remove-btn"
-                                                                    onClick={clearEpmSubGoal}
-                                                                    type="button"
-                                                                    title="Clear sub-goal"
-                                                                    data-epm-scope-field="subGoal"
-                                                                >
-                                                                    ×
-                                                                </button>
+                                                        {selectedEpmSubGoals.length > 0 && (
+                                                            <div className="selected-team-chips" style={{ marginTop: '0.35rem' }}>
+                                                                {selectedEpmSubGoals.map((goal) => {
+                                                                    const display = getEpmSubGoalDisplayParts(goal);
+                                                                    return (
+                                                                        <div className="selected-team-chip" key={goal.key || goal.id}>
+                                                                            <span className="team-name">
+                                                                                {display.name}
+                                                                                {display.key && display.name !== display.key ? ` (${display.key})` : ''}
+                                                                            </span>
+                                                                            <button
+                                                                                className="remove-btn"
+                                                                                onClick={() => clearEpmSubGoal(goal.key)}
+                                                                                type="button"
+                                                                                title="Remove sub-goal"
+                                                                                data-epm-scope-field="subGoal"
+                                                                            >
+                                                                                x
+                                                                            </button>
+                                                                        </div>
+                                                                    );
+                                                                })}
                                                             </div>
                                                         )}
-                                                        {!selectedEpmSubGoal && (
-                                                            <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
-                                                                <input
-                                                                    type="text"
-                                                                    className="team-search-input"
-                                                                    value={epmSubGoalQuery}
-                                                                    onChange={(event) => {
-                                                                        setEpmSubGoalQuery(event.target.value);
-                                                                        setEpmSubGoalOpen(true);
-                                                                        setEpmSubGoalIndex(0);
-                                                                    }}
-                                                                    onFocus={() => {
-                                                                        if (!epmConfigDraft.scope?.rootGoalKey) return;
-                                                                        setEpmSubGoalOpen(true);
-                                                                        void loadEpmSubGoalsForRoot(epmConfigDraft.scope.rootGoalKey);
-                                                                    }}
-                                                                    onBlur={() => { window.setTimeout(() => setEpmSubGoalOpen(false), 120); }}
-                                                                    onKeyDown={handleEpmSubGoalSearchKeyDown}
-                                                                    placeholder={epmSubGoalsLoading ? 'Loading sub-goals...' : 'Search sub-goals...'}
-                                                                    disabled={!epmConfigDraft.scope?.rootGoalKey}
-                                                                    data-epm-scope-field="subGoal"
-                                                                />
-                                                                {showEpmSubGoalResults && (
-                                                                    <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
-                                                                        {epmSubGoalsLoading ? (
-                                                                            <div className="team-search-result-item is-empty">Loading sub-goals...</div>
-                                                                        ) : epmSubGoalsError ? (
-                                                                            <div className="team-search-result-item is-empty">{epmSubGoalsError}</div>
-                                                                        ) : !filteredEpmSubGoals.length ? (
-                                                                            <div className="team-search-result-item is-empty">No sub-goals found</div>
-                                                                        ) : (
-                                                                            visibleEpmSubGoals.map((goal, index) => (
+                                                        <div className="team-search-wrapper" style={{ minWidth: 0, marginTop: '0.5rem' }}>
+                                                            <input
+                                                                type="text"
+                                                                className="team-search-input"
+                                                                value={epmSubGoalQuery}
+                                                                onChange={(event) => {
+                                                                    setEpmSubGoalQuery(event.target.value);
+                                                                    setEpmSubGoalOpen(true);
+                                                                    setEpmSubGoalIndex(0);
+                                                                }}
+                                                                onFocus={() => {
+                                                                    if (!epmConfigDraft.scope?.rootGoalKey) return;
+                                                                    setEpmSubGoalOpen(true);
+                                                                    void loadEpmSubGoalsForRoot(epmConfigDraft.scope.rootGoalKey);
+                                                                }}
+                                                                onBlur={() => { window.setTimeout(() => setEpmSubGoalOpen(false), 120); }}
+                                                                onKeyDown={handleEpmSubGoalSearchKeyDown}
+                                                                placeholder={epmSubGoalsLoading ? 'Loading sub-goals...' : 'Add sub-goal...'}
+                                                                disabled={!epmConfigDraft.scope?.rootGoalKey}
+                                                                data-epm-scope-field="subGoal"
+                                                            />
+                                                            {showEpmSubGoalResults && (
+                                                                <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
+                                                                    {epmSubGoalsLoading ? (
+                                                                        <div className="team-search-result-item is-empty">Loading sub-goals...</div>
+                                                                    ) : epmSubGoalsError ? (
+                                                                        <div className="team-search-result-item is-empty">{epmSubGoalsError}</div>
+                                                                    ) : !visibleEpmSubGoals.length ? (
+                                                                        <div className="team-search-result-item is-empty">No sub-goals found</div>
+                                                                    ) : (
+                                                                        visibleEpmSubGoals.map((goal, index) => {
+                                                                            const display = getEpmSubGoalDisplayParts(goal);
+                                                                            return (
                                                                                 <div
                                                                                     key={goal.id || goal.key}
                                                                                     className={`team-search-result-item ${activeEpmSubGoalIndex === index ? 'active' : ''}`}
                                                                                     onClick={() => selectEpmSubGoal(goal)}
                                                                                 >
-                                                                                    <strong>{goal.name || goal.key}</strong>
-                                                                                    {goal.key ? ` (${goal.key})` : ''}
+                                                                                    <strong>{display.name}</strong>
+                                                                                    {display.key && display.name !== display.key ? ` (${display.key})` : ''}
                                                                                 </div>
-                                                                            ))
-                                                                        )}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
+                                                                            );
+                                                                        })
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div className="group-projects-subsection" style={{ marginTop: '0.8rem' }}>
@@ -289,7 +298,7 @@ export default function EpmSettings(props) {
                                                     <div className="group-pane-header-row">
                                                         <div>
                                                             <div className="group-pane-title">EPM projects</div>
-                                                            <div className="group-pane-subtitle">Map direct Jira Home projects under the selected sub-goal to exact Jira labels.</div>
+                                                            <div className="group-pane-subtitle">Map direct Jira Home projects under the selected sub-goals to exact Jira labels.</div>
                                                         </div>
                                                         <div className="epm-projects-header-actions">
                                                             {canLoadEpmProjects && (
@@ -319,11 +328,11 @@ export default function EpmSettings(props) {
                                                 {epmProjectPrerequisites.length > 0 && (
                                                     <div className="epm-prerequisite-panel">
                                                         <div className="group-pane-title">Setup required</div>
-                                                        <div className="group-pane-subtitle">Choose the Jira Home sub-goal and label prefix before loading project configuration.</div>
+                                                        <div className="group-pane-subtitle">Choose at least one Jira Home sub-goal and label prefix before loading project configuration.</div>
                                                         <div className="epm-prerequisite-actions">
                                                             {epmProjectPrerequisites.includes('subGoal') && (
                                                                 <button className="secondary compact" type="button" onClick={() => focusEpmScopeField('subGoal')}>
-                                                                    Set sub-goal
+                                                                    Set sub-goals
                                                                 </button>
                                                             )}
                                                             {epmProjectPrerequisites.includes('labelPrefix') && (
@@ -596,8 +605,8 @@ export default function EpmSettings(props) {
                                                     </div>
                                                 ) : (epmSettingsProjects.length === 0 && epmSettingsProjectsLoaded && !epmSettingsProjectsLoading && !epmSettingsProjectsError) ? (
                                                     <div className="epm-project-empty-state">
-                                                        <div className="group-pane-subtitle">No Home projects under the configured sub-goal.</div>
-                                                        <div className="group-pane-subtitle">This sub-goal has no direct Jira Home projects. Choose a different child goal.</div>
+                                                        <div className="group-pane-subtitle">No Home projects under the configured sub-goals.</div>
+                                                        <div className="group-pane-subtitle">These sub-goals have no direct Jira Home projects. Choose different child goals.</div>
                                                         <div className="epm-project-state-actions">
                                                             <button
                                                                 className="secondary compact"

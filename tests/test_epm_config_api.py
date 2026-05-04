@@ -47,7 +47,7 @@ class TestEpmConfigApi(unittest.TestCase):
             {
                 'version': 2,
                 'labelPrefix': 'rnd_project_',
-                'scope': {'rootGoalKey': '', 'subGoalKey': ''},
+                'scope': {'rootGoalKey': '', 'subGoalKeys': []},
                 'issueTypes': self.DEFAULT_ISSUE_TYPES,
                 'projects': {},
             },
@@ -79,7 +79,7 @@ class TestEpmConfigApi(unittest.TestCase):
                 'labelPrefix': 'rnd_project_',
                 'scope': {
                     'rootGoalKey': '',
-                    'subGoalKey': 'CHILD-200',
+                    'subGoalKeys': ['CHILD-200'],
                 },
                 'issueTypes': self.DEFAULT_ISSUE_TYPES,
                 'projects': {},
@@ -121,7 +121,7 @@ class TestEpmConfigApi(unittest.TestCase):
                 'labelPrefix': 'rnd_project_*',
                 'scope': {
                     'rootGoalKey': 'ROOT-100',
-                    'subGoalKey': 'CHILD-200',
+                    'subGoalKeys': ['CHILD-200'],
                 },
                 'issueTypes': self.DEFAULT_ISSUE_TYPES,
                 'projects': {
@@ -159,7 +159,7 @@ class TestEpmConfigApi(unittest.TestCase):
                 'labelPrefix': 'rnd_project_',
                 'scope': {
                     'rootGoalKey': 'ROOT-100',
-                    'subGoalKey': 'CHILD-200',
+                    'subGoalKeys': ['CHILD-200'],
                 },
                 'issueTypes': self.DEFAULT_ISSUE_TYPES,
                 'projects': {
@@ -173,13 +173,42 @@ class TestEpmConfigApi(unittest.TestCase):
             },
         )
 
+    def test_normalize_epm_config_reads_legacy_sub_goal_key_as_sub_goal_keys(self):
+        payload = jira_server.normalize_epm_config({
+            'version': 2,
+            'scope': {
+                'rootGoalKey': ' root-100 ',
+                'subGoalKey': ' child-200 ',
+            },
+        })
+
+        self.assertEqual(payload['scope'], {
+            'rootGoalKey': 'ROOT-100',
+            'subGoalKeys': ['CHILD-200'],
+        })
+        self.assertNotIn('subGoalKey', payload['scope'])
+
+    def test_normalize_epm_config_cleans_multi_sub_goal_keys(self):
+        payload = jira_server.normalize_epm_config({
+            'version': 2,
+            'scope': {
+                'rootGoalKey': ' root-100 ',
+                'subGoalKeys': [' child-200 ', 'CHILD-201', '', 'child-200'],
+            },
+        })
+
+        self.assertEqual(payload['scope'], {
+            'rootGoalKey': 'ROOT-100',
+            'subGoalKeys': ['CHILD-200', 'CHILD-201'],
+        })
+
     def test_normalize_epm_config_round_trips_v2_shape(self):
         config = {
             'version': 2,
             'labelPrefix': 'rnd_project_custom_',
             'scope': {
                 'rootGoalKey': 'ROOT-100',
-                'subGoalKey': 'CHILD-200',
+                'subGoalKeys': ['CHILD-200'],
             },
             'issueTypes': self.DEFAULT_ISSUE_TYPES,
             'projects': {
@@ -294,7 +323,7 @@ class TestEpmConfigApi(unittest.TestCase):
                 'labelPrefix': 'rnd_project_',
                 'scope': {
                     'rootGoalKey': 'ROOT-100',
-                    'subGoalKey': 'CHILD-200',
+                    'subGoalKeys': ['CHILD-200'],
                 },
                 'issueTypes': self.DEFAULT_ISSUE_TYPES,
                 'projects': {
@@ -458,7 +487,7 @@ class TestEpmConfigApi(unittest.TestCase):
             self.assertEqual(payload['version'], 2)
             self.assertEqual(payload['labelPrefix'], 'rnd_project_')
             self.assertEqual(payload['scope']['rootGoalKey'], 'ROOT-100')
-            self.assertEqual(payload['scope']['subGoalKey'], 'CHILD-200')
+            self.assertEqual(payload['scope']['subGoalKeys'], ['CHILD-200'])
             self.assertEqual(payload['issueTypes'], self.DEFAULT_ISSUE_TYPES)
             self.assertEqual(payload['projects']['tsq-1']['id'], 'tsq-1')
             self.assertEqual(payload['projects']['tsq-1']['homeProjectId'], 'tsq-1')
@@ -477,7 +506,7 @@ class TestEpmConfigApi(unittest.TestCase):
         self.assertEqual(saved['epm']['version'], 2)
         self.assertEqual(saved['epm']['labelPrefix'], 'rnd_project_')
         self.assertEqual(saved['epm']['scope']['rootGoalKey'], 'ROOT-100')
-        self.assertEqual(saved['epm']['scope']['subGoalKey'], 'CHILD-200')
+        self.assertEqual(saved['epm']['scope']['subGoalKeys'], ['CHILD-200'])
         self.assertNotIn('jiraEpicKey', saved['epm']['projects']['tsq-1'])
         self.assertEqual(saved['epm']['projects']['tsq-1']['id'], 'tsq-1')
         self.assertEqual(saved['epm']['projects']['tsq-1']['label'], 'synthetic_label_alpha')

@@ -19,6 +19,8 @@ export function EpmView({
     epmDuplicates,
     epmAggregateTruncated,
     epmProjectRollupLoadingIds,
+    collapsedProjectIds,
+    setCollapsedProjectIds,
     searchQuery,
     loadArchivedEpmProjectRollup,
     openEpmSettingsTab,
@@ -61,6 +63,8 @@ export function EpmView({
                     epmDuplicates={epmDuplicates}
                     epmAggregateTruncated={epmAggregateTruncated}
                     epmProjectRollupLoadingIds={epmProjectRollupLoadingIds}
+                    collapsedProjectIds={collapsedProjectIds}
+                    setCollapsedProjectIds={setCollapsedProjectIds}
                     searchQuery={searchQuery}
                     onProjectExpand={loadArchivedEpmProjectRollup}
                     openEpmSettingsTab={openEpmSettingsTab}

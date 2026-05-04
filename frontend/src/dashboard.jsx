@@ -90,11 +90,13 @@ import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     filterEpmSettingsProjectsForView,
     flattenEpmRollupBoardsForDependencies,
+    getEpmProjectDisplayName,
     getEpmProjectPrerequisites,
     getEpmSettingsProjectsCacheKey,
     hydrateEpmProjectDraft,
     isEmptyCustomEpmProjectRow,
     isEpmProjectsConfigReady,
+    normalizeEpmScopeSubGoalKeys,
     shouldUseEpmSprint,
     sortEpmSettingsProjects
 } from './epm/epmProjectUtils.mjs';
@@ -110,7 +112,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
         const createEmptyEpmConfigDraft = () => ({
             version: 2,
             labelPrefix: DEFAULT_EPM_LABEL_PREFIX,
-            scope: { rootGoalKey: '', subGoalKey: '' },
+            scope: { rootGoalKey: '', subGoalKeys: [] },
             projects: {}
         });
 
@@ -275,6 +277,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const [epmProjectSearch, setEpmProjectSearch] = useState('');
             const [showEpmProjectDropdown, setShowEpmProjectDropdown] = useState(false);
             const epmProjectDropdownRefs = useRef({ main: null, compact: null });
+            const [showEpmSubGoalFilterDropdown, setShowEpmSubGoalFilterDropdown] = useState(false);
+            const epmSubGoalFilterDropdownRefs = useRef({ main: null, compact: null });
             const [epmConfigDraft, setEpmConfigDraft] = useState(createEmptyEpmConfigDraft());
             const [epmConfigLoading, setEpmConfigLoading] = useState(false);
             const [epmConfigSaving, setEpmConfigSaving] = useState(false);
@@ -1058,15 +1062,15 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     if (normalizedExpectedSubGoalKey && !lookupFailed && !hasExpectedSubGoal) {
                         setEpmConfigDraft((prev) => {
                             const prevRootGoalKey = String(prev?.scope?.rootGoalKey || '').trim().toUpperCase();
-                            const prevSubGoalKey = String(prev?.scope?.subGoalKey || '').trim().toUpperCase();
-                            if (prevRootGoalKey !== normalizedRootGoalKey || prevSubGoalKey !== normalizedExpectedSubGoalKey) {
+                            const prevSubGoalKeys = normalizeEpmScopeSubGoalKeys(prev?.scope);
+                            if (prevRootGoalKey !== normalizedRootGoalKey || !prevSubGoalKeys.includes(normalizedExpectedSubGoalKey)) {
                                 return prev;
                             }
                             return {
                                 ...prev,
                                 scope: {
                                     ...(prev.scope || {}),
-                                    subGoalKey: '',
+                                    subGoalKeys: prevSubGoalKeys.filter(key => key !== normalizedExpectedSubGoalKey),
                                 },
                             };
                         });
@@ -1098,7 +1102,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     scope: {
                         ...(prev.scope || {}),
                         rootGoalKey,
-                        subGoalKey: rootChanged ? '' : prev.scope?.subGoalKey || '',
+                        subGoalKeys: rootChanged ? [] : normalizeEpmScopeSubGoalKeys(prev.scope),
                     },
                 }));
                 setEpmRootGoalQuery('');
@@ -1116,23 +1120,41 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             const clearEpmRootGoal = () => {
                 resetEpmSettingsProjectRows();
                 updateEpmScopeDraft('rootGoalKey', '');
-                updateEpmScopeDraft('subGoalKey', '');
+                updateEpmScopeDraft('subGoalKeys', []);
                 setEpmRootGoalQuery('');
                 setEpmSubGoalQuery('');
                 setEpmRootGoalOpen(false);
                 setEpmRootGoalIndex(0);
                 clearEpmSubGoalOptions();
             };
-            const clearEpmSubGoal = () => {
+            const clearEpmSubGoal = (subGoalKey) => {
                 resetEpmSettingsProjectRows();
-                updateEpmScopeDraft('subGoalKey', '');
+                const normalizedSubGoalKey = String(subGoalKey || '').trim().toUpperCase();
+                setEpmConfigDraft((prev) => ({
+                    ...prev,
+                    scope: {
+                        ...(prev.scope || {}),
+                        subGoalKeys: normalizeEpmScopeSubGoalKeys(prev.scope).filter(key => key !== normalizedSubGoalKey),
+                    },
+                }));
                 setEpmSubGoalQuery('');
                 setEpmSubGoalOpen(false);
                 setEpmSubGoalIndex(0);
             };
             const selectEpmSubGoal = (goal) => {
+                const subGoalKey = String(goal?.key || '').trim().toUpperCase();
+                if (!subGoalKey) return;
                 resetEpmSettingsProjectRows();
-                updateEpmScopeDraft('subGoalKey', String(goal?.key || '').trim().toUpperCase());
+                setEpmConfigDraft((prev) => {
+                    const subGoalKeys = normalizeEpmScopeSubGoalKeys(prev.scope);
+                    return {
+                        ...prev,
+                        scope: {
+                            ...(prev.scope || {}),
+                            subGoalKeys: subGoalKeys.includes(subGoalKey) ? subGoalKeys : [...subGoalKeys, subGoalKey],
+                        },
+                    };
+                });
                 setEpmSubGoalQuery('');
                 setEpmSubGoalOpen(false);
                 setEpmSubGoalIndex(0);
@@ -1161,6 +1183,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setShowGroupDropdown(next.group);
                 setShowTeamDropdown(next.team);
                 setShowEpmProjectDropdown(next.project);
+                setShowEpmSubGoalFilterDropdown(next.subGoal);
             };
 
             const invalidateSprintDataForConfigSave = (refreshTarget) => {
@@ -1582,7 +1605,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     labelPrefix: String(config?.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX).trim(),
                     scope: {
                         rootGoalKey: String(config?.scope?.rootGoalKey || '').trim().toUpperCase(),
-                        subGoalKey: String(config?.scope?.subGoalKey || '').trim().toUpperCase(),
+                        subGoalKeys: normalizeEpmScopeSubGoalKeys(config?.scope),
                     },
                     issueTypes: config?.issueTypes && typeof config.issueTypes === 'object' ? config.issueTypes : undefined,
                     projects,
@@ -1596,7 +1619,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 return nextConfig;
             };
             const hasSavedEpmScopeConfig = (config) => {
-                return Boolean(config?.scope?.rootGoalKey && config?.scope?.subGoalKey);
+                return Boolean(config?.scope?.rootGoalKey && normalizeEpmScopeSubGoalKeys(config?.scope).length > 0);
             };
             const filteredEpmRootGoals = React.useMemo(() => {
                 const query = String(epmRootGoalQuery || '').trim().toLowerCase();
@@ -1621,13 +1644,21 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 if (!key) return null;
                 return epmRootGoals.find((goal) => String(goal?.key || '').trim().toUpperCase() === key) || { key, name: key };
             }, [epmConfigDraft.scope?.rootGoalKey, epmRootGoals]);
-            const selectedEpmSubGoal = React.useMemo(() => {
-                const key = String(epmConfigDraft.scope?.subGoalKey || '').trim().toUpperCase();
-                if (!key) return null;
-                return epmSubGoals.find((goal) => String(goal?.key || '').trim().toUpperCase() === key) || { key, name: key };
-            }, [epmConfigDraft.scope?.subGoalKey, epmSubGoals]);
+            const selectedEpmSubGoals = React.useMemo(() => {
+                const keys = normalizeEpmScopeSubGoalKeys(epmConfigDraft.scope);
+                if (!keys.length) return [];
+                return keys.map((key) => (
+                    epmSubGoals.find((goal) => String(goal?.key || '').trim().toUpperCase() === key) || { key, name: key }
+                ));
+            }, [epmConfigDraft.scope?.subGoalKeys, epmSubGoals]);
             const visibleEpmRootGoals = filteredEpmRootGoals.slice(0, 10);
-            const visibleEpmSubGoals = filteredEpmSubGoals.slice(0, 10);
+            const selectedEpmSubGoalKeySet = React.useMemo(
+                () => new Set(normalizeEpmScopeSubGoalKeys(epmConfigDraft.scope)),
+                [epmConfigDraft.scope?.subGoalKeys]
+            );
+            const visibleEpmSubGoals = filteredEpmSubGoals
+                .filter((goal) => !selectedEpmSubGoalKeySet.has(String(goal?.key || '').trim().toUpperCase()))
+                .slice(0, 10);
             const activeEpmRootGoalIndex = Math.min(epmRootGoalIndex, Math.max(visibleEpmRootGoals.length - 1, 0));
             const activeEpmSubGoalIndex = Math.min(epmSubGoalIndex, Math.max(visibleEpmSubGoals.length - 1, 0));
             const showEpmRootGoalResults = epmRootGoalOpen && (epmRootGoalsLoading || Boolean(epmRootGoalsError) || Boolean(epmRootGoalQuery.trim()) || visibleEpmRootGoals.length > 0 || (!epmRootGoalsLoading && !epmRootGoalsError && epmRootGoals.length === 0));
@@ -1975,6 +2006,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     return false;
                 }
             }, [epmConfigDraft]);
+            const savedEpmSubGoalKeys = React.useMemo(
+                () => normalizeEpmScopeSubGoalKeys(epmConfigDraft.scope),
+                [epmConfigDraft.scope?.subGoalKeys]
+            );
             const {
                 epmTab,
                 setEpmTab,
@@ -1993,6 +2028,9 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 epmAggregateTruncated,
                 epmRollupLoading,
                 epmProjectRollupLoadingIds,
+                epmSelectedSubGoalKeys,
+                setEpmSelectedSubGoalKeys,
+                runtimeEpmSubGoalKeys,
                 refreshEpmProjects,
                 refreshEpmView,
                 loadArchivedEpmProjectRollup,
@@ -2003,10 +2041,56 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 selectedView,
                 epmConfigLoaded,
                 hasSavedEpmScope,
+                savedEpmSubGoalKeys,
                 selectedSprint,
                 epmProjectSearch,
                 searchQuery,
             });
+            const [epmCollapsedProjectIds, setEpmCollapsedProjectIds] = useState(() => new Set());
+            const epmVisibleProjectKeys = React.useMemo(() => {
+                if (selectedView !== 'epm' || epmSelectedProjectId) return [];
+                const boards = Array.isArray(visibleEpmRollupBoards) ? visibleEpmRollupBoards : [];
+                return boards
+                    .map(({ project }) => project?.id || getEpmProjectDisplayName(project) || '')
+                    .filter(Boolean);
+            }, [selectedView, epmSelectedProjectId, visibleEpmRollupBoards]);
+            const epmVisibleProjectKeysSignature = epmVisibleProjectKeys.join('|');
+            const showEpmProjectCollapseAllButton = selectedView === 'epm' && !epmSelectedProjectId && epmVisibleProjectKeys.length > 1;
+            const allVisibleEpmProjectsCollapsed = epmVisibleProjectKeys.length > 0 && epmVisibleProjectKeys.every((key) => epmCollapsedProjectIds.has(key));
+            const epmProjectCollapseAllLabel = allVisibleEpmProjectsCollapsed ? 'Expand all projects' : 'Collapse all projects';
+
+            useEffect(() => {
+                if (selectedView !== 'epm' || epmSelectedProjectId || !Array.isArray(visibleEpmRollupBoards)) return;
+                if (epmTab === 'archived') {
+                    setEpmCollapsedProjectIds((prev) => {
+                        const next = new Set(prev);
+                        epmVisibleProjectKeys.forEach((key) => next.add(key));
+                        return next;
+                    });
+                    return;
+                }
+                setEpmCollapsedProjectIds(new Set());
+            }, [selectedView, epmSelectedProjectId, epmTab, epmVisibleProjectKeysSignature]);
+
+            const toggleAllVisibleEpmProjectsCollapsed = () => {
+                if (!showEpmProjectCollapseAllButton) return;
+                if (allVisibleEpmProjectsCollapsed) {
+                    setEpmCollapsedProjectIds((prev) => {
+                        const next = new Set(prev);
+                        epmVisibleProjectKeys.forEach((key) => next.delete(key));
+                        return next;
+                    });
+                    if (epmTab === 'archived') {
+                        (visibleEpmRollupBoards || []).forEach(({ project }) => loadArchivedEpmProjectRollup(project));
+                    }
+                    return;
+                }
+                setEpmCollapsedProjectIds((prev) => {
+                    const next = new Set(prev);
+                    epmVisibleProjectKeys.forEach((key) => next.add(key));
+                    return next;
+                });
+            };
             const hasDraftEpmScope = React.useMemo(() => {
                 return hasSavedEpmScopeConfig(epmConfigDraft);
             }, [epmConfigDraft]);
@@ -4511,6 +4595,18 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     if (!node) return;
                     if (!node.contains(event.target)) {
                         setShowEpmProjectDropdown(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, [compactStickyVisible]);
+
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    const node = getActiveDropdownNode(epmSubGoalFilterDropdownRefs);
+                    if (!node) return;
+                    if (!node.contains(event.target)) {
+                        setShowEpmSubGoalFilterDropdown(false);
                     }
                 };
                 document.addEventListener('mousedown', handleClickOutside);
@@ -10224,6 +10320,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 setShowSprintDropdown(false);
                 setShowGroupDropdown(false);
                 setShowEpmProjectDropdown(false);
+                setShowEpmSubGoalFilterDropdown(false);
             }, [compactStickyVisible]);
 
             useEffect(() => {
@@ -10390,8 +10487,44 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                     setEpmProjectSearch={setEpmProjectSearch}
                     setEpmSelectedProjectId={setEpmSelectedProjectId}
                     setShowEpmProjectDropdown={setShowEpmProjectDropdown}
+                    savedEpmSubGoalKeys={savedEpmSubGoalKeys}
+                    epmSubGoalOptions={epmSubGoals}
+                    selectedEpmSubGoalKeys={epmSelectedSubGoalKeys}
+                    setEpmSelectedSubGoalKeys={setEpmSelectedSubGoalKeys}
+                    showEpmSubGoalDropdown={showEpmSubGoalFilterDropdown}
+                    setShowEpmSubGoalDropdown={setShowEpmSubGoalFilterDropdown}
+                    epmSubGoalFilterDropdownRefs={epmSubGoalFilterDropdownRefs}
                 />
             );
+
+            const renderEpmProjectCollapseAllButton = (_surface) => {
+                if (!showEpmProjectCollapseAllButton) return null;
+                return (
+                    <button
+                        className="group-gear-button epm-project-collapse-all-button"
+                        onClick={toggleAllVisibleEpmProjectsCollapsed}
+                        title={epmProjectCollapseAllLabel}
+                        aria-label={epmProjectCollapseAllLabel}
+                        aria-pressed={allVisibleEpmProjectsCollapsed}
+                        type="button"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            {allVisibleEpmProjectsCollapsed ? (
+                                <>
+                                    <path d="M7 8l5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M7 16l5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                </>
+                            ) : (
+                                <>
+                                    <path d="M7 5l5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M7 19l5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                </>
+                            )}
+                            <path d="M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                        </svg>
+                    </button>
+                );
+            };
 
             const renderSprintControl = (surface) => (
                 <ControlField label="Sprint">
@@ -10838,18 +10971,21 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     </button>
                                 )}
                                 {selectedView === 'epm' && (
-                                    <button
-                                        className="group-gear-button"
-                                        onClick={openEpmSettingsTab}
-                                        title="Open EPM settings"
-                                        aria-label="Open EPM settings"
-                                        type="button"
-                                    >
-                                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                            <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
-                                            <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                                        </svg>
-                                    </button>
+                                    <>
+                                        {renderEpmProjectCollapseAllButton('main')}
+                                        <button
+                                            className="group-gear-button"
+                                            onClick={openEpmSettingsTab}
+                                            title="Open EPM settings"
+                                            aria-label="Open EPM settings"
+                                            type="button"
+                                        >
+                                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
+                                                <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                            </svg>
+                                        </button>
+                                    </>
                                 )}
                             </div>
                         </div>
@@ -10874,6 +11010,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         <>
                                             {shouldUseEpmSprint(epmTab) && renderSprintControl('compact')}
                                             {renderEpmControls('compact', false)}
+                                            {renderEpmProjectCollapseAllButton('compact')}
                                             <button
                                                 className="group-gear-button"
                                                 onClick={openEpmSettingsTab}
@@ -13258,6 +13395,8 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     epmDuplicates={epmDuplicates}
                                     epmAggregateTruncated={epmAggregateTruncated}
                                     epmProjectRollupLoadingIds={epmProjectRollupLoadingIds}
+                                    collapsedProjectIds={epmCollapsedProjectIds}
+                                    setCollapsedProjectIds={setEpmCollapsedProjectIds}
                                     searchQuery={searchQuery}
                                     loadArchivedEpmProjectRollup={loadArchivedEpmProjectRollup}
                                     openEpmSettingsTab={openEpmSettingsTab}
@@ -13451,7 +13590,7 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                         visibleEpmRootGoals,
                                         activeEpmRootGoalIndex,
                                         selectEpmRootGoal,
-                                        selectedEpmSubGoal,
+                                        selectedEpmSubGoals,
                                         clearEpmSubGoal,
                                         epmConfigDraft,
                                         epmSubGoalQuery,

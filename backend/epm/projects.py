@@ -29,11 +29,36 @@ def normalize_epm_upper_text(value):
     return normalize_epm_text(value).upper()
 
 
+def normalize_epm_sub_goal_keys(values):
+    if isinstance(values, list):
+        raw_values = values
+    else:
+        raw_values = [values] if normalize_epm_text(values) else []
+    normalized = []
+    seen = set()
+    for value in raw_values:
+        key = normalize_epm_upper_text(value)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        normalized.append(key)
+    return normalized
+
+
+def _same_sub_goal_keys(left, right):
+    left_keys = normalize_epm_sub_goal_keys(left)
+    right_keys = normalize_epm_sub_goal_keys(right)
+    return len(left_keys) == len(right_keys) and set(left_keys) == set(right_keys)
+
+
 def build_epm_home_projects_cache_key(epm_scope):
     scope = epm_scope if isinstance(epm_scope, dict) else {}
+    sub_goal_keys = normalize_epm_sub_goal_keys(scope.get('subGoalKeys'))
+    if not sub_goal_keys:
+        sub_goal_keys = normalize_epm_sub_goal_keys(scope.get('subGoalKey'))
     return json.dumps({
         'rootGoalKey': normalize_epm_upper_text(scope.get('rootGoalKey')),
-        'subGoalKey': normalize_epm_upper_text(scope.get('subGoalKey')),
+        'subGoalKeys': sub_goal_keys,
     }, sort_keys=True)
 
 
@@ -206,6 +231,7 @@ def build_custom_project_payload(row):
         'latestUpdateDate': '',
         'latestUpdateSnippet': '',
         'latestUpdateHtml': '',
+        'latestUpdateAuthor': '',
         'name': name,
         'label': label,
         'customName': name,
@@ -236,10 +262,23 @@ def find_epm_config_row(projects, project_id):
     return None
 
 
-def build_epm_projects_payload(epm_config, deps, force_refresh=False, tab=None):
+def build_epm_projects_payload(epm_config, deps, force_refresh=False, tab=None, sub_goal_keys=None):
     normalized_config = deps.normalize_epm_config(epm_config or {})
     projects = []
     epm_scope = normalized_config.get('scope') or {}
+    saved_sub_goal_keys = normalize_epm_sub_goal_keys(epm_scope.get('subGoalKeys'))
+    requested_raw_sub_goal_keys = normalize_epm_sub_goal_keys(sub_goal_keys)
+    saved_sub_goal_key_set = set(saved_sub_goal_keys)
+    requested_sub_goal_keys = [
+        key for key in requested_raw_sub_goal_keys
+        if key in saved_sub_goal_key_set
+    ]
+    runtime_narrowing = bool(requested_raw_sub_goal_keys) and not _same_sub_goal_keys(requested_sub_goal_keys, saved_sub_goal_keys)
+    if requested_raw_sub_goal_keys:
+        epm_scope = {
+            **epm_scope,
+            'subGoalKeys': requested_sub_goal_keys,
+        }
     home_state = build_epm_home_projects_state(epm_scope, deps, force_refresh=force_refresh)
     returned_home_project_ids = set()
     for home_project in home_state['homeProjects']:
@@ -258,6 +297,8 @@ def build_epm_projects_payload(epm_config, deps, force_refresh=False, tab=None):
     for row in normalized_config['projects'].values():
         home_project_id = normalize_epm_text(row.get('homeProjectId'))
         if home_project_id and home_project_id in returned_home_project_ids:
+            continue
+        if runtime_narrowing:
             continue
         if home_project_id:
             missing_home_row = build_custom_project_payload(row)
@@ -301,7 +342,7 @@ def filter_epm_projects_for_tab(projects, tab):
 
 
 def find_epm_project_or_404(project_id, deps):
-    epm_config = deps.get_epm_config()
+    epm_config = deps.normalize_epm_config(deps.get_epm_config() or {})
     epm_scope = epm_config.get('scope') or {}
     config_row = find_epm_config_row(epm_config['projects'], project_id)
 

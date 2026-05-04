@@ -46,7 +46,10 @@ async function loadHeaderFixture(page) {
                         </div>
                         <div class="epm-project-board-update-row">
                             <div class="epm-project-board-update">
-                                <span class="epm-project-board-update-date">yesterday</span>
+                                <div class="epm-project-board-update-meta">
+                                    <span class="epm-project-board-update-date">yesterday</span>
+                                    <span class="epm-project-board-update-author">· Ada Lovelace</span>
+                                </div>
                                 <div class="epm-project-board-update-copy">
                                     <p><strong>RFP AI bot</strong> and related <em>deals AI</em> work are progressing.</p>
                                     <p>Build is ready for <a href="https://example.test/client-testing">client testing</a>; rollout model defined.</p>
@@ -80,7 +83,9 @@ for (const viewport of [
         const meta = page.locator('.epm-project-board-meta');
         const updateRow = page.locator('.epm-project-board-update-row');
         const update = page.locator('.epm-project-board-update').first();
+        const updateMeta = page.locator('.epm-project-board-update-meta');
         const updateDate = page.locator('.epm-project-board-update-date');
+        const updateAuthor = page.locator('.epm-project-board-update-author');
 
         await expect(header).toBeVisible();
         await expect(toggle.locator('a')).toHaveCount(0);
@@ -92,7 +97,9 @@ for (const viewport of [
         const metaBox = await meta.boundingBox();
         const updateRowBox = await updateRow.boundingBox();
         const updateBox = await update.boundingBox();
+        const updateMetaBox = await updateMeta.boundingBox();
         const updateDateBox = await updateDate.boundingBox();
+        const updateAuthorBox = await updateAuthor.boundingBox();
 
         expect(headerBox).toBeTruthy();
         expect(bodyBox).toBeTruthy();
@@ -100,14 +107,17 @@ for (const viewport of [
         expect(metaBox).toBeTruthy();
         expect(updateRowBox).toBeTruthy();
         expect(updateBox).toBeTruthy();
+        expect(updateMetaBox).toBeTruthy();
         expect(updateDateBox).toBeTruthy();
+        expect(updateAuthorBox).toBeTruthy();
 
         expect(boxesOverlap(toggleBox, metaBox)).toBe(false);
         expect(bodyBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height - 0.5);
         expect(updateRowBox.x + updateRowBox.width).toBeLessThanOrEqual(headerBox.x + headerBox.width + 0.5);
-        expect(updateDateBox.y).toBeLessThanOrEqual(updateBox.y + 1);
-        expect(updateDateBox.x).toBeGreaterThan(updateBox.x);
-        expect(updateDateBox.x + updateDateBox.width).toBeLessThan(updateBox.x + updateBox.width);
+        expect(updateMetaBox.y).toBeLessThanOrEqual(updateBox.y + 1);
+        expect(updateMetaBox.x).toBeGreaterThan(updateBox.x);
+        expect(updateMetaBox.x + updateMetaBox.width).toBeLessThan(updateBox.x + updateBox.width);
+        expect(updateAuthorBox.x).toBeGreaterThan(updateDateBox.x + updateDateBox.width);
         await expect(update.locator('strong')).toHaveText('RFP AI bot');
         await expect(update.locator('em')).toHaveText('deals AI');
         await expect(update.locator('a')).toHaveAttribute('href', 'https://example.test/client-testing');

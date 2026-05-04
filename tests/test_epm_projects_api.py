@@ -462,8 +462,7 @@ class TestEpmProjectsApi(unittest.TestCase):
         response = self.client.get('/api/epm/projects')
 
         self.assertEqual(response.status_code, 200)
-        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'})
-        self.assertEqual(mock_fetch_projects.call_args.args[0], mock_get_epm_config.return_value['scope'])
+        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
         payload = response.get_json()
         project = payload['projects'][0]
         self.assertEqual(project['customName'], 'Synthetic Launch')
@@ -471,6 +470,64 @@ class TestEpmProjectsApi(unittest.TestCase):
         self.assertEqual(project['resolvedLinkage']['labels'], ['synthetic_label_alpha'])
         self.assertEqual(project['resolvedLinkage']['epicKeys'], [])
         self.assertEqual(project['matchState'], 'home-linked')
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_endpoint_runtime_sub_goal_keys_narrow_home_scope_without_mutating_saved_config(self, mock_fetch_projects, mock_get_epm_config):
+        saved_config = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-A', 'CHILD-B', 'CHILD-C']},
+            'projects': {},
+        }
+        mock_get_epm_config.return_value = saved_config
+        mock_fetch_projects.return_value = []
+
+        response = self.client.get('/api/epm/projects?tab=active&subGoalKeys=child-a, CHILD-B')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-A', 'CHILD-B']})
+        self.assertEqual(saved_config['scope']['subGoalKeys'], ['CHILD-A', 'CHILD-B', 'CHILD-C'])
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_endpoint_runtime_sub_goal_keys_cannot_expand_saved_scope(self, mock_fetch_projects, mock_get_epm_config):
+        saved_config = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-A', 'CHILD-B']},
+            'projects': {},
+        }
+        mock_get_epm_config.return_value = saved_config
+        mock_fetch_projects.return_value = []
+
+        response = self.client.get('/api/epm/projects?subGoalKeys=CHILD-A,CHILD-Z')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-A']})
+        self.assertEqual(saved_config['scope']['subGoalKeys'], ['CHILD-A', 'CHILD-B'])
+
+    @patch('jira_server.get_epm_config')
+    @patch('jira_server.fetch_epm_home_projects', create=True)
+    def test_projects_endpoint_hides_custom_projects_when_runtime_sub_goal_narrowing_is_active(self, mock_fetch_projects, mock_get_epm_config):
+        mock_get_epm_config.return_value = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-A', 'CHILD-B']},
+            'projects': {
+                'custom-a': {
+                    'id': 'custom-a',
+                    'name': 'Custom Alpha',
+                    'label': 'synthetic_label_alpha',
+                },
+            },
+        }
+        mock_fetch_projects.return_value = []
+
+        response = self.client.get('/api/epm/projects?subGoalKeys=CHILD-A')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['projects'], [])
 
     @patch('jira_server.get_epm_config')
     @patch('jira_server.fetch_epm_home_projects', create=True)
@@ -504,12 +561,11 @@ class TestEpmProjectsApi(unittest.TestCase):
 
         project = jira_server.find_epm_project_or_404('tsq-1')
 
-        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'})
-        self.assertIs(mock_fetch_projects.call_args.args[0], mock_get_epm_config.return_value['scope'])
+        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
         self.assertEqual(project['customName'], 'Synthetic Launch')
         self.assertEqual(project['displayName'], 'Synthetic Launch')
         self.assertEqual(project['resolvedLinkage']['labels'], ['synthetic_label_alpha'])
-        self.assertEqual(project['resolvedLinkage']['epicKeys'], ['SYN-123'])
+        self.assertEqual(project['resolvedLinkage']['epicKeys'], [])
         self.assertEqual(project['matchState'], 'jep-fallback')
 
     @patch('jira_server.get_epm_config')
@@ -661,7 +717,7 @@ class TestEpmProjectsApi(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         mock_get_epm_config.assert_not_called()
-        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'})
+        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
         payload = response.get_json()
         self.assertEqual(payload['projects'][0]['displayName'], 'Preview Launch')
         self.assertEqual(payload['projects'][0]['resolvedLinkage']['labels'], ['synthetic_label_alpha'])
@@ -842,7 +898,7 @@ class TestEpmProjectsApi(unittest.TestCase):
         mock_fetch_projects.return_value = self._home_projects()
         home = jira_server.find_epm_project_or_404('home-2')
 
-        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'})
+        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
         self.assertEqual(home['id'], 'home-2')
         self.assertEqual(home['displayName'], 'Configured Home Two')
         self.assertEqual(home['label'], 'synthetic_label_home_two')
@@ -863,7 +919,7 @@ class TestEpmProjectsApi(unittest.TestCase):
 
         home = jira_server.find_epm_project_or_404('home-2')
 
-        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'})
+        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
         self.assertEqual(home['id'], 'home-2')
         self.assertEqual(home['displayName'], 'Configured Home Two')
         self.assertEqual(home['label'], 'synthetic_label_home_two')

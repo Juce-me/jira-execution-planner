@@ -6995,6 +6995,24 @@
             display: none;
         }
 
+        .epm-project-bulk-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin: -0.2rem 0 0.35rem;
+        }
+
+        .epm-project-collapse-all-button {
+            color: var(--epm-project-accent);
+            border-color: var(--epm-project-accent-soft);
+            background: var(--epm-project-accent-surface);
+            white-space: nowrap;
+        }
+
+        .epm-project-collapse-all-button:hover {
+            background: var(--epm-project-hover-surface);
+            color: var(--epm-project-accent);
+        }
+
         .epm-project-board-header {
             display: flex;
             align-items: center;

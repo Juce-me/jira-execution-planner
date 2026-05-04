@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
 
 const screenshotDir = '/tmp/codebase-structure-qa';
+const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
 const groupTeamIds = ['team-alpha', 'team-beta'];
@@ -22,20 +23,21 @@ test.beforeAll(() => {
     fs.mkdirSync(screenshotDir, { recursive: true });
 });
 
-function epmProject(tab) {
+function epmProject(tab, index = 1) {
+    const suffix = index === 1 ? '' : ` ${index}`;
     return {
-        id: `${tab}-1`,
-        homeProjectId: `${tab}-1`,
-        name: `${tab[0].toUpperCase()}${tab.slice(1)} Project`,
-        displayName: `${tab[0].toUpperCase()}${tab.slice(1)} Project`,
-        label: `rnd_project_${tab}`,
+        id: `${tab}-${index}`,
+        homeProjectId: `${tab}-${index}`,
+        name: `${tab[0].toUpperCase()}${tab.slice(1)} Project${suffix}`,
+        displayName: `${tab[0].toUpperCase()}${tab.slice(1)} Project${suffix}`,
+        label: `rnd_project_${tab}_${index}`,
         stateValue: tab === 'archived' ? 'DONE' : tab === 'backlog' ? 'PAUSED' : 'ON_TRACK',
         stateLabel: tab === 'archived' ? 'Done' : tab === 'backlog' ? 'Paused' : 'On track',
         tabBucket: tab,
         latestUpdateDate: '2026-04-29',
-        latestUpdateSnippet: `${tab} project update`,
-        homeUrl: `https://home.atlassian.com/project/${tab}-1`,
-        resolvedLinkage: { labels: [`rnd_project_${tab}`], epicKeys: [] },
+        latestUpdateSnippet: `${tab} project${suffix} update`,
+        homeUrl: `https://home.atlassian.com/project/${tab}-${index}`,
+        resolvedLinkage: { labels: [`rnd_project_${tab}_${index}`], epicKeys: [] },
         matchState: 'home-linked',
     };
 }
@@ -84,9 +86,10 @@ const techTasks = Array.from({ length: 12 }, (_, index) => makeEngTask('tech', i
 const productEpic = makeEpic('product');
 const techEpic = makeEpic('tech');
 
-function makeEpmStory(tab, index, epicKey) {
+function makeEpmStory(tab, index, epicKey, projectIndex = 1) {
+    const suffix = projectIndex === 1 ? '' : `-${projectIndex}`;
     return {
-        key: `${tab.toUpperCase()}-STORY-${index}`,
+        key: `${tab.toUpperCase()}${suffix}-STORY-${index}`,
         summary: `${tab} portfolio story ${index}`,
         issueType: 'Story',
         status: index % 3 === 0 ? 'In Progress' : 'To Do',
@@ -99,11 +102,12 @@ function makeEpmStory(tab, index, epicKey) {
     };
 }
 
-function epmRollup(tab) {
+function epmRollup(tab, projectIndex = 1) {
     if (tab === 'archived') {
         return { metadataOnly: true };
     }
-    const epicKey = `${tab.toUpperCase()}-EPIC`;
+    const suffix = projectIndex === 1 ? '' : `-${projectIndex}`;
+    const epicKey = `${tab.toUpperCase()}${suffix}-EPIC`;
     return {
         metadataOnly: false,
         emptyRollup: false,
@@ -121,7 +125,7 @@ function epmRollup(tab) {
                     teamId: 'team-alpha',
                     teamName: 'Alpha Team',
                 },
-                stories: Array.from({ length: 10 }, (_, index) => makeEpmStory(tab, index + 1, epicKey)),
+                stories: Array.from({ length: 10 }, (_, index) => makeEpmStory(tab, index + 1, epicKey, projectIndex)),
             },
         },
         orphanStories: [],
@@ -295,6 +299,7 @@ async function expectArchivedMetadataOnlyStickyContract(page) {
 
 async function installApiMocks(page, calls, options = {}) {
     const configGate = options.delayConfig ? createDeferred() : null;
+    const epmProjectCount = options.epmProjectCount || 1;
     const unexpectedCalls = [];
     const state = {
         configReleased: !configGate,
@@ -373,16 +378,23 @@ async function installApiMocks(page, calls, options = {}) {
         if (url.pathname === '/api/scenario/overrides') return json({ overrides: {} });
         if (url.pathname === '/api/epm/projects') {
             const tab = url.searchParams.get('tab') || 'active';
-            return json({ projects: [epmProject(tab)] });
+            return json({
+                projects: Array.from({ length: epmProjectCount }, (_, index) => epmProject(tab, index + 1)),
+            });
         }
         if (url.pathname === '/api/epm/projects/rollup/all') {
             if (!state.configReleased) {
                 state.rollupBeforeConfigRelease = true;
             }
             const tab = url.searchParams.get('tab') || 'active';
-            const project = epmProject(tab);
             return json({
-                projects: [{ project, rollup: epmRollup(tab) }],
+                projects: Array.from({ length: epmProjectCount }, (_, index) => {
+                    const projectIndex = index + 1;
+                    return {
+                        project: epmProject(tab, projectIndex),
+                        rollup: epmRollup(tab, projectIndex),
+                    };
+                }),
                 duplicates: {},
                 truncated: false,
                 fallback: true,
@@ -421,7 +433,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
         showScenario: false,
     });
 
-    await page.goto('http://127.0.0.1:5050/', { waitUntil: 'networkidle' });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await expect(page.getByText('Catch Up')).toBeVisible();
     await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
     await waitForCallCount(calls, call => call.pathname === '/api/missing-info', 1);
@@ -501,7 +513,7 @@ test('EPM lifecycle tabs load after config with scoped rollup requests and stick
         sprintName: selectedSprintName,
     });
 
-    await page.goto('http://127.0.0.1:5050/', { waitUntil: 'domcontentloaded' });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
     await expect.poll(() => callsFor(calls, '/api/config').length).toBe(1);
     expect(callsFor(calls, '/api/epm/projects/rollup/all')).toHaveLength(0);
     apiMocks.releaseConfig();
@@ -544,5 +556,38 @@ test('EPM lifecycle tabs load after config with scoped rollup requests and stick
         expect(metadataCalls.length).toBeLessThanOrEqual(1);
         expect(tabRollups).toHaveLength(1);
     });
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('EPM all-project board can collapse and expand all visible projects', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, { epmProjectCount: 3 });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'epm',
+        epmTab: 'active',
+        epmSelectedProjectId: '',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.locator('.epm-project-board')).toHaveCount(3);
+    await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Collapse all projects' })).toBeVisible();
+    await page.screenshot({ path: `${screenshotDir}/epm-collapse-all-projects.png`, fullPage: true });
+
+    await page.getByRole('button', { name: 'Collapse all projects' }).click();
+    await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(3);
+    await expect(page.locator('.epm-project-board:not(.is-collapsed) .epic-header')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Expand all projects' }).click();
+    await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(0);
+    await expect(page.locator('.epm-project-board:not(.is-collapsed) .epic-header')).toHaveCount(3);
+
+    await page.getByRole('button', { name: 'Active Project 2' }).click();
+    await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Collapse all projects' })).toBeVisible();
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });

@@ -152,12 +152,14 @@ Do not hand-edit `frontend/dist/`; run `npm run build` if frontend source change
 
 **Files:**
 - Modify: `backend/auth/jira_auth.py`
+- Modify: `backend/routes/auth_routes.py`
 - Modify: `jira_server.py`
 - Modify: `.env.example`
 - Modify: `docs/atlassian-oauth-setup.md`
 - Test: `tests/test_jira_auth.py`
+- Test: `tests/test_auth_routes.py`
 
-- [ ] **Step 1: Write the failing scope test**
+- [ ] **Step 1: Write failing scope and old-session tests**
 
 Add this test to `tests/test_jira_auth.py` next to `test_default_scopes_include_read_me`:
 
@@ -170,23 +172,100 @@ Add this test to `tests/test_jira_auth.py` next to `test_default_scopes_include_
         self.assertIn("read:project:jira", scopes)
 ```
 
-- [ ] **Step 2: Run the failing scope test**
+Also import `missing_oauth_scopes` from `backend.auth.jira_auth` and add helper coverage for already-issued OAuth sessions that do not have the new scope grant:
+
+```python
+    def test_missing_oauth_scopes_detects_old_session(self):
+        required = {
+            "read:me",
+            "read:jira-work",
+            "read:jira-user",
+            "read:board-scope:jira-software",
+            "read:sprint:jira-software",
+            "read:project:jira",
+            "offline_access",
+        }
+        session_data = {
+            "access_token": "access-123",
+            "scope": "read:me read:jira-work read:jira-user offline_access",
+        }
+
+        self.assertEqual(
+            missing_oauth_scopes(session_data, required),
+            {"read:board-scope:jira-software", "read:sprint:jira-software", "read:project:jira"},
+        )
+```
+
+Add route-level status coverage in `tests/test_auth_routes.py`:
+
+```python
+    def test_status_requires_reconsent_when_oauth_session_has_old_scopes(self):
+        with self.client.session_transaction() as flask_session:
+            flask_session["atlassian_oauth_session_id"] = "session-1"
+        jira_server.OAUTH_TOKEN_STORE["session-1"] = {
+            "access_token": "access-123",
+            "refresh_token": "refresh-123",
+            "expires_at": 9999999999,
+            "cloudid": "cloud-123",
+            "site_url": "https://example.atlassian.net",
+            "site_name": "Example",
+            "account_id": "account-123",
+            "account_status": "active",
+            "stored_at": time.time(),
+            "scope": "read:me read:jira-work read:jira-user offline_access",
+        }
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "ATLASSIAN_SCOPES", "read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access"):
+            response = self.client.get("/api/auth/status")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["authenticated"], False)
+        self.assertEqual(payload["loginRequired"], True)
+        self.assertEqual(payload["loginUrl"], "/login?reason=missing_scope")
+        self.assertNotIn("access_token", str(payload))
+        self.assertNotIn("refresh_token", str(payload))
+```
+
+- [ ] **Step 2: Run the failing scope and old-session tests**
 
 Run:
 
 ```bash
-python3 -m unittest tests.test_jira_auth.JiraAuthTests.test_default_scopes_include_jira_software_agile_reads
+python3 -m unittest tests.test_jira_auth.JiraAuthTests.test_default_scopes_include_jira_software_agile_reads tests.test_jira_auth.JiraAuthTests.test_missing_oauth_scopes_detects_old_session tests.test_auth_routes.TestAuthRoutes.test_status_requires_reconsent_when_oauth_session_has_old_scopes
 ```
 
-Expected: FAIL because the default scopes currently omit Jira Software Agile read scopes.
+Expected: FAIL because the default scopes currently omit Jira Software Agile read scopes and existing OAuth sessions are not checked for stale grants.
 
-- [ ] **Step 3: Update default OAuth scopes**
+- [ ] **Step 3: Update default OAuth scopes and stale-scope detection**
 
 In `backend/auth/jira_auth.py`, change the `AuthConfig.scopes` default to:
 
 ```python
 scopes: str = "read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access"
 ```
+
+Add helpers that normalize the configured scope string and the scope grant stored with OAuth token data:
+
+```python
+def oauth_scope_set(scopes):
+    if isinstance(scopes, str):
+        return {scope for scope in scopes.split() if scope}
+    if isinstance(scopes, (list, tuple, set)):
+        return {str(scope).strip() for scope in scopes if str(scope).strip()}
+    return set()
+
+
+def missing_oauth_scopes(session_data, required_scopes):
+    granted = oauth_scope_set((session_data or {}).get("scope") or (session_data or {}).get("granted_scopes"))
+    required = oauth_scope_set(required_scopes)
+    if not granted:
+        return required
+    return required - granted
+```
+
+When storing token data after the OAuth callback, persist the token response's granted scope string as `scope`. If the token response omits scope, store an empty string so older or unknown sessions require consent after the app's required scopes change.
 
 In `jira_server.py`, change the `ATLASSIAN_SCOPES` default to the same string:
 
@@ -196,6 +275,23 @@ ATLASSIAN_SCOPES = os.getenv(
     'read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access',
 ).strip()
 ```
+
+In `backend/routes/auth_routes.py`, make `/api/auth/status` treat missing required scopes as a re-consent requirement. In `jira_server.py`, add the same missing-scope check to the OAuth before-request guard for OAuth-ready API paths before the route handler runs:
+
+```python
+if missing_oauth_scopes(session_data, ATLASSIAN_SCOPES):
+    login_url = "/login?reason=missing_scope"
+    return {
+        "authMode": "atlassian_oauth",
+        "authenticated": False,
+        "loginRequired": True,
+        "loginUrl": login_url,
+    }
+```
+
+For OAuth-ready API paths outside `/api/auth/status`, return `401 {"error": "auth_required", "loginUrl": "/login?reason=missing_scope"}` so the browser can drive the user back through Atlassian consent.
+
+Do not include token material in the status payload. Do not include the user's access token, refresh token, OAuth authorization code, PKCE verifier, or client secret in logs.
 
 - [ ] **Step 4: Update local setup docs and env example**
 
@@ -228,12 +324,18 @@ Also add reference links:
 - Jira Software sprint API scopes: https://developer.atlassian.com/cloud/jira/software/rest/api-group-sprint/
 ```
 
+Add a rollout note:
+
+```markdown
+If you already signed in before adding the Jira Software scopes, update `ATLASSIAN_SCOPES`, clear the local OAuth token session, and sign in again. `/api/auth/status` reports `loginUrl: "/login?reason=missing_scope"` when the stored session was issued without the current required scopes.
+```
+
 - [ ] **Step 5: Run scope and auth tests**
 
 Run:
 
 ```bash
-python3 -m unittest tests.test_jira_auth
+python3 -m unittest tests.test_jira_auth tests.test_auth_routes
 ```
 
 Expected: PASS.
@@ -241,7 +343,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/auth/jira_auth.py jira_server.py .env.example docs/atlassian-oauth-setup.md tests/test_jira_auth.py
+git add backend/auth/jira_auth.py backend/routes/auth_routes.py jira_server.py .env.example docs/atlassian-oauth-setup.md tests/test_jira_auth.py tests/test_auth_routes.py
 git commit -m "Document Jira Software OAuth scopes"
 ```
 
@@ -664,6 +766,165 @@ git commit -m "Migrate shared Jira helpers to auth context"
 
 ---
 
+## Task 2A: Convert Jira Issue Search Pagination
+
+**Files:**
+- Modify: `backend/jira_client.py`
+- Modify: `jira_server.py`
+- Modify: `backend/routes/eng_routes.py`
+- Modify: `backend/routes/settings_routes.py`
+- Test: `tests/test_backend_service_extraction.py`
+- Test: `tests/test_jira_search_pagination_source_guard.py`
+- Test: affected route/helper tests
+
+Atlassian's `/rest/api/3/search/jql` endpoint is token-paginated. It accepts `nextPageToken`, not `startAt`. Agile board and sprint discovery endpoints still use `startAt`; do not convert those `current_jira_get(... /rest/agile/...)` calls.
+
+References:
+
+- Jira issue search: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-search/
+- Jira Software board API: https://developer.atlassian.com/cloud/jira/software/rest/api-group-board/
+- Jira Software sprint API: https://developer.atlassian.com/cloud/jira/software/rest/api-group-sprint/
+
+- [ ] **Step 1: Inventory Jira issue-search pagination callers**
+
+Run:
+
+```bash
+rg -n "jira_search_request\\(|current_jira_search\\(|['\\\"]startAt['\\\"]|nextPageToken" jira_server.py backend/routes tests -g '*.py'
+```
+
+Classify every hit:
+
+- Jira issue search through `jira_search_request` / `current_jira_search`: must use `nextPageToken`.
+- Agile board/sprint calls through `current_jira_get` / `resilient_jira_get` to `/rest/agile/...`: keep `startAt`.
+- Tests and fixtures: update expected payloads when the production call was converted.
+
+- [ ] **Step 2: Write failing pagination tests and source guard**
+
+In `tests/test_backend_service_extraction.py`, add coverage that the shared Jira search param builder rejects `startAt` for `/rest/api/3/search/jql`:
+
+```python
+    def test_search_params_reject_start_at_for_search_jql(self):
+        jira_client = importlib.import_module("backend.jira_client")
+        with self.assertRaises(ValueError):
+            jira_client.build_jira_search_params({"jql": "project = PROD", "startAt": 50, "maxResults": 100})
+
+    def test_search_params_allow_next_page_token(self):
+        jira_client = importlib.import_module("backend.jira_client")
+        params = jira_client.build_jira_search_params({
+            "jql": "project = PROD",
+            "nextPageToken": "page-2",
+            "maxResults": 100,
+        })
+
+        self.assertEqual(params["nextPageToken"], "page-2")
+        self.assertNotIn("startAt", params)
+```
+
+Create `tests/test_jira_search_pagination_source_guard.py`:
+
+```python
+import re
+from pathlib import Path
+import unittest
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SEARCH_FILES = [
+    REPO_ROOT / "jira_server.py",
+    REPO_ROOT / "backend" / "routes" / "eng_routes.py",
+    REPO_ROOT / "backend" / "routes" / "settings_routes.py",
+]
+
+
+class JiraSearchPaginationSourceGuardTests(unittest.TestCase):
+    def test_issue_search_payloads_do_not_use_start_at(self):
+        offenders = []
+        for path in SEARCH_FILES:
+            lines = path.read_text(encoding="utf8").splitlines()
+            for index, line in enumerate(lines):
+                if "jira_search_request(" not in line and "current_jira_search(" not in line:
+                    continue
+                window = "\n".join(lines[max(0, index - 20):index + 1])
+                if re.search(r"['\"]startAt['\"]", window):
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}:{index + 1}")
+
+        self.assertEqual(offenders, [])
+```
+
+This guard is intentionally narrow: it checks the local construction window before Jira issue search calls and does not ban `startAt` in Agile board/sprint `current_jira_get` calls. If the guard false-positives because an unrelated Agile `startAt` is adjacent to an issue search call, refactor the code so those concerns are separated instead of weakening the guard.
+
+- [ ] **Step 3: Run the failing pagination tests**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_backend_service_extraction tests.test_jira_search_pagination_source_guard
+```
+
+Expected: FAIL because `build_jira_search_params` still forwards `startAt`, and several issue-search payloads still use `startAt`.
+
+- [ ] **Step 4: Convert issue-search callers to token pagination**
+
+In `backend/jira_client.py`, remove `startAt` from the allowed `/rest/api/3/search/jql` params and fail fast if a caller still passes it:
+
+```python
+def build_jira_search_params(payload):
+    if "startAt" in payload:
+        raise ValueError("/rest/api/3/search/jql uses nextPageToken, not startAt")
+    ...
+    for key in ("jql", "maxResults", "expand", "fields", "fieldsByKeys", "nextPageToken"):
+        ...
+```
+
+Convert every loop that calls `jira_search_request(payload)` with `startAt` to the token pattern:
+
+```python
+next_page_token = None
+while True:
+    payload = {
+        "jql": jql,
+        "maxResults": 100,
+        "fields": fields,
+    }
+    if next_page_token:
+        payload["nextPageToken"] = next_page_token
+
+    response = jira_search_request(payload)
+    data = response.json()
+    issues.extend(data.get("issues") or [])
+
+    next_page_token = data.get("nextPageToken")
+    if data.get("isLast", not next_page_token) or not next_page_token:
+        break
+```
+
+Do not keep `start_at += ...` fallbacks for `/rest/api/3/search/jql`. If the endpoint does not return `nextPageToken` and does not explicitly say `isLast: false`, stop after the current page.
+
+Keep these `startAt` calls unchanged because they are Agile APIs:
+
+- `GET /rest/agile/1.0/board`
+- `GET /rest/agile/1.0/board/{boardId}/sprint`
+
+- [ ] **Step 5: Run pagination and affected route/helper tests**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_backend_service_extraction tests.test_jira_search_pagination_source_guard tests.test_oauth_jira_client tests.test_oauth_eng_routes tests.test_oauth_settings_routes tests.test_oauth_stats_routes tests.test_burnout_stats_api tests.test_epic_cohort_api tests.test_group_excluded_capacity_epics_api tests.test_sprint_dates
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/jira_client.py jira_server.py backend/routes/eng_routes.py backend/routes/settings_routes.py tests/test_backend_service_extraction.py tests/test_jira_search_pagination_source_guard.py tests/test_oauth_jira_client.py tests/test_oauth_eng_routes.py tests/test_oauth_settings_routes.py tests/test_oauth_stats_routes.py tests/test_burnout_stats_api.py tests/test_epic_cohort_api.py tests/test_group_excluded_capacity_epics_api.py tests/test_sprint_dates.py
+git commit -m "Convert Jira issue search to token pagination"
+```
+
+---
+
 ## Task 3: ENG Route Migration
 
 **Files:**
@@ -759,6 +1020,16 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["issues"][0]["key"], "PROD-1")
         mock_search.assert_called()
 
+    def test_tasks_with_team_name_expired_oauth_returns_login_url(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "build_base_jql", return_value='project = "PROD"'), \
+             patch.object(jira_server, "current_jira_search", side_effect=jira_server.AuthError("auth_required", "Atlassian authentication is required.")):
+            response = self.client.get("/api/tasks-with-team-name?sprint=2026Q2&project=all&refresh=true")
+
+        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "auth_required")
+        self.assertEqual(response.get_json()["loginUrl"], "/login?reason=session_expired")
+
     def test_dependencies_requires_oauth_csrf_header(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
             response = self.client.post("/api/dependencies", json={"keys": ["PROD-1"]})
@@ -816,7 +1087,21 @@ response = jira_search_request(payload)
 
 The `headers` argument remains present in shared helper signatures during this task but must not be constructed in route handlers.
 
-- [ ] **Step 4: Add ENG routes to OAuth readiness**
+- [ ] **Step 4: Add ENG auth-required recovery before route readiness**
+
+Before editing `OAUTH_READY_API_PATHS`, update the migrated ENG handlers that call Jira so `AuthError("auth_required", ...)` returns the stable expired-session JSON:
+
+```python
+except AuthError as error:
+    if error.code == "auth_required":
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
+    raise
+```
+
+At minimum, `test_tasks_with_team_name_expired_oauth_returns_login_url` must pass in the same commit that makes `/api/tasks-with-team-name` OAuth-ready. Do not add an ENG route to `OAUTH_READY_API_PATHS` if an expired OAuth session can still fall into a broad `except Exception` and return 500.
+
+- [ ] **Step 5: Add ENG routes to OAuth readiness**
 
 Before editing `OAUTH_READY_API_PATHS`, run:
 
@@ -843,7 +1128,7 @@ OAUTH_READY_API_PATHS = {
 }
 ```
 
-- [ ] **Step 5: Add unsafe-method header to ENG dependency POST**
+- [ ] **Step 6: Add unsafe-method header to ENG dependency POST**
 
 In `frontend/src/api/engApi.js`, update `fetchDependencies`:
 
@@ -860,7 +1145,7 @@ export const fetchDependencies = (backendUrl, keys, { signal } = {}) =>
     });
 ```
 
-- [ ] **Step 6: Run ENG tests and source guard**
+- [ ] **Step 7: Run ENG tests and source guard**
 
 Run:
 
@@ -871,7 +1156,7 @@ node tests/test_auth_isolation_source_guard.js
 
 Expected: PASS.
 
-- [ ] **Step 7: Build frontend if `engApi.js` changed**
+- [ ] **Step 8: Build frontend if `engApi.js` changed**
 
 Run:
 
@@ -881,7 +1166,7 @@ npm run build
 
 Expected: PASS. Do not manually edit `frontend/dist/`.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add backend/routes/eng_routes.py jira_server.py frontend/src/api/engApi.js frontend/dist tests/test_oauth_eng_routes.py tests/test_oauth_route_guards.py
@@ -965,6 +1250,15 @@ class OAuthSettingsRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["projects"][0]["key"], "PROD")
         mock_get.assert_called()
 
+    def test_projects_expired_oauth_returns_login_url(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", side_effect=jira_server.AuthError("auth_required", "Atlassian authentication is required.")):
+            response = self.client.get("/api/projects?refresh=true")
+
+        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "auth_required")
+        self.assertEqual(response.get_json()["loginUrl"], "/login?reason=session_expired")
+
     def test_labels_route_bypasses_process_cache_for_oauth(self):
         first = FakeResponse(200, {"values": ["alpha"], "isLast": True})
         second = FakeResponse(200, {"values": ["beta"], "isLast": True})
@@ -1019,7 +1313,7 @@ Apply the same pattern to:
 - `/rest/api/3/issue/createmeta/{project_key}/issuetypes/{it_id}`
 - `/rest/api/3/field`
 
-Keep Agile board/sprint pagination on `startAt` because the Agile API uses that contract. Keep Jira issue search pagination on `nextPageToken` where the endpoint is `/rest/api/3/search/jql`.
+Keep Agile board/sprint pagination on `startAt` because the Agile API uses that contract. Task 2A already converted Jira issue search pagination to `nextPageToken`; do not reintroduce `startAt` in any `jira_search_request` payload.
 
 - [ ] **Step 4: Return OAuth session site URL from config**
 
@@ -1054,7 +1348,18 @@ with _cache_lock:
 
 Only write to these caches when `cache_enabled` is true.
 
-- [ ] **Step 6: Add local and catalog routes to OAuth readiness**
+- [ ] **Step 6: Add settings auth-required recovery before route readiness**
+
+Before editing `OAUTH_READY_API_PATHS`, update migrated settings/catalog handlers that call Jira so `AuthError("auth_required", ...)` returns:
+
+```python
+payload, status = oauth_auth_required_payload()
+return jsonify(payload), status
+```
+
+At minimum, `test_projects_expired_oauth_returns_login_url` must pass in the same commit that makes `/api/projects` OAuth-ready. Do not add a settings/catalog route to `OAUTH_READY_API_PATHS` if an expired OAuth session can still fall into a broad `except Exception` and return 500.
+
+- [ ] **Step 7: Add local and catalog routes to OAuth readiness**
 
 Before editing `OAUTH_READY_API_PATHS`, run:
 
@@ -1092,7 +1397,7 @@ Expand `OAUTH_READY_API_PATHS` in `jira_server.py` with settings/config routes:
 
 Do not add Home/EPM data routes.
 
-- [ ] **Step 7: Add unsafe-method headers to frontend API helpers**
+- [ ] **Step 8: Add unsafe-method headers to frontend API helpers**
 
 In `frontend/src/api/http.js`, update `postJson`:
 
@@ -1133,7 +1438,7 @@ headers: {
 }
 ```
 
-- [ ] **Step 8: Run settings tests and frontend build**
+- [ ] **Step 9: Run settings tests and frontend build**
 
 Run:
 
@@ -1145,7 +1450,7 @@ npm run build
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add backend/routes/settings_routes.py backend/routes/epm_routes.py jira_server.py frontend/src/api/http.js frontend/src/api/configApi.js frontend/src/api/jiraCatalogApi.js frontend/src/dashboard.jsx frontend/dist tests/test_oauth_settings_routes.py tests/test_oauth_route_guards.py
@@ -1256,6 +1561,40 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["data"], {"teams": []})
         mock_save_cache.assert_not_called()
 
+    def test_stats_route_expired_oauth_returns_login_url(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "resolve_team_field_id", side_effect=jira_server.AuthError("auth_required", "Atlassian authentication is required.")):
+            response = self.client.get("/api/stats?sprint=2026Q2")
+
+        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "auth_required")
+        self.assertEqual(response.get_json()["loginUrl"], "/login?reason=session_expired")
+
+    def test_scenario_route_bypasses_sprint_cache_for_oauth(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "load_sprints_cache", side_effect=AssertionError("OAuth must not read sprints file cache")), \
+             patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
+             patch.object(jira_server, "resolve_epic_link_field_id", return_value=None), \
+             patch.object(jira_server, "fetch_issues_by_jql", return_value=[]), \
+             patch.object(jira_server, "collect_dependencies", return_value={}), \
+             patch.object(jira_server, "fetch_capacity_for_sprint", return_value=({"enabled": False, "capacities": {}}, None)):
+            response = self.client.post(
+                "/api/scenario",
+                headers={"X-Requested-With": "jira-execution-planner"},
+                json={"filters": {"sprint": "2026Q2"}, "config": {}},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+    def test_burnout_route_bypasses_sprint_cache_for_oauth(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "load_sprints_cache", side_effect=AssertionError("OAuth must not read sprints file cache")), \
+             patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
+             patch.object(jira_server, "current_jira_search", return_value=FakeResponse(200, {"issues": [], "isLast": True})):
+            response = self.client.get("/api/stats/burnout?sprint=2026Q2")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
     def test_stats_burnout_post_requires_oauth_csrf_header(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
             response = self.client.post("/api/stats/burnout", json={"sprint": "2026Q2"})
@@ -1335,10 +1674,31 @@ Apply that policy to:
 
 - `load_sprints_cache()` / `save_sprints_cache()` in `/api/sprints`.
 - `load_stats_cache()` / `save_stats_cache()` in `/api/stats`.
+- Scenario sprint boundary reads in `scenario_planner`.
+- Sprint date lookup in `resolve_sprint_date_bounds`, which is used by burnout stats.
 
-Do not read or write `sprints_cache.json` or `stats_cache.json` for OAuth users unless a later task auth-keys those files with `build_auth_cache_key(context, ...)`.
+Update sprint-cache helpers that are shared by OAuth-ready routes to accept `context=None` or `cache_enabled=None`, and pass `current_request_auth_context()` from the route. In OAuth mode, fall back to quarter-derived dates or `sprintBoundaries: None`; do not read global sprint metadata from `sprints_cache.json`.
 
-- [ ] **Step 4: Add route readiness**
+After edits, run:
+
+```bash
+rg -n "load_sprints_cache\\(|save_sprints_cache\\(|load_stats_cache\\(|save_stats_cache\\(" jira_server.py backend/routes
+```
+
+Expected: every remaining read/write in an OAuth-ready route is guarded by `jira_home_process_cache_enabled(current_request_auth_context())` or moved behind an auth-keyed cache. Do not read or write `sprints_cache.json` or `stats_cache.json` for OAuth users unless a later task auth-keys those files with `build_auth_cache_key(context, ...)`.
+
+- [ ] **Step 4: Add stats/scenario auth-required recovery before route readiness**
+
+Before editing `OAUTH_READY_API_PATHS`, update the migrated stats/scenario handlers that call Jira so `AuthError("auth_required", ...)` returns:
+
+```python
+payload, status = oauth_auth_required_payload()
+return jsonify(payload), status
+```
+
+At minimum, `test_stats_route_expired_oauth_returns_login_url` must pass in the same commit that makes `/api/stats` OAuth-ready. Do not add a stats/scenario route to `OAUTH_READY_API_PATHS` if an expired OAuth session can still fall into a broad `except Exception` and return 500.
+
+- [ ] **Step 5: Add route readiness**
 
 Before editing `OAUTH_READY_API_PATHS`, run:
 
@@ -1363,7 +1723,7 @@ Add these paths to `OAUTH_READY_API_PATHS`:
 
 Keep `/api/debug-fields` and `/api/tasks-fields` guarded unless they are explicitly migrated and tested in the same task.
 
-- [ ] **Step 5: Add unsafe-method headers to existing dashboard POSTs**
+- [ ] **Step 6: Add unsafe-method headers to existing dashboard POSTs**
 
 Only add the CSRF header to existing POST calls. Do not add auth status, refresh, login, token storage, or expired-session handling to `frontend/src/dashboard.jsx`.
 
@@ -1385,7 +1745,7 @@ This applies to current POST calls for:
 
 Do not add EPM Home data routes to OAuth readiness in this task.
 
-- [ ] **Step 6: Run stats/scenario tests and frontend guard**
+- [ ] **Step 7: Run stats/scenario tests and frontend guard**
 
 Run:
 
@@ -1397,7 +1757,7 @@ npm run build
 
 Expected: PASS. The Node source guard must still reject auth status/refresh/login logic in `frontend/src/dashboard.jsx`; CSRF headers are allowed.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add jira_server.py frontend/src/dashboard.jsx frontend/dist tests/test_oauth_stats_routes.py tests/test_oauth_route_guards.py
@@ -1509,9 +1869,11 @@ Update every caller to remove the obsolete `headers` argument.
 
 Keep a compatibility argument only if an existing test or route outside `OAUTH_READY_API_PATHS` still needs it. If compatibility is kept, name it `_legacy_headers=None` and do not use it for HTTP.
 
-- [ ] **Step 4: Ensure auth errors return the expired-login payload**
+- [ ] **Step 4: Verify batch auth-error recovery remains in place**
 
-For OAuth-ready API routes that call Jira, catch `AuthError('auth_required')` and return:
+Tasks 3, 4, and 5 add `AuthError("auth_required")` recovery before each route batch is marked OAuth-ready. Do not defer expired-session recovery to this cleanup task.
+
+In this task, keep the route-batch expired-session tests in the focused test run and add source-guard coverage if a migrated handler has a broad `except Exception` before an `except AuthError` block. OAuth-ready API routes that call Jira must return:
 
 ```python
 payload, status = oauth_auth_required_payload()
@@ -1594,7 +1956,23 @@ python3 jira_server.py
 
 Expected: server starts without printing token material. Startup fails if OAuth mode lacks `JIRA_URL`, `ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET`, `ATLASSIAN_REDIRECT_URI`, `FLASK_SECRET_KEY`, or the local token-store allow pair.
 
-- [ ] **Step 4: Verify the browser journey**
+- [ ] **Step 4: Verify new scopes and force re-consent when needed**
+
+Before the browser journey, confirm the local `.env` `ATLASSIAN_SCOPES` exactly includes the current required scope set:
+
+```text
+read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access
+```
+
+If you previously signed in with the older scope set, clear the local OAuth token session or use `/api/auth/status` to confirm it reports:
+
+```json
+{"loginRequired": true, "loginUrl": "/login?reason=missing_scope"}
+```
+
+Then sign in again and verify Atlassian consent includes the Jira Software API scopes. A session created before the Agile scopes were added is not sufficient for `/api/boards` or `/api/sprints`.
+
+- [ ] **Step 5: Verify the browser journey**
 
 In the browser, verify:
 
@@ -1605,12 +1983,13 @@ In the browser, verify:
 5. Callback returns to authenticated `/`.
 6. Dashboard ENG task load no longer shows `route_not_oauth_ready` for `/api/tasks-with-team-name`.
 7. `/api/auth/status` returns authenticated state without access tokens, refresh tokens, API tokens, OAuth codes, PKCE verifiers, or authorization headers.
-8. `/api/test` returns success through OAuth.
-9. Clearing the local OAuth token store or using an expired session makes API routes return `401 {"error": "auth_required", "loginUrl": "/login?reason=session_expired"}` and the browser shows the expired-auth screen.
-10. Returning to a visible tab calls `POST /api/auth/refresh`; the response contains no token material.
-11. An intentionally unmigrated route such as `/api/epm/projects` returns `501 {"error": "route_not_oauth_ready"}`.
+8. `/api/boards` and `/api/sprints` return data through OAuth, proving the Jira Software scopes were granted.
+9. `/api/test` returns success through OAuth.
+10. Clearing the local OAuth token store or using an expired session makes API routes return `401 {"error": "auth_required", "loginUrl": "/login?reason=session_expired"}` and the browser shows the expired-auth screen.
+11. Returning to a visible tab calls `POST /api/auth/refresh`; the response contains no token material.
+12. An intentionally unmigrated route such as `/api/epm/projects` returns `501 {"error": "route_not_oauth_ready"}`.
 
-- [ ] **Step 5: Review commits**
+- [ ] **Step 6: Review commits**
 
 Run:
 
@@ -1620,7 +1999,7 @@ git log --oneline -5
 
 Expected: the latest commits are the atomic OAuth Jira client migration commits from this plan.
 
-- [ ] **Step 6: Commit docs**
+- [ ] **Step 7: Commit docs**
 
 ```bash
 git add docs/atlassian-oauth-setup.md .env.example
@@ -1706,7 +2085,9 @@ Then capture manual/browser evidence:
 
 - `/` -> `/login` -> Sign in with Atlassian -> Microsoft Entra SSO if enforced -> Atlassian consent -> callback -> authenticated `/`.
 - `/api/auth/status` authenticated state without token material.
+- An old OAuth session issued before the Jira Software scope update reports `loginUrl: "/login?reason=missing_scope"` and requires re-consent.
 - `/api/test` uses OAuth.
+- `/api/boards` and `/api/sprints` use OAuth with Jira Software scopes.
 - ENG dashboard task route loads without `route_not_oauth_ready`.
 - Expired/cleared auth returns `401 auth_required` with `loginUrl: "/login?reason=session_expired"` and shows the expired-auth screen.
 - Returning to a visible tab calls `/api/auth/refresh` without exposing token material.
@@ -1717,5 +2098,6 @@ Then capture manual/browser evidence:
 - Spec coverage: OAuth Jira REST routes migrate through the auth/client boundary; Basic mode remains compatible; Home/EPM GraphQL remains explicitly guarded; unsafe POST header is preserved; caches are disabled for OAuth unless auth-keyed.
 - Security coverage: no OAuth token material in Flask signed session, localStorage, dashboard config, logs, URLs, or docs; no Microsoft bearer token acceptance; expired auth returns the stable login URL.
 - Pagination coverage: Jira search uses `/rest/api/3/search/jql` with `nextPageToken`; Agile board/sprint APIs keep their `startAt` contract.
+- Scope coverage: Jira Software Agile scopes are documented, old OAuth sessions without those grants force re-consent, and board/sprint routes are verified after re-login.
 - UI coverage: browser journey is verified, and `frontend/src/dashboard.jsx` only receives CSRF headers for existing POSTs, not auth UI or refresh handling.
 - Commit coverage: every task has a focused commit and `git log --oneline -5` is reviewed before asking to push.

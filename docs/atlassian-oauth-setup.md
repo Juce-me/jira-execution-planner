@@ -64,6 +64,8 @@ offline_access
 
 Atlassian uses `offline_access` in the authorization URL to issue refresh tokens. It is not the same checkbox group as the Jira API or User Identity API permissions.
 
+You do not add `offline_access` from the app's `Permissions` API list, and it does not appear as a separate API row in the screen. Leave it in `ATLASSIAN_SCOPES`; the backend sends it to Atlassian as part of the OAuth authorize URL.
+
 ## Local `.env`
 
 Use real values from the Atlassian Developer Console:

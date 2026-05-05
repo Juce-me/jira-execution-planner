@@ -2,6 +2,8 @@
 
 from flask import Blueprint, jsonify, redirect, request, session
 
+from backend.auth.jira_auth import ensure_oauth_token
+
 from . import bind_server_globals
 
 
@@ -30,6 +32,35 @@ def api_auth_status():
         'siteUrl': data.get('site_url'),
         'siteName': data.get('site_name'),
     })
+
+
+@bp.route('/login', methods=['GET'])
+def auth_entry_page():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return redirect('/')
+    data = oauth_session_data()
+    if data.get('access_token') and data.get('cloudid'):
+        return redirect('/')
+    message = ''
+    if request.args.get('reason') == 'session_expired':
+        message = '<p>Your Jira sign-in expired. Sign in again to continue.</p>'
+    return f"""
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign in</title>
+  </head>
+  <body>
+    <main>
+      <h1>Sign in to Jira Execution Planner</h1>
+      {message}
+      <a href="/api/auth/atlassian/login">Sign in with Atlassian</a>
+    </main>
+  </body>
+</html>
+""", 200, {'Content-Type': 'text/html; charset=utf-8'}
 
 
 @bp.route('/api/auth/atlassian/login', methods=['GET'])
@@ -81,6 +112,45 @@ def api_atlassian_callback():
             return auth_error_response(error, 400)
         return auth_error_response(error, 401 if error.code != 'jira_site_not_accessible' else 403)
     return redirect('/')
+
+
+@bp.route('/api/auth/refresh', methods=['POST'])
+def api_auth_refresh():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return jsonify({'authenticated': True, 'authMode': AUTH_MODE_BASIC})
+    data = oauth_session_data()
+    if not data.get('access_token') or not data.get('cloudid'):
+        save_oauth_session({})
+        return jsonify({
+            'error': 'auth_required',
+            'message': 'Your Jira sign-in expired. Sign in again to continue.',
+            'loginUrl': '/login?reason=session_expired',
+        }), 401
+    try:
+        active = ensure_oauth_token(
+            current_auth_config(),
+            data,
+            save_oauth_session,
+            reload_session=oauth_session_data,
+            refresh_lock=oauth_refresh_lock(),
+        )
+    except AuthError as error:
+        if error.code == 'auth_required':
+            save_oauth_session({})
+            return jsonify({
+                'error': 'auth_required',
+                'message': 'Your Jira sign-in expired. Sign in again to continue.',
+                'loginUrl': '/login?reason=session_expired',
+            }), 401
+        return auth_error_response(error, 401)
+    return jsonify({
+        'authMode': AUTH_MODE_ATLASSIAN_OAUTH,
+        'authenticated': True,
+        'loginRequired': False,
+        'expiresAt': active.get('expires_at'),
+        'siteUrl': active.get('site_url'),
+        'siteName': active.get('site_name'),
+    })
 
 
 @bp.route('/api/auth/logout', methods=['POST'])

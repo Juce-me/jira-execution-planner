@@ -1,3 +1,4 @@
+import time
 import unittest
 from unittest.mock import patch
 import threading
@@ -32,6 +33,38 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.get_json()['authenticated'])
         self.assertTrue(response.get_json()['loginRequired'])
+
+    def test_oauth_refresh_requires_session(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.post(
+                '/api/auth/refresh',
+                headers={'X-Requested-With': 'jira-execution-planner'},
+            )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json()['error'], 'auth_required')
+        self.assertEqual(response.get_json()['loginUrl'], '/login?reason=session_expired')
+
+    def test_oauth_refresh_returns_authenticated_without_tokens(self):
+        with self.client.session_transaction() as session:
+            session['atlassian_oauth_session_id'] = 'session-123'
+        jira_server.OAUTH_TOKEN_STORE['session-123'] = {
+            'access_token': 'access-123',
+            'refresh_token': 'refresh-123',
+            'expires_at': time.time() + 600,
+            'cloudid': 'cloud-123',
+            'site_url': 'https://example.atlassian.net',
+            'stored_at': time.time(),
+        }
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.post(
+                '/api/auth/refresh',
+                headers={'X-Requested-With': 'jira-execution-planner'},
+            )
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body['authenticated'])
+        self.assertNotIn('access_token', body)
+        self.assertNotIn('refresh_token', body)
 
     def test_oauth_login_redirects_to_atlassian(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \

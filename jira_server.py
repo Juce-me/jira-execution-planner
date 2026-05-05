@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from flask import abort, jsonify, request, send_file, send_from_directory, session
+from flask import abort, jsonify, redirect, request, send_file, send_from_directory, session
 import requests
 import argparse
 import base64
@@ -237,6 +237,7 @@ configure_logging()
 
 
 UNSAFE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
+OAUTH_DASHBOARD_ENTRY_PATHS = {'/', '/jira-dashboard.html'}
 
 
 def current_auth_config():
@@ -391,6 +392,18 @@ def require_oauth_unsafe_method_header():
         'error': 'csrf_required',
         'message': 'Unsafe OAuth requests require X-Requested-With: jira-execution-planner',
     }), 403
+
+
+@app.before_request
+def redirect_unauthenticated_oauth_dashboard_entry():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if request.path not in OAUTH_DASHBOARD_ENTRY_PATHS:
+        return None
+    data = oauth_session_data()
+    if data.get('access_token') and data.get('cloudid'):
+        return None
+    return redirect('/login?reason=session_expired' if session.get('atlassian_oauth_session_id') else '/login')
 
 
 def utc_now_iso(timespec=None):

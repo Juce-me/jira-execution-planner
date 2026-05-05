@@ -44,6 +44,17 @@ class TestAuthEntryPage(unittest.TestCase):
         self.assertIn('Your Jira sign-in expired', body)
         self.assertIn('Sign in with Atlassian', body)
 
+    def test_login_page_uses_readable_auth_entry_styles(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.get('/login?reason=session_expired')
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('<style>', body)
+        self.assertIn('color-scheme: light', body)
+        self.assertIn('class="auth-entry"', body)
+        self.assertIn('class="auth-card"', body)
+        self.assertIn('class="auth-action"', body)
+
     def test_dashboard_auth_shell_refreshes_on_initial_load(self):
         source = Path('jira-dashboard.html').read_text()
         self.assertIn("fetch('/api/auth/refresh'", source)

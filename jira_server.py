@@ -80,6 +80,7 @@ app.secret_key = FLASK_SECRET_KEY or os.urandom(32)
 APP_ENVIRONMENT_KEY = os.getenv('APP_ENVIRONMENT_KEY', 'local').strip() or 'local'
 OAUTH_LOCAL_TOKEN_STORE_ALLOWED = os.getenv('OAUTH_LOCAL_TOKEN_STORE_ALLOWED', '').strip().lower() in {'1', 'true', 'yes'}
 OAUTH_TOKEN_STORE_TTL_SECONDS = int(os.getenv('OAUTH_TOKEN_STORE_TTL_SECONDS', '28800'))
+OAUTH_TOKEN_STORE_MIN_TTL_SECONDS = 900
 JQL_QUERY = os.getenv('JQL_QUERY', '').strip()
 JIRA_BOARD_ID = os.getenv('JIRA_BOARD_ID')  # Optional: board ID for faster sprint fetching
 JIRA_PRODUCT_PROJECT = os.getenv('JIRA_PRODUCT_PROJECT', 'PRODUCT ROADMAPS')
@@ -388,6 +389,11 @@ def validate_local_token_store_allowed():
         raise AuthError(
             'local_token_store_not_allowed',
             'Local OAuth token storage requires APP_ENVIRONMENT_KEY=local or dev and OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true',
+        )
+    if OAUTH_TOKEN_STORE_TTL_SECONDS < OAUTH_TOKEN_STORE_MIN_TTL_SECONDS:
+        raise AuthError(
+            'oauth_token_store_ttl_too_low',
+            f'OAUTH_TOKEN_STORE_TTL_SECONDS must be at least {OAUTH_TOKEN_STORE_MIN_TTL_SECONDS} seconds for Atlassian OAuth local testing',
         )
 
 

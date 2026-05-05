@@ -220,6 +220,21 @@ class TestAuthRoutes(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, 'local_token_store_not_allowed')
 
+    def test_startup_auth_validation_rejects_too_short_local_token_store_ttl(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
+             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
+             patch.object(jira_server, 'OAUTH_TOKEN_STORE_TTL_SECONDS', 30), \
+             patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
+             patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
+             patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
+             patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
+             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'):
+            with self.assertRaises(jira_server.AuthError) as raised:
+                jira_server.validate_startup_auth_config()
+
+        self.assertEqual(raised.exception.code, 'oauth_token_store_ttl_too_low')
+
     def test_credentialed_cors_rejects_wildcard_origins(self):
         with patch.dict('os.environ', {'APP_ALLOWED_ORIGINS': '*'}):
             with self.assertRaises(ValueError):

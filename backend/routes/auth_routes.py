@@ -43,7 +43,7 @@ def auth_entry_page():
         return redirect('/')
     message = ''
     if request.args.get('reason') == 'session_expired':
-        message = '<p>Your Jira sign-in expired. Sign in again to continue.</p>'
+        message = '<p class="auth-notice" role="status">Your Jira sign-in expired. Sign in again to continue.</p>'
     return f"""
 <!doctype html>
 <html lang="en">
@@ -51,12 +51,120 @@ def auth_entry_page():
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Sign in</title>
+    <style>
+      :root {{
+        color-scheme: light;
+      }}
+
+      * {{
+        box-sizing: border-box;
+      }}
+
+      body {{
+        margin: 0;
+        min-height: 100vh;
+        padding: 32px 18px;
+        background: #f4f7fb;
+        color: #172033;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.5;
+      }}
+
+      body,
+      .auth-entry {{
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }}
+
+      .auth-entry {{
+        width: 100%;
+      }}
+
+      .auth-card {{
+        width: min(100%, 560px);
+        padding: 32px;
+        background: #ffffff;
+        border: 1px solid #d8e0eb;
+        border-radius: 8px;
+        box-shadow: 0 12px 32px rgba(23, 32, 51, 0.08);
+      }}
+
+      h1 {{
+        margin: 0;
+        color: #172033;
+        font-size: 2rem;
+        line-height: 1.15;
+        font-weight: 700;
+        letter-spacing: 0;
+      }}
+
+      .auth-copy {{
+        margin: 12px 0 0;
+        color: #4a5568;
+        font-size: 1rem;
+      }}
+
+      .auth-notice {{
+        margin: 20px 0 0;
+        padding: 12px 14px;
+        color: #7c2d12;
+        background: #fff7ed;
+        border: 1px solid #fed7aa;
+        border-radius: 6px;
+      }}
+
+      .auth-action {{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        margin-top: 24px;
+        padding: 0 18px;
+        color: #ffffff;
+        background: #0c66e4;
+        border-radius: 6px;
+        font-weight: 700;
+        text-decoration: none;
+      }}
+
+      .auth-action:hover {{
+        background: #0055cc;
+      }}
+
+      .auth-action:focus-visible {{
+        outline: 3px solid #85b8ff;
+        outline-offset: 2px;
+      }}
+
+      @media (max-width: 520px) {{
+        body {{
+          align-items: flex-start;
+          padding: 20px 12px;
+        }}
+
+        .auth-card {{
+          padding: 24px 20px;
+        }}
+
+        h1 {{
+          font-size: 1.55rem;
+        }}
+
+        .auth-action {{
+          width: 100%;
+        }}
+      }}
+    </style>
   </head>
   <body>
-    <main>
-      <h1>Sign in to Jira Execution Planner</h1>
-      {message}
-      <a href="/api/auth/atlassian/login">Sign in with Atlassian</a>
+    <main class="auth-entry">
+      <section class="auth-card" aria-labelledby="auth-title">
+        <h1 id="auth-title">Sign in to Jira Execution Planner</h1>
+        <p class="auth-copy">Use your Atlassian account to continue.</p>
+        {message}
+        <a class="auth-action" href="/api/auth/atlassian/login">Sign in with Atlassian</a>
+      </section>
     </main>
   </body>
 </html>

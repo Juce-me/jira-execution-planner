@@ -167,6 +167,18 @@ python3 jira_server.py \
   --jira_token your-api-token-here \
 ```
 
+### Atlassian OAuth login
+
+The dashboard can run with Atlassian OAuth 2.0 (3LO) instead of a personal Jira API token.
+
+1. Create an OAuth 2.0 app in the Atlassian Developer Console.
+2. Add Jira API permissions for the scopes in `ATLASSIAN_SCOPES`.
+3. Set the callback URL to `http://localhost:5050/api/auth/atlassian/callback`, or to an HTTPS tunnel URL if your Atlassian app requires HTTPS.
+4. Set `JIRA_AUTH_MODE=atlassian_oauth`, `APP_ENVIRONMENT_KEY=local`, `ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET`, `ATLASSIAN_REDIRECT_URI`, `FLASK_SECRET_KEY`, and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true` for local single-process testing. OAuth startup must fail unless both the environment key is local/dev and the local token store flag is true.
+5. Start the server and open `/`. If no OAuth session exists, the app should show `/login` with a `Sign in with Atlassian` action. That action starts Atlassian OAuth; for managed Atlassian accounts backed by Microsoft Entra SSO, the flow should redirect through Microsoft automatically, then show the Atlassian authorization/consent screen for this app before returning to the app callback. Confirm `/api/auth/status` reports `authenticated: true`, then use the migrated endpoint `/api/test`. Full dashboard data-route migration is intentionally deferred; un-migrated API routes return `route_not_oauth_ready`/501 in OAuth mode.
+
+Jira still receives Atlassian OAuth tokens, not Microsoft Entra tokens. Direct Microsoft access tokens cannot be used as Jira REST API bearer tokens.
+
 ## 🧱 Frontend build (contributors)
 
 The repo commits the compiled frontend output so normal users don’t need Node.

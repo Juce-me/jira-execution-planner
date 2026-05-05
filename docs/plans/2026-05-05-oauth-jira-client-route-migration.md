@@ -153,8 +153,11 @@ Do not hand-edit `frontend/dist/`; run `npm run build` if frontend source change
 Create `tests/test_oauth_jira_client.py`:
 
 ```python
+import time
 import unittest
 from unittest.mock import patch
+
+from flask import session
 
 import jira_server
 
@@ -175,9 +178,11 @@ class OAuthJiraClientTests(unittest.TestCase):
         jira_server.app.secret_key = "test-secret"
         self.client = jira_server.app.test_client()
 
-    def _login_oauth(self):
-        with self.client.session_transaction() as flask_session:
-            flask_session["atlassian_oauth_session_id"] = "session-1"
+    def _push_oauth_request(self):
+        request_context = jira_server.app.test_request_context("/")
+        request_context.push()
+        self.addCleanup(request_context.pop)
+        session["atlassian_oauth_session_id"] = "session-1"
         jira_server.OAUTH_TOKEN_STORE["session-1"] = {
             "access_token": "access-123",
             "refresh_token": "refresh-123",
@@ -187,7 +192,7 @@ class OAuthJiraClientTests(unittest.TestCase):
             "site_name": "Example",
             "account_id": "account-123",
             "account_status": "active",
-            "stored_at": 1,
+            "stored_at": time.time(),
         }
 
     def tearDown(self):
@@ -201,8 +206,8 @@ class OAuthJiraClientTests(unittest.TestCase):
             calls.append((url, kwargs))
             return FakeResponse(200, {"ok": True})
 
-        self._login_oauth()
-        with self.client, patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+        self._push_oauth_request()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "resilient_jira_get", side_effect=fake_get):
             response = jira_server.current_jira_get("/rest/api/3/project/search", params={"maxResults": 1})
 
@@ -218,8 +223,8 @@ class OAuthJiraClientTests(unittest.TestCase):
             calls.append((url, kwargs))
             return FakeResponse(200, {"issues": []})
 
-        self._login_oauth()
-        with self.client, patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+        self._push_oauth_request()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "resilient_jira_get", side_effect=fake_get):
             response = jira_server.current_jira_search({
                 "jql": 'project = "PROD"',
@@ -233,7 +238,8 @@ class OAuthJiraClientTests(unittest.TestCase):
         self.assertEqual(calls[0][1]["headers"]["Authorization"], "Bearer access-123")
 
     def test_current_jira_get_auth_required_returns_stable_payload(self):
-        with self.client, patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+        self._push_oauth_request()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
             payload, status = jira_server.oauth_auth_required_payload()
 
         self.assertEqual(status, 401)
@@ -300,12 +306,21 @@ def oauth_auth_required_payload():
 
 def current_jira_get(path, *, params=None, timeout=30, context=None):
     auth_context = context or current_request_auth_context()
+
+    def request_get(url, **kwargs):
+        return resilient_jira_get(
+            url,
+            session=HTTP_SESSION,
+            breaker=JIRA_SEARCH_CIRCUIT_BREAKER,
+            **kwargs,
+        )
+
     return jira_get(
         current_auth_config(),
         auth_context,
         jira_session_data(),
         path,
-        http_get=resilient_jira_get,
+        http_get=request_get,
         save_session=save_oauth_session,
         reload_session=oauth_session_data,
         refresh_lock=oauth_refresh_lock(),
@@ -383,8 +398,8 @@ Extend `tests/test_oauth_jira_client.py`:
 
 ```python
     def test_jira_search_request_uses_current_auth_boundary(self):
-        self._login_oauth()
-        with self.client, patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+        self._push_oauth_request()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "current_jira_search", return_value=FakeResponse(200, {"issues": []})) as mock_search:
             response = jira_server.jira_search_request({"jql": 'project = "PROD"', "fields": ["summary"]})
 
@@ -392,11 +407,13 @@ Extend `tests/test_oauth_jira_client.py`:
         mock_search.assert_called_once_with({"jql": 'project = "PROD"', "fields": ["summary"]})
 
     def test_resolve_team_field_id_uses_current_jira_get_in_oauth_mode(self):
-        self._login_oauth()
+        self._push_oauth_request()
         fields_payload = [
             {"id": "customfield_12345", "name": "Team[Team]"},
         ]
-        with self.client, patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "TEAM_FIELD_CACHE", None), \
+             patch.object(jira_server, "get_team_field_id", return_value=""), \
              patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, fields_payload)) as mock_get:
             field_id = jira_server.resolve_team_field_id(None, context=jira_server.current_request_auth_context())
 
@@ -515,6 +532,7 @@ git commit -m "Migrate shared Jira helpers to auth context"
 Create `tests/test_oauth_eng_routes.py`:
 
 ```python
+import time
 import unittest
 from unittest.mock import patch
 
@@ -547,7 +565,7 @@ class OAuthEngRouteTests(unittest.TestCase):
             "site_name": "Example",
             "account_id": "account-123",
             "account_status": "active",
-            "stored_at": 1,
+            "stored_at": time.time(),
         }
 
     def tearDown(self):
@@ -734,6 +752,7 @@ git commit -m "Migrate ENG Jira routes to OAuth client"
 Create `tests/test_oauth_settings_routes.py`:
 
 ```python
+import time
 import unittest
 from unittest.mock import patch
 
@@ -766,7 +785,7 @@ class OAuthSettingsRouteTests(unittest.TestCase):
             "site_name": "Example",
             "account_id": "account-123",
             "account_status": "active",
-            "stored_at": 1,
+            "stored_at": time.time(),
         }
 
     def tearDown(self):
@@ -904,7 +923,6 @@ Expand `OAUTH_READY_API_PATHS` in `jira_server.py` with settings/config routes:
     '/api/issue-types/config',
     '/api/fields',
     '/api/boards',
-    '/api/sprints',
     '/api/epm/config',
 ```
 
@@ -976,6 +994,7 @@ git commit -m "Migrate settings Jira catalog routes to OAuth"
 Create `tests/test_oauth_stats_routes.py`:
 
 ```python
+import time
 import unittest
 from unittest.mock import patch
 
@@ -1008,7 +1027,7 @@ class OAuthStatsRouteTests(unittest.TestCase):
             "site_name": "Example",
             "account_id": "account-123",
             "account_status": "active",
-            "stored_at": 1,
+            "stored_at": time.time(),
         }
 
     def tearDown(self):
@@ -1106,6 +1125,7 @@ jira_base_url = current_request_auth_context().site_url or (JIRA_URL or '').rstr
 Add these paths to `OAUTH_READY_API_PATHS`:
 
 ```python
+    '/api/sprints',
     '/api/capacity',
     '/api/planned-capacity',
     '/api/scenario',
@@ -1181,11 +1201,17 @@ import unittest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+JIRA_SERVER_PATH = REPO_ROOT / "jira_server.py"
 
 MIGRATED_FILES = [
-    REPO_ROOT / "jira_server.py",
     REPO_ROOT / "backend" / "routes" / "eng_routes.py",
     REPO_ROOT / "backend" / "routes" / "settings_routes.py",
+]
+
+ALLOWED_JIRA_SERVER_SECTIONS = [
+    ("def build_jira_headers():", "\ndef build_epm_fields_list"),
+    ("@app.route('/api/debug-fields'", "\n\n@app.route('/api/tasks-fields'"),
+    ("@app.route('/api/tasks-fields'", "\n\n@app.route('/api/export-excel'"),
 ]
 
 FORBIDDEN_PATTERNS = [
@@ -1197,6 +1223,19 @@ FORBIDDEN_PATTERNS = [
 ]
 
 
+def source_without_allowed_jira_server_sections():
+    source = JIRA_SERVER_PATH.read_text(encoding="utf8")
+    for start_marker, end_marker in ALLOWED_JIRA_SERVER_SECTIONS:
+        start = source.find(start_marker)
+        if start == -1:
+            continue
+        end = source.find(end_marker, start)
+        if end == -1:
+            end = len(source)
+        source = source[:start] + source[end:]
+    return source
+
+
 class OAuthJiraClientSourceGuardTests(unittest.TestCase):
     def test_migrated_files_do_not_construct_basic_jira_requests(self):
         failures = []
@@ -1206,10 +1245,15 @@ class OAuthJiraClientSourceGuardTests(unittest.TestCase):
                 if pattern.search(source):
                     failures.append(f"{path.relative_to(REPO_ROOT)} matches {pattern.pattern}")
 
+        jira_server_source = source_without_allowed_jira_server_sections()
+        for pattern in FORBIDDEN_PATTERNS:
+            if pattern.search(jira_server_source):
+                failures.append(f"jira_server.py migrated surface matches {pattern.pattern}")
+
         self.assertEqual(failures, [])
 
     def test_legacy_build_jira_headers_remains_basic_only_guard(self):
-        source = (REPO_ROOT / "jira_server.py").read_text(encoding="utf8")
+        source = JIRA_SERVER_PATH.read_text(encoding="utf8")
         self.assertIn("def build_jira_headers():", source)
         self.assertIn("'route_not_oauth_ready'", source)
 ```

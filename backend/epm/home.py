@@ -14,6 +14,8 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from backend.auth.cache_policy import jira_home_process_cache_enabled
+
 logger = logging.getLogger(__name__)
 
 HOME_GRAPHQL_ENDPOINT = "https://team.atlassian.com/gateway/api/graphql"
@@ -514,7 +516,7 @@ def _project_tag_cypher(project_ari: str | None = None, project_url: str | None 
     return None
 
 
-def _project_ari_candidates(project: dict) -> list[str]:
+def _project_ari_candidates(project: dict, context=None) -> list[str]:
     project_id = str((project or {}).get("id") or "").strip()
     if not project_id:
         return []
@@ -522,7 +524,7 @@ def _project_ari_candidates(project: dict) -> list[str]:
         return [project_id]
     candidates: list[str] = []
     try:
-        cloud_id = fetch_home_site_cloud_id()
+        cloud_id = fetch_home_site_cloud_id(context=context) if context is not None else fetch_home_site_cloud_id()
     except RuntimeError:
         cloud_id = ""
     if cloud_id:
@@ -541,7 +543,7 @@ def _extract_project_tags_from_twg_response(response: dict) -> list[str]:
     return extract_tag_names(connection.get("edges"))
 
 
-def fetch_project_tags(client: HomeGraphQLClient, project: dict) -> list[str] | None:
+def fetch_project_tags(client: HomeGraphQLClient, project: dict, context=None) -> list[str] | None:
     project_id = str((project or {}).get("id") or "").strip()
     if not project_id:
         return []
@@ -556,7 +558,7 @@ def fetch_project_tags(client: HomeGraphQLClient, project: dict) -> list[str] | 
 
     try:
         teamwork_graph_client = build_teamwork_graph_client()
-        for project_ari in _project_ari_candidates(project):
+        for project_ari in _project_ari_candidates(project, context=context):
             cypher = _project_tag_cypher(project_ari=project_ari)
             if not cypher:
                 continue
@@ -639,11 +641,12 @@ def get_configured_jira_url() -> str:
     return str(os.environ.get("JIRA_URL") or "").rstrip("/")
 
 
-def fetch_home_site_cloud_id() -> str:
+def fetch_home_site_cloud_id(context=None) -> str:
     jira_url = get_configured_jira_url()
     if not jira_url:
         raise RuntimeError("JIRA_URL must be set to detect the Atlassian site cloud ID")
-    if jira_url in _CLOUD_ID_CACHE:
+    cache_enabled = jira_home_process_cache_enabled(context)
+    if cache_enabled and jira_url in _CLOUD_ID_CACHE:
         return _CLOUD_ID_CACHE[jira_url]
     request = Request(f"{jira_url}/_edge/tenant_info", headers={"Accept": "application/json"}, method="GET")
     try:
@@ -654,7 +657,8 @@ def fetch_home_site_cloud_id() -> str:
     cloud_id = str(payload.get("cloudId") or "").strip()
     if not cloud_id:
         raise RuntimeError("Jira tenant_info did not return cloudId")
-    _CLOUD_ID_CACHE[jira_url] = cloud_id
+    if cache_enabled:
+        _CLOUD_ID_CACHE[jira_url] = cloud_id
     return cloud_id
 
 
@@ -669,13 +673,14 @@ def _goal_cache_key(container_id: str, goal_key: str) -> str:
     }, sort_keys=True)
 
 
-def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: str) -> dict | None:
+def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: str, context=None) -> dict | None:
     expected_key = _normalize_goal_key(goal_key)
     if not expected_key:
         return None
     cache_key = _goal_cache_key(container_id, expected_key)
-    cached = _GOAL_BY_KEY_CACHE.get(cache_key)
-    if cached:
+    cache_enabled = jira_home_process_cache_enabled(context)
+    cached = _GOAL_BY_KEY_CACHE.get(cache_key) if cache_enabled else None
+    if cache_enabled and cached:
         return dict(cached)
     try:
         response = client.execute(
@@ -684,7 +689,8 @@ def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: 
         )
         goal = ((response.get("data") or {}).get("goals_byKey") or {})
         if goal and _normalize_goal_key(goal.get("key")) == expected_key:
-            _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
+            if cache_enabled:
+                _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
             return goal
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Goal by key lookup failed for %s: %s", expected_key, exc)
@@ -700,7 +706,8 @@ def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: 
         return None
     for goal in goals:
         if _normalize_goal_key(goal.get("key")) == expected_key:
-            _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
+            if cache_enabled:
+                _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
             return goal
     logger.warning("Goal %s not found among %d goals", goal_key, len(goals))
     return None
@@ -719,8 +726,12 @@ def fetch_sub_goals(client: HomeGraphQLClient, root_goal_id: str) -> list[dict]:
     return [goal for goal in nodes if not goal.get("isArchived")]
 
 
-def fetch_sub_goals_for_root_key(client: HomeGraphQLClient, root_goal_key: str, container_id: str) -> list[dict]:
-    root_goal = resolve_goal_by_key(client, root_goal_key, container_id)
+def fetch_sub_goals_for_root_key(client: HomeGraphQLClient, root_goal_key: str, container_id: str, context=None) -> list[dict]:
+    root_goal = (
+        resolve_goal_by_key(client, root_goal_key, container_id, context=context)
+        if context is not None
+        else resolve_goal_by_key(client, root_goal_key, container_id)
+    )
     if not root_goal:
         return []
     return fetch_sub_goals(client, root_goal["id"])
@@ -745,14 +756,18 @@ def _epm_scope_sub_goal_keys(scope: dict) -> list[str]:
     return normalized
 
 
-def resolve_sub_goals_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str) -> list[dict]:
+def resolve_sub_goals_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str, context=None) -> list[dict]:
     scope = epm_scope if isinstance(epm_scope, dict) else {}
     sub_goal_keys = _epm_scope_sub_goal_keys(scope)
     if not sub_goal_keys:
         return []
     root_goal_key = _normalize_goal_key(scope.get("rootGoalKey"))
     if root_goal_key:
-        child_goals = fetch_sub_goals_for_root_key(client, root_goal_key, container_id)
+        child_goals = (
+            fetch_sub_goals_for_root_key(client, root_goal_key, container_id, context=context)
+            if context is not None
+            else fetch_sub_goals_for_root_key(client, root_goal_key, container_id)
+        )
         goals_by_key = {_normalize_goal_key(goal.get("key")): goal for goal in child_goals}
         resolved = []
         for key in sub_goal_keys:
@@ -764,14 +779,22 @@ def resolve_sub_goals_for_scope(client: HomeGraphQLClient, epm_scope: dict, cont
         return resolved
     resolved = []
     for key in sub_goal_keys:
-        goal = resolve_goal_by_key(client, key, container_id)
+        goal = (
+            resolve_goal_by_key(client, key, container_id, context=context)
+            if context is not None
+            else resolve_goal_by_key(client, key, container_id)
+        )
         if goal:
             resolved.append(goal)
     return resolved
 
 
-def resolve_sub_goal_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str) -> dict | None:
-    goals = resolve_sub_goals_for_scope(client, epm_scope, container_id)
+def resolve_sub_goal_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str, context=None) -> dict | None:
+    goals = (
+        resolve_sub_goals_for_scope(client, epm_scope, container_id, context=context)
+        if context is not None
+        else resolve_sub_goals_for_scope(client, epm_scope, container_id)
+    )
     return goals[0] if goals else None
 
 
@@ -810,7 +833,7 @@ def fetch_goal_project_links(client: HomeGraphQLClient, goal_id: str) -> list[di
     return projects
 
 
-def _fetch_home_project_record(client: HomeGraphQLClient, row: dict) -> dict | None:
+def _fetch_home_project_record(client: HomeGraphQLClient, row: dict, context=None) -> dict | None:
     project_id = row.get("id")
     if not project_id:
         return None
@@ -819,7 +842,7 @@ def _fetch_home_project_record(client: HomeGraphQLClient, row: dict) -> dict | N
         payload = (detail.get("data") or {}).get("projects_byId") or {}
         project = _shape_project_detail(project_id, payload)
         updates = fetch_latest_project_update(client, project_id)
-        home_tags = fetch_project_tags(client, project)
+        home_tags = fetch_project_tags(client, project, context=context)
         linkage = extract_home_jira_linkage(project)
         return build_home_project_record(project, updates, linkage, home_tags, tags_unavailable=home_tags is None)
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
@@ -849,20 +872,23 @@ def _build_home_project_record_from_goal_row(row: dict) -> dict | None:
     return build_home_project_record(project, updates, linkage, home_tags)
 
 
-def _fetch_or_build_home_project_record(client: HomeGraphQLClient, row: dict) -> dict | None:
+def _fetch_or_build_home_project_record(client: HomeGraphQLClient, row: dict, context=None) -> dict | None:
     if _has_enriched_goal_project_fields(row):
         return _build_home_project_record_from_goal_row(row)
-    return _fetch_home_project_record(client, row)
+    return _fetch_home_project_record(client, row, context=context)
 
 
-def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str) -> list[dict]:
+def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str, context=None) -> list[dict]:
     try:
         linked_projects = fetch_goal_project_links(client, goal_id)
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Goal project list fetch failed: %s", exc)
         return []
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        records = executor.map(lambda row: _fetch_or_build_home_project_record(client, row), linked_projects)
+        if context is not None:
+            records = executor.map(lambda row: _fetch_or_build_home_project_record(client, row, context=context), linked_projects)
+        else:
+            records = executor.map(lambda row: _fetch_or_build_home_project_record(client, row), linked_projects)
     return [record for record in records if record is not None]
 
 
@@ -901,7 +927,7 @@ def merge_epm_linkage(home_project, epm_config_row):
     return {"labels": labels, "epicKeys": epic_keys}, match_state
 
 
-def fetch_epm_home_projects(epm_scope):
+def fetch_epm_home_projects(epm_scope, context=None):
     scope = epm_scope if isinstance(epm_scope, dict) else {}
     sub_goal_keys = _epm_scope_sub_goal_keys(scope)
     if not sub_goal_keys:
@@ -910,13 +936,17 @@ def fetch_epm_home_projects(epm_scope):
 
     try:
         client = build_home_graphql_client()
-        cloud_id = fetch_home_site_cloud_id()
+        cloud_id = fetch_home_site_cloud_id(context=context) if context is not None else fetch_home_site_cloud_id()
     except RuntimeError as exc:
         logger.warning("EPM home fetch failed: %s", exc)
         return []
 
     container_id = _container_id_from_cloud(cloud_id)
-    sub_goals = resolve_sub_goals_for_scope(client, scope, container_id)
+    sub_goals = (
+        resolve_sub_goals_for_scope(client, scope, container_id, context=context)
+        if context is not None
+        else resolve_sub_goals_for_scope(client, scope, container_id)
+    )
     if not sub_goals:
         return []
 
@@ -929,7 +959,12 @@ def fetch_epm_home_projects(epm_scope):
             "key": sub_goal_key,
             "name": str(sub_goal.get("name") or "").strip(),
         }
-        for home_project in fetch_projects_for_goal(client, sub_goal["id"]):
+        projects = (
+            fetch_projects_for_goal(client, sub_goal["id"], context=context)
+            if context is not None
+            else fetch_projects_for_goal(client, sub_goal["id"])
+        )
+        for home_project in projects:
             project_id = home_project.get("homeProjectId") or home_project.get("id")
             if not project_id:
                 continue

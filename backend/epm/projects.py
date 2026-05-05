@@ -3,6 +3,7 @@ import json
 import time
 from typing import Callable, MutableMapping
 
+from backend.auth.cache_policy import jira_home_process_cache_enabled
 from backend.epm import home as epm_home
 
 
@@ -18,6 +19,7 @@ class EpmProjectsDependencies:
     home_project_limit: int
     get_epm_config: Callable | None = None
     abort_not_found: Callable | None = None
+    context: object = None
     now: Callable = time.time
 
 
@@ -63,8 +65,9 @@ def build_epm_home_projects_cache_key(epm_scope):
 
 
 def build_epm_home_projects_state(epm_scope, deps, force_refresh=False):
+    cache_enabled = jira_home_process_cache_enabled(deps.context)
     cache_key = build_epm_home_projects_cache_key(epm_scope)
-    if not force_refresh:
+    if cache_enabled and not force_refresh:
         with deps.cache_lock:
             cached = deps.cache.get(cache_key)
             if cached and (deps.now() - cached['timestamp']) < deps.cache_ttl_seconds:
@@ -80,14 +83,15 @@ def build_epm_home_projects_state(epm_scope, deps, force_refresh=False):
     home_projects = deps.fetch_epm_home_projects(epm_scope)
     possibly_truncated = bool(deps.home_project_limit and len(home_projects) >= deps.home_project_limit)
     fetched_at = deps.utc_now_iso(timespec='seconds')
-    with deps.cache_lock:
-        deps.cache[cache_key] = {
-            'timestamp': deps.now(),
-            'fetchedAt': fetched_at,
-            'homeProjects': home_projects,
-            'homeProjectLimit': deps.home_project_limit,
-            'possiblyTruncated': possibly_truncated,
-        }
+    if cache_enabled:
+        with deps.cache_lock:
+            deps.cache[cache_key] = {
+                'timestamp': deps.now(),
+                'fetchedAt': fetched_at,
+                'homeProjects': home_projects,
+                'homeProjectLimit': deps.home_project_limit,
+                'possiblyTruncated': possibly_truncated,
+            }
     return {
         'homeProjects': home_projects,
         'cacheHit': False,

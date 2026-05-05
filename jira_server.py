@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from flask import abort, jsonify, redirect, request, send_file, send_from_directory, session
+from flask import abort, has_request_context, jsonify, redirect, request, send_file, send_from_directory, session
 import requests
 import argparse
 import base64
@@ -31,6 +31,7 @@ from backend.epm.home import fetch_epm_home_projects, merge_epm_linkage
 from backend.epm.rollup import EpmRollupDependencies, build_per_project_rollup
 from backend.epm.scope import build_epm_scope_clause, normalize_epm_sprint_field, should_apply_epm_sprint
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
+from backend.auth.cache_policy import jira_home_process_cache_enabled
 from backend.auth.context import RequestAuthContext, stable_local_workspace_id
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
@@ -367,6 +368,14 @@ def current_request_auth_context():
     )
 
 
+def _cache_policy_context(context=None):
+    if context is not None:
+        return context
+    if has_request_context():
+        return current_request_auth_context()
+    return None
+
+
 def auth_error_response(error, status=401):
     return jsonify({'error': error.code, 'message': str(error)}), status
 
@@ -675,17 +684,20 @@ EPIC_LINK_FIELD_CACHE = None
 CAPACITY_FIELD_CACHE = None
 
 
-def resolve_team_field_id(headers):
+def resolve_team_field_id(headers, context=None):
     """Resolve the Jira custom field ID for Team[Team]."""
     global TEAM_FIELD_CACHE
+    cache_enabled = jira_home_process_cache_enabled(_cache_policy_context(context))
     with _cache_lock:
-        if TEAM_FIELD_CACHE:
+        if cache_enabled and TEAM_FIELD_CACHE:
             return TEAM_FIELD_CACHE
         # Check dashboard config first
         configured = get_team_field_id()
         if configured:
-            TEAM_FIELD_CACHE = configured
-            return TEAM_FIELD_CACHE
+            if cache_enabled:
+                TEAM_FIELD_CACHE = configured
+                return TEAM_FIELD_CACHE
+            return configured
 
         try:
             response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
@@ -696,26 +708,32 @@ def resolve_team_field_id(headers):
             for field in fields:
                 name = str(field.get('name', '')).strip().lower()
                 if name == 'team[team]':
-                    TEAM_FIELD_CACHE = field.get('id')
-                    return TEAM_FIELD_CACHE
+                    field_id = field.get('id')
+                    if cache_enabled:
+                        TEAM_FIELD_CACHE = field_id
+                        return TEAM_FIELD_CACHE
+                    return field_id
         except Exception:
             return None
 
         return None
 
 
-def resolve_epic_link_field_id(headers, names_map=None):
+def resolve_epic_link_field_id(headers, names_map=None, context=None):
     """Resolve the Jira custom field ID for Epic Link."""
     global EPIC_LINK_FIELD_CACHE
+    cache_enabled = jira_home_process_cache_enabled(_cache_policy_context(context))
     with _cache_lock:
-        if EPIC_LINK_FIELD_CACHE:
+        if cache_enabled and EPIC_LINK_FIELD_CACHE:
             return EPIC_LINK_FIELD_CACHE
 
         if names_map:
             for field_id, field_name in (names_map or {}).items():
                 if str(field_name).strip().lower() == 'epic link':
-                    EPIC_LINK_FIELD_CACHE = field_id
-                    return EPIC_LINK_FIELD_CACHE
+                    if cache_enabled:
+                        EPIC_LINK_FIELD_CACHE = field_id
+                        return EPIC_LINK_FIELD_CACHE
+                    return field_id
 
         try:
             response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
@@ -726,24 +744,30 @@ def resolve_epic_link_field_id(headers, names_map=None):
             for field in fields:
                 name = str(field.get('name', '')).strip().lower()
                 if name == 'epic link':
-                    EPIC_LINK_FIELD_CACHE = field.get('id')
-                    return EPIC_LINK_FIELD_CACHE
+                    field_id = field.get('id')
+                    if cache_enabled:
+                        EPIC_LINK_FIELD_CACHE = field_id
+                        return EPIC_LINK_FIELD_CACHE
+                    return field_id
         except Exception:
             return None
 
         return None
 
 
-def resolve_capacity_field_id(headers):
+def resolve_capacity_field_id(headers, context=None):
     """Resolve the Jira custom field ID for Team capacity."""
     global CAPACITY_FIELD_CACHE
+    cache_enabled = jira_home_process_cache_enabled(_cache_policy_context(context))
     with _cache_lock:
-        if CAPACITY_FIELD_CACHE:
+        if cache_enabled and CAPACITY_FIELD_CACHE:
             return CAPACITY_FIELD_CACHE
         cap = get_capacity_config()
         if cap['fieldId']:
-            CAPACITY_FIELD_CACHE = cap['fieldId']
-            return CAPACITY_FIELD_CACHE
+            if cache_enabled:
+                CAPACITY_FIELD_CACHE = cap['fieldId']
+                return CAPACITY_FIELD_CACHE
+            return cap['fieldId']
 
         field_name = cap['fieldName']
         if not field_name:
@@ -759,8 +783,11 @@ def resolve_capacity_field_id(headers):
             for field in fields:
                 name = str(field.get('name', '')).strip().lower()
                 if name == target:
-                    CAPACITY_FIELD_CACHE = field.get('id')
-                    return CAPACITY_FIELD_CACHE
+                    field_id = field.get('id')
+                    if cache_enabled:
+                        CAPACITY_FIELD_CACHE = field_id
+                        return CAPACITY_FIELD_CACHE
+                    return field_id
         except Exception:
             return None
 
@@ -1452,8 +1479,13 @@ def clear_epm_caches():
 
 
 def build_epm_projects_dependencies():
+    auth_context = current_request_auth_context() if has_request_context() else None
     return epm_projects.EpmProjectsDependencies(
-        fetch_epm_home_projects=fetch_epm_home_projects,
+        fetch_epm_home_projects=(
+            lambda epm_scope: fetch_epm_home_projects(epm_scope, context=auth_context)
+            if auth_context is not None
+            else fetch_epm_home_projects(epm_scope)
+        ),
         merge_epm_linkage=merge_epm_linkage,
         normalize_epm_config=normalize_epm_config,
         utc_now_iso=utc_now_iso,
@@ -1463,6 +1495,7 @@ def build_epm_projects_dependencies():
         home_project_limit=epm_home.HOME_MAX_PROJECTS_PER_GOAL,
         get_epm_config=get_epm_config,
         abort_not_found=abort,
+        context=auth_context,
     )
 
 
@@ -1687,6 +1720,7 @@ def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_quer
 
 
 def build_epm_rollup_dependencies(sub_goal_keys=None):
+    auth_context = current_request_auth_context() if has_request_context() else None
     return EpmRollupDependencies(
         find_epm_project_or_404=lambda project_id: find_epm_project_or_404(project_id, sub_goal_keys=sub_goal_keys),
         normalize_epm_text=normalize_epm_text,
@@ -1695,8 +1729,16 @@ def build_epm_rollup_dependencies(sub_goal_keys=None):
         build_base_jql=build_base_jql,
         add_clause_to_jql=add_clause_to_jql,
         build_jira_headers=build_jira_headers,
-        resolve_epic_link_field_id=resolve_epic_link_field_id,
-        resolve_team_field_id=resolve_team_field_id,
+        resolve_epic_link_field_id=(
+            lambda headers: resolve_epic_link_field_id(headers, context=auth_context)
+            if auth_context is not None
+            else resolve_epic_link_field_id(headers)
+        ),
+        resolve_team_field_id=(
+            lambda headers: resolve_team_field_id(headers, context=auth_context)
+            if auth_context is not None
+            else resolve_team_field_id(headers)
+        ),
         build_epm_rollup_fields_list=build_epm_rollup_fields_list,
         get_epm_config=get_epm_config,
         normalize_epm_issue_type_sets=normalize_epm_issue_type_sets,
@@ -1707,6 +1749,7 @@ def build_epm_rollup_dependencies(sub_goal_keys=None):
         cache=EPM_ROLLUP_CACHE,
         cache_lock=_epm_cache_lock,
         cache_ttl_seconds=EPM_ROLLUP_CACHE_TTL_SECONDS,
+        context=auth_context,
     )
 
 
@@ -2024,7 +2067,10 @@ def get_epm_config():
     return normalize_epm_config(config.get('epm') or {})
 
 
-def fetch_home_site_cloud_id():
+def fetch_home_site_cloud_id(context=None):
+    auth_context = _cache_policy_context(context)
+    if auth_context is not None:
+        return epm_home.fetch_home_site_cloud_id(context=auth_context)
     return epm_home.fetch_home_site_cloud_id()
 
 
@@ -2040,10 +2086,11 @@ def fetch_epm_goal_catalog():
 
 
 def fetch_epm_sub_goals(root_goal_key):
+    auth_context = _cache_policy_context()
     client = epm_home.build_home_graphql_client()
-    cloud_id = fetch_home_site_cloud_id()
+    cloud_id = fetch_home_site_cloud_id(context=auth_context)
     container_id = epm_home._container_id_from_cloud(cloud_id)
-    return epm_home.fetch_sub_goals_for_root_key(client, root_goal_key, container_id)
+    return epm_home.fetch_sub_goals_for_root_key(client, root_goal_key, container_id, context=auth_context)
 
 
 # --- Custom field config getters ---
@@ -3184,9 +3231,13 @@ def fetch_tasks(include_team_name=False):
             epic_keys_filter
         )
         record_timing('parse_params', parse_started)
-        with _cache_lock:
-            cached_entry = TASKS_CACHE.get(cache_key)
-        if not force_refresh and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
+        auth_context = current_request_auth_context()
+        cache_enabled = jira_home_process_cache_enabled(auth_context)
+        cached_entry = None
+        if cache_enabled:
+            with _cache_lock:
+                cached_entry = TASKS_CACHE.get(cache_key)
+        if cache_enabled and not force_refresh and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
             cached_response = jsonify(cached_entry.get('data') or {})
             cached_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             cached_response.headers['Pragma'] = 'no-cache'
@@ -3263,8 +3314,8 @@ def fetch_tasks(include_team_name=False):
             tasks_jql = add_clause_to_jql(tasks_jql, f'("Epic Link" in ({quoted_epics}) OR parent in ({quoted_epics}))')
         record_timing('build_jql', jql_started)
 
-        team_field_id = resolve_team_field_id(headers)
-        epic_link_field_id = resolve_epic_link_field_id(headers)
+        team_field_id = resolve_team_field_id(headers, context=auth_context)
+        epic_link_field_id = resolve_epic_link_field_id(headers, context=auth_context)
 
         sprint_field_id = get_sprint_field_id()
 
@@ -3377,7 +3428,7 @@ def fetch_tasks(include_team_name=False):
 
         if not team_field_id:
             team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
-        epic_link_field = epic_link_field_id or resolve_epic_link_field_id(headers, names_map)
+        epic_link_field = epic_link_field_id or resolve_epic_link_field_id(headers, names_map, context=auth_context)
         epic_name_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic name'), None)
         epic_keys = set()
         normalize_started = time.perf_counter()
@@ -3525,13 +3576,14 @@ def fetch_tasks(include_team_name=False):
             f'project={project_filter or "all"} issues={len(slim_issues)} epics={len(epics_in_scope)} '
             f'timings_ms={timings_ms}'
         )
-        cache_store_started = time.perf_counter()
-        with _cache_lock:
-            TASKS_CACHE[cache_key] = {
-                'timestamp': time.time(),
-                'data': data
-            }
-        record_timing('cache_store', cache_store_started)
+        if cache_enabled:
+            cache_store_started = time.perf_counter()
+            with _cache_lock:
+                TASKS_CACHE[cache_key] = {
+                    'timestamp': time.time(),
+                    'data': data
+                }
+            record_timing('cache_store', cache_store_started)
 
         success_response = jsonify(data)
         success_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -3843,11 +3895,14 @@ def collect_dependencies(keys, headers):
 @app.route('/api/scenario', methods=['GET', 'POST'])
 def scenario_planner():
     """Scenario planner endpoint."""
+    cache_enabled = jira_home_process_cache_enabled(current_request_auth_context())
     if request.method == 'GET':
-        with _cache_lock:
-            if not SCENARIO_CACHE.get('data'):
-                return jsonify({'error': 'No scenario cached'}), 404
-            return jsonify(SCENARIO_CACHE)
+        if cache_enabled:
+            with _cache_lock:
+                if not SCENARIO_CACHE.get('data'):
+                    return jsonify({'error': 'No scenario cached'}), 404
+                return jsonify(SCENARIO_CACHE)
+        return jsonify({'error': 'No scenario cached'}), 404
 
     try:
         payload = request.get_json(silent=True) or {}
@@ -4291,9 +4346,10 @@ def scenario_planner():
             'sprintBoundaries': sprint_boundaries,
         }
 
-        with _cache_lock:
-            SCENARIO_CACHE['generatedAt'] = result['generatedAt']
-            SCENARIO_CACHE['data'] = result
+        if cache_enabled:
+            with _cache_lock:
+                SCENARIO_CACHE['generatedAt'] = result['generatedAt']
+                SCENARIO_CACHE['data'] = result
 
         return jsonify(result)
     except Exception as e:
@@ -5363,11 +5419,15 @@ def get_epic_cohort_stats():
     refresh = _cohort_parse_bool(payload.get('refresh'))
     scoped_projects = _cohort_project_scope()
     cache_key = _build_epic_cohort_cache_key(start_quarter, team_ids, scoped_projects, component_names)
+    auth_context = current_request_auth_context()
+    cache_enabled = jira_home_process_cache_enabled(auth_context)
 
     now_ts = time.time()
-    with _cache_lock:
-        cached = EPIC_COHORT_CACHE.get(cache_key)
-    if cached and not refresh and (now_ts - float(cached.get('ts') or 0)) <= EPIC_COHORT_CACHE_TTL_SECONDS:
+    cached = None
+    if cache_enabled:
+        with _cache_lock:
+            cached = EPIC_COHORT_CACHE.get(cache_key)
+    if cache_enabled and cached and not refresh and (now_ts - float(cached.get('ts') or 0)) <= EPIC_COHORT_CACHE_TTL_SECONDS:
         return jsonify({
             'cached': True,
             'generatedAt': cached.get('generatedAt'),
@@ -5383,7 +5443,7 @@ def get_epic_cohort_stats():
         'Content-Type': 'application/json'
     }
 
-    team_field_id = resolve_team_field_id(headers)
+    team_field_id = resolve_team_field_id(headers, context=auth_context)
     cohort_payload, error_response = fetch_epic_cohort_data(
         start_quarter,
         headers,
@@ -5398,12 +5458,13 @@ def get_epic_cohort_stats():
         }), error_response.status_code
 
     generated_at = datetime.now().isoformat()
-    with _cache_lock:
-        EPIC_COHORT_CACHE[cache_key] = {
-            'ts': now_ts,
-            'generatedAt': generated_at,
-            'data': cohort_payload
-        }
+    if cache_enabled:
+        with _cache_lock:
+            EPIC_COHORT_CACHE[cache_key] = {
+                'ts': now_ts,
+                'generatedAt': generated_at,
+                'data': cohort_payload
+            }
 
     return jsonify({
         'cached': False,

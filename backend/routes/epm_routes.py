@@ -2,6 +2,8 @@
 
 from flask import Blueprint
 
+from backend.auth.cache_policy import jira_home_process_cache_enabled
+
 from . import bind_server_globals
 
 
@@ -114,10 +116,14 @@ def get_epm_project_issues_endpoint(home_project_id):
         return jsonify({'project': project, 'issues': [], 'epics': {}, 'metadataOnly': True})
 
     base_jql = build_base_jql()
+    auth_context = current_request_auth_context()
+    cache_enabled = jira_home_process_cache_enabled(auth_context)
     cache_key = f"{home_project_id}::{tab}::{sprint}::{base_jql}::{json.dumps(linkage, sort_keys=True)}"
-    with _epm_cache_lock:
-        cached = EPM_ISSUES_CACHE.get(cache_key)
-    if cached and (time.time() - cached['timestamp']) < EPM_ISSUES_CACHE_TTL_SECONDS:
+    cached = None
+    if cache_enabled:
+        with _epm_cache_lock:
+            cached = EPM_ISSUES_CACHE.get(cache_key)
+    if cache_enabled and cached and (time.time() - cached['timestamp']) < EPM_ISSUES_CACHE_TTL_SECONDS:
         response = jsonify(cached['data'])
         response.headers['Server-Timing'] = 'cache;dur=1'
         return response
@@ -134,8 +140,9 @@ def get_epm_project_issues_endpoint(home_project_id):
         'epics': epic_details,
         'metadataOnly': False,
     }
-    with _epm_cache_lock:
-        EPM_ISSUES_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
+    if cache_enabled:
+        with _epm_cache_lock:
+            EPM_ISSUES_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
     response = jsonify(payload)
     response.headers['Server-Timing'] = f'jira-search;dur={round((time.perf_counter() - started) * 1000, 1)}'
     return response

@@ -14,6 +14,7 @@ This phase includes:
 - Per-user auth connection metadata.
 - Per-user Jira project access status for configured product/tech projects.
 - Encrypted token storage.
+- Token/admin/config audit events.
 - Admin inspection of user properties.
 - Admin-only gates for specific shared configuration areas.
 
@@ -54,6 +55,39 @@ Before this database phase starts, the OAuth slice must settle these items:
 - Keep the process-local `OAUTH_TOKEN_STORE` local-only. Production database auth must hard-fail if it would use that store instead of encrypted database tokens.
 - Define session cookie, CORS, and CSRF policy before exposing DB-backed admin/config mutation endpoints: `HttpOnly`, `SameSite=Lax`, `Secure` outside local HTTP development, a restricted origin allowlist, and CSRF checks for state-changing browser routes.
 - Partition or disable every Jira/Home-derived cache for OAuth users before multiple users can share a process.
+- Define and use `RequestAuthContext` for all Jira/Home clients and caches. Routes must not reach into global auth state after this boundary exists.
+
+## RequestAuthContext Boundary
+
+Before database tables are introduced, the auth slice must define a request-scoped context with these fields:
+
+| Field | Source before DB | Source after DB |
+| --- | --- | --- |
+| `user_id` | Synthetic local id for Basic, or local OAuth session user id. | `users.id`. |
+| `stable_subject` | Atlassian `/me` `account_id` or synthetic local subject. | `users.external_subject`. |
+| `atlassian_account_id` | Atlassian `/me` `account_id` when OAuth is used. | `users.external_subject` for Atlassian users. |
+| `workspace_id` | Deterministic local id from environment key plus normalized Jira site. | `workspaces.id`. |
+| `auth_connection_id` | Opaque local OAuth session connection id or synthetic Basic connection id. | `auth_connections.id`. |
+| `cloud_id` | Accessible resource `id`. | `workspaces.jira_cloud_id` and `auth_connections.cloud_id`. |
+| `token_version` | Local token/session version. | Monotonic `auth_connections.token_version`. |
+| `account_status` | Atlassian `/me` account status or local active status. | `users.status` plus provider status check. |
+| `is_admin` | Local single-user default or bootstrap-only flag. | `users.account_type == "admin"`. |
+| `project_access` | Empty or local snapshot. | Latest `jira_project_access` rows for the connection. |
+
+All Jira and Home client entry points must take `RequestAuthContext` as an explicit argument. Cache helpers must also take this context and use it in cache keys. This includes Jira issue searches, project/field/label/board lookups, Home goal/project fetches, EPM rollups, and generated project metadata caches.
+
+The database phase must not add new DB-backed routes that still call `build_jira_headers()`, `JIRA_EMAIL`, `JIRA_TOKEN`, `JIRA_URL`, `fetch_home_*`, or process caches directly from route globals. Any remaining Basic-mode compatibility wrapper should first build a `RequestAuthContext`, then call the same Jira/Home client boundary.
+
+## Environment And Workspace Isolation
+
+Database-backed state is isolated by deployment environment and Jira/Atlassian workplace/site.
+
+- Production, staging, and local development should use separate databases or schemas. If they share a PostgreSQL cluster, they still need distinct database/schema names and distinct token-encryption key ids.
+- Every workspace row includes an `environment_key`, for example `local`, `staging`, or `production`, and the normalized Jira site identity.
+- The effective workspace key is `(environment_key, jira_cloud_id)` when OAuth has a cloud id, otherwise `(environment_key, normalized_jira_site_url)`.
+- All operational tables that store configuration, auth connections, tokens, project access, saved views, cache metadata, and audit events must include `workspace_id` directly or through a required parent row.
+- API routes resolve the current workspace from `RequestAuthContext`; clients must not accept a caller-supplied workspace id unless it is checked against that context.
+- No cache key may omit `workspace_id`; no token, config, or audit query may run without workspace scoping.
 
 ## Recommended Approach
 
@@ -94,12 +128,13 @@ One row for the configured Jira/Atlassian site or deployment scope.
 | Column | Purpose |
 | --- | --- |
 | `id` | Workspace UUID. |
+| `environment_key` | Deployment environment scope such as `local`, `staging`, or `production`. |
 | `name` | Human-readable workspace name. |
 | `jira_site_url` | Normalized Jira site URL. |
 | `jira_cloud_id` | Atlassian cloud id when OAuth is used. |
 | `created_by`, `created_at`, `updated_at` | Ownership and lifecycle. |
 
-This table is not an access-control list in this phase. Jira project permissions come from Jira, not from Jira Execution Planner workspace membership.
+Use a unique constraint on `(environment_key, jira_cloud_id)` when `jira_cloud_id` is present and on `(environment_key, jira_site_url)` for local Basic mode. This table is not an access-control list in this phase. Jira project permissions come from Jira, not from Jira Execution Planner workspace membership.
 
 ### `auth_connections`
 
@@ -113,6 +148,7 @@ One row per user and external service connection.
 | `site_url`, `cloud_id` | Provider target. |
 | `scopes` | Granted scopes. |
 | `status` | `active`, `expired`, `revoked`, or `error`. |
+| `token_version` | Monotonic integer incremented on token refresh, revoke, reconnect, or project-access snapshot reset. |
 | `last_validated_at`, `expires_at` | Token lifecycle. |
 | `created_at`, `updated_at` | Lifecycle timestamps. |
 
@@ -145,14 +181,43 @@ Encrypted token material separated from connection metadata and never joined int
 | --- | --- |
 | `connection_id` | Parent connection. |
 | `token_kind` | `access_token`, `refresh_token`, or `api_token`. |
+| `algorithm` | Encryption algorithm, initially `AES-256-GCM`. |
 | `ciphertext` | Encrypted token value. |
+| `nonce` | Per-token encryption nonce. |
+| `wrapped_dek` | Data encryption key wrapped by the configured key-encryption key. |
 | `key_id` | Encryption key identifier for rotation. |
+| `aad_hash` | Hash of authenticated associated data such as workspace, connection, and token kind. |
 | `expires_at` | Token expiry when known. |
 | `rotated_at`, `revoked_at` | Secret lifecycle. |
 
 Frontend APIs should receive only status such as `authenticated`, `provider`, `expiresAt`, and `needsReconnect`.
 
+### `audit_events`
+
+Append-only security and admin event log. Events must not contain token material, OAuth codes, PKCE verifiers, raw authorization headers, or full callback URLs.
+
+| Column | Purpose |
+| --- | --- |
+| `id` | Event UUID. |
+| `workspace_id` | Workspace scope. |
+| `actor_user_id` | User who caused the event, nullable for system/bootstrap events. |
+| `target_user_id` | Affected user when applicable. |
+| `auth_connection_id` | Affected connection when applicable. |
+| `event_type` | `login_success`, `login_failure`, `token_refresh_success`, `token_refresh_failure`, `connection_revoked`, `admin_granted`, `admin_revoked`, `user_disabled`, `user_enabled`, `config_write`, `key_rotation_started`, `key_rotation_completed`. |
+| `metadata` | Redacted JSON metadata: status code, sanitized provider error code, project key, config section, or key id. |
+| `created_at` | Event timestamp. |
+
 ## Admin Configuration Access
+
+Admin bootstrap:
+
+- First admin is granted only by stable Atlassian account id using `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`, a comma-separated list of account ids.
+- Bootstrap runs only when the workspace has zero admin users. Email address and email domain are not accepted as bootstrap identity keys because they can change.
+- If no bootstrap account id is configured, OAuth login can create normal active users, but admin endpoints and shared config writes remain unavailable until an operator runs an explicit local admin-grant command.
+- Later admins are granted or revoked only by an existing admin through an admin endpoint, or by a local break-glass CLI command that requires server filesystem access and writes an `audit_events` row.
+- Every admin grant, revocation, user disable, and user enable creates an audit event.
+- Login admission requires an active Atlassian account and access to the configured Atlassian resource whose `cloud_id` or site URL matches the workspace. Optional `AUTH_ALLOWED_EMAIL_DOMAINS` can further restrict login admission, but it is not an identity key and does not grant admin rights.
+- Jira project access is never sufficient for admin config endpoints.
 
 Admin-only configuration areas:
 
@@ -166,6 +231,23 @@ All other settings/configuration tabs remain available to all authenticated user
 
 Do not model this as separate `dev_lead` or `epm` roles. Admin access controls shared configuration and user inspection only.
 
+Current mutable routes that need an authenticated admin boundary before DB auth lands:
+
+- `POST /api/groups-config` in `backend/routes/settings_routes.py`.
+- `POST /api/team-catalog` in `backend/routes/settings_routes.py`.
+- `POST /api/projects/selected` in `backend/routes/settings_routes.py`.
+- `POST /api/board-config` in `backend/routes/settings_routes.py`.
+- `POST /api/capacity/config` in `backend/routes/settings_routes.py`.
+- `POST /api/sprint-field/config` in `backend/routes/settings_routes.py`.
+- `POST /api/story-points-field/config` in `backend/routes/settings_routes.py`.
+- `POST /api/parent-name-field/config` in `backend/routes/settings_routes.py`.
+- `POST /api/team-field/config` in `backend/routes/settings_routes.py`.
+- `POST /api/stats/priority-weights-config` in `backend/routes/settings_routes.py`.
+- `POST /api/issue-types/config` in `backend/routes/settings_routes.py`.
+- `POST /api/epm/config` in `backend/routes/epm_routes.py`.
+
+`POST /api/epm/projects/configuration` and `POST /api/epm/projects/preview` are currently non-persistent preview helpers. They still need authentication and CSRF handling because they are browser POST routes, but they do not need admin authorization unless they start persisting configuration.
+
 ## API Surface
 
 | Endpoint | Purpose |
@@ -175,21 +257,26 @@ Do not model this as separate `dev_lead` or `epm` roles. Admin access controls s
 | `DELETE /api/auth/connections/<id>` | Revoke a stored connection. |
 | `GET /api/admin/users` | Admin-only list of user properties, Jira project access, and auth connection status. |
 | `GET /api/admin/users/<id>` | Admin-only user detail: ids, creator, timestamps, status, Jira project access, and auth connection status. |
+| `PATCH /api/admin/users/<id>/status` | Admin-only enable, disable, or mark deleted. |
+| `POST /api/admin/users/<id>/admin-grant` | Admin-only grant admin account type. |
+| `DELETE /api/admin/users/<id>/admin-grant` | Admin-only revoke admin account type. |
 | `GET /api/admin/config` | Admin-only shared configuration summary for scope projects, Jira source, field mapping, capacity, and priority weights. |
+| `GET /api/admin/audit-events` | Admin-only redacted security/admin event log. |
 
 Existing `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` continue reading the current JSON-backed configuration during this phase.
 
 ## Migration Plan
 
 1. Add database connection config and migration tooling.
-2. Create `users`, `workspaces`, `auth_connections`, `auth_tokens`, and `jira_project_access`.
+2. Create `users`, `workspaces`, `auth_connections`, `auth_tokens`, `jira_project_access`, and `audit_events`.
 3. Bootstrap one workspace from the current configured Jira site.
 4. Create or upsert the current authenticated user on login by `(external_provider, external_subject)` from the Atlassian `account_id`; update changed email/display-name fields without creating a duplicate user.
-5. Store OAuth connection metadata and encrypted refresh tokens in the database.
-6. Validate configured Jira project access for the user's auth connection without adding heavy startup fan-out.
-7. Keep Basic API-token mode local-only unless there is a clear requirement to store API tokens server-side.
-8. Add admin user inspection endpoints.
-9. Gate only the admin-only shared configuration areas; keep all other configuration tabs available to authenticated users.
+5. Resolve every request into `RequestAuthContext` and pass it to Jira/Home clients and cache helpers.
+6. Store OAuth connection metadata and encrypted refresh tokens in the database.
+7. Validate configured Jira project access for the user's auth connection without adding heavy startup fan-out.
+8. Keep Basic API-token mode local-only unless there is a clear requirement to store API tokens server-side.
+9. Add admin bootstrap, admin user inspection, admin grant/revoke, user lifecycle, and audit-event endpoints.
+10. Gate only the admin-only shared configuration areas; keep all other configuration tabs available to authenticated users.
 
 ## Multi-User Cache Safety
 
@@ -198,6 +285,23 @@ Any cache that contains Jira/Home-derived data must be partitioned by the author
 At minimum, cache keys for issue/project/rollup data must include the `workspace_id` and either the `user_id` or a stable `auth_connection_id` plus token/access version. This prevents a user with broader Jira access from warming a process-wide cache that is later served to a user with narrower Jira access.
 
 Shared caches are acceptable only for data that is both non-secret and independent of Jira/Home permissions. Revoke, reconnect, project-access changes, and admin changes to scope projects must invalidate affected user/workspace cache entries.
+
+Existing process caches that must be either auth-keyed or disabled for OAuth users include project search, component lookup, epic search, labels, issue types, EPM issue payloads, EPM rollups, EPM Home project metadata, sprint caches when the board/source is workspace-specific, and any Home goal/project catalog cache. A cache key built only from project key, JQL, tab, sprint, Home project id, label prefix, or goal key is not sufficient in DB/OAuth mode.
+
+## Token Encryption And Refresh Model
+
+Token storage must be designed before writing `auth_tokens`.
+
+- Use envelope encryption. Generate a random data-encryption key per stored token value, encrypt token plaintext with `AES-256-GCM`, and wrap the data-encryption key with a configured key-encryption key.
+- Production key source should be a KMS or secrets-manager key referenced by `TOKEN_ENCRYPTION_KEY_ID`. Local development may use `TOKEN_ENCRYPTION_MASTER_KEY_B64`, but production startup must reject local-only key material.
+- Store `key_id`, `algorithm`, `nonce`, `wrapped_dek`, `ciphertext`, and an authenticated-data hash. Associated data must bind the token to `workspace_id`, `auth_connection_id`, `token_kind`, and `key_id`.
+- Keep a keyring for reads: one primary key for new writes and zero or more retired keys for decrypt-only access during rotation.
+- Rotation adds a new primary `key_id`, writes an audit event, rewraps data-encryption keys or re-encrypts tokens in batches, then marks the old key decrypt-only until no rows need it.
+- Refresh uses a transaction and a per-connection lock, either `SELECT ... FOR UPDATE` on `auth_connections` or a PostgreSQL advisory lock keyed by `auth_connection_id`.
+- During refresh, read and decrypt the current refresh token under the lock, call Atlassian, then atomically update access-token and refresh-token rows, `auth_connections.expires_at`, `auth_connections.status`, and increment `auth_connections.token_version`.
+- If Atlassian returns a replacement refresh token, replace the old refresh token in the same transaction. If the provider response omits a refresh token, retain the previous one only if the provider contract allows that; otherwise mark the connection `error` and require reconnect.
+- A stale concurrent refresh response must not overwrite newer token rows. Use the row lock plus token-version check to enforce this.
+- Logs and audit events are redacted: never log plaintext tokens, ciphertext, wrapped data-encryption keys, OAuth authorization codes, PKCE verifiers, raw `Authorization` headers, or full callback URLs.
 
 ## Security Rules
 
@@ -209,12 +313,21 @@ Shared caches are acceptable only for data that is both non-secret and independe
 - Revoke auth connections without deleting saved user identity.
 - Enforce active user, current auth connection, admin-only configuration gates, and Jira project access checks in backend routes.
 - Block disabled or deleted local users even if Atlassian OAuth succeeds.
+- Require CSRF checks for all browser-originating state-changing routes, including admin and shared-config mutations.
 
 ## Verification Criteria
 
 - `GET /api/me` returns the current user, current workspace/site, Jira project access status, and auth connection status without token material.
+- All Jira/Home routes construct and pass `RequestAuthContext`; source guards fail if routes call Jira/Home clients or caches without context.
+- Every Jira/Home-derived cache is keyed by workspace and auth context or disabled for OAuth users.
 - OAuth login creates or updates a user by Atlassian `account_id`; an email change updates profile metadata and does not create another user.
 - Inactive Atlassian accounts and disabled/deleted local users cannot create active sessions.
+- First admin bootstrap succeeds only for configured Atlassian account ids and only while the workspace has zero admins.
+- Later admin grant/revoke actions require an existing admin and create audit events.
+- Non-admin users cannot mutate selected projects, board config, capacity, field mapping, priority weights, team/group config, issue-type config, or EPM config.
+- Token encryption tests prove tokens are not stored as plaintext, use the configured `key_id`, decrypt with retired keys during rotation, and redact logs.
+- Concurrent refresh tests prove one refresh updates tokens and increments `token_version` while stale refresh attempts cannot overwrite newer token material.
+- Data for one environment/Jira workspace cannot be read with another environment/workspace context.
 - Admin user detail shows user id, provider id, created-by, timestamps, status, Jira project access status, and auth connection status.
 - A user with product-only, tech-only, or no configured Jira project access receives explicit access states instead of leaked cached data or generic Jira failures.
 - Revoking an auth connection prevents future Jira/Home calls for that user.

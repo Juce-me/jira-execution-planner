@@ -33,6 +33,10 @@ The following must be implemented or explicitly verified before starting the dat
 4. **Session/CORS/CSRF:** set `SESSION_COOKIE_HTTPONLY`, `SESSION_COOKIE_SAMESITE=Lax`, and `SESSION_COOKIE_SECURE` for non-local HTTPS deployments. Replace broad Flask-CORS defaults with an allowlist. Require CSRF protection for state-changing browser routes before adding DB-backed admin/config endpoints.
 5. **Cache isolation:** Jira/Home-derived caches must include `workspace_id` plus `user_id` or `auth_connection_id` and a token/access version, or must be disabled for OAuth users until partitioning exists.
 6. **Admin bootstrap:** define how the first admin is created, how later admins are granted, and how disabled/deleted users are blocked before any admin DB endpoints are exposed.
+7. **Request auth context:** define a `RequestAuthContext` and make every Jira/Home client and cache accept it explicitly. Do not let routes or caches read process-global auth state once OAuth users can exist.
+8. **Mutable config gate inventory:** list every current write route that must require an authenticated admin and CSRF protection before DB auth lands. At minimum this includes selected projects, board config, capacity, field mappings, priority weights, and persistent EPM config writes.
+9. **Token storage operating model:** define envelope encryption, key source, `key_id`, rotation, refresh-token replacement transaction, concurrent refresh lock, audit events, and redacted logging before writing `auth_tokens`.
+10. **Environment/workspace isolation:** database-backed identity, token, config, and cache state must be scoped to the deployment environment and configured Jira/Atlassian workspace/site.
 
 ## Current Codebase Alignment
 
@@ -45,13 +49,75 @@ This plan was drafted before the backend split. Implement it against current `ma
 - Reuse `backend/jira_client.py` for resilient request behavior; keep auth-mode decisions in `backend/auth/jira_auth.py`.
 - Use the old local branch `feature/atlassian-oauth-auth` only as source material. Do not copy it directly over current `main`, because it predates the `backend/routes` split.
 
+## RequestAuthContext Contract
+
+Before database work starts, create a single request-scoped auth object and pass it into every Jira/Home client and cache helper. The local OAuth slice can populate synthetic local ids where the database id is not available yet; the field names must match the later database-backed version so route migrations do not churn.
+
+```python
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class ProjectAccessSnapshot:
+    project_key: str
+    project_type: str
+    status: str
+    checked_at: str = ''
+
+
+@dataclass(frozen=True)
+class RequestAuthContext:
+    auth_mode: str
+    user_id: str
+    stable_subject: str
+    atlassian_account_id: str
+    workspace_id: str
+    auth_connection_id: str
+    cloud_id: str
+    site_url: str
+    token_version: str
+    account_status: str
+    is_admin: bool
+    project_access: tuple[ProjectAccessSnapshot, ...] = field(default_factory=tuple)
+```
+
+Rules:
+
+- `stable_subject` is the provider-stable identity key. For Atlassian OAuth it is the `/me` `account_id`; for local Basic mode use a clearly synthetic value such as `local-basic`.
+- `workspace_id` identifies the deployment environment plus Jira/Atlassian site. Before the DB exists, use a deterministic local value derived from normalized `JIRA_URL` and the environment key.
+- `auth_connection_id` identifies the credential connection used for Jira/Home calls. Before the DB exists, use an opaque local id tied to the OAuth session id, not the token value.
+- `token_version` changes whenever the credential or project-access snapshot changes. Cache keys must include it or must opt out for OAuth users.
+- `account_status` must be `active` before Jira/Home calls run. Disabled/deleted local users and inactive Atlassian accounts are blocked.
+- `is_admin` is required for shared configuration mutation and admin inspection only. Jira project access is not an admin signal.
+- Jira/Home clients must accept `context` explicitly, for example `jira_get(context, path, ...)` and `home_graphql(context, query, ...)`.
+- Caches that contain Jira/Home-derived data must accept `context` explicitly and build keys from `workspace_id`, `auth_connection_id` or `user_id`, `cloud_id`, `token_version`, and route-specific parameters. If a cache cannot be keyed this way, disable it for OAuth users.
+
+## OAuth Callback And Browser Policy
+
+The callback must be strict because the DB phase will persist identities and tokens created by this flow:
+
+- Reject callback requests with missing `code`, missing `state`, unknown state, mismatched state, missing PKCE verifier, or provider `error`.
+- Consume `state` and `code_verifier` exactly once by clearing both on every callback path, including validation failures and token-exchange failures.
+- Exchange the code with the exact configured redirect URI and the matching PKCE verifier.
+- Fetch `/me` before writing session state. If `account_id` is missing or `account_status` is not `active`, clear local auth state and return a sanitized auth error.
+- Return only sanitized error codes to the browser, such as `invalid_oauth_state`, `oauth_exchange_failed`, `user_identity_failed`, `user_inactive`, or `jira_site_not_accessible`.
+- Never log access tokens, refresh tokens, API tokens, OAuth codes, PKCE verifiers, raw authorization headers, or full callback query strings. Logs may include a correlation id, sanitized provider error code, HTTP status, `cloud_id`, and `account_id` only after identity validation.
+
+Browser policy before DB-backed admin/config endpoints:
+
+- Flask session cookie: `HttpOnly`, `SameSite=Lax`, and `Secure` outside local HTTP development.
+- CORS: explicit `APP_ALLOWED_ORIGINS` allowlist only; no broad wildcard origin when credentials are enabled.
+- CSRF: all state-changing browser routes require a server-issued CSRF token, preferably sent in an `X-CSRF-Token` header and bound to the session.
+
 ## File Structure
 
 **Create:**
 
 - `backend/auth/__init__.py` - package marker for auth helpers.
+- `backend/auth/context.py` - `RequestAuthContext` dataclasses and cache-key helpers shared by Jira/Home clients.
 - `backend/auth/jira_auth.py` - auth mode parsing, OAuth URL/token helpers, resource matching, token refresh, Jira URL/header construction.
 - `backend/routes/auth_routes.py` - auth status, Atlassian login/callback, and logout blueprint.
+- `tests/test_auth_context.py` - request auth context, synthetic local context, and cache-key unit tests.
 - `tests/test_jira_auth.py` - backend unit tests for auth mode, URLs, resources, refresh behavior, and request headers.
 - `tests/test_auth_routes.py` - Flask route tests for auth status, login redirect, callback errors, and logout.
 - `tests/test_auth_isolation_source_guard.js` - source guard that auth-mode work stays out of `frontend/src/dashboard.jsx`.
@@ -59,7 +125,7 @@ This plan was drafted before the backend split. Implement it against current `ma
 **Modify:**
 
 - `backend/app.py` - register the auth blueprint.
-- `jira_server.py` - configure auth env values, Flask secret key, local token store helpers, Basic-only startup validation, and migrate `/api/test` plus one small read endpoint to the auth helper.
+- `jira_server.py` - configure auth env values, Flask secret key, local token store helpers, Basic-only startup validation, request auth context helpers, and migrate `/api/test` plus one small read endpoint to the auth helper.
 - `.env.example` - document `JIRA_AUTH_MODE` and Atlassian OAuth variables.
 - `README.md` - document local OAuth setup and Basic auth fallback.
 

@@ -24,6 +24,10 @@ This phase does not include:
 
 Do not split users into `dev_lead` and `epm` roles. The user is a system user. The selected configuration determines whether the dashboard opens ENG, EPM, or mixed behavior.
 
+All configuration reads and writes inherit the environment/workspace isolation from `docs/plans/2026-05-05-database-introduction-user-auth.md`. Workspace defaults and saved views are scoped by `workspace_id`, and that workspace is resolved from `RequestAuthContext`; the client must not choose an arbitrary workspace id.
+
+Shared workspace defaults remain admin-controlled. User-owned saved views can be created by normal authenticated users, but they must only reference projects, fields, Home goals, and EPM project mappings visible in the current `RequestAuthContext` project-access snapshot.
+
 ## Data Model
 
 ### `workspace_config`
@@ -128,6 +132,8 @@ The response should include the resolved view plus metadata explaining where it 
 
 Existing `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` should continue to work during migration by reading from the database-backed config repository. Do not break the current frontend bootstrap in the first configuration slice.
 
+`PATCH /api/workspace/config` and any compatibility route that mutates shared workspace defaults must require an authenticated admin and CSRF validation. `POST /api/me/views` and `PATCH /api/me/views/<id>` require an authenticated active user, CSRF validation, workspace scoping from `RequestAuthContext`, and ownership checks.
+
 ## Migration Plan
 
 1. Create `workspace_config`, `view_configs`, and `view_config_versions`.
@@ -145,5 +151,7 @@ Existing `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` 
 - A user can save ENG, EPM, or mixed views in their selected workspace.
 - ENG/EPM behavior comes from the selected configuration, not from separate user roles.
 - A user cannot open or save a view for a workspace they cannot access.
+- A request in one environment/Jira workspace cannot read or mutate defaults or saved views from another environment/Jira workspace.
+- Normal users can save private views but cannot mutate shared workspace defaults.
 - No view payload contains token material.
 - Initial dashboard bootstrap remains one compact user/config request plus the existing scoped data requests.

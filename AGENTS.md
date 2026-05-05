@@ -243,6 +243,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In PR descriptions, never include secrets, token placeholders, credential env vars, or local absolute paths.
 - Store implementation plans in `docs/plans/` only.
 - Keep local task changes in the checkout the user is actively viewing; use a secondary worktree only when the user explicitly asks for one.
+- For shared header/menu UI changes, add or update Playwright assertions for menu layering and icon/control geometry before reporting visual verification.
 
 ---
 

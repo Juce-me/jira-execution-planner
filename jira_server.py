@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from flask import abort, jsonify, request, send_file, send_from_directory
+from flask import abort, jsonify, request, send_file, send_from_directory, session
 import requests
 import argparse
 import base64
@@ -31,13 +31,29 @@ from backend.epm.home import fetch_epm_home_projects, merge_epm_linkage
 from backend.epm.rollup import EpmRollupDependencies, build_per_project_rollup
 from backend.epm.scope import build_epm_scope_clause, normalize_epm_sprint_field, should_apply_epm_sprint
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
+from backend.auth.jira_auth import (
+    AUTH_MODE_ATLASSIAN_OAUTH,
+    AUTH_MODE_BASIC,
+    AuthConfig,
+    AuthError,
+    build_authorize_url,
+    build_pkce_challenge,
+    choose_accessible_resource,
+    exchange_authorization_code,
+    fetch_accessible_resources,
+    fetch_current_user,
+    new_oauth_state,
+    new_pkce_verifier,
+    token_session_payload,
+    validate_auth_config,
+)
+
+# Load environment variables from .env file before constructing the Flask app.
+load_dotenv()
 from backend.app import app
 from backend import config_store as _config_store
 from backend import jira_client as _jira_client
 from backend.epm import projects as epm_projects
-
-# Load environment variables from .env file
-load_dotenv()
 
 # Reuse a single HTTP session to avoid reconnect overhead on repeated calls
 HTTP_SESSION = Session()
@@ -47,6 +63,19 @@ logger = logging.getLogger(__name__)
 JIRA_URL = os.getenv('JIRA_URL')
 JIRA_EMAIL = os.getenv('JIRA_EMAIL')
 JIRA_TOKEN = os.getenv('JIRA_TOKEN')
+JIRA_AUTH_MODE = os.getenv('JIRA_AUTH_MODE', AUTH_MODE_BASIC).strip() or AUTH_MODE_BASIC
+ATLASSIAN_CLIENT_ID = os.getenv('ATLASSIAN_CLIENT_ID', '').strip()
+ATLASSIAN_CLIENT_SECRET = os.getenv('ATLASSIAN_CLIENT_SECRET', '').strip()
+ATLASSIAN_REDIRECT_URI = os.getenv('ATLASSIAN_REDIRECT_URI', '').strip()
+ATLASSIAN_SCOPES = os.getenv(
+    'ATLASSIAN_SCOPES',
+    'read:me read:jira-work read:jira-user offline_access',
+).strip()
+FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', '').strip()
+app.secret_key = FLASK_SECRET_KEY or os.urandom(32)
+APP_ENVIRONMENT_KEY = os.getenv('APP_ENVIRONMENT_KEY', 'local').strip() or 'local'
+OAUTH_LOCAL_TOKEN_STORE_ALLOWED = os.getenv('OAUTH_LOCAL_TOKEN_STORE_ALLOWED', '').strip().lower() in {'1', 'true', 'yes'}
+OAUTH_TOKEN_STORE_TTL_SECONDS = int(os.getenv('OAUTH_TOKEN_STORE_TTL_SECONDS', '28800'))
 JQL_QUERY = os.getenv('JQL_QUERY', '').strip()
 JIRA_BOARD_ID = os.getenv('JIRA_BOARD_ID')  # Optional: board ID for faster sprint fetching
 JIRA_PRODUCT_PROJECT = os.getenv('JIRA_PRODUCT_PROJECT', 'PRODUCT ROADMAPS')
@@ -100,6 +129,9 @@ EPIC_COHORT_CACHE = {}
 EPM_PROJECTS_CACHE = {}
 EPM_ISSUES_CACHE = {}
 EPM_ROLLUP_CACHE = {}
+OAUTH_TOKEN_STORE = {}
+OAUTH_TOKEN_STORE_LOCK = threading.RLock()
+OAUTH_REFRESH_LOCKS = {}
 EPM_PROJECTS_CACHE_TTL_SECONDS = 300
 EPM_ISSUES_CACHE_TTL_SECONDS = 300
 EPM_ROLLUP_CACHE_TTL_SECONDS = 300
@@ -199,6 +231,115 @@ def log_error(*parts):
 
 
 configure_logging()
+
+
+UNSAFE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
+
+
+def current_auth_config():
+    return AuthConfig(
+        auth_mode=JIRA_AUTH_MODE,
+        jira_url=JIRA_URL or '',
+        jira_email=JIRA_EMAIL or '',
+        jira_token=JIRA_TOKEN or '',
+        client_id=ATLASSIAN_CLIENT_ID,
+        client_secret=ATLASSIAN_CLIENT_SECRET,
+        redirect_uri=ATLASSIAN_REDIRECT_URI,
+        scopes=ATLASSIAN_SCOPES,
+        flask_secret_key=FLASK_SECRET_KEY,
+    )
+
+
+def _drop_oauth_session(session_id):
+    with OAUTH_TOKEN_STORE_LOCK:
+        OAUTH_TOKEN_STORE.pop(session_id, None)
+        OAUTH_REFRESH_LOCKS.pop(session_id, None)
+
+
+def _cleanup_expired_oauth_sessions(now=None):
+    now = time.time() if now is None else now
+    expired = [
+        stored_id
+        for stored_id, stored in OAUTH_TOKEN_STORE.items()
+        if now - stored.get('stored_at', 0) > OAUTH_TOKEN_STORE_TTL_SECONDS
+    ]
+    for stored_id in expired:
+        OAUTH_TOKEN_STORE.pop(stored_id, None)
+        OAUTH_REFRESH_LOCKS.pop(stored_id, None)
+
+
+def save_oauth_session(data):
+    if not data:
+        session_id = session.pop('atlassian_oauth_session_id', None)
+        if session_id:
+            _drop_oauth_session(session_id)
+        return
+    now = time.time()
+    session_id = session.get('atlassian_oauth_session_id')
+    with OAUTH_TOKEN_STORE_LOCK:
+        _cleanup_expired_oauth_sessions(now)
+        if not session_id:
+            session_id = new_oauth_state()
+            session['atlassian_oauth_session_id'] = session_id
+        OAUTH_TOKEN_STORE[session_id] = dict(data, stored_at=now)
+        OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+
+
+def oauth_refresh_lock():
+    session_id = session.get('atlassian_oauth_session_id')
+    if not session_id:
+        return OAUTH_TOKEN_STORE_LOCK
+    with OAUTH_TOKEN_STORE_LOCK:
+        return OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+
+
+def oauth_session_data():
+    session_id = session.get('atlassian_oauth_session_id')
+    if not session_id:
+        with OAUTH_TOKEN_STORE_LOCK:
+            _cleanup_expired_oauth_sessions()
+        return {}
+    with OAUTH_TOKEN_STORE_LOCK:
+        _cleanup_expired_oauth_sessions()
+        data = OAUTH_TOKEN_STORE.get(session_id) or {}
+    if data and time.time() - data.get('stored_at', 0) > OAUTH_TOKEN_STORE_TTL_SECONDS:
+        save_oauth_session({})
+        return {}
+    return data
+
+
+def auth_error_response(error, status=401):
+    return jsonify({'error': error.code, 'message': str(error)}), status
+
+
+def validate_local_token_store_allowed():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return
+    environment = APP_ENVIRONMENT_KEY.strip().lower()
+    if environment not in {'local', 'dev'} or not OAUTH_LOCAL_TOKEN_STORE_ALLOWED:
+        raise AuthError(
+            'local_token_store_not_allowed',
+            'Local OAuth token storage requires APP_ENVIRONMENT_KEY=local or dev and OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true',
+        )
+
+
+def validate_startup_auth_config():
+    validate_auth_config(current_auth_config())
+    validate_local_token_store_allowed()
+
+
+@app.before_request
+def require_oauth_unsafe_method_header():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if request.method not in UNSAFE_METHODS:
+        return None
+    if request.headers.get('X-Requested-With') == 'jira-execution-planner':
+        return None
+    return jsonify({
+        'error': 'csrf_required',
+        'message': 'Unsafe OAuth requests require X-Requested-With: jira-execution-planner',
+    }), 403
 
 
 def utc_now_iso(timespec=None):
@@ -5559,9 +5700,11 @@ if __name__ == '__main__':
         SERVER_PORT = args.server_port
 
     # Validate configuration
-    if not JIRA_URL or not JIRA_EMAIL or not JIRA_TOKEN:
-        log_error('JIRA_URL, JIRA_EMAIL and JIRA_TOKEN must be set via environment or CLI')
-        log_info('Please copy .env.example to .env, fill in credentials, or pass them as flags')
+    try:
+        validate_startup_auth_config()
+    except AuthError as error:
+        log_error(str(error))
+        log_info('Please copy .env.example to .env and configure either basic auth or Atlassian OAuth')
         exit(1)
 
     # Only print on first startup, not on reload
@@ -5572,7 +5715,9 @@ if __name__ == '__main__':
 
         log_info(f'Jira Proxy Server starting on http://localhost:{SERVER_PORT}')
         log_info(f'   Jira: {JIRA_URL}')
-        log_info(f'   Email: {JIRA_EMAIL}')
+        log_info(f'   Auth mode: {JIRA_AUTH_MODE}')
+        if JIRA_AUTH_MODE == AUTH_MODE_BASIC:
+            log_info(f'   Email: {JIRA_EMAIL}')
         effective_board_id = get_effective_board_id()
         if effective_board_id:
             log_info(f'   Board: {effective_board_id}')

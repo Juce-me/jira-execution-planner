@@ -106,6 +106,8 @@ Restart the Flask server after changing `.env`.
 
 If Atlassian reports a missing scope, add the named scope to the matching API on the app's `Permissions` page, save, then start again from `/login`.
 
+Use the same browser and hostname for the whole flow. If `ATLASSIAN_REDIRECT_URI` uses `localhost`, start from `http://localhost:5050/login`, not `http://127.0.0.1:5050/login`.
+
 ## Common Errors
 
 `failed to retrieve client`
@@ -119,6 +121,17 @@ The scope is in `ATLASSIAN_SCOPES`, but it was not added in the app's `Permissio
 `invalid redirect_uri`
 
 The callback URL configured in Atlassian does not exactly match `ATLASSIAN_REDIRECT_URI`.
+
+`invalid_oauth_state`
+
+The callback reached the local server, but the browser did not send the same Flask session that started `/api/auth/atlassian/login`. Common causes:
+
+- The callback URL was opened in a different browser or profile.
+- The flow mixed `localhost` and `127.0.0.1`.
+- The Flask server restarted after login with a different `FLASK_SECRET_KEY`.
+- An old callback URL was refreshed or pasted after the one-time authorization code was already stale.
+
+Start again from `/login` in the same browser tab. Do not reuse an old callback URL.
 
 `Local OAuth token storage requires APP_ENVIRONMENT_KEY=local or dev and OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`
 

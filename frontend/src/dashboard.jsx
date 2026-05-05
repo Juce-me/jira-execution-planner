@@ -8639,6 +8639,16 @@ import {
                 () => collectJiraExportKeysFromEpmRollupBoards(epmRollupExportBoards, 'stories'),
                 [epmRollupExportBoards]
             );
+            const activeJiraExportEpicKeys = React.useMemo(() => {
+                if (selectedView === 'epm') return epmJiraEpicKeys;
+                if (showScenario) return scenarioJiraEpicKeys;
+                return visibleTaskJiraEpicKeys;
+            }, [selectedView, showScenario, epmJiraEpicKeys, scenarioJiraEpicKeys, visibleTaskJiraEpicKeys]);
+            const activeJiraExportStoryKeys = React.useMemo(() => {
+                if (selectedView === 'epm') return epmJiraStoryKeys;
+                if (showScenario) return scenarioJiraStoryKeys;
+                return visibleTaskJiraStoryKeys;
+            }, [selectedView, showScenario, epmJiraStoryKeys, scenarioJiraStoryKeys, visibleTaskJiraStoryKeys]);
             const epmDependencyTasks = React.useMemo(() => {
                 const boards = epmRollupExportBoards;
                 return flattenEpmRollupBoardsForDependencies(boards);
@@ -10952,15 +10962,12 @@ import {
                                 <div className="header-actions-row">
                                     {renderViewSwitch()}
                                     {renderSearchControl('main')}
-                                    {selectedView === 'eng' && !showPlanning && !showScenario && (
-                                        <JiraExportButton
-                                            jiraUrl={jiraUrl}
-                                            epicKeys={visibleTaskJiraEpicKeys}
-                                            storyKeys={visibleTaskJiraStoryKeys}
-                                            defaultIssueKind="stories"
-                                            className="jira-export-header"
-                                        />
-                                    )}
+                                    <JiraExportButton
+                                        jiraUrl={jiraUrl}
+                                        epicKeys={activeJiraExportEpicKeys}
+                                        storyKeys={activeJiraExportStoryKeys}
+                                        className="jira-export-header"
+                                    />
                                     <IconButton
                                         variant="secondary compact"
                                         className="refresh-icon"
@@ -12555,13 +12562,6 @@ import {
                                             >
                                                 Conflicts Only
                                             </button>
-                                            <JiraExportButton
-                                                jiraUrl={jiraUrl}
-                                                epicKeys={scenarioJiraEpicKeys}
-                                                storyKeys={scenarioJiraStoryKeys}
-                                                defaultIssueKind={scenarioLaneMode === 'epic' ? 'epics' : 'stories'}
-                                                className="jira-export-scenario"
-                                            />
                                             <button
                                                 className="secondary"
                                                 onClick={runScenario}
@@ -13136,13 +13136,6 @@ import {
                             >
                                 Clear Selected
                             </button>
-                            <JiraExportButton
-                                jiraUrl={jiraUrl}
-                                epicKeys={visibleTaskJiraEpicKeys}
-                                storyKeys={visibleTaskJiraStoryKeys}
-                                defaultIssueKind="stories"
-                                className="jira-export-planning"
-                            />
                             <button
                                 className="planning-action-button planning-icon-button"
                                 onClick={openSelectedInJira}
@@ -13473,15 +13466,6 @@ import {
                                     loadArchivedEpmProjectRollup={loadArchivedEpmProjectRollup}
                                     openEpmSettingsTab={openEpmSettingsTab}
                                     jiraUrl={jiraUrl}
-                                    jiraExportButton={
-                                        <JiraExportButton
-                                            jiraUrl={jiraUrl}
-                                            epicKeys={epmJiraEpicKeys}
-                                            storyKeys={epmJiraStoryKeys}
-                                            defaultIssueKind="epics"
-                                            className="jira-export-epm"
-                                        />
-                                    }
                                     InitiativeIcon={InitiativeIcon}
                                 />
                             </IssueCardContext.Provider>

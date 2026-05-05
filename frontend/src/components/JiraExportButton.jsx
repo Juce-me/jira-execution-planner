@@ -9,7 +9,6 @@ export default function JiraExportButton({
     jiraUrl,
     epicKeys = [],
     storyKeys = [],
-    defaultIssueKind = 'stories',
     className = '',
     opener,
 }) {
@@ -19,19 +18,13 @@ export default function JiraExportButton({
     const warningTimerRef = React.useRef(null);
     const normalizedEpicKeys = React.useMemo(() => normalizeJiraExportKeys(epicKeys), [epicKeys]);
     const normalizedStoryKeys = React.useMemo(() => normalizeJiraExportKeys(storyKeys), [storyKeys]);
-    const defaultKind = defaultIssueKind === 'epics' ? 'epics' : 'stories';
     const keyMap = {
         epics: normalizedEpicKeys,
         stories: normalizedStoryKeys
     };
-    const defaultKeys = keyMap[defaultKind];
     const hasAnyKeys = normalizedEpicKeys.length > 0 || normalizedStoryKeys.length > 0;
     const isHidden = !String(jiraUrl || '').trim();
-    const defaultSingular = defaultKind === 'epics' ? 'epic' : 'story';
-    const defaultPlural = defaultKind === 'epics' ? 'epics' : 'stories';
-    const defaultTitle = defaultKeys.length
-        ? `Open ${defaultKeys.length} ${pluralize(defaultKeys.length, defaultSingular, defaultPlural)} in Jira`
-        : `No ${defaultPlural} visible to open in Jira`;
+    const triggerTitle = hasAnyKeys ? 'Open visible issues in Jira' : 'No visible issues to open in Jira';
 
     React.useEffect(() => {
         const handleDocumentClick = (event) => {
@@ -75,11 +68,10 @@ export default function JiraExportButton({
     const renderMenuItem = (issueKind, label, singular, plural) => {
         const keys = keyMap[issueKind];
         const count = keys.length;
-        const isDefault = issueKind === defaultKind;
         return (
             <button
                 type="button"
-                className={`jira-export-menu-item ${isDefault ? 'active' : ''}`}
+                className="jira-export-menu-item"
                 role="menuitem"
                 onClick={() => openKind(issueKind)}
                 disabled={count === 0}
@@ -93,33 +85,30 @@ export default function JiraExportButton({
 
     return (
         <div className={`jira-export ${className}`.trim()} ref={rootRef}>
-            <div className="jira-export-split">
-                <button
-                    type="button"
-                    className="secondary compact jira-export-primary"
-                    onClick={() => openKind(defaultKind)}
-                    disabled={defaultKeys.length === 0}
-                    title={defaultTitle}
+            <button
+                type="button"
+                className="secondary compact jira-export-icon-button"
+                onClick={() => setIsOpen(open => !open)}
+                disabled={!hasAnyKeys}
+                title={triggerTitle}
+                aria-label="Open Jira issue menu"
+                aria-haspopup="menu"
+                aria-expanded={isOpen}
+            >
+                <svg
+                    className="jira-export-icon"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
                 >
-                    Open in Jira
-                </button>
-                <button
-                    type="button"
-                    className="secondary compact jira-export-caret"
-                    onClick={() => setIsOpen(open => !open)}
-                    disabled={!hasAnyKeys}
-                    title={hasAnyKeys ? defaultTitle : 'No visible issues to open in Jira'}
-                    aria-label="Choose Jira export issue type"
-                    aria-haspopup="menu"
-                    aria-expanded={isOpen}
-                >
-                    ▾
-                </button>
-            </div>
+                    <path className="jira-export-icon-mark jira-export-icon-mark-secondary" d="M11.8 3.2 3 12l8.8 8.8 3-3L9 12l5.8-5.8-3-3z" />
+                    <path className="jira-export-icon-mark" d="M12.2 3.2 21 12l-8.8 8.8-3-3L15 12 9.2 6.2l3-3z" />
+                </svg>
+            </button>
             {isOpen && hasAnyKeys && (
                 <div className="jira-export-menu" role="menu">
-                    {renderMenuItem('epics', 'Epics only', 'epic', 'epics')}
-                    {renderMenuItem('stories', 'Stories only', 'story', 'stories')}
+                    {renderMenuItem('epics', 'Open epics', 'epic', 'epics')}
+                    {renderMenuItem('stories', 'Open stories', 'story', 'stories')}
                 </div>
             )}
             {warning && (

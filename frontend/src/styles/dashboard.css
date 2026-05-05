@@ -183,6 +183,8 @@
             align-items: center;
             gap: 0.75rem;
             flex-wrap: wrap;
+            position: relative;
+            z-index: calc(var(--sticky-control-overlay-z) + 1);
         }
 
         .subtitle-main {
@@ -2396,33 +2398,40 @@
             display: inline-flex;
             align-items: center;
             margin: 0;
+            z-index: calc(var(--sticky-control-overlay-z) + 2);
         }
 
-        .jira-export-split {
+        .header-actions-row .jira-export .jira-export-icon-button,
+        .jira-export .jira-export-icon-button {
+            width: var(--control-height);
+            min-width: var(--control-height);
+            height: var(--control-height);
+            min-height: var(--control-height);
             display: inline-flex;
             align-items: center;
-            white-space: nowrap;
-        }
-
-        .jira-export .jira-export-primary,
-        .jira-export .jira-export-caret {
+            justify-content: center;
             margin: 0;
-            border-radius: 6px 0 0 6px;
-            min-height: 2rem;
+            padding: 0;
+            border-radius: 6px;
         }
 
-        .jira-export .jira-export-caret {
-            border-left: 0;
-            border-radius: 0 6px 6px 0;
-            padding-left: 0.55rem;
-            padding-right: 0.55rem;
+        .jira-export-icon {
+            width: 1.35rem;
+            height: 1.35rem;
+            color: #0052cc;
+            display: block;
+            fill: currentColor;
+        }
+
+        .jira-export-icon-mark-secondary {
+            opacity: 0.72;
         }
 
         .jira-export-menu {
             position: absolute;
             top: calc(100% + 0.35rem);
             right: 0;
-            z-index: 70;
+            z-index: calc(var(--sticky-control-overlay-z) + 3);
             min-width: 12rem;
             padding: 0.35rem;
             background: var(--bg-primary);
@@ -2444,7 +2453,7 @@
             border-radius: 6px;
             color: var(--text-secondary);
             text-align: left;
-            letter-spacing: 0.04em;
+            letter-spacing: 0;
         }
 
         .jira-export-menu-item:hover {
@@ -2452,11 +2461,6 @@
             color: var(--text-primary);
             box-shadow: none;
             transform: none;
-        }
-
-        .jira-export-menu-item.active {
-            background: #eef5ff;
-            color: #0747a6;
         }
 
         .jira-export-menu-item:disabled {
@@ -2472,7 +2476,7 @@
             position: absolute;
             top: calc(100% + 0.35rem);
             right: 0;
-            z-index: 80;
+            z-index: calc(var(--sticky-control-overlay-z) + 4);
             width: max-content;
             max-width: 18rem;
             padding: 0.5rem 0.65rem;
@@ -6983,13 +6987,6 @@
             white-space: nowrap;
             margin-top: 0.15rem;
             margin-bottom: 0.35rem;
-        }
-
-        .epm-rollup-toolbar {
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            margin: 0 0 0.6rem;
         }
 
         .planning-stat {

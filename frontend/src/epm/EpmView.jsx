@@ -25,7 +25,6 @@ export function EpmView({
     loadArchivedEpmProjectRollup,
     openEpmSettingsTab,
     jiraUrl,
-    jiraExportButton,
     InitiativeIcon,
 }) {
     if (selectedView !== 'epm') return null;
@@ -70,7 +69,6 @@ export function EpmView({
                     onProjectExpand={loadArchivedEpmProjectRollup}
                     openEpmSettingsTab={openEpmSettingsTab}
                     jiraUrl={jiraUrl}
-                    jiraExportButton={jiraExportButton}
                     InitiativeIcon={InitiativeIcon}
                 />
             )}

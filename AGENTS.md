@@ -245,6 +245,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - When an auth plan names a security gate, include the concrete implementation task and verification before the dependent handoff.
 - For Atlassian OAuth work, treat Microsoft Entra/Azure SSO through Atlassian Cloud SSO as a primary acceptance path.
 - Auth/backend plans must name and verify the user journey for each supported route surface; backend tests alone are not enough unless the route is explicitly developer-only.
+- OAuth cookie-session slices must include unsafe-method CSRF protection before the first supported browser POST route.
+- Local OAuth token stores must require both a local/dev environment key and an explicit allow flag at startup.
 - Keep local task changes in the checkout the user is actively viewing; use a secondary worktree only when the user explicitly asks for one.
 - For shared header/menu UI changes, add or update Playwright assertions for menu layering and icon/control geometry before reporting visual verification.
 

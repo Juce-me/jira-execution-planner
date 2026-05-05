@@ -29,8 +29,8 @@ The following must be implemented or explicitly verified before starting the dat
 
 1. **Stable identity:** the OAuth callback must fetch `https://api.atlassian.com/me` with the granted token, store `account_id` as the stable user subject, and treat email/display name as mutable profile metadata only. The first database login path must upsert users by `(external_provider='atlassian', external_subject=account_id)`, update changed email/name fields, and reject `account_status` values other than `active`.
 2. **PKCE:** the authorize URL must include an S256 `code_challenge`, and the token exchange must include the matching `code_verifier`. Keep `state` as a separate one-time CSRF value.
-3. **Local token store guard:** the process-local `OAUTH_TOKEN_STORE` is a local bridge only. It must have TTL cleanup, logout/revoke deletion, refresh locking, and a runtime guard such as `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true` that blocks OAuth startup outside explicitly approved local/single-process mode.
-4. **Session/CORS/CSRF:** set `SESSION_COOKIE_HTTPONLY`, `SESSION_COOKIE_SAMESITE=Lax`, and `SESSION_COOKIE_SECURE` for non-local HTTPS deployments. Replace broad Flask-CORS defaults with an allowlist. Require CSRF protection for state-changing browser routes before adding DB-backed admin/config endpoints.
+3. **Local token store guard:** the process-local `OAUTH_TOKEN_STORE` is a local bridge only. It must have TTL cleanup, logout/revoke deletion, refresh locking, and a startup/runtime guard that requires both `APP_ENVIRONMENT_KEY=local` or `dev` and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`. OAuth startup must fail outside explicitly approved local/single-process mode.
+4. **Session/CORS/CSRF:** set `SESSION_COOKIE_HTTPONLY`, `SESSION_COOKIE_SAMESITE=Lax`, and `SESSION_COOKIE_SECURE` for non-local HTTPS deployments. Replace broad Flask-CORS defaults with an allowlist. In the OAuth slice, require a custom unsafe-method header on every browser `POST`, `PUT`, `PATCH`, and `DELETE` route so classic form-post CSRF cannot hit cookie-authenticated endpoints. Before DB-backed admin/config endpoints, upgrade that header guard to token-bound CSRF protection.
 5. **Cache isolation:** Jira/Home-derived caches must include `workspace_id` plus `user_id` or `auth_connection_id` and a token/access version, or must be disabled for OAuth users until partitioning exists.
 6. **Admin bootstrap:** define how the first admin is created, how later admins are granted, and how disabled/deleted users are blocked before any admin DB endpoints are exposed.
 7. **Request auth context:** define a `RequestAuthContext` and make every Jira/Home client and cache accept it explicitly. Do not let routes or caches read process-global auth state once OAuth users can exist.
@@ -68,7 +68,7 @@ Change these before implementation:
 - Put request context dataclasses and cache-key helpers in `backend/auth/context.py`.
 - Put OAuth routes in `backend/routes/auth_routes.py` as a blueprint and register it from `backend/app.py`; do not add new direct `@app.route` handlers in `jira_server.py`.
 - Use `backend.routes.bind_server_globals` for transition globals until dependencies are moved out of `jira_server.py`.
-- Add `read:me`, PKCE S256, `/me` identity fetch, inactive-account rejection, one-time state/verifier cleanup, sanitized OAuth errors, cookie/CORS/CSRF policy, and the local token-store runtime guard.
+- Add `read:me`, PKCE S256, `/me` identity fetch, inactive-account rejection, one-time state/verifier cleanup, sanitized OAuth errors, cookie/CORS/CSRF policy, and the compound local-token-store runtime guard.
 - Make Jira/Home clients take `RequestAuthContext`; do not keep wrappers that read `JIRA_EMAIL`, `JIRA_TOKEN`, `JIRA_URL`, or OAuth token session globals inside route handlers.
 - Disable existing Jira/Home process caches for OAuth users in this slice. Keying them with `RequestAuthContext` can happen route-by-route later, but the DB phase must not inherit process-global Jira/Home cache behavior.
 
@@ -139,7 +139,8 @@ Browser policy before DB-backed admin/config endpoints:
 
 - Flask session cookie: `HttpOnly`, `SameSite=Lax`, and `Secure` outside local HTTP development.
 - CORS: explicit `APP_ALLOWED_ORIGINS` allowlist only; no broad wildcard origin when credentials are enabled.
-- CSRF: all state-changing browser routes require a server-issued CSRF token, preferably sent in an `X-CSRF-Token` header and bound to the session.
+- CSRF in this OAuth slice: all unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`) require a non-simple custom header, initially `X-Requested-With: jira-execution-planner`, before route handlers run. This forces CORS preflight and blocks classic cross-site form posts against cookie-authenticated endpoints.
+- CSRF before DB-backed admin/config endpoints: replace or augment the temporary custom-header guard with a server-issued CSRF token, preferably sent in an `X-CSRF-Token` header and bound to the session.
 
 ## Microsoft Entra SSO Support Model
 
@@ -810,6 +811,7 @@ class TestAuthRoutes(unittest.TestCase):
 
     def test_oauth_login_redirects_to_atlassian(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
              patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
              patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
              patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
@@ -821,6 +823,25 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertIn('https://auth.atlassian.com/authorize?', response.headers['Location'])
         self.assertIn('code_challenge=', response.headers['Location'])
         self.assertIn('code_challenge_method=S256', response.headers['Location'])
+
+    def test_oauth_login_rejects_non_local_token_store_environment(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'production'), \
+             patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
+             patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
+             patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
+             patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
+             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
+             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True):
+            response = self.client.get('/api/auth/atlassian/login')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['error'], 'local_token_store_not_allowed')
+
+    def test_oauth_logout_requires_unsafe_method_header(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.post('/api/auth/logout')
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()['error'], 'csrf_required')
 
     def test_oauth_login_rejects_basic_mode(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
@@ -847,7 +868,10 @@ class TestAuthRoutes(unittest.TestCase):
         with self.client.session_transaction() as session:
             session['atlassian_oauth_session_id'] = 'session-123'
         jira_server.OAUTH_TOKEN_STORE['session-123'] = {'access_token': 'access-123'}
-        response = self.client.post('/api/auth/logout')
+        response = self.client.post(
+            '/api/auth/logout',
+            headers={'X-Requested-With': 'jira-execution-planner'},
+        )
         self.assertEqual(response.status_code, 200)
         with self.client.session_transaction() as session:
             self.assertNotIn('atlassian_oauth_session_id', session)
@@ -963,6 +987,7 @@ ATLASSIAN_SCOPES = os.getenv(
 ).strip()
 FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', '').strip()
 app.secret_key = FLASK_SECRET_KEY or os.urandom(32)
+APP_ENVIRONMENT_KEY = os.getenv('APP_ENVIRONMENT_KEY', 'local').strip() or 'local'
 OAUTH_TOKEN_STORE = {}
 OAUTH_TOKEN_STORE_LOCK = threading.RLock()
 OAUTH_REFRESH_LOCKS = {}
@@ -1038,10 +1063,13 @@ def auth_error_response(error, status=401):
 
 
 def validate_local_token_store_allowed():
-    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and not OAUTH_LOCAL_TOKEN_STORE_ALLOWED:
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return
+    environment = APP_ENVIRONMENT_KEY.strip().lower()
+    if environment not in {'local', 'dev', 'development'} or not OAUTH_LOCAL_TOKEN_STORE_ALLOWED:
         raise AuthError(
             'local_token_store_not_allowed',
-            'OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true is required for the temporary local OAuth token store',
+            'Local OAuth token storage requires APP_ENVIRONMENT_KEY=local or dev and OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true',
         )
 ```
 
@@ -1166,6 +1194,28 @@ flask_app.config.update(
 )
 CORS(flask_app, origins=_allowed_cors_origins(), supports_credentials=True)
 ```
+
+Add a temporary unsafe-method guard for OAuth mode. This is not the final DB-backed CSRF token design; it is the minimum OAuth-slice guard that prevents classic form-post CSRF once the app starts using a browser session cookie:
+
+```python
+UNSAFE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
+
+
+@app.before_request
+def require_oauth_unsafe_method_header():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if request.method not in UNSAFE_METHODS:
+        return None
+    if request.headers.get('X-Requested-With') == 'jira-execution-planner':
+        return None
+    return jsonify({
+        'error': 'csrf_required',
+        'message': 'Unsafe OAuth requests require X-Requested-With: jira-execution-planner',
+    }), 403
+```
+
+All first-party browser clients that call unsafe routes in OAuth mode must include `X-Requested-With: jira-execution-planner`. The DB phase may replace this with `X-CSRF-Token`, but it must not remove the unsafe-method protection.
 
 - [ ] **Step 4: Run route tests**
 
@@ -1389,12 +1439,9 @@ def jira_post(
     )
 ```
 
-In `jira_server.py`, import `RequestAuthContext` and `stable_local_workspace_id` from `backend.auth.context`, plus `jira_get` and `jira_post` from `backend.auth.jira_auth`. Reuse the `save_oauth_session` and `oauth_session_data` helpers from Task 2, then add:
+In `jira_server.py`, import `RequestAuthContext` and `stable_local_workspace_id` from `backend.auth.context`, plus `jira_get` and `jira_post` from `backend.auth.jira_auth`. Reuse `APP_ENVIRONMENT_KEY`, `save_oauth_session`, and `oauth_session_data` from Task 2, then add:
 
 ```python
-APP_ENVIRONMENT_KEY = os.getenv('APP_ENVIRONMENT_KEY', 'local').strip() or 'local'
-
-
 def jira_session_data():
     if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
         return oauth_session_data()
@@ -1908,7 +1955,7 @@ Expected: commit includes only the source guard.
 
 - [ ] **Step 1: Add startup validation tests or manual check**
 
-If no existing startup validation tests are practical, use the route tests from Task 2 as coverage and add a manual startup check in Step 4.
+If no existing startup validation tests are practical, use the route tests from Task 2 as coverage and add the explicit positive and negative startup-validation checks in Step 4. Do not rely on `python3 jira_server.py --help`; argument help can exit before startup validation runs.
 
 - [ ] **Step 2: Update startup validation**
 
@@ -1948,6 +1995,7 @@ Add to `.env.example`:
 ```text
 # Auth mode: basic keeps the existing API-token flow; atlassian_oauth enables browser login.
 JIRA_AUTH_MODE=basic
+APP_ENVIRONMENT_KEY=local
 
 # Required for JIRA_AUTH_MODE=atlassian_oauth.
 # Create an OAuth 2.0 (3LO) app in the Atlassian Developer Console.
@@ -1960,7 +2008,7 @@ ATLASSIAN_SCOPES=read:me read:jira-work read:jira-user offline_access
 FLASK_SECRET_KEY=
 
 # Required to use the temporary process-local OAuth token store.
-# Keep false outside explicit local/single-process development.
+# Requires APP_ENVIRONMENT_KEY=local or dev. Keep false outside explicit local/single-process development.
 OAUTH_LOCAL_TOKEN_STORE_ALLOWED=false
 ```
 
@@ -1974,7 +2022,7 @@ The dashboard can run with Atlassian OAuth 2.0 (3LO) instead of a personal Jira 
 1. Create an OAuth 2.0 app in the Atlassian Developer Console.
 2. Add Jira API permissions for the scopes in `ATLASSIAN_SCOPES`.
 3. Set the callback URL to `http://localhost:5050/api/auth/atlassian/callback`, or to an HTTPS tunnel URL if your Atlassian app requires HTTPS.
-4. Set `JIRA_AUTH_MODE=atlassian_oauth`, `ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET`, `ATLASSIAN_REDIRECT_URI`, `FLASK_SECRET_KEY`, and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true` for local single-process testing.
+4. Set `JIRA_AUTH_MODE=atlassian_oauth`, `APP_ENVIRONMENT_KEY=local`, `ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET`, `ATLASSIAN_REDIRECT_URI`, `FLASK_SECRET_KEY`, and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true` for local single-process testing. OAuth startup must fail unless both the environment key is local/dev and the local token store flag is true.
 5. Start the server and open `/`. If no OAuth session exists, the app should show `/login` with a `Sign in with Atlassian` action. That action starts Atlassian OAuth; for managed Atlassian accounts backed by Microsoft Entra SSO, the flow should redirect through Microsoft automatically, then show the Atlassian authorization/consent screen for this app before returning to the app callback. Confirm `/api/auth/status` reports `authenticated: true`, then use the migrated endpoint `/api/test`. Full dashboard data-route migration is intentionally deferred; un-migrated API routes return `route_not_oauth_ready`/501 in OAuth mode.
 
 Jira still receives Atlassian OAuth tokens, not Microsoft Entra tokens. Direct Microsoft access tokens cannot be used as Jira REST API bearer tokens.
@@ -1987,10 +2035,11 @@ Run:
 ```bash
 python3 -m unittest tests.test_jira_auth tests.test_auth_routes tests.test_auth_entry_page tests.test_oauth_route_guards tests.test_oauth_cache_isolation -v
 node tests/test_auth_isolation_source_guard.js
-JIRA_AUTH_MODE=atlassian_oauth JIRA_URL=https://example.atlassian.net ATLASSIAN_CLIENT_ID=client ATLASSIAN_CLIENT_SECRET=secret ATLASSIAN_REDIRECT_URI=http://localhost:5050/api/auth/atlassian/callback FLASK_SECRET_KEY=test OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true python3 jira_server.py --help
+APP_ENVIRONMENT_KEY=local JIRA_AUTH_MODE=atlassian_oauth JIRA_URL=https://example.atlassian.net ATLASSIAN_CLIENT_ID=client ATLASSIAN_CLIENT_SECRET=secret ATLASSIAN_REDIRECT_URI=http://localhost:5050/api/auth/atlassian/callback FLASK_SECRET_KEY=test OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true python3 -c "import jira_server; jira_server.validate_auth_config(jira_server.current_auth_config()); jira_server.validate_local_token_store_allowed()"
+APP_ENVIRONMENT_KEY=production JIRA_AUTH_MODE=atlassian_oauth JIRA_URL=https://example.atlassian.net ATLASSIAN_CLIENT_ID=client ATLASSIAN_CLIENT_SECRET=secret ATLASSIAN_REDIRECT_URI=http://localhost:5050/api/auth/atlassian/callback FLASK_SECRET_KEY=test OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true python3 -c "import jira_server; jira_server.validate_auth_config(jira_server.current_auth_config()); jira_server.validate_local_token_store_allowed()"
 ```
 
-Expected: Python tests PASS, source guard PASS, and `--help` prints CLI help without starting the server.
+Expected: Python tests PASS, source guard PASS, the local validation command exits 0, and the production validation command exits nonzero with `local_token_store_not_allowed`.
 
 - [ ] **Step 5: Commit**
 

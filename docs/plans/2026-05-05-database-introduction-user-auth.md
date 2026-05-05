@@ -52,7 +52,7 @@ Before this database phase starts, the OAuth slice must settle these items:
 - Fetch `https://api.atlassian.com/me` during OAuth callback and use Atlassian `account_id` as the stable external subject. Email and display name are mutable profile metadata and must not be used as identity keys.
 - Reject inactive Atlassian accounts before creating or updating local user records.
 - Use PKCE S256 in the Atlassian authorization-code flow, with one-time `state` and `code_verifier` cleanup on callback success or failure.
-- Keep the process-local `OAUTH_TOKEN_STORE` local-only. Production database auth must hard-fail if it would use that store instead of encrypted database tokens.
+- Keep the process-local `OAUTH_TOKEN_STORE` local-only. It must require both `APP_ENVIRONMENT_KEY=local` or `dev` and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`; production database auth must hard-fail if it would use that store instead of encrypted database tokens.
 - Serialize local OAuth refresh per session and re-read token state inside the lock before calling Atlassian. The database refresh path can then replace this with `SELECT ... FOR UPDATE` or an advisory lock without changing the caller contract.
 - Make unsupported OAuth route surface explicit. Until a route is migrated through the auth/client boundary, `JIRA_AUTH_MODE=atlassian_oauth` must return `route_not_oauth_ready`/501 instead of falling through to empty Basic credentials.
 - Define session cookie, CORS, and CSRF policy before exposing DB-backed admin/config mutation endpoints: `HttpOnly`, `SameSite=Lax`, `Secure` outside local HTTP development, a restricted origin allowlist, and CSRF checks for state-changing browser routes.
@@ -79,6 +79,8 @@ Before database tables are introduced, the auth slice must define a request-scop
 All Jira and Home client entry points must take `RequestAuthContext` as an explicit argument. Cache helpers must also take this context and use it in cache keys. This includes Jira issue searches, project/field/label/board lookups, Home goal/project fetches, EPM rollups, and generated project metadata caches.
 
 The database phase must not add new DB-backed routes that still call `build_jira_headers()`, `JIRA_EMAIL`, `JIRA_TOKEN`, `JIRA_URL`, `fetch_home_*`, or process caches directly from route globals. Any remaining Basic-mode compatibility wrapper should first build a `RequestAuthContext`, then call the same Jira/Home client boundary.
+
+On every authenticated request, the auth context resolver reads `users.status` and `auth_connections.status` from the database before issuing Jira/Home calls. Do not cache these statuses beyond the request by default. The only acceptable optimization is a per-process status cache with a maximum 30-second TTL, keyed by `(user_id, auth_connection_id, token_version)`, and invalidated immediately by admin enable/disable, admin grant/revoke, connection revoke, and reconnect events. Any non-active user or connection returns `401` with a stable error such as `account_disabled` or `auth_connection_revoked` before Jira/Home calls run.
 
 ## Environment And Workspace Isolation
 
@@ -301,7 +303,9 @@ Token storage must be designed before writing `auth_tokens`.
 - Rotation adds a new primary `key_id`, writes an audit event, rewraps data-encryption keys or re-encrypts tokens in batches, then marks the old key decrypt-only until no rows need it.
 - Refresh uses a transaction and a per-connection lock, either `SELECT ... FOR UPDATE` on `auth_connections` or a PostgreSQL advisory lock keyed by `auth_connection_id`.
 - During refresh, read and decrypt the current refresh token under the lock, call Atlassian, then atomically update access-token and refresh-token rows, `auth_connections.expires_at`, `auth_connections.status`, and increment `auth_connections.token_version`.
-- If Atlassian returns a replacement refresh token, replace the old refresh token in the same transaction. If the provider response omits a refresh token, retain the previous one only if the provider contract allows that; otherwise mark the connection `error` and require reconnect.
+- If Atlassian returns a replacement refresh token, replace the old refresh token in the same transaction and hard-delete the previous refresh-token row before commit. Old refresh-token ciphertext must not remain as a usable secret.
+- If the refresh response is a provider `4xx` indicating `invalid_grant`, `token_already_used`, or any equivalent refresh-token reuse/replay signal, do not retry. Mark the connection `revoked`, delete usable token rows in the same transaction, write a `connection_revoked` audit event with cause `refresh_reuse_detected`, and force re-authentication.
+- If the provider response omits a refresh token, retain the previous one only if the provider contract allows that; otherwise mark the connection `error` and require reconnect.
 - A stale concurrent refresh response must not overwrite newer token rows. Use the row lock plus token-version check to enforce this.
 - Logs and audit events are redacted: never log plaintext tokens, ciphertext, wrapped data-encryption keys, OAuth authorization codes, PKCE verifiers, raw `Authorization` headers, or full callback URLs.
 
@@ -311,6 +315,7 @@ Token storage must be designed before writing `auth_tokens`.
 - Encrypt token values before database insert and store the encryption `key_id`.
 - Define token key source, `key_id` format, rotation procedure, and local-development behavior before storing production tokens.
 - Store refresh-token replacements atomically and guard concurrent refreshes so an older refresh response cannot overwrite newer token material.
+- Treat refresh-token reuse or replay signals as a connection revocation event, not as a transient refresh failure.
 - Admin endpoints return token status only, never token ciphertext or plaintext.
 - Revoke auth connections without deleting saved user identity.
 - Enforce active user, current auth connection, admin-only configuration gates, and Jira project access checks in backend routes.
@@ -327,11 +332,14 @@ Token storage must be designed before writing `auth_tokens`.
 - Every Jira/Home-derived cache is keyed by workspace and auth context or disabled for OAuth users.
 - OAuth login creates or updates a user by Atlassian `account_id`; an email change updates profile metadata and does not create another user.
 - Inactive Atlassian accounts and disabled/deleted local users cannot create active sessions.
+- Disabling a signed-in user terminates their next authenticated request within 30 seconds without process restart; the response is `401 account_disabled` and no Jira/Home call runs.
+- Revoking an auth connection terminates that user's next authenticated Jira/Home request within 30 seconds without process restart; the response is `401 auth_connection_revoked`.
 - First admin bootstrap succeeds only for configured Atlassian account ids and only while the workspace has zero admins.
 - Later admin grant/revoke actions require an existing admin and create audit events.
 - Non-admin users cannot mutate selected projects, board config, capacity, field mapping, priority weights, team/group config, issue-type config, or EPM config.
 - Token encryption tests prove tokens are not stored as plaintext, use the configured `key_id`, decrypt with retired keys during rotation, and redact logs.
-- Concurrent refresh tests prove one refresh updates tokens and increments `token_version` while stale refresh attempts cannot overwrite newer token material.
+- Concurrent refresh tests prove one refresh updates tokens, deletes the previous refresh-token row, and increments `token_version` while stale refresh attempts cannot overwrite newer token material.
+- Refresh-reuse tests prove `invalid_grant` or provider reuse signals revoke the connection, delete usable tokens, write a redacted `connection_revoked` audit event with cause `refresh_reuse_detected`, and do not retry.
 - Data for one environment/Jira workspace cannot be read with another environment/workspace context.
 - Admin user detail shows user id, provider id, created-by, timestamps, status, Jira project access status, and auth connection status.
 - A user with product-only, tech-only, or no configured Jira project access receives explicit access states instead of leaked cached data or generic Jira failures.

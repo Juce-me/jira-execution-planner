@@ -1478,12 +1478,13 @@ def clear_epm_caches():
         EPM_ROLLUP_CACHE.clear()
 
 
-def build_epm_projects_dependencies():
-    auth_context = current_request_auth_context() if has_request_context() else None
+def build_epm_projects_dependencies(context=None):
+    auth_context = context if context is not None else (current_request_auth_context() if has_request_context() else None)
+    fetch_context = auth_context if auth_context is not None and not jira_home_process_cache_enabled(auth_context) else None
     return epm_projects.EpmProjectsDependencies(
         fetch_epm_home_projects=(
-            lambda epm_scope: fetch_epm_home_projects(epm_scope, context=auth_context)
-            if auth_context is not None
+            lambda epm_scope: fetch_epm_home_projects(epm_scope, context=fetch_context)
+            if fetch_context is not None
             else fetch_epm_home_projects(epm_scope)
         ),
         merge_epm_linkage=merge_epm_linkage,
@@ -1722,7 +1723,11 @@ def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_quer
 def build_epm_rollup_dependencies(sub_goal_keys=None):
     auth_context = current_request_auth_context() if has_request_context() else None
     return EpmRollupDependencies(
-        find_epm_project_or_404=lambda project_id: find_epm_project_or_404(project_id, sub_goal_keys=sub_goal_keys),
+        find_epm_project_or_404=lambda project_id: find_epm_project_or_404(
+            project_id,
+            sub_goal_keys=sub_goal_keys,
+            context=auth_context,
+        ),
         normalize_epm_text=normalize_epm_text,
         validate_epm_tab_sprint=validate_epm_tab_sprint,
         build_empty_epm_rollup_payload=build_empty_epm_rollup_payload,
@@ -1782,10 +1787,10 @@ def find_epm_config_row(projects, project_id):
     return epm_projects.find_epm_config_row(projects, project_id)
 
 
-def build_epm_projects_payload(epm_config, force_refresh=False, tab=None, sub_goal_keys=None):
+def build_epm_projects_payload(epm_config, force_refresh=False, tab=None, sub_goal_keys=None, context=None):
     return epm_projects.build_epm_projects_payload(
         epm_config,
-        build_epm_projects_dependencies(),
+        build_epm_projects_dependencies(context=context),
         force_refresh=force_refresh,
         tab=tab,
         sub_goal_keys=sub_goal_keys,
@@ -1914,11 +1919,15 @@ def build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=None):
     }
 
 
-def find_epm_project_or_404(project_id, sub_goal_keys=None):
+def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None):
     requested_sub_goal_keys = epm_projects.normalize_epm_sub_goal_keys(sub_goal_keys)
     if requested_sub_goal_keys:
         epm_config = get_epm_config()
-        projects_payload = build_epm_projects_payload(epm_config, sub_goal_keys=requested_sub_goal_keys)
+        projects_payload = build_epm_projects_payload(
+            epm_config,
+            sub_goal_keys=requested_sub_goal_keys,
+            context=context,
+        )
         for project in projects_payload.get('projects') or []:
             candidates = [
                 normalize_epm_text(project.get('id')),
@@ -1927,7 +1936,7 @@ def find_epm_project_or_404(project_id, sub_goal_keys=None):
             if normalize_epm_text(project_id) in candidates:
                 return project
         abort(404)
-    return epm_projects.find_epm_project_or_404(project_id, build_epm_projects_dependencies())
+    return epm_projects.find_epm_project_or_404(project_id, build_epm_projects_dependencies(context=context))
 
 
 def get_epm_project_payload_identity(project):

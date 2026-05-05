@@ -1,10 +1,15 @@
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+import jira_server
 from backend.auth.cache_policy import jira_home_process_cache_enabled
 from backend.auth.context import RequestAuthContext
 from backend.epm.projects import EpmProjectsDependencies, build_epm_home_projects_state
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def context(auth_mode):
@@ -60,6 +65,62 @@ class TestOauthCacheIsolation(unittest.TestCase):
         self.assertEqual(state['homeProjects'], [{'id': 'fresh'}])
         self.assertEqual(cache['{"rootGoalKey": "ROOT", "subGoalKeys": ["GOAL"]}']['homeProjects'], [{'id': 'cached'}])
 
+    def test_rollup_project_lookup_keeps_oauth_context_outside_request_thread(self):
+        epm_config = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': 'ROOT', 'subGoalKeys': ['GOAL']},
+            'projects': {},
+        }
+        cache_key = jira_server.build_epm_home_projects_cache_key(epm_config['scope'])
+        cached_project = {
+            'homeProjectId': 'cached',
+            'name': 'Cached project',
+            'homeTags': ['rnd_project_cached'],
+            'resolvedLinkage': {'labels': [], 'epicKeys': []},
+        }
+        fresh_project = {
+            'homeProjectId': 'fresh',
+            'name': 'Fresh project',
+            'homeUrl': '',
+            'stateValue': 'ON_TRACK',
+            'stateLabel': 'On track',
+            'tabBucket': 'active',
+            'latestUpdateDate': '',
+            'latestUpdateSnippet': '',
+            'latestUpdateHtml': '',
+            'latestUpdateAuthor': '',
+            'homeTags': ['rnd_project_fresh'],
+            'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            'matchState': 'metadata-only',
+        }
+        fetched_scopes = []
+
+        def fetch_home_projects(scope, context=None):
+            fetched_scopes.append(scope)
+            return [fresh_project]
+
+        jira_server.EPM_PROJECTS_CACHE.clear()
+        jira_server.EPM_PROJECTS_CACHE[cache_key] = {
+            'timestamp': 10**12,
+            'fetchedAt': 'cached',
+            'homeProjects': [cached_project],
+            'homeProjectLimit': 500,
+            'possiblyTruncated': False,
+        }
+        try:
+            with jira_server.app.test_request_context('/api/epm/projects/rollup/all?tab=active&sprint=42'):
+                with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+                    deps = jira_server.build_epm_rollup_dependencies(sub_goal_keys=['GOAL'])
+            with patch.object(jira_server, 'get_epm_config', return_value=epm_config), \
+                 patch.object(jira_server, 'fetch_epm_home_projects', side_effect=fetch_home_projects):
+                project = deps.find_epm_project_or_404('fresh')
+        finally:
+            jira_server.EPM_PROJECTS_CACHE.clear()
+
+        self.assertEqual(project['homeProjectId'], 'fresh')
+        self.assertEqual(len(fetched_scopes), 1)
+
     def test_known_jira_home_cache_modules_use_cache_policy(self):
         cache_sources = {
             'jira_server.py': [
@@ -80,7 +141,7 @@ class TestOauthCacheIsolation(unittest.TestCase):
             'backend/epm/rollup.py': ['cache_key'],
         }
         for path, cache_symbols in cache_sources.items():
-            source = Path(path).read_text()
+            source = (REPO_ROOT / path).read_text()
             self.assertIn('jira_home_process_cache_enabled', source, path)
             for symbol in cache_symbols:
                 self.assertIn(symbol, source, path)

@@ -238,6 +238,13 @@ configure_logging()
 
 UNSAFE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
 OAUTH_DASHBOARD_ENTRY_PATHS = {'/', '/jira-dashboard.html'}
+OAUTH_READY_API_PATHS = {
+    '/api/test',
+}
+
+
+def is_oauth_ready_api_path(path):
+    return path.startswith('/api/auth/') or path in OAUTH_READY_API_PATHS
 
 
 def current_auth_config():
@@ -386,6 +393,8 @@ def require_oauth_unsafe_method_header():
         return None
     if request.method not in UNSAFE_METHODS:
         return None
+    if request.path.startswith('/api/') and not is_oauth_ready_api_path(request.path):
+        return None
     if request.headers.get('X-Requested-With') == 'jira-execution-planner':
         return None
     return jsonify({
@@ -404,6 +413,18 @@ def redirect_unauthenticated_oauth_dashboard_entry():
     if data.get('access_token') and data.get('cloudid'):
         return None
     return redirect('/login?reason=session_expired' if session.get('atlassian_oauth_session_id') else '/login')
+
+
+@app.before_request
+def reject_unmigrated_oauth_routes():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if request.path.startswith('/api/') and not is_oauth_ready_api_path(request.path):
+        return jsonify({
+            'error': 'route_not_oauth_ready',
+            'message': 'This API route has not been migrated to Atlassian OAuth yet',
+        }), 501
+    return None
 
 
 def utc_now_iso(timespec=None):
@@ -1462,6 +1483,11 @@ def get_cached_epm_home_projects(epm_scope, force_refresh=False):
 
 
 def build_jira_headers():
+    if JIRA_AUTH_MODE != AUTH_MODE_BASIC:
+        raise AuthError(
+            'route_not_oauth_ready',
+            'This Jira route has not been migrated to Atlassian OAuth yet',
+        )
     credentials = base64.b64encode(f"{JIRA_EMAIL or ''}:{JIRA_TOKEN or ''}".encode()).decode()
     return {
         'Authorization': f'Basic {credentials}',

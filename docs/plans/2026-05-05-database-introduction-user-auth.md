@@ -44,6 +44,17 @@ Do not implement this database phase until the Jira/Home auth-client boundary ex
 
 The phase assumes backend Jira/Home calls can resolve the current request's authenticated user, auth connection, workspace/site, and headers without reading process-global `JIRA_EMAIL` / `JIRA_TOKEN` directly in every route. Either complete `docs/plans/2026-04-27-atlassian-oauth-auth.md` first or add an equivalent centralized auth/client layer before database-backed identity work starts.
 
+## Security Preconditions
+
+Before this database phase starts, the OAuth slice must settle these items:
+
+- Fetch `https://api.atlassian.com/me` during OAuth callback and use Atlassian `account_id` as the stable external subject. Email and display name are mutable profile metadata and must not be used as identity keys.
+- Reject inactive Atlassian accounts before creating or updating local user records.
+- Use PKCE S256 in the Atlassian authorization-code flow, with one-time `state` and `code_verifier` cleanup on callback success or failure.
+- Keep the process-local `OAUTH_TOKEN_STORE` local-only. Production database auth must hard-fail if it would use that store instead of encrypted database tokens.
+- Define session cookie, CORS, and CSRF policy before exposing DB-backed admin/config mutation endpoints: `HttpOnly`, `SameSite=Lax`, `Secure` outside local HTTP development, a restricted origin allowlist, and CSRF checks for state-changing browser routes.
+- Partition or disable every Jira/Home-derived cache for OAuth users before multiple users can share a process.
+
 ## Recommended Approach
 
 Use PostgreSQL for production because this feature needs concurrent users, transactions, constraints, encrypted token metadata, and reliable migrations. SQLite can be used for local development tests only, but it should not be the production sharing or auth store.
@@ -66,7 +77,7 @@ One row per authenticated person.
 | --- | --- |
 | `id` | Internal UUID primary key. |
 | `external_provider` | Identity provider, initially `atlassian`. |
-| `external_subject` | Stable provider user/account id. |
+| `external_subject` | Stable provider user/account id, initially Atlassian `account_id`. |
 | `email` | Display and admin lookup only. |
 | `display_name` | UI label. |
 | `account_type` | `user` or `admin`. |
@@ -173,7 +184,7 @@ Existing `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` 
 1. Add database connection config and migration tooling.
 2. Create `users`, `workspaces`, `auth_connections`, `auth_tokens`, and `jira_project_access`.
 3. Bootstrap one workspace from the current configured Jira site.
-4. Create or upsert the current authenticated user on login.
+4. Create or upsert the current authenticated user on login by `(external_provider, external_subject)` from the Atlassian `account_id`; update changed email/display-name fields without creating a duplicate user.
 5. Store OAuth connection metadata and encrypted refresh tokens in the database.
 6. Validate configured Jira project access for the user's auth connection without adding heavy startup fan-out.
 7. Keep Basic API-token mode local-only unless there is a clear requirement to store API tokens server-side.
@@ -197,10 +208,13 @@ Shared caches are acceptable only for data that is both non-secret and independe
 - Admin endpoints return token status only, never token ciphertext or plaintext.
 - Revoke auth connections without deleting saved user identity.
 - Enforce active user, current auth connection, admin-only configuration gates, and Jira project access checks in backend routes.
+- Block disabled or deleted local users even if Atlassian OAuth succeeds.
 
 ## Verification Criteria
 
 - `GET /api/me` returns the current user, current workspace/site, Jira project access status, and auth connection status without token material.
+- OAuth login creates or updates a user by Atlassian `account_id`; an email change updates profile metadata and does not create another user.
+- Inactive Atlassian accounts and disabled/deleted local users cannot create active sessions.
 - Admin user detail shows user id, provider id, created-by, timestamps, status, Jira project access status, and auth connection status.
 - A user with product-only, tech-only, or no configured Jira project access receives explicit access states instead of leaked cached data or generic Jira failures.
 - Revoking an auth connection prevents future Jira/Home calls for that user.

@@ -131,4 +131,3 @@ Verification:
 - Analytics events do not include token material.
 - Jira issue content is excluded unless a later analytics feature defines retention, privacy, and deletion rules.
 - Performance data can identify slow endpoints without storing private Jira payloads.
-

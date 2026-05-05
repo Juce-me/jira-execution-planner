@@ -147,4 +147,3 @@ Existing `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` 
 - A user cannot open or save a view for a workspace they cannot access.
 - No view payload contains token material.
 - Initial dashboard bootstrap remains one compact user/config request plus the existing scoped data requests.
-

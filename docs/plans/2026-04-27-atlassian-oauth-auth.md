@@ -4,7 +4,7 @@
 
 **Goal:** Add optional Atlassian OAuth 2.0 3LO login so Jira Execution Planner can call Jira on behalf of the signed-in user without requiring a personal API token.
 
-**Architecture:** Keep `basic` auth as the default and introduce `atlassian_oauth` behind `JIRA_AUTH_MODE`. Add a small backend auth/client boundary in the current `backend/` package, migrate the first Jira endpoints through it, and keep auth-mode changes isolated from `frontend/src/dashboard.jsx`. This slice is the prerequisite for later database-backed identity and token storage; it does not create database tables or production multi-user persistence.
+**Architecture:** Keep `basic` auth as the default and introduce `atlassian_oauth` behind `JIRA_AUTH_MODE`. Add a small backend auth/client boundary in the current `backend/` package, migrate only the first Jira endpoints through it, and keep auth-mode changes isolated from `frontend/src/dashboard.jsx`. Serve the unauthenticated OAuth entry screen outside the dashboard bundle so `dashboard.jsx` stays focused on authenticated product state. This slice is a developer-only local OAuth bridge: the supported OAuth route surface is `/login`, `/api/auth/*`, `/api/auth/status`, and the migrated `/api/test`; every other API route must fail clearly with `route_not_oauth_ready`/501 until it is migrated through the auth/client boundary. This slice is the prerequisite for later database-backed identity and token storage; it does not create database tables or production multi-user persistence.
 
 **Tech Stack:** Python Flask, `requests`, existing `backend/jira_client.py` helpers, Flask session id plus process-local token store for local OAuth testing, Python `unittest`, Node source-guard tests. Later database phases use PostgreSQL with encrypted token storage.
 
@@ -19,7 +19,7 @@ These notes supersede older snippets in this plan that assume the pre-split back
 - Store local OAuth token material server-side behind an opaque Flask session id, for example `session['atlassian_oauth_session_id']` plus a process-local `OAUTH_TOKEN_STORE`. The signed cookie may contain the opaque session id and OAuth `state`, but not access tokens, refresh tokens, or API tokens.
 - The later database auth phase should move connection metadata and encrypted token material into PostgreSQL tables equivalent to `users`, `workspaces`, `auth_connections`, `auth_tokens`, and `jira_project_access`.
 - Keep Basic API-token mode local by default. Do not store Basic API tokens in the database unless a later requirement explicitly asks for server-side Basic credential persistence.
-- The auth/client boundary must expose enough request auth context for later cache partitioning by workspace and user or auth connection. Do not let Jira/Home-derived caches stay process-global once multi-user auth exists.
+- The auth/client boundary must expose enough request auth context for later cache partitioning by workspace and user or auth connection. In this first OAuth slice, Jira/Home-derived process caches must be disabled for OAuth users unless the implementation has already keyed that cache with `RequestAuthContext`.
 - Do not introduce `dev_lead` or `epm` user roles. Database-backed access control should distinguish normal users from admins only; ENG/EPM behavior comes from the selected configuration or saved view.
 - Preserve initial-load performance. Auth status and later `/api/me`-style bootstrapping must stay compact and must not trigger broad Jira/Home fan-out.
 
@@ -59,7 +59,7 @@ Carry these ideas forward:
 - Route behavior for `/api/auth/status`, `/api/auth/atlassian/login`, `/api/auth/atlassian/callback`, and `/api/auth/logout`.
 - Server-side token storage behind an opaque Flask session id. Keep the test that proves access and refresh tokens are not stored in the Flask signed session.
 - Refresh failure behavior that clears the local auth session before returning `auth_required`.
-- The dashboard source guard that prevents this first slice from modifying `frontend/src/dashboard.jsx` or storing Atlassian tokens in `localStorage`.
+- The dashboard source guard that prevents this first slice from modifying `frontend/src/dashboard.jsx` or storing Atlassian tokens in `localStorage`; the OAuth entry screen is served separately by backend auth routes.
 - `.env.example` and README documentation structure for Basic fallback plus Atlassian OAuth setup.
 
 Change these before implementation:
@@ -70,7 +70,7 @@ Change these before implementation:
 - Use `backend.routes.bind_server_globals` for transition globals until dependencies are moved out of `jira_server.py`.
 - Add `read:me`, PKCE S256, `/me` identity fetch, inactive-account rejection, one-time state/verifier cleanup, sanitized OAuth errors, cookie/CORS/CSRF policy, and the local token-store runtime guard.
 - Make Jira/Home clients take `RequestAuthContext`; do not keep wrappers that read `JIRA_EMAIL`, `JIRA_TOKEN`, `JIRA_URL`, or OAuth token session globals inside route handlers.
-- Key or disable existing process caches for OAuth users before exposing multi-user DB auth.
+- Disable existing Jira/Home process caches for OAuth users in this slice. Keying them with `RequestAuthContext` can happen route-by-route later, but the DB phase must not inherit process-global Jira/Home cache behavior.
 
 Do not carry these prototype details forward:
 
@@ -141,23 +141,51 @@ Browser policy before DB-backed admin/config endpoints:
 - CORS: explicit `APP_ALLOWED_ORIGINS` allowlist only; no broad wildcard origin when credentials are enabled.
 - CSRF: all state-changing browser routes require a server-issued CSRF token, preferably sent in an `X-CSRF-Token` header and bound to the session.
 
+## Microsoft Entra SSO Support Model
+
+Microsoft Entra ID, formerly Azure AD, is supported through Atlassian Cloud SSO. The app must start the Atlassian OAuth 2.0 3LO authorization flow at `https://auth.atlassian.com/authorize`; for managed Atlassian accounts whose organization enforces Microsoft Entra SAML SSO, Atlassian redirects the browser to Microsoft during that login flow. After Entra authenticates the user, Atlassian returns the OAuth authorization code to this app's callback.
+
+The authorization/consent screen is Atlassian-hosted and must be included by using `prompt=consent` in the authorize URL. That screen shows the user the app, requested scopes, and Atlassian site access before the callback receives a code. For Entra-backed managed accounts, the expected browser flow is Atlassian authorize URL, Microsoft Entra SSO if required, Atlassian consent/site authorization, then `/api/auth/atlassian/callback`.
+
+The app must exchange and store Atlassian OAuth tokens only. Do not accept Microsoft Entra ID tokens or access tokens as Jira REST API bearer tokens, and do not add a direct Entra application registration for Jira API access in this slice. The stable identity remains Atlassian `/me` `account_id`; Entra is the upstream identity provider used by Atlassian to authenticate the managed account.
+
+Manual OAuth smoke tests must use a managed Atlassian account from the Entra-backed organization and confirm the browser is sent through Microsoft SSO before Atlassian returns to `/api/auth/atlassian/callback`.
+
+## User Journey Verification Contract
+
+Do not treat backend OAuth routes as complete until the supported browser journey is verified end-to-end. This slice has a deliberately small product surface, but it still needs a face:
+
+1. Unauthenticated user opens `/` and is redirected to `/login`.
+2. `/login` shows a clear `Sign in with Atlassian` action and no token material.
+3. The sign-in action starts Atlassian OAuth, routes through Microsoft Entra SSO when required by the managed Atlassian org, shows Atlassian consent/site authorization, and returns to `/api/auth/atlassian/callback`.
+4. Authenticated user returns to `/` and is not sent back to `/login`.
+5. `/api/auth/status` shows the authenticated site state without tokens.
+6. The migrated test route proves Jira calls use the OAuth token.
+7. Un-migrated API routes fail with `route_not_oauth_ready`/501 instead of a silent empty-Basic Jira failure.
+
+For each future route added to the OAuth-supported surface, the implementation plan must name the user-visible entry point or dashboard state that exercises it. If no user journey exists, the route should stay out of scope or be explicitly marked developer-only with a manual verification path.
+
 ## File Structure
 
 **Create:**
 
 - `backend/auth/__init__.py` - package marker for auth helpers.
 - `backend/auth/context.py` - `RequestAuthContext` dataclasses and cache-key helpers shared by Jira/Home clients.
-- `backend/auth/jira_auth.py` - auth mode parsing, OAuth URL/token helpers, resource matching, token refresh, Jira URL/header construction.
+- `backend/auth/jira_auth.py` - auth mode parsing, OAuth URL/token helpers, resource matching, token refresh, refresh serialization, Jira URL/header construction.
+- `backend/auth/cache_policy.py` - cache policy helper that disables Jira/Home process caches for OAuth until they are auth-keyed.
 - `backend/routes/auth_routes.py` - auth status, Atlassian login/callback, and logout blueprint.
 - `tests/test_auth_context.py` - request auth context, synthetic local context, and cache-key unit tests.
-- `tests/test_jira_auth.py` - backend unit tests for auth mode, URLs, resources, refresh behavior, and request headers.
+- `tests/test_jira_auth.py` - backend unit tests for auth mode, URLs, resources, refresh behavior, refresh serialization, and request headers.
 - `tests/test_auth_routes.py` - Flask route tests for auth status, login redirect, callback errors, and logout.
+- `tests/test_auth_entry_page.py` - Flask route tests for the OAuth entry screen and unauthenticated dashboard gate.
+- `tests/test_oauth_route_guards.py` - Flask route tests that unsupported API routes return `route_not_oauth_ready`/501 in OAuth mode.
+- `tests/test_oauth_cache_isolation.py` - unit/source tests that Jira/Home process caches are disabled in OAuth mode.
 - `tests/test_auth_isolation_source_guard.js` - source guard that auth-mode work stays out of `frontend/src/dashboard.jsx`.
 
 **Modify:**
 
 - `backend/app.py` - register the auth blueprint.
-- `jira_server.py` - configure auth env values, Flask secret key, local token store helpers, Basic-only startup validation, request auth context helpers, and migrate `/api/test` plus one small read endpoint to the auth helper.
+- `jira_server.py` - configure auth env values, Flask secret key, local token store helpers, per-session refresh locks, OAuth entry screen, unsupported-route guard, Basic-only startup validation, request auth context helpers, and migrate `/api/test` plus one small read endpoint to the auth helper.
 - `.env.example` - document `JIRA_AUTH_MODE` and Atlassian OAuth variables.
 - `README.md` - document local OAuth setup and Basic auth fallback.
 
@@ -759,6 +787,8 @@ class TestAuthRoutes(unittest.TestCase):
         jira_server.app.secret_key = 'test-secret'
         if hasattr(jira_server, 'OAUTH_TOKEN_STORE'):
             jira_server.OAUTH_TOKEN_STORE.clear()
+        if hasattr(jira_server, 'OAUTH_REFRESH_LOCKS'):
+            jira_server.OAUTH_REFRESH_LOCKS.clear()
         self.client = jira_server.app.test_client()
 
     def test_basic_auth_status_reports_configured(self):
@@ -827,9 +857,11 @@ class TestAuthRoutes(unittest.TestCase):
         with jira_server.app.test_request_context('/'):
             jira_server.session['atlassian_oauth_session_id'] = 'session-123'
             jira_server.OAUTH_TOKEN_STORE['session-123'] = {'access_token': 'access-123'}
+            jira_server.OAUTH_REFRESH_LOCKS['session-123'] = object()
             jira_server.save_oauth_session({})
             self.assertNotIn('atlassian_oauth_session_id', jira_server.session)
             self.assertNotIn('session-123', jira_server.OAUTH_TOKEN_STORE)
+            self.assertNotIn('session-123', jira_server.OAUTH_REFRESH_LOCKS)
 
     def test_callback_stores_oauth_tokens_server_side_with_identity(self):
         with self.client.session_transaction() as session:
@@ -933,6 +965,7 @@ FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', '').strip()
 app.secret_key = FLASK_SECRET_KEY or os.urandom(32)
 OAUTH_TOKEN_STORE = {}
 OAUTH_TOKEN_STORE_LOCK = threading.RLock()
+OAUTH_REFRESH_LOCKS = {}
 OAUTH_LOCAL_TOKEN_STORE_ALLOWED = os.getenv('OAUTH_LOCAL_TOKEN_STORE_ALLOWED', '').strip().lower() in {'1', 'true', 'yes'}
 OAUTH_TOKEN_STORE_TTL_SECONDS = int(os.getenv('OAUTH_TOKEN_STORE_TTL_SECONDS', '28800'))
 ```
@@ -960,6 +993,7 @@ def save_oauth_session(data):
         if session_id:
             with OAUTH_TOKEN_STORE_LOCK:
                 OAUTH_TOKEN_STORE.pop(session_id, None)
+                OAUTH_REFRESH_LOCKS.pop(session_id, None)
         return
     now = time.time()
     session_id = session.get('atlassian_oauth_session_id')
@@ -971,10 +1005,20 @@ def save_oauth_session(data):
         ]
         for stored_id in expired:
             OAUTH_TOKEN_STORE.pop(stored_id, None)
+            OAUTH_REFRESH_LOCKS.pop(stored_id, None)
         if not session_id:
             session_id = new_oauth_state()
             session['atlassian_oauth_session_id'] = session_id
         OAUTH_TOKEN_STORE[session_id] = dict(data, stored_at=now)
+        OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+
+
+def oauth_refresh_lock():
+    session_id = session.get('atlassian_oauth_session_id')
+    if not session_id:
+        return OAUTH_TOKEN_STORE_LOCK
+    with OAUTH_TOKEN_STORE_LOCK:
+        return OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
 
 
 def oauth_session_data():
@@ -1147,9 +1191,16 @@ git commit -m "Add Atlassian OAuth login routes"
 - Modify: `jira_server.py`
 - Modify: `tests/test_jira_auth.py`
 
-- [ ] **Step 1: Add request wrapper tests**
+- [ ] **Step 1: Add request wrapper and refresh-lock tests**
 
-Append to `tests/test_jira_auth.py`:
+Add these imports to `tests/test_jira_auth.py`:
+
+```python
+import threading
+from concurrent.futures import ThreadPoolExecutor
+```
+
+Then append:
 
 ```python
     def test_jira_get_uses_built_url_and_headers(self):
@@ -1180,34 +1231,131 @@ Append to `tests/test_jira_auth.py`:
         called_url = http_get.call_args.args[0]
         self.assertEqual(called_url, 'https://example.atlassian.net/rest/api/3/project/search')
         self.assertIn('Authorization', http_get.call_args.kwargs['headers'])
+
+    def test_concurrent_oauth_refresh_only_calls_provider_once(self):
+        from backend.auth.jira_auth import ensure_oauth_token
+
+        config = AuthConfig(
+            auth_mode='atlassian_oauth',
+            jira_url='https://example.atlassian.net',
+            client_id='client-123',
+            client_secret='secret-123',
+        )
+        shared_session = {
+            'access_token': 'old-access',
+            'refresh_token': 'refresh-1',
+            'expires_at': time.time() - 10,
+        }
+        session_lock = threading.Lock()
+        refresh_lock = threading.Lock()
+        start = threading.Barrier(2)
+
+        def load_session():
+            with session_lock:
+                return dict(shared_session)
+
+        def save_session(data):
+            with session_lock:
+                shared_session.update(data)
+
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            'access_token': 'access-2',
+            'refresh_token': 'refresh-2',
+            'expires_in': 3600,
+        }
+        http_post = Mock(return_value=response)
+
+        def worker():
+            initial = load_session()
+            start.wait(timeout=5)
+            return ensure_oauth_token(
+                config,
+                initial,
+                save_session,
+                http_post=http_post,
+                reload_session=load_session,
+                refresh_lock=refresh_lock,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda _: worker(), range(2)))
+
+        self.assertEqual(http_post.call_count, 1)
+        self.assertEqual(shared_session['refresh_token'], 'refresh-2')
+        self.assertEqual([result['access_token'] for result in results], ['access-2', 'access-2'])
 ```
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `python3 -m unittest tests.test_jira_auth.TestJiraAuth.test_jira_get_uses_built_url_and_headers -v`
+Run:
 
-Expected: FAIL because `jira_get` does not exist.
+```bash
+python3 -m unittest \
+  tests.test_jira_auth.TestJiraAuth.test_jira_get_uses_built_url_and_headers \
+  tests.test_jira_auth.TestJiraAuth.test_concurrent_oauth_refresh_only_calls_provider_once \
+  -v
+```
+
+Expected: FAIL because `jira_get` and refresh-locked `ensure_oauth_token` do not exist.
 
 - [ ] **Step 3: Add request wrappers**
 
-Append to `backend/auth/jira_auth.py`:
+Add this import near the top of `backend/auth/jira_auth.py`:
 
 ```python
-def ensure_oauth_token(config, session_data, save_session, http_post=requests.post):
+from contextlib import nullcontext
+```
+
+Then append the request wrappers:
+
+```python
+def ensure_oauth_token(
+    config,
+    session_data,
+    save_session,
+    http_post=requests.post,
+    reload_session=None,
+    refresh_lock=None,
+):
     if config.auth_mode != AUTH_MODE_ATLASSIAN_OAUTH:
         return session_data
     if not session_data.get('access_token'):
         raise AuthError('auth_required', 'User must sign in with Atlassian')
     if not is_oauth_token_expired(session_data):
         return session_data
-    refreshed = refresh_oauth_token(config, session_data, http_post=http_post)
-    save_session(refreshed)
-    return refreshed
+    lock = refresh_lock or nullcontext()
+    with lock:
+        active_session = reload_session() if reload_session else session_data
+        if not active_session.get('access_token'):
+            raise AuthError('auth_required', 'User must sign in with Atlassian')
+        if not is_oauth_token_expired(active_session):
+            return active_session
+        refreshed = refresh_oauth_token(config, active_session, http_post=http_post)
+        save_session(refreshed)
+        return refreshed
 
 
-def jira_get(config, context, session_data, path, http_get=requests.get, save_session=None, **kwargs):
+def jira_get(
+    config,
+    context,
+    session_data,
+    path,
+    http_get=requests.get,
+    save_session=None,
+    reload_session=None,
+    refresh_lock=None,
+    **kwargs,
+):
     save_session = save_session or (lambda data: None)
-    active_session = ensure_oauth_token(config, session_data, save_session)
+    active_session = ensure_oauth_token(
+        config,
+        session_data,
+        save_session,
+        reload_session=reload_session,
+        refresh_lock=refresh_lock,
+    )
     return http_get(
         build_jira_api_url(config, context, path),
         headers=build_jira_headers(config, active_session),
@@ -1215,9 +1363,25 @@ def jira_get(config, context, session_data, path, http_get=requests.get, save_se
     )
 
 
-def jira_post(config, context, session_data, path, http_post=requests.post, save_session=None, **kwargs):
+def jira_post(
+    config,
+    context,
+    session_data,
+    path,
+    http_post=requests.post,
+    save_session=None,
+    reload_session=None,
+    refresh_lock=None,
+    **kwargs,
+):
     save_session = save_session or (lambda data: None)
-    active_session = ensure_oauth_token(config, session_data, save_session)
+    active_session = ensure_oauth_token(
+        config,
+        session_data,
+        save_session,
+        reload_session=reload_session,
+        refresh_lock=refresh_lock,
+    )
     return http_post(
         build_jira_api_url(config, context, path),
         headers=build_jira_headers(config, active_session),
@@ -1281,11 +1445,13 @@ response = jira_get(
     jira_session_data(),
     '/rest/api/3/myself',
     save_session=save_oauth_session,
+    reload_session=oauth_session_data,
+    refresh_lock=oauth_refresh_lock(),
     timeout=15,
 )
 ```
 
-If the route currently tests another endpoint, preserve the route's JSON keys and only replace URL/header construction.
+If the route currently tests another endpoint, preserve the route's JSON keys and only replace URL/header construction. Every OAuth-aware route that can refresh tokens must pass both `reload_session=oauth_session_data` and `refresh_lock=oauth_refresh_lock()` so a waiting request re-reads the session after acquiring the lock before calling Atlassian.
 
 - [ ] **Step 4: Run targeted tests**
 
@@ -1308,7 +1474,377 @@ git commit -m "Route initial Jira calls through auth helper"
 
 ---
 
-## Task 4: Dashboard Isolation Guard
+## Task 4: OAuth Entry Screen Outside Dashboard Bundle
+
+**Files:**
+- Modify: `backend/routes/auth_routes.py`
+- Modify: `jira_server.py`
+- Create: `tests/test_auth_entry_page.py`
+
+- [ ] **Step 1: Write entry-screen tests**
+
+Create `tests/test_auth_entry_page.py`:
+
+```python
+import unittest
+from unittest.mock import patch
+
+import jira_server
+
+
+class TestAuthEntryPage(unittest.TestCase):
+    def setUp(self):
+        jira_server.app.config['TESTING'] = True
+        jira_server.app.secret_key = 'test-secret'
+        if hasattr(jira_server, 'OAUTH_TOKEN_STORE'):
+            jira_server.OAUTH_TOKEN_STORE.clear()
+        self.client = jira_server.app.test_client()
+
+    def test_oauth_login_page_shows_atlassian_sign_in_action(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.get('/login')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('text/html', response.headers['Content-Type'])
+        body = response.get_data(as_text=True)
+        self.assertIn('Sign in with Atlassian', body)
+        self.assertIn('/api/auth/atlassian/login', body)
+        self.assertNotIn('access_token', body)
+        self.assertNotIn('refresh_token', body)
+
+    def test_oauth_dashboard_entry_redirects_unauthenticated_user_to_login_page(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.get('/')
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/login')
+
+    def test_basic_mode_does_not_show_oauth_login_page(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
+            response = self.client.get('/login')
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/')
+```
+
+- [ ] **Step 2: Run tests to verify failure**
+
+Run: `python3 -m unittest tests.test_auth_entry_page -v`
+
+Expected: FAIL because `/login` and the unauthenticated dashboard gate do not exist.
+
+- [ ] **Step 3: Add backend-served login page**
+
+Add the OAuth entry page to `backend/routes/auth_routes.py`. Keep it intentionally separate from `frontend/src/dashboard.jsx`:
+
+```python
+@bp.route('/login', methods=['GET'])
+def auth_entry_page():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return redirect('/')
+    data = oauth_session_data()
+    if data.get('access_token') and data.get('cloudid'):
+        return redirect('/')
+    return """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign in</title>
+  </head>
+  <body>
+    <main>
+      <h1>Sign in to Jira Execution Planner</h1>
+      <a href="/api/auth/atlassian/login">Sign in with Atlassian</a>
+    </main>
+  </body>
+</html>
+""", 200, {'Content-Type': 'text/html; charset=utf-8'}
+```
+
+This page is an auth shell only. It must not read Jira data, call Home, load `frontend/src/dashboard.jsx`, store tokens in browser storage, or include product-dashboard controls. Atlassian and Microsoft own the downstream login, SSO, and consent screens.
+
+- [ ] **Step 4: Gate dashboard entry in OAuth mode**
+
+Add a small `before_request` guard in `jira_server.py` before the dashboard route runs:
+
+```python
+OAUTH_DASHBOARD_ENTRY_PATHS = {'/', '/jira-dashboard.html'}
+
+
+@app.before_request
+def redirect_unauthenticated_oauth_dashboard_entry():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if request.path not in OAUTH_DASHBOARD_ENTRY_PATHS:
+        return None
+    data = oauth_session_data()
+    if data.get('access_token') and data.get('cloudid'):
+        return None
+    return redirect('/login')
+```
+
+Keep API behavior separate: API routes should return JSON auth errors or `route_not_oauth_ready`/501, not HTML redirects.
+
+- [ ] **Step 5: Run targeted tests**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_auth_entry_page tests.test_auth_routes tests.test_jira_auth -v
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+Run:
+
+```bash
+git add backend/routes/auth_routes.py jira_server.py tests/test_auth_entry_page.py
+git commit -m "Add OAuth entry screen outside dashboard"
+```
+
+---
+
+## Task 5: Unsupported OAuth Route Guard
+
+**Files:**
+- Modify: `jira_server.py`
+- Create: `tests/test_oauth_route_guards.py`
+
+- [ ] **Step 1: Write route guard tests**
+
+Create `tests/test_oauth_route_guards.py`:
+
+```python
+import unittest
+from unittest.mock import patch
+
+import jira_server
+
+
+class TestOauthRouteGuards(unittest.TestCase):
+    def setUp(self):
+        jira_server.app.config['TESTING'] = True
+        jira_server.app.secret_key = 'test-secret'
+        self.client = jira_server.app.test_client()
+
+    def test_oauth_mode_blocks_unmigrated_api_route(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.get('/api/config')
+        self.assertEqual(response.status_code, 501)
+        self.assertEqual(response.get_json()['error'], 'route_not_oauth_ready')
+
+    def test_oauth_mode_allows_auth_status(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.get('/api/auth/status')
+        self.assertEqual(response.status_code, 200)
+
+    def test_basic_mode_does_not_apply_oauth_route_guard(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
+            response = self.client.get('/api/config')
+        self.assertNotEqual(response.status_code, 501)
+```
+
+- [ ] **Step 2: Run tests to verify failure**
+
+Run: `python3 -m unittest tests.test_oauth_route_guards -v`
+
+Expected: FAIL because unsupported routes are not guarded in OAuth mode.
+
+- [ ] **Step 3: Add the runtime guard**
+
+Add the guard near the auth helpers in `jira_server.py`:
+
+```python
+OAUTH_READY_API_PATHS = {
+    '/api/test',
+}
+
+
+def is_oauth_ready_api_path(path):
+    return path.startswith('/api/auth/') or path in OAUTH_READY_API_PATHS
+
+
+@app.before_request
+def reject_unmigrated_oauth_routes():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if request.path.startswith('/api/') and not is_oauth_ready_api_path(request.path):
+        return jsonify({
+            'error': 'route_not_oauth_ready',
+            'message': 'This API route has not been migrated to Atlassian OAuth yet',
+        }), 501
+    return None
+```
+
+Also update the legacy `build_jira_headers()` helper in `jira_server.py` so any accidental direct call in OAuth mode fails instead of emitting `Authorization: Basic Og==`:
+
+```python
+def build_jira_headers():
+    if JIRA_AUTH_MODE != AUTH_MODE_BASIC:
+        raise AuthError(
+            'route_not_oauth_ready',
+            'This Jira route has not been migrated to Atlassian OAuth yet',
+        )
+    credentials = base64.b64encode(f"{JIRA_EMAIL or ''}:{JIRA_TOKEN or ''}".encode()).decode()
+    return {
+        'Authorization': f'Basic {credentials}',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+    }
+```
+
+The app-level guard is the protection for inline Basic-header construction sites in `backend/routes/eng_routes.py`, `backend/routes/settings_routes.py`, `backend/routes/epm_routes.py`, and the remaining `jira_server.py` routes. Do not migrate those routes in this slice; they must return 501 under OAuth until each route is intentionally moved to `jira_get`/`jira_post`.
+
+- [ ] **Step 4: Run targeted tests**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_oauth_route_guards tests.test_auth_routes tests.test_jira_auth -v
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+Run:
+
+```bash
+git add jira_server.py tests/test_oauth_route_guards.py
+git commit -m "Guard unmigrated routes in OAuth mode"
+```
+
+---
+
+## Task 6: OAuth Cache Isolation Guard
+
+**Files:**
+- Create: `backend/auth/cache_policy.py`
+- Modify: `jira_server.py`
+- Modify: `backend/epm/home.py`
+- Modify: `backend/epm/projects.py`
+- Modify: `backend/epm/rollup.py`
+- Modify: `backend/routes/epm_routes.py`
+- Create: `tests/test_oauth_cache_isolation.py`
+
+- [ ] **Step 1: Write cache isolation tests**
+
+Create `tests/test_oauth_cache_isolation.py`:
+
+```python
+import unittest
+from pathlib import Path
+
+from backend.auth.cache_policy import jira_home_process_cache_enabled
+from backend.auth.context import RequestAuthContext
+
+
+def context(auth_mode):
+    return RequestAuthContext(
+        auth_mode=auth_mode,
+        user_id='user-1',
+        stable_subject='subject-1',
+        atlassian_account_id='account-1',
+        workspace_id='workspace-1',
+        auth_connection_id='connection-1',
+        cloud_id='cloud-1',
+        site_url='https://example.atlassian.net',
+        token_version='1',
+        account_status='active',
+        is_admin=False,
+    )
+
+
+class TestOauthCacheIsolation(unittest.TestCase):
+    def test_basic_mode_allows_process_caches(self):
+        self.assertTrue(jira_home_process_cache_enabled(context('basic')))
+
+    def test_oauth_mode_disables_process_caches(self):
+        self.assertFalse(jira_home_process_cache_enabled(context('atlassian_oauth')))
+
+    def test_known_jira_home_cache_modules_use_cache_policy(self):
+        cache_sources = {
+            'jira_server.py': [
+                'SCENARIO_CACHE',
+                'TASKS_CACHE',
+                'EPIC_COHORT_CACHE',
+                'EPM_PROJECTS_CACHE',
+                'EPM_ISSUES_CACHE',
+                'EPM_ROLLUP_CACHE',
+                'TEAM_FIELD_CACHE',
+                'PARENT_NAME_FIELD_CACHE',
+                'EPIC_LINK_FIELD_CACHE',
+                'CAPACITY_FIELD_CACHE',
+            ],
+            'backend/routes/epm_routes.py': ['EPM_ISSUES_CACHE'],
+            'backend/epm/home.py': ['_CLOUD_ID_CACHE', '_GOAL_BY_KEY_CACHE'],
+            'backend/epm/projects.py': ['build_epm_home_projects_cache_key'],
+            'backend/epm/rollup.py': ['cache_key'],
+        }
+        for path, cache_symbols in cache_sources.items():
+            source = Path(path).read_text()
+            self.assertIn('jira_home_process_cache_enabled', source, path)
+            for symbol in cache_symbols:
+                self.assertIn(symbol, source, path)
+```
+
+- [ ] **Step 2: Run tests to verify failure**
+
+Run: `python3 -m unittest tests.test_oauth_cache_isolation -v`
+
+Expected: FAIL because cache policy and cache-site guards do not exist.
+
+- [ ] **Step 3: Add the cache policy helper**
+
+Create `backend/auth/cache_policy.py`:
+
+```python
+AUTH_MODE_BASIC = 'basic'
+
+
+def jira_home_process_cache_enabled(context):
+    return getattr(context, 'auth_mode', AUTH_MODE_BASIC) == AUTH_MODE_BASIC
+```
+
+- [ ] **Step 4: Guard all Jira/Home-derived process cache reads and writes**
+
+Disable, rather than key, process caches for OAuth in this slice. Every read and write for the following caches must be wrapped in `jira_home_process_cache_enabled(context)`:
+
+- `jira_server.py`: `SCENARIO_CACHE`, `TASKS_CACHE`, `EPIC_COHORT_CACHE`, `EPM_PROJECTS_CACHE`, `EPM_ISSUES_CACHE`, `EPM_ROLLUP_CACHE`, `TEAM_FIELD_CACHE`, `PARENT_NAME_FIELD_CACHE`, `EPIC_LINK_FIELD_CACHE`, `CAPACITY_FIELD_CACHE`.
+- `backend/epm/home.py`: `_CLOUD_ID_CACHE`, `_GOAL_BY_KEY_CACHE`.
+- `backend/epm/projects.py`: Home project metadata caches, including keys produced by `build_epm_home_projects_cache_key`.
+- `backend/epm/rollup.py`: rollup payload caches keyed by scope/sprint.
+- `backend/routes/epm_routes.py`: EPM issue payload cache reads/writes.
+
+Do not clear Basic-mode cache entries just because an OAuth request arrives. The OAuth path must bypass reads and writes; Basic mode may continue using the existing caches.
+
+If a helper does not currently accept `RequestAuthContext`, add the smallest parameter needed to pass `current_request_auth_context()` or an equivalent context from its caller. Do not use `JIRA_EMAIL`, `JIRA_TOKEN`, session globals, or raw OAuth token values as cache-key material.
+
+After editing, run `rg -n "SCENARIO_CACHE|TASKS_CACHE|EPIC_COHORT_CACHE|EPM_PROJECTS_CACHE|EPM_ISSUES_CACHE|EPM_ROLLUP_CACHE|TEAM_FIELD_CACHE|PARENT_NAME_FIELD_CACHE|EPIC_LINK_FIELD_CACHE|CAPACITY_FIELD_CACHE|_CLOUD_ID_CACHE|_GOAL_BY_KEY_CACHE|build_epm_home_projects_cache_key" jira_server.py backend` and inspect every hit. Each cache read/write must either be Basic-only through `jira_home_process_cache_enabled(context)` or be removed from the OAuth path.
+
+- [ ] **Step 5: Run targeted tests**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_oauth_cache_isolation tests.test_oauth_route_guards tests.test_jira_auth -v
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+Run:
+
+```bash
+git add backend/auth/cache_policy.py jira_server.py backend/epm/home.py backend/epm/projects.py backend/epm/rollup.py backend/routes/epm_routes.py tests/test_oauth_cache_isolation.py
+git commit -m "Disable Jira caches for OAuth users"
+```
+
+---
+
+## Task 7: Dashboard Isolation Guard
 
 **Files:**
 - Create: `tests/test_auth_isolation_source_guard.js`
@@ -1363,7 +1899,7 @@ Expected: commit includes only the source guard.
 
 ---
 
-## Task 5: Configuration Docs and Startup Validation
+## Task 8: Configuration Docs and Startup Validation
 
 **Files:**
 - Modify: `jira_server.py`
@@ -1390,6 +1926,7 @@ with:
 ```python
 try:
     validate_auth_config(current_auth_config())
+    validate_local_token_store_allowed()
 except AuthError as error:
     log_error(str(error))
     log_info('Please copy .env.example to .env and configure either basic auth or Atlassian OAuth')
@@ -1421,6 +1958,10 @@ ATLASSIAN_SCOPES=read:me read:jira-work read:jira-user offline_access
 
 # Required for stable Flask sessions in OAuth mode. Use a long random value locally.
 FLASK_SECRET_KEY=
+
+# Required to use the temporary process-local OAuth token store.
+# Keep false outside explicit local/single-process development.
+OAUTH_LOCAL_TOKEN_STORE_ALLOWED=false
 ```
 
 Add a README section:
@@ -1433,8 +1974,8 @@ The dashboard can run with Atlassian OAuth 2.0 (3LO) instead of a personal Jira 
 1. Create an OAuth 2.0 app in the Atlassian Developer Console.
 2. Add Jira API permissions for the scopes in `ATLASSIAN_SCOPES`.
 3. Set the callback URL to `http://localhost:5050/api/auth/atlassian/callback`, or to an HTTPS tunnel URL if your Atlassian app requires HTTPS.
-4. Set `JIRA_AUTH_MODE=atlassian_oauth`, `ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET`, `ATLASSIAN_REDIRECT_URI`, and `FLASK_SECRET_KEY`.
-5. Start the server and open `/api/auth/atlassian/login` to complete Atlassian login. Confirm `/api/auth/status` reports `authenticated: true`, then use the migrated test endpoints such as `/api/test`. Dashboard login UI is intentionally deferred. If your company Atlassian org uses Microsoft Entra SSO, Atlassian will send managed users through that company login flow.
+4. Set `JIRA_AUTH_MODE=atlassian_oauth`, `ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET`, `ATLASSIAN_REDIRECT_URI`, `FLASK_SECRET_KEY`, and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true` for local single-process testing.
+5. Start the server and open `/`. If no OAuth session exists, the app should show `/login` with a `Sign in with Atlassian` action. That action starts Atlassian OAuth; for managed Atlassian accounts backed by Microsoft Entra SSO, the flow should redirect through Microsoft automatically, then show the Atlassian authorization/consent screen for this app before returning to the app callback. Confirm `/api/auth/status` reports `authenticated: true`, then use the migrated endpoint `/api/test`. Full dashboard data-route migration is intentionally deferred; un-migrated API routes return `route_not_oauth_ready`/501 in OAuth mode.
 
 Jira still receives Atlassian OAuth tokens, not Microsoft Entra tokens. Direct Microsoft access tokens cannot be used as Jira REST API bearer tokens.
 ```
@@ -1444,9 +1985,9 @@ Jira still receives Atlassian OAuth tokens, not Microsoft Entra tokens. Direct M
 Run:
 
 ```bash
-python3 -m unittest tests.test_jira_auth tests.test_auth_routes -v
+python3 -m unittest tests.test_jira_auth tests.test_auth_routes tests.test_auth_entry_page tests.test_oauth_route_guards tests.test_oauth_cache_isolation -v
 node tests/test_auth_isolation_source_guard.js
-JIRA_AUTH_MODE=atlassian_oauth JIRA_URL=https://example.atlassian.net ATLASSIAN_CLIENT_ID=client ATLASSIAN_CLIENT_SECRET=secret ATLASSIAN_REDIRECT_URI=http://localhost:5050/api/auth/atlassian/callback FLASK_SECRET_KEY=test python3 jira_server.py --help
+JIRA_AUTH_MODE=atlassian_oauth JIRA_URL=https://example.atlassian.net ATLASSIAN_CLIENT_ID=client ATLASSIAN_CLIENT_SECRET=secret ATLASSIAN_REDIRECT_URI=http://localhost:5050/api/auth/atlassian/callback FLASK_SECRET_KEY=test OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true python3 jira_server.py --help
 ```
 
 Expected: Python tests PASS, source guard PASS, and `--help` prints CLI help without starting the server.
@@ -1462,7 +2003,7 @@ git commit -m "Document Atlassian OAuth configuration"
 
 ---
 
-## Task 6: Final Verification
+## Task 9: Final Verification
 
 **Files:**
 - No new files.
@@ -1479,15 +2020,19 @@ Run: `node tests/test_auth_isolation_source_guard.js`
 
 Expected: PASS.
 
-- [ ] **Step 3: Manual OAuth smoke test**
+- [ ] **Step 3: Manual browser user-journey smoke test**
 
-With a real Atlassian OAuth app configured in `.env`, run:
+With a real Atlassian OAuth app configured in `.env` and a managed Atlassian account from the Microsoft Entra-backed organization, run:
 
 ```bash
 python3 jira_server.py
 ```
 
-Open `http://localhost:5050/api/auth/atlassian/login`, complete Atlassian login, and confirm `/api/auth/status` returns:
+Open `http://localhost:5050/`, confirm the unauthenticated app shows `/login` with a `Sign in with Atlassian` action, start sign-in, confirm the browser is redirected through Microsoft Entra SSO by Atlassian, confirm the Atlassian authorization/consent screen is shown with the app and requested Jira scopes, complete authorization, and confirm the browser returns to `/` without looping back to `/login`.
+
+Capture or record evidence for the user journey in the PR notes: the `/login` entry screen, the Atlassian consent step, and the authenticated post-callback state. Do not report the OAuth slice complete from backend tests alone.
+
+Then confirm `/api/auth/status` returns:
 
 ```json
 {
@@ -1496,6 +2041,8 @@ Open `http://localhost:5050/api/auth/atlassian/login`, complete Atlassian login,
   "loginRequired": false
 }
 ```
+
+Then confirm `/api/test` uses the OAuth Jira gateway successfully and an un-migrated API route such as `/api/config` returns `501` with `error: "route_not_oauth_ready"`.
 
 - [ ] **Step 4: Review commits**
 
@@ -1511,9 +2058,10 @@ Do not push. This repo requires explicit user confirmation before push.
 
 ## Plan Self-Review
 
-- Spec coverage: the plan covers auth mode config, OAuth login/callback, local server-side token storage, resource selection, Jira URL/header construction, dashboard isolation, docs, and verification.
+- Spec coverage: the plan covers auth mode config, an app-owned OAuth entry screen, OAuth login/callback, local server-side token storage, refresh locking, resource selection, Jira URL/header construction, unsupported-route guards, OAuth cache disabling, dashboard bundle isolation, docs, and verification.
+- User journey coverage: the final gate requires browser evidence for unauthenticated entry, Atlassian/Microsoft sign-in, Atlassian consent, authenticated return, `/api/auth/status`, the migrated Jira test route, and clear unsupported-route failure.
 - Previous branch review: `feature/atlassian-oauth-auth` is treated as source material only. The plan carries forward its auth helper primitives, server-side token session idea, refresh failure clearing, route tests, source guard, and docs; it does not carry forward root-level `jira_auth.py`, direct `jira_server.py` routes, missing PKCE, missing `/me` identity, or global-session Jira wrappers.
-- Implementation consistency: the Jira wrappers now take `RequestAuthContext` explicitly so the first OAuth slice does not recreate the old branch's implicit global auth boundary.
-- DB alignment: this plan creates the auth/client boundary required before PostgreSQL-backed `users`, `workspaces`, `auth_connections`, encrypted `auth_tokens`, and `jira_project_access`; it intentionally does not implement those tables.
-- Scope: Confluence support, dashboard login UI, production multi-user persistence, and user-owned saved views are intentionally deferred.
-- Risk: dashboard login UX is intentionally deferred so the auth-mode slice does not modify `frontend/src/dashboard.jsx`.
+- Implementation consistency: the Jira wrappers now take `RequestAuthContext` explicitly, serialize refresh per OAuth session, and require OAuth-aware callers to re-read session state inside the refresh lock.
+- DB alignment: this plan creates the auth/client boundary required before PostgreSQL-backed `users`, `workspaces`, `auth_connections`, encrypted `auth_tokens`, and `jira_project_access`; it blocks un-migrated routes and disables Jira/Home process caches for OAuth users so the DB phase does not inherit silent Basic fallback or process-global cache leakage.
+- Scope: Confluence support, full dashboard data-route migration, production multi-user persistence, and user-owned saved views are intentionally deferred.
+- Risk: the OAuth entry screen is covered, but full dashboard data-route migration is intentionally deferred, so OAuth mode remains a local bridge until more routes migrate through the auth/client boundary.

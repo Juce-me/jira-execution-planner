@@ -220,7 +220,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 
-- Keep auth-mode changes isolated from `frontend/src/dashboard.jsx` unless the user explicitly approves a dashboard UI change.
+- Keep auth-mode changes and OAuth entry screens isolated from `frontend/src/dashboard.jsx` unless the user explicitly approves dashboard auth UI.
 - Keep progress updates compact: state the action directly instead of explaining routine tool choices.
 - In settings UIs, when a value is already selected or the option set is small, default to a compact selected-state control and reveal search only on explicit change; do not leave persistent search inputs visible by default.
 - In EPM settings project lists, sort only by table data columns; keep Home as a subtle icon beside the project name, never as a sort option or primary row action.
@@ -242,6 +242,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 - For UI screenshots, wait for CSS animations/transitions to settle or disable them before capturing visual proof.
 - In PR descriptions, never include secrets, token placeholders, credential env vars, or local absolute paths.
 - Store implementation plans in `docs/plans/` only.
+- When an auth plan names a security gate, include the concrete implementation task and verification before the dependent handoff.
+- For Atlassian OAuth work, treat Microsoft Entra/Azure SSO through Atlassian Cloud SSO as a primary acceptance path.
+- Auth/backend plans must name and verify the user journey for each supported route surface; backend tests alone are not enough unless the route is explicitly developer-only.
 - Keep local task changes in the checkout the user is actively viewing; use a secondary worktree only when the user explicitly asks for one.
 - For shared header/menu UI changes, add or update Playwright assertions for menu layering and icon/control geometry before reporting visual verification.
 

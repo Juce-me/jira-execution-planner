@@ -41,9 +41,9 @@ This phase does not include:
 
 ## Blocker
 
-Do not implement this database phase until the Jira/Home auth-client boundary exists.
+Do not implement this database phase until the Jira/Home auth-client boundary exists and the OAuth slice has closed the local-only safety gaps.
 
-The phase assumes backend Jira/Home calls can resolve the current request's authenticated user, auth connection, workspace/site, and headers without reading process-global `JIRA_EMAIL` / `JIRA_TOKEN` directly in every route. Either complete `docs/plans/2026-04-27-atlassian-oauth-auth.md` first or add an equivalent centralized auth/client layer before database-backed identity work starts.
+The phase assumes backend Jira/Home calls can resolve the current request's authenticated user, auth connection, workspace/site, and headers without reading process-global `JIRA_EMAIL` / `JIRA_TOKEN` directly in every route. Before starting this phase, the OAuth slice must also serialize refresh-token replacement, return `route_not_oauth_ready`/501 for un-migrated API routes in `JIRA_AUTH_MODE=atlassian_oauth`, and disable or auth-key Jira/Home process caches for OAuth users. Either complete `docs/plans/2026-04-27-atlassian-oauth-auth.md` first or add an equivalent centralized auth/client layer with those same gates before database-backed identity work starts.
 
 ## Security Preconditions
 
@@ -53,6 +53,8 @@ Before this database phase starts, the OAuth slice must settle these items:
 - Reject inactive Atlassian accounts before creating or updating local user records.
 - Use PKCE S256 in the Atlassian authorization-code flow, with one-time `state` and `code_verifier` cleanup on callback success or failure.
 - Keep the process-local `OAUTH_TOKEN_STORE` local-only. Production database auth must hard-fail if it would use that store instead of encrypted database tokens.
+- Serialize local OAuth refresh per session and re-read token state inside the lock before calling Atlassian. The database refresh path can then replace this with `SELECT ... FOR UPDATE` or an advisory lock without changing the caller contract.
+- Make unsupported OAuth route surface explicit. Until a route is migrated through the auth/client boundary, `JIRA_AUTH_MODE=atlassian_oauth` must return `route_not_oauth_ready`/501 instead of falling through to empty Basic credentials.
 - Define session cookie, CORS, and CSRF policy before exposing DB-backed admin/config mutation endpoints: `HttpOnly`, `SameSite=Lax`, `Secure` outside local HTTP development, a restricted origin allowlist, and CSRF checks for state-changing browser routes.
 - Partition or disable every Jira/Home-derived cache for OAuth users before multiple users can share a process.
 - Define and use `RequestAuthContext` for all Jira/Home clients and caches. Routes must not reach into global auth state after this boundary exists.
@@ -317,6 +319,9 @@ Token storage must be designed before writing `auth_tokens`.
 
 ## Verification Criteria
 
+- Every supported auth/admin backend path has a named browser or dashboard journey that exercises it. Backend route tests are required but not sufficient for completion.
+- User-journey verification covers unauthenticated entry, Atlassian/Microsoft login, authenticated bootstrap, admin access, non-admin denial, revoked/disabled user denial, and at least one Jira/Home data fetch through the authenticated context.
+- PR notes include evidence for the relevant journey, such as screenshots or a concise browser-test transcript. Do not merge a faceless backend-only auth slice unless the plan explicitly marks it as developer-only and lists its manual verification path.
 - `GET /api/me` returns the current user, current workspace/site, Jira project access status, and auth connection status without token material.
 - All Jira/Home routes construct and pass `RequestAuthContext`; source guards fail if routes call Jira/Home clients or caches without context.
 - Every Jira/Home-derived cache is keyed by workspace and auth context or disabled for OAuth users.

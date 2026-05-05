@@ -1,6 +1,8 @@
 import base64
+import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import parse_qs, urlparse
 
 import requests
@@ -474,6 +476,130 @@ class JiraAuthTests(unittest.TestCase):
     def test_is_oauth_token_expired_uses_sixty_second_buffer(self):
         self.assertTrue(is_oauth_token_expired({"expires_at": int(time.time()) + 30}))
         self.assertFalse(is_oauth_token_expired({"expires_at": int(time.time()) + 600}))
+
+    def test_jira_get_uses_built_url_and_headers(self):
+        config = AuthConfig(
+            auth_mode=AUTH_MODE_BASIC,
+            jira_url="https://example.atlassian.net",
+            jira_email="user@example.com",
+            jira_token="token-123",
+        )
+        context = self._auth_context()
+        calls = []
+
+        def http_get(url, **kwargs):
+            calls.append((url, kwargs))
+            return FakeResponse(200, {"ok": True})
+
+        from backend.auth.jira_auth import jira_get
+
+        response = jira_get(config, context, {}, "/rest/api/3/project/search", http_get=http_get, timeout=15)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(calls[0][0], "https://example.atlassian.net/rest/api/3/project/search")
+        self.assertIn("Authorization", calls[0][1]["headers"])
+        self.assertEqual(calls[0][1]["timeout"], 15)
+
+    def test_concurrent_oauth_refresh_only_calls_provider_once(self):
+        from backend.auth.jira_auth import ensure_oauth_token
+
+        config = AuthConfig(
+            auth_mode=AUTH_MODE_ATLASSIAN_OAUTH,
+            jira_url="https://example.atlassian.net",
+            client_id="client-123",
+            client_secret="secret-123",
+        )
+        shared_session = {
+            "access_token": "old-access",
+            "refresh_token": "refresh-1",
+            "expires_at": time.time() - 10,
+        }
+        session_lock = threading.Lock()
+        refresh_lock = threading.Lock()
+        start = threading.Barrier(2)
+
+        def load_session():
+            with session_lock:
+                return dict(shared_session)
+
+        def save_session(data):
+            with session_lock:
+                shared_session.update(data)
+
+        http_post_calls = []
+
+        def http_post(url, **kwargs):
+            http_post_calls.append((url, kwargs))
+            return FakeResponse(200, {
+                "access_token": "access-2",
+                "refresh_token": "refresh-2",
+                "expires_in": 3600,
+            })
+
+        def worker():
+            initial = load_session()
+            start.wait(timeout=5)
+            return ensure_oauth_token(
+                config,
+                initial,
+                save_session,
+                http_post=http_post,
+                reload_session=load_session,
+                refresh_lock=refresh_lock,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda _: worker(), range(2)))
+
+        self.assertEqual(len(http_post_calls), 1)
+        self.assertEqual(shared_session["refresh_token"], "refresh-2")
+        self.assertEqual([result["access_token"] for result in results], ["access-2", "access-2"])
+
+    def test_oauth_refresh_does_not_save_after_session_cleared(self):
+        from backend.auth.jira_auth import ensure_oauth_token
+
+        config = AuthConfig(
+            auth_mode=AUTH_MODE_ATLASSIAN_OAUTH,
+            jira_url="https://example.atlassian.net",
+            client_id="client-123",
+            client_secret="secret-123",
+        )
+        expired_session = {
+            "access_token": "old-access",
+            "refresh_token": "refresh-1",
+            "expires_at": time.time() - 10,
+        }
+        reloads = []
+        saved = []
+
+        def reload_session():
+            reloads.append(True)
+            if len(reloads) == 1:
+                return dict(expired_session)
+            return {}
+
+        def save_session(data):
+            saved.append(data)
+
+        def http_post(url, **kwargs):
+            return FakeResponse(200, {
+                "access_token": "access-2",
+                "refresh_token": "refresh-2",
+                "expires_in": 3600,
+            })
+
+        with self.assertRaises(AuthError) as raised:
+            ensure_oauth_token(
+                config,
+                expired_session,
+                save_session,
+                http_post=http_post,
+                reload_session=reload_session,
+                refresh_lock=threading.Lock(),
+            )
+
+        self.assertEqual(raised.exception.code, "auth_required")
+        self.assertEqual(saved, [])
 
     def _auth_context(self, cloud_id=""):
         return RequestAuthContext(

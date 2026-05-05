@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import patch
+import threading
 
 from backend import app as app_module
 import jira_server
@@ -104,7 +105,7 @@ class TestAuthRoutes(unittest.TestCase):
         with self.client.session_transaction() as session:
             session['atlassian_oauth_session_id'] = 'session-123'
         jira_server.OAUTH_TOKEN_STORE['session-123'] = {'access_token': 'access-123'}
-        jira_server.OAUTH_REFRESH_LOCKS['session-123'] = object()
+        jira_server.OAUTH_REFRESH_LOCKS['session-123'] = threading.RLock()
         response = self.client.post(
             '/api/auth/logout',
             headers={'X-Requested-With': 'jira-execution-planner'},
@@ -119,11 +120,37 @@ class TestAuthRoutes(unittest.TestCase):
         with jira_server.app.test_request_context('/'):
             jira_server.session['atlassian_oauth_session_id'] = 'session-123'
             jira_server.OAUTH_TOKEN_STORE['session-123'] = {'access_token': 'access-123'}
-            jira_server.OAUTH_REFRESH_LOCKS['session-123'] = object()
+            jira_server.OAUTH_REFRESH_LOCKS['session-123'] = threading.RLock()
             jira_server.save_oauth_session({})
             self.assertNotIn('atlassian_oauth_session_id', jira_server.session)
             self.assertNotIn('session-123', jira_server.OAUTH_TOKEN_STORE)
             self.assertNotIn('session-123', jira_server.OAUTH_REFRESH_LOCKS)
+
+    def test_save_oauth_session_clear_waits_for_in_flight_refresh(self):
+        class RecordingLock:
+            def __init__(self):
+                self.acquired = False
+
+            def __enter__(self):
+                self.acquired = True
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                self.acquired = False
+
+        lock = RecordingLock()
+        with jira_server.app.test_request_context('/'):
+            jira_server.session['atlassian_oauth_session_id'] = 'session-123'
+            jira_server.OAUTH_TOKEN_STORE['session-123'] = {'access_token': 'access-123'}
+            jira_server.OAUTH_REFRESH_LOCKS['session-123'] = lock
+
+            def drop_session(session_id):
+                self.assertTrue(lock.acquired)
+
+            with patch.object(jira_server, '_drop_oauth_session', side_effect=drop_session) as mocked_drop:
+                jira_server.save_oauth_session({})
+
+            mocked_drop.assert_called_once_with('session-123')
 
     def test_oauth_session_data_sweeps_expired_store_entries(self):
         now = 1000

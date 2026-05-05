@@ -2,6 +2,7 @@ import base64
 import hashlib
 import secrets
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
@@ -233,6 +234,34 @@ def refresh_oauth_token(config, session_data, http_post=requests.post):
     return merged
 
 
+def ensure_oauth_token(
+    config,
+    session_data,
+    save_session,
+    http_post=requests.post,
+    reload_session=None,
+    refresh_lock=None,
+):
+    if config.auth_mode != AUTH_MODE_ATLASSIAN_OAUTH:
+        return session_data
+    if not session_data.get("access_token"):
+        raise AuthError("auth_required", "Atlassian authentication is required.")
+    if not is_oauth_token_expired(session_data):
+        return session_data
+    lock = refresh_lock or nullcontext()
+    with lock:
+        active_session = reload_session() if reload_session else session_data
+        if not active_session.get("access_token"):
+            raise AuthError("auth_required", "Atlassian authentication is required.")
+        if not is_oauth_token_expired(active_session):
+            return active_session
+        refreshed = refresh_oauth_token(config, active_session, http_post=http_post)
+        if reload_session and not (reload_session() or {}).get("access_token"):
+            raise AuthError("auth_required", "Atlassian authentication is required.")
+        save_session(refreshed)
+        return refreshed
+
+
 def build_jira_headers(config, session_data):
     headers = {
         "Accept": "application/json",
@@ -260,3 +289,59 @@ def build_jira_api_url(config, context, path):
             raise AuthError("auth_required", "Atlassian authentication is required.")
         return f"{ATLASSIAN_API_BASE}/ex/jira/{context.cloud_id}{normalized_path}"
     raise AuthError("invalid_auth_mode", "Unsupported auth mode.")
+
+
+def jira_get(
+    config,
+    context,
+    session_data,
+    path,
+    http_get=requests.get,
+    save_session=None,
+    reload_session=None,
+    refresh_lock=None,
+    refresh_http_post=requests.post,
+    **kwargs,
+):
+    save_session = save_session or (lambda data: None)
+    active_session = ensure_oauth_token(
+        config,
+        session_data,
+        save_session,
+        http_post=refresh_http_post,
+        reload_session=reload_session,
+        refresh_lock=refresh_lock,
+    )
+    return http_get(
+        build_jira_api_url(config, context, path),
+        headers=build_jira_headers(config, active_session),
+        **kwargs,
+    )
+
+
+def jira_post(
+    config,
+    context,
+    session_data,
+    path,
+    http_post=requests.post,
+    save_session=None,
+    reload_session=None,
+    refresh_lock=None,
+    refresh_http_post=requests.post,
+    **kwargs,
+):
+    save_session = save_session or (lambda data: None)
+    active_session = ensure_oauth_token(
+        config,
+        session_data,
+        save_session,
+        http_post=refresh_http_post,
+        reload_session=reload_session,
+        refresh_lock=refresh_lock,
+    )
+    return http_post(
+        build_jira_api_url(config, context, path),
+        headers=build_jira_headers(config, active_session),
+        **kwargs,
+    )

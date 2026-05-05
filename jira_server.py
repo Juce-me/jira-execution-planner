@@ -31,6 +31,7 @@ from backend.epm.home import fetch_epm_home_projects, merge_epm_linkage
 from backend.epm.rollup import EpmRollupDependencies, build_per_project_rollup
 from backend.epm.scope import build_epm_scope_clause, normalize_epm_sprint_field, should_apply_epm_sprint
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
+from backend.auth.context import RequestAuthContext, stable_local_workspace_id
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
     AUTH_MODE_BASIC,
@@ -42,6 +43,8 @@ from backend.auth.jira_auth import (
     exchange_authorization_code,
     fetch_accessible_resources,
     fetch_current_user,
+    jira_get,
+    jira_post,
     new_oauth_state,
     new_pkce_verifier,
     token_session_payload,
@@ -272,7 +275,13 @@ def save_oauth_session(data):
     if not data:
         session_id = session.pop('atlassian_oauth_session_id', None)
         if session_id:
-            _drop_oauth_session(session_id)
+            with OAUTH_TOKEN_STORE_LOCK:
+                refresh_lock = OAUTH_REFRESH_LOCKS.get(session_id)
+            if refresh_lock:
+                with refresh_lock:
+                    _drop_oauth_session(session_id)
+            else:
+                _drop_oauth_session(session_id)
         return
     now = time.time()
     session_id = session.get('atlassian_oauth_session_id')
@@ -306,6 +315,48 @@ def oauth_session_data():
         save_oauth_session({})
         return {}
     return data
+
+
+def jira_session_data():
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+        return oauth_session_data()
+    return {}
+
+
+def current_request_auth_context():
+    session_data = jira_session_data()
+    site_url = (session_data.get('site_url') or JIRA_URL or '').strip().rstrip('/')
+    cloud_id = session_data.get('cloudid', '')
+    workspace_id = stable_local_workspace_id(APP_ENVIRONMENT_KEY, site_url, cloud_id)
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+        session_id = session.get('atlassian_oauth_session_id') or ''
+        account_id = session_data.get('account_id', '')
+        return RequestAuthContext(
+            auth_mode=AUTH_MODE_ATLASSIAN_OAUTH,
+            user_id=f'local-oauth-user:{account_id}',
+            stable_subject=account_id,
+            atlassian_account_id=account_id,
+            workspace_id=workspace_id,
+            auth_connection_id=f'local-oauth-connection:{session_id}',
+            cloud_id=cloud_id,
+            site_url=site_url,
+            token_version=str(session_data.get('stored_at', '1')),
+            account_status=session_data.get('account_status', ''),
+            is_admin=False,
+        )
+    return RequestAuthContext(
+        auth_mode=AUTH_MODE_BASIC,
+        user_id='local-basic-user',
+        stable_subject='local-basic',
+        atlassian_account_id='',
+        workspace_id=workspace_id,
+        auth_connection_id='local-basic-connection',
+        cloud_id='',
+        site_url=site_url,
+        token_version='1',
+        account_status='active',
+        is_admin=True,
+    )
 
 
 def auth_error_response(error, status=401):
@@ -5454,26 +5505,19 @@ def health_check():
 def test_connection():
     """Test Jira connection with simple query"""
     try:
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        # Simple test query - just get any 5 issues from PRODUCT project
-        test_payload = {
-            'jql': 'project = PRODUCT ORDER BY created DESC',
-            'maxResults': 5,
-            'fields': ['summary', 'status', 'priority']
-        }
-
         log_info('Testing Jira connection')
 
-        response = jira_search_request(headers, test_payload)
+        response = jira_get(
+            current_auth_config(),
+            current_request_auth_context(),
+            jira_session_data(),
+            '/rest/api/3/myself',
+            http_get=resilient_jira_get,
+            save_session=save_oauth_session,
+            reload_session=oauth_session_data,
+            refresh_lock=oauth_refresh_lock(),
+            timeout=15,
+        )
 
         log_info(f'Test response status={response.status_code}')
 
@@ -5487,9 +5531,21 @@ def test_connection():
         data = response.json()
         return jsonify({
             'status': 'success',
-            'message': f'Connection OK! Found {len(data.get("issues", []))} test issues',
-            'sample_issue': data.get('issues', [{}])[0].get('key', 'N/A') if data.get('issues') else None
+            'message': f'Connection OK! Authenticated as {data.get("displayName") or data.get("emailAddress") or "Jira user"}',
+            'sample_issue': None,
         })
+    except AuthError as e:
+        if e.code == 'auth_required':
+            save_oauth_session({})
+            return jsonify({
+                'error': 'auth_required',
+                'message': 'Your Jira sign-in expired. Sign in again to continue.',
+                'loginUrl': '/login?reason=session_expired',
+            }), 401
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+        }), 500
 
     except Exception as e:
         return jsonify({

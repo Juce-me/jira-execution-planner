@@ -10,6 +10,15 @@ import {
     sortTasksByPriority,
 } from './engTaskUtils.js';
 
+const OAUTH_ROUTE_NOT_READY_TASKS_MESSAGE = 'OAuth login succeeded, but this dashboard data route has not been migrated to Atlassian OAuth yet.';
+
+function taskLoadErrorMessage(err, backendUrl) {
+    if (err.code === 'route_not_oauth_ready') {
+        return `${OAUTH_ROUTE_NOT_READY_TASKS_MESSAGE} Verify OAuth with the auth status and test endpoints, or use Basic auth for the full dashboard until data routes are migrated.`;
+    }
+    return `Failed to load tasks: ${err.message}. Make sure the Python server is running on ${backendUrl}`;
+}
+
 export function useEngSprintData({
     backendUrl,
     selectedSprint,
@@ -82,7 +91,10 @@ export function useEngSprintData({
                     error: `HTTP ${response.status}`
                 }));
                 console.error('Error data:', errorData);
-                throw new Error(errorData.error || `Error ${response.status}`);
+                const error = new Error(errorData.error || `Error ${response.status}`);
+                error.code = errorData.error;
+                error.status = response.status;
+                throw error;
             }
 
             const data = await response.json();
@@ -116,8 +128,7 @@ export function useEngSprintData({
                 return [];
             }
             if (setErrors) {
-                const errorMsg = `Failed to load tasks: ${err.message}. Make sure the Python server is running on ${backendUrl}`;
-                setError(errorMsg);
+                setError(taskLoadErrorMessage(err, backendUrl));
             }
             console.error('Full error details:', err);
             return [];

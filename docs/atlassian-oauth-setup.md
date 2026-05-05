@@ -104,6 +104,8 @@ Restart the Flask server after changing `.env`.
 6. Open `http://localhost:5050/api/auth/status`; it should report authenticated state and must not include tokens.
 7. Open `http://localhost:5050/api/test`; it should use OAuth.
 
+The full dashboard is not migrated in this OAuth slice. After login, ENG dashboard data requests can still report `route_not_oauth_ready`; that means OAuth login worked, but the data route is intentionally blocked until it is migrated.
+
 If Atlassian reports a missing scope, add the named scope to the matching API on the app's `Permissions` page, save, then start again from `/login`.
 
 Use the same browser and hostname for the whole flow. If `ATLASSIAN_REDIRECT_URI` uses `localhost`, start from `http://localhost:5050/login`, not `http://127.0.0.1:5050/login`.
@@ -132,6 +134,10 @@ The callback reached the local server, but the browser did not send the same Fla
 - An old callback URL was refreshed or pasted after the one-time authorization code was already stale.
 
 Start again from `/login` in the same browser tab. Do not reuse an old callback URL.
+
+`route_not_oauth_ready`
+
+The login session is valid, but the requested API route has not been migrated to Atlassian OAuth. For this slice, verify OAuth with `/api/auth/status` and `/api/test`; use Basic auth for the full dashboard until the remaining data routes are migrated.
 
 `Local OAuth token storage requires APP_ENVIRONMENT_KEY=local or dev and OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`
 

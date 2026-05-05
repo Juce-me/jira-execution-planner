@@ -49,6 +49,38 @@ This plan was drafted before the backend split. Implement it against current `ma
 - Reuse `backend/jira_client.py` for resilient request behavior; keep auth-mode decisions in `backend/auth/jira_auth.py`.
 - Use the old local branch `feature/atlassian-oauth-auth` only as source material. Do not copy it directly over current `main`, because it predates the `backend/routes` split.
 
+## Previous OAuth Branch Porting Map
+
+The local branch `feature/atlassian-oauth-auth` is a prototype/reference branch, not the implementation branch to merge. It added useful OAuth primitives, route tests, source guards, and docs, but it predates the current backend package and route blueprint split.
+
+Carry these ideas forward:
+
+- Auth mode constants, `AuthConfig`, config validation, normalized site URL matching, accessible-resource selection, token expiry buffering, refresh-on-demand, and Jira gateway URL construction.
+- Route behavior for `/api/auth/status`, `/api/auth/atlassian/login`, `/api/auth/atlassian/callback`, and `/api/auth/logout`.
+- Server-side token storage behind an opaque Flask session id. Keep the test that proves access and refresh tokens are not stored in the Flask signed session.
+- Refresh failure behavior that clears the local auth session before returning `auth_required`.
+- The dashboard source guard that prevents this first slice from modifying `frontend/src/dashboard.jsx` or storing Atlassian tokens in `localStorage`.
+- `.env.example` and README documentation structure for Basic fallback plus Atlassian OAuth setup.
+
+Change these before implementation:
+
+- Move root `jira_auth.py` into `backend/auth/jira_auth.py`.
+- Put request context dataclasses and cache-key helpers in `backend/auth/context.py`.
+- Put OAuth routes in `backend/routes/auth_routes.py` as a blueprint and register it from `backend/app.py`; do not add new direct `@app.route` handlers in `jira_server.py`.
+- Use `backend.routes.bind_server_globals` for transition globals until dependencies are moved out of `jira_server.py`.
+- Add `read:me`, PKCE S256, `/me` identity fetch, inactive-account rejection, one-time state/verifier cleanup, sanitized OAuth errors, cookie/CORS/CSRF policy, and the local token-store runtime guard.
+- Make Jira/Home clients take `RequestAuthContext`; do not keep wrappers that read `JIRA_EMAIL`, `JIRA_TOKEN`, `JIRA_URL`, or OAuth token session globals inside route handlers.
+- Key or disable existing process caches for OAuth users before exposing multi-user DB auth.
+
+Do not carry these prototype details forward:
+
+- Root-level `jira_auth.py`.
+- Direct OAuth route definitions in `jira_server.py`.
+- OAuth authorize URLs without PKCE.
+- OAuth callback paths that do not fetch `/me` before saving session state.
+- Process-local `OAUTH_TOKEN_STORE` without TTL cleanup, a lock, logout/revoke deletion, and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED`.
+- Tests that only assert the authorize URL contains state but do not assert `code_challenge_method=S256`.
+
 ## RequestAuthContext Contract
 
 Before database work starts, create a single request-scoped auth object and pass it into every Jira/Home client and cache helper. The local OAuth slice can populate synthetic local ids where the database id is not available yet; the field names must match the later database-backed version so route migrations do not churn.
@@ -89,7 +121,7 @@ Rules:
 - `token_version` changes whenever the credential or project-access snapshot changes. Cache keys must include it or must opt out for OAuth users.
 - `account_status` must be `active` before Jira/Home calls run. Disabled/deleted local users and inactive Atlassian accounts are blocked.
 - `is_admin` is required for shared configuration mutation and admin inspection only. Jira project access is not an admin signal.
-- Jira/Home clients must accept `context` explicitly, for example `jira_get(context, path, ...)` and `home_graphql(context, query, ...)`.
+- Jira/Home clients must accept `context` explicitly, for example `jira_get(config, context, session_data, path, ...)` and `home_graphql(context, query, ...)`.
 - Caches that contain Jira/Home-derived data must accept `context` explicitly and build keys from `workspace_id`, `auth_connection_id` or `user_id`, `cloud_id`, `token_version`, and route-specific parameters. If a cache cannot be keyed this way, disable it for OAuth users.
 
 ## OAuth Callback And Browser Policy
@@ -131,6 +163,168 @@ Browser policy before DB-backed admin/config endpoints:
 
 ---
 
+## Task 0: Request Auth Context Foundation
+
+**Files:**
+- Create: `backend/auth/__init__.py`
+- Create: `backend/auth/context.py`
+- Create: `tests/test_auth_context.py`
+
+- [ ] **Step 1: Write failing context tests**
+
+Create `tests/test_auth_context.py`:
+
+```python
+import unittest
+
+from backend.auth.context import (
+    ProjectAccessSnapshot,
+    RequestAuthContext,
+    build_auth_cache_key,
+    stable_local_workspace_id,
+)
+
+
+class TestAuthContext(unittest.TestCase):
+    def test_stable_local_workspace_id_includes_environment_and_site(self):
+        first = stable_local_workspace_id('local', 'https://example.atlassian.net/')
+        second = stable_local_workspace_id('local', 'https://example.atlassian.net')
+        other_env = stable_local_workspace_id('staging', 'https://example.atlassian.net')
+        self.assertEqual(first, second)
+        self.assertNotEqual(first, other_env)
+
+    def test_cache_key_includes_workspace_connection_cloud_and_token_version(self):
+        context = RequestAuthContext(
+            auth_mode='atlassian_oauth',
+            user_id='user-1',
+            stable_subject='account-1',
+            atlassian_account_id='account-1',
+            workspace_id='workspace-1',
+            auth_connection_id='connection-1',
+            cloud_id='cloud-1',
+            site_url='https://example.atlassian.net',
+            token_version='7',
+            account_status='active',
+            is_admin=False,
+            project_access=(ProjectAccessSnapshot('PROD', 'product', 'accessible'),),
+        )
+        key = build_auth_cache_key(context, 'epm-rollup', 'active', 'Sprint 1')
+        self.assertEqual(
+            key,
+            (
+                'workspace-1',
+                'connection-1',
+                'cloud-1',
+                '7',
+                'epm-rollup',
+                'active',
+                'Sprint 1',
+            ),
+        )
+
+    def test_cache_key_changes_when_token_version_changes(self):
+        base = RequestAuthContext(
+            auth_mode='atlassian_oauth',
+            user_id='user-1',
+            stable_subject='account-1',
+            atlassian_account_id='account-1',
+            workspace_id='workspace-1',
+            auth_connection_id='connection-1',
+            cloud_id='cloud-1',
+            site_url='https://example.atlassian.net',
+            token_version='1',
+            account_status='active',
+            is_admin=False,
+        )
+        changed = RequestAuthContext(**{**base.__dict__, 'token_version': '2'})
+        self.assertNotEqual(
+            build_auth_cache_key(base, 'projects'),
+            build_auth_cache_key(changed, 'projects'),
+        )
+```
+
+- [ ] **Step 2: Run tests to verify failure**
+
+Run: `python3 -m unittest tests.test_auth_context -v`
+
+Expected: FAIL because `backend/auth/context.py` does not exist.
+
+- [ ] **Step 3: Add context module**
+
+Create `backend/auth/__init__.py` as an empty package marker.
+
+Create `backend/auth/context.py`:
+
+```python
+import hashlib
+from dataclasses import dataclass, field
+
+
+def _normalize_site_url(value):
+    return (value or '').strip().rstrip('/').lower()
+
+
+@dataclass(frozen=True)
+class ProjectAccessSnapshot:
+    project_key: str
+    project_type: str
+    status: str
+    checked_at: str = ''
+
+
+@dataclass(frozen=True)
+class RequestAuthContext:
+    auth_mode: str
+    user_id: str
+    stable_subject: str
+    atlassian_account_id: str
+    workspace_id: str
+    auth_connection_id: str
+    cloud_id: str
+    site_url: str
+    token_version: str
+    account_status: str
+    is_admin: bool
+    project_access: tuple[ProjectAccessSnapshot, ...] = field(default_factory=tuple)
+
+
+def stable_local_workspace_id(environment_key, jira_site_url, cloud_id=''):
+    environment = (environment_key or 'local').strip().lower()
+    site = _normalize_site_url(jira_site_url)
+    cloud = (cloud_id or '').strip()
+    source = f'{environment}|{cloud or site}'
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()[:16]
+    return f'local-workspace-{digest}'
+
+
+def build_auth_cache_key(context, *parts):
+    subject = context.auth_connection_id or context.user_id
+    return (
+        context.workspace_id,
+        subject,
+        context.cloud_id,
+        str(context.token_version),
+        *[str(part) for part in parts],
+    )
+```
+
+- [ ] **Step 4: Run context tests**
+
+Run: `python3 -m unittest tests.test_auth_context -v`
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+Run:
+
+```bash
+git add backend/auth/__init__.py backend/auth/context.py tests/test_auth_context.py
+git commit -m "Add request auth context foundation"
+```
+
+---
+
 ## Task 1: Auth Helper Foundation
 
 **Files:**
@@ -158,6 +352,7 @@ from backend.auth.jira_auth import (
     normalize_site_url,
     token_session_payload,
 )
+from backend.auth.context import RequestAuthContext
 
 
 class TestJiraAuth(unittest.TestCase):
@@ -253,15 +448,41 @@ class TestJiraAuth(unittest.TestCase):
 
     def test_basic_jira_url_uses_site_url(self):
         config = AuthConfig(auth_mode='basic', jira_url='https://example.atlassian.net')
+        context = RequestAuthContext(
+            auth_mode='basic',
+            user_id='local-user',
+            stable_subject='local-basic',
+            atlassian_account_id='',
+            workspace_id='workspace-1',
+            auth_connection_id='local-basic-connection',
+            cloud_id='',
+            site_url='https://example.atlassian.net',
+            token_version='1',
+            account_status='active',
+            is_admin=True,
+        )
         self.assertEqual(
-            build_jira_api_url(config, '/rest/api/3/project/search', {}),
+            build_jira_api_url(config, context, '/rest/api/3/project/search'),
             'https://example.atlassian.net/rest/api/3/project/search',
         )
 
     def test_oauth_jira_url_uses_cloudid_gateway(self):
         config = AuthConfig(auth_mode='atlassian_oauth', jira_url='https://example.atlassian.net')
+        context = RequestAuthContext(
+            auth_mode='atlassian_oauth',
+            user_id='user-1',
+            stable_subject='account-1',
+            atlassian_account_id='account-1',
+            workspace_id='workspace-1',
+            auth_connection_id='connection-1',
+            cloud_id='cloud-123',
+            site_url='https://example.atlassian.net',
+            token_version='1',
+            account_status='active',
+            is_admin=False,
+        )
         self.assertEqual(
-            build_jira_api_url(config, '/rest/api/3/project/search', {'cloudid': 'cloud-123'}),
+            build_jira_api_url(config, context, '/rest/api/3/project/search'),
             'https://api.atlassian.com/ex/jira/cloud-123/rest/api/3/project/search',
         )
 
@@ -290,6 +511,8 @@ from typing import Mapping
 from urllib.parse import urlencode
 
 import requests
+
+from backend.auth.context import RequestAuthContext
 
 
 AUTH_MODE_BASIC = 'basic'
@@ -485,14 +708,13 @@ def build_jira_headers(config, session_data):
     return headers
 
 
-def build_jira_api_url(config, path, session_data):
+def build_jira_api_url(config, context, path):
     clean_path = '/' + path.lstrip('/')
     if config.auth_mode == AUTH_MODE_BASIC:
         return f'{normalize_site_url(config.jira_url)}{clean_path}'
-    cloudid = session_data.get('cloudid')
-    if not cloudid:
+    if not context.cloud_id:
         raise AuthError('auth_required', 'Missing Atlassian cloudid in session')
-    return f'{ATLASSIAN_API_BASE}/ex/jira/{cloudid}{clean_path}'
+    return f'{ATLASSIAN_API_BASE}/ex/jira/{context.cloud_id}{clean_path}'
 ```
 
 - [ ] **Step 4: Run the helper tests**
@@ -540,7 +762,10 @@ class TestAuthRoutes(unittest.TestCase):
         self.client = jira_server.app.test_client()
 
     def test_basic_auth_status_reports_configured(self):
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
+             patch.object(jira_server, 'JIRA_EMAIL', 'user@example.com'), \
+             patch.object(jira_server, 'JIRA_TOKEN', 'token-123'):
             response = self.client.get('/api/auth/status')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()['authMode'], 'basic')
@@ -567,11 +792,26 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertIn('code_challenge=', response.headers['Location'])
         self.assertIn('code_challenge_method=S256', response.headers['Location'])
 
+    def test_oauth_login_rejects_basic_mode(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
+             patch.object(jira_server, 'JIRA_EMAIL', 'user@example.com'), \
+             patch.object(jira_server, 'JIRA_TOKEN', 'token-123'):
+            response = self.client.get('/api/auth/atlassian/login')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['error'], 'oauth_not_enabled')
+
     def test_callback_rejects_invalid_state(self):
+        with self.client.session_transaction() as session:
+            session['oauth_state'] = 'state-123'
+            session['oauth_pkce_verifier'] = 'verifier-123'
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             response = self.client.get('/api/auth/atlassian/callback?state=bad&code=abc')
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()['error'], 'invalid_oauth_state')
+        with self.client.session_transaction() as session:
+            self.assertNotIn('oauth_state', session)
+            self.assertNotIn('oauth_pkce_verifier', session)
 
     def test_logout_clears_auth_session(self):
         with self.client.session_transaction() as session:
@@ -582,6 +822,64 @@ class TestAuthRoutes(unittest.TestCase):
         with self.client.session_transaction() as session:
             self.assertNotIn('atlassian_oauth_session_id', session)
         self.assertNotIn('session-123', jira_server.OAUTH_TOKEN_STORE)
+
+    def test_save_oauth_session_clears_falsy_payload(self):
+        with jira_server.app.test_request_context('/'):
+            jira_server.session['atlassian_oauth_session_id'] = 'session-123'
+            jira_server.OAUTH_TOKEN_STORE['session-123'] = {'access_token': 'access-123'}
+            jira_server.save_oauth_session({})
+            self.assertNotIn('atlassian_oauth_session_id', jira_server.session)
+            self.assertNotIn('session-123', jira_server.OAUTH_TOKEN_STORE)
+
+    def test_callback_stores_oauth_tokens_server_side_with_identity(self):
+        with self.client.session_transaction() as session:
+            session['oauth_state'] = 'state-123'
+            session['oauth_pkce_verifier'] = 'verifier-123'
+
+        token_data = {
+            'access_token': 'access-123',
+            'refresh_token': 'refresh-123',
+            'expires_in': 3600,
+        }
+        user_profile = {
+            'account_id': 'account-123',
+            'account_status': 'active',
+            'email': 'new@example.com',
+            'name': 'New Name',
+        }
+        resource = {
+            'id': 'cloud-123',
+            'url': 'https://example.atlassian.net/',
+            'name': 'Example Jira',
+        }
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
+             patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
+             patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
+             patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
+             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
+             patch.object(jira_server, 'exchange_authorization_code', return_value=token_data) as exchange_code, \
+             patch.object(jira_server, 'fetch_current_user', return_value=user_profile), \
+             patch.object(jira_server, 'fetch_accessible_resources', return_value=[resource]):
+            response = self.client.get('/api/auth/atlassian/callback?state=state-123&code=abc')
+
+        self.assertEqual(response.status_code, 302)
+        exchange_code.assert_called_once()
+        self.assertEqual(exchange_code.call_args.args[2], 'verifier-123')
+        with self.client.session_transaction() as session:
+            session_payload = dict(session)
+            session_id = session.get('atlassian_oauth_session_id')
+            self.assertIsNotNone(session_id)
+            self.assertNotIn('oauth_state', session)
+            self.assertNotIn('oauth_pkce_verifier', session)
+            self.assertNotIn('atlassian_oauth', session)
+            self.assertNotIn('access-123', str(session_payload))
+            self.assertNotIn('refresh-123', str(session_payload))
+
+        stored = jira_server.OAUTH_TOKEN_STORE[session_id]
+        self.assertEqual(stored['access_token'], 'access-123')
+        self.assertEqual(stored['account_id'], 'account-123')
+        self.assertEqual(stored['account_status'], 'active')
 ```
 
 - [ ] **Step 2: Run the tests to verify failure**
@@ -614,6 +912,7 @@ from backend.auth.jira_auth import (
     fetch_current_user,
     new_pkce_verifier,
     new_oauth_state,
+    normalize_site_url,
     token_session_payload,
     validate_auth_config,
 )
@@ -738,6 +1037,8 @@ def api_auth_status():
 
 @bp.route('/api/auth/atlassian/login', methods=['GET'])
 def api_atlassian_login():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return auth_error_response(AuthError('oauth_not_enabled', 'Atlassian OAuth auth mode is not enabled'), 400)
     config = current_auth_config()
     try:
         validate_auth_config(config)
@@ -758,6 +1059,8 @@ def api_atlassian_callback():
     actual_state = request.args.get('state')
     if not expected_state or actual_state != expected_state:
         return jsonify({'error': 'invalid_oauth_state'}), 400
+    if request.args.get('error'):
+        return jsonify({'error': 'oauth_authorization_failed'}), 400
     code = request.args.get('code')
     if not code:
         return jsonify({'error': 'missing_oauth_code'}), 400
@@ -856,10 +1159,23 @@ Append to `tests/test_jira_auth.py`:
             jira_email='user@example.com',
             jira_token='token-123',
         )
+        context = RequestAuthContext(
+            auth_mode='basic',
+            user_id='local-user',
+            stable_subject='local-basic',
+            atlassian_account_id='',
+            workspace_id='workspace-1',
+            auth_connection_id='local-basic-connection',
+            cloud_id='',
+            site_url='https://example.atlassian.net',
+            token_version='1',
+            account_status='active',
+            is_admin=True,
+        )
         http_get = Mock()
         http_get.return_value.status_code = 200
         from backend.auth.jira_auth import jira_get
-        response = jira_get(config, {}, '/rest/api/3/project/search', http_get=http_get, timeout=15)
+        response = jira_get(config, context, {}, '/rest/api/3/project/search', http_get=http_get, timeout=15)
         self.assertEqual(response.status_code, 200)
         called_url = http_get.call_args.args[0]
         self.assertEqual(called_url, 'https://example.atlassian.net/rest/api/3/project/search')
@@ -889,33 +1205,71 @@ def ensure_oauth_token(config, session_data, save_session, http_post=requests.po
     return refreshed
 
 
-def jira_get(config, session_data, path, http_get=requests.get, save_session=None, **kwargs):
+def jira_get(config, context, session_data, path, http_get=requests.get, save_session=None, **kwargs):
     save_session = save_session or (lambda data: None)
     active_session = ensure_oauth_token(config, session_data, save_session)
     return http_get(
-        build_jira_api_url(config, path, active_session),
+        build_jira_api_url(config, context, path),
         headers=build_jira_headers(config, active_session),
         **kwargs,
     )
 
 
-def jira_post(config, session_data, path, http_post=requests.post, save_session=None, **kwargs):
+def jira_post(config, context, session_data, path, http_post=requests.post, save_session=None, **kwargs):
     save_session = save_session or (lambda data: None)
     active_session = ensure_oauth_token(config, session_data, save_session)
     return http_post(
-        build_jira_api_url(config, path, active_session),
+        build_jira_api_url(config, context, path),
         headers=build_jira_headers(config, active_session),
         **kwargs,
     )
 ```
 
-In `jira_server.py`, import `jira_get` and `jira_post` from `backend.auth.jira_auth`. Reuse the `save_oauth_session` and `oauth_session_data` helpers from Task 2, then add:
+In `jira_server.py`, import `RequestAuthContext` and `stable_local_workspace_id` from `backend.auth.context`, plus `jira_get` and `jira_post` from `backend.auth.jira_auth`. Reuse the `save_oauth_session` and `oauth_session_data` helpers from Task 2, then add:
 
 ```python
+APP_ENVIRONMENT_KEY = os.getenv('APP_ENVIRONMENT_KEY', 'local').strip() or 'local'
+
+
 def jira_session_data():
     if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
         return oauth_session_data()
     return {}
+
+
+def current_request_auth_context():
+    session_data = jira_session_data()
+    site_url = normalize_site_url(session_data.get('site_url') or JIRA_URL or '')
+    cloud_id = session_data.get('cloudid', '')
+    workspace_id = stable_local_workspace_id(APP_ENVIRONMENT_KEY, site_url, cloud_id)
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+        session_id = session.get('atlassian_oauth_session_id') or ''
+        return RequestAuthContext(
+            auth_mode=AUTH_MODE_ATLASSIAN_OAUTH,
+            user_id=f'local-oauth-user:{session_data.get("account_id", "")}',
+            stable_subject=session_data.get('account_id', ''),
+            atlassian_account_id=session_data.get('account_id', ''),
+            workspace_id=workspace_id,
+            auth_connection_id=f'local-oauth-connection:{session_id}',
+            cloud_id=cloud_id,
+            site_url=site_url,
+            token_version=str(session_data.get('stored_at', '1')),
+            account_status=session_data.get('account_status', ''),
+            is_admin=False,
+        )
+    return RequestAuthContext(
+        auth_mode=AUTH_MODE_BASIC,
+        user_id='local-basic-user',
+        stable_subject='local-basic',
+        atlassian_account_id='',
+        workspace_id=workspace_id,
+        auth_connection_id='local-basic-connection',
+        cloud_id='',
+        site_url=site_url,
+        token_version='1',
+        account_status='active',
+        is_admin=True,
+    )
 ```
 
 Migrate `/api/test` to call a small Jira endpoint through `jira_get`. Keep its response shape compatible with current frontend expectations. Use:
@@ -923,6 +1277,7 @@ Migrate `/api/test` to call a small Jira endpoint through `jira_get`. Keep its r
 ```python
 response = jira_get(
     current_auth_config(),
+    current_request_auth_context(),
     jira_session_data(),
     '/rest/api/3/myself',
     save_session=save_oauth_session,
@@ -1157,6 +1512,8 @@ Do not push. This repo requires explicit user confirmation before push.
 ## Plan Self-Review
 
 - Spec coverage: the plan covers auth mode config, OAuth login/callback, local server-side token storage, resource selection, Jira URL/header construction, dashboard isolation, docs, and verification.
+- Previous branch review: `feature/atlassian-oauth-auth` is treated as source material only. The plan carries forward its auth helper primitives, server-side token session idea, refresh failure clearing, route tests, source guard, and docs; it does not carry forward root-level `jira_auth.py`, direct `jira_server.py` routes, missing PKCE, missing `/me` identity, or global-session Jira wrappers.
+- Implementation consistency: the Jira wrappers now take `RequestAuthContext` explicitly so the first OAuth slice does not recreate the old branch's implicit global auth boundary.
 - DB alignment: this plan creates the auth/client boundary required before PostgreSQL-backed `users`, `workspaces`, `auth_connections`, encrypted `auth_tokens`, and `jira_project_access`; it intentionally does not implement those tables.
 - Scope: Confluence support, dashboard login UI, production multi-user persistence, and user-owned saved views are intentionally deferred.
 - Risk: dashboard login UX is intentionally deferred so the auth-mode slice does not modify `frontend/src/dashboard.jsx`.

@@ -11,6 +11,7 @@ import ControlField from './ui/ControlField.jsx';
 import IconButton from './ui/IconButton.jsx';
 import LoadingRows from './ui/LoadingRows.jsx';
 import EmptyState from './ui/EmptyState.jsx';
+import JiraExportButton from './components/JiraExportButton.jsx';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
 import EngView from './eng/EngView.jsx';
@@ -103,6 +104,12 @@ import {
 import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
 import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
+import {
+    collectJiraExportKeysFromEpmRollupBoards,
+    collectJiraExportKeysFromScenarioIssues,
+    collectJiraExportKeysFromTasks,
+    openJiraIssueSearch
+} from './jiraExportUtils.mjs';
 
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
@@ -6743,6 +6750,32 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 scenarioEpicFocus,
                 perfEnabled
             ]);
+            const scenarioVisibleExportIssues = React.useMemo(() => {
+                if (!scenarioTimelineWithSegments || scenarioTimelineWithSegments.length === 0) return [];
+                return scenarioTimelineWithSegments.filter(issue => {
+                    if (!issue?.key) return false;
+                    if (scenarioShowConflictsOnly && !scenarioAssigneeConflicts.conflicts.has(issue.key)) return false;
+                    const lane = scenarioLaneForIssue(issue);
+                    const rowIndex = scenarioLaneStacking.rowIndexByKey.get(issue.key) ?? 0;
+                    const visibleRows = scenarioLaneStacking.laneVisibleRows.get(lane) || 1;
+                    return rowIndex < visibleRows;
+                });
+            }, [
+                scenarioTimelineWithSegments,
+                scenarioShowConflictsOnly,
+                scenarioAssigneeConflicts,
+                scenarioLaneStacking,
+                scenarioLaneMode,
+                scenarioEpicFocus
+            ]);
+            const scenarioJiraEpicKeys = React.useMemo(
+                () => collectJiraExportKeysFromScenarioIssues(scenarioVisibleExportIssues, 'epics'),
+                [scenarioVisibleExportIssues]
+            );
+            const scenarioJiraStoryKeys = React.useMemo(
+                () => collectJiraExportKeysFromScenarioIssues(scenarioVisibleExportIssues, 'stories'),
+                [scenarioVisibleExportIssues]
+            );
             const scenarioLaneMeta = React.useMemo(() => {
                 const meta = new Map();
                 let offset = 0;
@@ -7794,6 +7827,14 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 );
                 return visibleTasks.filter((task) => scopedKeys.has(String(task?.key || '').trim().toUpperCase()));
             }, [visibleTasks, burnoutTaskFilter]);
+            const visibleTaskJiraEpicKeys = React.useMemo(
+                () => collectJiraExportKeysFromTasks(visibleTasksForList, 'epics'),
+                [visibleTasksForList]
+            );
+            const visibleTaskJiraStoryKeys = React.useMemo(
+                () => collectJiraExportKeysFromTasks(visibleTasksForList, 'stories'),
+                [visibleTasksForList]
+            );
             const visibleTaskKeySet = React.useMemo(() => {
                 const keys = new Set();
                 visibleTasks.forEach(task => {
@@ -8584,12 +8625,24 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                 };
             }, [compactHeaderOffset, compactStickyVisible, epicGroups, planningOffset]);
 
-            const epmDependencyTasks = React.useMemo(() => {
+            const epmRollupExportBoards = React.useMemo(() => {
                 const boards = Array.isArray(visibleEpmRollupBoards)
                     ? visibleEpmRollupBoards
                     : (epmRollupTree ? [{ project: selectedEpmProject, tree: epmRollupTree }] : []);
-                return flattenEpmRollupBoardsForDependencies(boards);
+                return boards;
             }, [visibleEpmRollupBoards, epmRollupTree, selectedEpmProject]);
+            const epmJiraEpicKeys = React.useMemo(
+                () => collectJiraExportKeysFromEpmRollupBoards(epmRollupExportBoards, 'epics'),
+                [epmRollupExportBoards]
+            );
+            const epmJiraStoryKeys = React.useMemo(
+                () => collectJiraExportKeysFromEpmRollupBoards(epmRollupExportBoards, 'stories'),
+                [epmRollupExportBoards]
+            );
+            const epmDependencyTasks = React.useMemo(() => {
+                const boards = epmRollupExportBoards;
+                return flattenEpmRollupBoardsForDependencies(boards);
+            }, [epmRollupExportBoards]);
 
             const dependencyTasks = React.useMemo(
                 () => selectedView === 'epm' ? epmDependencyTasks : [...loadedProductTasks, ...loadedTechTasks],
@@ -10364,14 +10417,10 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
             }, [compactHeaderOffset, compactStickyVisible, showPlanning]);
 
             const openSelectedInJira = () => {
-                if (!jiraUrl) return;
                 const keys = capacityTasks
                     .filter(task => selectedTasks[task.key])
-                    .map(task => task.key)
-                    .sort();
-                if (keys.length === 0) return;
-                const jql = encodeURIComponent(`key in (${keys.join(', ')})`);
-                window.open(`${jiraUrl}/issues/?jql=${jql}`, '_blank', 'noopener,noreferrer');
+                    .map(task => task.key);
+                openJiraIssueSearch({ jiraUrl, keys });
             };
 
             const activeControlSurface = compactStickyVisible ? 'compact' : 'main';
@@ -10903,6 +10952,15 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                 <div className="header-actions-row">
                                     {renderViewSwitch()}
                                     {renderSearchControl('main')}
+                                    {selectedView === 'eng' && !showPlanning && !showScenario && (
+                                        <JiraExportButton
+                                            jiraUrl={jiraUrl}
+                                            epicKeys={visibleTaskJiraEpicKeys}
+                                            storyKeys={visibleTaskJiraStoryKeys}
+                                            defaultIssueKind="stories"
+                                            className="jira-export-header"
+                                        />
+                                    )}
                                     <IconButton
                                         variant="secondary compact"
                                         className="refresh-icon"
@@ -12497,6 +12555,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                             >
                                                 Conflicts Only
                                             </button>
+                                            <JiraExportButton
+                                                jiraUrl={jiraUrl}
+                                                epicKeys={scenarioJiraEpicKeys}
+                                                storyKeys={scenarioJiraStoryKeys}
+                                                defaultIssueKind={scenarioLaneMode === 'epic' ? 'epics' : 'stories'}
+                                                className="jira-export-scenario"
+                                            />
                                             <button
                                                 className="secondary"
                                                 onClick={runScenario}
@@ -13071,6 +13136,13 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                             >
                                 Clear Selected
                             </button>
+                            <JiraExportButton
+                                jiraUrl={jiraUrl}
+                                epicKeys={visibleTaskJiraEpicKeys}
+                                storyKeys={visibleTaskJiraStoryKeys}
+                                defaultIssueKind="stories"
+                                className="jira-export-planning"
+                            />
                             <button
                                 className="planning-action-button planning-icon-button"
                                 onClick={openSelectedInJira}
@@ -13401,6 +13473,15 @@ import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
                                     loadArchivedEpmProjectRollup={loadArchivedEpmProjectRollup}
                                     openEpmSettingsTab={openEpmSettingsTab}
                                     jiraUrl={jiraUrl}
+                                    jiraExportButton={
+                                        <JiraExportButton
+                                            jiraUrl={jiraUrl}
+                                            epicKeys={epmJiraEpicKeys}
+                                            storyKeys={epmJiraStoryKeys}
+                                            defaultIssueKind="epics"
+                                            className="jira-export-epm"
+                                        />
+                                    }
                                     InitiativeIcon={InitiativeIcon}
                                 />
                             </IssueCardContext.Provider>

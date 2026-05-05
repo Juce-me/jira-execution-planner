@@ -22,6 +22,7 @@ export function EpmRollupPanel({
     onProjectExpand,
     openEpmSettingsTab,
     jiraUrl,
+    jiraExportButton,
     InitiativeIcon,
 }) {
     const issueCardContext = useContext(IssueCardContext);
@@ -214,6 +215,15 @@ export function EpmRollupPanel({
         </div>
     );
 
+    const renderRollupToolbar = () => {
+        if (!jiraExportButton) return null;
+        return (
+            <div className="epm-rollup-toolbar">
+                {jiraExportButton}
+            </div>
+        );
+    };
+
     const getTaskTeamInfo = issueCardContext?.dependencyContext?.getTeamInfo || ((task) => {
         const team = task.fields?.team;
         const teamName = task.fields?.teamName || team?.name || team?.displayName || team?.teamName || 'Unknown Team';
@@ -391,6 +401,7 @@ export function EpmRollupPanel({
                 className={`task-list epm-issue-board epm-portfolio-board ${issueCardContext.dependencyContext?.activeDependencyFocus ? 'focus-mode' : ''}`}
                 onClick={issueCardContext.onDependencyFocusClick}
             >
+                {renderRollupToolbar()}
                 {renderDuplicatesCallout()}
                 {epmAggregateTruncated && (
                     <div className="group-field-helper">
@@ -465,6 +476,7 @@ export function EpmRollupPanel({
             className={`task-list epm-issue-board ${issueCardContext.dependencyContext?.activeDependencyFocus ? 'focus-mode' : ''}`}
             onClick={issueCardContext.onDependencyFocusClick}
         >
+            {renderRollupToolbar()}
             {epmRollupTree.truncated && (
                 <div className="group-field-helper">
                     This rollup is truncated; narrow the label or Jira scope.

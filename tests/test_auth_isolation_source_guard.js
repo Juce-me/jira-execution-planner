@@ -2,6 +2,7 @@ const fs = require('fs');
 const assert = require('assert');
 
 const source = fs.readFileSync('frontend/src/dashboard.jsx', 'utf8');
+const localStorageAtlassianPattern = /localStorage[\s\S]{0,160}atlassian|atlassian[\s\S]{0,160}localStorage/i;
 
 assert(
   !source.includes('/api/auth/status'),
@@ -29,6 +30,6 @@ assert(
 );
 
 assert(
-  !source.includes("localStorage.setItem('atlassian"),
+  !localStorageAtlassianPattern.test(source),
   'dashboard must not store Atlassian tokens in localStorage'
 );

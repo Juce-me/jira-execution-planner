@@ -35,12 +35,20 @@ This plan also does not require Compass GraphQL API permissions. Compass/Home Gr
 
 `/api/epm/config` is local configuration and can be OAuth-ready only if tests prove it does not call Jira or Home.
 
-Current scopes are enough for this read-only Jira REST migration:
+The current scopes are enough only for Jira Platform and identity reads:
 
 - `read:me`
 - `read:jira-work`
 - `read:jira-user`
 - `offline_access`
+
+This plan also migrates Jira Software Agile endpoints for boards and sprints. Those endpoints need Jira Software granular scopes in the Atlassian Developer Console and in `ATLASSIAN_SCOPES`:
+
+- `read:board-scope:jira-software`
+- `read:sprint:jira-software`
+- `read:project:jira`
+
+Do not migrate `/api/boards` or `/api/sprints` until the scope setup docs, `.env.example`, and default OAuth scopes include these Jira Software scopes. Atlassian documents Jira Software scopes separately from Jira Platform classic scopes; Jira Software does not support classic scopes for those Agile APIs.
 
 Do not migrate any Jira write endpoint in this plan. If a Jira issue create/update route appears during implementation, leave it guarded until the Atlassian app has the exact write scopes required by Atlassian docs and tests prove the route uses the unsafe-method header.
 
@@ -137,6 +145,105 @@ Modify these files only unless a named test exposes a required caller:
 - `.env.example` - update comments only if route migration changes the local testing instructions.
 
 Do not hand-edit `frontend/dist/`; run `npm run build` if frontend source changes.
+
+---
+
+## Task 0: OAuth Scope Audit For Planned Jira REST Routes
+
+**Files:**
+- Modify: `backend/auth/jira_auth.py`
+- Modify: `jira_server.py`
+- Modify: `.env.example`
+- Modify: `docs/atlassian-oauth-setup.md`
+- Test: `tests/test_jira_auth.py`
+
+- [ ] **Step 1: Write the failing scope test**
+
+Add this test to `tests/test_jira_auth.py` next to `test_default_scopes_include_read_me`:
+
+```python
+    def test_default_scopes_include_jira_software_agile_reads(self):
+        scopes = set(AuthConfig().scopes.split())
+
+        self.assertIn("read:board-scope:jira-software", scopes)
+        self.assertIn("read:sprint:jira-software", scopes)
+        self.assertIn("read:project:jira", scopes)
+```
+
+- [ ] **Step 2: Run the failing scope test**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_jira_auth.JiraAuthTests.test_default_scopes_include_jira_software_agile_reads
+```
+
+Expected: FAIL because the default scopes currently omit Jira Software Agile read scopes.
+
+- [ ] **Step 3: Update default OAuth scopes**
+
+In `backend/auth/jira_auth.py`, change the `AuthConfig.scopes` default to:
+
+```python
+scopes: str = "read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access"
+```
+
+In `jira_server.py`, change the `ATLASSIAN_SCOPES` default to the same string:
+
+```python
+ATLASSIAN_SCOPES = os.getenv(
+    'ATLASSIAN_SCOPES',
+    'read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access',
+).strip()
+```
+
+- [ ] **Step 4: Update local setup docs and env example**
+
+In `.env.example`, make the OAuth scopes example match the new default:
+
+```text
+ATLASSIAN_SCOPES=read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access
+```
+
+In `docs/atlassian-oauth-setup.md`, update the scope table so setup clearly maps each scope to the Atlassian Developer Console API:
+
+```markdown
+| API in Developer Console | Scope | Why this app needs it |
+| --- | --- | --- |
+| User identity API | `read:me` | Backend calls `https://api.atlassian.com/me` after callback. |
+| Jira API | `read:jira-work` | Jira issue, project, field, label, component, and search reads. |
+| Jira API | `read:jira-user` | User/profile fields returned by issue and team-related reads. |
+| Jira Software API | `read:board-scope:jira-software` | `/rest/agile/1.0/board` board discovery. |
+| Jira Software API | `read:sprint:jira-software` | `/rest/agile/1.0/board/{boardId}/sprint` sprint discovery. |
+| Jira API | `read:project:jira` | Jira Software board APIs require project read scope. |
+| OAuth authorize URL only | `offline_access` | Refresh tokens for local OAuth sessions; this does not appear as a separate API row. |
+```
+
+Also add reference links:
+
+```markdown
+- Jira Platform OAuth scopes: https://developer.atlassian.com/cloud/jira/platform/scopes-for-oauth-2-3LO-and-forge-apps/
+- Jira Software OAuth scopes: https://developer.atlassian.com/cloud/jira/software/scopes-for-oauth-2-3LO-and-forge-apps/
+- Jira Software board API scopes: https://developer.atlassian.com/cloud/jira/software/rest/api-group-board/
+- Jira Software sprint API scopes: https://developer.atlassian.com/cloud/jira/software/rest/api-group-sprint/
+```
+
+- [ ] **Step 5: Run scope and auth tests**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_jira_auth
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/auth/jira_auth.py jira_server.py .env.example docs/atlassian-oauth-setup.md tests/test_jira_auth.py
+git commit -m "Document Jira Software OAuth scopes"
+```
 
 ---
 
@@ -489,6 +596,14 @@ Do not remove the legacy `headers` argument yet; this keeps the diff small while
 
 Where tests patch or call `jira_search_request(headers, payload)`, update them to patch/call `jira_search_request(payload)`. Keep response payloads unchanged.
 
+First inventory every affected test:
+
+```bash
+rg -n "jira_search_request|def fake_search\\(|call_args.*\\[1\\]|args\\[1\\]" tests -g '*.py'
+```
+
+Expected before edits: hits include `tests/test_backend_service_extraction.py`, `tests/test_group_excluded_capacity_epics_api.py`, `tests/test_burnout_stats_api.py`, `tests/test_epic_cohort_api.py`, `tests/test_sprint_dates.py`, `tests/test_create_stories_alert.py`, `tests/test_initiative_extraction.py`, and `tests/test_backend_route_source_guards.py`.
+
 Example in `tests/test_backend_service_extraction.py`:
 
 ```python
@@ -498,6 +613,37 @@ with patch.object(jira_server, 'current_jira_search', return_value=sentinel.resp
 self.assertIs(response, sentinel.response)
 mock_search.assert_called_once_with({'jql': 'project = "PROD"', 'maxResults': 1})
 ```
+
+For side effects, change two-argument fakes:
+
+```python
+def fake_search(_headers, payload):
+    calls.append(payload)
+    return DummyResponse({'issues': []})
+```
+
+to:
+
+```python
+def fake_search(payload):
+    calls.append(payload)
+    return DummyResponse({'issues': []})
+```
+
+For call assertions, change `mock_search.call_args[0][1]` and `mock_search.call_args_list[0].args[1]` to index `0`:
+
+```python
+called_payload = mock_search.call_args[0][0]
+first_payload = mock_search.call_args_list[0].args[0]
+```
+
+After edits, re-run:
+
+```bash
+rg -n "def fake_search\\([^)]*,[^)]*\\)|call_args.*\\[1\\]|args\\[1\\]" tests -g '*.py'
+```
+
+Expected: no hits for Jira search helper fakes/assertions.
 
 - [ ] **Step 5: Run helper and affected unit tests**
 
@@ -598,11 +744,11 @@ class OAuthEngRouteTests(unittest.TestCase):
              patch.object(jira_server, "resolve_epic_link_field_id", return_value=None), \
              patch.object(jira_server, "get_sprint_field_id", return_value="customfield_sprint"), \
              patch.object(jira_server, "get_story_points_field_id", return_value="customfield_sp"), \
-             patch.object(jira_server, "jira_search_request", return_value=FakeResponse(200, {
+             patch.object(jira_server, "current_jira_search", return_value=FakeResponse(200, {
                  "issues": [issue],
                  "names": {"customfield_team": "Team[Team]"},
                  "isLast": True,
-             })), \
+             })) as mock_search, \
              patch.object(jira_server, "fetch_epic_details_bulk", return_value={}), \
              patch.object(jira_server, "fetch_epics_for_empty_alert", return_value=[]), \
              patch.object(jira_server, "fetch_story_counts_for_epics", return_value={}), \
@@ -611,6 +757,7 @@ class OAuthEngRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["issues"][0]["key"], "PROD-1")
+        mock_search.assert_called()
 
     def test_dependencies_requires_oauth_csrf_header(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
@@ -670,6 +817,14 @@ response = jira_search_request(payload)
 The `headers` argument remains present in shared helper signatures during this task but must not be constructed in route handlers.
 
 - [ ] **Step 4: Add ENG routes to OAuth readiness**
+
+Before editing `OAUTH_READY_API_PATHS`, run:
+
+```bash
+rg -n "JIRA_EMAIL|JIRA_TOKEN|base64|build_jira_headers\\(|JIRA_URL.*/rest" backend/routes/eng_routes.py
+```
+
+Expected: no hits for Basic auth construction or direct Jira REST URL construction. Do not mark ENG routes OAuth-ready until this is clean.
 
 In `jira_server.py`, expand `OAUTH_READY_API_PATHS`:
 
@@ -744,6 +899,7 @@ git commit -m "Migrate ENG Jira routes to OAuth client"
 - Modify: `frontend/src/api/http.js`
 - Modify: `frontend/src/api/configApi.js`
 - Modify: `frontend/src/api/jiraCatalogApi.js`
+- Modify: `frontend/src/dashboard.jsx`
 - Test: `tests/test_oauth_settings_routes.py`
 - Test: `tests/test_oauth_route_guards.py`
 
@@ -900,6 +1056,14 @@ Only write to these caches when `cache_enabled` is true.
 
 - [ ] **Step 6: Add local and catalog routes to OAuth readiness**
 
+Before editing `OAUTH_READY_API_PATHS`, run:
+
+```bash
+rg -n "JIRA_EMAIL|JIRA_TOKEN|base64|build_jira_headers\\(|JIRA_URL.*/rest" backend/routes/settings_routes.py
+```
+
+Expected: no hits for Basic auth construction or direct Jira REST URL construction. Do not mark settings/catalog routes OAuth-ready until this is clean.
+
 Expand `OAUTH_READY_API_PATHS` in `jira_server.py` with settings/config routes:
 
 ```python
@@ -960,6 +1124,15 @@ headers: {
 }
 ```
 
+Also update the existing `/api/epm/config` POST in `frontend/src/dashboard.jsx` in this task, because `/api/epm/config` becomes OAuth-ready in this task:
+
+```javascript
+headers: {
+    'Content-Type': 'application/json',
+    'X-Requested-With': 'jira-execution-planner',
+}
+```
+
 - [ ] **Step 8: Run settings tests and frontend build**
 
 Run:
@@ -975,7 +1148,7 @@ Expected: PASS.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add backend/routes/settings_routes.py backend/routes/epm_routes.py jira_server.py frontend/src/api/http.js frontend/src/api/configApi.js frontend/src/api/jiraCatalogApi.js frontend/dist tests/test_oauth_settings_routes.py tests/test_oauth_route_guards.py
+git add backend/routes/settings_routes.py backend/routes/epm_routes.py jira_server.py frontend/src/api/http.js frontend/src/api/configApi.js frontend/src/api/jiraCatalogApi.js frontend/src/dashboard.jsx frontend/dist tests/test_oauth_settings_routes.py tests/test_oauth_route_guards.py
 git commit -m "Migrate settings Jira catalog routes to OAuth"
 ```
 
@@ -1036,21 +1209,52 @@ class OAuthStatsRouteTests(unittest.TestCase):
 
     def test_sprints_route_is_oauth_ready(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "fetch_sprints_from_jira", return_value=[{"id": 42, "name": "2026Q2", "state": "active"}]), \
-             patch.object(jira_server, "save_sprints_cache"):
-            response = self.client.get("/api/sprints?refresh=true")
+             patch.object(jira_server, "is_cache_valid", return_value=True), \
+             patch.object(jira_server, "load_sprints_cache", side_effect=AssertionError("OAuth must not read sprints file cache")), \
+             patch.object(jira_server, "save_sprints_cache") as mock_save_cache, \
+             patch.object(jira_server, "get_effective_board_id", return_value="42"), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {
+                 "values": [{"id": 42, "name": "2026Q2", "state": "active", "originBoardId": 42}],
+                 "isLast": True,
+             })) as mock_get:
+            response = self.client.get("/api/sprints")
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["sprints"][0]["name"], "2026Q2")
+        mock_get.assert_called()
+        mock_save_cache.assert_not_called()
 
     def test_capacity_route_is_oauth_ready(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "get_effective_capacity_project", return_value="CAP"), \
-             patch.object(jira_server, "fetch_capacity_for_sprint", return_value=({"enabled": True, "capacities": {}}, None)):
+             patch.object(jira_server, "resolve_capacity_field_id", return_value="customfield_capacity"), \
+             patch.object(jira_server, "current_jira_search", return_value=FakeResponse(200, {
+                 "issues": [{
+                     "key": "CAP-1",
+                     "fields": {
+                         "summary": "Team info 2026Q2 - Alpha",
+                         "customfield_capacity": 5,
+                     },
+                 }]
+             })) as mock_search:
             response = self.client.get("/api/capacity?sprint=2026Q2")
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["enabled"], True)
+        self.assertEqual(response.get_json()["capacities"], {"Alpha": 5.0})
+        mock_search.assert_called()
+
+    def test_stats_route_bypasses_file_cache_for_oauth(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "load_stats_cache", side_effect=AssertionError("OAuth must not read stats file cache")), \
+             patch.object(jira_server, "save_stats_cache") as mock_save_cache, \
+             patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
+             patch.object(jira_server, "fetch_stats_for_sprint", return_value=({"teams": []}, None)):
+            response = self.client.get("/api/stats?sprint=2026Q2")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["data"], {"teams": []})
+        mock_save_cache.assert_not_called()
 
     def test_stats_burnout_post_requires_oauth_csrf_header(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
@@ -1120,7 +1324,29 @@ For browser links in response payloads, use the request context site URL:
 jira_base_url = current_request_auth_context().site_url or (JIRA_URL or '').rstrip('/')
 ```
 
+For file-backed Jira-derived caches, keep Basic behavior but bypass reads and writes in OAuth mode:
+
+```python
+auth_context = current_request_auth_context()
+cache_enabled = jira_home_process_cache_enabled(auth_context)
+```
+
+Apply that policy to:
+
+- `load_sprints_cache()` / `save_sprints_cache()` in `/api/sprints`.
+- `load_stats_cache()` / `save_stats_cache()` in `/api/stats`.
+
+Do not read or write `sprints_cache.json` or `stats_cache.json` for OAuth users unless a later task auth-keys those files with `build_auth_cache_key(context, ...)`.
+
 - [ ] **Step 4: Add route readiness**
+
+Before editing `OAUTH_READY_API_PATHS`, run:
+
+```bash
+rg -n "JIRA_EMAIL|JIRA_TOKEN|base64|build_jira_headers\\(|JIRA_URL.*/rest|resilient_jira_get\\(" jira_server.py
+```
+
+Expected: any remaining hits are only in intentionally guarded legacy/debug/EPM sections: `build_jira_headers()`, `/api/debug-fields`, `/api/tasks-fields`, and EPM Home/Jira rollup routes that are not added to `OAUTH_READY_API_PATHS`. Do not add sprint/capacity/stats/scenario routes to `OAUTH_READY_API_PATHS` while their execution path still contains a direct Basic header block or direct `JIRA_URL` REST call.
 
 Add these paths to `OAUTH_READY_API_PATHS`:
 
@@ -1152,7 +1378,6 @@ headers: {
 
 This applies to current POST calls for:
 
-- `/api/epm/config`
 - `/api/scenario`
 - `/api/stats/burnout`
 - `/api/stats/epic-cohort`
@@ -1403,6 +1628,66 @@ git commit -m "Document OAuth Jira client route coverage"
 ```
 
 Do not push. Wait for explicit user confirmation before push.
+
+---
+
+## Part 2: EPM/Home OAuth Follow-Up Plan
+
+Do not implement this part in the Jira REST migration commits above. Use it as the next plan once the Jira REST client boundary is stable.
+
+### EPM Workflow Inventory
+
+Frontend EPM entry points:
+
+- Initial/local config:
+  - `frontend/src/api/epmApi.js` `fetchEpmConfig()` -> `GET /api/epm/config`.
+  - `frontend/src/dashboard.jsx` save path -> `POST /api/epm/config`.
+- Settings scope and Home discovery:
+  - `fetchEpmScope()` -> `GET /api/epm/scope`.
+  - `fetchEpmGoals()` -> `GET /api/epm/goals`.
+  - `fetchEpmConfigurationProjects()` -> `POST /api/epm/projects/configuration`.
+- Main EPM view:
+  - `fetchEpmProjects()` -> `GET /api/epm/projects`.
+  - `fetchEpmAllProjectsRollup()` -> `GET /api/epm/projects/rollup/all`.
+  - `fetchEpmProjectRollup()` -> `GET /api/epm/projects/<project_id>/rollup`.
+
+Backend EPM dependencies:
+
+- `backend/epm/home.py` calls Atlassian Home/Townsquare GraphQL at `https://team.atlassian.com/gateway/api/graphql`.
+- `HomeGraphQLClient` currently builds Basic auth from `ATLASSIAN_EMAIL` / `ATLASSIAN_API_TOKEN` or `JIRA_EMAIL` / `JIRA_TOKEN`, plus `X-ExperimentalApi: Townsquare`.
+- Home metadata caches include `_CLOUD_ID_CACHE`, `_GOAL_BY_KEY_CACHE`, `EPM_PROJECTS_CACHE`, `EPM_ISSUES_CACHE`, and `EPM_ROLLUP_CACHE`.
+- EPM rollups combine Home project metadata and Jira issue searches, so they need both a Home auth boundary and the Jira REST boundary from Part 1.
+
+### EPM Decision Gate
+
+Before any EPM route is marked OAuth-ready, verify whether Atlassian OAuth 2.0 3LO tokens are accepted for the Home/Townsquare GraphQL gateway used here.
+
+- If Atlassian 3LO is supported for these Home GraphQL operations, add a Home client boundary that accepts `RequestAuthContext`, uses server-side OAuth token material only, and applies the same refresh locking and auth-required recovery policy as Jira.
+- If Atlassian 3LO is not supported for these Home GraphQL operations, keep Home-backed EPM routes returning `route_not_oauth_ready` in OAuth mode. Do not silently use a user's Jira OAuth token against Home. A later database phase can decide whether EPM uses an explicit admin-owned service credential, stored server-side and audited, rather than per-user OAuth.
+
+### EPM Part 2 Tasks
+
+1. **Home GraphQL feasibility spike**
+   - Test a real OAuth session against the exact `team.atlassian.com/gateway/api/graphql` operations currently used in `backend/epm/home.py`.
+   - Document required APIs/scopes or document that 3LO is unsupported for this Home surface.
+   - Keep `/api/epm/scope`, `/api/epm/goals`, `/api/epm/projects`, `/api/epm/projects/configuration`, `/api/epm/projects/preview`, `/api/epm/projects/rollup/all`, and `/api/epm/projects/<project_id>/rollup` guarded until this passes.
+2. **Home auth client boundary**
+   - Add a Home client wrapper analogous to `current_jira_get/current_jira_search`.
+   - Remove direct Basic auth construction from `backend/epm/home.py` for OAuth-ready paths.
+   - Return `401 auth_required` with `loginUrl` on expired OAuth state; never expose token material.
+3. **EPM settings workflow migration**
+   - Migrate `GET /api/epm/scope`, `GET /api/epm/goals`, and `POST /api/epm/projects/configuration`.
+   - Ensure `frontend/src/api/epmApi.js` POST helpers send `X-Requested-With`.
+   - Verify Settings -> EPM can load root goals, sub-goals, and project previews under OAuth.
+4. **EPM project and rollup migration**
+   - Migrate `GET /api/epm/projects`, `GET /api/epm/projects/rollup/all`, and `GET /api/epm/projects/<project_id>/rollup`.
+   - Jira rollup searches must use the Part 1 Jira client; Home project discovery must use the Part 2 Home client.
+   - Disable or auth-key Home/EPM caches for OAuth users before marking routes ready.
+5. **EPM manual verification**
+   - OAuth login -> EPM view -> Active tab with selected sprint -> project rollup cards render.
+   - Settings -> EPM -> scope loads -> sub-goals load -> project preview loads -> save works with CSRF header.
+   - Backlog and Archived EPM tabs still behave as before.
+   - Clearing OAuth auth state returns visible expired-auth recovery, not a blank EPM view.
 
 ---
 

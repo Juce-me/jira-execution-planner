@@ -209,6 +209,40 @@ async function waitForCallCount(calls, predicate, expected, timeout = 7000) {
     ).toBe(expected);
 }
 
+async function expectJiraExportMenu(page) {
+    const trigger = page.getByRole('button', { name: 'Open Jira issue menu' }).first();
+    await expect(trigger).toBeVisible();
+    const iconBox = await trigger.locator('.jira-export-icon').boundingBox();
+    expect(iconBox).not.toBeNull();
+    expect(iconBox.width).toBeGreaterThanOrEqual(18);
+    expect(iconBox.height).toBeGreaterThanOrEqual(18);
+    await trigger.click();
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: /Open epics/ })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: /Open stories/ })).toBeVisible();
+    const layerState = await menu.evaluate((menuNode) => {
+        const rect = menuNode.getBoundingClientRect();
+        const points = [
+            { x: rect.left + rect.width / 2, y: rect.top + 16 },
+            { x: rect.left + 24, y: rect.top + 24 },
+            { x: rect.right - 24, y: rect.top + 24 },
+        ];
+        return points.map((point) => {
+            const topNode = document.elementFromPoint(point.x, point.y);
+            return {
+                point,
+                topClass: topNode?.className || '',
+                topText: topNode?.textContent || '',
+                topIsMenu: Boolean(topNode?.closest?.('.jira-export-menu')),
+            };
+        });
+    });
+    expect(layerState.every(point => point.topIsMenu), JSON.stringify(layerState, null, 2)).toBe(true);
+    await page.mouse.click(8, 8);
+    await expect(menu).toHaveCount(0);
+}
+
 async function expectWindowSticky(page, selector) {
     const locator = page.locator(selector).first();
     await expect(locator).toBeVisible();
@@ -422,6 +456,7 @@ async function installApiMocks(page, calls, options = {}) {
 test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky checks', async ({ page }) => {
     const calls = [];
     const apiMocks = await installApiMocks(page, calls);
+    await page.setViewportSize({ width: 1028, height: 720 });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
@@ -438,6 +473,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
     await waitForCallCount(calls, call => call.pathname === '/api/missing-info', 1);
     await expect(page.locator('.epic-header').first()).toBeVisible();
+    await expectJiraExportMenu(page);
     await page.screenshot({ path: `${screenshotDir}/catch-up.png`, fullPage: true });
     await expectWindowSticky(page, '.epic-header');
 
@@ -495,6 +531,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await expect(page.getByText('Scenario Planner')).toBeVisible();
     await page.getByRole('button', { name: 'Run Scenario' }).click();
     await expect(page.locator('.scenario-axis')).toBeVisible();
+    await expectJiraExportMenu(page);
     await page.screenshot({ path: `${screenshotDir}/scenario.png`, fullPage: true });
     await expectContainerSticky(page, '.scenario-axis', '.scenario-timeline');
     expect(apiMocks.unexpectedCalls).toEqual([]);
@@ -503,6 +540,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
 test('EPM lifecycle tabs load after config with scoped rollup requests and sticky checks', async ({ page }) => {
     const calls = [];
     const apiMocks = await installApiMocks(page, calls, { delayConfig: true });
+    await page.setViewportSize({ width: 1028, height: 720 });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
@@ -522,6 +560,7 @@ test('EPM lifecycle tabs load after config with scoped rollup requests and stick
 
     await expect(page.locator('.epm-project-board-name', { hasText: 'Active Project' })).toBeVisible();
     await expect(page.locator('.epm-portfolio-board .epic-header').first()).toBeVisible();
+    await expectJiraExportMenu(page);
     await page.screenshot({ path: `${screenshotDir}/epm-active.png`, fullPage: true });
     await expectWindowSticky(page, '.epm-portfolio-board .epic-header');
 

@@ -162,7 +162,9 @@ Do not treat backend OAuth routes as complete until the supported browser journe
 4. Authenticated user returns to `/` and is not sent back to `/login`.
 5. `/api/auth/status` shows the authenticated site state without tokens.
 6. The migrated test route proves Jira calls use the OAuth token.
-7. Un-migrated API routes fail with `route_not_oauth_ready`/501 instead of a silent empty-Basic Jira failure.
+7. If the local OAuth session expires, token refresh fails, or the server clears auth state, the browser shows `/login?reason=session_expired` with a clear re-auth message and `Sign in with Atlassian` action. Do not leave the user on a blank dashboard or a generic backend error.
+8. When the browser tab becomes visible or focused, a small auth-shell script outside `frontend/src/dashboard.jsx` makes a throttled `POST /api/auth/refresh` call. The server refreshes only if needed and returns no token material. If refresh fails, the script sends the user to `/login?reason=session_expired`.
+9. Un-migrated API routes fail with `route_not_oauth_ready`/501 instead of a silent empty-Basic Jira failure.
 
 For each future route added to the OAuth-supported surface, the implementation plan must name the user-visible entry point or dashboard state that exercises it. If no user journey exists, the route should stay out of scope or be explicitly marked developer-only with a manual verification path.
 
@@ -187,6 +189,7 @@ For each future route added to the OAuth-supported surface, the implementation p
 
 - `backend/app.py` - register the auth blueprint.
 - `jira_server.py` - configure auth env values, Flask secret key, local token store helpers, per-session refresh locks, OAuth entry screen, unsupported-route guard, Basic-only startup validation, request auth context helpers, and migrate `/api/test` plus one small read endpoint to the auth helper.
+- `jira-dashboard.html` - load a tiny auth-shell focus/visibility refresh script outside the React dashboard bundle.
 - `.env.example` - document `JIRA_AUTH_MODE` and Atlassian OAuth variables.
 - `README.md` - document local OAuth setup and Basic auth fallback.
 
@@ -1486,16 +1489,26 @@ def current_request_auth_context():
 Migrate `/api/test` to call a small Jira endpoint through `jira_get`. Keep its response shape compatible with current frontend expectations. Use:
 
 ```python
-response = jira_get(
-    current_auth_config(),
-    current_request_auth_context(),
-    jira_session_data(),
-    '/rest/api/3/myself',
-    save_session=save_oauth_session,
-    reload_session=oauth_session_data,
-    refresh_lock=oauth_refresh_lock(),
-    timeout=15,
-)
+try:
+    response = jira_get(
+        current_auth_config(),
+        current_request_auth_context(),
+        jira_session_data(),
+        '/rest/api/3/myself',
+        save_session=save_oauth_session,
+        reload_session=oauth_session_data,
+        refresh_lock=oauth_refresh_lock(),
+        timeout=15,
+    )
+except AuthError as error:
+    if error.code == 'auth_required':
+        save_oauth_session({})
+        return jsonify({
+            'error': 'auth_required',
+            'message': 'Your Jira sign-in expired. Sign in again to continue.',
+            'loginUrl': '/login?reason=session_expired',
+        }), 401
+    raise
 ```
 
 If the route currently tests another endpoint, preserve the route's JSON keys and only replace URL/header construction. Every OAuth-aware route that can refresh tokens must pass both `reload_session=oauth_session_data` and `refresh_lock=oauth_refresh_lock()` so a waiting request re-reads the session after acquiring the lock before calling Atlassian.
@@ -1521,11 +1534,13 @@ git commit -m "Route initial Jira calls through auth helper"
 
 ---
 
-## Task 4: OAuth Entry Screen Outside Dashboard Bundle
+## Task 4: OAuth Entry, Focus Refresh, And Recovery Outside Dashboard Bundle
 
 **Files:**
 - Modify: `backend/routes/auth_routes.py`
 - Modify: `jira_server.py`
+- Modify: `jira-dashboard.html`
+- Modify: `tests/test_auth_routes.py`
 - Create: `tests/test_auth_entry_page.py`
 
 - [ ] **Step 1: Write entry-screen tests**
@@ -1569,13 +1584,56 @@ class TestAuthEntryPage(unittest.TestCase):
             response = self.client.get('/login')
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers['Location'], '/')
+
+    def test_login_page_shows_expired_session_message(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.get('/login?reason=session_expired')
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('Your Jira sign-in expired', body)
+        self.assertIn('Sign in with Atlassian', body)
+```
+
+Add `import time` to `tests/test_auth_routes.py`, then extend it:
+
+```python
+    def test_oauth_refresh_requires_session(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.post(
+                '/api/auth/refresh',
+                headers={'X-Requested-With': 'jira-execution-planner'},
+            )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json()['error'], 'auth_required')
+        self.assertEqual(response.get_json()['loginUrl'], '/login?reason=session_expired')
+
+    def test_oauth_refresh_returns_authenticated_without_tokens(self):
+        with self.client.session_transaction() as session:
+            session['atlassian_oauth_session_id'] = 'session-123'
+        jira_server.OAUTH_TOKEN_STORE['session-123'] = {
+            'access_token': 'access-123',
+            'refresh_token': 'refresh-123',
+            'expires_at': time.time() + 600,
+            'cloudid': 'cloud-123',
+            'site_url': 'https://example.atlassian.net',
+        }
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.post(
+                '/api/auth/refresh',
+                headers={'X-Requested-With': 'jira-execution-planner'},
+            )
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body['authenticated'])
+        self.assertNotIn('access_token', body)
+        self.assertNotIn('refresh_token', body)
 ```
 
 - [ ] **Step 2: Run tests to verify failure**
 
-Run: `python3 -m unittest tests.test_auth_entry_page -v`
+Run: `python3 -m unittest tests.test_auth_entry_page tests.test_auth_routes -v`
 
-Expected: FAIL because `/login` and the unauthenticated dashboard gate do not exist.
+Expected: FAIL because `/login`, `/api/auth/refresh`, and the unauthenticated dashboard gate do not exist.
 
 - [ ] **Step 3: Add backend-served login page**
 
@@ -1589,7 +1647,11 @@ def auth_entry_page():
     data = oauth_session_data()
     if data.get('access_token') and data.get('cloudid'):
         return redirect('/')
-    return """
+    reason = request.args.get('reason')
+    message = ''
+    if reason == 'session_expired':
+        message = '<p>Your Jira sign-in expired. Sign in again to continue.</p>'
+    return f"""
 <!doctype html>
 <html lang="en">
   <head>
@@ -1600,11 +1662,54 @@ def auth_entry_page():
   <body>
     <main>
       <h1>Sign in to Jira Execution Planner</h1>
+      {message}
       <a href="/api/auth/atlassian/login">Sign in with Atlassian</a>
     </main>
   </body>
 </html>
 """, 200, {'Content-Type': 'text/html; charset=utf-8'}
+```
+
+Add a lightweight refresh endpoint to the same auth blueprint:
+
+```python
+@bp.route('/api/auth/refresh', methods=['POST'])
+def api_auth_refresh():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return jsonify({'authenticated': True, 'authMode': AUTH_MODE_BASIC})
+    data = oauth_session_data()
+    if not data.get('access_token') or not data.get('cloudid'):
+        save_oauth_session({})
+        return jsonify({
+            'error': 'auth_required',
+            'message': 'Your Jira sign-in expired. Sign in again to continue.',
+            'loginUrl': '/login?reason=session_expired',
+        }), 401
+    try:
+        active = ensure_oauth_token(
+            current_auth_config(),
+            data,
+            save_oauth_session,
+            reload_session=oauth_session_data,
+            refresh_lock=oauth_refresh_lock(),
+        )
+    except AuthError as error:
+        if error.code == 'auth_required':
+            save_oauth_session({})
+            return jsonify({
+                'error': 'auth_required',
+                'message': 'Your Jira sign-in expired. Sign in again to continue.',
+                'loginUrl': '/login?reason=session_expired',
+            }), 401
+        return auth_error_response(error, 401)
+    return jsonify({
+        'authMode': AUTH_MODE_ATLASSIAN_OAUTH,
+        'authenticated': True,
+        'loginRequired': False,
+        'expiresAt': active.get('expires_at'),
+        'siteUrl': active.get('site_url'),
+        'siteName': active.get('site_name'),
+    })
 ```
 
 This page is an auth shell only. It must not read Jira data, call Home, load `frontend/src/dashboard.jsx`, store tokens in browser storage, or include product-dashboard controls. Atlassian and Microsoft own the downstream login, SSO, and consent screens.
@@ -1626,12 +1731,48 @@ def redirect_unauthenticated_oauth_dashboard_entry():
     data = oauth_session_data()
     if data.get('access_token') and data.get('cloudid'):
         return None
-    return redirect('/login')
+    reason = 'session_expired' if session.get('atlassian_oauth_session_id') else ''
+    return redirect('/login?reason=session_expired' if reason else '/login')
 ```
 
-Keep API behavior separate: API routes should return JSON auth errors or `route_not_oauth_ready`/501, not HTML redirects.
+Keep API behavior separate: API routes should return JSON auth errors or `route_not_oauth_ready`/501, not HTML redirects. When an OAuth-aware API route gets `AuthError('auth_required', ...)` from token refresh or missing token state, clear the local OAuth session and include `loginUrl: "/login?reason=session_expired"` in the JSON response so callers have a stable re-auth target.
 
-- [ ] **Step 5: Run targeted tests**
+- [ ] **Step 5: Add focus/visibility refresh outside dashboard JSX**
+
+Add a tiny auth-shell script to `jira-dashboard.html`, not `frontend/src/dashboard.jsx`. It should be safe in Basic mode, no-op there through the server response, throttle calls to at most once per minute, and never handle token material:
+
+```html
+<script>
+(() => {
+  let lastAuthRefreshAt = 0;
+  async function refreshAuthOnFocus() {
+    if (document.visibilityState && document.visibilityState !== 'visible') return;
+    const now = Date.now();
+    if (now - lastAuthRefreshAt < 60000) return;
+    lastAuthRefreshAt = now;
+    try {
+      const response = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'X-Requested-With': 'jira-execution-planner'},
+      });
+      if (response.status === 401) {
+        const body = await response.json().catch(() => ({}));
+        window.location.assign(body.loginUrl || '/login?reason=session_expired');
+      }
+    } catch (error) {
+      // Leave network failures to the next focused attempt or API request.
+    }
+  }
+  window.addEventListener('focus', refreshAuthOnFocus);
+  document.addEventListener('visibilitychange', refreshAuthOnFocus);
+})();
+</script>
+```
+
+If the script is served conditionally by Flask instead of statically in `jira-dashboard.html`, keep the same isolation rule: the focus handler may live in the HTML/auth shell, but not in `frontend/src/dashboard.jsx`.
+
+- [ ] **Step 6: Run targeted tests**
 
 Run:
 
@@ -1641,12 +1782,12 @@ python3 -m unittest tests.test_auth_entry_page tests.test_auth_routes tests.test
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 Run:
 
 ```bash
-git add backend/routes/auth_routes.py jira_server.py tests/test_auth_entry_page.py
+git add backend/routes/auth_routes.py jira_server.py jira-dashboard.html tests/test_auth_entry_page.py tests/test_auth_routes.py
 git commit -m "Add OAuth entry screen outside dashboard"
 ```
 
@@ -1917,6 +2058,16 @@ assert(
 );
 
 assert(
+  !source.includes('/api/auth/refresh'),
+  'dashboard.jsx must not own OAuth focus refresh in this slice'
+);
+
+assert(
+  !source.includes('session_expired'),
+  'dashboard.jsx must not own expired-auth screen routing in this slice'
+);
+
+assert(
   !source.includes('auth_required'),
   'dashboard.jsx must not add auth_required handling in this slice'
 );
@@ -2079,7 +2230,7 @@ python3 jira_server.py
 
 Open `http://localhost:5050/`, confirm the unauthenticated app shows `/login` with a `Sign in with Atlassian` action, start sign-in, confirm the browser is redirected through Microsoft Entra SSO by Atlassian, confirm the Atlassian authorization/consent screen is shown with the app and requested Jira scopes, complete authorization, and confirm the browser returns to `/` without looping back to `/login`.
 
-Capture or record evidence for the user journey in the PR notes: the `/login` entry screen, the Atlassian consent step, and the authenticated post-callback state. Do not report the OAuth slice complete from backend tests alone.
+Capture or record evidence for the user journey in the PR notes: the `/login` entry screen, the `/login?reason=session_expired` expired-auth screen, the focus/visibility refresh behavior, the Atlassian consent step, and the authenticated post-callback state. Do not report the OAuth slice complete from backend tests alone.
 
 Then confirm `/api/auth/status` returns:
 
@@ -2091,7 +2242,7 @@ Then confirm `/api/auth/status` returns:
 }
 ```
 
-Then confirm `/api/test` uses the OAuth Jira gateway successfully and an un-migrated API route such as `/api/config` returns `501` with `error: "route_not_oauth_ready"`.
+Then confirm `/api/test` uses the OAuth Jira gateway successfully, returning to a visible tab calls `/api/auth/refresh` without exposing token material, an expired or cleared OAuth session returns `401` with `error: "auth_required"` and `loginUrl: "/login?reason=session_expired"`, and an un-migrated API route such as `/api/config` returns `501` with `error: "route_not_oauth_ready"`.
 
 - [ ] **Step 4: Review commits**
 
@@ -2107,8 +2258,8 @@ Do not push. This repo requires explicit user confirmation before push.
 
 ## Plan Self-Review
 
-- Spec coverage: the plan covers auth mode config, an app-owned OAuth entry screen, OAuth login/callback, local server-side token storage, refresh locking, resource selection, Jira URL/header construction, unsupported-route guards, OAuth cache disabling, dashboard bundle isolation, docs, and verification.
-- User journey coverage: the final gate requires browser evidence for unauthenticated entry, Atlassian/Microsoft sign-in, Atlassian consent, authenticated return, `/api/auth/status`, the migrated Jira test route, and clear unsupported-route failure.
+- Spec coverage: the plan covers auth mode config, an app-owned OAuth entry screen, focus/visibility refresh, OAuth login/callback, local server-side token storage, refresh locking, resource selection, Jira URL/header construction, unsupported-route guards, OAuth cache disabling, dashboard bundle isolation, docs, and verification.
+- User journey coverage: the final gate requires browser evidence for unauthenticated entry, Atlassian/Microsoft sign-in, Atlassian consent, authenticated return, focus/visibility refresh, expired-auth recovery, `/api/auth/status`, the migrated Jira test route, and clear unsupported-route failure.
 - Previous branch review: `feature/atlassian-oauth-auth` is treated as source material only. The plan carries forward its auth helper primitives, server-side token session idea, refresh failure clearing, route tests, source guard, and docs; it does not carry forward root-level `jira_auth.py`, direct `jira_server.py` routes, missing PKCE, missing `/me` identity, or global-session Jira wrappers.
 - Implementation consistency: the Jira wrappers now take `RequestAuthContext` explicitly, serialize refresh per OAuth session, and require OAuth-aware callers to re-read session state inside the refresh lock.
 - DB alignment: this plan creates the auth/client boundary required before PostgreSQL-backed `users`, `workspaces`, `auth_connections`, encrypted `auth_tokens`, and `jira_project_access`; it blocks un-migrated routes and disables Jira/Home process caches for OAuth users so the DB phase does not inherit silent Basic fallback or process-global cache leakage.

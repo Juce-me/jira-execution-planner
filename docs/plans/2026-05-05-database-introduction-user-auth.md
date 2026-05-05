@@ -82,6 +82,10 @@ The database phase must not add new DB-backed routes that still call `build_jira
 
 On every authenticated request, the auth context resolver reads `users.status` and `auth_connections.status` from the database before issuing Jira/Home calls. Do not cache these statuses beyond the request by default. The only acceptable optimization is a per-process status cache with a maximum 30-second TTL, keyed by `(user_id, auth_connection_id, token_version)`, and invalidated immediately by admin enable/disable, admin grant/revoke, connection revoke, and reconnect events. Any non-active user or connection returns `401` with a stable error such as `account_disabled` or `auth_connection_revoked` before Jira/Home calls run.
 
+Every `401` auth-state response that a browser user can hit must include a stable re-auth target or screen state. Expired sessions and expired/error auth connections use `loginUrl: "/login?reason=session_expired"` or the DB-phase equivalent; disabled users and revoked connections use a visible account-disabled/reconnect screen instead of a generic dashboard failure.
+
+The browser may proactively call a token-safe refresh endpoint when the tab becomes visible or focused, but this is an optimization only. It must be throttled, must not return token material, must use the unsafe-method CSRF guard, and must fall back to the same visible expired-auth recovery state when refresh fails.
+
 ## Environment And Workspace Isolation
 
 Database-backed state is isolated by deployment environment and Jira/Atlassian workplace/site.
@@ -326,6 +330,8 @@ Token storage must be designed before writing `auth_tokens`.
 
 - Every supported auth/admin backend path has a named browser or dashboard journey that exercises it. Backend route tests are required but not sufficient for completion.
 - User-journey verification covers unauthenticated entry, Atlassian/Microsoft login, authenticated bootstrap, admin access, non-admin denial, revoked/disabled user denial, and at least one Jira/Home data fetch through the authenticated context.
+- User-journey verification covers expired-session recovery: the user sees an actionable expired-auth screen and can start re-authentication without reading a backend JSON error.
+- User-journey verification covers focus/visibility refresh: returning to an open tab attempts a safe refresh when needed, and refresh failure routes to the expired-auth recovery screen.
 - PR notes include evidence for the relevant journey, such as screenshots or a concise browser-test transcript. Do not merge a faceless backend-only auth slice unless the plan explicitly marks it as developer-only and lists its manual verification path.
 - `GET /api/me` returns the current user, current workspace/site, Jira project access status, and auth connection status without token material.
 - All Jira/Home routes construct and pass `RequestAuthContext`; source guards fail if routes call Jira/Home clients or caches without context.

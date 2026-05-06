@@ -274,6 +274,14 @@ OAUTH_READY_API_PATHS = {
     '/api/fields',
     '/api/boards',
     '/api/epm/config',
+    '/api/sprints',
+    '/api/capacity',
+    '/api/planned-capacity',
+    '/api/scenario',
+    '/api/scenario/overrides',
+    '/api/stats',
+    '/api/stats/burnout',
+    '/api/stats/epic-cohort',
 }
 
 
@@ -667,17 +675,20 @@ def parse_iso_date(value):
         return None
 
 
-def resolve_sprint_label(sprint_value):
+def resolve_sprint_label(sprint_value, cache_enabled=None):
     if sprint_value is None:
         return None
     sprint_str = str(sprint_value).strip()
     if not sprint_str:
         return None
     if sprint_str.isdigit():
-        cache = load_sprints_cache() or {}
-        for sprint in cache.get('sprints', []) or []:
-            if str(sprint.get('id')) == sprint_str:
-                return sprint.get('name') or sprint_str
+        if cache_enabled is None:
+            cache_enabled = jira_home_process_cache_enabled(_cache_policy_context())
+        if cache_enabled:
+            cache = load_sprints_cache() or {}
+            for sprint in cache.get('sprints', []) or []:
+                if str(sprint.get('id')) == sprint_str:
+                    return sprint.get('name') or sprint_str
     return sprint_str
 
 
@@ -2666,9 +2677,8 @@ def fetch_board_sprint_ids(board_id, headers):
     start_at = 0
     try:
         while True:
-            response = requests.get(
-                f'{JIRA_URL}/rest/agile/1.0/board/{board_id}/sprint',
-                headers=headers,
+            response = current_jira_get(
+                f'/rest/agile/1.0/board/{board_id}/sprint',
                 params={'maxResults': 100, 'startAt': start_at, 'state': 'active,future,closed'},
                 timeout=30
             )
@@ -2684,6 +2694,8 @@ def fetch_board_sprint_ids(board_id, headers):
             if data.get('isLast', False) or not data.get('values'):
                 break
             start_at += len(data['values'])
+    except AuthError:
+        raise
     except Exception as e:
         log_warning(f'Failed to fetch board sprint IDs for board {board_id}: {e}')
     return sprint_ids
@@ -2719,16 +2731,7 @@ def deduplicate_sprints_by_name(sprints, board_sprint_ids=None):
 
 def fetch_sprints_from_jira():
     """Fetch sprints from Jira (not from cache)"""
-    auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-    auth_bytes = auth_string.encode('ascii')
-    auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-    headers = {
-        'Authorization': f'Basic {auth_base64}',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-    }
-
+    headers = None
     formatted_sprints = []
     effective_board_id = get_effective_board_id()
     board_sprint_ids = None  # lazily fetched when needed for dedup/filtering
@@ -2739,9 +2742,8 @@ def fetch_sprints_from_jira():
             log_info(f'Fetching sprints from board {effective_board_id}')
             start_at = 0
             while True:
-                response = requests.get(
-                    f'{JIRA_URL}/rest/agile/1.0/board/{effective_board_id}/sprint',
-                    headers=headers,
+                response = current_jira_get(
+                    f'/rest/agile/1.0/board/{effective_board_id}/sprint',
                     params={'maxResults': 100, 'startAt': start_at, 'state': 'active,future,closed'},
                     timeout=30
                 )
@@ -2783,6 +2785,8 @@ def fetch_sprints_from_jira():
                 log_info(f'Found {len(formatted_sprints)} sprints from board')
             else:
                 log_warning(f'Board API returned {response.status_code}, trying alternative method')
+        except AuthError:
+            raise
         except Exception as board_error:
             log_warning(f'Board API failed: {board_error}, trying alternative method')
 
@@ -3990,7 +3994,8 @@ def collect_dependencies(keys, headers):
 @app.route('/api/scenario', methods=['GET', 'POST'])
 def scenario_planner():
     """Scenario planner endpoint."""
-    cache_enabled = jira_home_process_cache_enabled(current_request_auth_context())
+    auth_context = current_request_auth_context()
+    cache_enabled = jira_home_process_cache_enabled(auth_context)
     if request.method == 'GET':
         if cache_enabled:
             with _cache_lock:
@@ -4004,12 +4009,12 @@ def scenario_planner():
         config_payload = payload.get('config') or {}
         filters = payload.get('filters') or {}
 
-        sprint_label = resolve_sprint_label(filters.get('sprint'))
+        sprint_label = resolve_sprint_label(filters.get('sprint'), cache_enabled=cache_enabled)
         quarter_start, quarter_end = quarter_dates_from_label(sprint_label)
 
         # Build sprint boundaries (selected + previous/next neighbors)
         sprint_boundaries = None
-        if sprint_label:
+        if cache_enabled and sprint_label:
             cache_data = load_sprints_cache() or {}
             cached_sprints = cache_data.get('sprints') or []
             # Sort chronologically by name (e.g. 2025Q4, 2026Q1, 2026Q2)
@@ -4044,17 +4049,9 @@ def scenario_planner():
             lane_mode=config_payload.get('lane_mode', 'team'),
         )
 
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        team_field_id = resolve_team_field_id(headers)
-        epic_link_field_id = resolve_epic_link_field_id(headers)
+        headers = None
+        team_field_id = resolve_team_field_id(None, context=auth_context)
+        epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
 
         fields_list = [
             'summary',
@@ -4077,7 +4074,7 @@ def scenario_planner():
         search_query = (filters.get('search') or '').strip().lower()
         team_filter_ids = {t for t in (filters.get('teams') or []) if t}
         scenario_jql = build_scenario_jql(filters)
-        issues_raw = fetch_issues_by_jql(scenario_jql, headers, fields_list)
+        issues_raw = fetch_issues_by_jql(scenario_jql, None, fields_list)
 
         issues = []
         issue_keys = []
@@ -4147,7 +4144,7 @@ def scenario_planner():
                     'timeSpentSeconds': time_spent_seconds,
                 }
 
-        dependencies = collect_dependencies(issue_keys, headers)
+        dependencies = collect_dependencies(issue_keys, None)
         dependency_edges = {}
         edge_list = []
         edge_set = set()
@@ -4237,7 +4234,7 @@ def scenario_planner():
                     capacity_keys[name] = normalized
             capacity_sizes, capacity_details = fetch_capacity_team_sizes(
                 sprint_label,
-                headers,
+                None,
                 team_names=sorted(set(capacity_keys.values()))
             )
             scenario_config.team_sizes = {
@@ -4248,12 +4245,12 @@ def scenario_planner():
 
         epic_summary_by_key = {}
         if epic_keys:
-            epic_issues = fetch_issues_by_keys(sorted(epic_keys), headers, ['summary'])
+            epic_issues = fetch_issues_by_keys(sorted(epic_keys), None, ['summary'])
             for epic in epic_issues:
                 fields = epic.get('fields') or {}
                 epic_summary_by_key[epic.get('key')] = fields.get('summary')
 
-        jira_base_url = (JIRA_URL or '').rstrip('/')
+        jira_base_url = auth_context.site_url or (JIRA_URL or '').rstrip('/')
 
         capacity_by_team = {}
         if sprint_label:
@@ -4447,6 +4444,9 @@ def scenario_planner():
                 SCENARIO_CACHE['data'] = result
 
         return jsonify(result)
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
     except Exception as e:
         logger.exception('Scenario error')
         return jsonify({'error': 'Failed to compute scenario', 'message': str(e)}), 500
@@ -4742,17 +4742,20 @@ def normalize_team_change_value(raw_id, raw_name):
     return {'id': team_id, 'name': team_name or team_id}
 
 
-def resolve_sprint_date_bounds(sprint_label):
-    cache = load_sprints_cache() or {}
-    for sprint in cache.get('sprints', []) or []:
-        if str(sprint.get('name') or '').strip() != str(sprint_label or '').strip():
-            continue
-        start_value = str(sprint.get('startDate') or '')[:10]
-        end_value = str(sprint.get('endDate') or '')[:10]
-        start_date = parse_iso_date(start_value)
-        end_date = parse_iso_date(end_value)
-        if start_date and end_date:
-            return start_date, end_date
+def resolve_sprint_date_bounds(sprint_label, cache_enabled=None):
+    if cache_enabled is None:
+        cache_enabled = jira_home_process_cache_enabled(_cache_policy_context())
+    if cache_enabled:
+        cache = load_sprints_cache() or {}
+        for sprint in cache.get('sprints', []) or []:
+            if str(sprint.get('name') or '').strip() != str(sprint_label or '').strip():
+                continue
+            start_value = str(sprint.get('startDate') or '')[:10]
+            end_value = str(sprint.get('endDate') or '')[:10]
+            start_date = parse_iso_date(start_value)
+            end_date = parse_iso_date(end_value)
+            if start_date and end_date:
+                return start_date, end_date
     return quarter_dates_from_label(sprint_label)
 
 
@@ -4913,7 +4916,8 @@ def fetch_burnout_events_for_sprint(
         team_field_id,
         team_ids=None,
         issue_keys=None,
-        include_post_sprint_closures=False
+        include_post_sprint_closures=False,
+        cache_enabled=None
 ):
     base_jql = STATS_JQL_BASE or f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")'
     base_jql = strip_sprint_clause(base_jql)
@@ -4941,7 +4945,7 @@ def fetch_burnout_events_for_sprint(
     if team_field_id and team_field_id not in fields_list:
         fields_list.append(team_field_id)
 
-    sprint_start, sprint_end = resolve_sprint_date_bounds(sprint_name)
+    sprint_start, sprint_end = resolve_sprint_date_bounds(sprint_name, cache_enabled=cache_enabled)
     timezone_info = get_stats_burnout_timezone()
     collected_issues = []
     normalized_issue_keys = []
@@ -5386,47 +5390,46 @@ def get_completed_sprint_stats():
         team_ids = [team_id]
     else:
         team_ids = get_stats_team_ids()
+    auth_context = current_request_auth_context()
+    cache_enabled = jira_home_process_cache_enabled(auth_context)
     cache_key = build_stats_cache_key(sprint_name, base_jql, team_ids, group_id=group_id)
-    cache_data = load_stats_cache()
-    if not refresh and cache_key in cache_data:
-        cached_payload = cache_data.get(cache_key, {})
-        response = {
-            'cached': True,
-            'generatedAt': cached_payload.get('generatedAt'),
-            'data': cached_payload.get('data')
-        }
-        return jsonify(response)
+    cache_data = {}
+    if cache_enabled:
+        cache_data = load_stats_cache()
+        if not refresh and cache_key in cache_data:
+            cached_payload = cache_data.get(cache_key, {})
+            response = {
+                'cached': True,
+                'generatedAt': cached_payload.get('generatedAt'),
+                'data': cached_payload.get('data')
+            }
+            return jsonify(response)
 
-    auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-    auth_bytes = auth_string.encode('ascii')
-    auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+    try:
+        team_field_id = resolve_team_field_id(None, context=auth_context)
+        stats_payload, error_response = fetch_stats_for_sprint(sprint_name, None, team_field_id, team_ids=team_ids or None)
+        if error_response is not None:
+            return jsonify({
+                'error': 'Failed to fetch stats',
+                'details': error_response.text
+            }), error_response.status_code
 
-    headers = {
-        'Authorization': f'Basic {auth_base64}',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-    }
+        generated_at = datetime.now().isoformat()
+        if cache_enabled:
+            cache_data[cache_key] = {
+                'generatedAt': generated_at,
+                'data': stats_payload
+            }
+            save_stats_cache(cache_data)
 
-    team_field_id = resolve_team_field_id(headers)
-    stats_payload, error_response = fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=team_ids or None)
-    if error_response is not None:
         return jsonify({
-            'error': 'Failed to fetch stats',
-            'details': error_response.text
-        }), error_response.status_code
-
-    generated_at = datetime.now().isoformat()
-    cache_data[cache_key] = {
-        'generatedAt': generated_at,
-        'data': stats_payload
-    }
-    save_stats_cache(cache_data)
-
-    return jsonify({
-        'cached': False,
-        'generatedAt': generated_at,
-        'data': stats_payload
-    })
+            'cached': False,
+            'generatedAt': generated_at,
+            'data': stats_payload
+        })
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
 
 
 @app.route('/api/stats/burnout', methods=['GET', 'POST'])
@@ -5462,35 +5465,33 @@ def get_burnout_stats():
     elif team_id and team_id.lower() != 'all':
         scoped_team_ids = normalize_team_ids([team_id])
 
-    auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-    auth_bytes = auth_string.encode('ascii')
-    auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-    headers = {
-        'Authorization': f'Basic {auth_base64}',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-    }
+    try:
+        auth_context = current_request_auth_context()
+        cache_enabled = jira_home_process_cache_enabled(auth_context)
+        team_field_id = resolve_team_field_id(None, context=auth_context)
+        burnout_payload, error_response, debug_payload = fetch_burnout_events_for_sprint(
+            sprint_name,
+            None,
+            team_field_id,
+            team_ids=scoped_team_ids,
+            issue_keys=issue_keys,
+            include_post_sprint_closures=include_post_sprint_closures,
+            cache_enabled=cache_enabled
+        )
+        if error_response is not None:
+            return jsonify({
+                'error': 'Failed to fetch burnout stats',
+                'details': error_response.text,
+                'query': debug_payload
+            }), error_response.status_code
 
-    team_field_id = resolve_team_field_id(headers)
-    burnout_payload, error_response, debug_payload = fetch_burnout_events_for_sprint(
-        sprint_name,
-        headers,
-        team_field_id,
-        team_ids=scoped_team_ids,
-        issue_keys=issue_keys,
-        include_post_sprint_closures=include_post_sprint_closures
-    )
-    if error_response is not None:
         return jsonify({
-            'error': 'Failed to fetch burnout stats',
-            'details': error_response.text,
-            'query': debug_payload
-        }), error_response.status_code
-
-    return jsonify({
-        'generatedAt': datetime.now().isoformat(),
-        'data': burnout_payload
-    })
+            'generatedAt': datetime.now().isoformat(),
+            'data': burnout_payload
+        })
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
 
 
 @app.route('/api/stats/epic-cohort', methods=['POST'])
@@ -5522,28 +5523,23 @@ def get_epic_cohort_stats():
             'data': cached.get('data')
         })
 
-    auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-    auth_bytes = auth_string.encode('ascii')
-    auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-    headers = {
-        'Authorization': f'Basic {auth_base64}',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-    }
-
-    team_field_id = resolve_team_field_id(headers, context=auth_context)
-    cohort_payload, error_response = fetch_epic_cohort_data(
-        start_quarter,
-        headers,
-        team_field_id,
-        team_ids=team_ids,
-        component_names=component_names
-    )
-    if error_response is not None:
-        return jsonify({
-            'error': 'Failed to fetch epic cohort stats',
-            'details': error_response.text
-        }), error_response.status_code
+    try:
+        team_field_id = resolve_team_field_id(None, context=auth_context)
+        cohort_payload, error_response = fetch_epic_cohort_data(
+            start_quarter,
+            None,
+            team_field_id,
+            team_ids=team_ids,
+            component_names=component_names
+        )
+        if error_response is not None:
+            return jsonify({
+                'error': 'Failed to fetch epic cohort stats',
+                'details': error_response.text
+            }), error_response.status_code
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
 
     generated_at = datetime.now().isoformat()
     if cache_enabled:
@@ -5656,20 +5652,13 @@ def get_capacity():
         })
 
     try:
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        payload, error_message = fetch_capacity_for_sprint(sprint_name, headers, debug=debug, team_names=team_names)
+        payload, error_message = fetch_capacity_for_sprint(sprint_name, None, debug=debug, team_names=team_names)
         if error_message:
             return jsonify({'error': error_message}), 500
         return jsonify(payload)
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

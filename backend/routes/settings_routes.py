@@ -155,11 +155,12 @@ def get_sprints():
     """Fetch available sprints - uses cache if valid, otherwise fetches from Jira"""
     try:
         force_refresh = request.args.get('refresh', '').lower() == 'true'
+        cache_enabled = _settings_process_cache_enabled()
 
         formatted_sprints = []
 
         # Check if we should use cache
-        if not force_refresh and is_cache_valid():
+        if cache_enabled and not force_refresh and is_cache_valid():
             cache_data = load_sprints_cache()
             if cache_data and 'sprints' in cache_data:
                 formatted_sprints = cache_data['sprints']
@@ -173,7 +174,7 @@ def get_sprints():
             formatted_sprints = fetch_sprints_from_jira()
 
             # Save to cache
-            if formatted_sprints:
+            if cache_enabled and formatted_sprints:
                 save_sprints_cache(formatted_sprints)
 
         log_info(f'Total quarterly sprints: {len(formatted_sprints)}')
@@ -184,6 +185,9 @@ def get_sprints():
         success_response.headers['Expires'] = '0'
         return success_response
 
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
     except Exception as e:
         logger.exception('Sprints endpoint error')
         error_response = jsonify({

@@ -5065,7 +5065,10 @@ import {
                 try {
                     const response = await fetch(`${BACKEND_URL}/api/scenario`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'jira-execution-planner'
+                        },
                         body: JSON.stringify(buildScenarioPayload()),
                         signal: controller.signal
                     });
@@ -5766,7 +5769,10 @@ import {
                     try {
                         const response = await fetch(`${BACKEND_URL}/api/stats/burnout`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Requested-With': 'jira-execution-planner'
+                            },
                             cache: 'no-cache',
                             signal: controller.signal,
                             body: JSON.stringify({
@@ -5889,7 +5895,10 @@ import {
                     try {
                         const response = await fetch(`${BACKEND_URL}/api/stats/epic-cohort`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Requested-With': 'jira-execution-planner'
+                            },
                             cache: 'no-cache',
                             signal: controller.signal,
                             body: JSON.stringify({
@@ -6400,7 +6409,10 @@ import {
                 try {
                     const res = await fetch(`${BACKEND_URL}/api/scenario/overrides`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'jira-execution-planner'
+                        },
                         body: JSON.stringify({
                             scope_key: scenarioScopeKey,
                             name: `Draft ${new Date().toISOString().slice(0, 10)}`,

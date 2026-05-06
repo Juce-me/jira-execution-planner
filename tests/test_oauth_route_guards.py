@@ -12,13 +12,13 @@ class TestOauthRouteGuards(unittest.TestCase):
 
     def test_oauth_mode_blocks_unmigrated_api_route(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
-            response = self.client.get('/api/sprints')
+            response = self.client.get('/api/debug-fields')
         self.assertEqual(response.status_code, 501)
         self.assertEqual(response.get_json()['error'], 'route_not_oauth_ready')
 
     def test_oauth_mode_blocks_unmigrated_unsafe_api_route_before_csrf(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
-            response = self.client.post('/api/sprints')
+            response = self.client.post('/api/debug-fields')
         self.assertEqual(response.status_code, 501)
         self.assertEqual(response.get_json()['error'], 'route_not_oauth_ready')
 

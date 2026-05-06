@@ -2,6 +2,8 @@ import time
 import unittest
 from unittest.mock import patch
 import threading
+import tempfile
+from urllib.parse import parse_qs, urlparse
 
 from backend import app as app_module
 import jira_server
@@ -15,7 +17,12 @@ class TestAuthRoutes(unittest.TestCase):
             jira_server.OAUTH_TOKEN_STORE.clear()
         if hasattr(jira_server, 'OAUTH_REFRESH_LOCKS'):
             jira_server.OAUTH_REFRESH_LOCKS.clear()
+        self._old_oauth_token_store_path = getattr(jira_server, 'OAUTH_TOKEN_STORE_PATH', '')
+        jira_server.OAUTH_TOKEN_STORE_PATH = ''
         self.client = jira_server.app.test_client()
+
+    def tearDown(self):
+        jira_server.OAUTH_TOKEN_STORE_PATH = self._old_oauth_token_store_path
 
     def test_basic_auth_status_reports_configured(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
@@ -108,6 +115,29 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertIn('https://auth.atlassian.com/authorize?', response.headers['Location'])
         self.assertIn('code_challenge=', response.headers['Location'])
         self.assertIn('code_challenge_method=S256', response.headers['Location'])
+        self.assertNotIn('prompt=consent', response.headers['Location'])
+
+    def test_oauth_login_can_force_reconsent_for_scope_changes(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
+             patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
+             patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
+             patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
+             patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
+             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
+             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True):
+            response = self.client.get('/api/auth/atlassian/login?prompt=consent')
+
+        self.assertEqual(response.status_code, 302)
+        query = parse_qs(urlparse(response.headers['Location']).query)
+        self.assertEqual(query['prompt'], ['consent'])
+
+    def test_missing_scope_entry_page_links_to_reconsent_login(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.get('/login?reason=missing_scope')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('/api/auth/atlassian/login?prompt=consent', response.get_data(as_text=True))
 
     def test_oauth_login_rejects_non_local_token_store_environment(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
@@ -234,6 +264,52 @@ class TestAuthRoutes(unittest.TestCase):
             self.assertNotIn('expired-session', jira_server.OAUTH_TOKEN_STORE)
             self.assertNotIn('expired-session', jira_server.OAUTH_REFRESH_LOCKS)
 
+    def test_oauth_session_data_restores_local_token_store_after_restart(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store_path = f'{tmpdir}/oauth-token-store.json'
+            with jira_server.app.test_request_context('/'):
+                jira_server.session['atlassian_oauth_session_id'] = 'session-123'
+                with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                     patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
+                     patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
+                     patch.object(jira_server, 'OAUTH_TOKEN_STORE_PATH', store_path):
+                    jira_server.save_oauth_session({
+                        'access_token': 'access-123',
+                        'refresh_token': 'refresh-123',
+                        'expires_at': time.time() + 600,
+                        'cloudid': 'cloud-123',
+                        'site_url': 'https://example.atlassian.net',
+                    })
+                    jira_server.OAUTH_TOKEN_STORE.clear()
+                    jira_server.OAUTH_REFRESH_LOCKS.clear()
+
+                    restored = jira_server.oauth_session_data()
+
+                self.assertEqual(restored['access_token'], 'access-123')
+                self.assertEqual(restored['refresh_token'], 'refresh-123')
+                self.assertIn('session-123', jira_server.OAUTH_REFRESH_LOCKS)
+
+    def test_oauth_session_clear_removes_local_token_store_entry(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store_path = f'{tmpdir}/oauth-token-store.json'
+            with jira_server.app.test_request_context('/'):
+                jira_server.session['atlassian_oauth_session_id'] = 'session-123'
+                with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                     patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
+                     patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
+                     patch.object(jira_server, 'OAUTH_TOKEN_STORE_PATH', store_path):
+                    jira_server.save_oauth_session({
+                        'access_token': 'access-123',
+                        'refresh_token': 'refresh-123',
+                        'expires_at': time.time() + 600,
+                    })
+                    jira_server.save_oauth_session({})
+                    jira_server.session['atlassian_oauth_session_id'] = 'session-123'
+
+                    restored = jira_server.oauth_session_data()
+
+                self.assertEqual(restored, {})
+
     def test_startup_auth_validation_rejects_disallowed_local_token_store(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'production'), \
@@ -262,6 +338,9 @@ class TestAuthRoutes(unittest.TestCase):
                 jira_server.validate_startup_auth_config()
 
         self.assertEqual(raised.exception.code, 'oauth_token_store_ttl_too_low')
+
+    def test_default_oauth_token_store_ttl_supports_persistent_local_sessions(self):
+        self.assertGreaterEqual(jira_server.OAUTH_TOKEN_STORE_TTL_SECONDS, 60 * 60 * 24 * 30)
 
     def test_credentialed_cors_rejects_wildcard_origins(self):
         with patch.dict('os.environ', {'APP_ALLOWED_ORIGINS': '*'}):

@@ -58,6 +58,8 @@ ATLASSIAN_SCOPES=read:me read:jira-work read:jira-user read:board-scope:jira-sof
 
 FLASK_SECRET_KEY=...
 OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true
+OAUTH_TOKEN_STORE_PATH=.oauth-token-store.json
+OAUTH_TOKEN_STORE_TTL_SECONDS=2592000
 ```
 
 `JIRA_URL` is required in OAuth mode, but it is not a Basic-auth credential. It tells the backend which Jira Cloud site to select after Atlassian returns the user's accessible resources.
@@ -67,6 +69,12 @@ Generate `FLASK_SECRET_KEY` locally:
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
+
+### Local OAuth Session Persistence
+
+`offline_access` gives the server a refresh token. With `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`, the local/dev server stores that OAuth session server-side at `OAUTH_TOKEN_STORE_PATH` so a Flask restart does not force a new Atlassian consent flow. The browser cookie keeps only an opaque local session id; access and refresh tokens stay in the server-side token store.
+
+Keep `OAUTH_TOKEN_STORE_PATH` local and ignored by git. The default local path `.oauth-token-store.json` is ignored by this repo. `OAUTH_TOKEN_STORE_TTL_SECONDS` defaults to 30 days; shorten it only if you want local sessions to expire sooner. Delete the token store file or use `/api/auth/logout` when you want to clear the saved local session.
 
 ## Test The Flow
 
@@ -82,9 +90,9 @@ Restart the Flask server after changing `.env`.
 
 The ENG dashboard and Jira REST catalog/statistics routes are migrated through the OAuth Jira client. Home/Townsquare GraphQL-backed API routes remain guarded until the Home client has its own auth migration. Today those routes sit under `/api/epm/*` because EPM is the feature that consumes Home/Townsquare metadata. If a route returns `route_not_oauth_ready`, the OAuth session is valid but that route is intentionally outside the current OAuth Jira REST surface.
 
-If Atlassian reports a missing scope, add the named scope to the matching API on the app's `Permissions` page, save, then start again from `/login`. If you previously signed in before adding the Jira Software scopes, clear the local OAuth session and sign in again so Atlassian can show a new consent screen.
+If Atlassian reports a missing scope, add the named scope to the matching API on the app's `Permissions` page, save, then start again from `/login?reason=missing_scope`. That path forces a new consent prompt so Atlassian issues a grant with the updated scopes.
 
-If you already signed in before adding the Jira Software scopes, update `ATLASSIAN_SCOPES`, clear the local OAuth token session, and sign in again. `/api/auth/status` reports `loginUrl: "/login?reason=missing_scope"` when the stored session was issued without the current required scopes.
+If you already signed in before adding the Jira Software scopes, update `ATLASSIAN_SCOPES` and sign in again through `/login?reason=missing_scope`. `/api/auth/status` reports `loginUrl: "/login?reason=missing_scope"` when the stored session was issued without the current required scopes.
 
 Use the same browser and hostname for the whole flow. If `ATLASSIAN_REDIRECT_URI` uses `localhost`, start from `http://localhost:5050/login`, not `http://127.0.0.1:5050/login`.
 

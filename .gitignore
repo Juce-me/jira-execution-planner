@@ -1,6 +1,8 @@
 # Environment variables (contains secrets!)
 .env
 .env.backup
+.oauth-token-store.json
+.oauth-token-store.json.tmp
 
 # Python
 __pycache__/

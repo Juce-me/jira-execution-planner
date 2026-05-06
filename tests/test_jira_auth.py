@@ -134,7 +134,7 @@ class JiraAuthTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "accessible_resources_failed")
 
-    def test_build_authorize_url_includes_atlassian_oauth_parameters(self):
+    def test_build_authorize_url_includes_atlassian_oauth_parameters_without_forcing_consent(self):
         config = AuthConfig(
             auth_mode=AUTH_MODE_ATLASSIAN_OAUTH,
             jira_url="https://example.atlassian.net",
@@ -153,10 +153,31 @@ class JiraAuthTests(unittest.TestCase):
         self.assertEqual(query["audience"], ["api.atlassian.com"])
         self.assertEqual(query["client_id"], ["client-123"])
         self.assertEqual(query["response_type"], ["code"])
-        self.assertEqual(query["prompt"], ["consent"])
+        self.assertNotIn("prompt", query)
         self.assertEqual(query["state"], ["state-123"])
         self.assertEqual(query["code_challenge"], ["challenge-123"])
         self.assertEqual(query["code_challenge_method"], ["S256"])
+
+    def test_build_authorize_url_can_force_consent_for_scope_changes(self):
+        config = AuthConfig(
+            auth_mode=AUTH_MODE_ATLASSIAN_OAUTH,
+            jira_url="https://example.atlassian.net",
+            client_id="client-123",
+            client_secret="secret-123",
+            redirect_uri="http://localhost:5050/auth/callback",
+            scopes="read:me read:jira-work read:jira-user offline_access",
+            flask_secret_key="dev-secret",
+        )
+
+        authorize_url = build_authorize_url(
+            config,
+            "state-123",
+            code_challenge="challenge-123",
+            force_consent=True,
+        )
+        query = parse_qs(urlparse(authorize_url).query)
+
+        self.assertEqual(query["prompt"], ["consent"])
 
     def test_build_authorize_url_requires_pkce_challenge(self):
         config = AuthConfig(

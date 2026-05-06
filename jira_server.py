@@ -81,8 +81,9 @@ FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', '').strip()
 app.secret_key = FLASK_SECRET_KEY or os.urandom(32)
 APP_ENVIRONMENT_KEY = os.getenv('APP_ENVIRONMENT_KEY', 'local').strip() or 'local'
 OAUTH_LOCAL_TOKEN_STORE_ALLOWED = os.getenv('OAUTH_LOCAL_TOKEN_STORE_ALLOWED', '').strip().lower() in {'1', 'true', 'yes'}
-OAUTH_TOKEN_STORE_TTL_SECONDS = int(os.getenv('OAUTH_TOKEN_STORE_TTL_SECONDS', '28800'))
+OAUTH_TOKEN_STORE_TTL_SECONDS = int(os.getenv('OAUTH_TOKEN_STORE_TTL_SECONDS', '2592000'))
 OAUTH_TOKEN_STORE_MIN_TTL_SECONDS = 900
+OAUTH_TOKEN_STORE_PATH = os.getenv('OAUTH_TOKEN_STORE_PATH', '.oauth-token-store.json').strip()
 JQL_QUERY = os.getenv('JQL_QUERY', '').strip()
 JIRA_BOARD_ID = os.getenv('JIRA_BOARD_ID')  # Optional: board ID for faster sprint fetching
 JIRA_PRODUCT_PROJECT = os.getenv('JIRA_PRODUCT_PROJECT', 'PRODUCT ROADMAPS')
@@ -340,6 +341,82 @@ def _drop_oauth_session(session_id):
     with OAUTH_TOKEN_STORE_LOCK:
         OAUTH_TOKEN_STORE.pop(session_id, None)
         OAUTH_REFRESH_LOCKS.pop(session_id, None)
+        _drop_persistent_oauth_session(session_id)
+
+
+def _oauth_token_store_persistence_enabled():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return False
+    if APP_ENVIRONMENT_KEY.strip().lower() not in {'local', 'dev'}:
+        return False
+    return bool(OAUTH_LOCAL_TOKEN_STORE_ALLOWED and OAUTH_TOKEN_STORE_PATH)
+
+
+def _read_persistent_oauth_token_store():
+    if not _oauth_token_store_persistence_enabled():
+        return {}
+    try:
+        with open(OAUTH_TOKEN_STORE_PATH, 'r', encoding='utf-8') as handle:
+            payload = json.load(handle)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        logger.warning('Failed to read local OAuth token store: %s', exc)
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_persistent_oauth_token_store(payload):
+    if not _oauth_token_store_persistence_enabled():
+        return
+    directory = os.path.dirname(OAUTH_TOKEN_STORE_PATH)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    if not payload:
+        try:
+            os.remove(OAUTH_TOKEN_STORE_PATH)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.warning('Failed to remove local OAuth token store: %s', exc)
+        return
+    temp_path = f'{OAUTH_TOKEN_STORE_PATH}.tmp'
+    try:
+        fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            json.dump(payload, handle)
+        os.replace(temp_path, OAUTH_TOKEN_STORE_PATH)
+        os.chmod(OAUTH_TOKEN_STORE_PATH, 0o600)
+    except OSError as exc:
+        logger.warning('Failed to write local OAuth token store: %s', exc)
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+
+
+def _drop_persistent_oauth_session(session_id):
+    if not _oauth_token_store_persistence_enabled():
+        return
+    payload = _read_persistent_oauth_token_store()
+    if session_id not in payload:
+        return
+    payload.pop(session_id, None)
+    _write_persistent_oauth_token_store(payload)
+
+
+def _save_persistent_oauth_session(session_id, data):
+    if not _oauth_token_store_persistence_enabled():
+        return
+    payload = _read_persistent_oauth_token_store()
+    payload[session_id] = dict(data)
+    _write_persistent_oauth_token_store(payload)
+
+
+def _load_persistent_oauth_session(session_id):
+    payload = _read_persistent_oauth_token_store()
+    data = payload.get(session_id)
+    return data if isinstance(data, dict) else {}
 
 
 def _cleanup_expired_oauth_sessions(now=None):
@@ -352,6 +429,7 @@ def _cleanup_expired_oauth_sessions(now=None):
     for stored_id in expired:
         OAUTH_TOKEN_STORE.pop(stored_id, None)
         OAUTH_REFRESH_LOCKS.pop(stored_id, None)
+        _drop_persistent_oauth_session(stored_id)
 
 
 def save_oauth_session(data):
@@ -373,8 +451,10 @@ def save_oauth_session(data):
         if not session_id:
             session_id = new_oauth_state()
             session['atlassian_oauth_session_id'] = session_id
-        OAUTH_TOKEN_STORE[session_id] = dict(data, stored_at=now)
+        stored = dict(data, stored_at=now)
+        OAUTH_TOKEN_STORE[session_id] = stored
         OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+        _save_persistent_oauth_session(session_id, stored)
 
 
 def oauth_refresh_lock():
@@ -394,6 +474,11 @@ def oauth_session_data():
     with OAUTH_TOKEN_STORE_LOCK:
         _cleanup_expired_oauth_sessions()
         data = OAUTH_TOKEN_STORE.get(session_id) or {}
+        if not data:
+            data = _load_persistent_oauth_session(session_id)
+            if data:
+                OAUTH_TOKEN_STORE[session_id] = dict(data)
+                OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
     if data and time.time() - data.get('stored_at', 0) > OAUTH_TOKEN_STORE_TTL_SECONDS:
         save_oauth_session({})
         return {}

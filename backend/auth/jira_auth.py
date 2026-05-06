@@ -87,7 +87,7 @@ def build_pkce_challenge(verifier):
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
-def build_authorize_url(config, state, code_challenge=None):
+def build_authorize_url(config, state, code_challenge=None, force_consent=False):
     if not code_challenge:
         raise AuthError("missing_pkce_challenge", "PKCE code challenge is required.")
     params = {
@@ -97,10 +97,11 @@ def build_authorize_url(config, state, code_challenge=None):
         "redirect_uri": config.redirect_uri,
         "state": state,
         "response_type": "code",
-        "prompt": "consent",
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     }
+    if force_consent:
+        params["prompt"] = "consent"
     return f"{ATLASSIAN_AUTHORIZE_URL}?{urlencode(params)}"
 
 

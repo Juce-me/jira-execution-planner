@@ -52,10 +52,12 @@ def auth_entry_page():
     if data.get('access_token') and data.get('cloudid'):
         return redirect('/')
     message = ''
+    login_url = '/api/auth/atlassian/login'
     if request.args.get('reason') == 'session_expired':
         message = '<p class="auth-notice" role="status">Your Jira sign-in expired. Sign in again to continue.</p>'
     elif request.args.get('reason') == 'missing_scope':
         message = '<p class="auth-notice" role="status">Your Jira sign-in needs updated permissions. Sign in again to continue.</p>'
+        login_url = '/api/auth/atlassian/login?prompt=consent'
     return f"""
 <!doctype html>
 <html lang="en">
@@ -175,7 +177,7 @@ def auth_entry_page():
         <h1 id="auth-title">Sign in to Jira Execution Planner</h1>
         <p class="auth-copy">Use your Atlassian account to continue.</p>
         {message}
-        <a class="auth-action" href="/api/auth/atlassian/login">Sign in with Atlassian</a>
+        <a class="auth-action" href="{login_url}">Sign in with Atlassian</a>
       </section>
     </main>
   </body>
@@ -197,7 +199,8 @@ def api_atlassian_login():
     verifier = new_pkce_verifier()
     session['oauth_state'] = state
     session['oauth_pkce_verifier'] = verifier
-    return redirect(build_authorize_url(config, state, build_pkce_challenge(verifier)))
+    force_consent = str(request.args.get('prompt') or '').strip().lower() == 'consent'
+    return redirect(build_authorize_url(config, state, build_pkce_challenge(verifier), force_consent=force_consent))
 
 
 @bp.route('/api/auth/atlassian/callback', methods=['GET'])

@@ -170,6 +170,36 @@ PRIORITY_WEIGHT_NAME_ALIASES = {
 }
 
 
+SENSITIVE_CALLBACK_QUERY_RE = re.compile(
+    r'(/api/auth/atlassian/callback)\?[^ \t\r\n"]+'
+)
+
+
+def redact_sensitive_log_text(value):
+    if not isinstance(value, str):
+        return value
+    return SENSITIVE_CALLBACK_QUERY_RE.sub(r'\1?[redacted]', value)
+
+
+class SensitiveLogRedactionFilter(logging.Filter):
+    def filter(self, record):
+        record.msg = redact_sensitive_log_text(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(redact_sensitive_log_text(arg) for arg in record.args)
+        elif isinstance(record.args, dict):
+            record.args = {
+                key: redact_sensitive_log_text(value)
+                for key, value in record.args.items()
+            }
+        return True
+
+
+def _install_sensitive_log_filter(target_logger):
+    if any(isinstance(existing, SensitiveLogRedactionFilter) for existing in target_logger.filters):
+        return
+    target_logger.addFilter(SensitiveLogRedactionFilter())
+
+
 def configure_logging():
     """Initialize process logging once with a readable default format."""
     class CsvLineFormatter(logging.Formatter):
@@ -191,6 +221,9 @@ def configure_logging():
 
     formatter = CsvLineFormatter(datefmt='%Y-%m-%dT%H:%M:%S')
     root_logger = logging.getLogger()
+    _install_sensitive_log_filter(root_logger)
+    _install_sensitive_log_filter(logging.getLogger('werkzeug'))
+    _install_sensitive_log_filter(logger)
     if not root_logger.handlers:
         logging.basicConfig(
             level=getattr(logging, LOG_LEVEL, logging.INFO),

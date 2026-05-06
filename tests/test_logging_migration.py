@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import unittest
@@ -52,6 +53,21 @@ class TestLoggingMigration(unittest.TestCase):
         )
         output = '\n'.join(captured.output)
         self.assertIn('Fetched 1 teams from Jira Teams API', output)
+
+    @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
+    def test_werkzeug_logs_redact_oauth_callback_query(self):
+        werkzeug_logger = logging.getLogger('werkzeug')
+
+        with self.assertLogs('werkzeug', level='INFO') as captured:
+            werkzeug_logger.info(
+                '127.0.0.1 - - [06/May/2026 14:17:47] "%s" 302 -',
+                'GET /api/auth/atlassian/callback?state=state-secret&code=code-secret HTTP/1.1',
+            )
+
+        output = '\n'.join(captured.output)
+        self.assertIn('/api/auth/atlassian/callback?[redacted]', output)
+        self.assertNotIn('state-secret', output)
+        self.assertNotIn('code-secret', output)
 
 
 if __name__ == '__main__':

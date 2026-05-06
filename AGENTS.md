@@ -241,6 +241,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In EPM settings Projects, use table-style header sorting and compact icon actions in cells; avoid bulky text sort/change controls in headers or label chips.
 - For UI screenshots, wait for CSS animations/transitions to settle or disable them before capturing visual proof.
 - In PR descriptions, never include secrets, token placeholders, credential env vars, or local absolute paths.
+- Redact OAuth callback query strings from logs; never log authorization code or state values.
 - Store implementation plans in `docs/plans/` only.
 - When an auth plan names a security gate, include the concrete implementation task and verification before the dependent handoff.
 - For Atlassian OAuth work, treat Microsoft Entra/Azure SSO through Atlassian Cloud SSO as a primary acceptance path.

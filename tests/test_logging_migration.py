@@ -26,9 +26,9 @@ class TestLoggingMigration(unittest.TestCase):
         response = Mock()
         response.status_code = 503
 
-        with patch.object(jira_server.HTTP_SESSION, 'get', return_value=response):
+        with patch.object(jira_server, 'current_jira_get', return_value=response):
             with self.assertLogs(jira_server.logger.name, level='WARNING') as captured:
-                teams = jira_server.fetch_teams_from_jira_api(headers={})
+                teams = jira_server.fetch_teams_from_jira_api()
 
         self.assertEqual(teams, {})
         output = '\n'.join(captured.output)
@@ -42,9 +42,9 @@ class TestLoggingMigration(unittest.TestCase):
             {'id': 'team-1', 'title': 'Example Team'}
         ]
 
-        with patch.object(jira_server.HTTP_SESSION, 'get', return_value=response):
+        with patch.object(jira_server, 'current_jira_get', return_value=response):
             with self.assertLogs(jira_server.logger.name, level='INFO') as captured:
-                teams = jira_server.fetch_teams_from_jira_api(headers={})
+                teams = jira_server.fetch_teams_from_jira_api()
 
         self.assertEqual(
             teams,

@@ -1011,7 +1011,7 @@ def jira_search_request(payload):
     return current_jira_search(payload)
 
 
-def fetch_teams_from_jira_api(headers):
+def fetch_teams_from_jira_api():
     """Fetch teams directly from Jira Teams REST API (team registry, not issues).
 
     This catches teams that may not have any issues in PRODUCT/TECH projects.
@@ -1141,7 +1141,7 @@ def fetch_capacity_for_sprint(sprint_name, headers, debug=False, team_names=None
     return response_payload, None
 
 
-def fetch_watchers_count(issue_key, headers):
+def fetch_watchers_count(issue_key):
     """Fetch watchers count for an issue (fallback if watches field is missing)."""
     if not issue_key:
         return None
@@ -1204,7 +1204,7 @@ def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
         if isinstance(watches, dict):
             watch_count = watches.get('watchCount')
         if watch_count is None:
-            watch_count = fetch_watchers_count(issue.get('key'), headers)
+            watch_count = fetch_watchers_count(issue.get('key'))
         if watch_count is None:
             continue
         try:
@@ -1839,7 +1839,6 @@ def build_epm_rollup_hierarchy(issues, issue_types):
 def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_queries):
     raw_issues = fetch_issues_by_jql(
         jql,
-        headers,
         fields_list,
         max_results=EPM_ROLLUP_QUERY_MAX_RESULTS + 1,
     )
@@ -3717,7 +3716,7 @@ def fetch_tasks(include_team_name=False):
         return error_response, 500
 
 
-def fetch_issues_by_keys(keys, headers, fields_list):
+def fetch_issues_by_keys(keys, fields_list):
     """Fetch issues by keys in batches."""
     if not keys:
         return []
@@ -3742,7 +3741,7 @@ def fetch_issues_by_keys(keys, headers, fields_list):
     return results
 
 
-def fetch_issues_by_jql(jql, headers, fields_list, max_results=500):
+def fetch_issues_by_jql(jql, fields_list, max_results=500):
     """Fetch issues by JQL with pagination."""
     results = []
     next_page_token = None
@@ -3853,7 +3852,7 @@ def build_issue_snapshot(issue, team_field_id=None, epic_link_field_id=None):
     }
 
 
-def collect_dependencies(keys, headers):
+def collect_dependencies(keys):
     """Fetch dependency links for a set of issues."""
     keys = sorted({str(k).strip() for k in keys if str(k).strip()})
     if not keys:
@@ -3889,8 +3888,8 @@ def collect_dependencies(keys, headers):
         return None, None
 
     auth_context = current_request_auth_context() if has_request_context() else None
-    team_field_id = resolve_team_field_id(headers, context=auth_context)
-    epic_link_field_id = resolve_epic_link_field_id(headers, context=auth_context)
+    team_field_id = resolve_team_field_id(None, context=auth_context)
+    epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
 
     fields_list = [
         'summary',
@@ -3906,7 +3905,7 @@ def collect_dependencies(keys, headers):
     if team_field_id and team_field_id not in fields_list:
         fields_list.append(team_field_id)
 
-    issues = fetch_issues_by_keys(keys, headers, fields_list)
+    issues = fetch_issues_by_keys(keys, fields_list)
     issue_map = {}
     linked_keys = set()
     for issue in issues:
@@ -3920,7 +3919,7 @@ def collect_dependencies(keys, headers):
 
     missing_linked = sorted(linked_keys - set(issue_map.keys()))
     if missing_linked:
-        linked_issues = fetch_issues_by_keys(missing_linked, headers, fields_list)
+        linked_issues = fetch_issues_by_keys(missing_linked, fields_list)
         for issue in linked_issues:
             snapshot = build_issue_snapshot(issue, team_field_id, epic_link_field_id)
             if snapshot.get('key'):
@@ -4074,7 +4073,7 @@ def scenario_planner():
         search_query = (filters.get('search') or '').strip().lower()
         team_filter_ids = {t for t in (filters.get('teams') or []) if t}
         scenario_jql = build_scenario_jql(filters)
-        issues_raw = fetch_issues_by_jql(scenario_jql, None, fields_list)
+        issues_raw = fetch_issues_by_jql(scenario_jql, fields_list)
 
         issues = []
         issue_keys = []
@@ -4144,7 +4143,7 @@ def scenario_planner():
                     'timeSpentSeconds': time_spent_seconds,
                 }
 
-        dependencies = collect_dependencies(issue_keys, None)
+        dependencies = collect_dependencies(issue_keys)
         dependency_edges = {}
         edge_list = []
         edge_set = set()
@@ -4245,7 +4244,7 @@ def scenario_planner():
 
         epic_summary_by_key = {}
         if epic_keys:
-            epic_issues = fetch_issues_by_keys(sorted(epic_keys), None, ['summary'])
+            epic_issues = fetch_issues_by_keys(sorted(epic_keys), ['summary'])
             for epic in epic_issues:
                 fields = epic.get('fields') or {}
                 epic_summary_by_key[epic.get('key')] = fields.get('summary')

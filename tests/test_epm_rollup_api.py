@@ -801,10 +801,8 @@ class TestEpmRollupApi(unittest.TestCase):
         ]
 
         try:
-            with patch.object(jira_server, 'requests') as mock_requests:
-                mock_requests.get.return_value = response
-
-                field_id = jira_server.resolve_epic_link_field_id({'Authorization': 'Basic synthetic'})
+            with patch.object(jira_server, 'current_jira_get', return_value=response):
+                field_id = jira_server.resolve_epic_link_field_id(None)
 
             self.assertEqual(field_id, 'customfield_epiclink')
             self.assertEqual(jira_server.EPIC_LINK_FIELD_CACHE, 'customfield_epiclink')

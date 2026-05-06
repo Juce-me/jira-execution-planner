@@ -22,7 +22,7 @@ def get_dependencies():
         if not keys:
             return jsonify({'dependencies': {}})
 
-        dependencies = collect_dependencies(keys, None)
+        dependencies = collect_dependencies(keys)
         return jsonify({'dependencies': dependencies})
     except AuthError as error:
         if error.code == "auth_required":
@@ -65,7 +65,7 @@ def lookup_issues():
         issues = []
         if keys:
             unique_keys = sorted({str(k).strip() for k in keys if str(k).strip()})
-            issues.extend(fetch_issues_by_keys(unique_keys, None, fields_list))
+            issues.extend(fetch_issues_by_keys(unique_keys, fields_list))
 
         if ids:
             unique_ids = sorted({str(i).strip() for i in ids if str(i).strip()})
@@ -418,7 +418,7 @@ def get_teams():
         # When fetching all teams, also query Jira Teams API directly
         # to catch teams that have no issues in PRODUCT/TECH projects
         if fetch_all:
-            api_teams = fetch_teams_from_jira_api(None)
+            api_teams = fetch_teams_from_jira_api()
             for tid, tval in api_teams.items():
                 if tid not in teams_map:
                     teams_map[tid] = tval

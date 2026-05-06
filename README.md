@@ -59,7 +59,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 If you just want to see the dashboard working locally:
 1. Install dependencies: `python3 -m pip install --user -r requirements.txt`
 2. Copy the env template: `cp .env.example .env`
-3. Edit `.env` and set **JIRA_URL**, **JIRA_EMAIL**, **JIRA_TOKEN**.
+3. Edit `.env`. For default API-token auth, set **JIRA_URL**, **JIRA_EMAIL**, **JIRA_TOKEN**; for OAuth, comment the API-token block and uncomment the Atlassian OAuth block.
 4. Start the backend: `python3 jira_server.py`
 5. Visit `http://localhost:5050/api/test` in your browser to confirm connectivity.
 6. Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`), complete **Dashboard Settings** onboarding, then click **Save**.
@@ -118,7 +118,7 @@ python3 -m pip install --user flask flask-cors requests python-dotenv openpyxl "
 cp .env.example .env
 ```
 
-**Edit .env file and add your credentials:**
+**Edit .env file and add your credentials. The template defaults to Jira API-token auth; for OAuth, comment the API-token block and uncomment the Atlassian OAuth block.**
 ```bash
 nano .env  # or use any text editor
 ```
@@ -126,6 +126,9 @@ nano .env  # or use any text editor
 ```env
 # Your Jira instance URL
 JIRA_URL=https://your-company.atlassian.net
+
+# Use the API-token auth block by default
+JIRA_AUTH_MODE=basic
 
 # Your Jira email
 JIRA_EMAIL=your-email@company.com
@@ -174,7 +177,7 @@ The dashboard can run with Atlassian OAuth 2.0 (3LO) instead of a personal Jira 
 1. Create an OAuth 2.0 app in the Atlassian Developer Console.
 2. Add the required User Identity API and Jira API scopes documented in [docs/atlassian-oauth-setup.md](docs/atlassian-oauth-setup.md).
 3. Set the callback URL to `http://localhost:5050/api/auth/atlassian/callback`, or to an HTTPS tunnel URL if your Atlassian app requires HTTPS.
-4. Set `JIRA_AUTH_MODE=atlassian_oauth`, `APP_ENVIRONMENT_KEY=local`, `JIRA_URL`, `ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET`, `ATLASSIAN_REDIRECT_URI`, `FLASK_SECRET_KEY`, and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true` for local single-process testing. `JIRA_URL` is required in OAuth mode to select the matching Atlassian cloud site after login; `JIRA_EMAIL` and `JIRA_TOKEN` are not required for OAuth. OAuth startup must fail unless both the environment key is local/dev and the local token store flag is true. If `OAUTH_TOKEN_STORE_TTL_SECONDS` is set, keep it at least `900` so the local bridge does not expire during a human SSO/consent flow.
+4. In `.env`, comment the API-token auth block and uncomment the Atlassian OAuth block from `.env.example`. Set `JIRA_AUTH_MODE=atlassian_oauth`, `APP_ENVIRONMENT_KEY=local`, `JIRA_URL`, `ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET`, `ATLASSIAN_REDIRECT_URI`, `FLASK_SECRET_KEY`, and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true` for local single-process testing. `JIRA_URL` is required in OAuth mode to select the matching Atlassian cloud site after login; `JIRA_EMAIL` and `JIRA_TOKEN` are not required for OAuth. OAuth startup must fail unless both the environment key is local/dev and the local token store flag is true. If `OAUTH_TOKEN_STORE_TTL_SECONDS` is set, keep it at least `900` so the local bridge does not expire during a human SSO/consent flow.
 5. Start the server and open `/`. If no OAuth session exists, the app should show `/login` with a `Sign in with Atlassian` action. That action starts Atlassian OAuth; for managed Atlassian accounts backed by Microsoft Entra SSO, the flow should redirect through Microsoft automatically, then show the Atlassian authorization/consent screen for this app before returning to the app callback. Confirm `/api/auth/status` reports `authenticated: true`, then use the migrated endpoint `/api/test`. Full dashboard data-route migration is intentionally deferred; un-migrated API routes return `route_not_oauth_ready`/501 in OAuth mode.
 
 Jira still receives Atlassian OAuth tokens, not Microsoft Entra tokens. Direct Microsoft access tokens cannot be used as Jira REST API bearer tokens.
@@ -351,7 +354,7 @@ See the full guide:
 
 **"JIRA_URL, JIRA_EMAIL and JIRA_TOKEN must be set" error:**
 - Make sure you created `.env` file from `.env.example`
-- Check that you filled in all required fields in `.env` (URL, email, token)
+- Check that you filled in all required Basic auth fields in `.env` (URL, email, token), or switch to the OAuth block with `JIRA_AUTH_MODE=atlassian_oauth`
 
 **"401 Unauthorized" error:**
 - Check that your email and API token are correct in `.env`

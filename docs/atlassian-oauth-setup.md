@@ -43,6 +43,7 @@ Select:
 ```text
 View Jira issue data
 View user profiles
+View projects
 ```
 
 Scopes:
@@ -50,9 +51,21 @@ Scopes:
 ```text
 read:jira-work
 read:jira-user
+read:project:jira
 ```
 
 These scopes are required for the migrated Jira API smoke path and for selecting the configured Jira Cloud site from Atlassian's accessible resources response.
+
+### Jira Software API
+
+Use the Jira Software API granular scopes tab and add:
+
+```text
+read:board-scope:jira-software
+read:sprint:jira-software
+```
+
+These scopes are required for board and sprint discovery through `/rest/agile/1.0/board` and `/rest/agile/1.0/board/{boardId}/sprint`.
 
 ### Refresh Tokens
 
@@ -68,17 +81,17 @@ You do not add `offline_access` from the app's `Permissions` API list, and it do
 
 ## Local `.env`
 
-Use real values from the Atlassian Developer Console:
+Copy `.env.example` to `.env`, comment the Basic auth block, and uncomment the Atlassian OAuth block. Use real values from the Atlassian Developer Console:
 
 ```env
-JIRA_AUTH_MODE=atlassian_oauth
-APP_ENVIRONMENT_KEY=local
 JIRA_URL=https://your-company.atlassian.net
+APP_ENVIRONMENT_KEY=local
 
+JIRA_AUTH_MODE=atlassian_oauth
 ATLASSIAN_CLIENT_ID=...
 ATLASSIAN_CLIENT_SECRET=...
 ATLASSIAN_REDIRECT_URI=http://localhost:5050/api/auth/atlassian/callback
-ATLASSIAN_SCOPES=read:me read:jira-work read:jira-user offline_access
+ATLASSIAN_SCOPES=read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access
 
 FLASK_SECRET_KEY=...
 OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true
@@ -106,7 +119,7 @@ Restart the Flask server after changing `.env`.
 
 The full dashboard is not migrated in this OAuth slice. After login, ENG dashboard data requests can still report `route_not_oauth_ready`; that means OAuth login worked, but the data route is intentionally blocked until it is migrated.
 
-If Atlassian reports a missing scope, add the named scope to the matching API on the app's `Permissions` page, save, then start again from `/login`.
+If Atlassian reports a missing scope, add the named scope to the matching API on the app's `Permissions` page, save, then start again from `/login`. If you previously signed in before adding the Jira Software scopes, clear the local OAuth session and sign in again so Atlassian can show a new consent screen.
 
 Use the same browser and hostname for the whole flow. If `ATLASSIAN_REDIRECT_URI` uses `localhost`, start from `http://localhost:5050/login`, not `http://127.0.0.1:5050/login`.
 
@@ -152,4 +165,5 @@ OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true
 
 - Atlassian OAuth 2.0 (3LO) apps: https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/
 - Atlassian Jira OAuth scopes: https://developer.atlassian.com/cloud/jira/platform/scopes-for-oauth-2-3LO-and-forge-apps/
+- Atlassian Jira Software OAuth scopes: https://developer.atlassian.com/cloud/jira/software/scopes-for-oauth-2-3LO-and-forge-apps/
 - Atlassian refresh tokens: https://developer.atlassian.com/cloud/oauth/getting-started/refresh-tokens/

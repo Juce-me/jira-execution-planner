@@ -3574,18 +3574,28 @@ def fetch_tasks(include_team_name=False):
                 sprint_field_id=sprint_field_id
             )
         else:
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                future_epic_details = pool.submit(fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
-                future_epics_in_scope = pool.submit(
-                    fetch_epics_for_empty_alert,
+            if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+                epic_details = fetch_epic_details_bulk(epic_keys, headers, epic_name_field)
+                epics_in_scope = fetch_epics_for_empty_alert(
                     jql,
                     headers,
                     team_field_id,
                     epic_name_field,
                     sprint_field_id
                 )
-                epic_details = future_epic_details.result()
-                epics_in_scope = future_epics_in_scope.result()
+            else:
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    future_epic_details = pool.submit(fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
+                    future_epics_in_scope = pool.submit(
+                        fetch_epics_for_empty_alert,
+                        jql,
+                        headers,
+                        team_field_id,
+                        epic_name_field,
+                        sprint_field_id
+                    )
+                    epic_details = future_epic_details.result()
+                    epics_in_scope = future_epics_in_scope.result()
         record_timing('epic_enrichment', enrich_epics_started)
 
         if epic_keys_filter:
@@ -3594,16 +3604,23 @@ def fetch_tasks(include_team_name=False):
         if not lightweight_ready_to_close:
             enrich_counts_started = time.perf_counter()
             epic_scope_keys = [e.get('key') for e in epics_in_scope]
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                future_epic_story_counts = (
-                    pool.submit(fetch_story_counts_for_epics, epic_scope_keys, headers, epic_link_field)
+            if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+                epic_story_counts = (
+                    fetch_story_counts_for_epics(epic_scope_keys, headers, epic_link_field)
                     if epic_link_field else None
                 )
-                future_epic_story_distribution = pool.submit(
-                    fetch_story_distribution_for_epics, epic_scope_keys, headers, epic_link_field, sprint
-                )
-                epic_story_counts = future_epic_story_counts.result() if future_epic_story_counts else None
-                epic_story_distribution = future_epic_story_distribution.result()
+                epic_story_distribution = fetch_story_distribution_for_epics(epic_scope_keys, headers, epic_link_field, sprint)
+            else:
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    future_epic_story_counts = (
+                        pool.submit(fetch_story_counts_for_epics, epic_scope_keys, headers, epic_link_field)
+                        if epic_link_field else None
+                    )
+                    future_epic_story_distribution = pool.submit(
+                        fetch_story_distribution_for_epics, epic_scope_keys, headers, epic_link_field, sprint
+                    )
+                    epic_story_counts = future_epic_story_counts.result() if future_epic_story_counts else None
+                    epic_story_distribution = future_epic_story_distribution.result()
             record_timing('epic_counts_distribution', enrich_counts_started)
             for epic in epics_in_scope:
                 key = epic.get('key')

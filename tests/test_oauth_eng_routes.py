@@ -1,4 +1,5 @@
 import base64
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -32,6 +33,21 @@ def _synthetic_issue():
             "customfield_team": {"id": "team-alpha", "name": "Alpha Team"},
             "parent": {},
             "project": {"key": "PROD", "name": "Product"},
+        },
+    }
+
+
+def _synthetic_epic():
+    return {
+        "id": "20001",
+        "key": "PROD-EPIC",
+        "fields": {
+            "summary": "Synthetic epic",
+            "status": {"name": "To Do"},
+            "assignee": {"displayName": "Synthetic Owner"},
+            "labels": [],
+            "customfield_team": {"id": "team-alpha", "name": "Alpha Team"},
+            "customfield_sprint": [{"id": 42, "name": "2026Q2"}],
         },
     }
 
@@ -110,6 +126,49 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["error"], "auth_required")
         self.assertEqual(response.get_json()["loginUrl"], "/login?reason=session_expired")
+
+    def test_tasks_with_team_name_keeps_oauth_context_for_epic_enrichment(self):
+        main_thread_id = threading.get_ident()
+        calls = []
+        story = _synthetic_issue()
+        story["fields"]["customfield_epic"] = "PROD-EPIC"
+        epic = _synthetic_epic()
+
+        def fake_search(payload, *args, **kwargs):
+            if threading.get_ident() != main_thread_id:
+                raise jira_server.AuthError("auth_required", "Atlassian authentication is required.")
+            calls.append(payload.get("jql", ""))
+            jql = payload.get("jql", "")
+            if "Sprint = 2026Q2" in jql and "type" not in jql.lower() and "issuetype" not in jql.lower():
+                return FakeResponse(200, {
+                    "issues": [story],
+                    "names": {
+                        "customfield_team": "Team[Team]",
+                        "customfield_epic": "Epic Link",
+                    },
+                    "isLast": True,
+                })
+            if "issueKey in" in jql:
+                return FakeResponse(200, {"issues": [epic], "isLast": True})
+            if "type = Epic" in jql or "issuetype = Epic" in jql:
+                return FakeResponse(200, {"issues": [epic], "isLast": True})
+            return FakeResponse(200, {"issues": [], "isLast": True})
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "build_base_jql", return_value='project = "PROD"'), \
+             patch.object(jira_server, "get_selected_projects_typed", return_value=[]), \
+             patch.object(jira_server, "get_configured_issue_types", return_value=[]), \
+             patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
+             patch.object(jira_server, "resolve_epic_link_field_id", return_value="customfield_epic"), \
+             patch.object(jira_server, "get_sprint_field_id", return_value="customfield_sprint"), \
+             patch.object(jira_server, "get_story_points_field_id", return_value="customfield_sp"), \
+             patch.object(jira_server, "current_jira_search", side_effect=fake_search):
+            response = self.client.get("/api/tasks-with-team-name?sprint=2026Q2&project=all&refresh=true")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["issues"][0]["fields"]["epicKey"], "PROD-EPIC")
+        self.assertTrue(any("issueKey in" in jql for jql in calls))
+        self.assertTrue(any("type = Epic" in jql for jql in calls))
 
     def test_missing_info_route_is_oauth_ready(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \

@@ -41,6 +41,22 @@ class TestBackendServiceExtraction(unittest.TestCase):
             'nextPageToken': 'page-2'
         })
 
+    def test_search_params_reject_start_at_for_search_jql(self):
+        jira_client = importlib.import_module("backend.jira_client")
+        with self.assertRaises(ValueError):
+            jira_client.build_jira_search_params({"jql": "project = PROD", "startAt": 50, "maxResults": 100})
+
+    def test_search_params_allow_next_page_token(self):
+        jira_client = importlib.import_module("backend.jira_client")
+        params = jira_client.build_jira_search_params({
+            "jql": "project = PROD",
+            "nextPageToken": "page-2",
+            "maxResults": 100,
+        })
+
+        self.assertEqual(params["nextPageToken"], "page-2")
+        self.assertNotIn("startAt", params)
+
     def test_jira_client_requires_injected_request_state(self):
         jira_client = importlib.import_module('backend.jira_client')
         with self.assertRaises(ValueError):

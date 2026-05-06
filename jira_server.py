@@ -1057,7 +1057,6 @@ def fetch_capacity_for_sprint(sprint_name, headers, debug=False, team_names=None
         jqls.append(jql)
         payload = {
             'jql': jql,
-            'startAt': 0,
             'maxResults': 200,
             'fields': ['summary', capacity_field_id]
         }
@@ -1139,7 +1138,6 @@ def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
         jqls.append(jql)
         payload = {
             'jql': jql,
-            'startAt': 0,
             'maxResults': 200,
             'fields': ['summary', 'watches', 'reporter']
         }
@@ -2771,14 +2769,15 @@ def fetch_sprints_from_jira():
 
         def collect_sprints_by_jql(jql_query, sprints_dict):
             total_issues = 0
-            start_at = 0
+            next_page_token = None
             while True:
                 payload = {
                     'jql': jql_query,
-                    'startAt': start_at,
                     'maxResults': 200,  # Reduced from 1000 for better performance
                     'fields': [get_sprint_field_id()]  # Only get sprint field
                 }
+                if next_page_token:
+                    payload['nextPageToken'] = next_page_token
 
                 response = jira_search_request(payload)
                 if response.status_code != 200:
@@ -2806,10 +2805,9 @@ def fetch_sprints_from_jira():
                                     }
 
                 total_issues += len(issues)
-                if len(issues) < payload['maxResults']:
+                next_page_token = data.get('nextPageToken')
+                if data.get('isLast', not next_page_token) or not next_page_token:
                     break
-
-                start_at += len(issues)
 
             return total_issues
 
@@ -2967,7 +2965,6 @@ def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sp
 
     payload = {
         'jql': epic_jql,
-        'startAt': 0,
         'maxResults': 250,
         'fields': fields_list
     }
@@ -3023,7 +3020,6 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
 
     payload = {
         'jql': epic_jql,
-        'startAt': 0,
         'maxResults': 250,
         'fields': epic_fields
     }
@@ -3066,7 +3062,6 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
     children_jql = f'("Epic Link" in ({quoted_keys}) OR parent in ({quoted_keys})) AND issuetype != Epic'
     child_payload = {
         'jql': children_jql,
-        'startAt': 0,
         'maxResults': 250,
         'fields': [epic_link_field, 'parent', 'status', sprint_field_id]
     }
@@ -3106,17 +3101,18 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
         return {}
 
     def count_by_query(batch_keys, jql, fields):
-        start_at = 0
+        next_page_token = None
         max_results = 250
         local_counts = {k: 0 for k in batch_keys}
 
         while True:
             payload = {
                 'jql': jql,
-                'startAt': start_at,
                 'maxResults': max_results,
                 'fields': fields
             }
+            if next_page_token:
+                payload['nextPageToken'] = next_page_token
             resp = jira_search_request(payload)
             if resp.status_code != 200:
                 return local_counts
@@ -3134,11 +3130,8 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
                 if epic_key in local_counts:
                     local_counts[epic_key] += 1
 
-            start_at += len(issues)
-            total = data.get('total')
-            if total is not None and start_at >= total:
-                break
-            if len(issues) < max_results:
+            next_page_token = data.get('nextPageToken')
+            if data.get('isLast', not next_page_token) or not next_page_token:
                 break
 
         return local_counts
@@ -3189,15 +3182,16 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
         quoted_keys = ', '.join(f'"{k}"' for k in batch_keys)
 
         def run_query(jql, fields):
-            start_at = 0
+            next_page_token = None
             max_results = 250
             while True:
                 payload = {
                     'jql': jql,
-                    'startAt': start_at,
                     'maxResults': max_results,
                     'fields': fields
                 }
+                if next_page_token:
+                    payload['nextPageToken'] = next_page_token
                 resp = jira_search_request(payload)
                 if resp.status_code != 200:
                     return
@@ -3212,11 +3206,8 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
                         epic_key = (fields_obj.get('parent') or {}).get('key')
                     if epic_key in distribution:
                         distribution[epic_key][bucket_name] += 1
-                start_at += len(issues)
-                total = data.get('total')
-                if total is not None and start_at >= total:
-                    break
-                if len(issues) < max_results:
+                next_page_token = data.get('nextPageToken')
+                if data.get('isLast', not next_page_token) or not next_page_token:
                     break
 
         if epic_link_field:
@@ -3235,15 +3226,16 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
         where_clause = f'Sprint = {selected_sprint} AND issuetype != Epic'
 
         def run_query(jql, fields):
-            start_at = 0
+            next_page_token = None
             max_results = 250
             while True:
                 payload = {
                     'jql': jql,
-                    'startAt': start_at,
                     'maxResults': max_results,
                     'fields': fields
                 }
+                if next_page_token:
+                    payload['nextPageToken'] = next_page_token
                 resp = jira_search_request(payload)
                 if resp.status_code != 200:
                     return
@@ -3262,11 +3254,8 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
                     status_name = ((fields_obj.get('status') or {}).get('name') if isinstance(fields_obj.get('status'), dict) else None)
                     if is_actionable_selected_status(status_name):
                         distribution[epic_key]['selectedActionableStories'] += 1
-                start_at += len(issues)
-                total = data.get('total')
-                if total is not None and start_at >= total:
-                    break
-                if len(issues) < max_results:
+                next_page_token = data.get('nextPageToken')
+                if data.get('isLast', not next_page_token) or not next_page_token:
                     break
 
         if epic_link_field:
@@ -3447,7 +3436,6 @@ def fetch_tasks(include_team_name=False):
 
         max_results = 250
         page_size = 100
-        start_at = 0
         next_page_token = None
         collected_issues = []
         names_map = {}
@@ -3469,8 +3457,6 @@ def fetch_tasks(include_team_name=False):
             }
             if next_page_token:
                 payload['nextPageToken'] = next_page_token
-            else:
-                payload['startAt'] = start_at
 
             response = jira_search_request(payload)
             log_debug(f'Jira search page response status={response.status_code}')
@@ -3506,13 +3492,7 @@ def fetch_tasks(include_team_name=False):
 
             collected_issues.extend(issues)
             next_page_token = data.get('nextPageToken')
-            if next_page_token:
-                continue
-            start_at += len(issues)
-            if total_issues is not None and start_at >= total_issues:
-                break
-            # Stop when Jira signals we're at the end or when the last page is smaller than the request size
-            if len(issues) < page_limit:
+            if data.get('isLast', not next_page_token) or not next_page_token:
                 break
         record_timing('jira_search', jira_fetch_started)
 
@@ -3723,7 +3703,6 @@ def fetch_issues_by_keys(keys, headers, fields_list):
         jql = f'key in ({quoted_keys})'
         payload = {
             'jql': jql,
-            'startAt': 0,
             'maxResults': batch_size,
             'fields': fields_list
         }
@@ -3739,7 +3718,6 @@ def fetch_issues_by_keys(keys, headers, fields_list):
 def fetch_issues_by_jql(jql, headers, fields_list, max_results=500):
     """Fetch issues by JQL with pagination."""
     results = []
-    start_at = 0
     next_page_token = None
     page_size = 100
     while len(results) < max_results:
@@ -3752,8 +3730,6 @@ def fetch_issues_by_jql(jql, headers, fields_list, max_results=500):
         }
         if next_page_token:
             payload['nextPageToken'] = next_page_token
-        else:
-            payload['startAt'] = start_at
         response = jira_search_request(payload)
         if response.status_code != 200:
             log_warning(f'Scenario fetch error: status={response.status_code}')
@@ -3764,13 +3740,7 @@ def fetch_issues_by_jql(jql, headers, fields_list, max_results=500):
             break
         results.extend(issues)
         next_page_token = data.get('nextPageToken')
-        if next_page_token:
-            continue
-        start_at += len(issues)
-        total = data.get('total')
-        if total is not None and start_at >= total:
-            break
-        if len(issues) < page_limit:
+        if data.get('isLast', not next_page_token) or not next_page_token:
             break
     return results
 
@@ -4515,17 +4485,18 @@ def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):
         fields_list.append(team_field_id)
 
     page_size = 250
-    start_at = 0
+    next_page_token = None
     collected_issues = []
     total_issues = None
 
     while True:
         payload = {
             'jql': jql,
-            'startAt': start_at,
             'maxResults': page_size,
             'fields': fields_list
         }
+        if next_page_token:
+            payload['nextPageToken'] = next_page_token
 
         response = jira_search_request(payload)
         if response.status_code != 200:
@@ -4538,10 +4509,8 @@ def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):
             break
 
         collected_issues.extend(issues)
-        if len(issues) < payload['maxResults']:
-            break
-        start_at += len(issues)
-        if total_issues is not None and start_at >= total_issues:
+        next_page_token = data.get('nextPageToken')
+        if data.get('isLast', not next_page_token) or not next_page_token:
             break
 
     def normalize_status(value):
@@ -4981,7 +4950,6 @@ def fetch_burnout_events_for_sprint(
             chunk_jql = f'issueKey in ({quoted_keys})'
             payload = {
                 'jql': chunk_jql,
-                'startAt': 0,
                 'maxResults': len(chunk),
                 'fields': fields_list
             }
@@ -5010,7 +4978,6 @@ def fetch_burnout_events_for_sprint(
             chunk_jql = add_clause_to_jql(chunk_scope_jql, closure_clause)
             payload = {
                 'jql': chunk_jql,
-                'startAt': 0,
                 'maxResults': len(chunk),
                 'fields': fields_list,
                 'expand': ['changelog']
@@ -5031,17 +4998,18 @@ def fetch_burnout_events_for_sprint(
         collected_issues = list(issue_map.values())
     else:
         page_size = 100
-        start_at = 0
+        next_page_token = None
         total_issues = None
         debug_payload['mode'] = 'jql'
         while True:
             payload = {
                 'jql': jql,
-                'startAt': start_at,
                 'maxResults': page_size,
                 'fields': fields_list,
                 'expand': ['changelog']
             }
+            if next_page_token:
+                payload['nextPageToken'] = next_page_token
             response = jira_search_request(payload)
             if response.status_code != 200:
                 return None, response, payload
@@ -5051,10 +5019,8 @@ def fetch_burnout_events_for_sprint(
             if not issues:
                 break
             collected_issues.extend(issues)
-            if len(issues) < page_size:
-                break
-            start_at += len(issues)
-            if total_issues is not None and start_at >= total_issues:
+            next_page_token = data.get('nextPageToken')
+            if data.get('isLast', not next_page_token) or not next_page_token:
                 break
 
     events = []

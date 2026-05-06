@@ -199,6 +199,8 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, session=No
 
 
 def build_jira_search_params(payload):
+    if 'startAt' in payload:
+        raise ValueError('/rest/api/3/search/jql uses nextPageToken, not startAt')
     params = {}
 
     def to_csv(value):
@@ -206,7 +208,7 @@ def build_jira_search_params(payload):
             return ','.join(value)
         return value
 
-    for key in ('jql', 'startAt', 'maxResults', 'expand', 'fields', 'fieldsByKeys', 'nextPageToken'):
+    for key in ('jql', 'maxResults', 'expand', 'fields', 'fieldsByKeys', 'nextPageToken'):
         if key in payload and payload[key] is not None:
             params[key] = to_csv(payload[key])
     return params

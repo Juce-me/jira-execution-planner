@@ -86,7 +86,6 @@ def lookup_issues():
             jql = f'id in ({",".join(unique_ids)})'
             payload = {
                 'jql': jql,
-                'startAt': 0,
                 'maxResults': len(unique_ids),
                 'fields': fields_list
             }
@@ -151,7 +150,6 @@ def get_missing_info():
 
         epics_resp = jira_search_request({
             'jql': epic_jql,
-            'startAt': 0,
             'maxResults': 250,
             'fields': epic_fields
         })
@@ -215,14 +213,16 @@ def get_missing_info():
             # find stories missing those fields. We only scope epics, then pull every story under them.
             story_jql = f'({link_clause} OR {parent_clause}) AND issuetype = Story AND status not in (Killed, Done, Postponed)'
 
-            start_at = 0
+            next_page_token = None
             while True:
-                resp = jira_search_request({
+                payload = {
                     'jql': story_jql,
-                    'startAt': start_at,
                     'maxResults': 250,
                     'fields': story_fields
-                })
+                }
+                if next_page_token:
+                    payload['nextPageToken'] = next_page_token
+                resp = jira_search_request(payload)
                 if resp.status_code != 200:
                     break
 
@@ -302,11 +302,8 @@ def get_missing_info():
                         }
                     })
 
-                start_at += len(issues)
-                total = data.get('total')
-                if total is not None and start_at >= total:
-                    break
-                if len(issues) < 250:
+                next_page_token = data.get('nextPageToken')
+                if data.get('isLast', not next_page_token) or not next_page_token:
                     break
 
         response = jsonify({'issues': missing, 'epics': epics_summary, 'count': len(missing), 'epicCount': len(epic_keys)})
@@ -491,16 +488,17 @@ def resolve_team_names():
             fields_list.append(team_field_id)
 
         max_results = 250
-        start_at = 0
+        next_page_token = None
         teams_map = {}
 
         while True:
             payload = {
                 'jql': jql,
-                'startAt': start_at,
                 'maxResults': max_results,
                 'fields': fields_list
             }
+            if next_page_token:
+                payload['nextPageToken'] = next_page_token
             response = jira_search_request(payload)
             if response.status_code != 200:
                 return jsonify({'error': 'Failed to resolve teams', 'details': response.text}), response.status_code
@@ -525,11 +523,8 @@ def resolve_team_names():
             if len(teams_map) >= len(team_ids):
                 break
 
-            start_at += len(issues)
-            total = data.get('total')
-            if total is not None and start_at >= total:
-                break
-            if len(issues) < max_results:
+            next_page_token = data.get('nextPageToken')
+            if data.get('isLast', not next_page_token) or not next_page_token:
                 break
 
         missing = [team_id for team_id in team_ids if team_id not in teams_map]

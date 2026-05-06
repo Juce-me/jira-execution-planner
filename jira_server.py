@@ -46,6 +46,7 @@ from backend.auth.jira_auth import (
     fetch_current_user,
     jira_get,
     jira_post,
+    jira_request,
     missing_oauth_scopes,
     new_oauth_state,
     new_pkce_verifier,
@@ -367,6 +368,90 @@ def current_request_auth_context():
         token_version='1',
         account_status='active',
         is_admin=True,
+    )
+
+
+def oauth_auth_required_payload():
+    save_oauth_session({})
+    return {
+        'error': 'auth_required',
+        'message': 'Your Jira sign-in expired. Sign in again to continue.',
+        'loginUrl': '/login?reason=session_expired',
+    }, 401
+
+
+def current_jira_auth_context(context=None):
+    if context is not None:
+        return context
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and not has_request_context():
+        raise AuthError('auth_required', 'Atlassian authentication is required.')
+    return current_request_auth_context()
+
+
+def current_oauth_session_callbacks():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return {}
+    if not has_request_context():
+        raise AuthError('auth_required', 'Atlassian authentication is required.')
+    return {
+        'save_session': save_oauth_session,
+        'reload_session': oauth_session_data,
+        'refresh_lock': oauth_refresh_lock(),
+    }
+
+
+def current_jira_get(path, *, params=None, timeout=30, context=None):
+    auth_context = current_jira_auth_context(context)
+
+    def request_get(url, **kwargs):
+        return resilient_jira_get(
+            url,
+            session=HTTP_SESSION,
+            breaker=JIRA_SEARCH_CIRCUIT_BREAKER,
+            **kwargs,
+        )
+
+    return jira_get(
+        current_auth_config(),
+        auth_context,
+        jira_session_data(),
+        path,
+        http_get=request_get,
+        params=params,
+        timeout=timeout,
+        **current_oauth_session_callbacks(),
+    )
+
+
+def current_jira_search(payload, *, context=None, timeout=30):
+    return current_jira_get(
+        '/rest/api/3/search/jql',
+        params=_jira_client.build_jira_search_params(payload),
+        timeout=timeout,
+        context=context,
+    )
+
+
+def current_jira_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
+    auth_context = current_jira_auth_context(context)
+
+    def request_fn(method_name, url, **kwargs):
+        return HTTP_SESSION.request(method_name, url, **kwargs)
+
+    kwargs = {'timeout': timeout}
+    if json_body is not None:
+        kwargs['json'] = json_body
+    if params is not None:
+        kwargs['params'] = params
+    return jira_request(
+        current_auth_config(),
+        auth_context,
+        jira_session_data(),
+        method,
+        path,
+        request_fn,
+        **kwargs,
+        **current_oauth_session_callbacks(),
     )
 
 

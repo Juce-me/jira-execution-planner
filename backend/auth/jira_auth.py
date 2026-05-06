@@ -361,3 +361,33 @@ def jira_post(
         headers=build_jira_headers(config, active_session),
         **kwargs,
     )
+
+
+def jira_request(
+    config,
+    context,
+    session_data,
+    method,
+    path,
+    http_request,
+    save_session=None,
+    reload_session=None,
+    refresh_lock=None,
+    refresh_http_post=requests.post,
+    **kwargs,
+):
+    save_session = save_session or (lambda data: None)
+    active_session = ensure_oauth_token(
+        config,
+        session_data,
+        save_session,
+        http_post=refresh_http_post,
+        reload_session=reload_session,
+        refresh_lock=refresh_lock,
+    )
+    return http_request(
+        method,
+        build_jira_api_url(config, context, path),
+        headers=build_jira_headers(config, active_session),
+        **kwargs,
+    )

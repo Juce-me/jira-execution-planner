@@ -16,7 +16,10 @@ export const fetchTeamCatalog = (backendUrl) =>
 export const saveTeamCatalog = (backendUrl, { catalog, meta, merge }) =>
     fetch(`${backendUrl}/api/team-catalog`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'jira-execution-planner'
+        },
         body: JSON.stringify({ catalog, meta, merge })
     });
 

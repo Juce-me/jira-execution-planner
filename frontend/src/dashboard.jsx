@@ -801,7 +801,10 @@ import {
                     const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraft);
                     const response = await fetch(`${BACKEND_URL}/api/epm/config`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'jira-execution-planner'
+                        },
                         body: JSON.stringify(normalizedDraft)
                     });
                     if (!response.ok) {

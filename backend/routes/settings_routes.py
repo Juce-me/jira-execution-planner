@@ -13,6 +13,10 @@ def _sync_server_globals():
     bind_server_globals(globals())
 
 
+def _settings_process_cache_enabled():
+    return jira_home_process_cache_enabled(current_request_auth_context())
+
+
 @bp.route('/api/boards', methods=['GET'])
 def get_boards():
     """Fetch available boards from Jira API"""
@@ -24,16 +28,6 @@ def get_boards():
         except ValueError:
             limit = 200
         limit = max(1, min(limit, 500))
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
 
         log_info(
             f'Fetching boards mode={"search" if query else "all"} '
@@ -50,11 +44,7 @@ def get_boards():
 
         # Fast path: direct board-id lookup for numeric search terms.
         if query and query.isdigit():
-            direct_resp = requests.get(
-                f'{JIRA_URL}/rest/agile/1.0/board/{query}',
-                headers=headers,
-                timeout=30
-            )
+            direct_resp = current_jira_get(f'/rest/agile/1.0/board/{query}', timeout=30)
             log_debug(f'Board direct lookup status={direct_resp.status_code} boardId={query}')
             if direct_resp.status_code == 200:
                 board = direct_resp.json() or {}
@@ -74,12 +64,7 @@ def get_boards():
             params = {'maxResults': page_size, 'startAt': start_at}
             if query:
                 params['name'] = query
-            response = requests.get(
-                f'{JIRA_URL}/rest/agile/1.0/board',
-                headers=headers,
-                params=params,
-                timeout=30
-            )
+            response = current_jira_get('/rest/agile/1.0/board', params=params, timeout=30)
 
             log_debug(f'Boards response status={response.status_code} startAt={start_at}')
 
@@ -152,6 +137,9 @@ def get_boards():
         success_response.headers['Expires'] = '0'
         return success_response
 
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
     except Exception as e:
         logger.exception('Boards endpoint error')
         error_response = jsonify({
@@ -209,9 +197,10 @@ def get_sprints():
 @bp.route('/api/config', methods=['GET'])
 def get_config():
     """Get public configuration"""
+    auth_context = current_request_auth_context()
     board_cfg = get_board_config()
     return jsonify({
-        'jiraUrl': JIRA_URL,
+        'jiraUrl': auth_context.site_url,
         'capacityProject': get_effective_capacity_project(),
         'boardId': board_cfg.get('boardId', ''),
         'boardName': board_cfg.get('boardName', ''),
@@ -340,21 +329,14 @@ def get_jira_projects():
         query = request.args.get('query', '').strip()
         limit_raw = request.args.get('limit', '').strip()
         refresh = request.args.get('refresh', '').strip().lower() in ('1', 'true', 'yes')
+        cache_enabled = _settings_process_cache_enabled()
 
         # Return cached data only for full-list requests (no query/limit), unless refresh requested.
-        with _cache_lock:
-            if (not refresh and not query and not limit_raw and
-                    PROJECTS_CACHE['data'] and (time.time() - PROJECTS_CACHE['timestamp']) < PROJECTS_CACHE_TTL):
-                return jsonify({'projects': PROJECTS_CACHE['data']})
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
+        if cache_enabled:
+            with _cache_lock:
+                if (not refresh and not query and not limit_raw and
+                        PROJECTS_CACHE['data'] and (time.time() - PROJECTS_CACHE['timestamp']) < PROJECTS_CACHE_TTL):
+                    return jsonify({'projects': PROJECTS_CACHE['data']})
 
         limit = None
         if limit_raw:
@@ -375,12 +357,7 @@ def get_jira_projects():
             if query:
                 params['query'] = query
 
-            response = HTTP_SESSION.get(
-                f'{JIRA_URL}/rest/api/3/project/search',
-                params=params,
-                headers=headers,
-                timeout=15
-            )
+            response = current_jira_get('/rest/api/3/project/search', params=params, timeout=15)
             if response.status_code != 200:
                 return jsonify({'error': 'Failed to fetch projects', 'details': response.text}), response.status_code
             data = response.json()
@@ -428,12 +405,15 @@ def get_jira_projects():
             start_at = next_start
 
         # Cache results (only for unfiltered full list)
-        if not query:
+        if cache_enabled and not query:
             with _cache_lock:
                 PROJECTS_CACHE['data'] = all_projects
                 PROJECTS_CACHE['timestamp'] = time.time()
 
         return jsonify({'projects': all_projects})
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
     except Exception as e:
         return jsonify({'error': 'Failed to fetch projects', 'details': str(e)}), 500
 
@@ -444,6 +424,7 @@ def get_jira_components():
     try:
         query = request.args.get('query', '').strip().lower()
         limit_raw = request.args.get('limit', '').strip()
+        cache_enabled = _settings_process_cache_enabled()
 
         limit = 25
         if limit_raw:
@@ -453,19 +434,11 @@ def get_jira_components():
                 return jsonify({'error': 'limit must be an integer'}), 400
 
         # Return cached data when no query is specified and cache is fresh
-        with _cache_lock:
-            if (not query and COMPONENTS_CACHE['data'] and
-                    (time.time() - COMPONENTS_CACHE['timestamp']) < COMPONENTS_CACHE_TTL):
-                return jsonify({'components': COMPONENTS_CACHE['data'][:limit]})
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
+        if cache_enabled:
+            with _cache_lock:
+                if (not query and COMPONENTS_CACHE['data'] and
+                        (time.time() - COMPONENTS_CACHE['timestamp']) < COMPONENTS_CACHE_TTL):
+                    return jsonify({'components': COMPONENTS_CACHE['data'][:limit]})
 
         projects = get_selected_projects()
         if not projects:
@@ -475,11 +448,7 @@ def get_jira_components():
         all_components = []
         for project_key in projects:
             try:
-                resp = HTTP_SESSION.get(
-                    f'{JIRA_URL}/rest/api/3/project/{project_key}/components',
-                    headers=headers,
-                    timeout=10
-                )
+                resp = current_jira_get(f'/rest/api/3/project/{project_key}/components', timeout=10)
                 if resp.status_code != 200:
                     continue
                 for comp in (resp.json() or []):
@@ -495,13 +464,15 @@ def get_jira_components():
                         'name': name,
                         'projectKey': project_key
                     })
+            except AuthError:
+                raise
             except Exception:
                 continue
 
         all_components.sort(key=lambda c: c['name'].lower())
 
         # Cache the full unfiltered list
-        if not query:
+        if cache_enabled and not query:
             with _cache_lock:
                 COMPONENTS_CACHE['data'] = all_components
                 COMPONENTS_CACHE['timestamp'] = time.time()
@@ -511,6 +482,9 @@ def get_jira_components():
             all_components = [c for c in all_components if query in c['name'].lower()]
 
         return jsonify({'components': all_components[:limit]})
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
     except Exception as e:
         return jsonify({'error': 'Failed to fetch components', 'details': str(e)}), 500
 
@@ -535,22 +509,15 @@ def search_epics():
         if not projects:
             return jsonify({'epics': []})
 
+        cache_enabled = _settings_process_cache_enabled()
         normalized_projects = sorted({str(project or '').strip() for project in projects if str(project or '').strip()})
         cache_key = f'{"|".join(normalized_projects)}::{query.lower()}::{limit}'
         now_ts = time.time()
-        with _cache_lock:
-            cached = EPICS_SEARCH_CACHE.get(cache_key)
-            if cached and (now_ts - float(cached.get('timestamp') or 0)) < EPICS_SEARCH_CACHE_TTL:
-                return jsonify({'epics': cached.get('data') or []})
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
+        if cache_enabled:
+            with _cache_lock:
+                cached = EPICS_SEARCH_CACHE.get(cache_key)
+                if cached and (now_ts - float(cached.get('timestamp') or 0)) < EPICS_SEARCH_CACHE_TTL:
+                    return jsonify({'epics': cached.get('data') or []})
         escaped_projects = ', '.join(f'"{_escape_jql_literal(project)}"' for project in normalized_projects)
         escaped_query = _escape_jql_literal(query)
         escaped_key = _escape_jql_literal(query.upper())
@@ -605,13 +572,17 @@ def search_epics():
                 'projectKey': project_key
             })
 
-        with _cache_lock:
-            EPICS_SEARCH_CACHE[cache_key] = {
-                'timestamp': now_ts,
-                'data': epics
-            }
+        if cache_enabled:
+            with _cache_lock:
+                EPICS_SEARCH_CACHE[cache_key] = {
+                    'timestamp': now_ts,
+                    'data': epics
+                }
 
         return jsonify({'epics': epics})
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
     except Exception as e:
         return jsonify({'error': 'Failed to search epics', 'details': str(e)}), 500
 
@@ -628,29 +599,24 @@ def get_jira_labels():
         limit = 50
         if limit_raw.isdigit():
             limit = max(1, min(int(limit_raw), 200))
+        cache_enabled = _settings_process_cache_enabled()
 
-        with _cache_lock:
-            cached_labels = LABELS_CACHE.get('data')
-            cached_ts = LABELS_CACHE.get('timestamp', 0)
+        cached_labels = None
+        cached_ts = 0
+        if cache_enabled:
+            with _cache_lock:
+                cached_labels = LABELS_CACHE.get('data')
+                cached_ts = LABELS_CACHE.get('timestamp', 0)
 
-        if cached_labels and not refresh and (time.time() - cached_ts) < LABELS_CACHE_TTL:
+        if cache_enabled and cached_labels and not refresh and (time.time() - cached_ts) < LABELS_CACHE_TTL:
             labels = cached_labels
         else:
-            auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-            auth_bytes = auth_string.encode('ascii')
-            auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-            headers = {
-                'Authorization': f'Basic {auth_base64}',
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            }
             labels = []
             start_at = 0
             max_results = 1000
             while True:
-                response = requests.get(
-                    f'{JIRA_URL}/rest/api/3/label',
-                    headers=headers,
+                response = current_jira_get(
+                    '/rest/api/3/label',
                     params={'maxResults': max_results, 'startAt': start_at},
                     timeout=30
                 )
@@ -667,9 +633,10 @@ def get_jira_labels():
                 else:
                     start_at += len(values)
             labels = sorted(dict.fromkeys(labels), key=str.lower)
-            with _cache_lock:
-                LABELS_CACHE['data'] = labels
-                LABELS_CACHE['timestamp'] = time.time()
+            if cache_enabled:
+                with _cache_lock:
+                    LABELS_CACHE['data'] = labels
+                    LABELS_CACHE['timestamp'] = time.time()
 
         if query:
             labels = [label for label in labels if query in label.lower()]
@@ -677,6 +644,9 @@ def get_jira_labels():
             labels = [label for label in labels if label.lower().startswith(prefix)]
 
         return jsonify({'labels': labels[:limit]})
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
     except Exception as e:
         return jsonify({'error': 'Failed to fetch labels', 'details': str(e)}), 500
 
@@ -857,20 +827,13 @@ def save_stats_priority_weights_config_endpoint():
 def get_jira_issue_types():
     """Fetch available Jira issue types with caching."""
     try:
-        with _cache_lock:
-            if ISSUE_TYPES_CACHE['data'] and (time.time() - ISSUE_TYPES_CACHE['timestamp']) < ISSUE_TYPES_CACHE_TTL:
-                return jsonify({'issueTypes': ISSUE_TYPES_CACHE['data']})
+        cache_enabled = _settings_process_cache_enabled()
+        if cache_enabled:
+            with _cache_lock:
+                if ISSUE_TYPES_CACHE['data'] and (time.time() - ISSUE_TYPES_CACHE['timestamp']) < ISSUE_TYPES_CACHE_TTL:
+                    return jsonify({'issueTypes': ISSUE_TYPES_CACHE['data']})
 
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-        }
-
-        url = f'{JIRA_URL}/rest/api/3/issuetype'
-        response = HTTP_SESSION.get(url, headers=headers, timeout=15)
+        response = current_jira_get('/rest/api/3/issuetype', timeout=15)
         if response.status_code != 200:
             return jsonify({'error': 'Failed to fetch issue types', 'details': response.text}), response.status_code
         data = response.json()
@@ -887,11 +850,15 @@ def get_jira_issue_types():
                 })
         result.sort(key=lambda x: x['name'])
 
-        with _cache_lock:
-            ISSUE_TYPES_CACHE['data'] = result
-            ISSUE_TYPES_CACHE['timestamp'] = time.time()
+        if cache_enabled:
+            with _cache_lock:
+                ISSUE_TYPES_CACHE['data'] = result
+                ISSUE_TYPES_CACHE['timestamp'] = time.time()
 
         return jsonify({'issueTypes': result})
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
     except Exception as e:
         return jsonify({'error': 'Failed to fetch issue types', 'details': str(e)}), 500
 
@@ -931,19 +898,10 @@ def get_jira_fields():
     """Fetch available Jira fields, optionally scoped to a project."""
     project_key = request.args.get('project', '').strip()
     try:
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-        }
-
         if project_key:
             # Fetch fields scoped to a specific project via createmeta
             seen = {}
-            url = f'{JIRA_URL}/rest/api/3/issue/createmeta/{project_key}/issuetypes'
-            resp = HTTP_SESSION.get(url, headers=headers, timeout=15)
+            resp = current_jira_get(f'/rest/api/3/issue/createmeta/{project_key}/issuetypes', timeout=15)
             if resp.status_code == 200:
                 issue_types = (resp.json() or {}).get('issueTypes', resp.json() if isinstance(resp.json(), list) else [])
                 if isinstance(issue_types, list):
@@ -951,8 +909,10 @@ def get_jira_fields():
                         it_id = it.get('id', '')
                         if not it_id:
                             continue
-                        fields_url = f'{JIRA_URL}/rest/api/3/issue/createmeta/{project_key}/issuetypes/{it_id}'
-                        fields_resp = HTTP_SESSION.get(fields_url, headers=headers, timeout=15)
+                        fields_resp = current_jira_get(
+                            f'/rest/api/3/issue/createmeta/{project_key}/issuetypes/{it_id}',
+                            timeout=15
+                        )
                         if fields_resp.status_code == 200:
                             field_values = (fields_resp.json() or {}).get('fields', fields_resp.json() if isinstance(fields_resp.json(), list) else [])
                             if isinstance(field_values, list):
@@ -971,7 +931,7 @@ def get_jira_fields():
                 return jsonify({'fields': result, 'scoped': True})
             # Fallback to global fields if createmeta didn't work
 
-        response = HTTP_SESSION.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=15)
+        response = current_jira_get('/rest/api/3/field', timeout=15)
         if response.status_code != 200:
             return jsonify({'error': 'Failed to fetch fields', 'details': response.text}), response.status_code
         fields = response.json() or []
@@ -984,5 +944,8 @@ def get_jira_fields():
             })
         result.sort(key=lambda f: f['name'].lower())
         return jsonify({'fields': result, 'scoped': False})
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
     except Exception as e:
         return jsonify({'error': 'Failed to fetch fields', 'details': str(e)}), 500

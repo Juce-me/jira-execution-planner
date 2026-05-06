@@ -11,7 +11,8 @@ This phase includes:
 - Database connection and migration tooling.
 - User records.
 - Workspace record for the configured Jira/Atlassian site.
-- Per-user auth connection metadata.
+- Per-user OAuth auth connection metadata.
+- Workspace-level service integration metadata for server-side service-account credentials.
 - Per-user Jira project access status for configured product/tech projects.
 - Encrypted token storage.
 - Token/admin/config audit events.
@@ -25,11 +26,12 @@ This phase does not include:
 - Role-specific ENG/EPM authorization. ENG/EPM behavior comes from the selected configuration in the later user-configuration phase, not from user roles.
 - Workspace membership or workspace ACLs. In this phase, the workspace is the deployment's configured Jira/Atlassian site boundary, not a per-user authorization object.
 - Long-lived Jira issue replication.
+- Home/Townsquare user-ACL proof. Until the Home GraphQL 3LO gate passes, Home/Townsquare metadata is app/workspace-scoped service data, not user-filtered data.
 
 ## Current Constraints
 
 - Runtime dashboard configuration is currently stored in local JSON files, mainly `dashboard-config.json`, `team-groups.json`, and `team-catalog.json`.
-- Credentials are intentionally outside committed files and currently belong in `.env` or the local OAuth session path described in `docs/superpowers/specs/2026-04-27-atlassian-oauth-auth-design.md`.
+- Credentials are intentionally outside committed files and currently belong in `.env` or the local OAuth session path described in `docs/superpowers/specs/2026-04-27-atlassian-oauth-auth-design.md`. Server-side Basic/API-token credentials are service-account credentials, not personal user tokens.
 - Initial dashboard load is performance-critical. This phase must not add extra heavy startup requests.
 - Admin views must not expose token material.
 
@@ -43,7 +45,17 @@ This phase does not include:
 
 Do not implement this database phase until the Jira/Home auth-client boundary exists and the OAuth slice has closed the local-only safety gaps.
 
-The phase assumes backend Jira/Home calls can resolve the current request's authenticated user, auth connection, workspace/site, and headers without reading process-global `JIRA_EMAIL` / `JIRA_TOKEN` directly in every route. Before starting this phase, the OAuth slice must also serialize refresh-token replacement, return `route_not_oauth_ready`/501 for un-migrated API routes in `JIRA_AUTH_MODE=atlassian_oauth`, and disable or auth-key Jira/Home process caches for OAuth users. Either complete `docs/plans/2026-04-27-atlassian-oauth-auth.md` first or add an equivalent centralized auth/client layer with those same gates before database-backed identity work starts.
+The phase assumes backend Jira calls can resolve the current request's authenticated user, auth connection, workspace/site, and headers without reading process-global `JIRA_EMAIL` / `JIRA_TOKEN` directly in every route. Home/Townsquare calls must not be treated as user-scoped until `docs/plans/2026-05-06-home-townsquare-3lo-readiness-migration.md` passes its real local 3LO gate. Until that gate passes, Home/Townsquare metadata uses workspace-level service credentials and remains guarded or read-only for normal users. Before starting this phase, the OAuth slice must also serialize refresh-token replacement, return `route_not_oauth_ready`/501 for un-migrated API routes in `JIRA_AUTH_MODE=atlassian_oauth`, and disable or auth-key Jira/Home process caches for OAuth users. Either complete `docs/plans/2026-04-27-atlassian-oauth-auth.md` first or add an equivalent centralized auth/client layer with those same gates before database-backed identity work starts.
+
+## Home/Townsquare And Service-Credential Boundary
+
+This database phase keeps three credential concepts separate:
+
+- User OAuth connections: rows in `auth_connections` and `auth_tokens`, owned by an authenticated Atlassian user, used for Jira REST and any future provider that actually supports user 3LO.
+- Workspace service integrations: rows in `service_integrations` and `service_integration_tokens`, owned by the deployment/workspace and provisioned by an admin/operator service account.
+- Route authorization: normal users can read only through routes explicitly migrated and tested for their auth model; Home/Townsquare-backed or Jira-project-backed mutations require an admin or service-account guard.
+
+Do not store a Home/Townsquare Basic API token as a user's `auth_connection`. Until the Home/Townsquare 3LO gate passes, Home/Townsquare Basic credentials are service-account credentials and their data must not be described as user-ACL filtered. `RequestAuthContext` may still be passed to Home/Townsquare helpers for workspace scoping, cache partitioning, audit, and response gating, but it is not proof that the signed-in user has Home/Townsquare object-level access.
 
 ## Security Preconditions
 
@@ -55,9 +67,10 @@ Before this database phase starts, the OAuth slice must settle these items:
 - Keep the process-local `OAUTH_TOKEN_STORE` local-only. It must require both `APP_ENVIRONMENT_KEY=local` or `dev` and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`; production database auth must hard-fail if it would use that store instead of encrypted database tokens.
 - Serialize local OAuth refresh per session and re-read token state inside the lock before calling Atlassian. The database refresh path can then replace this with `SELECT ... FOR UPDATE` or an advisory lock without changing the caller contract.
 - Make unsupported OAuth route surface explicit. Until a route is migrated through the auth/client boundary, `JIRA_AUTH_MODE=atlassian_oauth` must return `route_not_oauth_ready`/501 instead of falling through to empty Basic credentials.
+- Before any Home/Townsquare route is marked OAuth-ready, follow `docs/plans/AGENTS.md` and rerun the Home GraphQL 3LO probe with a real local OAuth session. If it fails or credentials are unavailable, keep Home/Townsquare-backed routes guarded or service-credential-backed as documented.
 - Define session cookie, CORS, and CSRF policy before exposing DB-backed admin/config mutation endpoints: `HttpOnly`, `SameSite=Lax`, `Secure` outside local HTTP development, a restricted origin allowlist, and CSRF checks for state-changing browser routes.
 - Partition or disable every Jira/Home-derived cache for OAuth users before multiple users can share a process.
-- Define and use `RequestAuthContext` for all Jira/Home clients and caches. Routes must not reach into global auth state after this boundary exists.
+- Define and use `RequestAuthContext` for Jira clients and for Home/Townsquare workspace/cache/audit scoping. Routes must not reach into global auth state after this boundary exists.
 
 ## RequestAuthContext Boundary
 
@@ -76,11 +89,11 @@ Before database tables are introduced, the auth slice must define a request-scop
 | `is_admin` | Local single-user default or bootstrap-only flag. | `users.account_type == "admin"`. |
 | `project_access` | Empty or local snapshot. | Latest `jira_project_access` rows for the connection. |
 
-All Jira and Home client entry points must take `RequestAuthContext` as an explicit argument. Cache helpers must also take this context and use it in cache keys. This includes Jira issue searches, project/field/label/board lookups, Home goal/project fetches, EPM rollups, and generated project metadata caches.
+All Jira client entry points must take `RequestAuthContext` as an explicit argument. Home/Townsquare entry points must take `RequestAuthContext` for workspace/cache/audit scoping, but must resolve credentials from the workspace service integration unless the Home/Townsquare 3LO gate has passed and the route has been migrated through the future Home OAuth client. Cache helpers must also take this context and use it in cache keys. This includes Jira issue searches, project/field/label/board lookups, Home goal/project fetches, EPM rollups, and generated project metadata caches.
 
-The database phase must not add new DB-backed routes that still call `build_jira_headers()`, `JIRA_EMAIL`, `JIRA_TOKEN`, `JIRA_URL`, `fetch_home_*`, or process caches directly from route globals. Any remaining Basic-mode compatibility wrapper should first build a `RequestAuthContext`, then call the same Jira/Home client boundary.
+The database phase must not add new DB-backed routes that still call `build_jira_headers()`, `JIRA_EMAIL`, `JIRA_TOKEN`, `JIRA_URL`, `ATLASSIAN_EMAIL`, `ATLASSIAN_API_TOKEN`, `fetch_home_*`, or process caches directly from route globals. Any remaining Basic-mode compatibility wrapper should first build a `RequestAuthContext`, then call the same Jira/Home client boundary. Any server-side API token loaded from the database must come from a service-integration boundary, not from a normal user's auth connection.
 
-On every authenticated request, the auth context resolver reads `users.status` and `auth_connections.status` from the database before issuing Jira/Home calls. Do not cache these statuses beyond the request by default. The only acceptable optimization is a per-process status cache with a maximum 30-second TTL, keyed by `(user_id, auth_connection_id, token_version)`, and invalidated immediately by admin enable/disable, admin grant/revoke, connection revoke, and reconnect events. Any non-active user or connection returns `401` with a stable error such as `account_disabled` or `auth_connection_revoked` before Jira/Home calls run.
+On every authenticated request, the auth context resolver reads `users.status` and `auth_connections.status` from the database before issuing user-scoped Jira calls or serving Home/Townsquare-backed route responses. Do not cache these statuses beyond the request by default. The only acceptable optimization is a per-process status cache with a maximum 30-second TTL, keyed by `(user_id, auth_connection_id, token_version)`, and invalidated immediately by admin enable/disable, admin grant/revoke, connection revoke, and reconnect events. Any non-active user or connection returns `401` with a stable error such as `account_disabled` or `auth_connection_revoked` before user-scoped Jira calls or Home/Townsquare-backed route responses run.
 
 Every `401` auth-state response that a browser user can hit must include a stable re-auth target or screen state. Expired sessions and expired/error auth connections use `loginUrl: "/login?reason=session_expired"` or the DB-phase equivalent; disabled users and revoked connections use a visible account-disabled/reconnect screen instead of a generic dashboard failure.
 
@@ -200,6 +213,42 @@ Encrypted token material separated from connection metadata and never joined int
 
 Frontend APIs should receive only status such as `authenticated`, `provider`, `expiresAt`, and `needsReconnect`.
 
+### `service_integrations`
+
+One row per workspace-owned service credential configuration.
+
+| Column | Purpose |
+| --- | --- |
+| `id` | Integration UUID. |
+| `workspace_id` | Workspace scope. |
+| `provider` | `jira_basic` or `home_townsquare_basic`. |
+| `credential_subject` | Service-account email or non-secret account label. |
+| `status` | `active`, `disabled`, `expired`, `revoked`, or `error`. |
+| `token_version` | Monotonic integer incremented on rotation, revoke, or validation reset. |
+| `last_validated_at`, `expires_at` | Credential lifecycle when known. |
+| `created_by`, `updated_by` | Admin/operator actor ids. |
+| `created_at`, `updated_at` | Lifecycle timestamps. |
+
+Normal users cannot create or update service integrations. Admin/operator flows must verify that the credential belongs to a dedicated service account. Do not store personal API tokens here.
+
+### `service_integration_tokens`
+
+Encrypted token material for workspace service integrations.
+
+| Column | Purpose |
+| --- | --- |
+| `service_integration_id` | Parent service integration. |
+| `token_kind` | `api_token`. |
+| `algorithm` | Encryption algorithm, initially `AES-256-GCM`. |
+| `ciphertext` | Encrypted token value. |
+| `nonce` | Per-token encryption nonce. |
+| `wrapped_dek` | Data encryption key wrapped by the configured key-encryption key. |
+| `key_id` | Encryption key identifier for rotation. |
+| `aad_hash` | Hash of authenticated associated data such as workspace, service integration, and token kind. |
+| `rotated_at`, `revoked_at` | Secret lifecycle. |
+
+The encryption and redaction rules for `auth_tokens` apply here too. Admin APIs expose only status and service-account subject metadata, never token plaintext or ciphertext.
+
 ### `audit_events`
 
 Append-only security and admin event log. Events must not contain token material, OAuth codes, PKCE verifiers, raw authorization headers, or full callback URLs.
@@ -276,23 +325,23 @@ Existing `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` 
 ## Migration Plan
 
 1. Add database connection config and migration tooling.
-2. Create `users`, `workspaces`, `auth_connections`, `auth_tokens`, `jira_project_access`, and `audit_events`.
+2. Create `users`, `workspaces`, `auth_connections`, `auth_tokens`, `service_integrations`, `service_integration_tokens`, `jira_project_access`, and `audit_events`.
 3. Bootstrap one workspace from the current configured Jira site.
 4. Create or upsert the current authenticated user on login by `(external_provider, external_subject)` from the Atlassian `account_id`; update changed email/display-name fields without creating a duplicate user.
-5. Resolve every request into `RequestAuthContext` and pass it to Jira/Home clients and cache helpers.
+5. Resolve every request into `RequestAuthContext` and pass it to Jira clients plus Home/Townsquare cache/audit helpers.
 6. Store OAuth connection metadata and encrypted refresh tokens in the database.
 7. Validate configured Jira project access for the user's auth connection without adding heavy startup fan-out.
-8. Keep Basic API-token mode local-only unless there is a clear requirement to store API tokens server-side.
+8. Keep Basic API-token mode local-only until the `service_integrations` boundary and admin rotation flow exist. If API tokens are stored server-side, they must be service-account credentials.
 9. Add admin bootstrap, admin user inspection, admin grant/revoke, user lifecycle, and audit-event endpoints.
-10. Gate only the admin-only shared configuration areas; keep all other configuration tabs available to authenticated users.
+10. Gate admin-only shared configuration areas and any Home/Townsquare-backed or Jira-project-backed mutation surface; keep read-only and user-owned configuration tabs available to authenticated users.
 
 ## Multi-User Cache Safety
 
-Any cache that contains Jira/Home-derived data must be partitioned by the authorization context that produced it.
+Any cache that contains Jira/Home-derived data must be partitioned by the authorization or service-integration context that produced it.
 
 At minimum, cache keys for issue/project/rollup data must include the `workspace_id` and either the `user_id` or a stable `auth_connection_id` plus token/access version. This prevents a user with broader Jira access from warming a process-wide cache that is later served to a user with narrower Jira access.
 
-Shared caches are acceptable only for data that is both non-secret and independent of Jira/Home permissions. Revoke, reconnect, project-access changes, and admin changes to scope projects must invalidate affected user/workspace cache entries.
+Shared caches are acceptable only for data that is both non-secret and independent of Jira/Home permissions. Until Home/Townsquare 3LO passes, Home/Townsquare metadata caches are workspace/service-integration scoped, not user-ACL scoped, and must not be used as proof of user Home visibility. Revoke, reconnect, project-access changes, service-credential rotation, and admin changes to scope projects must invalidate affected user/workspace/service cache entries.
 
 Existing process caches that must be either auth-keyed or disabled for OAuth users include project search, component lookup, epic search, labels, issue types, EPM issue payloads, EPM rollups, EPM Home project metadata, sprint caches when the board/source is workspace-specific, and any Home goal/project catalog cache. A cache key built only from project key, JQL, tab, sprint, Home project id, label prefix, or goal key is not sufficient in DB/OAuth mode.
 
@@ -317,6 +366,7 @@ Token storage must be designed before writing `auth_tokens`.
 
 - Never store tokens in browser localStorage, share URLs, or dashboard config payloads.
 - Encrypt token values before database insert and store the encryption `key_id`.
+- Store server-side API tokens only as service-integration secrets for dedicated service accounts; never store a normal user's personal Atlassian API token as shared app auth.
 - Define token key source, `key_id` format, rotation procedure, and local-development behavior before storing production tokens.
 - Store refresh-token replacements atomically and guard concurrent refreshes so an older refresh response cannot overwrite newer token material.
 - Treat refresh-token reuse or replay signals as a connection revocation event, not as a transient refresh failure.
@@ -329,26 +379,27 @@ Token storage must be designed before writing `auth_tokens`.
 ## Verification Criteria
 
 - Every supported auth/admin backend path has a named browser or dashboard journey that exercises it. Backend route tests are required but not sufficient for completion.
-- User-journey verification covers unauthenticated entry, Atlassian/Microsoft login, authenticated bootstrap, admin access, non-admin denial, revoked/disabled user denial, and at least one Jira/Home data fetch through the authenticated context.
+- User-journey verification covers unauthenticated entry, Atlassian/Microsoft login, authenticated bootstrap, admin access, non-admin denial, revoked/disabled user denial, at least one Jira data fetch through the authenticated user context, and Home/Townsquare metadata fetch behavior through the correct service-integration or future Home 3LO boundary.
 - User-journey verification covers expired-session recovery: the user sees an actionable expired-auth screen and can start re-authentication without reading a backend JSON error.
 - User-journey verification covers focus/visibility refresh: returning to an open tab attempts a safe refresh when needed, and refresh failure routes to the expired-auth recovery screen.
 - PR notes include evidence for the relevant journey, such as screenshots or a concise browser-test transcript. Do not merge a faceless backend-only auth slice unless the plan explicitly marks it as developer-only and lists its manual verification path.
 - `GET /api/me` returns the current user, current workspace/site, Jira project access status, and auth connection status without token material.
-- All Jira/Home routes construct and pass `RequestAuthContext`; source guards fail if routes call Jira/Home clients or caches without context.
-- Every Jira/Home-derived cache is keyed by workspace and auth context or disabled for OAuth users.
+- All Jira routes construct and pass `RequestAuthContext`; Home/Townsquare routes pass `RequestAuthContext` for workspace/cache/audit scoping and resolve credentials from either the service-integration boundary or the future Home 3LO boundary. Source guards fail if routes call Jira/Home clients or caches directly from process globals.
+- Every Jira/Home-derived cache is keyed by workspace plus auth context or service-integration context, or disabled for OAuth users.
 - OAuth login creates or updates a user by Atlassian `account_id`; an email change updates profile metadata and does not create another user.
 - Inactive Atlassian accounts and disabled/deleted local users cannot create active sessions.
 - Disabling a signed-in user terminates their next authenticated request within 30 seconds without process restart; the response is `401 account_disabled` and no Jira/Home call runs.
-- Revoking an auth connection terminates that user's next authenticated Jira/Home request within 30 seconds without process restart; the response is `401 auth_connection_revoked`.
+- Revoking an auth connection terminates that user's next authenticated Jira request or Home/Townsquare-backed route response within 30 seconds without process restart; the response is `401 auth_connection_revoked`.
 - First admin bootstrap succeeds only for configured Atlassian account ids and only while the workspace has zero admins.
 - Later admin grant/revoke actions require an existing admin and create audit events.
 - Non-admin users cannot mutate selected projects, board config, capacity, field mapping, priority weights, team/group config, issue-type config, or EPM config.
+- Non-admin users cannot mutate Home/Townsquare-backed or Jira-project-backed EPM/APM configuration, even when they can read the resulting view.
 - Token encryption tests prove tokens are not stored as plaintext, use the configured `key_id`, decrypt with retired keys during rotation, and redact logs.
 - Concurrent refresh tests prove one refresh updates tokens, deletes the previous refresh-token row, and increments `token_version` while stale refresh attempts cannot overwrite newer token material.
 - Refresh-reuse tests prove `invalid_grant` or provider reuse signals revoke the connection, delete usable tokens, write a redacted `connection_revoked` audit event with cause `refresh_reuse_detected`, and do not retry.
 - Data for one environment/Jira workspace cannot be read with another environment/workspace context.
 - Admin user detail shows user id, provider id, created-by, timestamps, status, Jira project access status, and auth connection status.
 - A user with product-only, tech-only, or no configured Jira project access receives explicit access states instead of leaked cached data or generic Jira failures.
-- Revoking an auth connection prevents future Jira/Home calls for that user.
+- Revoking an auth connection prevents future user-scoped Jira calls and prevents Home/Townsquare-backed responses from being served through that user session. Workspace service metadata warmers may still run only through service integrations and must not expose data to a revoked user session.
 - Existing dashboard config endpoints still return the same non-secret payloads as before this phase.
 - Initial dashboard bootstrap remains one compact user/auth request plus the existing scoped data requests.

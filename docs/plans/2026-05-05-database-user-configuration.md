@@ -26,7 +26,7 @@ Do not split users into `dev_lead` and `epm` roles. The user is a system user. T
 
 All configuration reads and writes inherit the environment/workspace isolation from `docs/plans/2026-05-05-database-introduction-user-auth.md`. Workspace defaults and saved views are scoped by `workspace_id`, and that workspace is resolved from `RequestAuthContext`; the client must not choose an arbitrary workspace id.
 
-Shared workspace defaults remain admin-controlled. User-owned saved views can be created by normal authenticated users, but they must only reference projects, fields, Home goals, and EPM project mappings visible in the current `RequestAuthContext` project-access snapshot.
+Shared workspace defaults remain admin-controlled. User-owned saved views can be created by normal authenticated users, but Jira project references must be checked against the current `RequestAuthContext` project-access snapshot. Home/Townsquare goals, Home projects, and EPM project mappings are app/workspace-scoped metadata until the Home GraphQL 3LO gate passes; do not describe them as user-ACL filtered or allow normal users to mutate the shared Home/Jira-project-backed mapping catalog.
 
 ## Data Model
 
@@ -134,6 +134,8 @@ Existing `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` 
 
 `PATCH /api/workspace/config` and any compatibility route that mutates shared workspace defaults must require an authenticated admin and CSRF validation. `POST /api/me/views` and `PATCH /api/me/views/<id>` require an authenticated active user, CSRF validation, workspace scoping from `RequestAuthContext`, and ownership checks.
 
+Personal saved views may store references to configured Home/Townsquare project ids or goal keys, but they do not create or edit the shared Home/Townsquare-backed EPM/APM configuration. If Home/Townsquare 3LO is still unavailable, validate those references against the workspace service-backed catalog and validate Jira project/label reachability against the user's Jira access snapshot.
+
 ## Migration Plan
 
 1. Create `workspace_config`, `view_configs`, and `view_config_versions`.
@@ -153,5 +155,7 @@ Existing `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` 
 - A user cannot open or save a view for a workspace they cannot access.
 - A request in one environment/Jira workspace cannot read or mutate defaults or saved views from another environment/Jira workspace.
 - Normal users can save private views but cannot mutate shared workspace defaults.
+- Normal users cannot mutate shared Home/Townsquare-backed or Jira-project-backed EPM/APM mappings through saved-view endpoints.
+- Saved views that reference Home/Townsquare metadata do not claim user-level Home visibility unless `docs/plans/2026-05-06-home-townsquare-3lo-readiness-migration.md` has passed and the implementation validates that user 3LO path.
 - No view payload contains token material.
 - Initial dashboard bootstrap remains one compact user/config request plus the existing scoped data requests.

@@ -80,7 +80,7 @@ Restart the Flask server after changing `.env`.
 6. Open `http://localhost:5050/api/auth/status`; it should report authenticated state and must not include tokens.
 7. Open `http://localhost:5050/api/test`; it should use OAuth.
 
-The ENG dashboard and Jira REST catalog/statistics routes are migrated through the OAuth Jira client. EPM Home/GraphQL routes remain guarded until the Home client has its own auth migration. If a route returns `route_not_oauth_ready`, the OAuth session is valid but that route is intentionally outside the current OAuth Jira REST surface.
+The ENG dashboard and Jira REST catalog/statistics routes are migrated through the OAuth Jira client. Home/Townsquare GraphQL-backed API routes remain guarded until the Home client has its own auth migration. Today those routes sit under `/api/epm/*` because EPM is the feature that consumes Home/Townsquare metadata. If a route returns `route_not_oauth_ready`, the OAuth session is valid but that route is intentionally outside the current OAuth Jira REST surface.
 
 If Atlassian reports a missing scope, add the named scope to the matching API on the app's `Permissions` page, save, then start again from `/login`. If you previously signed in before adding the Jira Software scopes, clear the local OAuth session and sign in again so Atlassian can show a new consent screen.
 
@@ -90,7 +90,7 @@ Use the same browser and hostname for the whole flow. If `ATLASSIAN_REDIRECT_URI
 
 ## Home GraphQL OAuth Gate
 
-The local Home/Townsquare GraphQL 3LO feasibility probe currently stops the EPM route migration with:
+The local Home/Townsquare GraphQL 3LO feasibility probe currently stops the Home/Townsquare-backed API route migration with:
 
 ```text
 FAIL home_graphql_3lo_unsupported
@@ -98,7 +98,7 @@ FAIL home_graphql_3lo_unsupported
 
 The Jira OAuth session can read Jira REST and Jira Software APIs, but the Home GraphQL `goals_search` operation returns a Home scope authorization error for the current grant. Do not use the user's Jira OAuth access token for Home/Townsquare GraphQL calls while this gate fails.
 
-Keep these Home-backed EPM routes guarded with `route_not_oauth_ready` in OAuth mode:
+Keep these Home/Townsquare-backed API routes guarded with `route_not_oauth_ready` in OAuth mode:
 
 ```text
 /api/epm/scope
@@ -111,7 +111,7 @@ Keep these Home-backed EPM routes guarded with `route_not_oauth_ready` in OAuth 
 /api/epm/projects/<project_id>/rollup
 ```
 
-EPM/Home needs a later admin-owned service credential design. That credential must stay server-side only, avoid browser exposure, and be audited before any Home-backed EPM route is marked OAuth-ready.
+Home/Townsquare access needs a later admin-owned service credential design. That credential must stay server-side only, avoid browser exposure, and be audited before any Home/Townsquare-backed route is marked OAuth-ready.
 
 ## Common Errors
 
@@ -140,7 +140,7 @@ Start again from `/login` in the same browser tab. Do not reuse an old callback 
 
 `route_not_oauth_ready`
 
-The login session is valid, but the requested API route is intentionally outside the current OAuth Jira REST surface. The ENG dashboard and Jira REST catalog/statistics routes are migrated; EPM Home/GraphQL routes remain guarded until the Home client has its own auth migration.
+The login session is valid, but the requested API route is intentionally outside the current OAuth Jira REST surface. The ENG dashboard and Jira REST catalog/statistics routes are migrated; Home/Townsquare GraphQL-backed API routes remain guarded until the Home client has its own auth migration.
 
 `Local OAuth token storage requires APP_ENVIRONMENT_KEY=local or dev and OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`
 

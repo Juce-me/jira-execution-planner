@@ -88,6 +88,31 @@ If you already signed in before adding the Jira Software scopes, update `ATLASSI
 
 Use the same browser and hostname for the whole flow. If `ATLASSIAN_REDIRECT_URI` uses `localhost`, start from `http://localhost:5050/login`, not `http://127.0.0.1:5050/login`.
 
+## Home GraphQL OAuth Gate
+
+The local Home/Townsquare GraphQL 3LO feasibility probe currently stops the EPM route migration with:
+
+```text
+FAIL home_graphql_3lo_unsupported
+```
+
+The Jira OAuth session can read Jira REST and Jira Software APIs, but the Home GraphQL `goals_search` operation returns a Home scope authorization error for the current grant. Do not use the user's Jira OAuth access token for Home/Townsquare GraphQL calls while this gate fails.
+
+Keep these Home-backed EPM routes guarded with `route_not_oauth_ready` in OAuth mode:
+
+```text
+/api/epm/scope
+/api/epm/goals
+/api/epm/projects
+/api/epm/projects/configuration
+/api/epm/projects/preview
+/api/epm/projects/rollup/all
+/api/epm/projects/<home_project_id>/issues
+/api/epm/projects/<project_id>/rollup
+```
+
+EPM/Home needs a later admin-owned service credential design. That credential must stay server-side only, avoid browser exposure, and be audited before any Home-backed EPM route is marked OAuth-ready.
+
 ## Common Errors
 
 `failed to retrieve client`

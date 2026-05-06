@@ -250,6 +250,356 @@ query EpmProjectTags($cypherQuery: String!, $params: CypherRequestParams) {
 """
 
 
+HOME_GRAPHQL_FEASIBILITY_OPERATION_NAMES = (
+    "goals_search",
+    "goal_by_key",
+    "sub_goals",
+    "goal_projects",
+    "project_details",
+    "project_updates",
+    "project_tags",
+    "teamwork_graph_project_tags",
+)
+
+HOME_GRAPHQL_AUTH_ERROR_MARKERS = (
+    "unauthorized",
+    "forbidden",
+    "scope does not match",
+    "does not contain the right authorisation scopes",
+    "does not contain the right authorization scopes",
+)
+
+HOME_GRAPHQL_PROBE_SENSITIVE_KEYS = {
+    "access_token",
+    "refresh_token",
+    "authorization",
+    "client_secret",
+    "code",
+    "oauth_code",
+    "oauth_pkce_verifier",
+    "pkce_verifier",
+}
+
+
+def home_graphql_feasibility_queries() -> dict[str, str]:
+    return {
+        "goals_search": QUERY_GOALS_SEARCH,
+        "goal_by_key": QUERY_GOAL_BY_KEY,
+        "sub_goals": QUERY_SUB_GOALS,
+        "goal_projects": QUERY_GOAL_PROJECTS,
+        "project_details": QUERY_PROJECT_DETAILS,
+        "project_updates": QUERY_PROJECT_UPDATES,
+        "project_tags": QUERY_PROJECT_TAGS,
+        "teamwork_graph_project_tags": QUERY_TEAMWORK_GRAPH_PROJECT_TAGS,
+    }
+
+
+def redact_home_oauth_probe_payload(payload):
+    if isinstance(payload, dict):
+        redacted = {}
+        for key, value in payload.items():
+            if str(key).strip().lower() in HOME_GRAPHQL_PROBE_SENSITIVE_KEYS:
+                redacted[key] = "[redacted]"
+                continue
+            redacted[key] = redact_home_oauth_probe_payload(value)
+        return redacted
+    if isinstance(payload, list):
+        return [redact_home_oauth_probe_payload(value) for value in payload]
+    if isinstance(payload, str) and "bearer " in payload.lower():
+        return "[redacted]"
+    return payload
+
+
+def _home_graphql_probe_error_text(result: dict) -> str:
+    try:
+        return json.dumps(
+            {
+                "error": result.get("error"),
+                "errors": result.get("errors"),
+                "message": result.get("message"),
+            },
+            default=str,
+        ).lower()
+    except (TypeError, ValueError):
+        return str(result).lower()
+
+
+def classify_home_graphql_probe_results(results) -> dict:
+    rows = [row for row in (results or []) if isinstance(row, dict)]
+    for row in rows:
+        if row.get("reason") == "insufficient_home_fixture":
+            return {"decision": "fail", "reason": "insufficient_home_fixture"}
+        try:
+            status = int(row.get("status"))
+        except (TypeError, ValueError):
+            status = 0
+        if status in {401, 403}:
+            return {"decision": "fail", "reason": "home_graphql_3lo_unsupported"}
+        error_text = _home_graphql_probe_error_text(row)
+        if any(marker in error_text for marker in HOME_GRAPHQL_AUTH_ERROR_MARKERS):
+            return {"decision": "fail", "reason": "home_graphql_3lo_unsupported"}
+
+    required = set(HOME_GRAPHQL_FEASIBILITY_OPERATION_NAMES)
+    by_operation = {
+        str(row.get("operation")): row
+        for row in rows
+        if str(row.get("operation")) in required
+    }
+    if set(by_operation) != required:
+        return {"decision": "fail", "reason": "insufficient_home_fixture"}
+    for row in by_operation.values():
+        if row.get("ok") is not True:
+            return {"decision": "fail", "reason": "home_graphql_probe_failed"}
+    return {"decision": "pass", "reason": "home_graphql_3lo_supported"}
+
+
+def _graphql_error_messages(payload: dict) -> list[str]:
+    messages: list[str] = []
+    errors = payload.get("errors") if isinstance(payload, dict) else []
+    for error in errors or []:
+        if isinstance(error, dict):
+            messages.append(str(error.get("message") or error))
+        else:
+            messages.append(str(error))
+    return messages
+
+
+def _decode_graphql_probe_body(raw: bytes) -> dict:
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return {"errors": [{"message": "GraphQL probe returned invalid JSON."}]}
+    return payload if isinstance(payload, dict) else {"errors": [{"message": "GraphQL probe returned non-object JSON."}]}
+
+
+def _execute_home_oauth_probe_operation(
+    operation: str,
+    endpoint: str,
+    access_token: str,
+    query: str,
+    variables: dict,
+    endpoint_kind: str,
+) -> tuple[dict, dict]:
+    payload: dict[str, Any] = {"query": query, "variables": variables or {}}
+    request = Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token}",
+            "X-ExperimentalApi": "Townsquare",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=HOME_TIMEOUT_SECONDS) as response:
+            status = int(getattr(response, "status", response.getcode()))
+            response_payload = _decode_graphql_probe_body(response.read())
+    except HTTPError as exc:
+        status = int(exc.code)
+        response_payload = _decode_graphql_probe_body(exc.read())
+    except OSError as exc:
+        return {
+            "operation": operation,
+            "endpoint": endpoint_kind,
+            "status": 0,
+            "ok": False,
+            "errors": [str(exc)],
+        }, {}
+
+    errors = _graphql_error_messages(response_payload)
+    result = {
+        "operation": operation,
+        "endpoint": endpoint_kind,
+        "status": status,
+        "ok": 200 <= status < 300 and not errors,
+    }
+    if errors:
+        result["errors"] = errors[:3]
+    return result, response_payload
+
+
+def _connection_nodes(connection: dict) -> list[dict]:
+    nodes: list[dict] = []
+    for edge in (connection or {}).get("edges", []) or []:
+        node = edge.get("node") if isinstance(edge, dict) else None
+        if isinstance(node, dict):
+            nodes.append(node)
+    return nodes
+
+
+def _fixture_probe_result(message: str) -> dict:
+    return {
+        "operation": "fixture",
+        "status": 0,
+        "ok": False,
+        "reason": "insufficient_home_fixture",
+        "message": message,
+    }
+
+
+def _probe_twg_endpoint(jira_url: str) -> str:
+    return f"{str(jira_url or '').rstrip('/')}/gateway/api/graphql/twg"
+
+
+def run_home_graphql_oauth_probe(
+    access_token: str,
+    cloud_id: str,
+    epm_scope: dict | None = None,
+    root_goal_key: str = "",
+    sub_goal_key: str = "",
+    home_project_id: str = "",
+    jira_url: str = "",
+) -> dict:
+    scope = epm_scope if isinstance(epm_scope, dict) else {}
+    selected_root_key = _normalize_goal_key(root_goal_key or scope.get("rootGoalKey"))
+    selected_sub_goal_key = _normalize_goal_key(sub_goal_key)
+    if not selected_sub_goal_key:
+        sub_goal_keys = _epm_scope_sub_goal_keys(scope)
+        selected_sub_goal_key = sub_goal_keys[0] if sub_goal_keys else ""
+
+    results: list[dict] = []
+    if not access_token or not cloud_id:
+        results.append(_fixture_probe_result("OAuth access token and cloud ID are required."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+
+    container_id = _container_id_from_cloud(cloud_id)
+    queries = home_graphql_feasibility_queries()
+
+    result, goals_payload = _execute_home_oauth_probe_operation(
+        "goals_search",
+        HOME_GRAPHQL_ENDPOINT,
+        access_token,
+        queries["goals_search"],
+        {"containerId": container_id, "first": HOME_PAGE_SIZE, "after": None},
+        "home",
+    )
+    results.append(result)
+    if not result.get("ok"):
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    if not selected_root_key:
+        results.append(_fixture_probe_result("EPM rootGoalKey is required."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+
+    result, root_payload = _execute_home_oauth_probe_operation(
+        "goal_by_key",
+        HOME_GRAPHQL_ENDPOINT,
+        access_token,
+        queries["goal_by_key"],
+        {"containerId": container_id, "goalKey": selected_root_key},
+        "home",
+    )
+    results.append(result)
+    if not result.get("ok"):
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    root_goal = ((root_payload.get("data") or {}).get("goals_byKey") or {})
+    root_goal_id = root_goal.get("id")
+    if not root_goal_id:
+        results.append(_fixture_probe_result("EPM rootGoalKey did not resolve to a Home goal."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+
+    result, sub_goals_payload = _execute_home_oauth_probe_operation(
+        "sub_goals",
+        HOME_GRAPHQL_ENDPOINT,
+        access_token,
+        queries["sub_goals"],
+        {"goalId": root_goal_id, "first": HOME_PAGE_SIZE, "after": None},
+        "home",
+    )
+    results.append(result)
+    if not result.get("ok"):
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    if not selected_sub_goal_key:
+        results.append(_fixture_probe_result("EPM subGoalKey is required."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    sub_goal_nodes = _connection_nodes((((sub_goals_payload.get("data") or {}).get("goals_byId") or {}).get("subGoals") or {}))
+    sub_goal = next((goal for goal in sub_goal_nodes if _normalize_goal_key(goal.get("key")) == selected_sub_goal_key), None)
+    if not sub_goal:
+        results.append(_fixture_probe_result("EPM subGoalKey did not resolve under the root goal."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+
+    result, projects_payload = _execute_home_oauth_probe_operation(
+        "goal_projects",
+        HOME_GRAPHQL_ENDPOINT,
+        access_token,
+        queries["goal_projects"],
+        {"goalId": sub_goal.get("id"), "first": HOME_PAGE_SIZE, "after": None},
+        "home",
+    )
+    results.append(result)
+    if not result.get("ok"):
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    project_nodes = _connection_nodes((((projects_payload.get("data") or {}).get("goals_byId") or {}).get("projects") or {}))
+    selected_project_id = str(home_project_id or "").strip()
+    project = next((row for row in project_nodes if str(row.get("id") or "").strip() == selected_project_id), None)
+    if not project and selected_project_id:
+        project = {"id": selected_project_id, "url": ""}
+    if not project:
+        project = next(iter(project_nodes), None)
+    if not project or not project.get("id"):
+        results.append(_fixture_probe_result("EPM sub-goal must have at least one Home project."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    selected_project_id = str(project.get("id") or "").strip()
+
+    for operation in ("project_details", "project_updates", "project_tags"):
+        variables = {"projectId": selected_project_id}
+        if operation == "project_updates":
+            variables = {"projectId": selected_project_id, "first": 1, "after": None}
+        result, payload = _execute_home_oauth_probe_operation(
+            operation,
+            HOME_GRAPHQL_ENDPOINT,
+            access_token,
+            queries[operation],
+            variables,
+            "home",
+        )
+        results.append(result)
+        if operation == "project_details" and result.get("ok"):
+            detailed_project = ((payload.get("data") or {}).get("projects_byId") or {})
+            if isinstance(detailed_project, dict):
+                project = {**project, **detailed_project}
+        if not result.get("ok"):
+            decision = classify_home_graphql_probe_results(results)
+            return {**decision, "results": redact_home_oauth_probe_payload(results)}
+
+    if not jira_url:
+        results.append(_fixture_probe_result("Jira URL is required to build the Teamwork Graph endpoint."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    project_ari = selected_project_id if selected_project_id.startswith("ari:") else f"ari:cloud:townsquare:{cloud_id}:project/{selected_project_id}"
+    cypher = _project_tag_cypher(project_ari=project_ari)
+    if not cypher:
+        results.append(_fixture_probe_result("Home project ID is required for Teamwork Graph tag lookup."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    cypher_query, params = cypher
+    result, _ = _execute_home_oauth_probe_operation(
+        "teamwork_graph_project_tags",
+        _probe_twg_endpoint(jira_url),
+        access_token,
+        queries["teamwork_graph_project_tags"],
+        {"cypherQuery": cypher_query, "params": params},
+        "teamwork_graph",
+    )
+    results.append(result)
+
+    decision = classify_home_graphql_probe_results(results)
+    return {**decision, "results": redact_home_oauth_probe_payload(results)}
+
+
 def adf_to_text(value: Any) -> str:
     """Flatten Atlassian Document Format content to plain text."""
     if not value:

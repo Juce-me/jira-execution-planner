@@ -3,6 +3,7 @@
 from flask import Blueprint, jsonify, redirect, request, session
 
 from backend.auth.jira_auth import ensure_oauth_token, missing_oauth_scopes
+from backend.epm import home as epm_home
 
 from . import bind_server_globals
 
@@ -270,6 +271,57 @@ def api_auth_refresh():
         'siteUrl': active.get('site_url'),
         'siteName': active.get('site_name'),
     })
+
+
+@bp.route('/api/auth/dev/home-graphql-oauth-probe', methods=['GET'])
+def api_dev_home_graphql_oauth_probe():
+    if APP_ENVIRONMENT_KEY.strip().lower() not in {'local', 'dev'}:
+        return jsonify({'error': 'not_found'}), 404
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return jsonify({'error': 'oauth_required'}), 400
+    data = oauth_session_data()
+    if not data.get('access_token') or not data.get('cloudid'):
+        save_oauth_session({})
+        return jsonify({
+            'error': 'auth_required',
+            'message': 'Your Jira sign-in expired. Sign in again to continue.',
+            'loginUrl': '/login?reason=session_expired',
+        }), 401
+    try:
+        active = ensure_oauth_token(
+            current_auth_config(),
+            data,
+            save_oauth_session,
+            reload_session=oauth_session_data,
+            refresh_lock=oauth_refresh_lock(),
+        )
+    except AuthError as error:
+        if error.code == 'auth_required':
+            save_oauth_session({})
+            return jsonify({
+                'error': 'auth_required',
+                'message': 'Your Jira sign-in expired. Sign in again to continue.',
+                'loginUrl': '/login?reason=session_expired',
+            }), 401
+        return auth_error_response(error, 401)
+
+    epm_config = get_epm_config()
+    scope = epm_config.get('scope') or {}
+    sub_goal_keys = normalize_epm_sub_goal_keys(scope.get('subGoalKeys') or scope.get('subGoalKey'))
+    root_goal_key = normalize_epm_upper_text(request.args.get('rootGoalKey') or scope.get('rootGoalKey'))
+    sub_goal_key = normalize_epm_upper_text(
+        request.args.get('subGoalKey') or (sub_goal_keys[0] if sub_goal_keys else '')
+    )
+    payload = epm_home.run_home_graphql_oauth_probe(
+        active.get('access_token', ''),
+        active.get('cloudid', ''),
+        epm_scope=scope,
+        root_goal_key=root_goal_key,
+        sub_goal_key=sub_goal_key,
+        home_project_id=str(request.args.get('homeProjectId') or '').strip(),
+        jira_url=str(active.get('site_url') or JIRA_URL or '').strip(),
+    )
+    return jsonify(epm_home.redact_home_oauth_probe_payload(payload))
 
 
 @bp.route('/api/auth/logout', methods=['POST'])

@@ -113,6 +113,18 @@ Keep these Home/Townsquare-backed API routes guarded with `route_not_oauth_ready
 
 Home/Townsquare access needs a later admin-owned service credential design. That credential must stay server-side only, avoid browser exposure, and be audited before any Home/Townsquare-backed route is marked OAuth-ready.
 
+### Home/Townsquare Visibility Model
+
+When Home/Townsquare-backed routes are migrated, use hybrid authorization:
+
+- Require a valid user Atlassian OAuth session before serving the route.
+- Use the user OAuth session for Jira REST reads, rollups, labels, issue search, and any user-specific Jira data.
+- Use the server-side Home/Townsquare service credential only for Home goals/projects metadata.
+- Limit service-credential Home reads to the configured Home root/sub-goals.
+- Do not claim that Home/Townsquare GraphQL verified per-user Home project or goal access. The local feasibility probe showed the user's Jira 3LO token cannot call that GraphQL surface.
+
+The intended internal policy is: any authenticated Atlassian user for the configured site may view configured Home/Townsquare metadata, while Jira-backed data remains constrained by that user's Jira OAuth permissions.
+
 ## Common Errors
 
 `failed to retrieve client`

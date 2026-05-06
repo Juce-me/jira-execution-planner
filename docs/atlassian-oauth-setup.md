@@ -80,7 +80,7 @@ Restart the Flask server after changing `.env`.
 6. Open `http://localhost:5050/api/auth/status`; it should report authenticated state and must not include tokens.
 7. Open `http://localhost:5050/api/test`; it should use OAuth.
 
-The full dashboard is not migrated in this OAuth slice. After login, ENG dashboard data requests can still report `route_not_oauth_ready`; that means OAuth login worked, but the data route is intentionally blocked until it is migrated.
+The ENG dashboard and Jira REST catalog/statistics routes are migrated through the OAuth Jira client. EPM Home/GraphQL routes remain guarded until the Home client has its own auth migration. If a route returns `route_not_oauth_ready`, the OAuth session is valid but that route is intentionally outside the current OAuth Jira REST surface.
 
 If Atlassian reports a missing scope, add the named scope to the matching API on the app's `Permissions` page, save, then start again from `/login`. If you previously signed in before adding the Jira Software scopes, clear the local OAuth session and sign in again so Atlassian can show a new consent screen.
 
@@ -115,7 +115,7 @@ Start again from `/login` in the same browser tab. Do not reuse an old callback 
 
 `route_not_oauth_ready`
 
-The login session is valid, but the requested API route has not been migrated to Atlassian OAuth. For this slice, verify OAuth with `/api/auth/status` and `/api/test`; use Basic auth for the full dashboard until the remaining data routes are migrated.
+The login session is valid, but the requested API route is intentionally outside the current OAuth Jira REST surface. The ENG dashboard and Jira REST catalog/statistics routes are migrated; EPM Home/GraphQL routes remain guarded until the Home client has its own auth migration.
 
 `Local OAuth token storage requires APP_ENVIRONMENT_KEY=local or dev and OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`
 

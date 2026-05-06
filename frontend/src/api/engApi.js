@@ -98,7 +98,10 @@ export const fetchBacklogEpics = (backendUrl, { project, teamIds = [] } = {}) =>
 export const fetchDependencies = (backendUrl, keys, { signal } = {}) =>
     fetch(`${backendUrl}/api/dependencies`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'jira-execution-planner',
+        },
         body: JSON.stringify({ keys }),
         signal
     });

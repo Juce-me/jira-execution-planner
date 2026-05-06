@@ -244,6 +244,15 @@ UNSAFE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
 OAUTH_DASHBOARD_ENTRY_PATHS = {'/', '/jira-dashboard.html'}
 OAUTH_READY_API_PATHS = {
     '/api/test',
+    '/api/tasks',
+    '/api/tasks-with-team-name',
+    '/api/missing-info',
+    '/api/dependencies',
+    '/api/issues/lookup',
+    '/api/teams',
+    '/api/teams/resolve',
+    '/api/teams/all',
+    '/api/backlog-epics',
 }
 
 
@@ -978,14 +987,12 @@ def fetch_teams_from_jira_api(headers):
     """
     teams = {}
     try:
-        url = f'{JIRA_URL}/rest/teams/1.0/teams/find'
         start_at = 0
         max_results = 200
         while True:
-            response = HTTP_SESSION.get(
-                url,
+            response = current_jira_get(
+                '/rest/teams/1.0/teams/find',
                 params={'query': '', 'maxResults': max_results, 'startAt': start_at},
-                headers=headers,
                 timeout=30
             )
             if response.status_code != 200:
@@ -3335,18 +3342,8 @@ def fetch_tasks(include_team_name=False):
             cached_response.headers['Server-Timing'] = 'cache;dur=1'
             return cached_response
 
-        # Prepare authorization
         auth_started = time.perf_counter()
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        # Prepare headers
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
+        headers = None
         record_timing('auth_headers', auth_started)
 
         # Build JQL query with sprint filter if provided
@@ -3679,7 +3676,12 @@ def fetch_tasks(include_team_name=False):
         if server_timing_parts:
             success_response.headers['Server-Timing'] = ', '.join(server_timing_parts)
         return success_response
-        
+
+    except AuthError as error:
+        if error.code == "auth_required":
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
     except Exception as e:
         logger.exception('Failed to fetch tasks from Jira')
         error_response = jsonify({
@@ -3861,8 +3863,9 @@ def collect_dependencies(keys, headers):
             return (linked_key, base_key) if direction == 'outward' else (base_key, linked_key)
         return None, None
 
-    team_field_id = resolve_team_field_id(headers)
-    epic_link_field_id = resolve_epic_link_field_id(headers)
+    auth_context = current_request_auth_context() if has_request_context() else None
+    team_field_id = resolve_team_field_id(headers, context=auth_context)
+    epic_link_field_id = resolve_epic_link_field_id(headers, context=auth_context)
 
     fields_list = [
         'summary',

@@ -809,7 +809,7 @@ def resolve_team_field_id(headers, context=None):
             return configured
 
         try:
-            response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
+            response = current_jira_get('/rest/api/3/field', timeout=20, context=context)
             if response.status_code != 200:
                 return None
 
@@ -845,7 +845,7 @@ def resolve_epic_link_field_id(headers, names_map=None, context=None):
                     return field_id
 
         try:
-            response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
+            response = current_jira_get('/rest/api/3/field', timeout=20, context=context)
             if response.status_code != 200:
                 return None
 
@@ -883,7 +883,7 @@ def resolve_capacity_field_id(headers, context=None):
             return None
 
         try:
-            response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
+            response = current_jira_get('/rest/api/3/field', timeout=20, context=context)
             if response.status_code != 200:
                 return None
 
@@ -965,22 +965,9 @@ def build_team_value(raw_team):
     return raw_team
 
 
-def jira_search_request(headers, payload):
-    """Call Jira search endpoint using query parameters for /search/jql."""
-    def request_fn(url, **kwargs):
-        return resilient_jira_get(
-            url,
-            session=HTTP_SESSION,
-            breaker=JIRA_SEARCH_CIRCUIT_BREAKER,
-            **kwargs
-        )
-
-    return _jira_client.jira_search_request(
-        JIRA_URL,
-        headers,
-        payload,
-        request_fn=request_fn
-    )
+def jira_search_request(payload):
+    """Call Jira search endpoint through the active request auth boundary."""
+    return current_jira_search(payload)
 
 
 def fetch_teams_from_jira_api(headers):
@@ -1074,7 +1061,7 @@ def fetch_capacity_for_sprint(sprint_name, headers, debug=False, team_names=None
             'maxResults': 200,
             'fields': ['summary', capacity_field_id]
         }
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
         if response.status_code != 200:
             return None, response.text
         data = response.json() or {}
@@ -1121,11 +1108,7 @@ def fetch_watchers_count(issue_key, headers):
     if not issue_key:
         return None
     try:
-        response = requests.get(
-            f'{JIRA_URL}/rest/api/3/issue/{issue_key}/watchers',
-            headers=headers,
-            timeout=20
-        )
+        response = current_jira_get(f'/rest/api/3/issue/{issue_key}/watchers', timeout=20)
         if response.status_code != 200:
             log_warning(f'Watchers fetch failed: status={response.status_code}')
             return None
@@ -1160,7 +1143,7 @@ def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
             'maxResults': 200,
             'fields': ['summary', 'watches', 'reporter']
         }
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
         if response.status_code != 200:
             log_warning(f'Capacity size fetch failed: status={response.status_code}')
             continue
@@ -2797,7 +2780,7 @@ def fetch_sprints_from_jira():
                     'fields': [get_sprint_field_id()]  # Only get sprint field
                 }
 
-                response = jira_search_request(headers, payload)
+                response = jira_search_request(payload)
                 if response.status_code != 200:
                     break
 
@@ -2887,7 +2870,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
         }
 
         try:
-            resp = jira_search_request(headers, payload)
+            resp = jira_search_request(payload)
             if resp.status_code != 200:
                 log_warning(f'Epic batch {start}-{start + len(batch_keys)} failed: status={resp.status_code}')
                 continue
@@ -2988,7 +2971,7 @@ def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sp
         'maxResults': 250,
         'fields': fields_list
     }
-    resp = jira_search_request(headers, payload)
+    resp = jira_search_request(payload)
     if resp.status_code != 200:
         log_warning(f'Epic empty-state fetch failed: status={resp.status_code}')
         return []
@@ -3044,7 +3027,7 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
         'maxResults': 250,
         'fields': epic_fields
     }
-    resp = jira_search_request(headers, payload)
+    resp = jira_search_request(payload)
     if resp.status_code != 200:
         log_warning(f'Backlog epic fetch failed: status={resp.status_code}')
         return []
@@ -3087,7 +3070,7 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
         'maxResults': 250,
         'fields': [epic_link_field, 'parent', 'status', sprint_field_id]
     }
-    child_resp = jira_search_request(headers, child_payload)
+    child_resp = jira_search_request(child_payload)
     if child_resp.status_code != 200:
         log_warning(f'Backlog child fetch failed: status={child_resp.status_code}')
         return epics
@@ -3134,7 +3117,7 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
                 'maxResults': max_results,
                 'fields': fields
             }
-            resp = jira_search_request(headers, payload)
+            resp = jira_search_request(payload)
             if resp.status_code != 200:
                 return local_counts
 
@@ -3215,7 +3198,7 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
                     'maxResults': max_results,
                     'fields': fields
                 }
-                resp = jira_search_request(headers, payload)
+                resp = jira_search_request(payload)
                 if resp.status_code != 200:
                     return
                 data = resp.json() or {}
@@ -3261,7 +3244,7 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
                     'maxResults': max_results,
                     'fields': fields
                 }
-                resp = jira_search_request(headers, payload)
+                resp = jira_search_request(payload)
                 if resp.status_code != 200:
                     return
                 data = resp.json() or {}
@@ -3489,7 +3472,7 @@ def fetch_tasks(include_team_name=False):
             else:
                 payload['startAt'] = start_at
 
-            response = jira_search_request(headers, payload)
+            response = jira_search_request(payload)
             log_debug(f'Jira search page response status={response.status_code}')
 
             if response.status_code != 200:
@@ -3744,7 +3727,7 @@ def fetch_issues_by_keys(keys, headers, fields_list):
             'maxResults': batch_size,
             'fields': fields_list
         }
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
         if response.status_code != 200:
             log_warning(f'Dependencies fetch error: status={response.status_code}')
             continue
@@ -3771,7 +3754,7 @@ def fetch_issues_by_jql(jql, headers, fields_list, max_results=500):
             payload['nextPageToken'] = next_page_token
         else:
             payload['startAt'] = start_at
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
         if response.status_code != 200:
             log_warning(f'Scenario fetch error: status={response.status_code}')
             break
@@ -4544,7 +4527,7 @@ def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):
             'fields': fields_list
         }
 
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
         if response.status_code != 200:
             return None, response
 
@@ -5002,7 +4985,7 @@ def fetch_burnout_events_for_sprint(
                 'maxResults': len(chunk),
                 'fields': fields_list
             }
-            response = jira_search_request(headers, payload)
+            response = jira_search_request(payload)
             if response.status_code != 200:
                 return None, response, payload
             data = response.json() or {}
@@ -5032,7 +5015,7 @@ def fetch_burnout_events_for_sprint(
                 'fields': fields_list,
                 'expand': ['changelog']
             }
-            response = jira_search_request(headers, payload)
+            response = jira_search_request(payload)
             if response.status_code != 200:
                 return None, response, payload
             data = response.json() or {}
@@ -5059,7 +5042,7 @@ def fetch_burnout_events_for_sprint(
                 'fields': fields_list,
                 'expand': ['changelog']
             }
-            response = jira_search_request(headers, payload)
+            response = jira_search_request(payload)
             if response.status_code != 200:
                 return None, response, payload
             data = response.json() or {}
@@ -5161,13 +5144,10 @@ def _escape_jql_literal(value):
 
 
 def _cohort_fetch_terminal_date_from_changelog(issue_key, target_status, headers):
-    response = resilient_jira_get(
-        f'{JIRA_URL}/rest/api/3/issue/{issue_key}',
+    response = current_jira_get(
+        f'/rest/api/3/issue/{issue_key}',
         params={'fields': 'status', 'expand': 'changelog'},
-        headers=headers,
         timeout=20,
-        session=HTTP_SESSION,
-        breaker=JIRA_SEARCH_CIRCUIT_BREAKER
     )
     if response.status_code != 200:
         return issue_key, None, f'changelog fetch failed ({response.status_code})'
@@ -5233,7 +5213,7 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
         if next_page_token:
             payload['nextPageToken'] = next_page_token
 
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
         if response.status_code != 200:
             return None, response
         data = response.json() or {}
@@ -5795,7 +5775,7 @@ def debug_fields():
 
         log_info('Fetching all fields for debugging')
 
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
 
         if response.status_code != 200:
             return jsonify({
@@ -5860,7 +5840,7 @@ def get_tasks_fields():
 
         log_info(f'Fetching all fields for {limit_value} issues')
 
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
 
         if response.status_code != 200:
             return jsonify({

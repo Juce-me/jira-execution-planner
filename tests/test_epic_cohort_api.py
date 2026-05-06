@@ -98,8 +98,8 @@ class TestEpicCohortFetch(unittest.TestCase):
         self.assertEqual(len(payload.get('issues') or []), 2)
         self.assertEqual(payload.get('meta', {}).get('paginationMode'), 'nextPageToken/isLast')
         self.assertEqual(mock_search.call_count, 2)
-        first_payload = mock_search.call_args_list[0].args[1]
-        second_payload = mock_search.call_args_list[1].args[1]
+        first_payload = mock_search.call_args_list[0].args[0]
+        second_payload = mock_search.call_args_list[1].args[0]
         self.assertNotIn('nextPageToken', first_payload)
         self.assertEqual(second_payload.get('nextPageToken'), 'token-1')
 

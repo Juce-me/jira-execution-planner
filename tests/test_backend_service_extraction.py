@@ -25,9 +25,8 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertTrue(hasattr(config_store, 'save_dashboard_config'))
 
     def test_jira_search_wrapper_keeps_patchable_request_and_next_page_token(self):
-        with patch.object(jira_server, 'JIRA_URL', 'http://jira.example'), \
-             patch.object(jira_server, 'resilient_jira_get', return_value=sentinel.response) as mock_get:
-            response = jira_server.jira_search_request({'Authorization': 'Basic test'}, {
+        with patch.object(jira_server, 'current_jira_search', return_value=sentinel.response) as mock_search:
+            response = jira_server.jira_search_request({
                 'jql': 'project = TEST',
                 'fields': ['summary', 'status'],
                 'maxResults': 50,
@@ -35,11 +34,12 @@ class TestBackendServiceExtraction(unittest.TestCase):
             })
 
         self.assertIs(response, sentinel.response)
-        mock_get.assert_called_once()
-        args, kwargs = mock_get.call_args
-        self.assertEqual(args[0], 'http://jira.example/rest/api/3/search/jql')
-        self.assertEqual(kwargs['params']['nextPageToken'], 'page-2')
-        self.assertEqual(kwargs['params']['fields'], 'summary,status')
+        mock_search.assert_called_once_with({
+            'jql': 'project = TEST',
+            'fields': ['summary', 'status'],
+            'maxResults': 50,
+            'nextPageToken': 'page-2'
+        })
 
     def test_jira_client_requires_injected_request_state(self):
         jira_client = importlib.import_module('backend.jira_client')

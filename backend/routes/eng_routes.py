@@ -90,7 +90,7 @@ def lookup_issues():
                 'maxResults': len(unique_ids),
                 'fields': fields_list
             }
-            response = jira_search_request(headers, payload)
+            response = jira_search_request(payload)
             if response.status_code == 200:
                 data = response.json() or {}
                 issues.extend(data.get('issues', []) or [])
@@ -149,7 +149,7 @@ def get_missing_info():
         if team_field_id:
             epic_fields.append(team_field_id)
 
-        epics_resp = jira_search_request(headers, {
+        epics_resp = jira_search_request({
             'jql': epic_jql,
             'startAt': 0,
             'maxResults': 250,
@@ -217,7 +217,7 @@ def get_missing_info():
 
             start_at = 0
             while True:
-                resp = jira_search_request(headers, {
+                resp = jira_search_request({
                     'jql': story_jql,
                     'startAt': start_at,
                     'maxResults': 250,
@@ -393,7 +393,7 @@ def get_teams():
             if next_page_token:
                 payload['nextPageToken'] = next_page_token
 
-            response = jira_search_request(headers, payload)
+            response = jira_search_request(payload)
             if response.status_code != 200:
                 return jsonify({'error': 'Failed to fetch teams', 'details': response.text}), response.status_code
 
@@ -501,7 +501,7 @@ def resolve_team_names():
                 'maxResults': max_results,
                 'fields': fields_list
             }
-            response = jira_search_request(headers, payload)
+            response = jira_search_request(payload)
             if response.status_code != 200:
                 return jsonify({'error': 'Failed to resolve teams', 'details': response.text}), response.status_code
             data = response.json() or {}
@@ -582,7 +582,7 @@ def get_all_teams_list():
             if next_page_token:
                 payload['nextPageToken'] = next_page_token
 
-            response = jira_search_request(headers, payload)
+            response = jira_search_request(payload)
             if response.status_code != 200:
                 return jsonify({'error': 'Failed to fetch teams', 'details': response.text}), response.status_code
 

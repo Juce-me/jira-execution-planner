@@ -141,3 +141,27 @@ class OAuthJiraClientTests(unittest.TestCase):
         self.assertEqual(status, 401)
         self.assertEqual(payload["error"], "auth_required")
         self.assertEqual(payload["loginUrl"], "/login?reason=session_expired")
+
+    def test_jira_search_request_uses_current_auth_boundary(self):
+        self._push_oauth_request()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_search", return_value=FakeResponse(200, {"issues": []})) as mock_search:
+            response = jira_server.jira_search_request({"jql": 'project = "PROD"', "fields": ["summary"]})
+
+        self.assertEqual(response.status_code, 200)
+        mock_search.assert_called_once_with({"jql": 'project = "PROD"', "fields": ["summary"]})
+
+    def test_resolve_team_field_id_uses_current_jira_get_in_oauth_mode(self):
+        self._push_oauth_request()
+        fields_payload = [
+            {"id": "customfield_12345", "name": "Team[Team]"},
+        ]
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "TEAM_FIELD_CACHE", None), \
+             patch.object(jira_server, "get_team_field_id", return_value=""), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, fields_payload)) as mock_get:
+            auth_context = jira_server.current_request_auth_context()
+            field_id = jira_server.resolve_team_field_id(None, context=auth_context)
+
+        self.assertEqual(field_id, "customfield_12345")
+        mock_get.assert_called_once_with("/rest/api/3/field", timeout=20, context=auth_context)

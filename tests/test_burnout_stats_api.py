@@ -61,7 +61,7 @@ class TestBurnoutStatsApi(unittest.TestCase):
             }
         }
 
-        def fake_search(_headers, payload):
+        def fake_search(payload):
             calls.append(payload)
             return DummyResponse({'issues': [issue], 'total': 1})
 
@@ -106,7 +106,7 @@ class TestBurnoutStatsApi(unittest.TestCase):
             }
         }
 
-        def fake_search(_headers, _payload):
+        def fake_search(_payload):
             return DummyResponse({'issues': [issue], 'total': 1})
 
         with patch.object(jira_server, 'jira_search_request', side_effect=fake_search), \
@@ -124,7 +124,7 @@ class TestBurnoutStatsApi(unittest.TestCase):
     def test_burnout_post_issue_keys_uses_scoped_query(self):
         calls = []
 
-        def fake_search(_headers, payload):
+        def fake_search(payload):
             calls.append(payload)
             return DummyResponse({'issues': [], 'total': 0})
 
@@ -163,7 +163,7 @@ class TestBurnoutStatsApi(unittest.TestCase):
             }
         }
 
-        def fake_search(_headers, payload):
+        def fake_search(payload):
             calls.append(payload)
             return DummyResponse({'issues': [issue], 'total': 1})
 

@@ -566,7 +566,7 @@ def search_epics():
             f'AND {query_clause} ORDER BY updated DESC'
         )
 
-        response = jira_search_request(headers, {
+        response = jira_search_request({
             'jql': jql,
             'maxResults': limit,
             'fields': ['summary', 'status', 'project', 'issuetype']

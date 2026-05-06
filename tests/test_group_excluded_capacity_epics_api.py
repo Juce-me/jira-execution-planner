@@ -75,7 +75,7 @@ class TestEpicSearchEndpoint(unittest.TestCase):
         self.assertEqual(payload['epics'][0]['summary'], 'Build s2 bid2imp model')
 
         self.assertTrue(mock_search.called)
-        called_payload = mock_search.call_args[0][1]
+        called_payload = mock_search.call_args[0][0]
         self.assertIn('issuetype = Epic', called_payload.get('jql', ''))
         self.assertIn('project in ("PRODUCT", "TECH")', called_payload.get('jql', ''))
 

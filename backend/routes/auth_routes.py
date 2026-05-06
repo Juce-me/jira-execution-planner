@@ -2,7 +2,7 @@
 
 from flask import Blueprint, jsonify, redirect, request, session
 
-from backend.auth.jira_auth import ensure_oauth_token
+from backend.auth.jira_auth import ensure_oauth_token, missing_oauth_scopes
 
 from . import bind_server_globals
 
@@ -25,6 +25,15 @@ def api_auth_status():
         })
     data = oauth_session_data()
     authenticated = bool(data.get('access_token') and data.get('cloudid'))
+    if authenticated and missing_oauth_scopes(data, ATLASSIAN_SCOPES):
+        return jsonify({
+            'authMode': AUTH_MODE_ATLASSIAN_OAUTH,
+            'authenticated': False,
+            'loginRequired': True,
+            'loginUrl': '/login?reason=missing_scope',
+            'siteUrl': data.get('site_url'),
+            'siteName': data.get('site_name'),
+        })
     return jsonify({
         'authMode': AUTH_MODE_ATLASSIAN_OAUTH,
         'authenticated': authenticated,
@@ -44,6 +53,8 @@ def auth_entry_page():
     message = ''
     if request.args.get('reason') == 'session_expired':
         message = '<p class="auth-notice" role="status">Your Jira sign-in expired. Sign in again to continue.</p>'
+    elif request.args.get('reason') == 'missing_scope':
+        message = '<p class="auth-notice" role="status">Your Jira sign-in needs updated permissions. Sign in again to continue.</p>'
     return f"""
 <!doctype html>
 <html lang="en">

@@ -46,6 +46,7 @@ from backend.auth.jira_auth import (
     fetch_current_user,
     jira_get,
     jira_post,
+    missing_oauth_scopes,
     new_oauth_state,
     new_pkce_verifier,
     token_session_payload,
@@ -73,7 +74,7 @@ ATLASSIAN_CLIENT_SECRET = os.getenv('ATLASSIAN_CLIENT_SECRET', '').strip()
 ATLASSIAN_REDIRECT_URI = os.getenv('ATLASSIAN_REDIRECT_URI', '').strip()
 ATLASSIAN_SCOPES = os.getenv(
     'ATLASSIAN_SCOPES',
-    'read:me read:jira-work read:jira-user offline_access',
+    'read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access',
 ).strip()
 FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', '').strip()
 app.secret_key = FLASK_SECRET_KEY or os.urandom(32)
@@ -439,6 +440,23 @@ def reject_unmigrated_oauth_routes():
             'error': 'route_not_oauth_ready',
             'message': 'This API route has not been migrated to Atlassian OAuth yet',
         }), 501
+    return None
+
+
+@app.before_request
+def reject_stale_oauth_scope_api_sessions():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if not request.path.startswith('/api/') or request.path.startswith('/api/auth/'):
+        return None
+    if not is_oauth_ready_api_path(request.path):
+        return None
+    data = oauth_session_data()
+    if data.get('access_token') and data.get('cloudid') and missing_oauth_scopes(data, ATLASSIAN_SCOPES):
+        return jsonify({
+            'error': 'auth_required',
+            'loginUrl': '/login?reason=missing_scope',
+        }), 401
     return None
 
 

@@ -20,52 +20,15 @@ The callback URL in the Atlassian app must exactly match `ATLASSIAN_REDIRECT_URI
 
 Open the app's `Permissions` page and add/configure these APIs.
 
-### User Identity API
-
-Select:
-
-```text
-View active user profile
-```
-
-Scope:
-
-```text
-read:me
-```
-
-This scope is required because the backend calls `https://api.atlassian.com/me` after OAuth callback to identify the signed-in Atlassian account.
-
-### Jira API
-
-Select:
-
-```text
-View Jira issue data
-View user profiles
-View projects
-```
-
-Scopes:
-
-```text
-read:jira-work
-read:jira-user
-read:project:jira
-```
-
-These scopes are required for the migrated Jira API smoke path and for selecting the configured Jira Cloud site from Atlassian's accessible resources response.
-
-### Jira Software API
-
-Use the Jira Software API granular scopes tab and add:
-
-```text
-read:board-scope:jira-software
-read:sprint:jira-software
-```
-
-These scopes are required for board and sprint discovery through `/rest/agile/1.0/board` and `/rest/agile/1.0/board/{boardId}/sprint`.
+| API in Developer Console | Scope | Why this app needs it |
+| --- | --- | --- |
+| User identity API | `read:me` | Backend calls `https://api.atlassian.com/me` after callback. |
+| Jira API | `read:jira-work` | Jira issue, project, field, label, component, and search reads. |
+| Jira API | `read:jira-user` | User/profile fields returned by issue and team-related reads. |
+| Jira Software API | `read:board-scope:jira-software` | `/rest/agile/1.0/board` board discovery. |
+| Jira Software API | `read:sprint:jira-software` | `/rest/agile/1.0/board/{boardId}/sprint` sprint discovery. |
+| Jira API | `read:project:jira` | Jira Software board APIs require project read scope. |
+| OAuth authorize URL only | `offline_access` | Refresh tokens for local OAuth sessions; this does not appear as a separate API row. |
 
 ### Refresh Tokens
 
@@ -121,6 +84,8 @@ The full dashboard is not migrated in this OAuth slice. After login, ENG dashboa
 
 If Atlassian reports a missing scope, add the named scope to the matching API on the app's `Permissions` page, save, then start again from `/login`. If you previously signed in before adding the Jira Software scopes, clear the local OAuth session and sign in again so Atlassian can show a new consent screen.
 
+If you already signed in before adding the Jira Software scopes, update `ATLASSIAN_SCOPES`, clear the local OAuth token session, and sign in again. `/api/auth/status` reports `loginUrl: "/login?reason=missing_scope"` when the stored session was issued without the current required scopes.
+
 Use the same browser and hostname for the whole flow. If `ATLASSIAN_REDIRECT_URI` uses `localhost`, start from `http://localhost:5050/login`, not `http://127.0.0.1:5050/login`.
 
 ## Common Errors
@@ -164,6 +129,8 @@ OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true
 ## References
 
 - Atlassian OAuth 2.0 (3LO) apps: https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/
-- Atlassian Jira OAuth scopes: https://developer.atlassian.com/cloud/jira/platform/scopes-for-oauth-2-3LO-and-forge-apps/
-- Atlassian Jira Software OAuth scopes: https://developer.atlassian.com/cloud/jira/software/scopes-for-oauth-2-3LO-and-forge-apps/
+- Jira Platform OAuth scopes: https://developer.atlassian.com/cloud/jira/platform/scopes-for-oauth-2-3LO-and-forge-apps/
+- Jira Software OAuth scopes: https://developer.atlassian.com/cloud/jira/software/scopes-for-oauth-2-3LO-and-forge-apps/
+- Jira Software board API scopes: https://developer.atlassian.com/cloud/jira/software/rest/api-group-board/
+- Jira Software sprint API scopes: https://developer.atlassian.com/cloud/jira/software/rest/api-group-sprint/
 - Atlassian refresh tokens: https://developer.atlassian.com/cloud/oauth/getting-started/refresh-tokens/

@@ -34,6 +34,34 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertFalse(response.get_json()['authenticated'])
         self.assertTrue(response.get_json()['loginRequired'])
 
+    def test_status_requires_reconsent_when_oauth_session_has_old_scopes(self):
+        with self.client.session_transaction() as flask_session:
+            flask_session["atlassian_oauth_session_id"] = "session-1"
+        jira_server.OAUTH_TOKEN_STORE["session-1"] = {
+            "access_token": "access-123",
+            "refresh_token": "refresh-123",
+            "expires_at": 9999999999,
+            "cloudid": "cloud-123",
+            "site_url": "https://example.atlassian.net",
+            "site_name": "Example",
+            "account_id": "account-123",
+            "account_status": "active",
+            "stored_at": time.time(),
+            "scope": "read:me read:jira-work read:jira-user offline_access",
+        }
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "ATLASSIAN_SCOPES", "read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access"):
+            response = self.client.get("/api/auth/status")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["authenticated"], False)
+        self.assertEqual(payload["loginRequired"], True)
+        self.assertEqual(payload["loginUrl"], "/login?reason=missing_scope")
+        self.assertNotIn("access_token", str(payload))
+        self.assertNotIn("refresh_token", str(payload))
+
     def test_oauth_refresh_requires_session(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             response = self.client.post(

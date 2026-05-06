@@ -23,6 +23,7 @@ from backend.auth.jira_auth import (
     fetch_accessible_resources,
     fetch_current_user,
     is_oauth_token_expired,
+    missing_oauth_scopes,
     normalize_site_url,
     refresh_oauth_token,
     token_session_payload,
@@ -46,6 +47,33 @@ class JiraAuthTests(unittest.TestCase):
 
     def test_default_scopes_include_read_me(self):
         self.assertIn("read:me", AuthConfig().scopes.split())
+
+    def test_default_scopes_include_jira_software_agile_reads(self):
+        scopes = set(AuthConfig().scopes.split())
+
+        self.assertIn("read:board-scope:jira-software", scopes)
+        self.assertIn("read:sprint:jira-software", scopes)
+        self.assertIn("read:project:jira", scopes)
+
+    def test_missing_oauth_scopes_detects_old_session(self):
+        required = {
+            "read:me",
+            "read:jira-work",
+            "read:jira-user",
+            "read:board-scope:jira-software",
+            "read:sprint:jira-software",
+            "read:project:jira",
+            "offline_access",
+        }
+        session_data = {
+            "access_token": "access-123",
+            "scope": "read:me read:jira-work read:jira-user offline_access",
+        }
+
+        self.assertEqual(
+            missing_oauth_scopes(session_data, required),
+            {"read:board-scope:jira-software", "read:sprint:jira-software", "read:project:jira"},
+        )
 
     def test_validate_auth_config_uses_planned_error_codes(self):
         cases = [

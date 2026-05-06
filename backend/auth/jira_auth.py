@@ -34,7 +34,7 @@ class AuthConfig:
     client_id: str = ""
     client_secret: str = ""
     redirect_uri: str = ""
-    scopes: str = "read:me read:jira-work read:jira-user offline_access"
+    scopes: str = "read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access"
     flask_secret_key: str = ""
 
 
@@ -56,6 +56,22 @@ def validate_auth_config(config):
             raise AuthError("missing_flask_secret_key", "FLASK_SECRET_KEY is required for Atlassian OAuth.")
         return
     raise AuthError("invalid_auth_mode", "Unsupported auth mode.")
+
+
+def oauth_scope_set(scopes):
+    if isinstance(scopes, str):
+        return {scope for scope in scopes.split() if scope}
+    if isinstance(scopes, (list, tuple, set)):
+        return {str(scope).strip() for scope in scopes if str(scope).strip()}
+    return set()
+
+
+def missing_oauth_scopes(session_data, required_scopes):
+    granted = oauth_scope_set((session_data or {}).get("scope") or (session_data or {}).get("granted_scopes"))
+    required = oauth_scope_set(required_scopes)
+    if not granted:
+        return required
+    return required - granted
 
 
 def new_oauth_state():
@@ -185,7 +201,7 @@ def token_session_payload(token_data, resource, user_profile=None):
         "access_token": token_data.get("access_token"),
         "refresh_token": token_data.get("refresh_token"),
         "expires_at": now + expires_in,
-        "scope": token_data.get("scope"),
+        "scope": token_data.get("scope") or "",
         "cloudid": resource.get("id"),
         "site_url": normalize_site_url(resource.get("url")),
         "site_name": resource.get("name"),

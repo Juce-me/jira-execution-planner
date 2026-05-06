@@ -15,7 +15,9 @@ This plan depends on:
 
 ### Shareable View Links
 
-Users should be able to save a view, create a link, paste it into chat, and let another authenticated user open it if they can access the same workspace and authorize against the configured Jira/Atlassian site.
+Users should be able to save a view, create a link, paste it into chat, and let another authenticated user open it if their request resolves to the same workspace/site and they can authorize against the configured Jira/Atlassian site.
+
+This plan does not introduce workspace membership or workspace ACLs. Until a separate membership model exists, share-link access is gated by the resolved `workspace_id` / site context from `RequestAuthContext`, optional explicit Atlassian account allowlists, and Jira authorization checks.
 
 Share links must never contain Jira tokens, OAuth tokens, API tokens, credential env names, or complete private configuration dumps.
 
@@ -23,7 +25,7 @@ Data model:
 
 | Table | Purpose |
 | --- | --- |
-| `shared_view_links` | Stores a hashed opaque token, target view version, workspace gate, expiry, and revocation state. |
+| `shared_view_links` | Stores a hashed opaque token, target view version, workspace/site gate, expiry, and revocation state. |
 | `user_saved_views` | Tracks a recipient saving a shared view into their own configuration. |
 
 Suggested `shared_view_links` columns:
@@ -34,8 +36,9 @@ Suggested `shared_view_links` columns:
 | `token_hash` | Hash of the opaque URL token. Store only the hash. |
 | `view_config_id`, `version_id` | Shared view snapshot. |
 | `created_by` | Link owner. |
-| `access_scope` | `workspace_users`, `specific_users`, or `any_authenticated_user_with_workspace_access`. |
-| `workspace_id` | Workspace required to open the link. |
+| `access_scope` | `same_resolved_workspace_site` or `specific_atlassian_accounts`. |
+| `workspace_id` | Resolved workspace/site required to open the link; not a membership ACL. |
+| `allowed_atlassian_account_ids` | Optional list when `access_scope` is `specific_atlassian_accounts`. |
 | `expires_at` | Optional expiry. |
 | `revoked_at` | Revocation timestamp. |
 | `created_at`, `last_used_at` | Lifecycle and usage. |
@@ -50,19 +53,20 @@ Flow:
 
 1. Owner saves a view configuration.
 2. Owner clicks `Share`.
-3. Backend validates that the owner can access the workspace.
-4. Backend creates `shared_view_links` with an opaque token and workspace access policy.
+3. Backend validates that the owner's request resolves to the view's workspace/site and that the owner can authorize against the configured Jira/Atlassian site.
+4. Backend creates `shared_view_links` with an opaque token and workspace/site access policy.
 5. Owner pastes the link into chat.
 6. Recipient opens the link.
 7. If unauthenticated, recipient is redirected through auth and returned to the link.
-8. Backend verifies workspace membership and that the user can authorize against the configured Jira/Atlassian site.
+8. Backend verifies the recipient's request resolves to the same workspace/site, matches any explicit Atlassian account allowlist, and can authorize against the configured Jira/Atlassian site.
 9. Backend returns the shared view snapshot without exposing owner credentials.
 10. Recipient can use it temporarily or save a private copy.
 
 Failure behavior:
 
 - Not logged in: redirect to login and preserve the share token in server-side state.
-- Logged in but missing workspace access: `403 workspace_access_required`.
+- Logged in but resolved to another workspace/site: `403 workspace_site_required`.
+- Logged in but not in the explicit account allowlist: `403 share_recipient_not_allowed`.
 - Logged in but unable to authorize against the configured site: `403 authorization_required`.
 - Revoked or expired link: `404 share_not_found` or `410 share_expired`.
 
@@ -71,13 +75,13 @@ Future API:
 | Endpoint | Purpose |
 | --- | --- |
 | `POST /api/views/<id>/share` | Create or rotate a share link. |
-| `GET /api/share/v/<token>` | Resolve a shared view after auth and workspace checks. |
+| `GET /api/share/v/<token>` | Resolve a shared view after auth and workspace/site checks. |
 | `POST /api/share/v/<token>/save` | Save the shared view as the current user's private copy. |
 
 Verification:
 
 - A share URL contains only an opaque token and no serialized config or secret values.
-- Users without workspace access cannot open workspace-gated links.
+- Users whose request resolves to a different workspace/site cannot open workspace/site-gated links.
 - A user opening a shared view must be able to authorize against the configured Jira/Atlassian site.
 - Revoking a share prevents new opens but does not delete recipient-owned saved copies.
 

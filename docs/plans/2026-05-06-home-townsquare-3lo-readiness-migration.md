@@ -221,11 +221,22 @@ git commit -m "Guard Home Townsquare OAuth route readiness"
 - Test: `tests/test_home_townsquare_guardrails.py`
 - Modify: `backend/routes/epm_routes.py`
 
+This task guards every mutation path that can change shared Home/Townsquare-backed or Jira-project-backed EPM/APM state. It is not limited to `/api/epm/config`.
+
+Mutation inventory:
+
+- Existing shared EPM config write: `POST /api/epm/config`.
+- DB-era shared workspace config write: `PATCH /api/workspace/config`.
+- Compatibility shared config writes that persist Home/Jira-project-backed mappings, including any DB-backed replacement for `POST /api/epm/config`.
+- Service integration writes such as create, rotate, disable, or revoke of `home_townsquare_basic` or `jira_basic` service credentials.
+- Saved-view routes that accept user-owned view payloads, such as `POST /api/me/views` and `PATCH /api/me/views/<id>`, only when they reject shared mapping definitions.
+
 - [ ] **Step 1: Write failing route tests**
 
 Create `tests/test_home_townsquare_oauth_routes.py`:
 
 ```python
+import inspect
 import unittest
 from unittest.mock import patch
 
@@ -245,6 +256,46 @@ class HomeTownsquareOauthRouteTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.get_json()["error"], "admin_required")
+
+    def test_workspace_config_patch_requires_admin_for_home_jira_mappings(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            response = self.client.patch(
+                "/api/workspace/config",
+                json={"epm": {"projects": {"home-project-1": {"label": "rnd_project_a"}}}},
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["error"], "admin_required")
+
+    def test_service_integration_write_requires_admin_or_service_guard(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            response = self.client.post(
+                "/api/admin/service-integrations",
+                json={"provider": "home_townsquare_basic", "credentialSubject": "svc@example.com"},
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["error"], "admin_required")
+
+    def test_saved_view_rejects_shared_home_mapping_backdoor(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            response = self.client.post(
+                "/api/me/views",
+                json={
+                    "name": "Private EPM view",
+                    "viewType": "epm",
+                    "payload": {
+                        "epm": {
+                            "projectMappings": {
+                                "home-project-1": {"jiraLabel": "rnd_project_a"}
+                            }
+                        }
+                    },
+                },
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "shared_mapping_not_allowed")
 
     def test_preview_route_remains_read_only(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -266,7 +317,7 @@ Run:
 python3 -m unittest tests.test_home_townsquare_oauth_routes
 ```
 
-Expected: FAIL because `/api/epm/config` still allows a normal OAuth user to save config.
+Expected: FAIL because shared Home/Jira-project-backed mutation routes either do not exist yet or still allow normal OAuth users to write shared mappings.
 
 - [ ] **Step 3: Add source guard coverage**
 
@@ -275,8 +326,15 @@ Extend `tests/test_home_townsquare_guardrails.py`:
 ```python
     def test_mutation_routes_require_admin_or_service_guard(self):
         source = inspect.getsource(jira_server)
-        self.assertIn("/api/epm/config", source)
-        self.assertIn("require_epm_admin_or_service_account", source)
+        for path in (
+            "/api/epm/config",
+            "/api/workspace/config",
+            "/api/admin/service-integrations",
+            "/api/me/views",
+        ):
+            self.assertIn(path, source)
+        self.assertIn("require_epm_shared_mapping_write_access", source)
+        self.assertIn("reject_shared_mapping_payload_keys", source)
 ```
 
 Run:
@@ -285,16 +343,18 @@ Run:
 python3 -m unittest tests.test_home_townsquare_guardrails
 ```
 
-Expected: FAIL because `require_epm_admin_or_service_account` is not implemented yet.
+Expected: FAIL because the shared mapping write guard and saved-view payload rejection are not implemented yet.
 
 - [ ] **Step 4: Implement the guard**
 
-In `backend/routes/epm_routes.py`, add:
+Add a shared guard and use it from every shared Home/Jira-project-backed mutation route:
 
 ```python
-def require_epm_admin_or_service_account():
+def require_epm_shared_mapping_write_access():
     auth_context = current_request_auth_context()
     if auth_context.is_admin:
+        return None
+    if getattr(auth_context, "service_integration_job", False):
         return None
     return jsonify({
         "error": "admin_required",
@@ -305,12 +365,36 @@ def require_epm_admin_or_service_account():
 At the start of `save_epm_config_endpoint()`, add:
 
 ```python
-    guard = require_epm_admin_or_service_account()
+    guard = require_epm_shared_mapping_write_access()
     if guard is not None:
         return guard
 ```
 
-Use the repo's existing imported globals through `bind_server_globals`.
+Use the same guard for `PATCH /api/workspace/config`, service-integration create/rotate/revoke endpoints, and any compatibility route that persists Home project ids, Jira labels, Home goal keys, or Jira project mapping defaults. Do not implement a browser header that lets a normal user impersonate a service-account path.
+
+For saved-view endpoints, implement a separate payload check so normal users can save private view state but cannot write shared Home/Jira-project-backed mappings:
+
+```python
+SHARED_MAPPING_PAYLOAD_KEYS = {
+    "projectMappings",
+    "projects",
+    "homeProjectMappings",
+    "jiraLabelDefinitions",
+    "serviceIntegrations",
+}
+
+
+def reject_shared_mapping_payload_keys(payload):
+    if not isinstance(payload, dict):
+        return None
+    epm_payload = payload.get("epm") if isinstance(payload.get("epm"), dict) else {}
+    if any(key in epm_payload for key in SHARED_MAPPING_PAYLOAD_KEYS):
+        return jsonify({
+            "error": "shared_mapping_not_allowed",
+            "message": "Saved views may reference configured Home/Jira metadata but cannot mutate shared mappings.",
+        }), 400
+    return None
+```
 
 - [ ] **Step 5: Run tests**
 
@@ -330,6 +414,15 @@ Run:
 git add backend/routes/epm_routes.py tests/test_home_townsquare_oauth_routes.py tests/test_home_townsquare_guardrails.py
 git commit -m "Guard Home backed EPM mutations"
 ```
+
+## Post-DB Execution Mode Check
+
+Before Task 4, check whether `docs/plans/2026-05-05-database-introduction-user-auth.md` has already been implemented.
+
+- If DB auth has not landed yet, the local OAuth token-store helpers may still exist only inside the local auth bridge.
+- If DB auth has landed, Home/Townsquare user 3LO must resolve through `RequestAuthContext`, `auth_connections`, encrypted `auth_tokens`, DB refresh locking, `token_version`, revoked/disabled-user checks, and user/auth cache partitioning.
+- In DB mode, Home/Townsquare route code must not call `oauth_session_data`, `save_oauth_session`, `oauth_refresh_lock`, or `OAUTH_TOKEN_STORE`.
+- In DB mode, do not store Home/Townsquare Basic service credentials as a user's `auth_connection`; they remain `service_integrations` until this Home user 3LO path is verified and implemented.
 
 ## Task 4: Add Request-Bound Home/Townsquare 3LO Client
 
@@ -428,21 +521,27 @@ Extend `tests/test_home_townsquare_oauth_routes.py`:
 ```python
     def test_projects_route_uses_request_bound_home_oauth_client(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-                patch.object(jira_server, "oauth_session_data", return_value={
-                    "access_token": "user-token",
-                    "cloudid": "cloud-1",
-                    "expires_at": 9999999999,
-                }), \
-                patch.object(jira_server, "ensure_oauth_token", return_value={
+                patch.object(jira_server, "current_home_oauth_token_for_context", return_value={
                     "access_token": "user-token",
                     "cloudid": "cloud-1",
                     "site_url": "https://example.atlassian.net",
+                    "token_version": "7",
                 }), \
                 patch.object(jira_server.epm_home, "HomeGraphQLOAuthClient") as oauth_client, \
                 patch.object(jira_server, "build_epm_projects_payload", return_value={"projects": []}):
             response = self.client.get("/api/epm/projects")
         self.assertEqual(response.status_code, 200)
         oauth_client.assert_called()
+
+    def test_post_db_home_client_boundary_does_not_use_local_session_helpers(self):
+        source = inspect.getsource(jira_server.current_home_graphql_client)
+        for forbidden in (
+            "oauth_session_data",
+            "save_oauth_session",
+            "oauth_refresh_lock",
+            "OAUTH_TOKEN_STORE",
+        ):
+            self.assertNotIn(forbidden, source)
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -460,22 +559,15 @@ Expected: FAIL because EPM route dependencies still use the process-global Home 
 Add a helper in the same server/auth boundary style used for Jira:
 
 ```python
-def current_home_graphql_client():
-    auth_context = current_request_auth_context()
+def current_home_graphql_client(auth_context=None):
+    auth_context = auth_context or current_request_auth_context()
     if auth_context.auth_mode == AUTH_MODE_ATLASSIAN_OAUTH:
-        data = oauth_session_data()
-        if not data.get("access_token") or not data.get("cloudid"):
-            raise AuthError("auth_required", "Atlassian authentication is required.")
-        active = ensure_oauth_token(
-            current_auth_config(),
-            data,
-            save_oauth_session,
-            reload_session=oauth_session_data,
-            refresh_lock=oauth_refresh_lock(),
-        )
+        active = current_home_oauth_token_for_context(auth_context)
         return epm_home.HomeGraphQLOAuthClient(active.get("access_token", ""))
     return epm_home.build_home_graphql_client()
 ```
+
+Implement `current_home_oauth_token_for_context(auth_context)` in the auth boundary. Before DB auth lands, it may delegate to the local OAuth bridge inside the auth module. After DB auth lands, it must read and refresh the user's encrypted `auth_tokens` through `auth_connections`, DB row/advisory refresh locking, `token_version` checks, active-user/active-connection checks, and revoked/disabled-user handling. Route modules must not call local token-store helpers directly.
 
 Wire Home/Townsquare fetch paths used by `/api/epm/scope`, `/api/epm/goals`, `/api/epm/projects`, `/api/epm/projects/configuration`, `/api/epm/projects/preview`, and rollup routes to accept or resolve this request-bound client. Keep Jira issue fetches on the existing request-bound Jira OAuth client.
 

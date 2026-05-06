@@ -114,6 +114,22 @@ Database-backed state is isolated by deployment environment and Jira/Atlassian w
 
 Use PostgreSQL for production because this feature needs concurrent users, transactions, constraints, encrypted token metadata, and reliable migrations. SQLite can be used for local development tests only, but it should not be the production sharing or auth store.
 
+## Local Execution Notes
+
+The executable DB implementation plan must include exact local setup and reset commands before schema work starts:
+
+- `DATABASE_URL` examples for local PostgreSQL and test SQLite. SQLite is acceptable only for unit tests; local multi-user auth and production-like refresh locking must use PostgreSQL.
+- A migration command and rollback command for the chosen migration tool.
+- A DB reset command that drops only the local/test database or schema and never targets production.
+- A local encryption-key generation command, for example:
+
+```bash
+python3 -c "import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())"
+```
+
+- A documented `.env` key such as `TOKEN_ENCRYPTION_MASTER_KEY_B64` for local development and a production key reference such as `TOKEN_ENCRYPTION_KEY_ID`.
+- A service-credential seeding path that reads service-account credentials from local env or an operator prompt and writes only encrypted `service_integration_tokens`; it must not commit secrets or ask normal users for personal API tokens.
+
 The first database slice should be deliberately narrow:
 
 - Store who the user is.
@@ -386,15 +402,21 @@ Token storage must be designed before writing `auth_tokens`.
 - `GET /api/me` returns the current user, current workspace/site, Jira project access status, and auth connection status without token material.
 - All Jira routes construct and pass `RequestAuthContext`; Home/Townsquare routes pass `RequestAuthContext` for workspace/cache/audit scoping and resolve credentials from either the service-integration boundary or the future Home 3LO boundary. Source guards fail if routes call Jira/Home clients or caches directly from process globals.
 - Every Jira/Home-derived cache is keyed by workspace plus auth context or service-integration context, or disabled for OAuth users.
+- The Home GraphQL gate is run or documented with `scripts/check_home_graphql_oauth.py`: a `FAIL` result keeps Home/Townsquare routes guarded or service-integration-scoped; a `PASS` result permits user Home 3LO only through the DB `auth_connections` / encrypted `auth_tokens` boundary with DB refresh locking, `token_version`, revoked/disabled-user checks, and user/auth cache partitioning.
 - OAuth login creates or updates a user by Atlassian `account_id`; an email change updates profile metadata and does not create another user.
 - Inactive Atlassian accounts and disabled/deleted local users cannot create active sessions.
-- Disabling a signed-in user terminates their next authenticated request within 30 seconds without process restart; the response is `401 account_disabled` and no Jira/Home call runs.
+- Disabling a signed-in user terminates their next authenticated request within 30 seconds without process restart; the response is `401 account_disabled` and no user-scoped Jira call or Home/Townsquare-backed route response runs.
 - Revoking an auth connection terminates that user's next authenticated Jira request or Home/Townsquare-backed route response within 30 seconds without process restart; the response is `401 auth_connection_revoked`.
 - First admin bootstrap succeeds only for configured Atlassian account ids and only while the workspace has zero admins.
 - Later admin grant/revoke actions require an existing admin and create audit events.
 - Non-admin users cannot mutate selected projects, board config, capacity, field mapping, priority weights, team/group config, issue-type config, or EPM config.
 - Non-admin users cannot mutate Home/Townsquare-backed or Jira-project-backed EPM/APM configuration, even when they can read the resulting view.
 - Token encryption tests prove tokens are not stored as plaintext, use the configured `key_id`, decrypt with retired keys during rotation, and redact logs.
+- Service-integration tests prove only admins/operators can create, rotate, disable, or revoke `jira_basic` and `home_townsquare_basic` credentials.
+- Service-token storage tests prove Basic/Home API tokens are stored only in `service_integration_tokens`, never as normal-user `auth_tokens`.
+- Service-token encryption tests prove associated data binds ciphertext to `workspace_id`, `service_integration_id`, `token_kind`, and `key_id`.
+- Admin API tests prove service-token plaintext, ciphertext, wrapped keys, and credential env names never appear in admin responses.
+- Service-credential rotation tests prove affected Home/Townsquare and Jira-derived service caches are invalidated by service integration `token_version` changes.
 - Concurrent refresh tests prove one refresh updates tokens, deletes the previous refresh-token row, and increments `token_version` while stale refresh attempts cannot overwrite newer token material.
 - Refresh-reuse tests prove `invalid_grant` or provider reuse signals revoke the connection, delete usable tokens, write a redacted `connection_revoked` audit event with cause `refresh_reuse_detected`, and do not retry.
 - Data for one environment/Jira workspace cannot be read with another environment/workspace context.

@@ -45,7 +45,7 @@ This phase does not include:
 
 Do not implement this database phase until the Jira/Home auth-client boundary exists and the OAuth slice has closed the local-only safety gaps.
 
-The phase assumes backend Jira calls can resolve the current request's authenticated user, auth connection, workspace/site, and headers without reading process-global `JIRA_EMAIL` / `JIRA_TOKEN` directly in every route. Home/Townsquare calls must not be treated as user-scoped until `docs/plans/2026-05-06-home-townsquare-3lo-readiness-migration.md` passes its real local 3LO gate. Until that gate passes, Home/Townsquare metadata uses workspace-level service credentials and remains guarded or read-only for normal users. Before starting this phase, the OAuth slice must also serialize refresh-token replacement, return `route_not_oauth_ready`/501 for un-migrated API routes in `JIRA_AUTH_MODE=atlassian_oauth`, and disable or auth-key Jira/Home process caches for OAuth users. Either complete `docs/plans/2026-04-27-atlassian-oauth-auth.md` first or add an equivalent centralized auth/client layer with those same gates before database-backed identity work starts.
+The phase assumes backend Jira calls can resolve the current request's authenticated user, auth connection, workspace/site, and headers without reading process-global `JIRA_EMAIL` / `JIRA_TOKEN` directly in every route. Home/Townsquare calls must not be treated as user-scoped until `docs/plans/2026-05-06-epm-home-oauth-migration.md` passes its real local 3LO gate. Until that gate passes, Home/Townsquare metadata uses workspace-level service credentials and remains guarded or read-only for normal users. Before starting this phase, the OAuth slice must also serialize refresh-token replacement, return `route_not_oauth_ready`/501 for un-migrated API routes in `JIRA_AUTH_MODE=atlassian_oauth`, and disable or auth-key Jira/Home process caches for OAuth users. Either complete `docs/plans/2026-04-27-atlassian-oauth-auth.md` first or add an equivalent centralized auth/client layer with those same gates before database-backed identity work starts.
 
 ## Home/Townsquare And Service-Credential Boundary
 
@@ -293,7 +293,7 @@ Append-only security and admin event log. Events must not contain token material
 | `actor_user_id` | User who caused the event, nullable for system/bootstrap events. |
 | `target_user_id` | Affected user when applicable. |
 | `auth_connection_id` | Affected connection when applicable. |
-| `event_type` | `login_success`, `login_failure`, `token_refresh_success`, `token_refresh_failure`, `connection_revoked`, `admin_granted`, `admin_revoked`, `user_disabled`, `user_enabled`, `config_write`, `key_rotation_started`, `key_rotation_completed`. |
+| `event_type` | Phase-1 values: `login_success`, `login_failure`, `token_refresh_success`, `token_refresh_failure`, `connection_revoked`, `admin_granted`, `admin_revoked`, `user_disabled`, `user_enabled`, `service_integration_created`, `service_integration_rotated`, `service_integration_disabled`, `service_integration_deleted`, and `config_write`. Add future key-rotation workflow events only when the rotation workflow itself ships. |
 | `metadata` | Redacted JSON metadata: status code, sanitized provider error code, project key, config section, or key id. |
 | `created_at` | Event timestamp. |
 
@@ -338,33 +338,7 @@ Current mutable routes that need an authenticated admin boundary before DB auth 
 
 `POST /api/epm/projects/configuration` and `POST /api/epm/projects/preview` are currently non-persistent preview helpers. They still need authentication and CSRF handling because they are browser POST routes, but they do not need admin authorization unless they start persisting configuration.
 
-## Pre-DB Admin Gate Task
-
-Before database tables exist, guard every current mutation route that is already OAuth-ready and writes shared configuration. This prevents the interim OAuth mode from letting any signed-in user mutate shared config before DB-backed admins land.
-
-**Files:**
-- Modify: `jira_server.py`
-- Modify: `backend/routes/settings_routes.py`
-- Modify: `backend/routes/epm_routes.py`
-- Test: `tests/test_pre_db_admin_gates.py`
-
-- [ ] Write failing tests proving a non-bootstrap OAuth user receives `403 admin_required` for:
-  - `POST /api/groups-config`
-  - `POST /api/team-catalog`
-  - `POST /api/projects/selected`
-  - `POST /api/board-config`
-  - `POST /api/capacity/config`
-  - `POST /api/sprint-field/config`
-  - `POST /api/story-points-field/config`
-  - `POST /api/parent-name-field/config`
-  - `POST /api/team-field/config`
-  - `POST /api/stats/priority-weights-config`
-  - `POST /api/issue-types/config`
-  - `POST /api/epm/config`
-- [ ] Implement a temporary pre-DB admin check based only on stable Atlassian account ids from `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`. Email and Jira project access are not admin signals.
-- [ ] Keep Basic single-user mode compatible by preserving the current local Basic admin behavior.
-- [ ] Run `.venv/bin/python -m unittest tests.test_pre_db_admin_gates tests.test_oauth_route_guards`.
-- [ ] Commit with `git commit -m "Gate OAuth shared config writes before DB auth"`.
+The executable checklist below assigns this pre-DB admin gate to Task 0. Do not start DB schema work before Task 0 passes.
 
 ## API Surface
 
@@ -390,44 +364,160 @@ Existing `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` 
 
 ## Migration Plan
 
-- [ ] Add DB dependencies and Alembic runtime files.
-  - Files: `requirements.txt`, `backend/db/engine.py`, `backend/db/models.py`, `backend/db/alembic.ini`, `backend/db/migrations/env.py`
-  - Tests: `tests/test_db_engine.py`
-- [ ] Add first migration for `users`, `workspaces`, `auth_connections`, `auth_tokens`, `service_integrations`, `service_integration_tokens`, `jira_project_access`, and `audit_events`.
-  - Files: `backend/db/migrations/versions/*_initial_auth.py`
-  - Tests: `tests/test_db_migrations.py`
-- [ ] Add token encryption and key-provider boundary.
-  - Files: `backend/auth/token_crypto.py`, `backend/auth/key_provider.py`
-  - Tests: `tests/test_db_token_encryption.py`
-- [ ] Add DB-backed auth connection repository and refresh locking.
-  - Files: `backend/auth/db_tokens.py`, `backend/auth/jira_auth.py`
-  - Tests: `tests/test_db_token_refresh.py`, `tests/test_db_refresh_race.py`
-- [ ] Add service integration repository and operator seeding CLI.
-  - Files: `backend/auth/service_integrations.py`, `backend/admin/seed_service_credential.py`
-  - Tests: `tests/test_db_service_integrations.py`
-- [ ] Add admin bootstrap from `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`.
-  - Files: `backend/auth/admin_bootstrap.py`, `backend/routes/admin_routes.py`
-  - Tests: `tests/test_db_admin_bootstrap.py`
-- [ ] Add DB-backed `RequestAuthContext` resolver.
-  - Files: `backend/auth/db_context.py`, `jira_server.py`
-  - Tests: `tests/test_db_auth_context.py`
-- [ ] Add token-bound CSRF before any DB admin/config browser mutation endpoint ships.
-  - Files: `backend/auth/csrf.py`, `backend/routes/auth_routes.py`, `jira_server.py`
-  - Tests: `tests/test_db_csrf.py`
-- [ ] Add user/admin/service-integration API routes.
-  - Files: `backend/routes/admin_routes.py`, `backend/routes/auth_routes.py`
-  - Tests: `tests/test_db_admin_routes.py`, `tests/test_db_service_integration_routes.py`
-- [ ] Add Jira project access snapshot checks without broad startup fan-out.
-  - Files: `backend/auth/project_access.py`
-  - Tests: `tests/test_db_project_access.py`
-- [ ] Add local OAuth store cutover.
-  - Files: `jira_server.py`, `backend/auth/jira_auth.py`, `backend/auth/db_tokens.py`
-  - Tests: `tests/test_db_oauth_cutover.py`
-  - Rule: during the transition, local token store and DB token rows must not both be authoritative for the same session. Run local store and DB in an explicit parallel-read/write window, verify DB rows, then disable local store reads when DB token rows exist.
-- [ ] Add visible recovery surfaces outside `frontend/src/dashboard.jsx`.
-  - Files: `backend/routes/auth_routes.py`, optional `backend/routes/admin_routes.py`
-  - Tests: `tests/test_db_auth_recovery_pages.py`
-- [ ] Run final verification: `.venv/bin/python -m unittest discover -s tests`, `node tests/test_auth_isolation_source_guard.js`, and browser smoke journeys listed below.
+Execute these tasks in order. Each task should be a focused commit unless the task explicitly says it is documentation-only.
+
+### Task 0: Pre-DB Admin Gate For Current OAuth Shared Config Writes
+
+**Files:**
+- Modify: `jira_server.py`
+- Modify: `backend/routes/settings_routes.py`
+- Modify: `backend/routes/epm_routes.py`
+- Test: `tests/test_pre_db_admin_gates.py`
+
+- [ ] Write failing tests proving a non-bootstrap OAuth user with `X-Requested-With: jira-execution-planner` receives `403 admin_required` for `POST /api/groups-config`, `POST /api/team-catalog`, `POST /api/projects/selected`, `POST /api/board-config`, `POST /api/capacity/config`, `POST /api/sprint-field/config`, `POST /api/story-points-field/config`, `POST /api/parent-name-field/config`, `POST /api/team-field/config`, `POST /api/stats/priority-weights-config`, `POST /api/issue-types/config`, and `POST /api/epm/config`.
+- [ ] Implement a temporary admin check based only on stable Atlassian account ids in `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`; keep `RequestAuthContext.is_admin = False` for all other OAuth users until DB auth lands.
+- [ ] Preserve Basic single-user behavior.
+- [ ] Run `.venv/bin/python -m unittest tests.test_pre_db_admin_gates tests.test_oauth_route_guards`.
+- [ ] Commit with `git commit -m "Gate OAuth shared config writes before DB auth"`.
+
+### Task 1: DB Runtime, Migration Harness, And Local Commands
+
+**Files:**
+- Modify: `requirements.txt`
+- Create: `backend/db/engine.py`
+- Create: `backend/db/models.py`
+- Create: `backend/db/alembic.ini`
+- Create: `backend/db/migrations/env.py`
+- Create: `backend/db/migrations/versions/*_initial_auth.py`
+- Create: `backend/db/reset_local.py`
+- Test: `tests/test_db_session.py`
+- Test: `tests/test_db_migrations.py`
+
+- [ ] Add `SQLAlchemy`, `alembic`, and `psycopg[binary]` dependencies.
+- [ ] Add SQLAlchemy 2.x engine/session helpers keyed by `DATABASE_URL` and `TEST_DATABASE_URL`; startup fails when DB mode is selected without a database URL.
+- [ ] Add Alembic config under `backend/db/` and document these commands in the plan implementation notes: `alembic -c backend/db/alembic.ini upgrade head`, `alembic -c backend/db/alembic.ini downgrade base`, and `python3 -m backend.db.reset_local`.
+- [ ] Create the initial auth migration for `users`, `workspaces`, `auth_connections`, `auth_tokens`, `service_integrations`, `service_integration_tokens`, `jira_project_access`, and `audit_events`.
+- [ ] Test migration upgrade/downgrade/rollback/idempotent rerun in `tests/test_db_migrations.py`.
+- [ ] Test session factory isolation and unique constraints on `(environment_key, jira_cloud_id)` and `(environment_key, jira_site_url)` in `tests/test_db_session.py`.
+- [ ] Ensure refresh-race tests refuse to run on SQLite or skip with a clear message because SQLite cannot prove PostgreSQL advisory-lock or `SELECT ... FOR UPDATE` semantics.
+- [ ] Commit with `git commit -m "Add database auth migration harness"`.
+
+### Task 2: Token Encryption, Keyring, And Audit Redaction
+
+**Files:**
+- Create: `backend/auth/token_crypto.py`
+- Create: `backend/auth/key_provider.py`
+- Modify: `backend/db/models.py`
+- Test: `tests/test_token_encryption.py`
+- Test: `tests/test_token_key_rotation.py`
+- Test: `tests/test_audit_redaction_source_guard.py`
+
+- [ ] Implement envelope encryption for `auth_tokens` and `service_integration_tokens` with AES-256-GCM, per-token data-encryption keys, wrapped DEKs, nonces, `key_id`, and AAD bound to `(workspace_id, auth_connection_id or service_integration_id, token_kind, key_id)`.
+- [ ] Add a key provider interface with local `TOKEN_ENCRYPTION_MASTER_KEY_B64`, production `TOKEN_ENCRYPTION_KEY_ID`, and a retired-key read path such as `TOKEN_ENCRYPTION_RETIRED_KEY_IDS` / `TOKEN_ENCRYPTION_RETIRED_KEYS_B64`.
+- [ ] Refuse production startup when `TOKEN_ENCRYPTION_MASTER_KEY_B64` is the only available key source and `APP_ENVIRONMENT_KEY` is not `local` or `dev`.
+- [ ] Test ciphertext is not plaintext, AAD prevents cross-row decrypt, logs are redacted, retired keys can decrypt existing rows, and new writes use the primary `key_id`.
+- [ ] Add an audit source guard that scans audit insert paths and fails if token material, OAuth codes, PKCE verifiers, raw Authorization headers, or full callback URLs can be written.
+- [ ] Commit with `git commit -m "Add encrypted auth token storage"`.
+
+### Task 3: DB Auth Context Resolver And Local OAuth Store Cutover
+
+**Files:**
+- Create: `backend/auth/db_context.py`
+- Create: `backend/auth/db_tokens.py`
+- Modify: `backend/auth/jira_auth.py`
+- Modify: `backend/routes/auth_routes.py`
+- Modify: `jira_server.py`
+- Test: `tests/test_auth_context_db.py`
+- Test: `tests/test_db_oauth_cutover.py`
+
+- [ ] Write DB-mode tests for active user plus active connection, disabled user, revoked connection, stale `token_version`, missing scopes, and the 30-second status TTL with immediate invalidation on admin enable/disable or connection revoke.
+- [ ] Rewrite `current_request_auth_context()` so DB mode reads `users`, `workspaces`, and `auth_connections` instead of `oauth_session_data()`.
+- [ ] OAuth callback cutover order: first write encrypted tokens to DB while still updating the local store, then read from DB while continuing compatibility writes, then flip DB mode to DB-only reads and reject local token-store helpers outside local/dev.
+- [ ] Ensure local store and DB rows are never both authoritative for the same session. DB mode wins once a DB `auth_connection` exists.
+- [ ] Extend source guards so DB-mode route code cannot call `OAUTH_TOKEN_STORE`, `oauth_session_data`, `save_oauth_session`, or `oauth_refresh_lock`, and cannot read `JIRA_EMAIL` / `JIRA_TOKEN` outside the service-integration boundary.
+- [ ] Commit with `git commit -m "Resolve auth context from database tokens"`.
+
+### Task 4: Refresh Race, Refresh Reuse, And Token Versioning
+
+**Files:**
+- Modify: `backend/auth/db_tokens.py`
+- Modify: `backend/auth/jira_auth.py`
+- Test: `tests/test_token_refresh_race.py`
+- Test: `tests/test_token_refresh_reuse.py`
+
+- [ ] Use a transaction plus `SELECT ... FOR UPDATE` or a PostgreSQL advisory lock keyed by `auth_connection_id` for every DB refresh.
+- [ ] Under the lock, decrypt the current refresh token, call Atlassian, replace access/refresh token rows, update `auth_connections.expires_at` and `status`, and increment `auth_connections.token_version` in the same transaction.
+- [ ] Hard-delete the previous refresh-token row before commit when Atlassian returns a replacement refresh token.
+- [ ] Treat `invalid_grant`, `token_already_used`, or equivalent refresh-reuse signals as revocation: no retry, delete usable tokens, set connection `revoked`, write `connection_revoked` audit metadata with `cause: refresh_reuse_detected`, and force re-authentication.
+- [ ] Test concurrent refresh serialization and monotonic `token_version` against PostgreSQL; skip or fail clearly on SQLite.
+- [ ] Commit with `git commit -m "Serialize database OAuth token refresh"`.
+
+### Task 5: Admin Bootstrap, Service Integrations, And Admin APIs
+
+**Files:**
+- Create: `backend/auth/admin_bootstrap.py`
+- Create: `backend/auth/service_integrations.py`
+- Create: `backend/admin/seed_service_credential.py`
+- Create: `backend/routes/admin_routes.py`
+- Modify: `backend/routes/auth_routes.py`
+- Test: `tests/test_service_integrations.py`
+- Test: `tests/test_db_admin_bootstrap.py`
+- Test: `tests/test_db_admin_routes.py`
+
+- [ ] Bootstrap the first admin only from `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS` and only while the workspace has zero admins.
+- [ ] Test that another Atlassian `account_id` cannot bootstrap admin even when it has the same email address.
+- [ ] Add admin-only `GET /api/admin/users`, `GET /api/admin/users/<id>`, `PATCH /api/admin/users/<id>/status`, `POST /api/admin/users/<id>/admin-grant`, `DELETE /api/admin/users/<id>/admin-grant`, and `GET /api/admin/audit-events`.
+- [ ] Add admin-only service-integration routes for list, create, rotate, disable, and delete. Unsafe methods require token-bound CSRF after Task 6.
+- [ ] Add `python3 -m backend.admin.seed_service_credential` for operator seeding into `service_integration_tokens` only.
+- [ ] Test redacted admin responses, admin-only mutation, service-token storage separation, and cache invalidation on service integration `token_version` changes.
+- [ ] Commit with `git commit -m "Add admin and service integration auth APIs"`.
+
+### Task 6: Token-Bound CSRF And Visible Recovery Pages
+
+**Files:**
+- Create: `backend/auth/csrf.py`
+- Modify: `backend/routes/auth_routes.py`
+- Modify: `backend/routes/admin_routes.py`
+- Modify: `jira_server.py`
+- Test: `tests/test_csrf_token_bound.py`
+- Test: `tests/test_db_auth_recovery_pages.py`
+
+- [ ] Add a server-issued CSRF token endpoint such as `GET /api/auth/csrf`.
+- [ ] Require `X-CSRF-Token` on every browser-originating `POST`, `PUT`, `PATCH`, and `DELETE` route for DB admin/config endpoints. Keep `X-Requested-With` only as an additional same-origin signal during transition.
+- [ ] Test missing, wrong, reused, and cross-session tokens return `403 csrf_required`.
+- [ ] Add visible recovery pages outside `frontend/src/dashboard.jsx`: unauthenticated/expired login, disabled account, revoked connection/reconnect, missing project access, non-admin denial, and service credential admin area.
+- [ ] Browser-verify the journeys listed in "Verification Criteria".
+- [ ] Commit with `git commit -m "Add token-bound CSRF and auth recovery screens"`.
+
+### Task 7: Jira Project Access, Cache Partitioning, And Home 3LO Gate Outcomes
+
+**Files:**
+- Create: `backend/auth/project_access.py`
+- Modify: cache helpers that read Jira/Home-derived data
+- Modify: `tests/test_oauth_jira_client_source_guard.py`
+- Test: `tests/test_db_project_access.py`
+- Test: `tests/test_cache_partitioning.py`
+- Test: `tests/test_home_3lo_gate_outcomes.py`
+
+- [ ] Add explicit project-access snapshots for configured product/tech projects without broad startup fan-out.
+- [ ] Test product-only, tech-only, no-access, and unknown-access user states.
+- [ ] Partition or disable every named cache surface: project search, components, epic search, labels, issue types, EPM issue payloads, EPM rollups, EPM Home project metadata, sprint caches, Home goal/project catalog cache, `sprints_cache.json`, and `stats_cache.json`.
+- [ ] Invalidate affected caches on revoke, disable, reconnect, service-credential rotation, admin scope-project changes, and token-version changes.
+- [ ] Test the Home GraphQL probe outcomes: `PASS` uses the DB auth boundary for Home 3LO, while `FAIL` keeps Home/Townsquare routes guarded or service-integration-scoped.
+- [ ] Commit with `git commit -m "Partition Jira and Home caches by auth context"`.
+
+### Task 8: Final DB Auth Verification
+
+**Files:**
+- Modify: PR notes only if a PR is created later
+
+- [ ] Run `.venv/bin/python -m unittest discover -s tests`.
+- [ ] Run `node tests/test_auth_isolation_source_guard.js`.
+- [ ] Run source guards for DB token-store and direct Basic credential reads.
+- [ ] Run `npm run build` if frontend auth recovery or admin surfaces changed.
+- [ ] Measure initial dashboard bootstrap before and after the DB landing and record `Server-Timing` or request-count evidence; do not claim performance neutrality without measurement.
+- [ ] Browser-verify unauthenticated entry, Atlassian/Microsoft login through Atlassian Cloud SSO, expired-session recovery, disabled-user screen, revoked-connection screen, missing-project-access state, non-admin denial, service-credential admin area, and focus/visibility refresh.
+- [ ] Review `git log --oneline -5` before push.
 
 ## Token-Bound CSRF Upgrade Task
 
@@ -439,7 +529,7 @@ Before any DB-backed browser mutation route ships:
 - Store only a token hash or session-bound nonce server-side.
 - Require `X-CSRF-Token` on every browser-originating `POST`, `PUT`, `PATCH`, and `DELETE` route.
 - Keep the old `X-Requested-With` requirement only as an additional same-origin signal during transition; it must not be the only CSRF proof for DB admin/config routes.
-- Tests in `tests/test_db_csrf.py` must prove missing, wrong, reused, or cross-session tokens fail with `403 csrf_required`.
+- Tests in `tests/test_csrf_token_bound.py` must prove missing, wrong, reused, or cross-session tokens fail with `403 csrf_required`.
 
 ## User Recovery UI Surfaces
 
@@ -461,9 +551,9 @@ At minimum, cache keys for issue/project/rollup data must include the `workspace
 
 Shared caches are acceptable only for data that is both non-secret and independent of Jira/Home permissions. Until Home/Townsquare 3LO passes, Home/Townsquare metadata caches are workspace/service-integration scoped, not user-ACL scoped, and must not be used as proof of user Home visibility. Revoke, reconnect, project-access changes, service-credential rotation, and admin changes to scope projects must invalidate affected user/workspace/service cache entries.
 
-Existing process caches that must be either auth-keyed or disabled for OAuth users include project search, component lookup, epic search, labels, issue types, EPM issue payloads, EPM rollups, EPM Home project metadata, sprint caches when the board/source is workspace-specific, and any Home goal/project catalog cache. A cache key built only from project key, JQL, tab, sprint, Home project id, label prefix, or goal key is not sufficient in DB/OAuth mode.
+Existing process caches that must be either auth-keyed or disabled for OAuth users include project search, component lookup, epic search, labels, issue types, EPM issue payloads, EPM rollups, EPM Home project metadata, sprint caches when the board/source is workspace-specific, `sprints_cache.json`, `stats_cache.json`, and any Home goal/project catalog cache. A cache key built only from project key, JQL, tab, sprint, Home project id, label prefix, or goal key is not sufficient in DB/OAuth mode.
 
-Tests in `tests/test_db_cache_partitioning.py` must explicitly cover project search, component lookup, epic search, labels, issue types, EPM issue payloads, EPM rollups, EPM Home project metadata, sprint caches, and Home goal/project catalog cache.
+Tests in `tests/test_cache_partitioning.py` must explicitly cover project search, component lookup, epic search, labels, issue types, EPM issue payloads, EPM rollups, EPM Home project metadata, sprint caches, `sprints_cache.json`, `stats_cache.json`, and Home goal/project catalog cache.
 
 ## Token Encryption And Refresh Model
 

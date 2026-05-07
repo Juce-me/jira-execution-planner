@@ -24,12 +24,22 @@ Use these two files as one ordered migration plan:
 
 Subagents must execute Part 2 tasks in order. Do not dispatch Part 2 implementation in parallel with unfinished Part 1 work because the EPM rollup tasks depend on Part 1's `current_jira_get` and `current_jira_search` boundary.
 
+## Implementation Status Reconciliation
+
+Status as of 2026-05-07: this is the canonical Home/Townsquare 3LO migration plan. The older same-dated Home/Townsquare readiness plan has been deleted; do not recreate or execute a parallel migration.
+
+- Part 2 Task 1's local feasibility helper, local dev probe route, wrapper script, and unit tests already exist in the checkout.
+- The latest documented local Home GraphQL gate result in `docs/atlassian-oauth-setup.md` is `FAIL home_graphql_3lo_unsupported`, so Home/Townsquare-backed EPM routes must remain guarded with `route_not_oauth_ready` until a real local probe produces `PASS`.
+- `current_home_graphql_client`, `current_teamwork_graph_client`, and `OAUTH_READY_API_PATH_PATTERNS` do not exist yet. Task 1A and Tasks 2 through 9 remain unimplemented.
+- `backend/routes/epm_routes.py` already calls `fetch_issues_by_jql(jql, build_epm_fields_list())` for `GET /api/epm/projects/<home_project_id>/issues`. Do not reintroduce `build_jira_headers()` in that route; Task 6 should verify the existing no-header call and finish the OAuth boundary, auth-error, cache, and dynamic route-readiness work.
+- Any Home/Townsquare-backed or Jira-project-backed mutation must have an admin or service-account guard before it is marked OAuth-ready. If DB auth has not landed, use the temporary pre-DB admin gate in `docs/plans/2026-05-05-database-introduction-user-auth.md`.
+
 ## Part 2 Route Surface Review
 
 Part 1 now lists the full EPM route surface and keeps Home-backed EPM routes guarded. Part 2 owns the migration details for that surface:
 
 - `POST /api/epm/projects/preview` is an alias of `POST /api/epm/projects/configuration` in `backend/routes/epm_routes.py`; migrate and test both names.
-- `GET /api/epm/projects/<home_project_id>/issues` currently performs Jira issue search directly through `fetch_issues_by_jql(jql, build_jira_headers(), build_epm_fields_list())`; it must move to the Part 1 Jira REST boundary before it becomes OAuth-ready.
+- `GET /api/epm/projects/<home_project_id>/issues` currently performs Jira issue search through `fetch_issues_by_jql(jql, build_epm_fields_list())`; verify that helper uses the Part 1 Jira REST boundary and do not add a Basic header argument back.
 - `GET /api/epm/projects/rollup/all` performs Home project discovery plus per-project Jira rollups, while `GET /api/epm/projects/<project_id>/rollup` performs one Home/custom project lookup plus Jira rollup queries; test them separately.
 - Dynamic EPM issue and rollup routes need explicit OAuth-ready pattern matching before they can work under OAuth.
 - `GET /api/epm/config` and `POST /api/epm/config` are local configuration routes. Part 1 may already migrate them with local config routes; Part 2 keeps EPM-specific regression coverage.
@@ -88,7 +98,7 @@ Do not add a route to `OAUTH_READY_API_PATHS` or an OAuth-ready dynamic path mat
 - Modify: `backend/routes/auth_routes.py` only if a local-only server-side probe route is needed for browser-session testing
 - Modify: `docs/atlassian-oauth-setup.md`
 
-- [ ] **Step 1: Write failing probe tests**
+- [x] **Step 1: Write failing probe tests**
 
 Create `tests/test_epm_home_oauth_feasibility.py` with these methods:
 
@@ -157,7 +167,7 @@ class HomeGraphQLOAuthFeasibilityTests(unittest.TestCase):
         self.assertEqual(result["decision"], "pass")
 ```
 
-- [ ] **Step 2: Run the failing probe tests**
+- [x] **Step 2: Run the failing probe tests**
 
 Run:
 
@@ -167,7 +177,7 @@ python3 -m unittest tests.test_epm_home_oauth_feasibility
 
 Expected: FAIL because `home_graphql_feasibility_queries`, `redact_home_oauth_probe_payload`, and `classify_home_graphql_probe_results` do not exist.
 
-- [ ] **Step 3: Add the probe helper functions without marking any EPM route OAuth-ready**
+- [x] **Step 3: Add the probe helper functions without marking any EPM route OAuth-ready**
 
 In `backend/epm/home.py`, add helper functions that reference the exact query constants and strip token-bearing fields from diagnostic output. The classification must return:
 
@@ -189,7 +199,7 @@ when any Home or TWG operation returns HTTP `401`, HTTP `403`, a GraphQL error c
 
 when the saved EPM scope cannot resolve a root goal, sub-goal, and at least one Home project to exercise project detail, update, direct tag, and TWG tag operations.
 
-- [ ] **Step 4: Add the local OAuth-session probe path or script**
+- [x] **Step 4: Add the local OAuth-session probe path or script**
 
 Prefer a local-only server-side probe route because the active OAuth token store is in the Flask server process. If Part 1 has already introduced another local diagnostic pattern, match it. Otherwise add a route under `/api/auth/dev/home-graphql-oauth-probe` in `backend/routes/auth_routes.py` with these guards. This path is reachable under the Part 1 global OAuth guard because `is_oauth_ready_api_path()` treats `/api/auth/*` as an OAuth-ready auth surface; if that exemption is missing in the implementation checkout, fix Part 1's guard first. Do not place the probe under `/api/epm/*`, and do not mark any Home-backed EPM route OAuth-ready just to run the probe.
 
@@ -220,7 +230,7 @@ Expected FAIL output for unsupported 3LO:
 FAIL home_graphql_3lo_unsupported
 ```
 
-- [ ] **Step 5: Run the unit probe tests**
+- [x] **Step 5: Run the unit probe tests**
 
 Run:
 
@@ -273,6 +283,77 @@ git commit -m "Add Home GraphQL OAuth feasibility gate"
 ```
 
 Expected: tests PASS. Commit only the files changed in this task.
+
+## Part 2 Task 1A: Admin/Service Guard For Home-Backed Mutations
+
+Execute this task before marking any Home/Townsquare-backed or Jira-project-backed mutation OAuth-ready. If `docs/plans/2026-05-05-database-introduction-user-auth.md` has already landed its DB admin and service-integration boundary, verify this task against the DB implementation instead of adding a second guard.
+
+**Files:**
+- Modify: `jira_server.py`
+- Modify: `backend/routes/epm_routes.py`
+- Modify: `backend/routes/settings_routes.py` only if a shared settings mutation joins the Home/Jira-project-backed surface
+- Create or modify: `backend/routes/admin_routes.py` only after DB auth owns service-integration mutations
+- Test: `tests/test_pre_db_admin_gates.py`
+- Test: `tests/test_service_integrations.py` after DB auth lands
+- Test: `tests/test_epm_home_oauth_source_guard.py`
+
+- [ ] **Step 1: Write the non-admin mutation denial tests**
+
+In `tests/test_pre_db_admin_gates.py`, prove that a valid OAuth session without an admin account id receives `403 {"error": "admin_required"}` for every shared config write that can alter Home/Townsquare or Jira-project-backed behavior, including `POST /api/epm/config` and any future persistent EPM/APM mapping route.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_pre_db_admin_gates
+```
+
+Expected: FAIL until the temporary or DB-backed admin guard exists.
+
+- [ ] **Step 2: Implement one admin boundary**
+
+If DB auth is not present, use only stable Atlassian account ids from `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS` as the temporary admin signal, keep `RequestAuthContext.is_admin = False` for all other OAuth users, and preserve Basic single-user compatibility. Do not use email, domain, Jira project access, or Home project access as admin signals.
+
+If DB auth is present, route the same check through DB `users.account_type == "admin"` and active user/connection status.
+
+- [ ] **Step 3: Keep service-account credentials out of normal user token storage**
+
+When service-integration routes exist, verify:
+
+```text
+GET /api/admin/service-integrations
+POST /api/admin/service-integrations
+POST /api/admin/service-integrations/<id>/rotate
+POST /api/admin/service-integrations/<id>/disable
+DELETE /api/admin/service-integrations/<id>
+```
+
+are admin-only, CSRF-required for unsafe methods, return redacted status metadata only, and store `jira_basic` / `home_townsquare_basic` token material only in `service_integration_tokens`.
+
+- [ ] **Step 4: Add source guard coverage**
+
+Extend the EPM/Home source guard so migrated Home route code cannot read `JIRA_EMAIL`, `JIRA_TOKEN`, `ATLASSIAN_EMAIL`, `ATLASSIAN_API_TOKEN`, or service-token plaintext directly. The only allowed service-credential read path is the service-integration boundary.
+
+- [ ] **Step 5: Run verification**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_pre_db_admin_gates tests.test_oauth_route_guards
+python3 -m unittest tests.test_service_integrations
+```
+
+Expected: PASS for the tests that exist in the current phase. If DB service-integration routes do not exist yet, document that `tests.test_service_integrations` is deferred to the DB Auth plan and keep this Part 2 task blocked for service mutations.
+
+- [ ] **Step 6: Commit**
+
+Run:
+
+```bash
+git add jira_server.py backend/routes/epm_routes.py backend/routes/settings_routes.py backend/routes/admin_routes.py tests/test_pre_db_admin_gates.py tests/test_service_integrations.py tests/test_epm_home_oauth_source_guard.py
+git commit -m "Guard Home-backed mutations behind admin auth"
+```
+
+Expected: commit includes only files needed for the active guard path.
 
 ## Part 2 Task 2: Request-Bound Home GraphQL Client Boundary
 
@@ -816,23 +897,23 @@ Run:
 python3 -m unittest tests.test_oauth_epm_rollup_routes
 ```
 
-Expected: FAIL because the routes are not OAuth-ready or still call `build_jira_headers`.
+Expected: FAIL because the routes are not OAuth-ready, do not have dynamic OAuth-ready path matching, or still miss Home/Jira auth-error handling.
 
-- [ ] **Step 3: Migrate the project issues endpoint**
+- [ ] **Step 3: Verify and keep the project issues endpoint on the Part 1 Jira boundary**
 
-In `backend/routes/epm_routes.py`, replace:
-
-```python
-issues = fetch_issues_by_jql(jql, build_jira_headers(), build_epm_fields_list())
-```
-
-with a call path that uses Part 1's Jira boundary under OAuth. The preferred shape is:
+The current checkout already uses the no-header call:
 
 ```python
 issues = fetch_issues_by_jql(jql, build_epm_fields_list())
 ```
 
-where `fetch_issues_by_jql` internally calls `current_jira_search` after Part 1 cleanup. If Part 1 kept a legacy compatibility parameter, pass no headers and make the helper ignore legacy headers for OAuth.
+Keep that shape. Do not reintroduce this legacy Basic-header call:
+
+```python
+issues = fetch_issues_by_jql(jql, build_jira_headers(), build_epm_fields_list())
+```
+
+Verify that `fetch_issues_by_jql` internally calls `current_jira_search` after Part 1 cleanup. If Part 1 kept a legacy compatibility parameter in another branch, pass no headers and make the helper ignore legacy headers for OAuth.
 
 Catch `AuthError("auth_required")` before broad exception handlers and return `oauth_auth_required_payload()`.
 
@@ -954,6 +1035,8 @@ Execute this task only if Part 2 Task 1 passes.
 **Files:**
 - Create: `tests/test_epm_home_oauth_source_guard.py`
 - Modify: `tests/test_auth_isolation_source_guard.js`
+
+Post-DB rule: after `docs/plans/2026-05-05-database-introduction-user-auth.md` lands, extend this guard so Home/Townsquare route code and migrated EPM route code cannot call `oauth_session_data`, `save_oauth_session`, `oauth_refresh_lock`, or `OAUTH_TOKEN_STORE`. At that point token resolution must flow through `RequestAuthContext`, DB `auth_connections`, encrypted `auth_tokens`, DB refresh locking, and revoked/disabled-user checks.
 
 - [ ] **Step 1: Write the source guard**
 

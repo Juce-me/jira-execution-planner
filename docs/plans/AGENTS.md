@@ -8,7 +8,7 @@ Before creating or executing any plan that touches Atlassian Home/Townsquare Gra
 
 1. Read `docs/atlassian-oauth-setup.md`, especially the Home GraphQL OAuth gate and visibility model.
 2. Check whether Atlassian Home/Townsquare GraphQL now accepts user 3LO tokens from a real local OAuth session.
-3. Start from the existing readiness plan: `docs/plans/2026-05-06-home-townsquare-3lo-readiness-migration.md`.
+3. Start from the canonical Part 2 plan: `docs/plans/2026-05-06-epm-home-oauth-migration.md`.
 4. Run or document this gate before marking any Home/Townsquare-backed route OAuth-ready:
 
 ```bash

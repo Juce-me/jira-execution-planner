@@ -123,7 +123,7 @@ Immutable history for rollback and audit.
 | `version_number` | Monotonic version. |
 | `payload` | Snapshot JSONB. |
 | `created_by`, `created_at` | Change audit. |
-| `change_note` | Short user or system note. |
+| `change_note` | Optional short system/admin note. Do not build a rollback UI in this phase; export rollback is an operator action only. |
 
 ## Effective Configuration Resolution
 
@@ -164,30 +164,94 @@ Personal saved views may store references to configured Home/Townsquare project 
 
 ## Migration Plan
 
-- [ ] Create DB config tables.
-  - Files: `backend/db/models.py`, `backend/db/migrations/versions/*_user_config.py`
-  - Tests: `tests/test_db_user_config_migrations.py`
-- [ ] Add explicit storage selector and config repository.
-  - Files: `backend/config/repository.py`, `backend/config/json_repository.py`, `backend/config/db_repository.py`
-  - Tests: `tests/test_config_storage_selector.py`
-- [ ] Add idempotent JSON import/export rollback command.
-  - Files: `backend/config/import_config.py`
-  - Tests: `tests/test_config_import_export.py`
-- [ ] Keep JSON fallback for `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config`.
-  - Files: `backend/routes/settings_routes.py`, `backend/routes/epm_routes.py`
-  - Tests: `tests/test_config_json_fallback_compatibility.py`
-- [ ] Add shared mapping payload validator.
-  - Files: `backend/config/view_validation.py`
-  - Tests: `tests/test_saved_view_validation.py`
-- [ ] Add saved-view route endpoints.
-  - Files: `backend/routes/views_routes.py`, `backend/app.py`
-  - Tests: `tests/test_saved_view_routes.py`
-- [ ] Add version snapshots when a saved view changes.
-  - Files: `backend/config/db_repository.py`
-  - Tests: `tests/test_view_config_versions.py`
-- [ ] Update frontend bootstrap to use selected workspace and effective config without adding heavy startup fan-out.
-  - Files: `frontend/src/api/config.js`, `frontend/src/dashboard.jsx` only if bootstrap wiring is unavoidable and auth UI stays outside dashboard state.
-  - Tests: existing frontend source guards plus a focused bootstrap test.
+Execute only after `docs/plans/2026-05-05-database-introduction-user-auth.md` has landed and verified DB `RequestAuthContext`, token-bound CSRF, admin checks, and JSON fallback behavior.
+
+### Task 1: Config Tables And Migration Tests
+
+**Files:**
+- Modify: `backend/db/models.py`
+- Create: `backend/db/migrations/versions/*_user_config.py`
+- Test: `tests/test_view_configs_db.py`
+
+- [ ] Add `workspace_config`, `view_configs`, and `view_config_versions` tables scoped by `workspace_id`.
+- [ ] Test migration upgrade/downgrade and constraints for owner/workspace isolation.
+- [ ] Test CRUD, archive, and version snapshot behavior in `tests/test_view_configs_db.py`.
+- [ ] Commit with `git commit -m "Add database tables for user view configs"`.
+
+### Task 2: Explicit Storage Selector And JSON Fallback
+
+**Files:**
+- Create: `backend/config/repository.py`
+- Create: `backend/config/json_repository.py`
+- Create: `backend/config/db_repository.py`
+- Create: `backend/config/import_config.py`
+- Modify: `backend/routes/settings_routes.py`
+- Modify: `backend/routes/epm_routes.py`
+- Test: `tests/test_config_storage_selector.py`
+- Test: `tests/test_config_jsonfile_fallback.py`
+
+- [ ] Implement `CONFIG_STORAGE_BACKEND=jsonfile|db`; default to `jsonfile` until import verification passes.
+- [ ] Fail startup when `CONFIG_STORAGE_BACKEND=db` and `DATABASE_URL` is missing or migrations are not at head.
+- [ ] Add idempotent import keyed by `(workspace_id, source_path, source_hash)` and an operator export rollback command that writes sanitized JSON outside committed paths.
+- [ ] Prove `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` return byte-identical non-secret payloads before import, after import, and after rollback to JSON mode.
+- [ ] Keep `team-groups.json` and `team-catalog.json` JSON-backed generated/local catalog files. Do not migrate them in this phase.
+- [ ] Commit with `git commit -m "Add deterministic config storage selector"`.
+
+### Task 3: Shared Mapping Payload Validator
+
+**Files:**
+- Create: `backend/config/view_validation.py`
+- Test: `tests/test_view_config_validator.py`
+- Modify: `tests/test_epm_home_oauth_source_guard.py` only if the Home/Townsquare plan has already created it
+
+- [ ] Define one `SHARED_MAPPING_PAYLOAD_KEYS` constant containing `epm.projectMappings`, `epm.projects`, `epm.homeProjectMappings`, `epm.jiraLabelDefinitions`, and `epm.serviceIntegrations`.
+- [ ] Implement `reject_shared_mapping_payload_keys(payload)` and use it from saved-view writes.
+- [ ] Cross-link this helper with the Part 2 Home/Townsquare guardrail tests so the forbidden shared mapping list is not duplicated.
+- [ ] Test that saved-view payloads cannot mutate shared Home/Townsquare-backed or Jira-project-backed mappings, labels, projects, or service integrations.
+- [ ] Commit with `git commit -m "Reject shared mappings from saved views"`.
+
+### Task 4: Effective Config Resolution
+
+**Files:**
+- Modify: `backend/config/db_repository.py`
+- Modify: `backend/config/repository.py`
+- Test: `tests/test_view_config_resolution.py`
+
+- [ ] Resolve effective config in this order: DB `RequestAuthContext` workspace, `workspace_config` defaults, selected private/workspace-visible user view, and `view_type`.
+- [ ] Return metadata that names `source`, `workspaceId`, `viewConfigId`, and `viewType`.
+- [ ] Test workspace defaults to user-view layering, workspace isolation, owner checks, archived-view exclusion, and ENG/EPM/mixed view selection.
+- [ ] Commit with `git commit -m "Resolve effective dashboard view config"`.
+
+### Task 5: Saved View And Workspace Config Routes
+
+**Files:**
+- Create: `backend/routes/views_routes.py`
+- Modify: app route registration file used by this repo
+- Modify: `backend/routes/settings_routes.py`
+- Test: `tests/test_view_configs_db.py`
+- Test: `tests/test_workspace_config_admin.py`
+
+- [ ] Add `GET /api/me/views`, `POST /api/me/views`, and `PATCH /api/me/views/<id>` for authenticated active users with token-bound CSRF on unsafe methods.
+- [ ] Add `GET /api/workspace/config` and `PATCH /api/workspace/config`; PATCH is admin-only and token-bound CSRF-required.
+- [ ] Validate Jira project references against the current `RequestAuthContext` project-access snapshot.
+- [ ] Validate Home/Townsquare references against the workspace service-backed catalog while the Home 3LO gate remains failed; do not claim user-level Home visibility.
+- [ ] Test normal users can save private views but cannot mutate workspace defaults.
+- [ ] Commit with `git commit -m "Add saved view config routes"`.
+
+### Task 6: Frontend Bootstrap Compatibility And Final Verification
+
+**Files:**
+- Modify: `frontend/src/api/config.js` if present, otherwise the existing frontend API module that loads config
+- Modify: `frontend/src/dashboard.jsx` only if bootstrap wiring is unavoidable; do not add auth UI here
+- Test: existing frontend source guards plus a focused bootstrap test
+
+- [ ] Keep initial dashboard bootstrap to one compact user/config request plus existing scoped data requests.
+- [ ] Preserve current JSON-compatible response shape for existing dashboard routes.
+- [ ] Run `.venv/bin/python -m unittest tests.test_view_configs_db tests.test_view_config_resolution tests.test_workspace_config_admin tests.test_view_config_validator tests.test_config_jsonfile_fallback`.
+- [ ] Run `node tests/test_auth_isolation_source_guard.js`.
+- [ ] Run `npm run build` if frontend source changed.
+- [ ] Measure first-load request count or `Server-Timing` before/after this phase and record the result.
+- [ ] Commit with `git commit -m "Wire dashboard config bootstrap to DB views"`.
 
 ## Verification Criteria
 
@@ -202,6 +266,6 @@ Personal saved views may store references to configured Home/Townsquare project 
 - Normal users can save private views but cannot mutate shared workspace defaults.
 - Normal users cannot mutate shared Home/Townsquare-backed or Jira-project-backed EPM/APM mappings through saved-view endpoints.
 - Saved-view validation uses the shared `reject_shared_mapping_payload_keys` helper from `backend/config/view_validation.py`.
-- Saved views that reference Home/Townsquare metadata do not claim user-level Home visibility unless `docs/plans/2026-05-06-home-townsquare-3lo-readiness-migration.md` has passed and the implementation validates that user 3LO path.
+- Saved views that reference Home/Townsquare metadata do not claim user-level Home visibility unless `docs/plans/2026-05-06-epm-home-oauth-migration.md` has passed and the implementation validates that user 3LO path.
 - No view payload contains token material.
 - Initial dashboard bootstrap remains one compact user/config request plus the existing scoped data requests.

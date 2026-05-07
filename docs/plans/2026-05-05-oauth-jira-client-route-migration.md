@@ -24,6 +24,18 @@ Use these two files as one ordered migration plan:
 
 Subagents must not pick tasks from both files in parallel. Execute Part 1 tasks in order, review the final verification output, then hand off to Part 2.
 
+## Implementation Status Reconciliation
+
+Status as of 2026-05-07: Part 1's code primitives and Jira REST route migration are already present in the checkout. Do not re-add or redesign them.
+
+- `jira_server.py` already defines `oauth_auth_required_payload`, `current_jira_auth_context`, `current_oauth_session_callbacks`, `current_jira_get`, `current_jira_search`, `current_jira_request`, `require_oauth_unsafe_method_header`, and single-argument `jira_search_request(payload)`.
+- `backend/auth/jira_auth.py` already defines `oauth_scope_set` and `missing_oauth_scopes`.
+- `OAUTH_READY_API_PATHS` already contains the Part 1 Jira REST and local-config surface, including `/api/test`, ENG routes, settings/catalog routes, boards/sprints/capacity/stats/scenario routes, and `/api/epm/config`.
+- Home/Townsquare-backed EPM routes are still intentionally guarded. `OAUTH_READY_API_PATHS` does not include `/api/epm/projects`, `/api/epm/projects/configuration`, `/api/epm/projects/preview`, `/api/epm/projects/rollup/all`, `/api/epm/projects/<home_project_id>/issues`, or `/api/epm/projects/<project_id>/rollup`, and there is no dynamic OAuth-ready EPM path matcher yet.
+- The current test modules for this phase already exist: `tests/oauth_test_helpers.py`, `tests/test_oauth_jira_client.py`, `tests/test_oauth_route_guards.py`, `tests/test_oauth_eng_routes.py`, `tests/test_oauth_settings_routes.py`, `tests/test_oauth_stats_routes.py`, `tests/test_oauth_jira_client_source_guard.py`, `tests/test_oauth_cache_isolation.py`, and `tests/test_epm_home_oauth_feasibility.py`.
+
+Task checkboxes through Part 1 Task 6 have been marked complete to reflect the current checkout. Part 1 Task 7 remains open until a worker reruns the full automated verification and the manual OAuth journey in the target environment. Do not start database execution from this plan alone; first complete the pre-DB admin gate in `docs/plans/2026-05-05-database-introduction-user-auth.md`.
+
 ## Existing Auth Primitives
 
 Part 1 assumes these auth foundation pieces already exist in the checkout. Verify them before starting route migration; if any are missing, stop and restore the auth foundation before continuing with this plan.
@@ -36,11 +48,11 @@ Part 1 assumes these auth foundation pieces already exist in the checkout. Verif
 
 ## Part 1 Scope Review
 
-The OAuth login path is working for the small slice already verified:
+The OAuth login path and Part 1 Jira REST route surface are implemented in the current checkout:
 
 - `/api/auth/status` reports OAuth authenticated state without token material.
 - `/api/test` calls Jira through Atlassian OAuth and returns the current user.
-- Full ENG dashboard data still fails with `route_not_oauth_ready`, which is expected until the data routes migrate.
+- ENG, settings/catalog, sprint/capacity/stats/scenario, and local config routes listed in the matrix are now in `OAUTH_READY_API_PATHS`.
 
 Do not remove the route guard globally. It is the safety gate that prevents empty Basic credentials in OAuth mode. Each route must earn OAuth readiness with tests first.
 
@@ -59,20 +71,20 @@ Part 1 also does not require Compass GraphQL API permissions. Compass/Home Graph
 
 `/api/epm/config` is local configuration and can be OAuth-ready only if tests prove it does not call Jira or Home.
 
-The current scopes are enough only for Jira Platform and identity reads:
+The original OAuth slice had only Jira Platform and identity reads:
 
 - `read:me`
 - `read:jira-work`
 - `read:jira-user`
 - `offline_access`
 
-This plan also migrates Jira Software Agile endpoints for boards and sprints. Those endpoints need Jira Software granular scopes in the Atlassian Developer Console and in `ATLASSIAN_SCOPES`:
+This plan also migrates Jira Software Agile endpoints for boards and sprints. The current checkout already includes these Jira Software granular scopes in the default `ATLASSIAN_SCOPES`; keep the Atlassian Developer Console permissions and `.env.example` aligned:
 
 - `read:board-scope:jira-software`
 - `read:sprint:jira-software`
 - `read:project:jira`
 
-Do not migrate `/api/boards` or `/api/sprints` until the scope setup docs, `.env.example`, and default OAuth scopes include these Jira Software scopes. Atlassian documents Jira Software scopes separately from Jira Platform classic scopes; Jira Software does not support classic scopes for those Agile APIs.
+Do not remove these scopes from `/api/boards` or `/api/sprints`. Atlassian documents Jira Software scopes separately from Jira Platform classic scopes; Jira Software does not support classic scopes for those Agile APIs.
 
 Do not migrate any Jira write endpoint in this plan. If a Jira issue create/update route appears during implementation, leave it guarded until the Atlassian app has the exact write scopes required by Atlassian docs and tests prove the route uses the unsafe-method header.
 
@@ -226,7 +238,7 @@ Do not hand-edit `frontend/dist/`; run `npm run build` if frontend source change
 - Test: `tests/test_jira_auth.py`
 - Test: `tests/test_auth_routes.py`
 
-- [ ] **Step 0: Confirm branch and clean working tree**
+- [x] **Step 0: Confirm branch and clean working tree**
 
 Run:
 
@@ -245,7 +257,7 @@ git switch -c feature/oauth-jira-routes
 
 If the checkout is already on a dedicated non-`main` branch for this migration, record the branch name and continue only when `git status --short` is empty or the user explicitly approves using the dirty branch. If there are uncommitted changes, stop and ask the user whether to continue on the current branch, commit/stash their changes, or start from a clean branch. Do not overwrite or revert user changes.
 
-- [ ] **Step 1: Add the shared full-scope OAuth test fixture and write failing scope tests**
+- [x] **Step 1: Add the shared full-scope OAuth test fixture and write failing scope tests**
 
 Create `tests/oauth_test_helpers.py` and use it in every OAuth route/client test module created by this plan. Do not hand-copy OAuth token-store payloads in individual route tests; copied fixtures are how stale missing-scope sessions re-enter the suite.
 
@@ -365,7 +377,7 @@ Add route-level status coverage in `tests/test_auth_routes.py`:
         self.assertNotIn("refresh_token", str(payload))
 ```
 
-- [ ] **Step 2: Run the failing scope and old-session tests**
+- [x] **Step 2: Run the failing scope and old-session tests**
 
 Run:
 
@@ -375,7 +387,7 @@ python3 -m unittest tests.test_jira_auth.JiraAuthTests.test_default_scopes_inclu
 
 Expected: FAIL because the default scopes currently omit Jira Software Agile read scopes and existing OAuth sessions are not checked for stale grants.
 
-- [ ] **Step 3: Update default OAuth scopes and stale-scope detection**
+- [x] **Step 3: Update default OAuth scopes and stale-scope detection**
 
 In `backend/auth/jira_auth.py`, change the `AuthConfig.scopes` default to:
 
@@ -430,7 +442,7 @@ For OAuth-ready API paths outside `/api/auth/status`, return `401 {"error": "aut
 
 Do not include token material in the status payload. Do not include the user's access token, refresh token, OAuth authorization code, PKCE verifier, or client secret in logs.
 
-- [ ] **Step 4: Update local setup docs and env example**
+- [x] **Step 4: Update local setup docs and env example**
 
 In `.env.example`, make the OAuth scopes example match the new default:
 
@@ -467,7 +479,7 @@ Add a rollout note:
 If you already signed in before adding the Jira Software scopes, update `ATLASSIAN_SCOPES`, clear the local OAuth token session, and sign in again. `/api/auth/status` reports `loginUrl: "/login?reason=missing_scope"` when the stored session was issued without the current required scopes.
 ```
 
-- [ ] **Step 5: Run scope and auth tests**
+- [x] **Step 5: Run scope and auth tests**
 
 Run:
 
@@ -477,7 +489,7 @@ python3 -m unittest tests.test_jira_auth tests.test_auth_routes
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/auth/jira_auth.py backend/routes/auth_routes.py jira_server.py .env.example docs/atlassian-oauth-setup.md tests/oauth_test_helpers.py tests/test_jira_auth.py tests/test_auth_routes.py
@@ -494,7 +506,7 @@ git commit -m "Enforce Jira Software OAuth scopes and re-consent"
 - Test: `tests/test_jira_auth.py`
 - Test: `tests/test_oauth_jira_client.py`
 
-- [ ] **Step 1: Write failing tests for auth-aware Jira search and GET**
+- [x] **Step 1: Write failing tests for auth-aware Jira search and GET**
 
 Create `tests/test_oauth_jira_client.py`:
 
@@ -644,7 +656,7 @@ class OAuthJiraClientTests(unittest.TestCase):
         self.assertEqual(payload["loginUrl"], "/login?reason=session_expired")
 ```
 
-- [ ] **Step 2: Run the failing tests**
+- [x] **Step 2: Run the failing tests**
 
 Run:
 
@@ -654,7 +666,7 @@ python3 -m unittest tests.test_oauth_jira_client
 
 Expected: FAIL because `current_jira_get`, `current_jira_search`, `current_jira_request`, and `oauth_auth_required_payload` do not exist.
 
-- [ ] **Step 3: Add generic request helpers**
+- [x] **Step 3: Add generic request helpers**
 
 In `backend/auth/jira_auth.py`, add a generic request helper below `jira_post` without changing existing `jira_get` and `jira_post` signatures:
 
@@ -780,7 +792,7 @@ Keep `build_jira_headers()` in `jira_server.py` as a Basic-only legacy guard. Do
 
 The wrapper must not touch Flask `session` or `oauth_refresh_lock()` in Basic mode. Direct Basic helper calls outside a Flask request are supported by the regression tests above and must continue to build `JIRA_URL` + Basic auth headers without requiring an OAuth CSRF header.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -790,7 +802,7 @@ python3 -m unittest tests.test_oauth_jira_client tests.test_jira_auth tests.test
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/auth/jira_auth.py jira_server.py tests/test_jira_auth.py tests/test_oauth_jira_client.py
@@ -807,7 +819,7 @@ git commit -m "Add OAuth-aware Jira request wrappers"
 - Modify: `tests/test_sprint_dates.py`
 - Test: `tests/test_oauth_jira_client.py`
 
-- [ ] **Step 1: Write failing tests for shared helper behavior**
+- [x] **Step 1: Write failing tests for shared helper behavior**
 
 Extend `tests/test_oauth_jira_client.py`:
 
@@ -836,7 +848,7 @@ Extend `tests/test_oauth_jira_client.py`:
         mock_get.assert_called_once_with("/rest/api/3/field", timeout=20, context=jira_server.current_request_auth_context())
 ```
 
-- [ ] **Step 2: Run the failing helper tests**
+- [x] **Step 2: Run the failing helper tests**
 
 Run:
 
@@ -846,7 +858,7 @@ python3 -m unittest tests.test_oauth_jira_client
 
 Expected: FAIL because `jira_search_request` still requires legacy `headers`, and field resolvers still call `requests.get(f'{JIRA_URL}/rest/api/3/field', ...)`.
 
-- [ ] **Step 3: Migrate shared helpers to request-bound calls**
+- [x] **Step 3: Migrate shared helpers to request-bound calls**
 
 In `jira_server.py`, change `jira_search_request` to the new single-payload signature:
 
@@ -900,7 +912,7 @@ response = current_jira_get(
 
 Do not remove the legacy `headers` argument yet; this keeps the diff small while the route batches are migrated.
 
-- [ ] **Step 4: Update tests that patch `jira_search_request`**
+- [x] **Step 4: Update tests that patch `jira_search_request`**
 
 Where tests patch or call `jira_search_request(headers, payload)`, update them to patch/call `jira_search_request(payload)`. Keep response payloads unchanged.
 
@@ -953,7 +965,7 @@ rg -n "def fake_search\\([^)]*,[^)]*\\)|call_args.*\\[1\\]|args\\[1\\]" tests -g
 
 Expected: no hits for Jira search helper fakes/assertions.
 
-- [ ] **Step 5: Run helper and affected unit tests**
+- [x] **Step 5: Run helper and affected unit tests**
 
 Run:
 
@@ -963,7 +975,7 @@ python3 -m unittest tests.test_oauth_jira_client tests.test_backend_service_extr
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add jira_server.py backend/routes/eng_routes.py backend/routes/settings_routes.py tests/test_oauth_jira_client.py tests/test_backend_service_extraction.py tests/test_sprint_dates.py tests/test_create_stories_alert.py tests/test_initiative_extraction.py tests/test_burnout_stats_api.py tests/test_epic_cohort_api.py
@@ -991,7 +1003,7 @@ References:
 - Jira Software board API: https://developer.atlassian.com/cloud/jira/software/rest/api-group-board/
 - Jira Software sprint API: https://developer.atlassian.com/cloud/jira/software/rest/api-group-sprint/
 
-- [ ] **Step 1: Inventory Jira issue-search pagination callers**
+- [x] **Step 1: Inventory Jira issue-search pagination callers**
 
 Run:
 
@@ -1005,7 +1017,7 @@ Classify every hit:
 - Agile board/sprint calls through `current_jira_get` / `resilient_jira_get` to `/rest/agile/...`: keep `startAt`.
 - Tests and fixtures: update expected payloads when the production call was converted.
 
-- [ ] **Step 2: Write failing pagination tests and source guard**
+- [x] **Step 2: Write failing pagination tests and source guard**
 
 In `tests/test_backend_service_extraction.py`, add coverage that the shared Jira search param builder rejects `startAt` for `/rest/api/3/search/jql`:
 
@@ -1060,7 +1072,7 @@ class JiraSearchPaginationSourceGuardTests(unittest.TestCase):
 
 This guard is intentionally narrow: it checks the local construction window before Jira issue search calls and does not ban `startAt` in Agile board/sprint `current_jira_get` calls. If the guard false-positives because an unrelated Agile `startAt` is adjacent to an issue search call, refactor the code so those concerns are separated instead of weakening the guard.
 
-- [ ] **Step 3: Run the failing pagination tests**
+- [x] **Step 3: Run the failing pagination tests**
 
 Run:
 
@@ -1070,7 +1082,7 @@ python3 -m unittest tests.test_backend_service_extraction tests.test_jira_search
 
 Expected: FAIL because `build_jira_search_params` still forwards `startAt`, and several issue-search payloads still use `startAt`.
 
-- [ ] **Step 4: Convert issue-search callers to token pagination**
+- [x] **Step 4: Convert issue-search callers to token pagination**
 
 In `backend/jira_client.py`, remove `startAt` from the allowed `/rest/api/3/search/jql` params and fail fast if a caller still passes it:
 
@@ -1112,7 +1124,7 @@ Keep these `startAt` calls unchanged because they are Agile APIs:
 - `GET /rest/agile/1.0/board`
 - `GET /rest/agile/1.0/board/{boardId}/sprint`
 
-- [ ] **Step 5: Run pagination and affected route/helper tests**
+- [x] **Step 5: Run pagination and affected route/helper tests**
 
 Run:
 
@@ -1124,7 +1136,7 @@ Expected: PASS.
 
 Do not run or stage `tests/test_oauth_eng_routes.py`, `tests/test_oauth_settings_routes.py`, or `tests/test_oauth_stats_routes.py` in Part 1 Task 2A. Those files are created in Part 1 Tasks 3, 4, and 5, and subagents executing Part 1 Task 2A in order must not fail on missing future modules. Each later route batch reruns the pagination/source guard with its newly created route tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/jira_client.py jira_server.py backend/routes/eng_routes.py backend/routes/settings_routes.py tests/test_backend_service_extraction.py tests/test_jira_search_pagination_source_guard.py tests/test_oauth_jira_client.py tests/test_burnout_stats_api.py tests/test_epic_cohort_api.py tests/test_group_excluded_capacity_epics_api.py tests/test_sprint_dates.py
@@ -1142,7 +1154,7 @@ git commit -m "Convert Jira issue search to token pagination"
 - Test: `tests/test_oauth_eng_routes.py`
 - Test: `tests/test_oauth_route_guards.py`
 
-- [ ] **Step 1: Write failing ENG route tests**
+- [x] **Step 1: Write failing ENG route tests**
 
 Create `tests/test_oauth_eng_routes.py`:
 
@@ -1294,7 +1306,7 @@ class BasicEngRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"dependencies": {"PROD-1": []}})
 ```
 
-- [ ] **Step 2: Run the failing ENG tests**
+- [x] **Step 2: Run the failing ENG tests**
 
 Run:
 
@@ -1304,7 +1316,7 @@ python3 -m unittest tests.test_oauth_eng_routes tests.test_oauth_route_guards
 
 Expected: FAIL because ENG paths are not in `OAUTH_READY_API_PATHS` and some handlers still build Basic headers inline.
 
-- [ ] **Step 3: Replace inline Basic headers in `backend/routes/eng_routes.py`**
+- [x] **Step 3: Replace inline Basic headers in `backend/routes/eng_routes.py`**
 
 Remove every block shaped like:
 
@@ -1331,7 +1343,7 @@ response = jira_search_request(payload)
 
 The `headers` argument remains present in shared helper signatures during this task but must not be constructed in route handlers.
 
-- [ ] **Step 4: Add ENG auth-required recovery before route readiness**
+- [x] **Step 4: Add ENG auth-required recovery before route readiness**
 
 Before editing `OAUTH_READY_API_PATHS`, update the migrated ENG handlers that call Jira so `AuthError("auth_required", ...)` returns the stable expired-session JSON:
 
@@ -1345,7 +1357,7 @@ except AuthError as error:
 
 At minimum, `test_tasks_with_team_name_expired_oauth_returns_login_url` must pass in the same commit that makes `/api/tasks-with-team-name` OAuth-ready. Do not add an ENG route to `OAUTH_READY_API_PATHS` if an expired OAuth session can still fall into a broad `except Exception` and return 500.
 
-- [ ] **Step 5: Add ENG routes to OAuth readiness**
+- [x] **Step 5: Add ENG routes to OAuth readiness**
 
 Before editing `OAUTH_READY_API_PATHS`, run:
 
@@ -1372,7 +1384,7 @@ OAUTH_READY_API_PATHS = {
 }
 ```
 
-- [ ] **Step 6: Add unsafe-method header to ENG dependency POST**
+- [x] **Step 6: Add unsafe-method header to ENG dependency POST**
 
 In `frontend/src/api/engApi.js`, update `fetchDependencies`:
 
@@ -1389,7 +1401,7 @@ export const fetchDependencies = (backendUrl, keys, { signal } = {}) =>
     });
 ```
 
-- [ ] **Step 7: Run ENG tests and source guard**
+- [x] **Step 7: Run ENG tests and source guard**
 
 Run:
 
@@ -1400,7 +1412,7 @@ node tests/test_auth_isolation_source_guard.js
 
 Expected: PASS.
 
-- [ ] **Step 8: Build frontend if `engApi.js` changed**
+- [x] **Step 8: Build frontend if `engApi.js` changed**
 
 Run:
 
@@ -1410,7 +1422,7 @@ npm run build
 
 Expected: PASS. Do not manually edit `frontend/dist/`.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add backend/routes/eng_routes.py jira_server.py frontend/src/api/engApi.js frontend/dist tests/test_oauth_eng_routes.py tests/test_oauth_route_guards.py
@@ -1432,7 +1444,7 @@ git commit -m "Migrate ENG Jira routes to OAuth client"
 - Test: `tests/test_oauth_settings_routes.py`
 - Test: `tests/test_oauth_route_guards.py`
 
-- [ ] **Step 1: Write failing settings/catalog tests**
+- [x] **Step 1: Write failing settings/catalog tests**
 
 Create `tests/test_oauth_settings_routes.py`:
 
@@ -1546,7 +1558,7 @@ class BasicSettingsRouteTests(unittest.TestCase):
         self.assertNotEqual(response.status_code, 403)
 ```
 
-- [ ] **Step 2: Run the failing settings tests**
+- [x] **Step 2: Run the failing settings tests**
 
 Run:
 
@@ -1556,7 +1568,7 @@ python3 -m unittest tests.test_oauth_settings_routes tests.test_oauth_route_guar
 
 Expected: FAIL because settings/catalog routes are guarded and still construct Basic headers directly.
 
-- [ ] **Step 3: Migrate settings Jira GET routes**
+- [x] **Step 3: Migrate settings Jira GET routes**
 
 Replace direct Jira requests in `backend/routes/settings_routes.py`:
 
@@ -1583,7 +1595,7 @@ Apply the same pattern to:
 
 Keep Agile board/sprint pagination on `startAt` because the Agile API uses that contract. Part 1 Task 2A already converted Jira issue search pagination to `nextPageToken`; do not reintroduce `startAt` in any `jira_search_request` payload.
 
-- [ ] **Step 4: Return OAuth session site URL from config**
+- [x] **Step 4: Return OAuth session site URL from config**
 
 In `/api/config`, use the request context site URL instead of process-global `JIRA_URL` when OAuth is active:
 
@@ -1594,7 +1606,7 @@ jira_url = auth_context.site_url or JIRA_URL
 
 Return `jiraUrl: jira_url` and keep the rest of the response shape unchanged.
 
-- [ ] **Step 5: Keep process caches disabled for OAuth users**
+- [x] **Step 5: Keep process caches disabled for OAuth users**
 
 Wrap reads and writes of these caches with `jira_home_process_cache_enabled(current_request_auth_context())`:
 
@@ -1616,7 +1628,7 @@ with _cache_lock:
 
 Only write to these caches when `cache_enabled` is true.
 
-- [ ] **Step 6: Add settings auth-required recovery before route readiness**
+- [x] **Step 6: Add settings auth-required recovery before route readiness**
 
 Before editing `OAUTH_READY_API_PATHS`, update migrated settings/catalog handlers that call Jira so `AuthError("auth_required", ...)` returns:
 
@@ -1627,7 +1639,7 @@ return jsonify(payload), status
 
 At minimum, `test_projects_expired_oauth_returns_login_url` must pass in the same commit that makes `/api/projects` OAuth-ready. Do not add a settings/catalog route to `OAUTH_READY_API_PATHS` if an expired OAuth session can still fall into a broad `except Exception` and return 500.
 
-- [ ] **Step 7: Add local and catalog routes to OAuth readiness**
+- [x] **Step 7: Add local and catalog routes to OAuth readiness**
 
 Before editing `OAUTH_READY_API_PATHS`, run:
 
@@ -1665,7 +1677,7 @@ Expand `OAUTH_READY_API_PATHS` in `jira_server.py` with settings/config routes:
 
 Do not add Home/EPM data routes.
 
-- [ ] **Step 8: Add unsafe-method headers to frontend API helpers**
+- [x] **Step 8: Add unsafe-method headers to frontend API helpers**
 
 In `frontend/src/api/http.js`, update `postJson`:
 
@@ -1706,7 +1718,7 @@ headers: {
 }
 ```
 
-- [ ] **Step 9: Run settings tests and frontend build**
+- [x] **Step 9: Run settings tests and frontend build**
 
 Run:
 
@@ -1718,7 +1730,7 @@ npm run build
 
 Expected: PASS.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add backend/routes/settings_routes.py backend/routes/epm_routes.py jira_server.py frontend/src/api/http.js frontend/src/api/configApi.js frontend/src/api/jiraCatalogApi.js frontend/src/dashboard.jsx frontend/dist tests/test_oauth_settings_routes.py tests/test_oauth_route_guards.py
@@ -1735,7 +1747,7 @@ git commit -m "Migrate settings Jira catalog routes to OAuth"
 - Test: `tests/test_oauth_stats_routes.py`
 - Test: existing stats/scenario tests
 
-- [ ] **Step 1: Write failing OAuth tests for remaining Jira read routes**
+- [x] **Step 1: Write failing OAuth tests for remaining Jira read routes**
 
 Create `tests/test_oauth_stats_routes.py`:
 
@@ -1954,7 +1966,7 @@ class BasicStatsRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
 ```
 
-- [ ] **Step 2: Run the failing tests**
+- [x] **Step 2: Run the failing tests**
 
 Run:
 
@@ -1964,7 +1976,7 @@ python3 -m unittest tests.test_oauth_stats_routes tests.test_oauth_route_guards
 
 Expected: FAIL because these route paths are still guarded and root handlers still construct Basic headers.
 
-- [ ] **Step 3: Migrate root Jira helpers and routes**
+- [x] **Step 3: Migrate root Jira helpers and routes**
 
 In `jira_server.py`, remove direct Basic header blocks from:
 
@@ -2031,7 +2043,7 @@ rg -n "load_sprints_cache\\(|save_sprints_cache\\(|load_stats_cache\\(|save_stat
 
 Expected: every remaining read/write in an OAuth-ready route is guarded by `jira_home_process_cache_enabled(current_request_auth_context())`, and that guard disables `sprints_cache.json` and `stats_cache.json` for OAuth users. Do not read or write those file caches for OAuth users in Part 1.
 
-- [ ] **Step 4: Add stats/scenario auth-required recovery before route readiness**
+- [x] **Step 4: Add stats/scenario auth-required recovery before route readiness**
 
 Before editing `OAUTH_READY_API_PATHS`, update the migrated stats/scenario handlers that call Jira so `AuthError("auth_required", ...)` returns:
 
@@ -2042,7 +2054,7 @@ return jsonify(payload), status
 
 At minimum, `test_stats_route_expired_oauth_returns_login_url` must pass in the same commit that makes `/api/stats` OAuth-ready. Do not add a stats/scenario route to `OAUTH_READY_API_PATHS` if an expired OAuth session can still fall into a broad `except Exception` and return 500.
 
-- [ ] **Step 5: Add route readiness**
+- [x] **Step 5: Add route readiness**
 
 Before editing `OAUTH_READY_API_PATHS`, run:
 
@@ -2067,7 +2079,7 @@ Add these paths to `OAUTH_READY_API_PATHS`:
 
 Keep `/api/debug-fields` and `/api/tasks-fields` guarded unless they are explicitly migrated and tested in the same task.
 
-- [ ] **Step 6: Add unsafe-method headers to existing dashboard POSTs**
+- [x] **Step 6: Add unsafe-method headers to existing dashboard POSTs**
 
 Only add the CSRF header to existing POST calls. Do not add auth status, refresh, login, token storage, or expired-session handling to `frontend/src/dashboard.jsx`.
 
@@ -2089,7 +2101,7 @@ This applies to current POST calls for:
 
 Do not add EPM Home data routes to OAuth readiness in this task.
 
-- [ ] **Step 7: Run stats/scenario tests and frontend guard**
+- [x] **Step 7: Run stats/scenario tests and frontend guard**
 
 Run:
 
@@ -2101,7 +2113,7 @@ npm run build
 
 Expected: PASS. The Node source guard must still reject auth status/refresh/login logic in `frontend/src/dashboard.jsx`; CSRF headers are allowed.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add jira_server.py frontend/src/dashboard.jsx frontend/dist tests/test_oauth_stats_routes.py tests/test_oauth_route_guards.py
@@ -2119,7 +2131,7 @@ git commit -m "Migrate stats and scenario Jira routes to OAuth"
 - Test: `tests/test_oauth_jira_client_source_guard.py`
 - Test: affected unit tests
 
-- [ ] **Step 1: Write the source guard**
+- [x] **Step 1: Write the source guard**
 
 Create `tests/test_oauth_jira_client_source_guard.py`:
 
@@ -2187,7 +2199,7 @@ class OAuthJiraClientSourceGuardTests(unittest.TestCase):
         self.assertIn("'route_not_oauth_ready'", source)
 ```
 
-- [ ] **Step 2: Run the failing source guard**
+- [x] **Step 2: Run the failing source guard**
 
 Run:
 
@@ -2197,7 +2209,7 @@ python3 -m unittest tests.test_oauth_jira_client_source_guard
 
 Expected: FAIL while any migrated file still builds Jira Basic headers or direct `JIRA_URL` REST requests.
 
-- [ ] **Step 3: Remove unused `headers` parameters where all callers migrated**
+- [x] **Step 3: Remove unused `headers` parameters where all callers migrated**
 
 Update helper signatures in `jira_server.py`:
 
@@ -2213,7 +2225,7 @@ Update every caller to remove the obsolete `headers` argument.
 
 Keep a compatibility argument only if an existing test or route outside `OAUTH_READY_API_PATHS` still needs it. If compatibility is kept, name it `_legacy_headers=None` and do not use it for HTTP.
 
-- [ ] **Step 4: Verify batch auth-error recovery remains in place**
+- [x] **Step 4: Verify batch auth-error recovery remains in place**
 
 Part 1 Tasks 3, 4, and 5 add `AuthError("auth_required")` recovery before each route batch is marked OAuth-ready. Do not defer expired-session recovery to this cleanup task.
 
@@ -2226,7 +2238,7 @@ return jsonify(payload), status
 
 Do not include token material, authorization headers, OAuth codes, PKCE verifiers, or callback URLs in error payloads or logs.
 
-- [ ] **Step 5: Run source guard and focused tests**
+- [x] **Step 5: Run source guard and focused tests**
 
 Run:
 
@@ -2236,7 +2248,7 @@ python3 -m unittest tests.test_oauth_jira_client_source_guard tests.test_oauth_e
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add jira_server.py backend/routes/eng_routes.py backend/routes/settings_routes.py tests/test_oauth_jira_client_source_guard.py

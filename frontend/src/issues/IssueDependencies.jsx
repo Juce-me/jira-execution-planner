@@ -1,14 +1,18 @@
 import * as React from 'react';
 import { normalizeIssueStatus } from './issueViewUtils.js';
 
+function getBlockOtherKey(dep, taskKey) {
+    if (!dep?.key || !taskKey) return '';
+    return dep.key !== taskKey
+        ? dep.key
+        : (dep.prereqKey === taskKey ? dep.dependentKey : dep.prereqKey);
+}
+
 function getBlockLinkBuckets(entries, taskKey) {
     const blockedBy = [];
     const blocks = [];
     (entries || []).forEach(dep => {
-        if (!dep?.key || !taskKey) return;
-        const otherKey = dep.key !== taskKey
-            ? dep.key
-            : (dep.prereqKey === taskKey ? dep.dependentKey : dep.prereqKey);
+        const otherKey = getBlockOtherKey(dep, taskKey);
         if (!otherKey) return;
         if (dep.dependentKey === taskKey) {
             blockedBy.push(otherKey);
@@ -30,6 +34,10 @@ function getBlockLinkBuckets(entries, taskKey) {
         blockedBy: Array.from(new Set(blockedBy)),
         blocks: Array.from(new Set(blocks))
     };
+}
+
+function getIssueStatusName(issue) {
+    return issue?.fields?.status?.name || issue?.status?.name || issue?.status || '';
 }
 
 function uniqueDependencyEntries(entries) {
@@ -73,6 +81,7 @@ export function buildIssueDependencyViewModel({
         dependentIds: [],
         blockedByIds: [],
         blocksIds: [],
+        isBlockedByDone: false,
         isDependsActive: false,
         isDependentsActive: false,
         isBlockedByActive: false,
@@ -95,6 +104,18 @@ export function buildIssueDependencyViewModel({
     const dependsOnIds = dependsOnAll.map(dep => dep.key).filter(Boolean);
     const dependentIds = dependentsAll.map(dep => dep.key).filter(Boolean);
     const { blockedBy: blockedByIds, blocks: blocksIds } = getBlockLinkBuckets(rawBlockDeps, task.key);
+    const blockInfoByKey = new Map();
+    rawBlockDeps.forEach(dep => {
+        const key = getBlockOtherKey(dep, task.key);
+        if (key && !blockInfoByKey.has(key)) {
+            blockInfoByKey.set(key, dep);
+        }
+    });
+    const isBlockedByDone = blockedByIds.length > 0 && blockedByIds.every(key => {
+        const info = blockInfoByKey.get(key) || {};
+        const status = getIssueStatusName(issueByKey.get(key)) || dependencyLookupCache[key]?.status || info.status;
+        return normalizeStatus(status) === 'done';
+    });
     const hasBlockLinks = blockedByIds.length > 0 || blocksIds.length > 0;
     const hasDependencyLinks = dependsOnIds.length > 0 || dependentIds.length > 0;
     const hasDeps = hasDependencyLinks || hasBlockLinks;
@@ -174,6 +195,7 @@ export function buildIssueDependencyViewModel({
         dependentIds,
         blockedByIds,
         blocksIds,
+        isBlockedByDone,
         isDependsActive: !!(isDependsFocusActive || isDependsHoverActive),
         isDependentsActive: !!(isDependentsFocusActive || isDependentsHoverActive),
         isBlockedByActive: !!(isBlockedByFocusActive || isBlockedByHoverActive),
@@ -253,15 +275,17 @@ export default function IssueDependencies({
                     {model.blockedByIds.length > 0 && (
                         <button
                             type="button"
-                            className={`dependency-count ${model.isBlockedByActive ? 'active' : ''}`}
+                            className={['dependency-count', model.isBlockedByActive ? 'active' : '', model.isBlockedByDone ? 'unblocked' : ''].filter(Boolean).join(' ')}
                             data-dep-chip="blocked-by"
                             data-task-id={task.id || task.key}
                             data-task-key={task.key}
-                            aria-label={`Blocked by ${model.blockedByIds.length} tasks`}
+                            aria-label={model.isBlockedByDone
+                                ? `Unblocked by ${model.blockedByIds.length} done tasks`
+                                : `Blocked by ${model.blockedByIds.length} tasks`}
                             onMouseEnter={() => onHoverEnter(task.key, 'blocked-by')}
                             onMouseLeave={() => onHoverLeave(task.key, 'blocked-by')}
                         >
-                            BLOCKED BY {model.blockedByIds.length}
+                            {model.isBlockedByDone ? 'UNBLOCKED' : 'BLOCKED BY'} {model.blockedByIds.length}
                         </button>
                     )}
                     {model.blocksIds.length > 0 && (

@@ -197,6 +197,15 @@ h1 {
   font-family: "IBM Plex Mono", monospace;
   cursor: pointer;
   white-space: nowrap;
+  transition:
+    padding 0.16s ease,
+    font-size 0.16s ease,
+    letter-spacing 0.16s ease;
+}
+.update-badge.compact {
+  padding: 0.12rem 0.38rem;
+  font-size: 0.47rem;
+  letter-spacing: 0.06em;
 }
 .update-badge:hover {
   background: rgba(220, 38, 38, 0.1);
@@ -2963,6 +2972,13 @@ button.toggle.active {
   background: rgba(59, 130, 246, 0.16);
   border-color: rgba(59, 130, 246, 0.55);
   color: #1d4ed8;
+}
+.dependency-count.unblocked[data-dep-chip=blocked-by],
+.dependency-count.unblocked[data-dep-chip=blocked-by]:hover,
+.dependency-count.active.unblocked[data-dep-chip=blocked-by] {
+  background: rgba(22, 163, 74, 0.12);
+  border-color: rgba(22, 163, 74, 0.42);
+  color: #166534;
 }
 .focus-mode .task-item {
   transition:

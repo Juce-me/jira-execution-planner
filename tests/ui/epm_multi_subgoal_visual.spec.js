@@ -124,3 +124,70 @@ test('EPM multi sub-goal visual smoke', async ({ page }) => {
     await expect(page.locator('.epm-project-board-name', { hasText: 'Archived Alpha' })).toBeVisible();
     await page.screenshot({ path: `${screenshotDir}/archived-narrowed-subgoal.png`, fullPage: true });
 });
+
+test('EPM sub-goal filter resolves saved sibling names before narrowing', async ({ page }) => {
+    await page.addInitScript(() => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'epm',
+            epmTab: 'active',
+            epmSelectedProjectId: '',
+            selectedSprint: 42,
+            sprintName: 'Sprint 42',
+        }));
+    });
+    await page.route('**/api/**', route => {
+        const url = new URL(route.request().url());
+        const json = (body) => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(body),
+        });
+        if (url.pathname === '/api/config') {
+            return json({
+                jiraUrl: 'https://jira.example',
+                projectsConfigured: true,
+                settingsAdminOnly: false,
+                userCanEditSettings: true,
+                epm: {
+                    version: 2,
+                    labelPrefix: 'rnd_project_',
+                    scope: { rootGoalKey: 'ROOT-100', subGoalKeys: ['CHILD-A', 'CHILD-B'] },
+                    issueTypes: { initiative: ['Initiative'], epic: ['Epic'], leaf: ['Story', 'Task'] },
+                    projects: {},
+                },
+            });
+        }
+        if (url.pathname === '/api/sprints') {
+            return json({ sprints: [{ id: 42, name: 'Sprint 42', state: 'active' }] });
+        }
+        if (url.pathname === '/api/epm/goals' && url.searchParams.get('rootGoalKey') === 'ROOT-100') {
+            return json({
+                goals: [
+                    { key: 'CHILD-A', name: '[EPM] BidSwitch' },
+                    { key: 'CHILD-B', name: '[EPM] AI Labs' },
+                ],
+            });
+        }
+        if (url.pathname === '/api/epm/projects') {
+            const narrowed = (url.searchParams.get('subGoalKeys') || '').split(',').filter(Boolean);
+            return json({ projects: narrowed.length ? projectsFor(url) : [project('active', 'CHILD-A', 'Alpha')] });
+        }
+        if (url.pathname === '/api/epm/projects/rollup/all') {
+            const narrowed = (url.searchParams.get('subGoalKeys') || '').split(',').filter(Boolean);
+            const projects = narrowed.length ? projectsFor(url) : [project('active', 'CHILD-A', 'Alpha')];
+            return json({
+                projects: projects.map(emptyRollup),
+                duplicates: {},
+                truncated: false,
+                fallback: true,
+            });
+        }
+        return json({});
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Filter EPM sub-goals' }).click();
+    await expect(page.locator('[data-sub-goal-key="CHILD-B"] .epm-subgoal-option-name')).toHaveText('AI Labs');
+    await expect(page.locator('[data-sub-goal-key="CHILD-B"] .epm-subgoal-option-key')).toHaveText('CHILD-B');
+    await page.screenshot({ path: `${screenshotDir}/saved-sibling-subgoal-name.png`, fullPage: true });
+});

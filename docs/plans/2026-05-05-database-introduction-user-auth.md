@@ -399,11 +399,11 @@ Expected: OAuth/Jira boundary tests pass, unsupported OAuth routes still return 
 - Modify: `backend/routes/epm_routes.py`
 - Test: `tests/test_pre_db_admin_gates.py`
 
-- [ ] Write failing tests proving a non-bootstrap OAuth user with `X-Requested-With: jira-execution-planner` receives `403 admin_required` for `POST /api/groups-config`, `POST /api/team-catalog`, `POST /api/projects/selected`, `POST /api/board-config`, `POST /api/capacity/config`, `POST /api/sprint-field/config`, `POST /api/story-points-field/config`, `POST /api/parent-name-field/config`, `POST /api/team-field/config`, `POST /api/stats/priority-weights-config`, `POST /api/issue-types/config`, and `POST /api/epm/config`.
-- [ ] Implement a temporary admin check based only on stable Atlassian account ids in `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`; keep `RequestAuthContext.is_admin = False` for all other OAuth users until DB auth lands.
-- [ ] Preserve Basic single-user behavior.
-- [ ] Run `.venv/bin/python -m unittest tests.test_pre_db_admin_gates tests.test_oauth_route_guards`.
-- [ ] Commit with `git commit -m "Gate OAuth shared config writes before DB auth"`.
+- [x] Write failing tests proving a non-bootstrap OAuth user with `X-Requested-With: jira-execution-planner` receives `403 admin_required` for `POST /api/groups-config`, `POST /api/team-catalog`, `POST /api/projects/selected`, `POST /api/board-config`, `POST /api/capacity/config`, `POST /api/sprint-field/config`, `POST /api/story-points-field/config`, `POST /api/parent-name-field/config`, `POST /api/team-field/config`, `POST /api/stats/priority-weights-config`, `POST /api/issue-types/config`, and `POST /api/epm/config`.
+- [x] Implement a temporary admin check based only on stable Atlassian account ids in `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`; keep `RequestAuthContext.is_admin = False` for all other OAuth users until DB auth lands.
+- [x] Preserve Basic single-user behavior.
+- [x] Run `.venv/bin/python -m unittest tests.test_pre_db_admin_gates tests.test_oauth_route_guards`.
+- [x] Commit with `git commit -m "Gate OAuth shared config writes before DB auth"`.
 
 ### Task 1: DB Runtime, Migration Harness, And Local Commands
 

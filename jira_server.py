@@ -318,9 +318,34 @@ OAUTH_READY_API_PATHS = {
     '/api/stats/epic-cohort',
 }
 
+OAUTH_SHARED_CONFIG_WRITE_PATHS = {
+    '/api/groups-config',
+    '/api/team-catalog',
+    '/api/projects/selected',
+    '/api/board-config',
+    '/api/capacity/config',
+    '/api/sprint-field/config',
+    '/api/story-points-field/config',
+    '/api/parent-name-field/config',
+    '/api/team-field/config',
+    '/api/stats/priority-weights-config',
+    '/api/issue-types/config',
+    '/api/epm/config',
+}
+
 
 def is_oauth_ready_api_path(path):
     return path.startswith('/api/auth/') or path in OAUTH_READY_API_PATHS
+
+
+def bootstrap_admin_account_ids():
+    raw = os.getenv('ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS', '')
+    return {account_id.strip() for account_id in raw.split(',') if account_id.strip()}
+
+
+def is_pre_db_admin_account(atlassian_account_id):
+    account_id = str(atlassian_account_id or '').strip()
+    return bool(account_id and account_id in bootstrap_admin_account_ids())
 
 
 def current_auth_config():
@@ -510,7 +535,7 @@ def current_request_auth_context():
             site_url=site_url,
             token_version=str(session_data.get('stored_at', '1')),
             account_status=session_data.get('account_status', ''),
-            is_admin=False,
+            is_admin=is_pre_db_admin_account(account_id),
         )
     return RequestAuthContext(
         auth_mode=AUTH_MODE_BASIC,
@@ -623,6 +648,13 @@ def auth_error_response(error, status=401):
     return jsonify({'error': error.code, 'message': str(error)}), status
 
 
+def admin_required_payload():
+    return {
+        'error': 'admin_required',
+        'message': 'Admin access is required for this configuration change.',
+    }, 403
+
+
 def validate_local_token_store_allowed():
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return
@@ -699,6 +731,24 @@ def reject_stale_oauth_scope_api_sessions():
             'loginUrl': '/login?reason=missing_scope',
         }), 401
     return None
+
+
+@app.before_request
+def require_oauth_shared_config_admin():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if request.method not in UNSAFE_METHODS:
+        return None
+    if request.path not in OAUTH_SHARED_CONFIG_WRITE_PATHS:
+        return None
+    data = oauth_session_data()
+    if not data.get('access_token') or not data.get('cloudid'):
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
+    if current_request_auth_context().is_admin:
+        return None
+    payload, status = admin_required_payload()
+    return jsonify(payload), status
 
 
 def utc_now_iso(timespec=None):

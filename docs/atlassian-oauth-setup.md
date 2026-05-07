@@ -60,6 +60,7 @@ FLASK_SECRET_KEY=...
 OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true
 OAUTH_TOKEN_STORE_PATH=.oauth-token-store.json
 OAUTH_TOKEN_STORE_TTL_SECONDS=2592000
+ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS=...
 ```
 
 `JIRA_URL` is required in OAuth mode, but it is not a Basic-auth credential. It tells the backend which Jira Cloud site to select after Atlassian returns the user's accessible resources.
@@ -75,6 +76,10 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 `offline_access` gives the server a refresh token. With `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`, the local/dev server stores that OAuth session server-side at `OAUTH_TOKEN_STORE_PATH` so a Flask restart does not force a new Atlassian consent flow. The browser cookie keeps only an opaque local session id; access and refresh tokens stay in the server-side token store.
 
 Keep `OAUTH_TOKEN_STORE_PATH` local and ignored by git. The default local path `.oauth-token-store.json` is ignored by this repo. `OAUTH_TOKEN_STORE_TTL_SECONDS` defaults to 30 days; shorten it only if you want local sessions to expire sooner. Delete the token store file or use `/api/auth/logout` when you want to clear the saved local session.
+
+### Temporary Pre-DB Admin Writes
+
+Until database-backed users and roles land, OAuth mode allows shared configuration writes only for stable Atlassian account ids listed in `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`. Use comma-separated Atlassian `account_id` values. Do not use email address, email domain, Jira project access, or Home/Townsquare access as admin signals.
 
 ## Test The Flow
 

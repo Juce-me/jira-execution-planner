@@ -2299,8 +2299,6 @@ import {
             };
             const openEpmSettingsTab = () => {
                 if (!canEditSharedConfiguration) {
-                    setGroupManageTab('teams');
-                    setShowGroupManage(true);
                     return;
                 }
                 resetEpmSettingsProjectRows();
@@ -10986,34 +10984,26 @@ import {
                         );
             };
 
-            const settingsModalTabs = [
+            const settingsModalAllTabs = [
                 {
                     id: 'scope',
                     label: 'Scope projects',
-                    onClick: () => canEditSharedConfiguration && setGroupManageTab('scope'),
-                    disabled: !canEditSharedConfiguration,
-                    title: canEditSharedConfiguration ? '' : 'Tool admin access required'
+                    onClick: () => setGroupManageTab('scope')
                 },
                 {
                     id: 'source',
                     label: 'Jira source',
-                    onClick: () => canEditSharedConfiguration && setGroupManageTab('source'),
-                    disabled: !canEditSharedConfiguration,
-                    title: canEditSharedConfiguration ? '' : 'Tool admin access required'
+                    onClick: () => setGroupManageTab('source')
                 },
                 {
                     id: 'mapping',
                     label: 'Field mapping',
-                    onClick: () => canEditSharedConfiguration && setGroupManageTab('mapping'),
-                    disabled: !canEditSharedConfiguration,
-                    title: canEditSharedConfiguration ? '' : 'Tool admin access required'
+                    onClick: () => setGroupManageTab('mapping')
                 },
                 {
                     id: 'capacity',
                     label: 'Capacity',
-                    onClick: () => canEditSharedConfiguration && setGroupManageTab('capacity'),
-                    disabled: !canEditSharedConfiguration,
-                    title: canEditSharedConfiguration ? '' : 'Tool admin access required'
+                    onClick: () => setGroupManageTab('capacity')
                 },
                 {
                     id: 'teams',
@@ -11030,18 +11020,15 @@ import {
                 {
                     id: 'priorityWeights',
                     label: 'Priority weights',
-                    onClick: () => canEditSharedConfiguration && setGroupManageTab('priorityWeights'),
-                    disabled: !canEditSharedConfiguration,
-                    title: canEditSharedConfiguration ? '' : 'Tool admin access required'
+                    onClick: () => setGroupManageTab('priorityWeights')
                 },
                 {
                     id: 'epm',
                     label: 'EPM',
-                    onClick: openEpmSettingsTab,
-                    disabled: !canEditSharedConfiguration,
-                    title: canEditSharedConfiguration ? '' : 'Tool admin access required'
+                    onClick: openEpmSettingsTab
                 }
             ];
+            const settingsModalTabs = settingsModalAllTabs.filter(tab => canEditSharedConfiguration || !SHARED_CONFIGURATION_TAB_IDS.has(tab.id));
             const settingsSaveHandler = groupManageTab === 'epm'
                 ? () => { void saveEpmConfig().catch(() => {}); }
                 : saveGroupsConfig;
@@ -11153,18 +11140,20 @@ import {
                                 {selectedView === 'epm' && (
                                     <>
                                         {renderEpmProjectCollapseAllButton('main')}
-                                        <button
-                                            className="group-gear-button"
-                                            onClick={openEpmSettingsTab}
-                                            title="Open EPM settings"
-                                            aria-label="Open EPM settings"
-                                            type="button"
-                                        >
-                                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
-                                                <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                                            </svg>
-                                        </button>
+                                        {canEditSharedConfiguration && (
+                                            <button
+                                                className="group-gear-button"
+                                                onClick={openEpmSettingsTab}
+                                                title="Open EPM settings"
+                                                aria-label="Open EPM settings"
+                                                type="button"
+                                            >
+                                                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                    <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
+                                                    <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                                </svg>
+                                            </button>
+                                        )}
                                     </>
                                 )}
                             </div>
@@ -11191,18 +11180,20 @@ import {
                                             {shouldUseEpmSprint(epmTab) && renderSprintControl('compact')}
                                             {renderEpmControls('compact', false)}
                                             {renderEpmProjectCollapseAllButton('compact')}
-                                            <button
-                                                className="group-gear-button"
-                                                onClick={openEpmSettingsTab}
-                                                title="Open EPM settings"
-                                                aria-label="Open EPM settings"
-                                                type="button"
-                                            >
-                                                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                    <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
-                                                    <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                                                </svg>
-                                            </button>
+                                            {canEditSharedConfiguration && (
+                                                <button
+                                                    className="group-gear-button"
+                                                    onClick={openEpmSettingsTab}
+                                                    title="Open EPM settings"
+                                                    aria-label="Open EPM settings"
+                                                    type="button"
+                                                >
+                                                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                        <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
+                                                        <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                                    </svg>
+                                                </button>
+                                            )}
                                         </>
                                     )}
                                 </div>

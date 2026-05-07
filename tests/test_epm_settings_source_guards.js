@@ -500,7 +500,7 @@ test('settings hotkey effect is declared after the save handlers it depends on',
 });
 
 test('settings tabs distinguish tool-admin configuration from team grouping', () => {
-    const tabsStart = dashboardSource.indexOf('const settingsModalTabs = [');
+    const tabsStart = dashboardSource.indexOf('const settingsModalAllTabs = [');
     const tabsEnd = dashboardSource.indexOf('];', tabsStart);
     assert.notStrictEqual(tabsStart, -1, 'Expected settings tab descriptors');
     assert.notStrictEqual(tabsEnd, -1, 'Expected settings tab descriptors end');
@@ -508,14 +508,25 @@ test('settings tabs distinguish tool-admin configuration from team grouping', ()
 
     assert.ok(dashboardSource.includes('const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;'), 'Expected explicit shared-configuration edit permission');
     assert.ok(dashboardSource.includes("const preferredSettingsTab = canEditSharedConfiguration ? 'scope' : 'teams';"), 'Expected non-tool-admin settings to open on Team Groups');
-    assert.ok(tabsSource.includes("id: 'scope'") && tabsSource.includes('disabled: !canEditSharedConfiguration'), 'Expected Scope Projects to require tool-admin config permission');
-    assert.ok(tabsSource.includes("id: 'source'") && tabsSource.includes('disabled: !canEditSharedConfiguration'), 'Expected Jira Source to require tool-admin config permission');
-    assert.ok(tabsSource.includes("id: 'mapping'") && tabsSource.includes('disabled: !canEditSharedConfiguration'), 'Expected Field Mapping to require tool-admin config permission');
-    assert.ok(tabsSource.includes("id: 'capacity'") && tabsSource.includes('disabled: !canEditSharedConfiguration'), 'Expected Capacity to require tool-admin config permission');
-    assert.ok(tabsSource.includes("id: 'priorityWeights'") && tabsSource.includes('disabled: !canEditSharedConfiguration'), 'Expected Priority Weights to require tool-admin config permission');
-    assert.ok(tabsSource.includes("id: 'epm'") && tabsSource.includes('disabled: !canEditSharedConfiguration'), 'Expected EPM settings to require tool-admin config permission');
+    assert.ok(tabsSource.includes("id: 'scope'"), 'Expected Scope Projects in the tool-admin tab list');
+    assert.ok(tabsSource.includes("id: 'source'"), 'Expected Jira Source in the tool-admin tab list');
+    assert.ok(tabsSource.includes("id: 'mapping'"), 'Expected Field Mapping in the tool-admin tab list');
+    assert.ok(tabsSource.includes("id: 'capacity'"), 'Expected Capacity in the tool-admin tab list');
+    assert.ok(tabsSource.includes("id: 'priorityWeights'"), 'Expected Priority Weights in the tool-admin tab list');
+    assert.ok(tabsSource.includes("id: 'epm'"), 'Expected EPM settings in the tool-admin tab list');
     assert.ok(tabsSource.includes("id: 'teams'") && tabsSource.includes("onClick: () => setGroupManageTab('teams')"), 'Expected Team Groups to stay directly accessible');
     assert.ok(!tabsSource.includes('savedSelectedProjects.length === 0'), 'Team Groups tab must not be disabled because dashboard projects are unconfigured');
+});
+
+test('normal users do not receive admin-only settings tabs as disabled edit surfaces', () => {
+    assert.ok(
+        dashboardSource.includes('const settingsModalTabs = settingsModalAllTabs.filter(tab => canEditSharedConfiguration || !SHARED_CONFIGURATION_TAB_IDS.has(tab.id));'),
+        'Expected normal-user settings tabs to omit admin-only shared configuration tabs'
+    );
+    assert.ok(
+        dashboardSource.includes('const settingsModalAllTabs = ['),
+        'Expected separate full tab list for tool admins'
+    );
 });
 
 test('team group save does not bundle admin-only shared config writes for normal users', () => {

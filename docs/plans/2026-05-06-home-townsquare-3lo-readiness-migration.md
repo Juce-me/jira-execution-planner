@@ -417,9 +417,8 @@ git commit -m "Guard Home backed EPM mutations"
 
 ## Post-DB Execution Mode Check
 
-Before Task 4, check whether `docs/plans/2026-05-05-database-introduction-user-auth.md` has already been implemented.
+Before Task 4, `docs/plans/2026-05-05-database-introduction-user-auth.md` Phase 1 must be merged and verified. Do not start Task 4 against the local OAuth token-store bridge.
 
-- If DB auth has not landed yet, the local OAuth token-store helpers may still exist only inside the local auth bridge.
 - If DB auth has landed, Home/Townsquare user 3LO must resolve through `RequestAuthContext`, `auth_connections`, encrypted `auth_tokens`, DB refresh locking, `token_version`, revoked/disabled-user checks, and user/auth cache partitioning.
 - In DB mode, Home/Townsquare route code must not call `oauth_session_data`, `save_oauth_session`, `oauth_refresh_lock`, or `OAUTH_TOKEN_STORE`.
 - In DB mode, do not store Home/Townsquare Basic service credentials as a user's `auth_connection`; they remain `service_integrations` until this Home user 3LO path is verified and implemented.
@@ -510,6 +509,7 @@ git commit -m "Add Home Townsquare OAuth client"
 
 **Files:**
 - Test: `tests/test_home_townsquare_oauth_routes.py`
+- Create: `backend/auth/home_oauth.py`
 - Modify: `backend/routes/epm_routes.py`
 - Modify: `backend/epm/home.py`
 - Modify: `jira_server.py`
@@ -556,9 +556,12 @@ Expected: FAIL because EPM route dependencies still use the process-global Home 
 
 - [ ] **Step 3: Add request-bound Home client resolution**
 
-Add a helper in the same server/auth boundary style used for Jira:
+Add `current_home_oauth_token_for_context(auth_context)` in `backend/auth/home_oauth.py`, then call it from a small server wrapper:
 
 ```python
+from backend.auth.home_oauth import current_home_oauth_token_for_context
+
+
 def current_home_graphql_client(auth_context=None):
     auth_context = auth_context or current_request_auth_context()
     if auth_context.auth_mode == AUTH_MODE_ATLASSIAN_OAUTH:
@@ -567,7 +570,7 @@ def current_home_graphql_client(auth_context=None):
     return epm_home.build_home_graphql_client()
 ```
 
-Implement `current_home_oauth_token_for_context(auth_context)` in the auth boundary. Before DB auth lands, it may delegate to the local OAuth bridge inside the auth module. After DB auth lands, it must read and refresh the user's encrypted `auth_tokens` through `auth_connections`, DB row/advisory refresh locking, `token_version` checks, active-user/active-connection checks, and revoked/disabled-user handling. Route modules must not call local token-store helpers directly.
+Implement `current_home_oauth_token_for_context(auth_context)` in `backend/auth/home_oauth.py`. It must read and refresh the user's encrypted `auth_tokens` through `auth_connections`, DB row/advisory refresh locking, `token_version` checks, active-user/active-connection checks, and revoked/disabled-user handling. Route modules must not call local token-store helpers directly.
 
 Wire Home/Townsquare fetch paths used by `/api/epm/scope`, `/api/epm/goals`, `/api/epm/projects`, `/api/epm/projects/configuration`, `/api/epm/projects/preview`, and rollup routes to accept or resolve this request-bound client. Keep Jira issue fetches on the existing request-bound Jira OAuth client.
 

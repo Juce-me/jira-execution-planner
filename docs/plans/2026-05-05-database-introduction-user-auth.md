@@ -114,12 +114,26 @@ Database-backed state is isolated by deployment environment and Jira/Atlassian w
 
 Use PostgreSQL for production because this feature needs concurrent users, transactions, constraints, encrypted token metadata, and reliable migrations. SQLite can be used for local development tests only, but it should not be the production sharing or auth store.
 
+## Migration Tool And DB Runtime
+
+Use Alembic with SQLAlchemy 2.x as the migration/runtime boundary:
+
+- Add dependencies to `requirements.txt`: `SQLAlchemy`, `alembic`, and `psycopg[binary]`.
+- Put DB engine/session helpers in `backend/db/engine.py`.
+- Put table metadata or ORM models in `backend/db/models.py`.
+- Put migration environment files under `backend/db/migrations/`.
+- Put Alembic versions under `backend/db/migrations/versions/`.
+- Use PostgreSQL through `postgresql+psycopg://...` for local production-like auth testing and production.
+- Use SQLite only for focused unit tests that do not depend on PostgreSQL locking, JSONB, or `SELECT ... FOR UPDATE` behavior.
+- Tests that verify refresh locking, concurrent token refresh, cache invalidation across workers, or production key handling must run against PostgreSQL.
+
 ## Local Execution Notes
 
 The executable DB implementation plan must include exact local setup and reset commands before schema work starts:
 
 - `DATABASE_URL` examples for local PostgreSQL and test SQLite. SQLite is acceptable only for unit tests; local multi-user auth and production-like refresh locking must use PostgreSQL.
-- A migration command and rollback command for the chosen migration tool.
+- A local PostgreSQL bootstrap example, for example `createdb jep_local`.
+- Alembic migration and rollback commands, for example `alembic -c backend/db/alembic.ini upgrade head` and `alembic -c backend/db/alembic.ini downgrade -1`.
 - A DB reset command that drops only the local/test database or schema and never targets production.
 - A local encryption-key generation command, for example:
 
@@ -128,7 +142,10 @@ python3 -c "import base64, secrets; print(base64.b64encode(secrets.token_bytes(3
 ```
 
 - A documented `.env` key such as `TOKEN_ENCRYPTION_MASTER_KEY_B64` for local development and a production key reference such as `TOKEN_ENCRYPTION_KEY_ID`.
+- Document these env keys in `.env.example`: `DATABASE_URL`, `TEST_DATABASE_URL`, `CONFIG_STORAGE_BACKEND`, `TOKEN_ENCRYPTION_MASTER_KEY_B64`, `TOKEN_ENCRYPTION_KEY_ID`, and `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`.
+- Production startup must refuse `TOKEN_ENCRYPTION_MASTER_KEY_B64`; production must use `TOKEN_ENCRYPTION_KEY_ID` and a KMS/secrets-manager adapter. Supported adapter shape for the first slice is a small key provider interface with `wrap_key(dek, aad)`, `unwrap_key(wrapped_dek, aad)`, and `primary_key_id()`.
 - A service-credential seeding path that reads service-account credentials from local env or an operator prompt and writes only encrypted `service_integration_tokens`; it must not commit secrets or ask normal users for personal API tokens.
+- Name the operator CLI before implementation. Use `python3 -m backend.admin.seed_service_credential` unless another module already exists.
 
 The first database slice should be deliberately narrow:
 
@@ -321,6 +338,34 @@ Current mutable routes that need an authenticated admin boundary before DB auth 
 
 `POST /api/epm/projects/configuration` and `POST /api/epm/projects/preview` are currently non-persistent preview helpers. They still need authentication and CSRF handling because they are browser POST routes, but they do not need admin authorization unless they start persisting configuration.
 
+## Pre-DB Admin Gate Task
+
+Before database tables exist, guard every current mutation route that is already OAuth-ready and writes shared configuration. This prevents the interim OAuth mode from letting any signed-in user mutate shared config before DB-backed admins land.
+
+**Files:**
+- Modify: `jira_server.py`
+- Modify: `backend/routes/settings_routes.py`
+- Modify: `backend/routes/epm_routes.py`
+- Test: `tests/test_pre_db_admin_gates.py`
+
+- [ ] Write failing tests proving a non-bootstrap OAuth user receives `403 admin_required` for:
+  - `POST /api/groups-config`
+  - `POST /api/team-catalog`
+  - `POST /api/projects/selected`
+  - `POST /api/board-config`
+  - `POST /api/capacity/config`
+  - `POST /api/sprint-field/config`
+  - `POST /api/story-points-field/config`
+  - `POST /api/parent-name-field/config`
+  - `POST /api/team-field/config`
+  - `POST /api/stats/priority-weights-config`
+  - `POST /api/issue-types/config`
+  - `POST /api/epm/config`
+- [ ] Implement a temporary pre-DB admin check based only on stable Atlassian account ids from `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`. Email and Jira project access are not admin signals.
+- [ ] Keep Basic single-user mode compatible by preserving the current local Basic admin behavior.
+- [ ] Run `.venv/bin/python -m unittest tests.test_pre_db_admin_gates tests.test_oauth_route_guards`.
+- [ ] Commit with `git commit -m "Gate OAuth shared config writes before DB auth"`.
+
 ## API Surface
 
 | Endpoint | Purpose |
@@ -334,22 +379,79 @@ Current mutable routes that need an authenticated admin boundary before DB auth 
 | `POST /api/admin/users/<id>/admin-grant` | Admin-only grant admin account type. |
 | `DELETE /api/admin/users/<id>/admin-grant` | Admin-only revoke admin account type. |
 | `GET /api/admin/config` | Admin-only shared configuration summary for scope projects, Jira source, field mapping, capacity, and priority weights. |
+| `GET /api/admin/service-integrations` | Admin-only list of workspace service integrations without token material. |
+| `POST /api/admin/service-integrations` | Admin-only create service integration metadata and encrypted service token. CSRF required. |
+| `POST /api/admin/service-integrations/<id>/rotate` | Admin-only rotate the encrypted service token and increment `token_version`. CSRF required. |
+| `POST /api/admin/service-integrations/<id>/disable` | Admin-only disable a service integration. CSRF required. |
+| `DELETE /api/admin/service-integrations/<id>` | Admin-only revoke/delete a service integration secret and invalidate dependent caches. CSRF required. |
 | `GET /api/admin/audit-events` | Admin-only redacted security/admin event log. |
 
 Existing `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` continue reading the current JSON-backed configuration during this phase.
 
 ## Migration Plan
 
-1. Add database connection config and migration tooling.
-2. Create `users`, `workspaces`, `auth_connections`, `auth_tokens`, `service_integrations`, `service_integration_tokens`, `jira_project_access`, and `audit_events`.
-3. Bootstrap one workspace from the current configured Jira site.
-4. Create or upsert the current authenticated user on login by `(external_provider, external_subject)` from the Atlassian `account_id`; update changed email/display-name fields without creating a duplicate user.
-5. Resolve every request into `RequestAuthContext` and pass it to Jira clients plus Home/Townsquare cache/audit helpers.
-6. Store OAuth connection metadata and encrypted refresh tokens in the database.
-7. Validate configured Jira project access for the user's auth connection without adding heavy startup fan-out.
-8. Keep Basic API-token mode local-only until the `service_integrations` boundary and admin rotation flow exist. If API tokens are stored server-side, they must be service-account credentials.
-9. Add admin bootstrap, admin user inspection, admin grant/revoke, user lifecycle, and audit-event endpoints.
-10. Gate admin-only shared configuration areas and any Home/Townsquare-backed or Jira-project-backed mutation surface; keep read-only and user-owned configuration tabs available to authenticated users.
+- [ ] Add DB dependencies and Alembic runtime files.
+  - Files: `requirements.txt`, `backend/db/engine.py`, `backend/db/models.py`, `backend/db/alembic.ini`, `backend/db/migrations/env.py`
+  - Tests: `tests/test_db_engine.py`
+- [ ] Add first migration for `users`, `workspaces`, `auth_connections`, `auth_tokens`, `service_integrations`, `service_integration_tokens`, `jira_project_access`, and `audit_events`.
+  - Files: `backend/db/migrations/versions/*_initial_auth.py`
+  - Tests: `tests/test_db_migrations.py`
+- [ ] Add token encryption and key-provider boundary.
+  - Files: `backend/auth/token_crypto.py`, `backend/auth/key_provider.py`
+  - Tests: `tests/test_db_token_encryption.py`
+- [ ] Add DB-backed auth connection repository and refresh locking.
+  - Files: `backend/auth/db_tokens.py`, `backend/auth/jira_auth.py`
+  - Tests: `tests/test_db_token_refresh.py`, `tests/test_db_refresh_race.py`
+- [ ] Add service integration repository and operator seeding CLI.
+  - Files: `backend/auth/service_integrations.py`, `backend/admin/seed_service_credential.py`
+  - Tests: `tests/test_db_service_integrations.py`
+- [ ] Add admin bootstrap from `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`.
+  - Files: `backend/auth/admin_bootstrap.py`, `backend/routes/admin_routes.py`
+  - Tests: `tests/test_db_admin_bootstrap.py`
+- [ ] Add DB-backed `RequestAuthContext` resolver.
+  - Files: `backend/auth/db_context.py`, `jira_server.py`
+  - Tests: `tests/test_db_auth_context.py`
+- [ ] Add token-bound CSRF before any DB admin/config browser mutation endpoint ships.
+  - Files: `backend/auth/csrf.py`, `backend/routes/auth_routes.py`, `jira_server.py`
+  - Tests: `tests/test_db_csrf.py`
+- [ ] Add user/admin/service-integration API routes.
+  - Files: `backend/routes/admin_routes.py`, `backend/routes/auth_routes.py`
+  - Tests: `tests/test_db_admin_routes.py`, `tests/test_db_service_integration_routes.py`
+- [ ] Add Jira project access snapshot checks without broad startup fan-out.
+  - Files: `backend/auth/project_access.py`
+  - Tests: `tests/test_db_project_access.py`
+- [ ] Add local OAuth store cutover.
+  - Files: `jira_server.py`, `backend/auth/jira_auth.py`, `backend/auth/db_tokens.py`
+  - Tests: `tests/test_db_oauth_cutover.py`
+  - Rule: during the transition, local token store and DB token rows must not both be authoritative for the same session. Run local store and DB in an explicit parallel-read/write window, verify DB rows, then disable local store reads when DB token rows exist.
+- [ ] Add visible recovery surfaces outside `frontend/src/dashboard.jsx`.
+  - Files: `backend/routes/auth_routes.py`, optional `backend/routes/admin_routes.py`
+  - Tests: `tests/test_db_auth_recovery_pages.py`
+- [ ] Run final verification: `.venv/bin/python -m unittest discover -s tests`, `node tests/test_auth_isolation_source_guard.js`, and browser smoke journeys listed below.
+
+## Token-Bound CSRF Upgrade Task
+
+The current OAuth unsafe-method guard uses `X-Requested-With: jira-execution-planner`. That is sufficient for the local OAuth bridge but not enough for DB-backed browser admin/config endpoints.
+
+Before any DB-backed browser mutation route ships:
+
+- Add a server-issued CSRF token endpoint, for example `GET /api/auth/csrf`.
+- Store only a token hash or session-bound nonce server-side.
+- Require `X-CSRF-Token` on every browser-originating `POST`, `PUT`, `PATCH`, and `DELETE` route.
+- Keep the old `X-Requested-With` requirement only as an additional same-origin signal during transition; it must not be the only CSRF proof for DB admin/config routes.
+- Tests in `tests/test_db_csrf.py` must prove missing, wrong, reused, or cross-session tokens fail with `403 csrf_required`.
+
+## User Recovery UI Surfaces
+
+Do not put auth recovery screens in `frontend/src/dashboard.jsx`. Add or keep backend-served lightweight pages or route-specific shells:
+
+- `/login` in `backend/routes/auth_routes.py` for unauthenticated and expired-session recovery.
+- `/account-disabled` in `backend/routes/auth_routes.py` for `account_disabled`.
+- `/connection-revoked` in `backend/routes/auth_routes.py` for `auth_connection_revoked` and reconnect.
+- `/access-required` in `backend/routes/auth_routes.py` for missing Jira project access.
+- `/admin/service-integrations` in `backend/routes/admin_routes.py` or the existing settings/admin shell for admin-only service credential status and rotation.
+
+Browser verification must cover every screen before DB auth is considered complete.
 
 ## Multi-User Cache Safety
 
@@ -360,6 +462,8 @@ At minimum, cache keys for issue/project/rollup data must include the `workspace
 Shared caches are acceptable only for data that is both non-secret and independent of Jira/Home permissions. Until Home/Townsquare 3LO passes, Home/Townsquare metadata caches are workspace/service-integration scoped, not user-ACL scoped, and must not be used as proof of user Home visibility. Revoke, reconnect, project-access changes, service-credential rotation, and admin changes to scope projects must invalidate affected user/workspace/service cache entries.
 
 Existing process caches that must be either auth-keyed or disabled for OAuth users include project search, component lookup, epic search, labels, issue types, EPM issue payloads, EPM rollups, EPM Home project metadata, sprint caches when the board/source is workspace-specific, and any Home goal/project catalog cache. A cache key built only from project key, JQL, tab, sprint, Home project id, label prefix, or goal key is not sufficient in DB/OAuth mode.
+
+Tests in `tests/test_db_cache_partitioning.py` must explicitly cover project search, component lookup, epic search, labels, issue types, EPM issue payloads, EPM rollups, EPM Home project metadata, sprint caches, and Home goal/project catalog cache.
 
 ## Token Encryption And Refresh Model
 
@@ -417,6 +521,7 @@ Token storage must be designed before writing `auth_tokens`.
 - Service-token encryption tests prove associated data binds ciphertext to `workspace_id`, `service_integration_id`, `token_kind`, and `key_id`.
 - Admin API tests prove service-token plaintext, ciphertext, wrapped keys, and credential env names never appear in admin responses.
 - Service-credential rotation tests prove affected Home/Townsquare and Jira-derived service caches are invalidated by service integration `token_version` changes.
+- JSON fallback compatibility tests prove `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` return identical non-secret payloads before import, after import, and after rollback to JSON mode.
 - Concurrent refresh tests prove one refresh updates tokens, deletes the previous refresh-token row, and increments `token_version` while stale refresh attempts cannot overwrite newer token material.
 - Refresh-reuse tests prove `invalid_grant` or provider reuse signals revoke the connection, delete usable tokens, write a redacted `connection_revoked` audit event with cause `refresh_reuse_detected`, and do not retry.
 - Data for one environment/Jira workspace cannot be read with another environment/workspace context.

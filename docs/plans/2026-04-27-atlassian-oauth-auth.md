@@ -49,6 +49,29 @@ This plan was drafted before the backend split. Implement it against current `ma
 - Reuse `backend/jira_client.py` for resilient request behavior; keep auth-mode decisions in `backend/auth/jira_auth.py`.
 - Use the old local branch `feature/atlassian-oauth-auth` only as source material. Do not copy it directly over current `main`, because it predates the `backend/routes` split.
 
+## Execution Status Reconciliation
+
+As of 2026-05-07, this plan's task checkboxes below are historical and must be reconciled before using this plan as a database-auth blocker. The current codebase already contains many OAuth-slice primitives; use this table as the pre-DB status source and rerun the listed verification commands before starting `docs/plans/2026-05-05-database-introduction-user-auth.md`.
+
+| Plan area | Current code status | Verification before DB auth |
+| --- | --- | --- |
+| Task 0 request auth context | Present in `backend/auth/context.py`; used from `jira_server.py`. | `.venv/bin/python -m unittest tests.test_auth_context` |
+| Task 1 auth helper foundation | Present in `backend/auth/jira_auth.py`. | `.venv/bin/python -m unittest tests.test_jira_auth tests.test_oauth_jira_client` |
+| Task 2 OAuth routes | Present in `backend/routes/auth_routes.py`. | `.venv/bin/python -m unittest tests.test_auth_routes tests.test_auth_entry_page` |
+| Task 3 Jira wrappers | Present in `jira_server.py` as `current_jira_get`, `current_jira_request`, and related helpers. | `.venv/bin/python -m unittest tests.test_oauth_jira_client tests.test_oauth_eng_routes tests.test_oauth_settings_routes tests.test_oauth_stats_routes` |
+| Task 4 entry/recovery | Present as backend-served `/login`, focus refresh, and API auth-required responses. | `.venv/bin/python -m unittest tests.test_auth_entry_page` and browser smoke test from Task 9 |
+| Task 5 unsupported route guard | Present in `jira_server.py` as `OAUTH_READY_API_PATHS`, `is_oauth_ready_api_path`, and `reject_unmigrated_oauth_routes`. | `.venv/bin/python -m unittest tests.test_oauth_route_guards` |
+| Task 6 cache isolation | Present in `backend/auth/cache_policy.py` and route/cache callers, but must be re-run before DB work. | `.venv/bin/python -m unittest tests.test_oauth_cache_isolation` |
+| Task 7 dashboard isolation | Source guards exist. | `node tests/test_auth_isolation_source_guard.js` |
+| Task 8 startup validation | Present in auth config validation and local token-store startup checks. | `.venv/bin/python -m unittest tests.test_jira_auth` plus manual invalid-env startup check |
+| Task 9 final verification | Must be re-run immediately before DB auth starts. | `.venv/bin/python -m unittest discover -s tests`; `node tests/test_auth_isolation_source_guard.js`; browser smoke test |
+
+Remaining pre-DB blockers:
+
+- Add the pre-DB admin mutation gate now owned by `docs/plans/2026-05-05-database-introduction-user-auth.md`.
+- Upgrade unsafe-method protection to token-bound CSRF before any DB-backed browser admin/config endpoint ships.
+- Re-run Task 9 final verification and record the command results in the DB auth execution notes.
+
 ## Previous OAuth Branch Porting Map
 
 The local branch `feature/atlassian-oauth-auth` is a prototype/reference branch, not the implementation branch to merge. It added useful OAuth primitives, route tests, source guards, and docs, but it predates the current backend package and route blueprint split.

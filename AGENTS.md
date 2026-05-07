@@ -189,6 +189,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Review relevant postmortems before making related changes. Add new postmortems under `postmortem/` as `MRTXXX-short-title.md` and update `postmortem/README.md`.
 - Store Jira credentials in `.env`; never commit secrets.
 - Server-side Jira and Home/Townsquare API-token credentials in `.env` are dedicated service-account credentials; do not ask individual users to create personal Atlassian API tokens for shared app auth.
+- Service-account API tokens for `home_townsquare_basic` and `jira_basic` belong only in `service_integration_tokens`; never store them in normal-user `auth_tokens`.
 - Treat `team-groups.json`, `team-catalog.json`, and `sprints_cache.json` as generated local caches.
 - Never commit real Jira fixture data. Use synthetic or sanitized examples only, and never copy identifiable config-derived values into committed tests.
 - Jira API pagination uses `nextPageToken` / `isLast`, not `startAt` / `total`. Verify response shapes before coding against them.

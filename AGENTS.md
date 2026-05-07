@@ -258,6 +258,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Browser-focus auth refresh is an optimization only; keep the visible expired-auth recovery path as the fallback.
 - Keep local task changes in the checkout the user is actively viewing; use a secondary worktree only when the user explicitly asks for one.
 - For shared header/menu UI changes, add or update Playwright assertions for menu layering and icon/control geometry before reporting visual verification.
+- In settings, keep Team Groups/Group Labels and ENG/EPM view preferences separate from admin-only shared configuration; never bundle their saves with scope, field, priority, issue-type, or EPM mapping writes.
 
 ---
 

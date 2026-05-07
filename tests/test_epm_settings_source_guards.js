@@ -518,6 +518,48 @@ test('settings tabs distinguish tool-admin configuration from team grouping', ()
     assert.ok(!tabsSource.includes('savedSelectedProjects.length === 0'), 'Team Groups tab must not be disabled because dashboard projects are unconfigured');
 });
 
+test('team group save does not bundle admin-only shared config writes for normal users', () => {
+    const saveStart = dashboardSource.indexOf('const saveGroupsConfig = async () => {');
+    const saveEnd = dashboardSource.indexOf('useEffect(() => {', saveStart);
+    assert.notStrictEqual(saveStart, -1, 'Expected saveGroupsConfig implementation');
+    assert.notStrictEqual(saveEnd, -1, 'Expected saveGroupsConfig implementation end');
+    const saveSource = dashboardSource.slice(saveStart, saveEnd);
+
+    assert.ok(!saveSource.includes('Tool admin access is required for shared configuration changes.'), 'Team group save must not block normal-user changes because hidden shared config drafts are dirty');
+    assert.ok(saveSource.includes('if (canEditSharedConfiguration) {'), 'Expected shared config writes to be gated by tool-admin edit permission');
+    const gatedStart = saveSource.indexOf('if (canEditSharedConfiguration) {');
+    const groupSaveStart = saveSource.indexOf('const response = await requestSaveGroupsConfig');
+    assert.ok(gatedStart !== -1 && groupSaveStart > gatedStart, 'Expected shared config gate before group config save');
+    const beforeGate = saveSource.slice(0, gatedStart);
+    const gatedSource = saveSource.slice(gatedStart, groupSaveStart);
+    [
+        'await saveEpmConfig();',
+        'await saveProjectSelection();',
+        'await savePriorityWeightsConfig();',
+        'await saveBoardConfig();',
+        'await saveCapacityConfig();',
+        'await saveSprintFieldConfig();',
+        'await saveParentNameFieldConfig();',
+        'await saveStoryPointsFieldConfig();',
+        'await saveTeamFieldConfig();',
+        'await saveIssueTypesConfig();',
+    ].forEach((call) => {
+        assert.ok(!beforeGate.includes(call), `Did not expect ${call} before shared config permission gate`);
+        assert.ok(gatedSource.includes(call), `Expected ${call} inside shared config permission gate`);
+    });
+});
+
+test('group labels tab is available for the current group draft', () => {
+    assert.ok(
+        dashboardSource.includes("const labelsTabEnabled = (groupDraft?.groups || groupsConfig.groups || []).length > 0;"),
+        'Group Labels should be enabled as soon as the draft has a group'
+    );
+    assert.ok(
+        !dashboardSource.includes("const labelsTabEnabled = (groupsConfig.groups || []).length > 0;"),
+        'Group Labels must not require a saved group round-trip before editing labels'
+    );
+});
+
 test('settings modal layer sits above sticky header search and view controls', () => {
     const rootMatch = dashboardCssSource.match(/--sticky-search-z:\s*(\d+);[\s\S]*?--modal-backdrop-z:\s*(\d+);/);
     assert.ok(rootMatch, 'Expected sticky and modal z-index CSS variables');

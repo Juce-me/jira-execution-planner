@@ -2698,50 +2698,55 @@ import {
                     setGroupDraftError(groupConfigValidationErrors[0]);
                     return;
                 }
-                if (!canEditSharedConfiguration && isSharedConfigurationDraftDirty) {
-                    setGroupDraftError('Tool admin access is required for shared configuration changes.');
-                    return;
-                }
                 setGroupSaving(true);
                 setGroupDraftError('');
                 try {
-                    if (isEpmConfigDirty) {
-                        await saveEpmConfig();
-                    }
+                    let projectsChanged = false;
+                    let priorityWeightsChanged = false;
+                    let boardChanged = false;
+                    let capacityChanged = false;
+                    let fieldConfigsChanged = false;
+                    let issueTypesChanged = false;
 
-                    // Save project selection if changed
-                    const projectsChanged = isProjectsDraftDirty;
-                    if (projectsChanged) {
-                        await saveProjectSelection();
-                    }
+                    if (canEditSharedConfiguration) {
+                        if (isEpmConfigDirty) {
+                            await saveEpmConfig();
+                        }
 
-                    const priorityWeightsChanged = isPriorityWeightsDirty;
-                    if (priorityWeightsChanged) {
-                        await savePriorityWeightsConfig();
-                    }
+                        // Save project selection if changed
+                        projectsChanged = isProjectsDraftDirty;
+                        if (projectsChanged) {
+                            await saveProjectSelection();
+                        }
 
-                    const boardChanged = isBoardConfigDirty;
-                    if (boardChanged) {
-                        await saveBoardConfig();
-                    }
+                        priorityWeightsChanged = isPriorityWeightsDirty;
+                        if (priorityWeightsChanged) {
+                            await savePriorityWeightsConfig();
+                        }
 
-                    // Save capacity config if changed
-                    const capacityChanged = isCapacityDraftDirty;
-                    if (capacityChanged) {
-                        await saveCapacityConfig();
-                    }
+                        boardChanged = isBoardConfigDirty;
+                        if (boardChanged) {
+                            await saveBoardConfig();
+                        }
 
-                    // Save custom field configs if changed
-                    if (isSprintFieldDirty) await saveSprintFieldConfig();
-                    if (isParentNameFieldDirty) await saveParentNameFieldConfig();
-                    if (isStoryPointsFieldDirty) await saveStoryPointsFieldConfig();
-                    if (isTeamFieldDirty) await saveTeamFieldConfig();
-                    const fieldConfigsChanged = isSprintFieldDirty || isParentNameFieldDirty || isStoryPointsFieldDirty || isTeamFieldDirty;
+                        // Save capacity config if changed
+                        capacityChanged = isCapacityDraftDirty;
+                        if (capacityChanged) {
+                            await saveCapacityConfig();
+                        }
 
-                    // Save issue types config if changed
-                    const issueTypesChanged = isIssueTypesDraftDirty;
-                    if (issueTypesChanged) {
-                        await saveIssueTypesConfig();
+                        // Save custom field configs if changed
+                        if (isSprintFieldDirty) await saveSprintFieldConfig();
+                        if (isParentNameFieldDirty) await saveParentNameFieldConfig();
+                        if (isStoryPointsFieldDirty) await saveStoryPointsFieldConfig();
+                        if (isTeamFieldDirty) await saveTeamFieldConfig();
+                        fieldConfigsChanged = isSprintFieldDirty || isParentNameFieldDirty || isStoryPointsFieldDirty || isTeamFieldDirty;
+
+                        // Save issue types config if changed
+                        issueTypesChanged = isIssueTypesDraftDirty;
+                        if (issueTypesChanged) {
+                            await saveIssueTypesConfig();
+                        }
                     }
 
                     // Capture the current active group's team IDs before saving
@@ -3775,7 +3780,7 @@ import {
             }, [activeGroupDraft, activeTeamQuery, availableTeams, groupDraft]);
             const activeTeamResultsLimited = activeTeamResults.slice(0, 10);
             const activeTeamIndex = activeGroupDraft ? (teamSearchIndex[activeGroupDraft.id] || 0) : 0;
-            const labelsTabEnabled = (groupsConfig.groups || []).length > 0;
+            const labelsTabEnabled = (groupDraft?.groups || groupsConfig.groups || []).length > 0;
             useEffect(() => {
                 if (!showGroupManage || canEditSharedConfiguration) return;
                 if (SHARED_CONFIGURATION_TAB_IDS.has(groupManageTab)) {
@@ -13904,8 +13909,8 @@ import {
                                 <div className="group-modal-body group-modal-split">
                                     <div className="group-pane group-list-pane">
                                         <div className="group-pane-header">
-                                            <div className="group-pane-title">Saved groups</div>
-                                            <div className="group-pane-subtitle">Choose a saved team group to map one Jira label per team.</div>
+                                            <div className="group-pane-title">Groups</div>
+                                            <div className="group-pane-subtitle">Choose a team group to map one Jira label per team.</div>
                                         </div>
                                         <div className="group-pane-list">
                                             {(filteredGroupDrafts || []).map((group) => {
@@ -13937,7 +13942,7 @@ import {
                                             <div className="group-pane-subtitle">Assign the team-specific epic label used with the selected sprint label.</div>
                                         </div>
                                         {!activeGroupDraft ? (
-                                            <div className="group-pane-empty">Select a saved group to edit its team label mappings.</div>
+                                            <div className="group-pane-empty">Select a group to edit its team label mappings.</div>
                                         ) : (activeGroupDraft.teamIds || []).length === 0 ? (
                                             <div className="group-pane-empty">Add teams in Team groups first, then return here to map labels.</div>
                                         ) : (

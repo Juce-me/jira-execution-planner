@@ -529,6 +529,25 @@ test('normal users do not receive admin-only settings tabs as disabled edit surf
     );
 });
 
+test('shared configuration permission fails closed while user config is missing or loading', () => {
+    assert.ok(
+        dashboardSource.includes('const [userCanEditSettings, setUserCanEditSettings] = useState(false);'),
+        'Expected settings edit permission to fail closed before /api/config returns'
+    );
+    assert.ok(
+        dashboardSource.includes('setUserCanEditSettings(config.userCanEditSettings === true);'),
+        'Expected initial config load to require an explicit editable permission'
+    );
+    assert.ok(
+        dashboardSource.includes('setUserCanEditSettings(cfg.userCanEditSettings === true);'),
+        'Expected config refresh after save to require an explicit editable permission'
+    );
+    assert.ok(
+        !dashboardSource.includes('userCanEditSettings !== false'),
+        'Missing userCanEditSettings must not imply editable admin configuration'
+    );
+});
+
 test('team group save does not bundle admin-only shared config writes for normal users', () => {
     const saveStart = dashboardSource.indexOf('const saveGroupsConfig = async () => {');
     const saveEnd = dashboardSource.indexOf('useEffect(() => {', saveStart);

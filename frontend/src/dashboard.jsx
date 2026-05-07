@@ -376,7 +376,7 @@ import {
             const [showTechnicalFieldIds, setShowTechnicalFieldIds] = useState(false);
             const [mappingHoverKey, setMappingHoverKey] = useState(null);
             const [settingsAdminOnly, setSettingsAdminOnly] = useState(true);
-            const [userCanEditSettings, setUserCanEditSettings] = useState(true);
+            const [userCanEditSettings, setUserCanEditSettings] = useState(false);
             const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;
             const preferredSettingsTab = canEditSharedConfiguration ? 'scope' : 'teams';
             const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
@@ -2799,7 +2799,7 @@ import {
                         const cfg = await fetchAppConfig(BACKEND_URL);
                         setCapacityEnabled(Boolean(cfg.capacityProject));
                         setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
-                        setUserCanEditSettings(cfg.userCanEditSettings !== false);
+                        setUserCanEditSettings(cfg.userCanEditSettings === true);
                     } catch (_) { /* best-effort */ }
 
                     invalidateSprintDataForConfigSave(refreshTarget);
@@ -4801,7 +4801,7 @@ import {
                     setCapacityEnabled(Boolean(config.capacityProject));
                     setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
                     setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
-                    setUserCanEditSettings(config.userCanEditSettings !== false);
+                    setUserCanEditSettings(config.userCanEditSettings === true);
                     applySavedEpmConfig(config.epm);
                 } catch (err) {
                     console.error('Failed to load config:', err);

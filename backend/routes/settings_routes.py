@@ -210,7 +210,7 @@ def get_config():
         'boardName': board_cfg.get('boardName', ''),
         'boardConfigSource': board_cfg.get('source', 'default'),
         'settingsAdminOnly': bool(SETTINGS_ADMIN_ONLY),
-        'userCanEditSettings': True,  # Placeholder until SSO/admin roles are implemented
+        'userCanEditSettings': (not SETTINGS_ADMIN_ONLY) or bool(auth_context.is_admin),
         'groupsConfigPath': resolve_groups_config_path(),
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),
         'projectsConfigured': bool(get_selected_projects()),

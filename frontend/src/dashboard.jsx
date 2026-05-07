@@ -115,6 +115,7 @@ import {
         const EMPTY_ARRAY = Object.freeze([]);
         const EMPTY_OBJECT = Object.freeze({});
         const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';
+        const SHARED_CONFIGURATION_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'epm']);
 
         const createEmptyEpmConfigDraft = () => ({
             version: 2,
@@ -376,6 +377,8 @@ import {
             const [mappingHoverKey, setMappingHoverKey] = useState(null);
             const [settingsAdminOnly, setSettingsAdminOnly] = useState(true);
             const [userCanEditSettings, setUserCanEditSettings] = useState(true);
+            const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;
+            const preferredSettingsTab = canEditSharedConfiguration ? 'scope' : 'teams';
             const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
             const [priorityWeightsSource, setPriorityWeightsSource] = useState('default');
             const [effectivePriorityWeightsRows, setEffectivePriorityWeightsRows] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
@@ -1930,6 +1933,7 @@ import {
             };
 
             const openGroupManage = () => {
+                setGroupManageTab(preferredSettingsTab);
                 setShowGroupManage(true);
             };
 
@@ -1941,7 +1945,7 @@ import {
                 setShowGroupAdvanced(false);
                 setShowGroupDiscardConfirm(false);
                 setShowGroupListMobile(false);
-                setGroupManageTab('scope');
+                setGroupManageTab(preferredSettingsTab);
                 setProjectSearchQuery('');
                 setProjectSearchOpen(false);
                 setProjectSearchIndex(0);
@@ -2190,7 +2194,7 @@ import {
                 return sortEpmSettingsProjects(filterEpmSettingsProjectsForView(rows, epmSettingsProjectView), epmSettingsProjectSort);
             }, [epmConfigDraft, epmSettingsProjectSort, epmSettingsProjectView, epmSettingsProjects]);
 
-            const isGroupDraftDirty = React.useMemo(() => {
+            const isSharedConfigurationDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
                 if (isPriorityWeightsDirty) return true;
                 if (isBoardConfigDirty) return true;
@@ -2201,24 +2205,28 @@ import {
                 if (isStoryPointsFieldDirty) return true;
                 if (isTeamFieldDirty) return true;
                 if (isEpmConfigDirty) return true;
+                return false;
+            }, [isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty]);
+            const isGroupDraftDirty = React.useMemo(() => {
+                if (canEditSharedConfiguration && isSharedConfigurationDraftDirty) return true;
                 if (!groupDraft) return false;
                 return groupDraftSignature !== groupDraftBaselineRef.current;
-            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty]);
+            }, [groupDraftSignature, groupDraft, canEditSharedConfiguration, isSharedConfigurationDraftDirty]);
             const unsavedSectionsCount = React.useMemo(() => {
                 return [
-                    isProjectsDraftDirty,
-                    isPriorityWeightsDirty,
-                    isBoardConfigDirty,
-                    isCapacityDraftDirty,
-                    isIssueTypesDraftDirty,
-                    isSprintFieldDirty,
-                    isParentNameFieldDirty,
-                    isStoryPointsFieldDirty,
-                    isTeamFieldDirty,
-                    isEpmConfigDirty,
+                    canEditSharedConfiguration && isProjectsDraftDirty,
+                    canEditSharedConfiguration && isPriorityWeightsDirty,
+                    canEditSharedConfiguration && isBoardConfigDirty,
+                    canEditSharedConfiguration && isCapacityDraftDirty,
+                    canEditSharedConfiguration && isIssueTypesDraftDirty,
+                    canEditSharedConfiguration && isSprintFieldDirty,
+                    canEditSharedConfiguration && isParentNameFieldDirty,
+                    canEditSharedConfiguration && isStoryPointsFieldDirty,
+                    canEditSharedConfiguration && isTeamFieldDirty,
+                    canEditSharedConfiguration && isEpmConfigDirty,
                     Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current)
                 ].filter(Boolean).length;
-            }, [isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty, groupDraft, groupDraftSignature]);
+            }, [canEditSharedConfiguration, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty, groupDraft, groupDraftSignature]);
             const priorityWeightsValidationError = React.useMemo(() => {
                 for (const row of (priorityWeightsDraft || [])) {
                     const label = String(row?.priority || '').trim() || 'Priority';
@@ -2241,32 +2249,34 @@ import {
             }, [priorityWeightsDraft]);
             const groupConfigValidationErrors = React.useMemo(() => {
                 const errors = [];
-                if (!selectedProjectsDraft.length) {
-                    errors.push('Add at least one dashboard project before saving.');
-                }
-                if (!sprintFieldIdDraft) {
-                    errors.push('Sprint field is required.');
-                }
-                if (!parentNameFieldIdDraft) {
-                    errors.push('Parent name field is required.');
-                }
-                if (!storyPointsFieldIdDraft) {
-                    errors.push('Story points field is required.');
-                }
-                if (!teamFieldIdDraft) {
-                    errors.push('Team field is required.');
-                }
-                if (capacityProjectDraft && !capacityFieldIdDraft) {
-                    errors.push('Capacity field is required when a capacity project is selected.');
-                }
-                if (!capacityProjectDraft && capacityFieldIdDraft) {
-                    errors.push('Capacity project is required when a capacity field is selected.');
-                }
-                if (priorityWeightsValidationError) {
-                    errors.push(priorityWeightsValidationError);
+                if (canEditSharedConfiguration) {
+                    if (!selectedProjectsDraft.length) {
+                        errors.push('Add at least one dashboard project before saving.');
+                    }
+                    if (!sprintFieldIdDraft) {
+                        errors.push('Sprint field is required.');
+                    }
+                    if (!parentNameFieldIdDraft) {
+                        errors.push('Parent name field is required.');
+                    }
+                    if (!storyPointsFieldIdDraft) {
+                        errors.push('Story points field is required.');
+                    }
+                    if (!teamFieldIdDraft) {
+                        errors.push('Team field is required.');
+                    }
+                    if (capacityProjectDraft && !capacityFieldIdDraft) {
+                        errors.push('Capacity field is required when a capacity project is selected.');
+                    }
+                    if (!capacityProjectDraft && capacityFieldIdDraft) {
+                        errors.push('Capacity project is required when a capacity field is selected.');
+                    }
+                    if (priorityWeightsValidationError) {
+                        errors.push(priorityWeightsValidationError);
+                    }
                 }
                 return errors;
-            }, [selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError]);
+            }, [canEditSharedConfiguration, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError]);
             const saveBlockedReason = React.useMemo(() => {
                 if (groupSaving) return 'Save in progress';
                 if (groupConfigValidationErrors.length > 0) return groupConfigValidationErrors[0];
@@ -2288,6 +2298,11 @@ import {
                 closeGroupManage();
             };
             const openEpmSettingsTab = () => {
+                if (!canEditSharedConfiguration) {
+                    setGroupManageTab('teams');
+                    setShowGroupManage(true);
+                    return;
+                }
                 resetEpmSettingsProjectRows();
                 setShowGroupManage(true);
                 setGroupManageTab('epm');
@@ -2681,6 +2696,10 @@ import {
                 if (!groupDraft) return;
                 if (groupConfigValidationErrors.length > 0) {
                     setGroupDraftError(groupConfigValidationErrors[0]);
+                    return;
+                }
+                if (!canEditSharedConfiguration && isSharedConfigurationDraftDirty) {
+                    setGroupDraftError('Tool admin access is required for shared configuration changes.');
                     return;
                 }
                 setGroupSaving(true);
@@ -3757,6 +3776,12 @@ import {
             const activeTeamResultsLimited = activeTeamResults.slice(0, 10);
             const activeTeamIndex = activeGroupDraft ? (teamSearchIndex[activeGroupDraft.id] || 0) : 0;
             const labelsTabEnabled = (groupsConfig.groups || []).length > 0;
+            useEffect(() => {
+                if (!showGroupManage || canEditSharedConfiguration) return;
+                if (SHARED_CONFIGURATION_TAB_IDS.has(groupManageTab)) {
+                    setGroupManageTab('teams');
+                }
+            }, [showGroupManage, canEditSharedConfiguration, groupManageTab]);
             const getLabelRowKey = (groupId, teamId) => `${groupId || 'group'}::${teamId || 'team'}`;
             const getLabelSearchResults = (groupId, teamId) => {
                 const key = getLabelRowKey(groupId, teamId);
@@ -10957,16 +10982,38 @@ import {
             };
 
             const settingsModalTabs = [
-                { id: 'scope', label: 'Scope projects', onClick: () => setGroupManageTab('scope') },
-                { id: 'source', label: 'Jira source', onClick: () => setGroupManageTab('source') },
-                { id: 'mapping', label: 'Field mapping', onClick: () => setGroupManageTab('mapping') },
-                { id: 'capacity', label: 'Capacity', onClick: () => setGroupManageTab('capacity') },
+                {
+                    id: 'scope',
+                    label: 'Scope projects',
+                    onClick: () => canEditSharedConfiguration && setGroupManageTab('scope'),
+                    disabled: !canEditSharedConfiguration,
+                    title: canEditSharedConfiguration ? '' : 'Tool admin access required'
+                },
+                {
+                    id: 'source',
+                    label: 'Jira source',
+                    onClick: () => canEditSharedConfiguration && setGroupManageTab('source'),
+                    disabled: !canEditSharedConfiguration,
+                    title: canEditSharedConfiguration ? '' : 'Tool admin access required'
+                },
+                {
+                    id: 'mapping',
+                    label: 'Field mapping',
+                    onClick: () => canEditSharedConfiguration && setGroupManageTab('mapping'),
+                    disabled: !canEditSharedConfiguration,
+                    title: canEditSharedConfiguration ? '' : 'Tool admin access required'
+                },
+                {
+                    id: 'capacity',
+                    label: 'Capacity',
+                    onClick: () => canEditSharedConfiguration && setGroupManageTab('capacity'),
+                    disabled: !canEditSharedConfiguration,
+                    title: canEditSharedConfiguration ? '' : 'Tool admin access required'
+                },
                 {
                     id: 'teams',
                     label: 'Team groups',
-                    onClick: () => savedSelectedProjects.length > 0 && setGroupManageTab('teams'),
-                    disabled: savedSelectedProjects.length === 0,
-                    title: savedSelectedProjects.length === 0 ? 'Configure data sources first' : ''
+                    onClick: () => setGroupManageTab('teams')
                 },
                 {
                     id: 'labels',
@@ -10975,8 +11022,20 @@ import {
                     disabled: !labelsTabEnabled,
                     title: labelsTabEnabled ? '' : 'Save at least one group first'
                 },
-                { id: 'priorityWeights', label: 'Priority weights', onClick: () => setGroupManageTab('priorityWeights') },
-                { id: 'epm', label: 'EPM', onClick: openEpmSettingsTab }
+                {
+                    id: 'priorityWeights',
+                    label: 'Priority weights',
+                    onClick: () => canEditSharedConfiguration && setGroupManageTab('priorityWeights'),
+                    disabled: !canEditSharedConfiguration,
+                    title: canEditSharedConfiguration ? '' : 'Tool admin access required'
+                },
+                {
+                    id: 'epm',
+                    label: 'EPM',
+                    onClick: openEpmSettingsTab,
+                    disabled: !canEditSharedConfiguration,
+                    title: canEditSharedConfiguration ? '' : 'Tool admin access required'
+                }
             ];
             const settingsSaveHandler = groupManageTab === 'epm'
                 ? () => { void saveEpmConfig().catch(() => {}); }

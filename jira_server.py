@@ -319,8 +319,6 @@ OAUTH_READY_API_PATHS = {
 }
 
 OAUTH_SHARED_CONFIG_WRITE_PATHS = {
-    '/api/groups-config',
-    '/api/team-catalog',
     '/api/projects/selected',
     '/api/board-config',
     '/api/capacity/config',
@@ -339,7 +337,7 @@ def is_oauth_ready_api_path(path):
 
 
 def bootstrap_tool_admin_account_ids():
-    raw = os.getenv('TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS', '')
+    raw = os.getenv('TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS', '')
     return {account_id.strip() for account_id in raw.split(',') if account_id.strip()}
 
 

@@ -312,7 +312,7 @@ Expected: FAIL until the temporary or DB-backed admin guard exists.
 
 - [ ] **Step 2: Implement one tool-admin boundary**
 
-If DB auth is not present, use only stable Atlassian account ids from `TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS` as the temporary tool-admin signal, keep `RequestAuthContext.is_admin = False` for all other OAuth users, and preserve Basic single-user compatibility. Do not use Atlassian tenant/admin status, email, domain, Jira project access, or Home project access as tool-admin signals.
+If DB auth is not present, use only stable Atlassian account ids from `TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS` as the temporary tool-admin signal, keep `RequestAuthContext.is_admin = False` for all other OAuth users, and preserve Basic single-user compatibility. Do not use Atlassian tenant/admin status, email, domain, Jira project access, or Home project access as tool-admin signals.
 
 If DB auth is present, route the same check through DB `users.account_type == "admin"` and active user/connection status.
 
@@ -582,7 +582,7 @@ class OAuthEpmConfigRouteTests(unittest.TestCase):
     def test_post_epm_config_requires_tool_admin_account_in_oauth_mode(self):
         install_oauth_session(self.client, account_id="regular-user-account")
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.dict("os.environ", {"TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False):
+             patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False):
             response = self.client.post(
                 "/api/epm/config",
                 json={"version": 2, "projects": {}},
@@ -595,7 +595,7 @@ class OAuthEpmConfigRouteTests(unittest.TestCase):
     def test_post_epm_config_tool_admin_saves_with_csrf_header(self):
         install_oauth_session(self.client, account_id="tool-admin-account")
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.dict("os.environ", {"TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
+             patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
              patch.object(jira_server, "load_dashboard_config", return_value={"version": 1, "projects": {"selected": []}, "teamGroups": {}}), \
              patch.object(jira_server, "save_dashboard_config") as mock_save:
             response = self.client.post(

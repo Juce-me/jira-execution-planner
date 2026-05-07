@@ -4,6 +4,7 @@ const path = require('path');
 const test = require('node:test');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
+const dashboardCssPath = path.join(__dirname, '..', 'frontend', 'src', 'styles', 'dashboard.css');
 const epmSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmSettings.jsx');
 const settingsModalPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'SettingsModal.jsx');
 const teamGroupsSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'TeamGroupsSettings.jsx');
@@ -16,6 +17,7 @@ const epmViewDataPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'us
 const epmControlsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmControls.jsx');
 const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngView.jsx');
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+const dashboardCssSource = fs.readFileSync(dashboardCssPath, 'utf8');
 const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
 const settingsModalSource = fs.existsSync(settingsModalPath) ? fs.readFileSync(settingsModalPath, 'utf8') : '';
 const teamGroupsSettingsSource = fs.existsSync(teamGroupsSettingsPath) ? fs.readFileSync(teamGroupsSettingsPath, 'utf8') : '';
@@ -495,4 +497,33 @@ test('settings hotkey effect is declared after the save handlers it depends on',
     assert.ok(saveGroupsConfigIndex !== -1, 'Expected saveGroupsConfig in dashboard.jsx');
     assert.ok(hotkeyEffectIndex > saveEpmConfigIndex, 'Expected settings hotkey effect after saveEpmConfig');
     assert.ok(hotkeyEffectIndex > saveGroupsConfigIndex, 'Expected settings hotkey effect after saveGroupsConfig');
+});
+
+test('settings tabs distinguish tool-admin configuration from team grouping', () => {
+    const tabsStart = dashboardSource.indexOf('const settingsModalTabs = [');
+    const tabsEnd = dashboardSource.indexOf('];', tabsStart);
+    assert.notStrictEqual(tabsStart, -1, 'Expected settings tab descriptors');
+    assert.notStrictEqual(tabsEnd, -1, 'Expected settings tab descriptors end');
+    const tabsSource = dashboardSource.slice(tabsStart, tabsEnd);
+
+    assert.ok(dashboardSource.includes('const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;'), 'Expected explicit shared-configuration edit permission');
+    assert.ok(dashboardSource.includes("const preferredSettingsTab = canEditSharedConfiguration ? 'scope' : 'teams';"), 'Expected non-tool-admin settings to open on Team Groups');
+    assert.ok(tabsSource.includes("id: 'scope'") && tabsSource.includes('disabled: !canEditSharedConfiguration'), 'Expected Scope Projects to require tool-admin config permission');
+    assert.ok(tabsSource.includes("id: 'source'") && tabsSource.includes('disabled: !canEditSharedConfiguration'), 'Expected Jira Source to require tool-admin config permission');
+    assert.ok(tabsSource.includes("id: 'mapping'") && tabsSource.includes('disabled: !canEditSharedConfiguration'), 'Expected Field Mapping to require tool-admin config permission');
+    assert.ok(tabsSource.includes("id: 'capacity'") && tabsSource.includes('disabled: !canEditSharedConfiguration'), 'Expected Capacity to require tool-admin config permission');
+    assert.ok(tabsSource.includes("id: 'priorityWeights'") && tabsSource.includes('disabled: !canEditSharedConfiguration'), 'Expected Priority Weights to require tool-admin config permission');
+    assert.ok(tabsSource.includes("id: 'epm'") && tabsSource.includes('disabled: !canEditSharedConfiguration'), 'Expected EPM settings to require tool-admin config permission');
+    assert.ok(tabsSource.includes("id: 'teams'") && tabsSource.includes("onClick: () => setGroupManageTab('teams')"), 'Expected Team Groups to stay directly accessible');
+    assert.ok(!tabsSource.includes('savedSelectedProjects.length === 0'), 'Team Groups tab must not be disabled because dashboard projects are unconfigured');
+});
+
+test('settings modal layer sits above sticky header search and view controls', () => {
+    const rootMatch = dashboardCssSource.match(/--sticky-search-z:\s*(\d+);[\s\S]*?--modal-backdrop-z:\s*(\d+);/);
+    assert.ok(rootMatch, 'Expected sticky and modal z-index CSS variables');
+    const stickySearchZ = Number(rootMatch[1]);
+    const modalBackdropZ = Number(rootMatch[2]);
+
+    assert.ok(modalBackdropZ > stickySearchZ, 'Settings modal backdrop must sit above sticky header search');
+    assert.ok(dashboardCssSource.includes('z-index: var(--modal-backdrop-z);'), 'Expected group modal backdrop to use modal z-index variable');
 });

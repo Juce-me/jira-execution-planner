@@ -60,7 +60,9 @@ FLASK_SECRET_KEY=...
 OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true
 OAUTH_TOKEN_STORE_PATH=.oauth-token-store.json
 OAUTH_TOKEN_STORE_TTL_SECONDS=2592000
-TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS=...
+# Reserved for future DB-backed first-admin bootstrap.
+# Pre-DB OAuth treats every signed-in Atlassian user as a local tool admin.
+# TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS=...
 ```
 
 `JIRA_URL` is required in OAuth mode, but it is not a Basic-auth credential. It tells the backend which Jira Cloud site to select after Atlassian returns the user's accessible resources.
@@ -79,7 +81,7 @@ Keep `OAUTH_TOKEN_STORE_PATH` local and ignored by git. The default local path `
 
 ### Temporary Pre-DB Tool-Admin Writes
 
-Until database-backed users and roles land, OAuth mode allows shared configuration writes only for tool-local admins listed in `TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS`. Use comma-separated Atlassian `account_id` values only as stable identity keys for those tool admins. Do not use Atlassian tenant/admin status, email address, email domain, Jira project access, or Home/Townsquare access as tool-admin signals.
+Until database-backed users and roles land, OAuth mode treats every signed-in Atlassian user as a local tool admin for shared configuration writes. This is a temporary local-runner simplification, not an Atlassian admin signal. `TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS` is reserved for future DB-backed first-admin bootstrap, where stable Atlassian `account_id` values will be identity keys and Atlassian tenant/admin status, email address, email domain, Jira project access, or Home/Townsquare access will not grant tool-admin rights.
 
 ## Test The Flow
 

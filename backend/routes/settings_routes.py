@@ -17,6 +17,44 @@ def _settings_process_cache_enabled():
     return jira_home_process_cache_enabled(current_request_auth_context())
 
 
+def _has_dashboard_config_value(value):
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return any(_has_dashboard_config_value(item) for item in value)
+    if isinstance(value, dict):
+        return any(_has_dashboard_config_value(item) for item in value.values())
+    return value not in (None, False)
+
+
+def _environment_dashboard_config_exists():
+    config = load_dashboard_config() or {}
+    if not isinstance(config, dict):
+        return False
+
+    projects = config.get('projects') or {}
+    if isinstance(projects, dict) and _has_dashboard_config_value(projects.get('selected')):
+        return True
+
+    for section in ('board', 'capacity', 'sprintField', 'storyPointsField', 'parentNameField', 'teamField'):
+        if _has_dashboard_config_value(config.get(section)):
+            return True
+
+    if _has_dashboard_config_value(config.get('statsPriorityWeights')):
+        return True
+    if _has_dashboard_config_value(config.get('issueTypes')):
+        return True
+
+    epm = config.get('epm') or {}
+    if isinstance(epm, dict):
+        return (
+            _has_dashboard_config_value(epm.get('scope'))
+            or _has_dashboard_config_value(epm.get('projects'))
+            or _has_dashboard_config_value(epm.get('labelPrefix'))
+        )
+    return False
+
+
 @bp.route('/api/boards', methods=['GET'])
 def get_boards():
     """Fetch available boards from Jira API"""
@@ -203,6 +241,7 @@ def get_config():
     """Get public configuration"""
     auth_context = current_request_auth_context()
     board_cfg = get_board_config()
+    epm_config = get_epm_config()
     return jsonify({
         'jiraUrl': auth_context.site_url,
         'capacityProject': get_effective_capacity_project(),
@@ -214,7 +253,8 @@ def get_config():
         'groupsConfigPath': resolve_groups_config_path(),
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),
         'projectsConfigured': bool(get_selected_projects()),
-        'epm': get_epm_config()
+        'environmentConfigExists': _environment_dashboard_config_exists(),
+        'epm': epm_config
     })
 
 

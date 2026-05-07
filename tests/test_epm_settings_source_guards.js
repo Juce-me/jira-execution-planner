@@ -506,8 +506,9 @@ test('settings tabs distinguish tool-admin configuration from team grouping', ()
     assert.notStrictEqual(tabsEnd, -1, 'Expected settings tab descriptors end');
     const tabsSource = dashboardSource.slice(tabsStart, tabsEnd);
 
+    assert.ok(dashboardSource.includes('const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);'), 'Expected environment-config state from /api/config');
     assert.ok(dashboardSource.includes('const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;'), 'Expected explicit shared-configuration edit permission');
-    assert.ok(dashboardSource.includes("const preferredSettingsTab = canEditSharedConfiguration ? 'scope' : 'teams';"), 'Expected non-tool-admin settings to open on Team Groups');
+    assert.ok(dashboardSource.includes("const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';"), 'Expected configured environments to open settings on Team Groups');
     assert.ok(tabsSource.includes("id: 'scope'"), 'Expected Scope Projects in the tool-admin tab list');
     assert.ok(tabsSource.includes("id: 'source'"), 'Expected Jira Source in the tool-admin tab list');
     assert.ok(tabsSource.includes("id: 'mapping'"), 'Expected Field Mapping in the tool-admin tab list');
@@ -539,8 +540,16 @@ test('shared configuration permission fails closed while user config is missing 
         'Expected initial config load to require an explicit editable permission'
     );
     assert.ok(
+        dashboardSource.includes('setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));'),
+        'Expected initial config load to preserve legacy projectsConfigured as an environment-config fallback'
+    );
+    assert.ok(
         dashboardSource.includes('setUserCanEditSettings(cfg.userCanEditSettings === true);'),
         'Expected config refresh after save to require an explicit editable permission'
+    );
+    assert.ok(
+        dashboardSource.includes('setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));'),
+        'Expected config refresh after save to preserve legacy projectsConfigured as an environment-config fallback'
     );
     assert.ok(
         !dashboardSource.includes('userCanEditSettings !== false'),

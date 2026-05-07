@@ -377,8 +377,9 @@ import {
             const [mappingHoverKey, setMappingHoverKey] = useState(null);
             const [settingsAdminOnly, setSettingsAdminOnly] = useState(true);
             const [userCanEditSettings, setUserCanEditSettings] = useState(false);
+            const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);
             const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;
-            const preferredSettingsTab = canEditSharedConfiguration ? 'scope' : 'teams';
+            const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';
             const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
             const [priorityWeightsSource, setPriorityWeightsSource] = useState('default');
             const [effectivePriorityWeightsRows, setEffectivePriorityWeightsRows] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
@@ -2800,6 +2801,7 @@ import {
                         setCapacityEnabled(Boolean(cfg.capacityProject));
                         setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
                         setUserCanEditSettings(cfg.userCanEditSettings === true);
+                        setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
                     } catch (_) { /* best-effort */ }
 
                     invalidateSprintDataForConfigSave(refreshTarget);
@@ -4802,6 +4804,7 @@ import {
                     setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
                     setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
                     setUserCanEditSettings(config.userCanEditSettings === true);
+                    setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));
                     applySavedEpmConfig(config.epm);
                 } catch (err) {
                     console.error('Failed to load config:', err);

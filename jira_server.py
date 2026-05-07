@@ -343,7 +343,7 @@ def bootstrap_tool_admin_account_ids():
 
 def is_pre_db_tool_admin_account(atlassian_account_id):
     account_id = str(atlassian_account_id or '').strip()
-    return bool(account_id and account_id in bootstrap_tool_admin_account_ids())
+    return bool(account_id)
 
 
 def current_auth_config():

@@ -350,7 +350,7 @@ Current mutable routes that need an authenticated admin boundary before DB auth 
 
 `POST /api/epm/projects/configuration` and `POST /api/epm/projects/preview` are currently non-persistent preview helpers. They still need authentication and CSRF handling because they are browser POST routes, but they do not need admin authorization unless they start persisting configuration.
 
-The executable checklist below assigns this pre-DB tool-admin gate to Task 0. Do not start DB schema work before Task 0 passes.
+The executable checklist below records the current pre-DB simplification: every signed-in OAuth user is treated as a local tool admin for shared configuration writes until DB-backed roles land. Do not treat this as the DB authorization design; DB auth must restore explicit admin assignment.
 
 ## API Surface
 
@@ -390,7 +390,7 @@ node tests/test_auth_isolation_source_guard.js
 
 Expected: OAuth/Jira boundary tests pass, unsupported OAuth routes still return `route_not_oauth_ready`, OAuth process caches are disabled or auth-keyed, and the Home GraphQL gate result is recorded. If the Home gate is `FAIL home_graphql_3lo_unsupported`, keep Home/Townsquare user 3LO out of DB auth and use only admin-managed `home_townsquare_basic` service integration credentials for Home metadata.
 
-### Task 0: Pre-DB Tool-Admin Gate For Current OAuth Shared Config Writes
+### Task 0: Current Pre-DB OAuth Shared Config Policy
 
 **Files:**
 - Modify: `jira_server.py`
@@ -398,8 +398,8 @@ Expected: OAuth/Jira boundary tests pass, unsupported OAuth routes still return 
 - Modify: `backend/routes/epm_routes.py`
 - Test: `tests/test_pre_db_admin_gates.py`
 
-- [x] Write failing tests proving a non-tool-admin OAuth user with `X-Requested-With: jira-execution-planner` receives `403 admin_required` for `POST /api/projects/selected`, `POST /api/board-config`, `POST /api/capacity/config`, `POST /api/sprint-field/config`, `POST /api/story-points-field/config`, `POST /api/parent-name-field/config`, `POST /api/team-field/config`, `POST /api/stats/priority-weights-config`, `POST /api/issue-types/config`, and `POST /api/epm/config`, while `POST /api/groups-config` and `POST /api/team-catalog` remain available to normal authenticated users.
-- [x] Implement a temporary tool-admin check based only on stable Atlassian account ids in `TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS`; keep `RequestAuthContext.is_admin = False` for all other OAuth users until DB auth lands.
+- [x] Write failing tests proving an authenticated OAuth user with `X-Requested-With: jira-execution-planner` can save `POST /api/projects/selected`, `POST /api/board-config`, `POST /api/capacity/config`, `POST /api/sprint-field/config`, `POST /api/story-points-field/config`, `POST /api/parent-name-field/config`, `POST /api/team-field/config`, `POST /api/stats/priority-weights-config`, `POST /api/issue-types/config`, and `POST /api/epm/config`, while missing OAuth sessions still receive `401 auth_required`.
+- [x] Implement the temporary pre-DB policy: any signed-in OAuth account id maps to `RequestAuthContext.is_admin = True`; `TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS` is reserved for future DB-backed first-admin bootstrap.
 - [x] Preserve Basic single-user behavior.
 - [x] Run `.venv/bin/python -m unittest tests.test_pre_db_admin_gates tests.test_oauth_route_guards`.
 - [x] Commit with `git commit -m "Gate OAuth shared config writes before DB auth"`.

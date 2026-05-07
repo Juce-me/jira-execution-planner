@@ -45,7 +45,7 @@ class OAuthSettingsRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["jiraUrl"], "https://oauth-site.atlassian.net")
 
-    def test_config_reports_non_tool_admin_settings_access(self):
+    def test_config_reports_authenticated_oauth_settings_access_before_db_roles(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "SETTINGS_ADMIN_ONLY", True), \
              patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
@@ -57,7 +57,33 @@ class OAuthSettingsRouteTests(unittest.TestCase):
             response = self.client.get("/api/config")
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertFalse(response.get_json()["userCanEditSettings"])
+        self.assertTrue(response.get_json()["userCanEditSettings"])
+
+    def test_config_reports_environment_config_exists_from_dashboard_json(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_board_config", return_value={"boardId": "7", "boardName": "Product", "source": "config"}), \
+             patch.object(jira_server, "get_effective_capacity_project", return_value="CAP"), \
+             patch.object(jira_server, "resolve_groups_config_path", return_value="team-groups.json"), \
+             patch.object(jira_server, "get_selected_projects", return_value=["PROD"]), \
+             patch.object(jira_server, "get_epm_config", return_value={"version": 2}), \
+             patch.object(jira_server, "load_dashboard_config", return_value={"projects": {"selected": [{"key": "PROD", "type": "product"}]}}):
+            response = self.client.get("/api/config")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertTrue(response.get_json()["environmentConfigExists"])
+
+    def test_config_reports_environment_config_missing_for_user_only_json(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_board_config", return_value={}), \
+             patch.object(jira_server, "get_effective_capacity_project", return_value="CAP"), \
+             patch.object(jira_server, "resolve_groups_config_path", return_value="team-groups.json"), \
+             patch.object(jira_server, "get_selected_projects", return_value=[]), \
+             patch.object(jira_server, "get_epm_config", return_value={"version": 2}), \
+             patch.object(jira_server, "load_dashboard_config", return_value={"teamGroups": {"groups": [{"id": "g1", "name": "Group 1"}]}}):
+            response = self.client.get("/api/config")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertFalse(response.get_json()["environmentConfigExists"])
 
     def test_config_reports_tool_admin_settings_access(self):
         install_oauth_session(self.client, account_id="tool-admin-account", site_url="https://oauth-site.atlassian.net")

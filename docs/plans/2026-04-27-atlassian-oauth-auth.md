@@ -68,7 +68,7 @@ As of 2026-05-07, this plan's task checkboxes below are historical and must be r
 
 Remaining pre-DB blockers:
 
-- Add the pre-DB tool-admin mutation gate now owned by `docs/plans/2026-05-05-database-introduction-user-auth.md`.
+- Keep the current pre-DB simplification documented: every signed-in OAuth user is a local tool admin until DB-backed roles land.
 - Upgrade unsafe-method protection to token-bound CSRF before any DB-backed browser admin/config endpoint ships.
 - Re-run Task 9 final verification and record the command results in the DB auth execution notes.
 

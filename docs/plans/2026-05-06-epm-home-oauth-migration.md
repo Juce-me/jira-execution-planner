@@ -80,7 +80,7 @@ Do not add a route to `OAUTH_READY_API_PATHS` or an OAuth-ready dynamic path mat
 | Route | Owning task | Named OAuth test | Named Basic compatibility test | Home GraphQL boundary mocked | Jira REST boundary mocked | Expired-auth behavior | CSRF behavior for unsafe methods | Cache policy |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `GET /api/epm/config` | Part 1 Task 4 / Part 2 Task 3 regression | `OAuthEpmConfigRouteTests.test_get_epm_config_is_oauth_ready_without_home_or_jira` | `BasicEpmConfigRouteTests.test_get_epm_config_basic_mode_returns_saved_config` | N/A | N/A | `401 auth_required` with `loginUrl` before local config if OAuth session is missing/stale | N/A | Local file only; clears no Home/Jira cache |
-| `POST /api/epm/config` | Part 1 Task 4 / DB auth Task 0 / Part 2 Task 3 regression | `OAuthEpmConfigRouteTests.test_post_epm_config_requires_csrf_header_in_oauth_mode`, `PreDbToolAdminGateTests.test_epm_config_post_requires_tool_admin`, and a tool-admin-save regression | `BasicEpmConfigRouteTests.test_post_epm_config_basic_mode_does_not_require_csrf_header` | N/A | N/A | `401 auth_required` with `loginUrl` before save if OAuth session is missing/stale; `403 admin_required` for non-tool-admin OAuth users once the pre-DB tool-admin gate lands | Requires `X-Requested-With: jira-execution-planner` in OAuth before DB auth; DB auth upgrades to token-bound CSRF | Clears EPM project and rollup caches exactly as current route does |
+| `POST /api/epm/config` | Part 1 Task 4 / DB auth Task 0 / Part 2 Task 3 regression | `OAuthEpmConfigRouteTests.test_post_epm_config_requires_csrf_header_in_oauth_mode`, `PreDbToolAdminGateTests.test_authenticated_oauth_account_can_save_shared_config_before_db_roles`, and a tool-admin-save regression after DB auth lands | `BasicEpmConfigRouteTests.test_post_epm_config_basic_mode_does_not_require_csrf_header` | N/A | N/A | `401 auth_required` with `loginUrl` before save if OAuth session is missing/stale; signed-in OAuth users may save before DB roles land | Requires `X-Requested-With: jira-execution-planner` in OAuth before DB auth; DB auth upgrades to token-bound CSRF | Clears EPM project and rollup caches exactly as current route does |
 | `GET /api/epm/scope` | Part 2 Task 4 | `OAuthEpmSettingsRouteTests.test_scope_route_uses_oauth_cloud_id_without_tenant_info_fetch` | `BasicEpmSettingsRouteTests.test_scope_route_basic_uses_existing_tenant_info_lookup` | N/A for GraphQL; uses session cloud ID in OAuth | N/A | `401 auth_required` with `loginUrl` if session missing/stale | N/A | No process-global `_CLOUD_ID_CACHE` read/write in OAuth; Basic cache unchanged |
 | `GET /api/epm/goals` | Part 2 Task 4 | `OAuthEpmSettingsRouteTests.test_goals_route_uses_oauth_home_client_for_catalog` and `OAuthEpmSettingsRouteTests.test_goals_route_uses_oauth_home_client_for_sub_goals` | `BasicEpmSettingsRouteTests.test_goals_route_basic_uses_basic_home_client` | `current_home_graphql_client` / fake Home client | N/A | `401 auth_required` with `loginUrl` when Home client raises `AuthError("auth_required")` | N/A | OAuth bypasses `_GOAL_BY_KEY_CACHE`; Basic cache unchanged |
 | `GET /api/epm/projects` | Part 2 Task 5 | `OAuthEpmProjectsRouteTests.test_projects_route_uses_oauth_home_client_and_preserves_server_timing` | `BasicEpmProjectsRouteTests.test_projects_route_basic_reuses_process_home_project_cache` | `current_home_graphql_client` / fake Home project fetcher | N/A | `401 auth_required` with `loginUrl` when Home client raises `AuthError("auth_required")` | N/A | OAuth bypasses `EPM_PROJECTS_CACHE`; Basic process cache unchanged |
@@ -298,9 +298,9 @@ Execute this task before marking any Home/Townsquare-backed or Jira-project-back
 - Test: `tests/test_service_integrations.py` after DB auth lands
 - Test: `tests/test_epm_home_oauth_source_guard.py`
 
-- [ ] **Step 1: Write the non-tool-admin mutation denial tests**
+- [ ] **Step 1: Write the pre-DB authenticated-save tests**
 
-In `tests/test_pre_db_admin_gates.py`, prove that a valid OAuth session without a tool-admin account id receives `403 {"error": "admin_required"}` for every shared config write that can alter Home/Townsquare or Jira-project-backed behavior, including `POST /api/epm/config` and any future persistent EPM/APM mapping route.
+In `tests/test_pre_db_admin_gates.py`, prove that a valid OAuth session can save every current shared config write that can alter Home/Townsquare or Jira-project-backed behavior, including `POST /api/epm/config`, while a missing or stale OAuth session still receives `401 {"error": "auth_required"}`. DB auth must replace this temporary policy with explicit admin assignment.
 
 Run:
 
@@ -310,9 +310,9 @@ python3 -m unittest tests.test_pre_db_admin_gates
 
 Expected: FAIL until the temporary or DB-backed admin guard exists.
 
-- [ ] **Step 2: Implement one tool-admin boundary**
+- [ ] **Step 2: Implement one shared-config authorization boundary**
 
-If DB auth is not present, use only stable Atlassian account ids from `TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS` as the temporary tool-admin signal, keep `RequestAuthContext.is_admin = False` for all other OAuth users, and preserve Basic single-user compatibility. Do not use Atlassian tenant/admin status, email, domain, Jira project access, or Home project access as tool-admin signals.
+If DB auth is not present, treat every signed-in OAuth account id as a local tool admin and preserve Basic single-user compatibility. Do not use Atlassian tenant/admin status, email, domain, Jira project access, or Home project access as distinct role signals.
 
 If DB auth is present, route the same check through DB `users.account_type == "admin"` and active user/connection status.
 
@@ -579,18 +579,19 @@ class OAuthEpmConfigRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.get_json()["error"], "csrf_required")
 
-    def test_post_epm_config_requires_tool_admin_account_in_oauth_mode(self):
+    def test_post_epm_config_authenticated_oauth_user_saves_before_db_roles(self):
         install_oauth_session(self.client, account_id="regular-user-account")
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False):
+             patch.object(jira_server, "load_dashboard_config", return_value={"version": 1, "projects": {"selected": []}, "teamGroups": {}}), \
+             patch.object(jira_server, "save_dashboard_config") as mock_save:
             response = self.client.post(
                 "/api/epm/config",
                 json={"version": 2, "projects": {}},
                 headers={"X-Requested-With": "jira-execution-planner"},
             )
 
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.get_json()["error"], "admin_required")
+        self.assertEqual(response.status_code, 200)
+        mock_save.assert_called_once()
 
     def test_post_epm_config_tool_admin_saves_with_csrf_header(self):
         install_oauth_session(self.client, account_id="tool-admin-account")
@@ -673,7 +674,7 @@ and update `is_oauth_ready_api_path(path)` to return true when the exact path is
 
 - [ ] **Step 4: Make only `/api/epm/config` OAuth-ready**
 
-If Part 1 did not already do this, add `/api/epm/config` to `OAUTH_READY_API_PATHS`. In `backend/routes/epm_routes.py`, make `GET` and `POST /api/epm/config` require a valid OAuth session in OAuth mode before reading or writing config. `POST /api/epm/config` must also preserve the pre-DB tool-admin gate from `docs/plans/2026-05-05-database-introduction-user-auth.md` Task 0. Use the Part 1 missing-scope/session-expired behavior; missing or expired sessions return:
+If Part 1 did not already do this, add `/api/epm/config` to `OAUTH_READY_API_PATHS`. In `backend/routes/epm_routes.py`, make `GET` and `POST /api/epm/config` require a valid OAuth session in OAuth mode before reading or writing config. `POST /api/epm/config` must preserve the current pre-DB policy from `docs/plans/2026-05-05-database-introduction-user-auth.md` Task 0: signed-in OAuth users can save until DB auth restores explicit admin roles. Use the Part 1 missing-scope/session-expired behavior; missing or expired sessions return:
 
 ```json
 {"error": "auth_required", "loginUrl": "/login?reason=session_expired"}

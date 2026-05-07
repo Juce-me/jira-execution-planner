@@ -1,10 +1,10 @@
 # Atlassian OAuth Migration Plan, Part 2: EPM/Home Routes
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. This is Part 2 of the singular Atlassian OAuth migration plan; start only after Part 1 final verification passes. Do not use a secondary worktree for this repo.
+> **Execution note:** Implement this plan task-by-task in order. Steps use checkbox (`- [ ]`) syntax for tracking. This is Part 2 of the singular Atlassian OAuth migration plan; start only after Part 1 final verification passes. Do not use a secondary worktree for this repo.
 
-**Goal:** Migrate the EPM/Home workflows to Atlassian OAuth only after a real Home/Townsquare GraphQL OAuth feasibility gate passes.
+**Goal:** Keep EPM/Home routes guarded while Home/Townsquare user 3LO is unsupported. Jira REST remains user-OAuth-backed; Home/Townsquare metadata remains server-side service-credential-backed until a fresh real Home GraphQL probe proves user 3LO works.
 
-**Architecture:** Keep Part 1's Jira REST boundary as the only path for Jira issue search and field lookup. Add a separate request-bound Home GraphQL boundary for Atlassian Home/Townsquare calls, and mark EPM routes OAuth-ready only after tests prove both Home GraphQL and Jira REST are reached through their boundaries. If the Home GraphQL gate fails, keep every Home-backed EPM route guarded with `route_not_oauth_ready`.
+**Architecture:** Keep Part 1's Jira REST boundary as the only path for Jira issue search and field lookup. Do not use a user's Jira OAuth access token for Home/Townsquare GraphQL while the Home GraphQL gate is `FAIL home_graphql_3lo_unsupported`. The current executable path is database-backed users plus admin-managed `home_townsquare_basic` service integration credentials; Home metadata is app/workspace-scoped service data, and Jira issue/rollup data is constrained by the signed-in user's Jira OAuth permissions. The user-3LO route migration tasks later in this file are dormant unless a fresh real probe returns PASS before DB auth lands. If DB auth has landed, those tasks must be rewritten to use DB `RequestAuthContext`, encrypted `auth_tokens`, DB refresh locking, and revoked/disabled-user checks before execution.
 
 **Tech Stack:** Python, Flask, unittest, React 19, esbuild, Atlassian OAuth 2.0 3LO, Atlassian Home/Townsquare GraphQL.
 
@@ -19,20 +19,21 @@ Use these two files as one ordered migration plan:
    - Provides the Jira REST OAuth client boundary that this Part 2 plan depends on.
 2. Part 2, this file: `docs/plans/2026-05-06-epm-home-oauth-migration.md`
    - Starts with a real Home/Townsquare GraphQL OAuth feasibility gate.
-   - Stops before route migration if the gate fails.
-   - Migrates EPM/Home routes only after the gate passes.
+   - Stops before user-3LO route migration if the gate fails.
+   - Hands Home/Townsquare route work to the DB auth service-integration path while the gate fails.
+   - Migrates EPM/Home routes through user 3LO only after the gate passes and only before DB auth lands; after DB auth lands, use the DB auth boundary instead of local OAuth token-store helpers.
 
-Subagents must execute Part 2 tasks in order. Do not dispatch Part 2 implementation in parallel with unfinished Part 1 work because the EPM rollup tasks depend on Part 1's `current_jira_get` and `current_jira_search` boundary.
+Execute Part 2 tasks in order. Do not run Part 2 implementation in parallel with unfinished Part 1 work because the EPM rollup tasks depend on Part 1's `current_jira_get` and `current_jira_search` boundary.
 
 ## Implementation Status Reconciliation
 
 Status as of 2026-05-07: this is the canonical Home/Townsquare 3LO migration plan. The older same-dated Home/Townsquare readiness plan has been deleted; do not recreate or execute a parallel migration.
 
 - Part 2 Task 1's local feasibility helper, local dev probe route, wrapper script, and unit tests already exist in the checkout.
-- The latest documented local Home GraphQL gate result in `docs/atlassian-oauth-setup.md` is `FAIL home_graphql_3lo_unsupported`, so Home/Townsquare-backed EPM routes must remain guarded with `route_not_oauth_ready` until a real local probe produces `PASS`.
+- The latest documented local Home GraphQL gate result in `docs/atlassian-oauth-setup.md` is `FAIL home_graphql_3lo_unsupported`, so Home/Townsquare-backed EPM routes must remain guarded with `route_not_oauth_ready` until either a real local probe produces `PASS` or the DB auth plan introduces an admin-managed service-integration route design.
 - `current_home_graphql_client`, `current_teamwork_graph_client`, and `OAUTH_READY_API_PATH_PATTERNS` do not exist yet. Task 1A and Tasks 2 through 9 remain unimplemented.
 - `backend/routes/epm_routes.py` already calls `fetch_issues_by_jql(jql, build_epm_fields_list())` for `GET /api/epm/projects/<home_project_id>/issues`. Do not reintroduce `build_jira_headers()` in that route; Task 6 should verify the existing no-header call and finish the OAuth boundary, auth-error, cache, and dynamic route-readiness work.
-- Any Home/Townsquare-backed or Jira-project-backed mutation must have an admin or service-account guard before it is marked OAuth-ready. If DB auth has not landed, use the temporary pre-DB admin gate in `docs/plans/2026-05-05-database-introduction-user-auth.md`.
+- Any Home/Townsquare-backed or Jira-project-backed mutation must have an admin or service-account guard before it is marked OAuth-ready. `docs/plans/2026-05-05-database-introduction-user-auth.md` Task 0 is the single implementation owner for the pre-DB shared-config admin gate; this plan only verifies that gate unless it adds a new persistent Home mutation.
 
 ## Part 2 Route Surface Review
 
@@ -74,12 +75,12 @@ This plan therefore requires a real local OAuth-session test before any Home-bac
 
 ## Route Coverage Matrix
 
-Do not add a route to `OAUTH_READY_API_PATHS` or an OAuth-ready dynamic path matcher until the named OAuth test and the listed Basic compatibility test pass.
+Do not add a route to `OAUTH_READY_API_PATHS` or an OAuth-ready dynamic path matcher until the named OAuth test and the listed Basic compatibility test pass. While the Home GraphQL gate remains failed, this matrix is not permission to migrate Home-backed routes through user OAuth; use it only as route inventory for the later service-integration or PASS-gated user-3LO design.
 
 | Route | Owning task | Named OAuth test | Named Basic compatibility test | Home GraphQL boundary mocked | Jira REST boundary mocked | Expired-auth behavior | CSRF behavior for unsafe methods | Cache policy |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `GET /api/epm/config` | Part 1 Task 4 / Part 2 Task 3 regression | `OAuthEpmConfigRouteTests.test_get_epm_config_is_oauth_ready_without_home_or_jira` | `BasicEpmConfigRouteTests.test_get_epm_config_basic_mode_returns_saved_config` | N/A | N/A | `401 auth_required` with `loginUrl` before local config if OAuth session is missing/stale | N/A | Local file only; clears no Home/Jira cache |
-| `POST /api/epm/config` | Part 1 Task 4 / Part 2 Task 3 regression | `OAuthEpmConfigRouteTests.test_post_epm_config_saves_with_csrf_header` and `OAuthEpmConfigRouteTests.test_post_epm_config_requires_csrf_header_in_oauth_mode` | `BasicEpmConfigRouteTests.test_post_epm_config_basic_mode_does_not_require_csrf_header` | N/A | N/A | `401 auth_required` with `loginUrl` before save if OAuth session is missing/stale | Requires `X-Requested-With: jira-execution-planner` in OAuth; Basic does not require it | Clears EPM project and rollup caches exactly as current route does |
+| `POST /api/epm/config` | Part 1 Task 4 / DB auth Task 0 / Part 2 Task 3 regression | `OAuthEpmConfigRouteTests.test_post_epm_config_requires_csrf_header_in_oauth_mode`, `PreDbAdminGateTests.test_epm_config_post_requires_admin`, and an admin-save regression | `BasicEpmConfigRouteTests.test_post_epm_config_basic_mode_does_not_require_csrf_header` | N/A | N/A | `401 auth_required` with `loginUrl` before save if OAuth session is missing/stale; `403 admin_required` for non-admin OAuth users once the pre-DB admin gate lands | Requires `X-Requested-With: jira-execution-planner` in OAuth before DB auth; DB auth upgrades to token-bound CSRF | Clears EPM project and rollup caches exactly as current route does |
 | `GET /api/epm/scope` | Part 2 Task 4 | `OAuthEpmSettingsRouteTests.test_scope_route_uses_oauth_cloud_id_without_tenant_info_fetch` | `BasicEpmSettingsRouteTests.test_scope_route_basic_uses_existing_tenant_info_lookup` | N/A for GraphQL; uses session cloud ID in OAuth | N/A | `401 auth_required` with `loginUrl` if session missing/stale | N/A | No process-global `_CLOUD_ID_CACHE` read/write in OAuth; Basic cache unchanged |
 | `GET /api/epm/goals` | Part 2 Task 4 | `OAuthEpmSettingsRouteTests.test_goals_route_uses_oauth_home_client_for_catalog` and `OAuthEpmSettingsRouteTests.test_goals_route_uses_oauth_home_client_for_sub_goals` | `BasicEpmSettingsRouteTests.test_goals_route_basic_uses_basic_home_client` | `current_home_graphql_client` / fake Home client | N/A | `401 auth_required` with `loginUrl` when Home client raises `AuthError("auth_required")` | N/A | OAuth bypasses `_GOAL_BY_KEY_CACHE`; Basic cache unchanged |
 | `GET /api/epm/projects` | Part 2 Task 5 | `OAuthEpmProjectsRouteTests.test_projects_route_uses_oauth_home_client_and_preserves_server_timing` | `BasicEpmProjectsRouteTests.test_projects_route_basic_reuses_process_home_project_cache` | `current_home_graphql_client` / fake Home project fetcher | N/A | `401 auth_required` with `loginUrl` when Home client raises `AuthError("auth_required")` | N/A | OAuth bypasses `EPM_PROJECTS_CACHE`; Basic process cache unchanged |
@@ -357,7 +358,7 @@ Expected: commit includes only files needed for the active guard path.
 
 ## Part 2 Task 2: Request-Bound Home GraphQL Client Boundary
 
-Execute this task only if Part 2 Task 1 passes.
+Execute this task only if Part 2 Task 1 passes before DB auth lands. Do not execute this task on the current documented `FAIL home_graphql_3lo_unsupported` path. If DB auth has already landed, replace the local OAuth session examples below with DB `RequestAuthContext`, encrypted `auth_tokens`, DB refresh locking, `token_version`, and revoked/disabled-user checks before writing code.
 
 **Files:**
 - Modify: `backend/epm/home.py`
@@ -523,7 +524,7 @@ Expected: commit succeeds with only Part 2 Task 2 files.
 
 ## Part 2 Task 3: EPM Config Route Regression And OAuth Route Matching
 
-Execute this task only if Part 2 Task 1 passes.
+This regression task may run after Part 1 and DB auth Task 0 verification because `/api/epm/config` is local configuration, not a Home GraphQL route. Do not add Home-backed dynamic route patterns while the Home GraphQL gate remains failed.
 
 Part 1 is allowed to migrate `/api/epm/config` as part of the local config route batch. In Part 2, treat `/api/epm/config` as a regression gate: add any missing EPM-specific tests, keep the CSRF/dashboard behavior verified, and avoid reworking the route if Part 1 already made it OAuth-ready.
 
@@ -578,9 +579,23 @@ class OAuthEpmConfigRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.get_json()["error"], "csrf_required")
 
-    def test_post_epm_config_saves_with_csrf_header(self):
-        install_oauth_session(self.client)
+    def test_post_epm_config_requires_admin_account_in_oauth_mode(self):
+        install_oauth_session(self.client, account_id="user-account")
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.dict("os.environ", {"ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS": "admin-account"}, clear=False):
+            response = self.client.post(
+                "/api/epm/config",
+                json={"version": 2, "projects": {}},
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["error"], "admin_required")
+
+    def test_post_epm_config_admin_saves_with_csrf_header(self):
+        install_oauth_session(self.client, account_id="admin-account")
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.dict("os.environ", {"ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS": "admin-account"}, clear=False), \
              patch.object(jira_server, "load_dashboard_config", return_value={"version": 1, "projects": {"selected": []}, "teamGroups": {}}), \
              patch.object(jira_server, "save_dashboard_config") as mock_save:
             response = self.client.post(
@@ -658,7 +673,7 @@ and update `is_oauth_ready_api_path(path)` to return true when the exact path is
 
 - [ ] **Step 4: Make only `/api/epm/config` OAuth-ready**
 
-If Part 1 did not already do this, add `/api/epm/config` to `OAUTH_READY_API_PATHS`. In `backend/routes/epm_routes.py`, make `GET` and `POST /api/epm/config` require a valid OAuth session in OAuth mode before reading or writing config. Use the Part 1 missing-scope/session-expired behavior; missing or expired sessions return:
+If Part 1 did not already do this, add `/api/epm/config` to `OAUTH_READY_API_PATHS`. In `backend/routes/epm_routes.py`, make `GET` and `POST /api/epm/config` require a valid OAuth session in OAuth mode before reading or writing config. `POST /api/epm/config` must also preserve the pre-DB admin gate from `docs/plans/2026-05-05-database-introduction-user-auth.md` Task 0. Use the Part 1 missing-scope/session-expired behavior; missing or expired sessions return:
 
 ```json
 {"error": "auth_required", "loginUrl": "/login?reason=session_expired"}
@@ -703,7 +718,7 @@ Expected: commit succeeds with only Part 2 Task 3 files. If Part 1 already made 
 
 ## Part 2 Task 4: EPM Settings Workflow Migration
 
-Execute this task only if Part 2 Task 1 passes.
+Execute this task only if Part 2 Task 1 passes before DB auth lands and Task 2's Home boundary is valid for the active auth model. While the gate is failed, keep these routes guarded and move service-credential-backed route work to the DB auth service-integration path.
 
 **Routes:** `GET /api/epm/scope`, `GET /api/epm/goals`, `POST /api/epm/projects/configuration`, `POST /api/epm/projects/preview`.
 
@@ -791,7 +806,7 @@ Expected: commit succeeds with only Part 2 Task 4 files plus rebuilt `frontend/d
 
 ## Part 2 Task 5: EPM Project Discovery Migration
 
-Execute this task only if Part 2 Task 1 passes.
+Execute this task only if Part 2 Task 1 passes before DB auth lands and Task 2's Home boundary is valid for the active auth model. While the gate is failed, keep this route guarded and move service-credential-backed route work to the DB auth service-integration path.
 
 **Route:** `GET /api/epm/projects`.
 
@@ -862,7 +877,7 @@ Expected: commit succeeds with only Part 2 Task 5 files.
 
 ## Part 2 Task 6: EPM Issue And Per-Project Rollup Migration
 
-Execute this task only if Part 2 Task 1 passes.
+Execute this task only if Part 2 Task 1 passes before DB auth lands and Task 2's Home boundary is valid for the active auth model. While the gate is failed, keep these routes guarded and move service-credential-backed route work to the DB auth service-integration path.
 
 **Routes:** `GET /api/epm/projects/<home_project_id>/issues`, `GET /api/epm/projects/<project_id>/rollup`.
 
@@ -963,7 +978,7 @@ Expected: commit succeeds with only Part 2 Task 6 files.
 
 ## Part 2 Task 7: EPM All-Projects Rollup Migration
 
-Execute this task only if Part 2 Task 1 passes.
+Execute this task only if Part 2 Task 1 passes before DB auth lands and Task 2's Home boundary is valid for the active auth model. While the gate is failed, keep this route guarded and move service-credential-backed route work to the DB auth service-integration path.
 
 **Route:** `GET /api/epm/projects/rollup/all`.
 
@@ -1030,7 +1045,7 @@ Expected: commit succeeds with only Part 2 Task 7 files.
 
 ## Part 2 Task 8: EPM/Home Source Guards
 
-Execute this task only if Part 2 Task 1 passes.
+Execute this task only if Part 2 Task 1 passes before DB auth lands and Task 2's Home boundary is valid for the active auth model. If DB auth has landed, source guards must reject local token-store helpers and enforce DB token/service-integration boundaries instead.
 
 **Files:**
 - Create: `tests/test_epm_home_oauth_source_guard.py`

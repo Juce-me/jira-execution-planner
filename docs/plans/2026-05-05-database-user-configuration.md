@@ -41,7 +41,7 @@ Import idempotency:
 
 - Import `dashboard-config.json` into `workspace_config` only once per `(workspace_id, source_path, source_hash)`.
 - If the same source hash was already imported, the command exits without creating another version.
-- If the source hash changed, create a new `view_config_versions`/history row and keep the previous version exportable for rollback.
+- If the source hash changed, create a new `workspace_config_versions` history row and keep the previous version exportable for rollback.
 - Export rollback writes a sanitized JSON file outside committed paths and does not include secrets.
 
 Out of scope for this phase:
@@ -69,15 +69,29 @@ Database-backed replacement for the non-secret parts of `dashboard-config.json`.
 
 This table owns shared defaults. User view configs can override active view state, but workspace defaults remain the baseline for project mappings and field configuration.
 
+### `workspace_config_versions`
+
+Immutable history for imported or edited workspace defaults.
+
+| Column | Purpose |
+| --- | --- |
+| `id` | Version UUID. |
+| `workspace_id` | Workspace scope. |
+| `version_number` | Monotonic version for the workspace defaults. |
+| `source_path`, `source_hash` | Import provenance for idempotency. |
+| `payload` | Snapshot JSONB of non-secret shared defaults. |
+| `created_by`, `created_at` | Change audit. |
+| `change_note` | Optional short system/admin note. Do not build a rollback UI in this phase; export rollback is an operator action only. |
+
 ### `view_configs`
 
-Versioned user or workspace view definitions.
+Versioned user-owned view definitions. Workspace defaults live only in `workspace_config`.
 
 | Column | Purpose |
 | --- | --- |
 | `id` | Config UUID. |
 | `workspace_id` | Workspace scope. |
-| `owner_user_id` | User owner, nullable for workspace defaults. |
+| `owner_user_id` | User owner; not nullable in this phase. |
 | `name` | User-visible saved view name. |
 | `view_type` | `eng`, `epm`, or `mixed`. |
 | `mode_policy` | `configuration`, meaning ENG/EPM behavior is inherited from this view. |
@@ -114,7 +128,7 @@ The payload stores view state and references to configured workspace entities. I
 
 ### `view_config_versions`
 
-Immutable history for rollback and audit.
+Immutable history for saved-view rollback and audit.
 
 | Column | Purpose |
 | --- | --- |
@@ -156,7 +170,7 @@ The response should include the resolved view plus metadata explaining where it 
 | `GET /api/workspace/config` | Current workspace default config. |
 | `PATCH /api/workspace/config` | Update shared defaults for the selected workspace. |
 
-Existing `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` should continue to work during migration by reading from the database-backed config repository. Do not break the current frontend bootstrap in the first configuration slice.
+Existing `GET /api/config` and `GET /api/epm/config` should continue to work during migration by reading from the selected config repository. `GET /api/groups-config` stays compatible through the existing JSON-backed generated/local source in this phase. Do not break the current frontend bootstrap in the first configuration slice.
 
 `PATCH /api/workspace/config` and any compatibility route that mutates shared workspace defaults must require an authenticated admin and CSRF validation. `POST /api/me/views` and `PATCH /api/me/views/<id>` require an authenticated active user, CSRF validation, workspace scoping from `RequestAuthContext`, and ownership checks.
 
@@ -173,7 +187,7 @@ Execute only after `docs/plans/2026-05-05-database-introduction-user-auth.md` ha
 - Create: `backend/db/migrations/versions/*_user_config.py`
 - Test: `tests/test_view_configs_db.py`
 
-- [ ] Add `workspace_config`, `view_configs`, and `view_config_versions` tables scoped by `workspace_id`.
+- [ ] Add `workspace_config`, `workspace_config_versions`, `view_configs`, and `view_config_versions` tables scoped by `workspace_id`.
 - [ ] Test migration upgrade/downgrade and constraints for owner/workspace isolation.
 - [ ] Test CRUD, archive, and version snapshot behavior in `tests/test_view_configs_db.py`.
 - [ ] Commit with `git commit -m "Add database tables for user view configs"`.
@@ -193,7 +207,8 @@ Execute only after `docs/plans/2026-05-05-database-introduction-user-auth.md` ha
 - [ ] Implement `CONFIG_STORAGE_BACKEND=jsonfile|db`; default to `jsonfile` until import verification passes.
 - [ ] Fail startup when `CONFIG_STORAGE_BACKEND=db` and `DATABASE_URL` is missing or migrations are not at head.
 - [ ] Add idempotent import keyed by `(workspace_id, source_path, source_hash)` and an operator export rollback command that writes sanitized JSON outside committed paths.
-- [ ] Prove `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` return byte-identical non-secret payloads before import, after import, and after rollback to JSON mode.
+- [ ] Prove `GET /api/config` and `GET /api/epm/config` return byte-identical non-secret payloads before import, after import, and after rollback to JSON mode.
+- [ ] Prove `GET /api/groups-config` remains JSON-backed and compatible before and after config storage migration.
 - [ ] Keep `team-groups.json` and `team-catalog.json` JSON-backed generated/local catalog files. Do not migrate them in this phase.
 - [ ] Commit with `git commit -m "Add deterministic config storage selector"`.
 
@@ -257,8 +272,8 @@ Execute only after `docs/plans/2026-05-05-database-introduction-user-auth.md` ha
 
 - Existing JSON config can be imported once and exported for rollback during early migration.
 - `CONFIG_STORAGE_BACKEND=jsonfile` and `CONFIG_STORAGE_BACKEND=db` select deterministic storage behavior; no auto DB probe changes config source silently.
-- Existing `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` return the same non-secret payloads before and after import.
-- `team-groups.json` and `team-catalog.json` remain JSON-backed and are explicitly out of scope for this phase.
+- Existing `GET /api/config` and `GET /api/epm/config` return the same non-secret payloads before and after import.
+- `GET /api/groups-config`, `team-groups.json`, and `team-catalog.json` remain JSON-backed and are explicitly out of scope for this phase.
 - A user can save ENG, EPM, or mixed views in their selected workspace.
 - ENG/EPM behavior comes from the selected configuration, not from separate user roles.
 - A user cannot open or save a view for a workspace they cannot access.

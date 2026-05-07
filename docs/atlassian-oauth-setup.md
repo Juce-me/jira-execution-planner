@@ -119,7 +119,7 @@ Keep these Home/Townsquare-backed API routes guarded with `route_not_oauth_ready
 /api/epm/projects/<project_id>/rollup
 ```
 
-Home/Townsquare access needs a later admin-owned service credential design. That credential must stay server-side only, avoid browser exposure, and be audited before any Home/Townsquare-backed route is marked OAuth-ready.
+Home/Townsquare access needs a later admin-owned service credential design. That credential must stay server-side only, avoid browser exposure, and be audited before any Home/Townsquare-backed route is marked OAuth-ready. Until a fresh real probe returns PASS, the implementation path is user OAuth for Jira REST plus server-side `home_townsquare_basic` service integration credentials for Home metadata.
 
 ### Home/Townsquare Visibility Model
 

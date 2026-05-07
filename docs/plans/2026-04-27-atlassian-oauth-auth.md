@@ -1,12 +1,12 @@
 # Atlassian OAuth Authentication Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Historical status:** Do not execute the unchecked task list in this file as a fresh implementation plan. The active checkout already contains the OAuth foundation and Jira REST migration primitives. Use the "Execution Status Reconciliation" table below as verification input before DB auth work, then use `docs/plans/2026-05-05-oauth-jira-client-route-migration.md` and `docs/plans/2026-05-05-database-introduction-user-auth.md` for executable tasks.
 
 **Goal:** Add optional Atlassian OAuth 2.0 3LO login so Jira Execution Planner can call Jira on behalf of the signed-in user without requiring a personal API token.
 
 **Architecture:** Keep `basic` auth as the default and introduce `atlassian_oauth` behind `JIRA_AUTH_MODE`. Add a small backend auth/client boundary in the current `backend/` package, migrate only the first Jira endpoints through it, and keep auth-mode changes isolated from `frontend/src/dashboard.jsx`. Serve the unauthenticated OAuth entry screen outside the dashboard bundle so `dashboard.jsx` stays focused on authenticated product state. This slice is a developer-only local OAuth bridge: the supported OAuth route surface is `/login`, `/api/auth/*`, `/api/auth/status`, and the migrated `/api/test`; every other API route must fail clearly with `route_not_oauth_ready`/501 until it is migrated through the auth/client boundary. This slice is the prerequisite for later database-backed identity and token storage; it does not create database tables or production multi-user persistence.
 
-**Tech Stack:** Python Flask, `requests`, existing `backend/jira_client.py` helpers, Flask session id plus process-local token store for local OAuth testing, Python `unittest`, Node source-guard tests. Later database phases use PostgreSQL with encrypted token storage.
+**Tech Stack:** Python Flask, `requests`, existing `backend/jira_client.py` helpers, Flask session id plus server-side local token store for local OAuth testing, Python `unittest`, Node source-guard tests. Later database phases use PostgreSQL with encrypted token storage.
 
 ---
 
@@ -16,7 +16,7 @@ These notes supersede older snippets in this plan that assume the pre-split back
 
 - The first OAuth slice must create the centralized auth/client boundary that the database work depends on. Do this before any database-backed identity or user-configuration phase.
 - Do not add database migrations, PostgreSQL setup, user tables, workspace tables, or saved-view tables in this OAuth slice.
-- Store local OAuth token material server-side behind an opaque Flask session id, for example `session['atlassian_oauth_session_id']` plus a process-local `OAUTH_TOKEN_STORE`. The signed cookie may contain the opaque session id and OAuth `state`, but not access tokens, refresh tokens, or API tokens.
+- Store local OAuth token material server-side behind an opaque Flask session id, for example `session['atlassian_oauth_session_id']` plus a local-dev `OAUTH_TOKEN_STORE`. The store may be process-local or persisted to the ignored `OAUTH_TOKEN_STORE_PATH` for local/dev testing only. The signed cookie may contain the opaque session id and OAuth `state`, but not access tokens, refresh tokens, or API tokens.
 - The later database auth phase should move connection metadata and encrypted token material into PostgreSQL tables equivalent to `users`, `workspaces`, `auth_connections`, `auth_tokens`, and `jira_project_access`.
 - Keep Basic API-token mode local by default. Do not store Basic API tokens in the database unless a later requirement explicitly asks for server-side Basic credential persistence.
 - The auth/client boundary must expose enough request auth context for later cache partitioning by workspace and user or auth connection. In this first OAuth slice, Jira/Home-derived process caches must be disabled for OAuth users unless the implementation has already keyed that cache with `RequestAuthContext`.
@@ -29,7 +29,7 @@ The following must be implemented or explicitly verified before starting the dat
 
 1. **Stable identity:** the OAuth callback must fetch `https://api.atlassian.com/me` with the granted token, store `account_id` as the stable user subject, and treat email/display name as mutable profile metadata only. The first database login path must upsert users by `(external_provider='atlassian', external_subject=account_id)`, update changed email/name fields, and reject `account_status` values other than `active`.
 2. **PKCE:** the authorize URL must include an S256 `code_challenge`, and the token exchange must include the matching `code_verifier`. Keep `state` as a separate one-time CSRF value.
-3. **Local token store guard:** the process-local `OAUTH_TOKEN_STORE` is a local bridge only. It must have TTL cleanup, logout/revoke deletion, refresh locking, and a startup/runtime guard that requires both `APP_ENVIRONMENT_KEY=local` or `dev` and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`. OAuth startup must fail outside explicitly approved local/single-process mode.
+3. **Local token store guard:** the local-dev `OAUTH_TOKEN_STORE` is a bridge only. It must have TTL cleanup, logout/revoke deletion, refresh locking, and a startup/runtime guard that requires both `APP_ENVIRONMENT_KEY=local` or `dev` and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`. If persisted with `OAUTH_TOKEN_STORE_PATH`, the file must stay local and ignored by git. OAuth startup must fail outside explicitly approved local/dev mode.
 4. **Session/CORS/CSRF:** set `SESSION_COOKIE_HTTPONLY`, `SESSION_COOKIE_SAMESITE=Lax`, and `SESSION_COOKIE_SECURE` for non-local HTTPS deployments. Replace broad Flask-CORS defaults with an allowlist. In the OAuth slice, require a custom unsafe-method header on every browser `POST`, `PUT`, `PATCH`, and `DELETE` route so classic form-post CSRF cannot hit cookie-authenticated endpoints. Before DB-backed admin/config endpoints, upgrade that header guard to token-bound CSRF protection.
 5. **Cache isolation:** Jira/Home-derived caches must include `workspace_id` plus `user_id` or `auth_connection_id` and a token/access version, or must be disabled for OAuth users until partitioning exists.
 6. **Admin bootstrap:** define how the first admin is created, how later admins are granted, and how disabled/deleted users are blocked before any admin DB endpoints are exposed.
@@ -2265,7 +2265,7 @@ Then confirm `/api/auth/status` returns:
 }
 ```
 
-Then confirm `/api/test` uses the OAuth Jira gateway successfully, returning to a visible tab calls `/api/auth/refresh` without exposing token material, an expired or cleared OAuth session returns `401` with `error: "auth_required"` and `loginUrl: "/login?reason=session_expired"`, and an un-migrated API route such as `/api/config` returns `501` with `error: "route_not_oauth_ready"`.
+Then confirm `/api/test` uses the OAuth Jira gateway successfully, returning to a visible tab calls `/api/auth/refresh` without exposing token material, an expired or cleared OAuth session returns `401` with `error: "auth_required"` and `loginUrl: "/login?reason=session_expired"`, and a still-guarded Home-backed API route such as `/api/epm/projects` returns `501` with `error: "route_not_oauth_ready"`.
 
 - [ ] **Step 4: Review commits**
 

@@ -64,7 +64,7 @@ Before this database phase starts, the OAuth slice must settle these items:
 - Fetch `https://api.atlassian.com/me` during OAuth callback and use Atlassian `account_id` as the stable external subject. Email and display name are mutable profile metadata and must not be used as identity keys.
 - Reject inactive Atlassian accounts before creating or updating local user records.
 - Use PKCE S256 in the Atlassian authorization-code flow, with one-time `state` and `code_verifier` cleanup on callback success or failure.
-- Keep the process-local `OAUTH_TOKEN_STORE` local-only. It must require both `APP_ENVIRONMENT_KEY=local` or `dev` and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`; production database auth must hard-fail if it would use that store instead of encrypted database tokens.
+- Keep the local-dev `OAUTH_TOKEN_STORE` local-only. It may be process-local or persisted to the ignored local token-store file, but it must require both `APP_ENVIRONMENT_KEY=local` or `dev` and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`; production database auth must hard-fail if it would use that store instead of encrypted database tokens.
 - Serialize local OAuth refresh per session and re-read token state inside the lock before calling Atlassian. The database refresh path can then replace this with `SELECT ... FOR UPDATE` or an advisory lock without changing the caller contract.
 - Make unsupported OAuth route surface explicit. Until a route is migrated through the auth/client boundary, `JIRA_AUTH_MODE=atlassian_oauth` must return `route_not_oauth_ready`/501 instead of falling through to empty Basic credentials.
 - Before any Home/Townsquare route is marked OAuth-ready, follow `docs/plans/AGENTS.md` and rerun the Home GraphQL 3LO probe with a real local OAuth session. If it fails or credentials are unavailable, keep Home/Townsquare-backed routes guarded or service-credential-backed as documented.
@@ -297,6 +297,19 @@ Append-only security and admin event log. Events must not contain token material
 | `metadata` | Redacted JSON metadata: status code, sanitized provider error code, project key, config section, or key id. |
 | `created_at` | Event timestamp. |
 
+### Required constraints
+
+Implementers must encode the auth invariants in database constraints, not only in route code:
+
+- `users`: unique `(external_provider, external_subject)`.
+- `workspaces`: unique `(environment_key, jira_cloud_id)` when `jira_cloud_id` is present and unique `(environment_key, jira_site_url)` for local Basic mode.
+- `auth_connections`: one current connection row per `(user_id, workspace_id, provider, cloud_id)` or `(user_id, workspace_id, provider, site_url)`; if later history is needed, add a separate history/audit table instead of allowing duplicate current connections.
+- `auth_tokens`: at most one non-revoked row per `(connection_id, token_kind)`.
+- `service_integrations`: at most one active integration per `(workspace_id, provider)` unless a later plan introduces named multiple credentials.
+- `service_integration_tokens`: at most one non-revoked row per `(service_integration_id, token_kind)`.
+- `jira_project_access`: unique `(connection_id, workspace_id, project_key, project_type)`.
+- `audit_events`: always scoped by `workspace_id`; token-bearing columns must never be added.
+
 ## Admin Configuration Access
 
 Admin bootstrap:
@@ -366,6 +379,18 @@ Existing `GET /api/config`, `GET /api/groups-config`, and `GET /api/epm/config` 
 
 Execute these tasks in order. Each task should be a focused commit unless the task explicitly says it is documentation-only.
 
+### Preflight: OAuth Boundary And Home Gate Evidence
+
+Run this preflight before Task 0, and attach the command results to the DB auth execution notes. Do not start schema work until it passes or the blocker is explicitly resolved.
+
+```bash
+.venv/bin/python -m unittest tests.test_auth_context tests.test_jira_auth tests.test_oauth_jira_client tests.test_auth_routes tests.test_auth_entry_page tests.test_oauth_route_guards tests.test_oauth_cache_isolation
+node tests/test_auth_isolation_source_guard.js
+.venv/bin/python scripts/check_home_graphql_oauth.py
+```
+
+Expected: OAuth/Jira boundary tests pass, unsupported OAuth routes still return `route_not_oauth_ready`, OAuth process caches are disabled or auth-keyed, and the Home GraphQL gate result is recorded. If the Home gate is `FAIL home_graphql_3lo_unsupported`, keep Home/Townsquare user 3LO out of DB auth and use only admin-managed `home_townsquare_basic` service integration credentials for Home metadata.
+
 ### Task 0: Pre-DB Admin Gate For Current OAuth Shared Config Writes
 
 **Files:**
@@ -419,7 +444,7 @@ Execute these tasks in order. Each task should be a focused commit unless the ta
 - [ ] Add an audit source guard that scans audit insert paths and fails if token material, OAuth codes, PKCE verifiers, raw Authorization headers, or full callback URLs can be written.
 - [ ] Commit with `git commit -m "Add encrypted auth token storage"`.
 
-### Task 3: DB Auth Context Resolver And Local OAuth Store Cutover
+### Task 3: DB Auth Context Resolver And Local OAuth Store Cutover Prep
 
 **Files:**
 - Create: `backend/auth/db_context.py`
@@ -432,9 +457,10 @@ Execute these tasks in order. Each task should be a focused commit unless the ta
 
 - [ ] Write DB-mode tests for active user plus active connection, disabled user, revoked connection, stale `token_version`, missing scopes, and the 30-second status TTL with immediate invalidation on admin enable/disable or connection revoke.
 - [ ] Rewrite `current_request_auth_context()` so DB mode reads `users`, `workspaces`, and `auth_connections` instead of `oauth_session_data()`.
-- [ ] OAuth callback cutover order: first write encrypted tokens to DB while still updating the local store, then read from DB while continuing compatibility writes, then flip DB mode to DB-only reads and reject local token-store helpers outside local/dev.
-- [ ] Ensure local store and DB rows are never both authoritative for the same session. DB mode wins once a DB `auth_connection` exists.
-- [ ] Extend source guards so DB-mode route code cannot call `OAUTH_TOKEN_STORE`, `oauth_session_data`, `save_oauth_session`, or `oauth_refresh_lock`, and cannot read `JIRA_EMAIL` / `JIRA_TOKEN` outside the service-integration boundary.
+- [ ] OAuth callback cutover order for this task: write encrypted tokens to DB while still updating the local store, and resolve request identity/connection metadata from DB when a DB `auth_connection` exists. Do not make DB refresh authoritative in this task.
+- [ ] If a DB-mode request needs token refresh before Task 4 lands, return the same visible reconnect/expired-auth recovery response instead of refreshing from DB without a row lock.
+- [ ] Ensure local store and DB rows are never both authoritative for the same request context. DB identity/context wins once a DB `auth_connection` exists; DB token refresh becomes authoritative only after Task 4 passes.
+- [ ] Extend source guards so active DB-mode route code cannot call `OAUTH_TOKEN_STORE`, `oauth_session_data`, `save_oauth_session`, or `oauth_refresh_lock`, and cannot read `JIRA_EMAIL` / `JIRA_TOKEN` outside the service-integration boundary. Local OAuth compatibility routes may keep local-store helpers only behind the explicit local/dev allow flag.
 - [ ] Commit with `git commit -m "Resolve auth context from database tokens"`.
 
 ### Task 4: Refresh Race, Refresh Reuse, And Token Versioning
@@ -450,6 +476,7 @@ Execute these tasks in order. Each task should be a focused commit unless the ta
 - [ ] Hard-delete the previous refresh-token row before commit when Atlassian returns a replacement refresh token.
 - [ ] Treat `invalid_grant`, `token_already_used`, or equivalent refresh-reuse signals as revocation: no retry, delete usable tokens, set connection `revoked`, write `connection_revoked` audit metadata with `cause: refresh_reuse_detected`, and force re-authentication.
 - [ ] Test concurrent refresh serialization and monotonic `token_version` against PostgreSQL; skip or fail clearly on SQLite.
+- [ ] After these tests pass, flip DB token reads and refresh to DB-only authority for DB-mode sessions; local token-store helpers remain only for the local OAuth bridge.
 - [ ] Commit with `git commit -m "Serialize database OAuth token refresh"`.
 
 ### Task 5: Admin Bootstrap, Service Integrations, And Admin APIs
@@ -466,8 +493,8 @@ Execute these tasks in order. Each task should be a focused commit unless the ta
 
 - [ ] Bootstrap the first admin only from `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS` and only while the workspace has zero admins.
 - [ ] Test that another Atlassian `account_id` cannot bootstrap admin even when it has the same email address.
-- [ ] Add admin-only `GET /api/admin/users`, `GET /api/admin/users/<id>`, `PATCH /api/admin/users/<id>/status`, `POST /api/admin/users/<id>/admin-grant`, `DELETE /api/admin/users/<id>/admin-grant`, and `GET /api/admin/audit-events`.
-- [ ] Add admin-only service-integration routes for list, create, rotate, disable, and delete. Unsafe methods require token-bound CSRF after Task 6.
+- [ ] Add admin-only `GET /api/admin/users`, `GET /api/admin/users/<id>`, and `GET /api/admin/audit-events`. Add mutation route stubs for `PATCH /api/admin/users/<id>/status`, `POST /api/admin/users/<id>/admin-grant`, and `DELETE /api/admin/users/<id>/admin-grant` only if they return a non-success response such as `501 csrf_not_ready` until Task 6 enables token-bound CSRF.
+- [ ] Add admin-only service-integration read routes and the operator seeding CLI in this task. Do not expose browser-callable create, rotate, disable, delete, admin-grant, admin-revoke, or user-status mutation routes until Task 6's token-bound CSRF is implemented; if stubs are registered, unsafe methods must return a non-success response such as `501 csrf_not_ready`.
 - [ ] Add `python3 -m backend.admin.seed_service_credential` for operator seeding into `service_integration_tokens` only.
 - [ ] Test redacted admin responses, admin-only mutation, service-token storage separation, and cache invalidation on service integration `token_version` changes.
 - [ ] Commit with `git commit -m "Add admin and service integration auth APIs"`.
@@ -485,6 +512,7 @@ Execute these tasks in order. Each task should be a focused commit unless the ta
 - [ ] Add a server-issued CSRF token endpoint such as `GET /api/auth/csrf`.
 - [ ] Require `X-CSRF-Token` on every browser-originating `POST`, `PUT`, `PATCH`, and `DELETE` route for DB admin/config endpoints. Keep `X-Requested-With` only as an additional same-origin signal during transition.
 - [ ] Test missing, wrong, reused, and cross-session tokens return `403 csrf_required`.
+- [ ] Enable the browser-callable unsafe admin/service-integration mutation routes from Task 5 only in the same commit that adds passing token-bound CSRF tests for them.
 - [ ] Add visible recovery pages outside `frontend/src/dashboard.jsx`: unauthenticated/expired login, disabled account, revoked connection/reconnect, missing project access, non-admin denial, and service credential admin area.
 - [ ] Browser-verify the journeys listed in "Verification Criteria".
 - [ ] Commit with `git commit -m "Add token-bound CSRF and auth recovery screens"`.

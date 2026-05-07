@@ -1,6 +1,6 @@
 # Atlassian OAuth Migration Plan, Part 1: Jira REST Routes
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. This is Part 1 of the singular Atlassian OAuth migration plan; finish and verify this file before starting Part 2.
+> **Execution note:** Implement this plan task-by-task in order. Steps use checkbox (`- [ ]`) syntax for tracking. This is Part 1 of the singular Atlassian OAuth migration plan; finish and verify this file before starting Part 2.
 
 **Goal:** Migrate the dashboard's Jira REST calls from direct Basic-header construction to the request-scoped OAuth-aware Jira client boundary, while keeping Basic mode compatible.
 
@@ -22,7 +22,7 @@ Use these two files as one ordered migration plan:
    - Runs the Home/Townsquare GraphQL OAuth feasibility gate before any Home-backed EPM route migration.
    - Continues with EPM/Home routes only if that gate passes.
 
-Subagents must not pick tasks from both files in parallel. Execute Part 1 tasks in order, review the final verification output, then hand off to Part 2.
+Do not pick tasks from both files in parallel. Execute Part 1 tasks in order, review the final verification output, then hand off to Part 2.
 
 ## Implementation Status Reconciliation
 
@@ -144,6 +144,7 @@ Jira REST read routes:
 - `/api/stats`
 - `/api/stats/burnout`
 - `/api/stats/epic-cohort`
+- `/api/scenario`
 
 Developer-only debug routes may remain guarded unless the implementation migrates and tests them:
 
@@ -1134,7 +1135,7 @@ python3 -m unittest tests.test_backend_service_extraction tests.test_jira_search
 
 Expected: PASS.
 
-Do not run or stage `tests/test_oauth_eng_routes.py`, `tests/test_oauth_settings_routes.py`, or `tests/test_oauth_stats_routes.py` in Part 1 Task 2A. Those files are created in Part 1 Tasks 3, 4, and 5, and subagents executing Part 1 Task 2A in order must not fail on missing future modules. Each later route batch reruns the pagination/source guard with its newly created route tests.
+Do not run or stage `tests/test_oauth_eng_routes.py`, `tests/test_oauth_settings_routes.py`, or `tests/test_oauth_stats_routes.py` in Part 1 Task 2A. Those files are created in Part 1 Tasks 3, 4, and 5, so Task 2A must not fail on missing future modules. Each later route batch reruns the pagination/source guard with its newly created route tests.
 
 - [x] **Step 6: Commit**
 

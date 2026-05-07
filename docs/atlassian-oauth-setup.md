@@ -60,7 +60,7 @@ FLASK_SECRET_KEY=...
 OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true
 OAUTH_TOKEN_STORE_PATH=.oauth-token-store.json
 OAUTH_TOKEN_STORE_TTL_SECONDS=2592000
-ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS=...
+TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS=...
 ```
 
 `JIRA_URL` is required in OAuth mode, but it is not a Basic-auth credential. It tells the backend which Jira Cloud site to select after Atlassian returns the user's accessible resources.
@@ -77,9 +77,9 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 
 Keep `OAUTH_TOKEN_STORE_PATH` local and ignored by git. The default local path `.oauth-token-store.json` is ignored by this repo. `OAUTH_TOKEN_STORE_TTL_SECONDS` defaults to 30 days; shorten it only if you want local sessions to expire sooner. Delete the token store file or use `/api/auth/logout` when you want to clear the saved local session.
 
-### Temporary Pre-DB Admin Writes
+### Temporary Pre-DB Tool-Admin Writes
 
-Until database-backed users and roles land, OAuth mode allows shared configuration writes only for stable Atlassian account ids listed in `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`. Use comma-separated Atlassian `account_id` values. Do not use email address, email domain, Jira project access, or Home/Townsquare access as admin signals.
+Until database-backed users and roles land, OAuth mode allows shared configuration writes only for tool-local admins listed in `TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`. Use comma-separated Atlassian `account_id` values only as stable identity keys for those tool admins. Do not use Atlassian tenant/admin status, email address, email domain, Jira project access, or Home/Townsquare access as tool-admin signals.
 
 ## Test The Flow
 

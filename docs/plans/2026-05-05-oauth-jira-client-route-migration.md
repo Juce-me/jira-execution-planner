@@ -34,7 +34,7 @@ Status as of 2026-05-07: Part 1's code primitives and Jira REST route migration 
 - Home/Townsquare-backed EPM routes are still intentionally guarded. `OAUTH_READY_API_PATHS` does not include `/api/epm/projects`, `/api/epm/projects/configuration`, `/api/epm/projects/preview`, `/api/epm/projects/rollup/all`, `/api/epm/projects/<home_project_id>/issues`, or `/api/epm/projects/<project_id>/rollup`, and there is no dynamic OAuth-ready EPM path matcher yet.
 - The current test modules for this phase already exist: `tests/oauth_test_helpers.py`, `tests/test_oauth_jira_client.py`, `tests/test_oauth_route_guards.py`, `tests/test_oauth_eng_routes.py`, `tests/test_oauth_settings_routes.py`, `tests/test_oauth_stats_routes.py`, `tests/test_oauth_jira_client_source_guard.py`, `tests/test_oauth_cache_isolation.py`, and `tests/test_epm_home_oauth_feasibility.py`.
 
-Task checkboxes through Part 1 Task 6 have been marked complete to reflect the current checkout. Part 1 Task 7 remains open until a worker reruns the full automated verification and the manual OAuth journey in the target environment. Do not start database execution from this plan alone; first complete the pre-DB admin gate in `docs/plans/2026-05-05-database-introduction-user-auth.md`.
+Task checkboxes through Part 1 Task 6 have been marked complete to reflect the current checkout. Part 1 Task 7 remains open until a worker reruns the full automated verification and the manual OAuth journey in the target environment. Do not start database execution from this plan alone; first complete the pre-DB tool-admin gate in `docs/plans/2026-05-05-database-introduction-user-auth.md`.
 
 ## Existing Auth Primitives
 

@@ -196,7 +196,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Any new API plan in `docs/plans/` must use the same Jira pagination contract.
 - EPM Project rollups are label-driven; each Project has one exact Jira label. No wildcard/fallback. Metadata-only Home projects still render the Home card plus `Settings -> EPM` CTA.
 - `epm.labelPrefix` in `dashboard-config.json` is a Home tag mask such as `"rnd_project_*"` and also filters manual Jira-label autocomplete. Resolve each Home Project's exact matching tag as the Jira label; rollup JQL uses that full label, never the mask.
-- Home/Townsquare-backed and Jira-project-backed EPM/APM surfaces are read-oriented for normal users; any mutation route for those surfaces requires an explicit admin or service-account guard in the plan and implementation.
+- Home/Townsquare-backed and Jira-project-backed EPM/APM surfaces are read-oriented for normal users; any mutation route for those surfaces requires an explicit tool-admin or service-account guard in the plan and implementation.
 - Initial dashboard load is performance-critical. Avoid redundant requests, justify heavy endpoints, and measure before/after when claiming improvements.
 - For analytics-style views, prefer one scoped fetch plus client-side regrouping/filtering. Re-fetch only when scope changes or the user explicitly refreshes.
 - If per-issue Jira enrichment is required, define strict fan-out limits before implementation.
@@ -244,6 +244,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In EPM settings Projects, use table-style header sorting and compact icon actions in cells; avoid bulky text sort/change controls in headers or label chips.
 - For UI screenshots, wait for CSS animations/transitions to settle or disable them before capturing visual proof.
 - In PR descriptions, never include secrets, token placeholders, credential env vars, or local absolute paths.
+- Treat Atlassian account ids only as stable identity keys for tool-local admin roles; never imply Atlassian tenant/admin status grants tool admin access.
 - Redact OAuth callback query strings from logs; never log authorization code or state values.
 - Store implementation plans in `docs/plans/` only.
 - Before creating or executing any Home/Townsquare auth migration plan, read `docs/plans/AGENTS.md` and run or document the Home GraphQL OAuth probe gate; do not mark Home/Townsquare-backed routes OAuth-ready unless it passes with a real local user 3LO session.

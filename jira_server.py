@@ -338,14 +338,14 @@ def is_oauth_ready_api_path(path):
     return path.startswith('/api/auth/') or path in OAUTH_READY_API_PATHS
 
 
-def bootstrap_admin_account_ids():
-    raw = os.getenv('ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS', '')
+def bootstrap_tool_admin_account_ids():
+    raw = os.getenv('TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS', '')
     return {account_id.strip() for account_id in raw.split(',') if account_id.strip()}
 
 
-def is_pre_db_admin_account(atlassian_account_id):
+def is_pre_db_tool_admin_account(atlassian_account_id):
     account_id = str(atlassian_account_id or '').strip()
-    return bool(account_id and account_id in bootstrap_admin_account_ids())
+    return bool(account_id and account_id in bootstrap_tool_admin_account_ids())
 
 
 def current_auth_config():
@@ -535,7 +535,7 @@ def current_request_auth_context():
             site_url=site_url,
             token_version=str(session_data.get('stored_at', '1')),
             account_status=session_data.get('account_status', ''),
-            is_admin=is_pre_db_admin_account(account_id),
+            is_admin=is_pre_db_tool_admin_account(account_id),
         )
     return RequestAuthContext(
         auth_mode=AUTH_MODE_BASIC,

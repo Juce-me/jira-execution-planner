@@ -53,7 +53,7 @@ This database phase keeps three credential concepts separate:
 
 - User OAuth connections: rows in `auth_connections` and `auth_tokens`, owned by an authenticated Atlassian user, used for Jira REST and any future provider that actually supports user 3LO.
 - Workspace service integrations: rows in `service_integrations` and `service_integration_tokens`, owned by the deployment/workspace and provisioned by an admin/operator service account.
-- Route authorization: normal users can read only through routes explicitly migrated and tested for their auth model; Home/Townsquare-backed or Jira-project-backed mutations require an admin or service-account guard.
+- Route authorization: normal users can read only through routes explicitly migrated and tested for their auth model; Home/Townsquare-backed or Jira-project-backed mutations require a tool-admin or service-account guard.
 
 Do not store a Home/Townsquare Basic API token as a user's `auth_connection`. Until the Home/Townsquare 3LO gate passes, Home/Townsquare Basic credentials are service-account credentials and their data must not be described as user-ACL filtered. `RequestAuthContext` may still be passed to Home/Townsquare helpers for workspace scoping, cache partitioning, audit, and response gating, but it is not proof that the signed-in user has Home/Townsquare object-level access.
 
@@ -86,7 +86,7 @@ Before database tables are introduced, the auth slice must define a request-scop
 | `cloud_id` | Accessible resource `id`. | `workspaces.jira_cloud_id` and `auth_connections.cloud_id`. |
 | `token_version` | Local token/session version. | Monotonic `auth_connections.token_version`. |
 | `account_status` | Atlassian `/me` account status or local active status. | `users.status` plus provider status check. |
-| `is_admin` | Local single-user default or bootstrap-only flag. | `users.account_type == "admin"`. |
+| `is_admin` | Local single-user default or pre-DB tool-admin bootstrap flag. | `users.account_type == "admin"`. |
 | `project_access` | Empty or local snapshot. | Latest `jira_project_access` rows for the connection. |
 
 All Jira client entry points must take `RequestAuthContext` as an explicit argument. Home/Townsquare entry points must take `RequestAuthContext` for workspace/cache/audit scoping, but must resolve credentials from the workspace service integration unless the Home/Townsquare 3LO gate has passed and the route has been migrated through the future Home OAuth client. Cache helpers must also take this context and use it in cache keys. This includes Jira issue searches, project/field/label/board lookups, Home goal/project fetches, EPM rollups, and generated project metadata caches.
@@ -142,7 +142,7 @@ python3 -c "import base64, secrets; print(base64.b64encode(secrets.token_bytes(3
 ```
 
 - A documented `.env` key such as `TOKEN_ENCRYPTION_MASTER_KEY_B64` for local development and a production key reference such as `TOKEN_ENCRYPTION_KEY_ID`.
-- Document these env keys in `.env.example`: `DATABASE_URL`, `TEST_DATABASE_URL`, `CONFIG_STORAGE_BACKEND`, `TOKEN_ENCRYPTION_MASTER_KEY_B64`, `TOKEN_ENCRYPTION_KEY_ID`, and `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`.
+- Document these env keys in `.env.example`: `DATABASE_URL`, `TEST_DATABASE_URL`, `CONFIG_STORAGE_BACKEND`, `TOKEN_ENCRYPTION_MASTER_KEY_B64`, `TOKEN_ENCRYPTION_KEY_ID`, and `TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`.
 - Production startup must refuse `TOKEN_ENCRYPTION_MASTER_KEY_B64`; production must use `TOKEN_ENCRYPTION_KEY_ID` and a KMS/secrets-manager adapter. Supported adapter shape for the first slice is a small key provider interface with `wrap_key(dek, aad)`, `unwrap_key(wrapped_dek, aad)`, and `primary_key_id()`.
 - A service-credential seeding path that reads service-account credentials from local env or an operator prompt and writes only encrypted `service_integration_tokens`; it must not commit secrets or ask normal users for personal API tokens.
 - Name the operator CLI before implementation. Use `python3 -m backend.admin.seed_service_credential` unless another module already exists.
@@ -173,7 +173,7 @@ One row per authenticated person.
 | `created_by` | `system`, `bootstrap`, or admin user id. |
 | `created_at`, `updated_at`, `last_seen_at` | Account lifecycle timestamps visible to admins. |
 
-There are only two account types: `user` and `admin`. A normal user can authenticate, use the dashboard, and use all non-admin configuration tabs. An admin can inspect user properties such as user id, provider id, created-by, created-at, status, last-seen, Jira project access status, and auth connection status. Admins also control the shared configuration areas listed in "Admin Configuration Access".
+There are only two tool account types: `user` and `admin`. A normal user can authenticate, use the dashboard, and use all non-admin configuration tabs. A tool admin can inspect user properties such as user id, provider id, created-by, created-at, status, last-seen, Jira project access status, and auth connection status. Tool admins also control the shared configuration areas listed in "Admin Configuration Access".
 
 ### `workspaces`
 
@@ -312,10 +312,10 @@ Implementers must encode the auth invariants in database constraints, not only i
 
 ## Admin Configuration Access
 
-Admin bootstrap:
+Tool-admin bootstrap:
 
-- First admin is granted only by stable Atlassian account id using `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`, a comma-separated list of account ids.
-- Bootstrap runs only when the workspace has zero admin users. Email address and email domain are not accepted as bootstrap identity keys because they can change.
+- First tool admin is granted only by stable Atlassian account id using `TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`, a comma-separated list of account ids. Atlassian tenant/admin status is not a tool-admin signal.
+- Bootstrap runs only when the workspace has zero tool-admin users. Email address and email domain are not accepted as bootstrap identity keys because they can change.
 - If no bootstrap account id is configured, OAuth login can create normal active users, but admin endpoints and shared config writes remain unavailable until an operator runs an explicit local admin-grant command.
 - Later admins are granted or revoked only by an existing admin through an admin endpoint, or by a local break-glass CLI command that requires server filesystem access and writes an `audit_events` row.
 - Every admin grant, revocation, user disable, and user enable creates an audit event.
@@ -351,7 +351,7 @@ Current mutable routes that need an authenticated admin boundary before DB auth 
 
 `POST /api/epm/projects/configuration` and `POST /api/epm/projects/preview` are currently non-persistent preview helpers. They still need authentication and CSRF handling because they are browser POST routes, but they do not need admin authorization unless they start persisting configuration.
 
-The executable checklist below assigns this pre-DB admin gate to Task 0. Do not start DB schema work before Task 0 passes.
+The executable checklist below assigns this pre-DB tool-admin gate to Task 0. Do not start DB schema work before Task 0 passes.
 
 ## API Surface
 
@@ -391,7 +391,7 @@ node tests/test_auth_isolation_source_guard.js
 
 Expected: OAuth/Jira boundary tests pass, unsupported OAuth routes still return `route_not_oauth_ready`, OAuth process caches are disabled or auth-keyed, and the Home GraphQL gate result is recorded. If the Home gate is `FAIL home_graphql_3lo_unsupported`, keep Home/Townsquare user 3LO out of DB auth and use only admin-managed `home_townsquare_basic` service integration credentials for Home metadata.
 
-### Task 0: Pre-DB Admin Gate For Current OAuth Shared Config Writes
+### Task 0: Pre-DB Tool-Admin Gate For Current OAuth Shared Config Writes
 
 **Files:**
 - Modify: `jira_server.py`
@@ -400,7 +400,7 @@ Expected: OAuth/Jira boundary tests pass, unsupported OAuth routes still return 
 - Test: `tests/test_pre_db_admin_gates.py`
 
 - [x] Write failing tests proving a non-bootstrap OAuth user with `X-Requested-With: jira-execution-planner` receives `403 admin_required` for `POST /api/groups-config`, `POST /api/team-catalog`, `POST /api/projects/selected`, `POST /api/board-config`, `POST /api/capacity/config`, `POST /api/sprint-field/config`, `POST /api/story-points-field/config`, `POST /api/parent-name-field/config`, `POST /api/team-field/config`, `POST /api/stats/priority-weights-config`, `POST /api/issue-types/config`, and `POST /api/epm/config`.
-- [x] Implement a temporary admin check based only on stable Atlassian account ids in `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`; keep `RequestAuthContext.is_admin = False` for all other OAuth users until DB auth lands.
+- [x] Implement a temporary tool-admin check based only on stable Atlassian account ids in `TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS`; keep `RequestAuthContext.is_admin = False` for all other OAuth users until DB auth lands.
 - [x] Preserve Basic single-user behavior.
 - [x] Run `.venv/bin/python -m unittest tests.test_pre_db_admin_gates tests.test_oauth_route_guards`.
 - [x] Commit with `git commit -m "Gate OAuth shared config writes before DB auth"`.
@@ -491,8 +491,8 @@ Expected: OAuth/Jira boundary tests pass, unsupported OAuth routes still return 
 - Test: `tests/test_db_admin_bootstrap.py`
 - Test: `tests/test_db_admin_routes.py`
 
-- [ ] Bootstrap the first admin only from `ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS` and only while the workspace has zero admins.
-- [ ] Test that another Atlassian `account_id` cannot bootstrap admin even when it has the same email address.
+- [ ] Bootstrap the first tool admin only from `TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS` and only while the workspace has zero tool admins.
+- [ ] Test that another Atlassian `account_id` cannot bootstrap tool admin even when it has the same email address.
 - [ ] Add admin-only `GET /api/admin/users`, `GET /api/admin/users/<id>`, and `GET /api/admin/audit-events`. Add mutation route stubs for `PATCH /api/admin/users/<id>/status`, `POST /api/admin/users/<id>/admin-grant`, and `DELETE /api/admin/users/<id>/admin-grant` only if they return a non-success response such as `501 csrf_not_ready` until Task 6 enables token-bound CSRF.
 - [ ] Add admin-only service-integration read routes and the operator seeding CLI in this task. Do not expose browser-callable create, rotate, disable, delete, admin-grant, admin-revoke, or user-status mutation routes until Task 6's token-bound CSRF is implemented; if stubs are registered, unsafe methods must return a non-success response such as `501 csrf_not_ready`.
 - [ ] Add `python3 -m backend.admin.seed_service_credential` for operator seeding into `service_integration_tokens` only.
@@ -513,7 +513,7 @@ Expected: OAuth/Jira boundary tests pass, unsupported OAuth routes still return 
 - [ ] Require `X-CSRF-Token` on every browser-originating `POST`, `PUT`, `PATCH`, and `DELETE` route for DB admin/config endpoints. Keep `X-Requested-With` only as an additional same-origin signal during transition.
 - [ ] Test missing, wrong, reused, and cross-session tokens return `403 csrf_required`.
 - [ ] Enable the browser-callable unsafe admin/service-integration mutation routes from Task 5 only in the same commit that adds passing token-bound CSRF tests for them.
-- [ ] Add visible recovery pages outside `frontend/src/dashboard.jsx`: unauthenticated/expired login, disabled account, revoked connection/reconnect, missing project access, non-admin denial, and service credential admin area.
+- [ ] Add visible recovery pages outside `frontend/src/dashboard.jsx`: unauthenticated/expired login, disabled account, revoked connection/reconnect, missing project access, non-tool-admin denial, and service credential admin area.
 - [ ] Browser-verify the journeys listed in "Verification Criteria".
 - [ ] Commit with `git commit -m "Add token-bound CSRF and auth recovery screens"`.
 
@@ -544,7 +544,7 @@ Expected: OAuth/Jira boundary tests pass, unsupported OAuth routes still return 
 - [ ] Run source guards for DB token-store and direct Basic credential reads.
 - [ ] Run `npm run build` if frontend auth recovery or admin surfaces changed.
 - [ ] Measure initial dashboard bootstrap before and after the DB landing and record `Server-Timing` or request-count evidence; do not claim performance neutrality without measurement.
-- [ ] Browser-verify unauthenticated entry, Atlassian/Microsoft login through Atlassian Cloud SSO, expired-session recovery, disabled-user screen, revoked-connection screen, missing-project-access state, non-admin denial, service-credential admin area, and focus/visibility refresh.
+- [ ] Browser-verify unauthenticated entry, Atlassian/Microsoft login through Atlassian Cloud SSO, expired-session recovery, disabled-user screen, revoked-connection screen, missing-project-access state, non-tool-admin denial, service-credential admin area, and focus/visibility refresh.
 - [ ] Review `git log --oneline -5` before push.
 
 ## Token-Bound CSRF Upgrade Task
@@ -617,7 +617,7 @@ Token storage must be designed before writing `auth_tokens`.
 ## Verification Criteria
 
 - Every supported auth/admin backend path has a named browser or dashboard journey that exercises it. Backend route tests are required but not sufficient for completion.
-- User-journey verification covers unauthenticated entry, Atlassian/Microsoft login, authenticated bootstrap, admin access, non-admin denial, revoked/disabled user denial, at least one Jira data fetch through the authenticated user context, and Home/Townsquare metadata fetch behavior through the correct service-integration or future Home 3LO boundary.
+- User-journey verification covers unauthenticated entry, Atlassian/Microsoft login, authenticated bootstrap, tool-admin access, non-tool-admin denial, revoked/disabled user denial, at least one Jira data fetch through the authenticated user context, and Home/Townsquare metadata fetch behavior through the correct service-integration or future Home 3LO boundary.
 - User-journey verification covers expired-session recovery: the user sees an actionable expired-auth screen and can start re-authentication without reading a backend JSON error.
 - User-journey verification covers focus/visibility refresh: returning to an open tab attempts a safe refresh when needed, and refresh failure routes to the expired-auth recovery screen.
 - PR notes include evidence for the relevant journey, such as screenshots or a concise browser-test transcript. Do not merge a faceless backend-only auth slice unless the plan explicitly marks it as developer-only and lists its manual verification path.
@@ -629,7 +629,7 @@ Token storage must be designed before writing `auth_tokens`.
 - Inactive Atlassian accounts and disabled/deleted local users cannot create active sessions.
 - Disabling a signed-in user terminates their next authenticated request within 30 seconds without process restart; the response is `401 account_disabled` and no user-scoped Jira call or Home/Townsquare-backed route response runs.
 - Revoking an auth connection terminates that user's next authenticated Jira request or Home/Townsquare-backed route response within 30 seconds without process restart; the response is `401 auth_connection_revoked`.
-- First admin bootstrap succeeds only for configured Atlassian account ids and only while the workspace has zero admins.
+- First tool-admin bootstrap succeeds only for configured Atlassian account ids and only while the workspace has zero tool admins.
 - Later admin grant/revoke actions require an existing admin and create audit events.
 - Non-admin users cannot mutate selected projects, board config, capacity, field mapping, priority weights, team/group config, issue-type config, or EPM config.
 - Non-admin users cannot mutate Home/Townsquare-backed or Jira-project-backed EPM/APM configuration, even when they can read the resulting view.

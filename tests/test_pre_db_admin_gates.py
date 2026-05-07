@@ -5,7 +5,7 @@ import jira_server
 from tests.oauth_test_helpers import install_oauth_session
 
 
-class PreDbAdminGateTests(unittest.TestCase):
+class PreDbToolAdminGateTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
@@ -15,8 +15,8 @@ class PreDbAdminGateTests(unittest.TestCase):
         jira_server.OAUTH_TOKEN_STORE.clear()
         jira_server.OAUTH_REFRESH_LOCKS.clear()
 
-    def test_shared_config_writes_require_admin_oauth_account(self):
-        install_oauth_session(self.client, account_id="user-account")
+    def test_shared_config_writes_require_tool_admin_oauth_account(self):
+        install_oauth_session(self.client, account_id="regular-user-account")
         routes = [
             ("/api/groups-config", {"groups": []}),
             ("/api/team-catalog", {"catalog": {}, "meta": {}}),
@@ -33,7 +33,7 @@ class PreDbAdminGateTests(unittest.TestCase):
         ]
 
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.dict("os.environ", {"ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS": "admin-account"}, clear=False):
+             patch.dict("os.environ", {"TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False):
             for route, payload in routes:
                 with self.subTest(route=route):
                     response = self.client.post(
@@ -47,7 +47,7 @@ class PreDbAdminGateTests(unittest.TestCase):
 
     def test_shared_config_write_without_oauth_session_returns_login_url(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.dict("os.environ", {"ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS": "admin-account"}, clear=False):
+             patch.dict("os.environ", {"TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False):
             response = self.client.post(
                 "/api/board-config",
                 json={"boardId": "7", "boardName": "Product"},
@@ -58,10 +58,10 @@ class PreDbAdminGateTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "auth_required")
         self.assertEqual(response.get_json()["loginUrl"], "/login?reason=session_expired")
 
-    def test_admin_oauth_account_can_save_shared_config(self):
-        install_oauth_session(self.client, account_id="admin-account")
+    def test_tool_admin_oauth_account_can_save_shared_config(self):
+        install_oauth_session(self.client, account_id="tool-admin-account")
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.dict("os.environ", {"ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS": "admin-account"}, clear=False), \
+             patch.dict("os.environ", {"TOOL_ADMIN_BOOTSTRAP_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
              patch.object(jira_server, "load_dashboard_config", return_value={}), \
              patch.object(jira_server, "save_dashboard_config") as mock_save:
             response = self.client.post(

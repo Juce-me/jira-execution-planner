@@ -488,6 +488,7 @@ import {
             const [showDependencies, setShowDependencies] = useState(true);
             const [searchQuery, setSearchQuery] = useState(savedPrefsRef.current.searchQuery ?? '');
             const [searchInput, setSearchInput] = useState(savedPrefsRef.current.searchQuery ?? '');
+            const [searchFocused, setSearchFocused] = useState(false);
             const normalizeSelectedTeams = (value) => {
                 if (Array.isArray(value)) {
                     return value.length ? value : ['all'];
@@ -569,6 +570,7 @@ import {
             const [scenarioFlashKey, setScenarioFlashKey] = useState(null);
             const [scenarioScrollTop, setScenarioScrollTop] = useState(0);
             const searchInputRef = useRef(null);
+            const searchFocusReleaseTimeoutRef = useRef(null);
             const [scenarioScrollLeft, setScenarioScrollLeft] = useState(0);
             const [scenarioViewportHeight, setScenarioViewportHeight] = useState(0);
             const [scenarioEpicFocus, setScenarioEpicFocus] = useState(null);
@@ -2017,6 +2019,14 @@ import {
                 () => normalizeEpmScopeSubGoalKeys(epmConfigDraft.scope),
                 [epmConfigDraft.scope?.subGoalKeys]
             );
+            const savedEpmRootGoalKey = React.useMemo(
+                () => String(epmConfigDraft.scope?.rootGoalKey || '').trim().toUpperCase(),
+                [epmConfigDraft.scope?.rootGoalKey]
+            );
+            useEffect(() => {
+                if (selectedView !== 'epm' || !epmConfigLoaded || savedEpmSubGoalKeys.length <= 1 || !savedEpmRootGoalKey) return;
+                void loadEpmSubGoalsForRoot(savedEpmRootGoalKey);
+            }, [selectedView, epmConfigLoaded, savedEpmRootGoalKey, savedEpmSubGoalKeys]);
             const {
                 epmTab,
                 setEpmTab,
@@ -4642,6 +4652,12 @@ import {
                 };
                 window.addEventListener('keydown', handleKey);
                 return () => window.removeEventListener('keydown', handleKey);
+            }, []);
+
+            useEffect(() => () => {
+                if (searchFocusReleaseTimeoutRef.current) {
+                    window.clearTimeout(searchFocusReleaseTimeoutRef.current);
+                }
             }, []);
 
             useEffect(() => {
@@ -10444,6 +10460,23 @@ import {
                 '--scenario-sticky-top': `${epicStickyTop}px`
             };
             const showGroupControl = (groupsConfig.groups || []).length > 1;
+            const searchActive = searchFocused || Boolean(String(searchInput || '').trim());
+            const handleSearchFocus = () => {
+                if (searchFocusReleaseTimeoutRef.current) {
+                    window.clearTimeout(searchFocusReleaseTimeoutRef.current);
+                    searchFocusReleaseTimeoutRef.current = null;
+                }
+                setSearchFocused(true);
+            };
+            const handleSearchBlur = () => {
+                if (searchFocusReleaseTimeoutRef.current) {
+                    window.clearTimeout(searchFocusReleaseTimeoutRef.current);
+                }
+                searchFocusReleaseTimeoutRef.current = window.setTimeout(() => {
+                    setSearchFocused(false);
+                    searchFocusReleaseTimeoutRef.current = null;
+                }, 220);
+            };
 
             const renderSearchControl = (surface, extraClassName = '') => (
                 <ControlField label="Search" className={`control-search ${extraClassName}`.trim()}>
@@ -10454,6 +10487,8 @@ import {
                             placeholder="Search tickets..."
                             value={searchInput}
                             onChange={(e) => setSearchInput(e.target.value)}
+                            onFocus={handleSearchFocus}
+                            onBlur={handleSearchBlur}
                             ref={searchInputRef}
                         />
                         {searchInput && (
@@ -10950,11 +10985,12 @@ import {
                                 {updateNoticeVisible && (
                                     <button
                                         type="button"
-                                        className="update-badge"
+                                        className={`update-badge ${searchActive ? 'compact' : ''}`}
                                         onClick={() => setShowUpdateModal(true)}
+                                        aria-label="New version available"
                                         title="A new version is available"
                                     >
-                                        New version available
+                                        {searchActive ? 'Update' : 'New version available'}
                                     </button>
                                 )}
                             </span>

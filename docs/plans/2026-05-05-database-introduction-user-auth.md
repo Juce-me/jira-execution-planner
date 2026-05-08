@@ -52,10 +52,11 @@ The phase assumes backend Jira calls can resolve the current request's authentic
 This database phase keeps three credential concepts separate:
 
 - User OAuth connections: rows in `auth_connections` and `auth_tokens`, owned by an authenticated Atlassian user, used for Jira REST and any future provider that actually supports user 3LO.
+- User API-token connections: rows in `auth_connections` and `auth_tokens`, owned by an authenticated Atlassian user, used only for explicit user-initiated Home/Townsquare write actions while Home/Townsquare user 3LO remains unsupported. See `docs/plans/2026-05-08-db-home-user-api-token-bridge.md`.
 - Workspace service integrations: rows in `service_integrations` and `service_integration_tokens`, owned by the deployment/workspace and provisioned by an admin/operator service account.
 - Route authorization: normal users can read only through routes explicitly migrated and tested for their auth model; Home/Townsquare-backed or Jira-project-backed mutations require a tool-admin or service-account guard.
 
-Do not store a Home/Townsquare Basic API token as a user's `auth_connection`. Until the Home/Townsquare 3LO gate passes, Home/Townsquare Basic credentials are service-account credentials and their data must not be described as user-ACL filtered. `RequestAuthContext` may still be passed to Home/Townsquare helpers for workspace scoping, cache partitioning, audit, and response gating, but it is not proof that the signed-in user has Home/Townsquare object-level access.
+Do not store a Home/Townsquare Basic API token as a user's `auth_connection` for shared app auth or workspace metadata reads. Until the Home/Townsquare 3LO gate passes, Home/Townsquare read credentials are service-account credentials and their data must not be described as user-ACL filtered. The only user-owned Basic/API-token exception is the Home write bridge in `docs/plans/2026-05-08-db-home-user-api-token-bridge.md`: the token must be verified against the signed-in OAuth user's Atlassian `account_id`, stored in encrypted `auth_tokens`, and used only for explicit Home/Townsquare write actions as that user. `RequestAuthContext` may still be passed to Home/Townsquare helpers for workspace scoping, cache partitioning, audit, and response gating, but it is not proof that the signed-in user has Home/Townsquare object-level access.
 
 ## Security Preconditions
 
@@ -198,7 +199,7 @@ One row per user and external service connection.
 | --- | --- |
 | `id` | Connection UUID. |
 | `user_id`, `workspace_id` | Owner and scope. |
-| `provider` | `atlassian_oauth`, `jira_basic`, or later `confluence_oauth`. |
+| `provider` | `atlassian_oauth`, `jira_basic`, `atlassian_user_api_token`, or later `confluence_oauth`. |
 | `site_url`, `cloud_id` | Provider target. |
 | `scopes` | Granted scopes. |
 | `status` | `active`, `expired`, `revoked`, or `error`. |
@@ -603,7 +604,7 @@ Token storage must be designed before writing `auth_tokens`.
 
 - Never store tokens in browser localStorage, share URLs, or dashboard config payloads.
 - Encrypt token values before database insert and store the encryption `key_id`.
-- Store server-side API tokens only as service-integration secrets for dedicated service accounts; never store a normal user's personal Atlassian API token as shared app auth.
+- Store server-side API tokens for shared app reads only as service-integration secrets for dedicated service accounts; never store a normal user's personal Atlassian API token as shared app auth. Per-user Atlassian API tokens are allowed only for the Home/Townsquare write bridge, must live in encrypted `auth_tokens`, and must be verified against the signed-in OAuth user's Atlassian `account_id`.
 - Define token key source, `key_id` format, rotation procedure, and local-development behavior before storing production tokens.
 - Store refresh-token replacements atomically and guard concurrent refreshes so an older refresh response cannot overwrite newer token material.
 - Treat refresh-token reuse or replay signals as a connection revocation event, not as a transient refresh failure.
@@ -634,7 +635,7 @@ Token storage must be designed before writing `auth_tokens`.
 - Non-admin users cannot mutate Home/Townsquare-backed or Jira-project-backed EPM/APM configuration, even when they can read the resulting view.
 - Token encryption tests prove tokens are not stored as plaintext, use the configured `key_id`, decrypt with retired keys during rotation, and redact logs.
 - Service-integration tests prove only admins/operators can create, rotate, disable, or revoke `jira_basic` and `home_townsquare_basic` credentials.
-- Service-token storage tests prove Basic/Home API tokens are stored only in `service_integration_tokens`, never as normal-user `auth_tokens`.
+- Service-token storage tests prove shared Basic/Home API tokens are stored only in `service_integration_tokens`, never as normal-user `auth_tokens`. User-token bridge tests prove `atlassian_user_api_token` rows store only user-owned Home write credentials in `auth_tokens` and never in `service_integration_tokens`.
 - Service-token encryption tests prove associated data binds ciphertext to `workspace_id`, `service_integration_id`, `token_kind`, and `key_id`.
 - Admin API tests prove service-token plaintext, ciphertext, wrapped keys, and credential env names never appear in admin responses.
 - Service-credential rotation tests prove affected Home/Townsquare and Jira-derived service caches are invalidated by service integration `token_version` changes.

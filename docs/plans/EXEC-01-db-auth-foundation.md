@@ -33,7 +33,7 @@ This phase does not include:
 ## Current Constraints
 
 - Runtime dashboard configuration is currently stored in local JSON files, mainly `dashboard-config.json`, `team-groups.json`, and `team-catalog.json`.
-- Credentials are intentionally outside committed files and currently belong in `.env` or the local OAuth session path described in `docs/superpowers/specs/2026-04-27-atlassian-oauth-auth-design.md`. Server-side Basic/API-token credentials are service-account credentials, not personal user tokens.
+- Credentials are intentionally outside committed files and currently belong in `.env` or the local OAuth session path. Server-side Basic/API-token credentials are service-account credentials, not personal user tokens.
 - Initial dashboard load is performance-critical. This phase must not add extra heavy startup requests.
 - Admin views must not expose token material.
 
@@ -530,10 +530,19 @@ Expected: OAuth/Jira boundary tests pass, unsupported OAuth routes still return 
 - Test: `tests/test_home_3lo_gate_outcomes.py`
 
 - [ ] Add explicit project-access snapshots for configured product/tech projects without broad startup fan-out.
-- [ ] Test product-only, tech-only, no-access, and unknown-access user states.
+- [ ] Add `tests/test_db_project_access.py::TestProjectAccess.test_product_only_user_renders_product_views`.
+- [ ] Add `tests/test_db_project_access.py::TestProjectAccess.test_tech_only_user_renders_tech_views`.
+- [ ] Add `tests/test_db_project_access.py::TestProjectAccess.test_user_with_no_project_access_blocked_with_clear_state`.
+- [ ] Add `tests/test_db_project_access.py::TestProjectAccess.test_unknown_access_avoids_startup_retry_storm`.
 - [ ] Partition or disable every named cache surface: project search, components, epic search, labels, issue types, EPM issue payloads, EPM rollups, EPM Home project metadata, sprint caches, Home goal/project catalog cache, `sprints_cache.json`, and `stats_cache.json`.
 - [ ] Invalidate affected caches on revoke, disable, reconnect, service-credential rotation, admin scope-project changes, and token-version changes.
-- [ ] Test the Home GraphQL probe outcomes: `PASS` uses the DB auth boundary for Home 3LO, while `FAIL` keeps Home/Townsquare routes guarded or service-integration-scoped.
+- [ ] Add `tests/test_cache_partitioning.py::TestCachePartitioning.test_cache_invalidated_on_connection_revoke`.
+- [ ] Add `tests/test_cache_partitioning.py::TestCachePartitioning.test_cache_invalidated_on_user_disable`.
+- [ ] Add `tests/test_cache_partitioning.py::TestCachePartitioning.test_cache_invalidated_on_service_credential_rotation`.
+- [ ] Add `tests/test_cache_partitioning.py::TestCachePartitioning.test_cache_invalidated_on_admin_scope_project_change`.
+- [ ] Add `tests/test_cache_partitioning.py::TestCachePartitioning.test_cache_invalidated_on_token_version_bump`.
+- [ ] Add `tests/test_home_3lo_gate_outcomes.py::TestHome3loGateOutcomes.test_pass_uses_db_auth_boundary`.
+- [ ] Add `tests/test_home_3lo_gate_outcomes.py::TestHome3loGateOutcomes.test_fail_keeps_routes_service_integration_scoped`.
 - [ ] Commit with `git commit -m "Partition Jira and Home caches by auth context"`.
 
 ### Task 8: Final DB Auth Verification

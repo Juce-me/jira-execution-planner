@@ -258,13 +258,13 @@ Execute only after `docs/plans/EXEC-01-db-auth-foundation.md` has landed and ver
 ### Task 6: Frontend Bootstrap Compatibility And Final Verification
 
 **Files:**
-- Modify: `frontend/src/api/config.js` if present, otherwise the existing frontend API module that loads config
+- Modify: `frontend/src/api/configApi.js`
 - Modify: `frontend/src/dashboard.jsx` only if bootstrap wiring is unavoidable; do not add auth UI here
-- Test: existing frontend source guards plus a focused bootstrap test
+- Test: `tests/test_dashboard_bootstrap_config_source.py::test_bootstrap_returns_resolved_view_with_source_metadata`
 
 - [ ] Keep initial dashboard bootstrap to one compact user/config request plus existing scoped data requests.
 - [ ] Preserve current JSON-compatible response shape for existing dashboard routes.
-- [ ] Run `.venv/bin/python -m unittest tests.test_view_configs_db tests.test_view_config_resolution tests.test_workspace_config_admin tests.test_view_config_validator tests.test_config_jsonfile_fallback`.
+- [ ] Run `.venv/bin/python -m unittest tests.test_view_configs_db tests.test_view_config_resolution tests.test_workspace_config_admin tests.test_view_config_validator tests.test_config_jsonfile_fallback tests.test_dashboard_bootstrap_config_source.test_bootstrap_returns_resolved_view_with_source_metadata`.
 - [ ] Run `node tests/test_auth_isolation_source_guard.js`.
 - [ ] Run `npm run build` if frontend source changed.
 - [ ] Measure first-load request count or `Server-Timing` before/after this phase and record the result.

@@ -1,206 +1,126 @@
-# SUPPORT: DB Migration Claude Review Workflow
+# SUPPORT: Claude DB Migration Plan Review Prompt
 
-> **Review-only packet:** Do not execute implementation tasks from this file. Use it to review the current auth/DB/Home migration plan set after the OAuth and EPM fixes on `cdx/auth-db-context-plan`.
+> **Review-only packet:** Do not execute implementation tasks from this file. Use it as the clean prompt for an external Claude review of the auth/DB/Home migration plans on `cdx/auth-db-context-plan`.
 
-## Goal
+## Prompt
 
-Give Claude one compact workflow for a thorough plan review: what to read, what is already fixed, what remains active, and where contradictions or missing gates are most likely.
-
-## Current Branch State
-
-Branch: `cdx/auth-db-context-plan`
-
-Recent stabilizing commits:
+Copy this into Claude from the repository root:
 
 ```text
-3487175 Fix OAuth EPM rollup worker auth context
-7bf6fe2 Enable hybrid EPM routes in OAuth mode
-d1ec1a0 Require explicit Home credentials in OAuth mode
-992de93 Guard dashboard config against empty overwrites
-40ba3c4 Fix team group saves without discovered teams
-04c7317 Treat OAuth users as pre-DB admins
-0cd91bf Fail closed on settings edit permission
-f52f598 Hide admin-only settings from normal users
-c3cd937 Fix normal user group settings save
-25af0b0 Fix tool admin settings access
-9c59249 Clarify tool admin bootstrap semantics
-89f6f4a Gate OAuth shared config writes before DB auth
-```
+You are reviewing the Jira Execution Planner auth/DB/Home migration plan set on branch cdx/auth-db-context-plan.
 
-Known verification after the latest EPM OAuth worker fix:
+This is a plan review, not an implementation. Do not edit files. Do not implement tasks. Produce findings and a go/no-go recommendation for execution readiness.
 
-```bash
-env JIRA_AUTH_MODE=basic JIRA_EMAIL=test@example.com JIRA_TOKEN=test-token JIRA_URL=https://jira.example .venv/bin/python -m unittest discover -s tests
-node tests/test_frontend_api_source_guards.js
-git diff --check
-```
+Repository context:
+- Backend: Python + Flask.
+- Frontend: React + esbuild.
+- Current branch: cdx/auth-db-context-plan.
+- Active DB plans use these prefixes:
+  - EXEC-* = implementation-ready or gated execution plans.
+  - SUPPORT-* = review, handoff, or operator-support docs.
+  - FUTURE-* = deferred scope.
+  - DONE-* = completed, verified, accepted/merged execution plans kept for audit.
 
-Expected current evidence:
+Plan packet to review:
+- docs/plans/README.md
+- docs/plans/AGENTS.md
+- docs/atlassian-oauth-setup.md
+- docs/plans/2026-04-27-atlassian-oauth-auth.md
+- docs/plans/2026-05-05-oauth-jira-client-route-migration.md
+- docs/plans/2026-05-06-epm-home-oauth-migration.md
+- docs/plans/EXEC-01-db-auth-foundation.md
+- docs/plans/EXEC-02-db-home-user-api-token-bridge.md
+- docs/plans/EXEC-03-db-user-configuration.md
+- docs/plans/FUTURE-db-additional-features.md
 
-```text
-420 Python tests OK
-12 frontend source-guard tests OK
-git diff --check clean
-```
+Read order:
+1. AGENTS.md
+2. docs/plans/README.md
+3. docs/plans/AGENTS.md
+4. docs/atlassian-oauth-setup.md
+5. docs/plans/2026-04-27-atlassian-oauth-auth.md
+6. docs/plans/2026-05-05-oauth-jira-client-route-migration.md
+7. docs/plans/2026-05-06-epm-home-oauth-migration.md
+8. docs/plans/EXEC-01-db-auth-foundation.md
+9. docs/plans/EXEC-02-db-home-user-api-token-bridge.md
+10. docs/plans/EXEC-03-db-user-configuration.md
+11. docs/plans/FUTURE-db-additional-features.md
 
-Current DB plan packet:
+Current implementation assumptions to preserve:
+- Tool admin is a tool-local role, not an Atlassian admin role.
+- Pre-DB OAuth treats every signed-in Atlassian user as a local tool admin only as a temporary local policy. DB auth must restore explicit tool-admin assignment.
+- Team Groups, Group Labels, and EPM-side user settings are user-owned/non-admin workflows where applicable.
+- Scope projects, Jira source, field mapping, capacity, priority weights, issue types, and shared EPM mappings are shared environment/workspace configuration controlled by tool admins.
+- Existing JSON configuration must not be silently overwritten with empty selected projects, empty groups, or missing EPM mappings.
+- Home/Townsquare user 3LO is currently unsupported unless the plans document a fresh real `PASS home_graphql_3lo_supported` probe.
+- Jira REST can use user Atlassian OAuth.
+- Home/Townsquare metadata reads stay workspace service-integration-backed while the Home 3LO gate fails.
+- User-owned Atlassian API tokens are allowed only as verified per-user Home/Townsquare write credentials. They must never become shared service credentials.
+- A user API token must be verified by calling Jira `/rest/api/3/myself` and matching returned `accountId` to the signed-in OAuth `account_id`; email is not identity proof.
 
-```text
-docs/plans/EXEC-01-db-auth-foundation.md
-docs/plans/EXEC-02-db-home-user-api-token-bridge.md
-docs/plans/EXEC-03-db-user-configuration.md
-docs/plans/FUTURE-db-additional-features.md
-docs/plans/SUPPORT-db-migration-claude-review-workflow.md
-docs/plans/README.md
-```
-
-Review those as part of the plan set.
-
-## Home/Townsquare Gate
-
-Current documented Home GraphQL OAuth gate:
-
-```text
-FAIL home_graphql_3lo_unsupported
-```
-
-Review consequence:
-
-- User Atlassian 3LO is valid for Jira REST.
-- Do not use user Jira 3LO bearer tokens for Home/Townsquare GraphQL.
-- Home/Townsquare metadata reads are workspace service-integration-backed.
-- User-owned API-token bridge is allowed only for explicit Home/Townsquare writes as that user.
-- If a future real probe returns `PASS home_graphql_3lo_supported`, the user API-token bridge should become optional or dormant in favor of DB-stored OAuth tokens for Home.
-
-## Read Order
-
-Read these files in order. Do not start with the older EPM feature plans unless a specific inconsistency points there.
-
-1. `AGENTS.md`
-   - Project constraints, recent learnings, auth/Home rules.
-
-2. `docs/plans/AGENTS.md`
-   - Home GraphQL gate, service-credential policy, no personal token as shared app auth.
-
-3. `docs/atlassian-oauth-setup.md`
-   - Current runtime OAuth behavior, Home/Townsquare gate, hybrid EPM model.
-
-4. `docs/plans/2026-04-27-atlassian-oauth-auth.md`
-   - Historical OAuth foundation and DB auth preconditions. Treat old unchecked implementation tasks as historical unless reconciled in the status table.
-
-5. `docs/plans/2026-05-05-oauth-jira-client-route-migration.md`
-   - Jira REST route migration and OAuth boundary.
-
-6. `docs/plans/2026-05-06-epm-home-oauth-migration.md`
-   - Home/Townsquare 3LO gate and dormant PASS-gated user-3LO tasks.
-
-7. `docs/plans/EXEC-01-db-auth-foundation.md`
-   - Primary active DB auth foundation plan.
-
-8. `docs/plans/EXEC-02-db-home-user-api-token-bridge.md`
-   - New supplement for user-owned Atlassian API tokens for Home/Townsquare writes.
-
-9. `docs/plans/EXEC-03-db-user-configuration.md`
-   - Later DB-backed workspace defaults and user saved views.
-
-10. `docs/plans/FUTURE-db-additional-features.md`
-   - Future scope only.
-
-## Active Workflow
-
-The intended implementation order is:
-
-1. Finish review and commit the plan-doc updates.
-2. Re-run preflight before DB implementation:
-
-```bash
-.venv/bin/python -m unittest tests.test_auth_context tests.test_jira_auth tests.test_oauth_jira_client tests.test_auth_routes tests.test_auth_entry_page tests.test_oauth_route_guards tests.test_oauth_cache_isolation
-node tests/test_auth_isolation_source_guard.js
-.venv/bin/python scripts/check_home_graphql_oauth.py
-```
-
-3. Implement `docs/plans/EXEC-01-db-auth-foundation.md`.
-   - Task 0 is already effectively implemented pre-DB: signed-in OAuth users are local tool admins until DB roles land.
-   - Tasks 1 through 8 remain the DB implementation path.
-
-4. Keep Home/Townsquare EPM reads hybrid during DB auth:
+Expected execution order to validate:
+1. Re-run the OAuth/Jira/Home preflight named in EXEC-01.
+2. Execute EXEC-01 first.
+   - Task 0 is already completed pre-DB.
+   - Tasks 1-8 are the active DB auth path.
+3. Keep Home/Townsquare EPM reads hybrid during DB auth:
    - user OAuth for Jira REST;
    - workspace `home_townsquare_basic` service integration for Home metadata;
-   - explicit workspace/service cache partitioning.
+   - cache partitioning by workspace plus user auth context or service-integration context.
+4. Execute EXEC-02 only after EXEC-01 has encrypted token storage, active user/connection checks, token-bound CSRF, and service integrations.
+   - The bridge is for explicit Home/Townsquare writes as the user.
+   - It is not required for login, dashboard load, or opening the EPM tab.
+   - If no concrete Home/Townsquare write action exists, flag any generic mutation task as not execution-ready.
+5. Execute EXEC-03 only after EXEC-01 is stable and JSON fallback behavior is verified.
+6. Treat FUTURE-db-additional-features.md as deferred scope unless explicitly reopened.
 
-5. Implement `docs/plans/EXEC-02-db-home-user-api-token-bridge.md` only after DB encrypted token storage, token-bound CSRF, active user/connection checks, and service integrations exist.
-   - This bridge is for user-initiated Home writes.
-   - It is not required to open the EPM tab.
+Review questions:
+1. Is the plan order coherent, or are tasks listed before prerequisites exist?
+2. Does EXEC-01 still contain blockers or preconditions that are unresolved by the current branch?
+3. Does any active plan imply Home/Townsquare user 3LO is supported despite the current failing probe?
+4. Does any active plan store personal user API tokens as shared service credentials?
+5. Does EXEC-02 verify `accountId`, not email, before storing a user API token?
+6. Are Home/Townsquare reads and writes separated clearly enough?
+7. Are normal users blocked from shared workspace configuration writes after DB roles land while still allowed to manage user-owned settings?
+8. Are token-bound CSRF and visible auth recovery screens prerequisites before browser-callable DB mutations?
+9. Are cache keys explicitly partitioned by workspace plus user auth context or service-integration context?
+10. Are local OAuth token-store helpers clearly forbidden after DB auth lands?
+11. Are stale tasks in the older OAuth/EPM plans marked historical or cross-linked to the active DB service-integration path?
+12. Is every EXEC plan implementable task-by-task by a coding agent without guessing missing file names, route names, credentials, or expected tests?
 
-6. Implement `docs/plans/EXEC-03-db-user-configuration.md` after DB auth is stable.
-   - Workspace defaults remain admin-controlled.
-   - User saved views remain user-owned and cannot mutate shared Home/Jira mappings.
-
-7. Treat `docs/plans/FUTURE-db-additional-features.md` as future scope.
-
-## What Was Fixed Already
-
-Do not ask implementers to re-solve these unless the review finds a regression:
-
-- Tool admin is a tool-local role, not Atlassian admin.
-- Pre-DB OAuth treats signed-in Atlassian users as local tool admins.
-- Settings edit permission fails closed until `/api/config` says `userCanEditSettings: true`.
-- Normal users can edit user-specific Team Groups / Group Labels / EPM-side settings where applicable.
-- Admin-only shared config tabs are hidden from normal users.
-- Team Groups saves allow empty `teamIds` and do not require discovered Jira teams.
-- Shared config save endpoints reject implicit empty overwrites of existing selected projects or groups.
-- OAuth mode requires explicit `ATLASSIAN_EMAIL` / `ATLASSIAN_API_TOKEN` for Home/Townsquare service credentials.
-- Hybrid EPM routes are OAuth-ready with user OAuth for Jira REST and service Basic for Home metadata.
-- EPM all-project rollup worker threads carry captured OAuth auth context and no longer touch Flask request-local session.
-
-## Main Review Questions
-
-Ask Claude to answer these directly, with file and line references:
-
-1. Is the plan order coherent, or are any tasks listed before their prerequisites exist?
-2. Does any active plan still imply Home/Townsquare user 3LO is supported despite the current failing probe?
-3. Does any active plan still store personal user API tokens as shared service credentials?
-4. Does the new user API-token bridge correctly verify `accountId`, not email, before storing a token?
-5. Are Home/Townsquare reads and writes separated cleanly enough?
-6. Are normal users blocked from shared workspace configuration writes after DB roles land, while still allowed to manage user-owned settings?
-7. Are token-bound CSRF and visible auth recovery screens prerequisites before browser-callable DB mutations?
-8. Are cache keys explicitly partitioned by workspace plus user auth context or service-integration context?
-9. Are local OAuth token-store helpers clearly forbidden after DB auth lands?
-10. Are there stale tasks in the older OAuth/EPM plans that should be marked historical, removed, or cross-linked to the active DB service-integration path?
-
-## Expected Claude Output
-
-Use this prompt:
-
-```text
-Review the auth/DB/Home migration plan set on branch cdx/auth-db-context-plan.
-
-Read docs/plans/SUPPORT-db-migration-claude-review-workflow.md first, then follow its read order.
-
-Please produce a code-review-style plan review, not an implementation:
-- Findings first, ordered Critical, Important, Minor.
+Output format:
+- Findings first, ordered by severity: Critical, Important, Minor.
 - Each finding must cite file and line references.
 - Focus on contradictions, missing prerequisites, security gaps, bad task order, stale tasks, and test gaps.
-- Treat Home/Townsquare user 3LO as unsupported unless the plan documents a fresh PASS probe.
-- Treat personal Atlassian API tokens as allowed only for verified per-user Home/Townsquare write credentials, never as shared service credentials.
-- Do not propose broad refactors unless they remove a concrete risk in the plan.
-- End with a short go/no-go recommendation for DB implementation readiness.
+- For each finding, state the exact plan edit needed before execution.
+- Add an execution-readiness rating for each plan:
+  - Ready
+  - Gated
+  - Not ready
+- End with one DB implementation go/no-go recommendation and the first executable next step.
+
+Do not propose broad refactors unless they remove a concrete execution or security risk in the plans.
+Do not ask implementers to re-solve already-fixed pre-DB behavior unless you can cite a regression.
+Do not include secrets, tokens, OAuth callback query strings, local absolute paths, or real Jira fixture data in the review output.
 ```
 
-## Local Review Commands
+## Local Checks Before Review
 
-Run these before sending the plan set to Claude:
+Run these before sending the prompt to Claude:
 
 ```bash
-rg -n "T[B]D|TO[D]O|im[p]lement later|fill in detail[s]|Similar to Tas[k]" docs/plans/EXEC-01-db-auth-foundation.md docs/plans/EXEC-02-db-home-user-api-token-bridge.md docs/plans/SUPPORT-db-migration-claude-review-workflow.md
-git diff --check
 git status --short
+git log --oneline -15
+rg -n "T[B]D|TO[D]O|im[p]lement later|fill in detail[s]|Similar to Tas[k]" docs/plans/EXEC-01-db-auth-foundation.md docs/plans/EXEC-02-db-home-user-api-token-bridge.md docs/plans/EXEC-03-db-user-configuration.md docs/plans/SUPPORT-db-migration-claude-review-workflow.md
+git diff --check
 ```
 
-Optional, if Claude will review current code as well as plans:
+If Claude will review current code as well as plans, also run:
 
 ```bash
 env JIRA_AUTH_MODE=basic JIRA_EMAIL=test@example.com JIRA_TOKEN=test-token JIRA_URL=https://jira.example .venv/bin/python -m unittest discover -s tests
 node tests/test_frontend_api_source_guards.js
 node tests/test_auth_isolation_source_guard.js
 ```
+
+Do not paste secrets, token values, OAuth callback URLs, probe payloads with token material, or real Jira fixture data into Claude.

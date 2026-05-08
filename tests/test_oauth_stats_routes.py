@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 import jira_server
+from backend.auth.context import RequestAuthContext
 from tests.oauth_test_helpers import install_oauth_session
 
 
@@ -159,23 +160,65 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(post_response.status_code, 200, post_response.get_data(as_text=True))
         mock_save.assert_called_once()
 
-    def test_unmigrated_epm_home_routes_stay_guarded(self):
-        routes = [
-            ("GET", "/api/epm/scope"),
-            ("GET", "/api/epm/goals"),
-            ("GET", "/api/epm/projects"),
-            ("POST", "/api/epm/projects/configuration"),
-            ("POST", "/api/epm/projects/preview"),
-            ("GET", "/api/epm/projects/rollup/all"),
-            ("GET", "/api/epm/projects/home-1/issues"),
-            ("GET", "/api/epm/projects/project-1/rollup"),
-        ]
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
-            for method, path in routes:
-                response = self.client.open(path, method=method, json={} if method == "POST" else None)
+    def test_epm_home_routes_are_oauth_ready_with_service_home_credentials(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "fetch_home_site_cloud_id", return_value="cloud-123"), \
+             patch.object(jira_server, "fetch_epm_goal_catalog", return_value=[]), \
+             patch.object(jira_server, "fetch_epm_sub_goals", return_value=[]), \
+             patch.object(jira_server, "build_epm_projects_payload", return_value={"projects": []}), \
+             patch.object(jira_server, "build_all_epm_projects_rollup", return_value=({"projects": []}, 200, {})), \
+             patch.object(jira_server, "find_epm_project_or_404", return_value={
+                 "id": "home-1",
+                 "resolvedLinkage": {"labels": ["rnd_project_alpha"], "epicKeys": []},
+             }), \
+             patch.object(jira_server, "build_base_jql", return_value="project = ABC"), \
+             patch.object(jira_server, "fetch_issues_by_jql", return_value=[]), \
+             patch.object(jira_server, "build_per_project_rollup", return_value=({"project": {}}, 200, {})):
+            responses = [
+                self.client.get("/api/epm/scope"),
+                self.client.get("/api/epm/goals"),
+                self.client.get("/api/epm/projects"),
+                self.client.post(
+                    "/api/epm/projects/configuration",
+                    headers={"X-Requested-With": "jira-execution-planner"},
+                    json={},
+                ),
+                self.client.post(
+                    "/api/epm/projects/preview",
+                    headers={"X-Requested-With": "jira-execution-planner"},
+                    json={},
+                ),
+                self.client.get("/api/epm/projects/rollup/all?tab=backlog"),
+                self.client.get("/api/epm/projects/home-1/issues?tab=backlog"),
+                self.client.get("/api/epm/projects/project-1/rollup?tab=backlog"),
+            ]
 
-                self.assertEqual(response.status_code, 501, path)
-                self.assertEqual(response.get_json()["error"], "route_not_oauth_ready", path)
+        for response in responses:
+            self.assertNotEqual(response.status_code, 501, response.get_data(as_text=True))
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+    def test_epm_issue_search_accepts_explicit_oauth_context(self):
+        context = RequestAuthContext(
+            auth_mode="atlassian_oauth",
+            user_id="local-oauth-user:acct-1",
+            stable_subject="acct-1",
+            atlassian_account_id="acct-1",
+            workspace_id="workspace-1",
+            auth_connection_id="connection-1",
+            cloud_id="cloud-1",
+            site_url="https://example.atlassian.net",
+            token_version="1",
+            account_status="active",
+            is_admin=True,
+        )
+        with patch.object(jira_server, "current_jira_search", return_value=FakeResponse(200, {
+            "issues": [],
+            "isLast": True,
+        })) as mock_search:
+            issues = jira_server.fetch_issues_by_jql("project = ABC", ["summary"], context=context)
+
+        self.assertEqual(issues, [])
+        self.assertEqual(mock_search.call_args.kwargs.get("context"), context)
 
 
 class BasicStatsRouteTests(unittest.TestCase):

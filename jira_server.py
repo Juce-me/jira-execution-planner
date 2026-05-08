@@ -308,6 +308,12 @@ OAUTH_READY_API_PATHS = {
     '/api/fields',
     '/api/boards',
     '/api/epm/config',
+    '/api/epm/scope',
+    '/api/epm/goals',
+    '/api/epm/projects',
+    '/api/epm/projects/configuration',
+    '/api/epm/projects/preview',
+    '/api/epm/projects/rollup/all',
     '/api/sprints',
     '/api/capacity',
     '/api/planned-capacity',
@@ -333,7 +339,11 @@ OAUTH_SHARED_CONFIG_WRITE_PATHS = {
 
 
 def is_oauth_ready_api_path(path):
-    return path.startswith('/api/auth/') or path in OAUTH_READY_API_PATHS
+    if path.startswith('/api/auth/') or path in OAUTH_READY_API_PATHS:
+        return True
+    if path.startswith('/api/epm/projects/') and (path.endswith('/issues') or path.endswith('/rollup')):
+        return True
+    return False
 
 
 def bootstrap_tool_admin_account_ids():
@@ -1172,9 +1182,11 @@ def build_team_value(raw_team):
     return raw_team
 
 
-def jira_search_request(payload):
+def jira_search_request(payload, *, context=None):
     """Call Jira search endpoint through the active request auth boundary."""
-    return current_jira_search(payload)
+    if context is None:
+        return current_jira_search(payload)
+    return current_jira_search(payload, context=context)
 
 
 def fetch_teams_from_jira_api():
@@ -2002,11 +2014,12 @@ def build_epm_rollup_hierarchy(issues, issue_types):
     }
 
 
-def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_queries):
+def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_queries, context=None):
     raw_issues = fetch_issues_by_jql(
         jql,
         fields_list,
         max_results=EPM_ROLLUP_QUERY_MAX_RESULTS + 1,
+        context=context,
     )
     if len(raw_issues) > EPM_ROLLUP_QUERY_MAX_RESULTS:
         truncated_queries.append(query_name)
@@ -2027,7 +2040,10 @@ def build_epm_rollup_dependencies(sub_goal_keys=None):
         build_empty_epm_rollup_payload=build_empty_epm_rollup_payload,
         build_base_jql=build_base_jql,
         add_clause_to_jql=add_clause_to_jql,
-        build_jira_headers=build_jira_headers,
+        build_jira_headers=(
+            (lambda: {}) if auth_context is not None and auth_context.auth_mode != AUTH_MODE_BASIC
+            else build_jira_headers
+        ),
         resolve_epic_link_field_id=(
             lambda headers: resolve_epic_link_field_id(headers, context=auth_context)
             if auth_context is not None
@@ -2041,7 +2057,10 @@ def build_epm_rollup_dependencies(sub_goal_keys=None):
         build_epm_rollup_fields_list=build_epm_rollup_fields_list,
         get_epm_config=get_epm_config,
         normalize_epm_issue_type_sets=normalize_epm_issue_type_sets,
-        fetch_epm_rollup_query=fetch_epm_rollup_query,
+        fetch_epm_rollup_query=(
+            lambda jql, query_name, headers, fields_list, truncated_queries:
+            fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_queries, context=auth_context)
+        ),
         shape_epm_rollup_issue_payload=shape_epm_rollup_issue_payload,
         dedupe_issues_by_key=dedupe_issues_by_key,
         build_epm_rollup_hierarchy=build_epm_rollup_hierarchy,
@@ -3924,7 +3943,7 @@ def fetch_issues_by_keys(keys, fields_list):
     return results
 
 
-def fetch_issues_by_jql(jql, fields_list, max_results=500):
+def fetch_issues_by_jql(jql, fields_list, max_results=500, context=None):
     """Fetch issues by JQL with pagination."""
     results = []
     next_page_token = None
@@ -3939,7 +3958,7 @@ def fetch_issues_by_jql(jql, fields_list, max_results=500):
         }
         if next_page_token:
             payload['nextPageToken'] = next_page_token
-        response = jira_search_request(payload)
+        response = jira_search_request(payload, context=context)
         if response.status_code != 200:
             log_warning(f'Scenario fetch error: status={response.status_code}')
             break

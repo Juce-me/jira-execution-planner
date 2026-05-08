@@ -132,7 +132,7 @@ def get_epm_project_issues_endpoint(home_project_id):
     jql = add_clause_to_jql(base_jql, scope_clause)
     if should_apply_epm_sprint(tab):
         jql = add_clause_to_jql(jql, f'Sprint = {sprint}')
-    issues = fetch_issues_by_jql(jql, build_epm_fields_list())
+    issues = fetch_issues_by_jql(jql, build_epm_fields_list(), context=auth_context)
     slim_issues, epic_details = shape_epm_issue_payload(issues)
     payload = {
         'project': project,

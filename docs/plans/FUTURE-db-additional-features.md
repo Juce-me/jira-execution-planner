@@ -1,4 +1,4 @@
-# Database Additional Features Plan
+# FUTURE: DB Additional Features Plan
 
 > **Future scope:** Do not pull this plan forward into the first DB auth phase or the DB user-configuration phase. Execute only after those phases are complete, verified, and explicitly reopened for follow-up work.
 
@@ -10,8 +10,8 @@ Define later database-backed features that become possible after database-backed
 
 This plan depends on:
 
-- `docs/plans/2026-05-05-database-introduction-user-auth.md`
-- `docs/plans/2026-05-05-database-user-configuration.md`
+- `docs/plans/EXEC-01-db-auth-foundation.md`
+- `docs/plans/EXEC-03-db-user-configuration.md`
 
 ## Future Feature Areas
 

@@ -1,4 +1,4 @@
-# DB Migration Claude Review Workflow
+# SUPPORT: DB Migration Claude Review Workflow
 
 > **Review-only packet:** Do not execute implementation tasks from this file. Use it to review the current auth/DB/Home migration plan set after the OAuth and EPM fixes on `cdx/auth-db-context-plan`.
 
@@ -43,12 +43,15 @@ Expected current evidence:
 git diff --check clean
 ```
 
-Current uncommitted plan-doc changes may exist:
+Current DB plan packet:
 
 ```text
-docs/plans/2026-05-05-database-introduction-user-auth.md
-docs/plans/2026-05-08-db-home-user-api-token-bridge.md
-docs/plans/2026-05-08-db-migration-claude-review-workflow.md
+docs/plans/EXEC-01-db-auth-foundation.md
+docs/plans/EXEC-02-db-home-user-api-token-bridge.md
+docs/plans/EXEC-03-db-user-configuration.md
+docs/plans/FUTURE-db-additional-features.md
+docs/plans/SUPPORT-db-migration-claude-review-workflow.md
+docs/plans/README.md
 ```
 
 Review those as part of the plan set.
@@ -91,16 +94,16 @@ Read these files in order. Do not start with the older EPM feature plans unless 
 6. `docs/plans/2026-05-06-epm-home-oauth-migration.md`
    - Home/Townsquare 3LO gate and dormant PASS-gated user-3LO tasks.
 
-7. `docs/plans/2026-05-05-database-introduction-user-auth.md`
+7. `docs/plans/EXEC-01-db-auth-foundation.md`
    - Primary active DB auth foundation plan.
 
-8. `docs/plans/2026-05-08-db-home-user-api-token-bridge.md`
+8. `docs/plans/EXEC-02-db-home-user-api-token-bridge.md`
    - New supplement for user-owned Atlassian API tokens for Home/Townsquare writes.
 
-9. `docs/plans/2026-05-05-database-user-configuration.md`
+9. `docs/plans/EXEC-03-db-user-configuration.md`
    - Later DB-backed workspace defaults and user saved views.
 
-10. `docs/plans/2026-05-05-database-additional-features.md`
+10. `docs/plans/FUTURE-db-additional-features.md`
    - Future scope only.
 
 ## Active Workflow
@@ -116,7 +119,7 @@ node tests/test_auth_isolation_source_guard.js
 .venv/bin/python scripts/check_home_graphql_oauth.py
 ```
 
-3. Implement `docs/plans/2026-05-05-database-introduction-user-auth.md`.
+3. Implement `docs/plans/EXEC-01-db-auth-foundation.md`.
    - Task 0 is already effectively implemented pre-DB: signed-in OAuth users are local tool admins until DB roles land.
    - Tasks 1 through 8 remain the DB implementation path.
 
@@ -125,15 +128,15 @@ node tests/test_auth_isolation_source_guard.js
    - workspace `home_townsquare_basic` service integration for Home metadata;
    - explicit workspace/service cache partitioning.
 
-5. Implement `docs/plans/2026-05-08-db-home-user-api-token-bridge.md` only after DB encrypted token storage, token-bound CSRF, active user/connection checks, and service integrations exist.
+5. Implement `docs/plans/EXEC-02-db-home-user-api-token-bridge.md` only after DB encrypted token storage, token-bound CSRF, active user/connection checks, and service integrations exist.
    - This bridge is for user-initiated Home writes.
    - It is not required to open the EPM tab.
 
-6. Implement `docs/plans/2026-05-05-database-user-configuration.md` after DB auth is stable.
+6. Implement `docs/plans/EXEC-03-db-user-configuration.md` after DB auth is stable.
    - Workspace defaults remain admin-controlled.
    - User saved views remain user-owned and cannot mutate shared Home/Jira mappings.
 
-7. Treat `docs/plans/2026-05-05-database-additional-features.md` as future scope.
+7. Treat `docs/plans/FUTURE-db-additional-features.md` as future scope.
 
 ## What Was Fixed Already
 
@@ -172,7 +175,7 @@ Use this prompt:
 ```text
 Review the auth/DB/Home migration plan set on branch cdx/auth-db-context-plan.
 
-Read docs/plans/2026-05-08-db-migration-claude-review-workflow.md first, then follow its read order.
+Read docs/plans/SUPPORT-db-migration-claude-review-workflow.md first, then follow its read order.
 
 Please produce a code-review-style plan review, not an implementation:
 - Findings first, ordered Critical, Important, Minor.
@@ -189,7 +192,7 @@ Please produce a code-review-style plan review, not an implementation:
 Run these before sending the plan set to Claude:
 
 ```bash
-rg -n "TBD|TODO|implement later|fill in details|appropriate error|write tests for the above|Similar to Task" docs/plans/2026-05-05-database-introduction-user-auth.md docs/plans/2026-05-08-db-home-user-api-token-bridge.md docs/plans/2026-05-08-db-migration-claude-review-workflow.md
+rg -n "T[B]D|TO[D]O|im[p]lement later|fill in detail[s]|Similar to Tas[k]" docs/plans/EXEC-01-db-auth-foundation.md docs/plans/EXEC-02-db-home-user-api-token-bridge.md docs/plans/SUPPORT-db-migration-claude-review-workflow.md
 git diff --check
 git status --short
 ```

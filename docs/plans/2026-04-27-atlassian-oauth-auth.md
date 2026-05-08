@@ -1,6 +1,6 @@
 # Atlassian OAuth Authentication Implementation Plan
 
-> **Historical status:** Do not execute the unchecked task list in this file as a fresh implementation plan. The active checkout already contains the OAuth foundation and Jira REST migration primitives. Use the "Execution Status Reconciliation" table below as verification input before DB auth work, then use `docs/plans/2026-05-05-oauth-jira-client-route-migration.md` and `docs/plans/2026-05-05-database-introduction-user-auth.md` for executable tasks.
+> **Historical status:** Do not execute the unchecked task list in this file as a fresh implementation plan. The active checkout already contains the OAuth foundation and Jira REST migration primitives. Use the "Execution Status Reconciliation" table below as verification input before DB auth work, then use `docs/plans/2026-05-05-oauth-jira-client-route-migration.md` and `docs/plans/EXEC-01-db-auth-foundation.md` for executable tasks.
 
 **Goal:** Add optional Atlassian OAuth 2.0 3LO login so Jira Execution Planner can call Jira on behalf of the signed-in user without requiring a personal API token.
 
@@ -51,7 +51,7 @@ This plan was drafted before the backend split. Implement it against current `ma
 
 ## Execution Status Reconciliation
 
-As of 2026-05-07, this plan's task checkboxes below are historical and must be reconciled before using this plan as a database-auth blocker. The current codebase already contains many OAuth-slice primitives; use this table as the pre-DB status source and rerun the listed verification commands before starting `docs/plans/2026-05-05-database-introduction-user-auth.md`.
+As of 2026-05-07, this plan's task checkboxes below are historical and must be reconciled before using this plan as a database-auth blocker. The current codebase already contains many OAuth-slice primitives; use this table as the pre-DB status source and rerun the listed verification commands before starting `docs/plans/EXEC-01-db-auth-foundation.md`.
 
 | Plan area | Current code status | Verification before DB auth |
 | --- | --- | --- |

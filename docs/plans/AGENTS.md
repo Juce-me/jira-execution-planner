@@ -2,6 +2,10 @@
 
 Plan-specific instructions for this repository.
 
+## Plan Naming
+
+Use `EXEC-*` for implementation plans, `SUPPORT-*` for review or handoff workflows, and `FUTURE-*` for deferred scope. Date-only plan files are historical, feature-specific, or gate-specific references unless an `EXEC-*` plan names them as active prerequisites.
+
 ## Home/Townsquare 3LO Gate
 
 Before creating or executing any plan that touches Atlassian Home/Townsquare GraphQL auth, Home-backed EPM/APM routes, or Jira-project-backed EPM/APM route migration:

@@ -1,4 +1,6 @@
-# Database Introduction And User Auth Plan
+# EXEC-01: DB Auth Foundation Plan
+
+> **Execution expectation:** This is the first DB implementation plan. Execute only after the OAuth/Home preflight passes or records the current Home 3LO failure, and commit each task separately.
 
 ## Goal
 
@@ -52,11 +54,11 @@ The phase assumes backend Jira calls can resolve the current request's authentic
 This database phase keeps three credential concepts separate:
 
 - User OAuth connections: rows in `auth_connections` and `auth_tokens`, owned by an authenticated Atlassian user, used for Jira REST and any future provider that actually supports user 3LO.
-- User API-token connections: rows in `auth_connections` and `auth_tokens`, owned by an authenticated Atlassian user, used only for explicit user-initiated Home/Townsquare write actions while Home/Townsquare user 3LO remains unsupported. See `docs/plans/2026-05-08-db-home-user-api-token-bridge.md`.
+- User API-token connections: rows in `auth_connections` and `auth_tokens`, owned by an authenticated Atlassian user, used only for explicit user-initiated Home/Townsquare write actions while Home/Townsquare user 3LO remains unsupported. See `docs/plans/EXEC-02-db-home-user-api-token-bridge.md`.
 - Workspace service integrations: rows in `service_integrations` and `service_integration_tokens`, owned by the deployment/workspace and provisioned by an admin/operator service account.
 - Route authorization: normal users can read only through routes explicitly migrated and tested for their auth model; Home/Townsquare-backed or Jira-project-backed mutations require a tool-admin or service-account guard.
 
-Do not store a Home/Townsquare Basic API token as a user's `auth_connection` for shared app auth or workspace metadata reads. Until the Home/Townsquare 3LO gate passes, Home/Townsquare read credentials are service-account credentials and their data must not be described as user-ACL filtered. The only user-owned Basic/API-token exception is the Home write bridge in `docs/plans/2026-05-08-db-home-user-api-token-bridge.md`: the token must be verified against the signed-in OAuth user's Atlassian `account_id`, stored in encrypted `auth_tokens`, and used only for explicit Home/Townsquare write actions as that user. `RequestAuthContext` may still be passed to Home/Townsquare helpers for workspace scoping, cache partitioning, audit, and response gating, but it is not proof that the signed-in user has Home/Townsquare object-level access.
+Do not store a Home/Townsquare Basic API token as a user's `auth_connection` for shared app auth or workspace metadata reads. Until the Home/Townsquare 3LO gate passes, Home/Townsquare read credentials are service-account credentials and their data must not be described as user-ACL filtered. The only user-owned Basic/API-token exception is the Home write bridge in `docs/plans/EXEC-02-db-home-user-api-token-bridge.md`: the token must be verified against the signed-in OAuth user's Atlassian `account_id`, stored in encrypted `auth_tokens`, and used only for explicit Home/Townsquare write actions as that user. `RequestAuthContext` may still be passed to Home/Townsquare helpers for workspace scoping, cache partitioning, audit, and response gating, but it is not proof that the signed-in user has Home/Townsquare object-level access.
 
 ## Security Preconditions
 

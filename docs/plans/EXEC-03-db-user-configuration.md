@@ -1,8 +1,10 @@
-# Database User Configuration Plan
+# EXEC-03: DB User Configuration Plan
+
+> **Execution expectation:** Execute only after `EXEC-01-db-auth-foundation.md` has landed and verified DB `RequestAuthContext`, token-bound CSRF, admin checks, and JSON fallback behavior.
 
 ## Goal
 
-Move dashboard and view configuration from one local file-backed model toward database-backed workspace defaults and user-owned saved views. This phase builds on `docs/plans/2026-05-05-database-introduction-user-auth.md`.
+Move dashboard and view configuration from one local file-backed model toward database-backed workspace defaults and user-owned saved views. This phase builds on `docs/plans/EXEC-01-db-auth-foundation.md`.
 
 ## Scope
 
@@ -24,7 +26,7 @@ This phase does not include:
 
 Do not split users into `dev_lead` and `epm` roles. The user is a system user. The selected configuration determines whether the dashboard opens ENG, EPM, or mixed behavior.
 
-All configuration reads and writes inherit the environment/workspace isolation from `docs/plans/2026-05-05-database-introduction-user-auth.md`. Workspace defaults and saved views are scoped by `workspace_id`, and that workspace is resolved from `RequestAuthContext`; the client must not choose an arbitrary workspace id.
+All configuration reads and writes inherit the environment/workspace isolation from `docs/plans/EXEC-01-db-auth-foundation.md`. Workspace defaults and saved views are scoped by `workspace_id`, and that workspace is resolved from `RequestAuthContext`; the client must not choose an arbitrary workspace id.
 
 Shared workspace defaults remain admin-controlled. User-owned saved views can be created by normal authenticated users, but Jira project references must be checked against the current `RequestAuthContext` project-access snapshot. Home/Townsquare goals, Home projects, and EPM project mappings are app/workspace-scoped metadata until the Home GraphQL 3LO gate passes; do not describe them as user-ACL filtered or allow normal users to mutate the shared Home/Jira-project-backed mapping catalog.
 
@@ -178,7 +180,7 @@ Personal saved views may store references to configured Home/Townsquare project 
 
 ## Migration Plan
 
-Execute only after `docs/plans/2026-05-05-database-introduction-user-auth.md` has landed and verified DB `RequestAuthContext`, token-bound CSRF, admin checks, and JSON fallback behavior.
+Execute only after `docs/plans/EXEC-01-db-auth-foundation.md` has landed and verified DB `RequestAuthContext`, token-bound CSRF, admin checks, and JSON fallback behavior.
 
 ### Task 1: Config Tables And Migration Tests
 

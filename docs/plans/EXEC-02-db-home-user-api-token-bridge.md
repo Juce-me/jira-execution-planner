@@ -1,4 +1,4 @@
-# DB Home User API Token Bridge Implementation Plan
+# EXEC-02: DB Home User API Token Bridge Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. Do not use subagent-driven execution unless the user explicitly asks for it. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -105,7 +105,7 @@ Not allowed:
 
 ## File Map
 
-- Modify: `docs/plans/2026-05-05-database-introduction-user-auth.md`
+- Modify: `docs/plans/EXEC-01-db-auth-foundation.md`
 - Modify: `backend/db/models.py`
 - Modify: `backend/db/migrations/versions/*_initial_auth.py` or add a follow-up migration if the initial DB plan already landed
 - Create: `backend/auth/user_api_tokens.py`

@@ -94,6 +94,18 @@ class TestBackendServiceExtraction(unittest.TestCase):
                 self.assertTrue(os.path.exists(team_catalog_path))
                 self.assertEqual(jira_server.load_team_catalog(), saved_catalog)
 
+    def test_dashboard_config_save_uses_atomic_replace(self):
+        config_store = importlib.import_module('backend.config_store')
+        with tempfile.TemporaryDirectory() as tmp:
+            dashboard_path = os.path.join(tmp, 'dashboard-config.json')
+            with patch.object(config_store.os, 'replace', wraps=config_store.os.replace) as mock_replace:
+                config_store.save_dashboard_config({'version': 1}, dashboard_path)
+
+            self.assertEqual(mock_replace.call_count, 1)
+            self.assertEqual(mock_replace.call_args[0][1], dashboard_path)
+            with open(dashboard_path, 'r') as handle:
+                self.assertEqual(json.load(handle), {'version': 1})
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -330,6 +330,10 @@ def save_groups_config():
     # Save into unified dashboard config, preserving other sections
     try:
         dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}}
+        existing_team_groups = dashboard_config.get('teamGroups') or {}
+        existing_groups = existing_team_groups.get('groups') if isinstance(existing_team_groups, dict) else []
+        if not normalized.get('groups') and _has_dashboard_config_value(existing_groups):
+            return jsonify({'error': 'team groups cannot be cleared implicitly'}), 400
         dashboard_config['teamGroups'] = normalized
         save_dashboard_config(dashboard_config)
     except Exception as e:
@@ -719,6 +723,10 @@ def save_selected_projects():
 
     try:
         dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+        existing_projects = dashboard_config.get('projects') or {}
+        existing_selected = existing_projects.get('selected') if isinstance(existing_projects, dict) else []
+        if not sanitized and _has_dashboard_config_value(existing_selected):
+            return jsonify({'error': 'selected projects cannot be cleared implicitly'}), 400
         dashboard_config.setdefault('projects', {})['selected'] = sanitized
         save_dashboard_config(dashboard_config)
     except Exception as e:

@@ -18,7 +18,7 @@ class PreDbToolAdminGateTests(unittest.TestCase):
     def test_authenticated_oauth_account_can_save_shared_config_before_db_roles(self):
         install_oauth_session(self.client, account_id="regular-user-account")
         routes = [
-            ("/api/projects/selected", {"selected": []}),
+            ("/api/projects/selected", {"selected": [{"key": "ABC", "type": "product"}]}),
             ("/api/board-config", {"boardId": "7", "boardName": "Product"}),
             ("/api/capacity/config", {"project": "CAP", "fieldId": "customfield_1"}),
             ("/api/sprint-field/config", {"fieldId": "customfield_2", "fieldName": "Sprint"}),
@@ -120,6 +120,49 @@ class PreDbToolAdminGateTests(unittest.TestCase):
         self.assertEqual(response.get_json()["groups"][0]["teamIds"], [])
         saved_config = mock_save.call_args[0][0]
         self.assertEqual(saved_config["teamGroups"]["groups"][0]["missingInfoComponents"], ["ATS"])
+
+    def test_project_selection_rejects_empty_overwrite_when_projects_exist(self):
+        install_oauth_session(self.client, account_id="regular-user-account")
+        existing = {
+            "version": 1,
+            "projects": {"selected": [{"key": "ABC", "type": "product"}]},
+        }
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "load_dashboard_config", return_value=existing), \
+             patch.object(jira_server, "save_dashboard_config") as mock_save:
+            response = self.client.post(
+                "/api/projects/selected",
+                json={"selected": []},
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "selected projects cannot be cleared implicitly")
+        mock_save.assert_not_called()
+
+    def test_group_config_rejects_empty_overwrite_when_groups_exist(self):
+        install_oauth_session(self.client, account_id="regular-user-account")
+        existing = {
+            "version": 1,
+            "projects": {"selected": [{"key": "ABC", "type": "product"}]},
+            "teamGroups": {
+                "version": 1,
+                "groups": [{"id": "group-1", "name": "Group 1", "teamIds": ["team-1"]}],
+                "defaultGroupId": "group-1",
+            },
+        }
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "load_dashboard_config", return_value=existing), \
+             patch.object(jira_server, "save_dashboard_config") as mock_save:
+            response = self.client.post(
+                "/api/groups-config",
+                json={"version": 1, "groups": [], "defaultGroupId": ""},
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "team groups cannot be cleared implicitly")
+        mock_save.assert_not_called()
 
     def test_authenticated_oauth_account_can_save_team_catalog(self):
         install_oauth_session(self.client, account_id="regular-user-account")

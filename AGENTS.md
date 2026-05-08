@@ -265,6 +265,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Dashboard config save endpoints must reject implicit empty overwrites of existing selected projects or groups; clearing shared JSON state needs an explicit action.
 - In OAuth mode, Home/Townsquare Basic service credentials must be explicit `ATLASSIAN_EMAIL`/`ATLASSIAN_API_TOKEN`; only Basic auth mode may fall back to `JIRA_EMAIL`/`JIRA_TOKEN`.
 - OAuth-ready EPM routes use hybrid auth: user OAuth for Jira REST and explicit Home/Townsquare service Basic creds for Home metadata; worker-thread Jira searches must carry the captured request auth context.
+- For OAuth Jira worker-thread fixes, verify a no-request-context test that reaches the real Jira auth wrapper; route mocks alone are not sufficient.
 
 ---
 

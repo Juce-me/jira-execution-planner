@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 import jira_server
+from backend.auth.context import RequestAuthContext
 from tests.oauth_test_helpers import push_oauth_request
 
 
@@ -25,6 +26,21 @@ class OAuthJiraClientTests(unittest.TestCase):
     def _push_oauth_request(self):
         request_context = push_oauth_request(jira_server.app)
         self.addCleanup(request_context.pop)
+
+    def _oauth_context(self, session_id="session-1"):
+        return RequestAuthContext(
+            auth_mode="atlassian_oauth",
+            user_id="local-oauth-user:account-123",
+            stable_subject="account-123",
+            atlassian_account_id="account-123",
+            workspace_id="workspace-1",
+            auth_connection_id=f"local-oauth-connection:{session_id}",
+            cloud_id="cloud-123",
+            site_url="https://example.atlassian.net",
+            token_version="1",
+            account_status="active",
+            is_admin=True,
+        )
 
     def tearDown(self):
         jira_server.OAUTH_TOKEN_STORE.clear()
@@ -66,6 +82,35 @@ class OAuthJiraClientTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(calls[0][0], "https://api.atlassian.com/ex/jira/cloud-123/rest/api/3/search/jql")
         self.assertEqual(calls[0][1]["params"]["fields"], "summary,status")
+        self.assertEqual(calls[0][1]["headers"]["Authorization"], "Bearer access-123")
+
+    def test_current_jira_search_oauth_uses_explicit_context_without_request_context(self):
+        calls = []
+
+        def fake_get(url, **kwargs):
+            calls.append((url, kwargs))
+            return FakeResponse(200, {"issues": []})
+
+        jira_server.OAUTH_TOKEN_STORE["session-1"] = {
+            "access_token": "access-123",
+            "refresh_token": "refresh-123",
+            "expires_at": 9999999999,
+            "cloudid": "cloud-123",
+            "site_url": "https://example.atlassian.net",
+            "account_id": "account-123",
+            "stored_at": 9999999999,
+        }
+        context = self._oauth_context("session-1")
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "resilient_jira_get", side_effect=fake_get):
+            response = jira_server.current_jira_search({
+                "jql": 'project = "PROD"',
+                "fields": ["summary"],
+                "maxResults": 50,
+            }, context=context)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(calls[0][0], "https://api.atlassian.com/ex/jira/cloud-123/rest/api/3/search/jql")
         self.assertEqual(calls[0][1]["headers"]["Authorization"], "Bearer access-123")
 
     def test_current_jira_get_basic_uses_site_url_and_basic_auth_without_request_context(self):

@@ -24,10 +24,10 @@ Repository context:
 Plan packet to review:
 - docs/plans/README.md
 - docs/plans/AGENTS.md
-- docs/atlassian-oauth-setup.md
-- docs/plans/2026-04-27-atlassian-oauth-auth.md
-- docs/plans/2026-05-05-oauth-jira-client-route-migration.md
-- docs/plans/2026-05-06-epm-home-oauth-migration.md
+- docs/SUPPORT-atlassian-oauth-setup.md
+- docs/plans/SUPPORT-atlassian-oauth-auth.md
+- docs/plans/SUPPORT-oauth-jira-client-route-migration.md
+- docs/plans/SUPPORT-epm-home-oauth-migration.md
 - docs/plans/EXEC-01-db-auth-foundation.md
 - docs/plans/EXEC-02-db-home-user-api-token-bridge.md
 - docs/plans/EXEC-03-db-user-configuration.md
@@ -37,10 +37,10 @@ Read order:
 1. AGENTS.md
 2. docs/plans/README.md
 3. docs/plans/AGENTS.md
-4. docs/atlassian-oauth-setup.md
-5. docs/plans/2026-04-27-atlassian-oauth-auth.md
-6. docs/plans/2026-05-05-oauth-jira-client-route-migration.md
-7. docs/plans/2026-05-06-epm-home-oauth-migration.md
+4. docs/SUPPORT-atlassian-oauth-setup.md
+5. docs/plans/SUPPORT-atlassian-oauth-auth.md
+6. docs/plans/SUPPORT-oauth-jira-client-route-migration.md
+7. docs/plans/SUPPORT-epm-home-oauth-migration.md
 8. docs/plans/EXEC-01-db-auth-foundation.md
 9. docs/plans/EXEC-02-db-home-user-api-token-bridge.md
 10. docs/plans/EXEC-03-db-user-configuration.md

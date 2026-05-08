@@ -39,7 +39,7 @@ This phase does not include:
 
 ## Related Repo Context
 
-- `docs/plans/2026-04-27-atlassian-oauth-auth.md` defines the first OAuth slice and intentionally defers production multi-user persistence.
+- `docs/plans/SUPPORT-atlassian-oauth-auth.md` defines the first OAuth slice and intentionally defers production multi-user persistence.
 - `docs/features/epm-view.md` documents current EPM config shape and exact-label rollup behavior that later phases must preserve.
 - `postmortem/MRT010-startup-api-load-fanout-and-overscoped-payloads.md` and `postmortem/MRT015-epm-first-load-home-fanout-overfetch.md` show why database-backed bootstrapping must stay compact and measured.
 
@@ -47,7 +47,7 @@ This phase does not include:
 
 Do not implement this database phase until the Jira/Home auth-client boundary exists and the OAuth slice has closed the local-only safety gaps.
 
-The phase assumes backend Jira calls can resolve the current request's authenticated user, auth connection, workspace/site, and headers without reading process-global `JIRA_EMAIL` / `JIRA_TOKEN` directly in every route. Home/Townsquare calls must not be treated as user-scoped until `docs/plans/2026-05-06-epm-home-oauth-migration.md` passes its real local 3LO gate. Until that gate passes, Home/Townsquare metadata uses workspace-level service credentials and remains guarded or read-only for normal users. Before starting this phase, the OAuth slice must also serialize refresh-token replacement, return `route_not_oauth_ready`/501 for un-migrated API routes in `JIRA_AUTH_MODE=atlassian_oauth`, and disable or auth-key Jira/Home process caches for OAuth users. Either complete `docs/plans/2026-04-27-atlassian-oauth-auth.md` first or add an equivalent centralized auth/client layer with those same gates before database-backed identity work starts.
+The phase assumes backend Jira calls can resolve the current request's authenticated user, auth connection, workspace/site, and headers without reading process-global `JIRA_EMAIL` / `JIRA_TOKEN` directly in every route. Home/Townsquare calls must not be treated as user-scoped until the real local 3LO gate documented in `docs/plans/SUPPORT-epm-home-oauth-migration.md` passes. Until that gate passes, Home/Townsquare metadata uses workspace-level service credentials and remains guarded or read-only for normal users. Before starting this phase, the OAuth slice must also serialize refresh-token replacement, return `route_not_oauth_ready`/501 for un-migrated API routes in `JIRA_AUTH_MODE=atlassian_oauth`, and disable or auth-key Jira/Home process caches for OAuth users. Verify the reconciled OAuth support references in `docs/plans/SUPPORT-atlassian-oauth-auth.md` first, or add an equivalent centralized auth/client layer with those same gates before database-backed identity work starts.
 
 ## Home/Townsquare And Service-Credential Boundary
 

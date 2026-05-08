@@ -1,4 +1,4 @@
-# Atlassian OAuth Setup
+# SUPPORT: Atlassian OAuth Setup
 
 This app uses Atlassian OAuth 2.0 (3LO) for browser login. Microsoft Entra SSO, when enforced by your organization, happens inside Atlassian's login flow; do not create or use a Microsoft OAuth app for Jira API bearer tokens.
 

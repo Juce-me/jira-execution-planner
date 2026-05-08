@@ -89,7 +89,7 @@ Verification:
 
 ### Safer EPM Project Metadata Caching
 
-The database can store Home project metadata cache rows keyed by workspace, service integration, root goal, sub-goal, lifecycle tab, and cache version. Until the Home GraphQL 3LO gate passes, this cache is service-credential-backed app metadata and must not be treated as proof of user-level Home/Townsquare visibility. If Home/Townsquare user 3LO later becomes supported, follow `docs/plans/2026-05-06-epm-home-oauth-migration.md` and add user/auth-context cache partitioning before serving Home metadata as user-scoped data. This should be done only after measuring that database caching reduces Jira/Home fan-out without making first load stale or harder to reason about.
+The database can store Home project metadata cache rows keyed by workspace, service integration, root goal, sub-goal, lifecycle tab, and cache version. Until the Home GraphQL 3LO gate passes, this cache is service-credential-backed app metadata and must not be treated as proof of user-level Home/Townsquare visibility. If Home/Townsquare user 3LO later becomes supported, follow `docs/plans/SUPPORT-epm-home-oauth-migration.md` and add user/auth-context cache partitioning before serving Home metadata as user-scoped data. This should be done only after measuring that database caching reduces Jira/Home fan-out without making first load stale or harder to reason about.
 
 This feature must preserve lessons from:
 

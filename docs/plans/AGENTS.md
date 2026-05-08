@@ -4,7 +4,7 @@ Plan-specific instructions for this repository.
 
 ## Plan Naming
 
-Use `EXEC-*` for implementation plans, `DONE-*` for executed plans kept for audit, `SUPPORT-*` for review or handoff workflows, and `FUTURE-*` for deferred scope. Date-only plan files are historical, feature-specific, or gate-specific references unless an `EXEC-*` plan names them as active prerequisites.
+Use `EXEC-*` for implementation plans, `DONE-*` for executed plans kept for audit, `SUPPORT-*` for review, handoff, setup, gate, or historical-reference workflows, and `FUTURE-*` for deferred scope. Do not create new date-only auth/DB/Home migration docs.
 
 Do not rename an `EXEC-*` plan to `DONE-*` until the implementation has been completed, verified, and accepted or merged. Add a short top note naming the execution commit or PR, for example:
 
@@ -16,9 +16,9 @@ Do not rename an `EXEC-*` plan to `DONE-*` until the implementation has been com
 
 Before creating or executing any plan that touches Atlassian Home/Townsquare GraphQL auth, Home-backed EPM/APM routes, or Jira-project-backed EPM/APM route migration:
 
-1. Read `docs/atlassian-oauth-setup.md`, especially the Home GraphQL OAuth gate and visibility model.
+1. Read `docs/SUPPORT-atlassian-oauth-setup.md`, especially the Home GraphQL OAuth gate and visibility model.
 2. Check whether Atlassian Home/Townsquare GraphQL now accepts user 3LO tokens from a real local OAuth session.
-3. Start from the canonical Part 2 plan: `docs/plans/2026-05-06-epm-home-oauth-migration.md`.
+3. Start from the canonical Part 2 support reference: `docs/plans/SUPPORT-epm-home-oauth-migration.md`.
 4. Run or document this gate before marking any Home/Townsquare-backed route OAuth-ready:
 
 ```bash

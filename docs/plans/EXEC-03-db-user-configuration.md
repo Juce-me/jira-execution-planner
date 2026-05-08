@@ -283,6 +283,6 @@ Execute only after `docs/plans/EXEC-01-db-auth-foundation.md` has landed and ver
 - Normal users can save private views but cannot mutate shared workspace defaults.
 - Normal users cannot mutate shared Home/Townsquare-backed or Jira-project-backed EPM/APM mappings through saved-view endpoints.
 - Saved-view validation uses the shared `reject_shared_mapping_payload_keys` helper from `backend/config/view_validation.py`.
-- Saved views that reference Home/Townsquare metadata do not claim user-level Home visibility unless `docs/plans/2026-05-06-epm-home-oauth-migration.md` has passed and the implementation validates that user 3LO path.
+- Saved views that reference Home/Townsquare metadata do not claim user-level Home visibility unless the Home 3LO gate documented in `docs/plans/SUPPORT-epm-home-oauth-migration.md` has passed and the implementation validates that user 3LO path.
 - No view payload contains token material.
 - Initial dashboard bootstrap remains one compact user/config request plus the existing scoped data requests.

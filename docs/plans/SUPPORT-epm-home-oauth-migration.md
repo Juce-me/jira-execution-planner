@@ -1,6 +1,6 @@
-# Atlassian OAuth Migration Plan, Part 2: EPM/Home Routes
+# SUPPORT: EPM/Home OAuth Migration Reference
 
-> **Execution note:** Implement this plan task-by-task in order. Steps use checkbox (`- [ ]`) syntax for tracking. This is Part 2 of the singular Atlassian OAuth migration plan; start only after Part 1 final verification passes. Do not use a secondary worktree for this repo.
+> **Support status:** This file is Home/Townsquare OAuth gate and route-migration context, not the active DB implementation plan. While Home/Townsquare user 3LO remains unsupported, use it as support evidence for the service-integration path in `docs/plans/EXEC-01-db-auth-foundation.md`. Do not execute dormant user-3LO migration tasks unless a fresh real probe returns `PASS home_graphql_3lo_supported` and a new `EXEC-*` plan or explicit reopened scope points here.
 
 **Goal:** Keep EPM/Home routes guarded while Home/Townsquare user 3LO is unsupported. Jira REST remains user-OAuth-backed; Home/Townsquare metadata remains server-side service-credential-backed until a fresh real Home GraphQL probe proves user 3LO works.
 
@@ -12,25 +12,25 @@
 
 ## Migration Plan Structure
 
-Use these two files as one ordered migration plan:
+Use these two support files as the ordered OAuth/Home migration reference set:
 
-1. Part 1: `docs/plans/2026-05-05-oauth-jira-client-route-migration.md`
+1. Part 1: `docs/plans/SUPPORT-oauth-jira-client-route-migration.md`
    - Must be implemented and verified before this file starts.
    - Provides the Jira REST OAuth client boundary that this Part 2 plan depends on.
-2. Part 2, this file: `docs/plans/2026-05-06-epm-home-oauth-migration.md`
+2. Part 2, this file: `docs/plans/SUPPORT-epm-home-oauth-migration.md`
    - Starts with a real Home/Townsquare GraphQL OAuth feasibility gate.
    - Stops before user-3LO route migration if the gate fails.
    - Hands Home/Townsquare route work to the DB auth service-integration path while the gate fails.
    - Migrates EPM/Home routes through user 3LO only after the gate passes and only before DB auth lands; after DB auth lands, use the DB auth boundary instead of local OAuth token-store helpers.
 
-Execute Part 2 tasks in order. Do not run Part 2 implementation in parallel with unfinished Part 1 work because the EPM rollup tasks depend on Part 1's `current_jira_get` and `current_jira_search` boundary.
+Do not run Part 2 implementation in parallel with unfinished Part 1 work because the EPM rollup tasks depend on Part 1's `current_jira_get` and `current_jira_search` boundary. Current DB execution should follow `docs/plans/EXEC-01-db-auth-foundation.md` unless the Home 3LO gate is explicitly reopened.
 
 ## Implementation Status Reconciliation
 
 Status as of 2026-05-07: this is the canonical Home/Townsquare 3LO migration plan. The older same-dated Home/Townsquare readiness plan has been deleted; do not recreate or execute a parallel migration.
 
 - Part 2 Task 1's local feasibility helper, local dev probe route, wrapper script, and unit tests already exist in the checkout.
-- The latest documented local Home GraphQL gate result in `docs/atlassian-oauth-setup.md` is `FAIL home_graphql_3lo_unsupported`, so Home/Townsquare-backed EPM routes must remain guarded with `route_not_oauth_ready` until either a real local probe produces `PASS` or the DB auth plan introduces an admin-managed service-integration route design.
+- The latest documented local Home GraphQL gate result in `docs/SUPPORT-atlassian-oauth-setup.md` is `FAIL home_graphql_3lo_unsupported`, so Home/Townsquare-backed EPM routes must remain guarded with `route_not_oauth_ready` until either a real local probe produces `PASS` or the DB auth plan introduces an admin-managed service-integration route design.
 - `current_home_graphql_client`, `current_teamwork_graph_client`, and `OAUTH_READY_API_PATH_PATTERNS` do not exist yet. Task 1A and Tasks 2 through 9 remain unimplemented.
 - `backend/routes/epm_routes.py` already calls `fetch_issues_by_jql(jql, build_epm_fields_list())` for `GET /api/epm/projects/<home_project_id>/issues`. Do not reintroduce `build_jira_headers()` in that route; Task 6 should verify the existing no-header call and finish the OAuth boundary, auth-error, cache, and dynamic route-readiness work.
 - Any Home/Townsquare-backed or Jira-project-backed mutation must have a tool-admin or service-account guard before it is marked OAuth-ready. `docs/plans/EXEC-01-db-auth-foundation.md` Task 0 is the single implementation owner for the pre-DB shared-config tool-admin gate; this plan only verifies that gate unless it adds a new persistent Home mutation.
@@ -97,7 +97,7 @@ Do not add a route to `OAUTH_READY_API_PATHS` or an OAuth-ready dynamic path mat
 - Create: `tests/test_epm_home_oauth_feasibility.py`
 - Modify: `backend/epm/home.py`
 - Modify: `backend/routes/auth_routes.py` only if a local-only server-side probe route is needed for browser-session testing
-- Modify: `docs/atlassian-oauth-setup.md`
+- Modify: `docs/SUPPORT-atlassian-oauth-setup.md`
 
 - [x] **Step 1: Write failing probe tests**
 
@@ -269,9 +269,9 @@ FAIL means:
 
 - [ ] **Step 7: Apply the gate outcome**
 
-If PASS, update `docs/atlassian-oauth-setup.md` with the exact granted OAuth scope string used by the passing local session and continue to Part 2 Task 2.
+If PASS, update `docs/SUPPORT-atlassian-oauth-setup.md` with the exact granted OAuth scope string used by the passing local session and continue to Part 2 Task 2.
 
-If FAIL with `home_graphql_3lo_unsupported`, stop this implementation before route migration. Keep `/api/epm/scope`, `/api/epm/goals`, `/api/epm/projects`, `/api/epm/projects/configuration`, `/api/epm/projects/preview`, `/api/epm/projects/rollup/all`, `/api/epm/projects/<home_project_id>/issues`, and `/api/epm/projects/<project_id>/rollup` guarded with `route_not_oauth_ready`. Add a short section to `docs/atlassian-oauth-setup.md` stating that EPM/Home needs an admin-owned service credential design later, stored only server-side and audited. Do not use the user's Jira OAuth token against Home when the probe says unsupported.
+If FAIL with `home_graphql_3lo_unsupported`, stop this implementation before route migration. Keep `/api/epm/scope`, `/api/epm/goals`, `/api/epm/projects`, `/api/epm/projects/configuration`, `/api/epm/projects/preview`, `/api/epm/projects/rollup/all`, `/api/epm/projects/<home_project_id>/issues`, and `/api/epm/projects/<project_id>/rollup` guarded with `route_not_oauth_ready`. Add a short section to `docs/SUPPORT-atlassian-oauth-setup.md` stating that EPM/Home needs an admin-owned service credential design later, stored only server-side and audited. Do not use the user's Jira OAuth token against Home when the probe says unsupported.
 
 - [ ] **Step 8: Commit the feasibility gate**
 
@@ -279,7 +279,7 @@ Run:
 
 ```bash
 python3 -m unittest tests.test_epm_home_oauth_feasibility tests.test_oauth_route_guards
-git add backend/epm/home.py backend/routes/auth_routes.py scripts/check_home_graphql_oauth.py tests/test_epm_home_oauth_feasibility.py docs/atlassian-oauth-setup.md
+git add backend/epm/home.py backend/routes/auth_routes.py scripts/check_home_graphql_oauth.py tests/test_epm_home_oauth_feasibility.py docs/SUPPORT-atlassian-oauth-setup.md
 git commit -m "Add Home GraphQL OAuth feasibility gate"
 ```
 
@@ -1238,7 +1238,7 @@ Expected:
 Commit message for the stop path:
 
 ```bash
-git add backend/epm/home.py backend/routes/auth_routes.py scripts/check_home_graphql_oauth.py tests/test_epm_home_oauth_feasibility.py docs/atlassian-oauth-setup.md
+git add backend/epm/home.py backend/routes/auth_routes.py scripts/check_home_graphql_oauth.py tests/test_epm_home_oauth_feasibility.py docs/SUPPORT-atlassian-oauth-setup.md
 git commit -m "Record Home GraphQL OAuth gate result"
 ```
 

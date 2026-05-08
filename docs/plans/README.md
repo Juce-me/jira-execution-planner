@@ -8,7 +8,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 - `DONE-*`: completed and verified execution plans. Keep these for audit/history only; do not execute them as active plans.
 - `SUPPORT-*`: review, handoff, or operator support documents. Do not execute them as implementation plans.
 - `FUTURE-*`: deferred scope. Do not pull these into the current implementation unless the scope is explicitly reopened.
-- Date-only files: historical, feature-specific, or gate-specific plans. Read them when an `EXEC-*` or `SUPPORT-*` file points to them.
+- Do not create new date-only auth/DB/Home migration docs. Use one of the prefixes above so execution state is visible from the filename.
 
 ## Current DB Workflow
 

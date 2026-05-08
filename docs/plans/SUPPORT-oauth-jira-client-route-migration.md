@@ -1,6 +1,6 @@
-# Atlassian OAuth Migration Plan, Part 1: Jira REST Routes
+# SUPPORT: OAuth Jira REST Route Migration Reference
 
-> **Execution note:** Implement this plan task-by-task in order. Steps use checkbox (`- [ ]`) syntax for tracking. This is Part 1 of the singular Atlassian OAuth migration plan; finish and verify this file before starting Part 2.
+> **Support status:** This file is historical route-migration context for DB execution, not the active DB implementation plan. Do not re-run completed tasks from this file unless a review finds a regression. Use the reconciliation section and final verification items as support evidence for `docs/plans/EXEC-01-db-auth-foundation.md`.
 
 **Goal:** Migrate the dashboard's Jira REST calls from direct Basic-header construction to the request-scoped OAuth-aware Jira client boundary, while keeping Basic mode compatible.
 
@@ -12,17 +12,17 @@
 
 ## Migration Plan Structure
 
-Use these two files as one ordered migration plan:
+Use these two support files as the ordered OAuth migration reference set:
 
-1. Part 1, this file: `docs/plans/2026-05-05-oauth-jira-client-route-migration.md`
+1. Part 1, this file: `docs/plans/SUPPORT-oauth-jira-client-route-migration.md`
    - Migrates OAuth login readiness, Jira REST client boundaries, Jira REST route batches, local config routes, source guards, and the Part 1 browser journey.
    - Keeps Home/Townsquare-backed EPM routes guarded.
-2. Part 2: `docs/plans/2026-05-06-epm-home-oauth-migration.md`
+2. Part 2: `docs/plans/SUPPORT-epm-home-oauth-migration.md`
    - Starts only after Part 1 final verification passes.
    - Runs the Home/Townsquare GraphQL OAuth feasibility gate before any Home-backed EPM route migration.
    - Continues with EPM/Home routes only if that gate passes.
 
-Do not pick tasks from both files in parallel. Execute Part 1 tasks in order, review the final verification output, then hand off to Part 2.
+Do not pick tasks from both files in parallel as new active work. If a fresh OAuth/Home issue reopens this area, reconcile Part 1 first, review the final verification output, then hand off to Part 2.
 
 ## Implementation Status Reconciliation
 
@@ -220,7 +220,7 @@ Modify these files only unless a named test exposes a required caller:
 - `tests/oauth_test_helpers.py` - shared full-scope OAuth test-session helper.
 - `tests/test_oauth_jira_client_source_guard.py` - new source guard against direct Basic/Jira URL construction in migrated route surfaces.
 - `tests/test_auth_isolation_source_guard.js` - keep dashboard auth isolation; allow CSRF headers only.
-- `docs/atlassian-oauth-setup.md` - update the migration status and route coverage note.
+- `docs/SUPPORT-atlassian-oauth-setup.md` - update the migration status and route coverage note.
 - `.env.example` - update comments only if route migration changes the local testing instructions.
 
 Do not hand-edit `frontend/dist/`; run `npm run build` if frontend source changes.
@@ -234,7 +234,7 @@ Do not hand-edit `frontend/dist/`; run `npm run build` if frontend source change
 - Modify: `backend/routes/auth_routes.py`
 - Modify: `jira_server.py`
 - Modify: `.env.example`
-- Modify: `docs/atlassian-oauth-setup.md`
+- Modify: `docs/SUPPORT-atlassian-oauth-setup.md`
 - Test: `tests/oauth_test_helpers.py`
 - Test: `tests/test_jira_auth.py`
 - Test: `tests/test_auth_routes.py`
@@ -451,7 +451,7 @@ In `.env.example`, make the OAuth scopes example match the new default:
 ATLASSIAN_SCOPES=read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access
 ```
 
-In `docs/atlassian-oauth-setup.md`, update the scope table so setup clearly maps each scope to the Atlassian Developer Console API:
+In `docs/SUPPORT-atlassian-oauth-setup.md`, update the scope table so setup clearly maps each scope to the Atlassian Developer Console API:
 
 ```markdown
 | API in Developer Console | Scope | Why this app needs it |
@@ -493,7 +493,7 @@ Expected: PASS.
 - [x] **Step 6: Commit**
 
 ```bash
-git add backend/auth/jira_auth.py backend/routes/auth_routes.py jira_server.py .env.example docs/atlassian-oauth-setup.md tests/oauth_test_helpers.py tests/test_jira_auth.py tests/test_auth_routes.py
+git add backend/auth/jira_auth.py backend/routes/auth_routes.py jira_server.py .env.example docs/SUPPORT-atlassian-oauth-setup.md tests/oauth_test_helpers.py tests/test_jira_auth.py tests/test_auth_routes.py
 git commit -m "Enforce Jira Software OAuth scopes and re-consent"
 ```
 
@@ -2261,13 +2261,13 @@ git commit -m "Guard OAuth Jira client route migration"
 ## Part 1 Task 7: Documentation And Manual OAuth Journey
 
 **Files:**
-- Modify: `docs/atlassian-oauth-setup.md`
+- Modify: `docs/SUPPORT-atlassian-oauth-setup.md`
 - Modify: `.env.example` only if comments still imply full dashboard is not migrated after the route batches pass.
 - Test: full backend/frontend verification.
 
 - [ ] **Step 1: Update OAuth setup docs**
 
-In `docs/atlassian-oauth-setup.md`, replace the current route limitation text:
+In `docs/SUPPORT-atlassian-oauth-setup.md`, replace the current route limitation text:
 
 ```markdown
 The full dashboard is not migrated in this OAuth slice. After login, ENG dashboard data requests can still report `route_not_oauth_ready`; that means OAuth login worked, but the data route is intentionally blocked until it is migrated.
@@ -2359,7 +2359,7 @@ Expected: the latest commits are the atomic OAuth Jira client migration commits 
 - [ ] **Step 7: Commit docs**
 
 ```bash
-git add docs/atlassian-oauth-setup.md .env.example
+git add docs/SUPPORT-atlassian-oauth-setup.md .env.example
 git commit -m "Document OAuth Jira client route coverage"
 ```
 
@@ -2372,7 +2372,7 @@ Do not push. Wait for explicit user confirmation before push.
 Do not implement EPM/Home route migration in Part 1 commits. After Part 1 final verification passes, continue with:
 
 ```text
-docs/plans/2026-05-06-epm-home-oauth-migration.md
+docs/plans/SUPPORT-epm-home-oauth-migration.md
 ```
 
 Part 2 owns the Home/Townsquare GraphQL feasibility gate, the request-bound Home GraphQL client, EPM/Home route migration, EPM cache isolation, and the final EPM browser journey. It intentionally rechecks `/api/epm/config` because that route is local EPM configuration, but Part 1 is allowed to migrate it when local config routes are migrated.

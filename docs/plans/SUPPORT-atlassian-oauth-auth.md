@@ -1,6 +1,6 @@
-# Atlassian OAuth Authentication Implementation Plan
+# SUPPORT: Atlassian OAuth Auth Reference
 
-> **Historical status:** Do not execute the unchecked task list in this file as a fresh implementation plan. The active checkout already contains the OAuth foundation and Jira REST migration primitives. Use the "Execution Status Reconciliation" table below as verification input before DB auth work, then use `docs/plans/2026-05-05-oauth-jira-client-route-migration.md` and `docs/plans/EXEC-01-db-auth-foundation.md` for executable tasks.
+> **Support status:** Do not execute the unchecked task list in this file as a fresh implementation plan. The active checkout already contains the OAuth foundation and Jira REST migration primitives. Use the "Execution Status Reconciliation" table below as verification input before DB auth work, then use `docs/plans/SUPPORT-oauth-jira-client-route-migration.md` as support context and `docs/plans/EXEC-01-db-auth-foundation.md` for executable DB tasks.
 
 **Goal:** Add optional Atlassian OAuth 2.0 3LO login so Jira Execution Planner can call Jira on behalf of the signed-in user without requiring a personal API token.
 

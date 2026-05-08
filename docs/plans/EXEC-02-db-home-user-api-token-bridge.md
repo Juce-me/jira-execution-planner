@@ -264,7 +264,7 @@ node tests/test_frontend_api_source_guards.js
 **Files:**
 - Create: `tests/test_user_api_token_source_guard.py`
 - Modify: `tests/test_auth_isolation_source_guard.js` if it owns backend/frontend token isolation checks
-- Modify: `docs/atlassian-oauth-setup.md`
+- Modify: `docs/SUPPORT-atlassian-oauth-setup.md`
 - Modify: `README.md`
 
 - [ ] Add a source guard proving no frontend code stores `apiToken`, `access_token`, `refresh_token`, or `Authorization` in localStorage/sessionStorage.

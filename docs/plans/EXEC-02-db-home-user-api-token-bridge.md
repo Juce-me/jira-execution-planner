@@ -10,6 +10,26 @@
 
 ---
 
+## Preflight: EXEC-01 Tasks Required Before This Plan
+
+Do not start Task 1 until the following EXEC-01 tasks have landed in `main` and the listed verifications pass on the current checkout:
+
+- EXEC-01 Task 1: DB runtime, migration harness, and local commands.
+- EXEC-01 Task 2: Token encryption, keyring, and audit redaction.
+- EXEC-01 Task 3: DB auth context resolver and local OAuth store cutover prep.
+- EXEC-01 Task 4: Refresh race, refresh reuse, and token versioning.
+- EXEC-01 Task 6: Token-bound CSRF and visible recovery pages.
+
+Re-run and attach the results to the EXEC-02 execution notes:
+
+```bash
+.venv/bin/python -m unittest tests.test_db_session tests.test_db_migrations tests.test_token_encryption tests.test_token_key_rotation tests.test_audit_redaction_source_guard tests.test_auth_context_db tests.test_db_oauth_cutover tests.test_token_refresh_race tests.test_token_refresh_reuse tests.test_csrf_token_bound tests.test_db_auth_recovery_pages
+```
+
+If any task above is unlanded, stop and finish EXEC-01 first.
+
+If specific test module names listed above do not exist after EXEC-01 has merged, replace with the actual EXEC-01 test names from `EXEC-01-db-auth-foundation.md` Tasks 1-6 — do not invent test names.
+
 ## Decision
 
 Yes, we can support the model the user described, with one important correction:
@@ -105,9 +125,8 @@ Not allowed:
 
 ## File Map
 
-- Modify: `docs/plans/EXEC-01-db-auth-foundation.md`
 - Modify: `backend/db/models.py`
-- Modify: `backend/db/migrations/versions/*_initial_auth.py` or add a follow-up migration if the initial DB plan already landed
+- Create: `backend/db/migrations/versions/*_user_api_token_connection.py`
 - Create: `backend/auth/user_api_tokens.py`
 - Create: `backend/auth/home_credentials.py`
 - Modify: `backend/auth/token_crypto.py`
@@ -130,13 +149,14 @@ Not allowed:
 
 **Files:**
 - Modify: `backend/db/models.py`
-- Modify: `backend/db/migrations/versions/*_initial_auth.py` or create a new Alembic version after DB auth lands
+- Create: `backend/db/migrations/versions/*_user_api_token_connection.py`
 - Test: `tests/test_user_api_token_connections.py`
 
-- [ ] Add `atlassian_user_api_token` as an allowed `auth_connections.provider` value.
-- [ ] Add nullable `auth_connections.credential_subject` for the verified Basic-auth email.
-- [ ] Add non-null `auth_connections.capabilities` JSON/array storage with default `[]`.
-- [ ] Add a uniqueness constraint so each user has at most one current `atlassian_user_api_token` connection per workspace/cloud id.
+- [ ] Create a follow-up migration `backend/db/migrations/versions/*_user_api_token_connection.py`; do not edit `*_initial_auth.py`.
+- [ ] Add `atlassian_user_api_token` as an allowed `auth_connections.provider` value in the model and follow-up migration.
+- [ ] Add nullable `auth_connections.credential_subject` for the verified Basic-auth email in the model and follow-up migration.
+- [ ] Add non-null `auth_connections.capabilities` JSON/array storage with default `[]` in the model and follow-up migration.
+- [ ] Add a uniqueness constraint so each user has at most one current `atlassian_user_api_token` connection per workspace/cloud id in the model and follow-up migration.
 - [ ] Add tests proving `service_integrations` cannot use `atlassian_user_api_token` and `auth_connections` cannot use `home_townsquare_basic`.
 - [ ] Add tests proving `auth_tokens.token_kind = "api_token"` can attach to `atlassian_user_api_token` but the plaintext token never appears in model reprs, admin responses, logs, or audit event metadata.
 - [ ] Run:
@@ -184,10 +204,12 @@ Not allowed:
 - [ ] Store the API token in encrypted `auth_tokens`, set connection `status = "active"`, increment `token_version`, and write audit event `user_api_token_connected`.
 - [ ] Add `DELETE /api/me/connections/home-token` with token-bound CSRF. It revokes the connection, deletes usable token rows, increments `token_version`, and writes audit event `user_api_token_revoked`.
 - [ ] Ensure normal authenticated users can connect and revoke only their own user API token. Tool admin is not required for this user-owned credential.
+- [ ] Add and run `TestUserApiTokenConnections.test_home_credential_rejected_when_home_probe_fails` in `tests/test_user_api_token_connections.py`.
+- [ ] Add and run `TestUserApiTokenConnections.test_credential_subject_mismatch_when_account_id_differs` in `tests/test_user_api_token_connections.py`.
 - [ ] Run:
 
 ```bash
-.venv/bin/python -m unittest tests.test_user_api_token_connections tests.test_csrf_token_bound
+.venv/bin/python -m unittest tests.test_user_api_token_connections tests.test_user_api_token_connections.TestUserApiTokenConnections.test_home_credential_rejected_when_home_probe_fails tests.test_user_api_token_connections.TestUserApiTokenConnections.test_credential_subject_mismatch_when_account_id_differs tests.test_csrf_token_bound
 ```
 
 - [ ] Commit with `git commit -m "Add user Home API token connection routes"`.
@@ -238,26 +260,33 @@ node tests/test_frontend_api_source_guards.js
 
 - [ ] Commit with `git commit -m "Add user Home token connection UI"`.
 
-## Task 5: Home/Townsquare Mutation Guard
+## Task 5: Home Project Update Route Guard
 
 **Files:**
-- Modify: `backend/routes/epm_routes.py` or the route module that introduces the specific Home/Townsquare write action
+- Modify: `backend/routes/epm_routes.py`
 - Modify: `backend/epm/home.py`
 - Test: `tests/test_home_mutation_auth_guards.py`
+- Test: `tests/test_home_credential_resolver.py`
 
-- [ ] Add mutation routes one-by-one. Do not add a generic GraphQL forwarding route.
-- [ ] Each Home/Townsquare mutation route must require active OAuth user, active DB user, active OAuth auth connection, token-bound CSRF, and active `atlassian_user_api_token`.
-- [ ] Each Home/Townsquare mutation route must call `resolve_home_credential(context, "write_as_user")`.
-- [ ] Each Home/Townsquare mutation route must return `409 home_user_token_required` when the user token is missing and `401 auth_connection_revoked` when the OAuth or user API-token connection is revoked.
-- [ ] Tests must prove the workspace service integration is not used for mutation even when present and active.
-- [ ] Tests must prove non-admin users can perform Home mutations only when Home accepts their own credential. Tool admin is required only when the route also changes JEP shared workspace config.
+- [ ] Add exactly one Home/Townsquare mutation route: `POST /api/epm/projects/<project_id>/home-update`.
+- [ ] Use the route only to post a Home/Townsquare project status update on behalf of the signed-in user.
+- [ ] Wire the EPM Project detail surface's `Post update` action to this route; when the user has not connected an API token, the action must show the `home_user_token_required` recovery state.
+- [ ] Require active OAuth user, active DB user, active OAuth `auth_connection`, token-bound CSRF, and active `atlassian_user_api_token`.
+- [ ] Call `resolve_home_credential(context, "write_as_user")`; never fall back to the workspace `home_townsquare_basic` service integration.
+- [ ] Return `409 home_user_token_required` when the user API-token connection is missing.
+- [ ] Return `401 auth_connection_revoked` when either the OAuth connection or the user API-token connection is revoked.
+- [ ] Add `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_requires_user_api_token`.
+- [ ] Add `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_returns_auth_connection_revoked_when_oauth_revoked`.
+- [ ] Add `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_uses_user_credential_not_service_integration`.
+- [ ] Add `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_requires_token_bound_csrf`.
+- [ ] Do not add a generic Home GraphQL proxy.
 - [ ] Run:
 
 ```bash
 .venv/bin/python -m unittest tests.test_home_mutation_auth_guards tests.test_home_credential_resolver
 ```
 
-- [ ] Commit with `git commit -m "Guard Home mutations with user API token"`.
+- [ ] Commit with `git commit -m "Add Home project update route for user API token bridge"`.
 
 ## Task 6: Source Guards And Final Verification
 

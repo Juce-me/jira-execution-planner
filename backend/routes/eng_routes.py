@@ -336,8 +336,10 @@ def get_teams():
             return jsonify({'error': 'No projects configured', 'teams': []}), 400
 
         # If fetching all teams, remove team filter but keep sprint scope
+        project_scope_jql = None
         if fetch_all:
             jql = remove_team_filter_from_jql(jql)
+            project_scope_jql = jql
             if sprint:
                 jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
         elif sprint:
@@ -351,69 +353,80 @@ def get_teams():
         if team_field_id:
             fields_list.append(team_field_id)
 
-        max_results = 100
-        max_pages = 30  # Cap at ~3000 issues for team discovery
-        page_count = 0
-        next_page_token = None
-        all_issues = []
+        def fetch_team_issues(query):
+            max_results = 100
+            max_pages = 30  # Cap at ~3000 issues for team discovery
+            page_count = 0
+            next_page_token = None
+            all_issues = []
+            names_map = {}
 
-        while True:
-            payload = {
-                'jql': jql,
-                'maxResults': max_results,
-                'fields': fields_list
-            }
-            if next_page_token:
-                payload['nextPageToken'] = next_page_token
+            while True:
+                payload = {
+                    'jql': query,
+                    'maxResults': max_results,
+                    'fields': fields_list
+                }
+                if next_page_token:
+                    payload['nextPageToken'] = next_page_token
 
-            response = jira_search_request(payload)
-            if response.status_code != 200:
-                return jsonify({'error': 'Failed to fetch teams', 'details': response.text}), response.status_code
+                response = jira_search_request(payload)
+                if response.status_code != 200:
+                    return all_issues, names_map, response
 
-            data = response.json()
-            issues = data.get('issues', [])
+                data = response.json()
+                names_map.update(data.get('names', {}) or {})
+                issues = data.get('issues', [])
 
-            if not issues:
-                break
+                if not issues:
+                    break
 
-            all_issues.extend(issues)
-            page_count += 1
-            if page_count >= max_pages:
-                break
+                all_issues.extend(issues)
+                page_count += 1
+                if page_count >= max_pages:
+                    break
 
-            # Check if we've fetched everything (using new pagination API)
-            is_last = data.get('isLast', True)
-            if is_last:
-                break
+                # Check if we've fetched everything (using new pagination API)
+                is_last = data.get('isLast', True)
+                if is_last:
+                    break
 
-            next_page_token = data.get('nextPageToken')
-            if not next_page_token:
-                break
+                next_page_token = data.get('nextPageToken')
+                if not next_page_token:
+                    break
 
-        names_map = data.get('names', {}) or {}
+            return all_issues, names_map, None
 
-        if not team_field_id:
-            team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
+        def collect_teams_from_issues(issues, names_map, teams_map):
+            effective_team_field_id = team_field_id
+            if not effective_team_field_id:
+                effective_team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
+
+            for issue in issues:
+                fields = issue.get('fields', {})
+                raw_team = None
+
+                if effective_team_field_id and fields.get(effective_team_field_id) is not None:
+                    raw_team = fields.get(effective_team_field_id)
+
+                if raw_team is not None:
+                    team_value = build_team_value(raw_team)
+                    team_id = team_value.get('id') if isinstance(team_value, dict) else None
+                    team_name = extract_team_name(raw_team)
+
+                    if team_id and team_name:
+                        teams_map[team_id] = {
+                            'id': team_id,
+                            'name': team_name
+                        }
+
+        all_issues, names_map, error_response = fetch_team_issues(jql)
+        if error_response is not None:
+            return jsonify({'error': 'Failed to fetch teams', 'details': error_response.text}), error_response.status_code
 
         # Extract unique teams (no filtering - return all teams)
         teams_map = {}
-        for issue in all_issues:
-            fields = issue.get('fields', {})
-            raw_team = None
-
-            if team_field_id and fields.get(team_field_id) is not None:
-                raw_team = fields.get(team_field_id)
-
-            if raw_team is not None:
-                team_value = build_team_value(raw_team)
-                team_id = team_value.get('id') if isinstance(team_value, dict) else None
-                team_name = extract_team_name(raw_team)
-
-                if team_id and team_name:
-                    teams_map[team_id] = {
-                        'id': team_id,
-                        'name': team_name
-                    }
+        collect_teams_from_issues(all_issues, names_map, teams_map)
 
         # When fetching all teams, also query Jira Teams API directly
         # to catch teams that have no issues in PRODUCT/TECH projects
@@ -422,6 +435,11 @@ def get_teams():
             for tid, tval in api_teams.items():
                 if tid not in teams_map:
                     teams_map[tid] = tval
+            if not teams_map and sprint and project_scope_jql and project_scope_jql != jql:
+                fallback_issues, fallback_names_map, error_response = fetch_team_issues(project_scope_jql)
+                if error_response is not None:
+                    return jsonify({'error': 'Failed to fetch teams', 'details': error_response.text}), error_response.status_code
+                collect_teams_from_issues(fallback_issues, fallback_names_map, teams_map)
 
         # Sort teams by name
         teams_list = sorted(teams_map.values(), key=lambda t: t['name'].lower())

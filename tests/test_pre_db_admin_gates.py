@@ -95,6 +95,32 @@ class PreDbToolAdminGateTests(unittest.TestCase):
         self.assertEqual(response.get_json()["defaultGroupId"], "group-1")
         mock_save.assert_called_once()
 
+    def test_authenticated_oauth_account_can_save_group_without_teams(self):
+        install_oauth_session(self.client, account_id="regular-user-account")
+        payload = {
+            "version": 1,
+            "groups": [{
+                "id": "group-1",
+                "name": "Group 1",
+                "teamIds": [],
+                "missingInfoComponents": ["ATS"],
+            }],
+            "defaultGroupId": "group-1",
+        }
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "load_dashboard_config", return_value={"version": 1, "projects": {"selected": []}}), \
+             patch.object(jira_server, "save_dashboard_config") as mock_save:
+            response = self.client.post(
+                "/api/groups-config",
+                json=payload,
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["groups"][0]["teamIds"], [])
+        saved_config = mock_save.call_args[0][0]
+        self.assertEqual(saved_config["teamGroups"]["groups"][0]["missingInfoComponents"], ["ATS"])
+
     def test_authenticated_oauth_account_can_save_team_catalog(self):
         install_oauth_session(self.client, account_id="regular-user-account")
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \

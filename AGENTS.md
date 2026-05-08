@@ -261,6 +261,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In settings, keep Team Groups/Group Labels and ENG/EPM view preferences separate from admin-only shared configuration; never bundle their saves with scope, field, priority, issue-type, or EPM mapping writes.
 - Pre-DB OAuth treats every signed-in Atlassian user as a local tool admin; when environment JSON exists, settings should default to Team Groups/EPM workflows instead of setup tabs.
 - Settings edit permission must fail closed until `/api/config` explicitly returns `userCanEditSettings: true`; never treat a missing flag or loading state as admin-editable.
+- Team Groups saves must allow empty `teamIds`; group-level components, labels, and exclusions must save even when team discovery returns no teams.
 
 ---
 

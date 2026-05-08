@@ -256,6 +256,36 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["teams"][0]["id"], "team-alpha")
         mock_search.assert_called()
 
+    def test_teams_all_falls_back_to_project_scan_when_sprint_has_no_teams(self):
+        calls = []
+
+        def fake_search(payload):
+            calls.append(payload["jql"])
+            if "Sprint = 2026Q2" in payload["jql"]:
+                return FakeResponse(200, {
+                    "issues": [],
+                    "names": {"customfield_team": "Team[Team]"},
+                    "isLast": True,
+                })
+            return FakeResponse(200, {
+                "issues": [_synthetic_issue()],
+                "names": {"customfield_team": "Team[Team]"},
+                "isLast": True,
+            })
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "build_base_jql", return_value='project = "PROD"'), \
+             patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
+             patch.object(jira_server, "jira_search_request", side_effect=fake_search), \
+             patch.object(jira_server, "fetch_teams_from_jira_api", return_value={}):
+            response = self.client.get("/api/teams?sprint=2026Q2&all=true")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["teams"][0]["id"], "team-alpha")
+        self.assertEqual(len(calls), 2)
+        self.assertIn("Sprint = 2026Q2", calls[0])
+        self.assertNotIn("Sprint = 2026Q2", calls[1])
+
     def test_backlog_epics_route_is_oauth_ready(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "build_base_jql", return_value='project = "PROD"'), \

@@ -323,7 +323,7 @@ def get_groups_config():
 def save_groups_config():
     """Persist team groups configuration to disk."""
     payload = request.get_json(silent=True) or {}
-    normalized, errors, warnings = validate_groups_config(payload, allow_empty=False)
+    normalized, errors, warnings = validate_groups_config(payload, allow_empty=True)
     if errors:
         return jsonify({'errors': errors}), 400
 

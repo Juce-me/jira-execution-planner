@@ -60,6 +60,7 @@ If you just want to see the dashboard working locally:
 1. Install dependencies: `python3 -m pip install --user -r requirements.txt`
 2. Copy the env template: `cp .env.example .env`
 3. Edit `.env` and set **JIRA_URL**, **JIRA_EMAIL**, **JIRA_TOKEN**.
+   For a shared board, use a Jira service account with read-only access to the board, projects, teams, and Atlassian Home scope the dashboard should show.
 4. Start the backend: `python3 jira_server.py`
 5. Visit `http://localhost:5050/api/test` in your browser to confirm connectivity.
 6. Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`), complete **Dashboard Settings** onboarding, then click **Save**.
@@ -72,6 +73,7 @@ If you want the fastest setup with no frontend build step:
 1. Download the latest release asset (e.g. `jira-execution-planner-latest.zip`) from GitHub Releases.
 2. Unzip it anywhere.
 3. Configure `.env` from `.env.example`.
+   For a team-shared dashboard, point `JIRA_EMAIL` / `JIRA_TOKEN` at a read-only Jira service account and choose the shared sprint board in Dashboard Settings.
 4. Install backend deps: `python3 -m pip install --user -r requirements.txt`
 5. Start the backend: `python3 jira_server.py`
 6. Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`).
@@ -150,6 +152,18 @@ SCENARIO_OVERRIDES_PATH=./scenario-overrides.json
 1. Go to https://id.atlassian.com/manage-profile/security/api-tokens
 2. Click "Create API token"
 3. Copy the token and paste it into `.env` file
+
+### Recommended shared-board setup
+
+For release `0.1`, the most stable setup is a single local backend using a Jira service account and one shared sprint board:
+
+1. Create or choose a Jira service account with read-only access to the Jira projects, sprint board, team field, capacity project, and Atlassian Home goals/projects used by the dashboard.
+2. Put that account in `.env` as `JIRA_EMAIL` and `JIRA_TOKEN`. Leave `ATLASSIAN_EMAIL` and `ATLASSIAN_API_TOKEN` blank unless Atlassian Home uses different credentials.
+3. Start the backend on a trusted machine: `python3 jira_server.py`.
+4. Open **Dashboard Settings -> Jira source**, select the shared sprint board, and save. This writes the board ID to local `dashboard-config.json`.
+5. Share the dashboard URL only with users who should see data available to the service account.
+
+Keep `.env` and generated config/cache JSON files local to the machine running the backend. They are intentionally ignored by git and should not be included in release zips.
 
 ### Step 4: Start the server
 

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import json
 import time
-from typing import Callable, MutableMapping
+from typing import Callable, MutableMapping, Optional
 
 from backend.epm import home as epm_home
 
@@ -16,8 +16,8 @@ class EpmProjectsDependencies:
     cache_lock: object
     cache_ttl_seconds: int
     home_project_limit: int
-    get_epm_config: Callable | None = None
-    abort_not_found: Callable | None = None
+    get_epm_config: Optional[Callable] = None
+    abort_not_found: Optional[Callable] = None
     now: Callable = time.time
 
 

@@ -4,7 +4,13 @@ Plan-specific instructions for this repository.
 
 ## Plan Naming
 
-Use `EXEC-*` for implementation plans, `SUPPORT-*` for review or handoff workflows, and `FUTURE-*` for deferred scope. Date-only plan files are historical, feature-specific, or gate-specific references unless an `EXEC-*` plan names them as active prerequisites.
+Use `EXEC-*` for implementation plans, `DONE-*` for executed plans kept for audit, `SUPPORT-*` for review or handoff workflows, and `FUTURE-*` for deferred scope. Date-only plan files are historical, feature-specific, or gate-specific references unless an `EXEC-*` plan names them as active prerequisites.
+
+Do not rename an `EXEC-*` plan to `DONE-*` until the implementation has been completed, verified, and accepted or merged. Add a short top note naming the execution commit or PR, for example:
+
+```md
+> **Status:** Done. Executed in `<commit-or-PR>`. Kept for audit context only.
+```
 
 ## Home/Townsquare 3LO Gate
 

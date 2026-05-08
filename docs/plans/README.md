@@ -5,6 +5,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 ## Prefixes
 
 - `EXEC-*`: implementation-ready execution plans. Run these in numeric order unless a plan says it is gated.
+- `DONE-*`: completed and verified execution plans. Keep these for audit/history only; do not execute them as active plans.
 - `SUPPORT-*`: review, handoff, or operator support documents. Do not execute them as implementation plans.
 - `FUTURE-*`: deferred scope. Do not pull these into the current implementation unless the scope is explicitly reopened.
 - Date-only files: historical, feature-specific, or gate-specific plans. Read them when an `EXEC-*` or `SUPPORT-*` file points to them.
@@ -37,3 +38,4 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 - Keep workspace Home/Townsquare reads service-integration-backed while the Home 3LO gate fails.
 - Treat user-owned Atlassian API tokens as Home/Townsquare write credentials only; never as shared service credentials.
 - Commit each completed task with the commit message specified in the plan.
+- Rename an `EXEC-*` plan to `DONE-*` only after implementation is completed, verified, and accepted or merged, then add a top status note with the execution commit or PR.

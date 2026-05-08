@@ -1,3 +1,4 @@
+import base64
 import json
 import unittest
 import threading
@@ -370,6 +371,36 @@ class TestEpmHomeApi(unittest.TestCase):
 
         self.assertEqual(fetch_home_site_cloud_id(), 'cloud-456')
         self.assertEqual(mock_urlopen.call_args[0][0].full_url, 'https://env-override.atlassian.net/_edge/tenant_info')
+
+    @patch.dict('os.environ', {
+        'JIRA_AUTH_MODE': 'atlassian_oauth',
+        'JIRA_EMAIL': 'jira@example.com',
+        'JIRA_TOKEN': 'jira-token',
+    }, clear=True)
+    def test_home_graphql_client_oauth_requires_explicit_home_credentials(self):
+        with self.assertRaisesRegex(RuntimeError, 'ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN must be set'):
+            epm_home.build_home_graphql_client()
+
+    @patch.dict('os.environ', {
+        'JIRA_AUTH_MODE': 'atlassian_oauth',
+        'JIRA_URL': 'https://example.atlassian.net',
+        'JIRA_EMAIL': 'jira@example.com',
+        'JIRA_TOKEN': 'jira-token',
+    }, clear=True)
+    def test_teamwork_graph_client_oauth_requires_explicit_home_credentials(self):
+        with self.assertRaisesRegex(RuntimeError, 'ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN must be set'):
+            epm_home.build_teamwork_graph_client()
+
+    @patch.dict('os.environ', {
+        'JIRA_AUTH_MODE': 'basic',
+        'JIRA_EMAIL': 'jira@example.com',
+        'JIRA_TOKEN': 'jira-token',
+    }, clear=True)
+    def test_home_graphql_client_basic_keeps_jira_credential_fallback(self):
+        client = epm_home.build_home_graphql_client()
+
+        expected = base64.b64encode(b'jira@example.com:jira-token').decode('ascii')
+        self.assertEqual(client.headers['Authorization'], f'Basic {expected}')
 
     @patch('backend.epm.home.resolve_goal_by_key')
     def test_fetch_sub_goals_for_root_key_returns_non_archived_children(self, mock_resolve_goal):

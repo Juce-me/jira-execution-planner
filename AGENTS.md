@@ -263,6 +263,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Settings edit permission must fail closed until `/api/config` explicitly returns `userCanEditSettings: true`; never treat a missing flag or loading state as admin-editable.
 - Team Groups saves must allow empty `teamIds`; group-level components, labels, and exclusions must save even when team discovery returns no teams.
 - Dashboard config save endpoints must reject implicit empty overwrites of existing selected projects or groups; clearing shared JSON state needs an explicit action.
+- In OAuth mode, Home/Townsquare Basic service credentials must be explicit `ATLASSIAN_EMAIL`/`ATLASSIAN_API_TOKEN`; only Basic auth mode may fall back to `JIRA_EMAIL`/`JIRA_TOKEN`.
 
 ---
 

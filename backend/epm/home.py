@@ -34,6 +34,7 @@ ARCHIVED_EPM_STATES = {"COMPLETED", "CANCELLED", "ARCHIVED", "DONE", "RELEASE", 
 MATCH_STATE_HOME_LINKED = "home-linked"
 MATCH_STATE_JEP_FALLBACK = "jep-fallback"
 MATCH_STATE_METADATA_ONLY = "metadata-only"
+AUTH_MODE_ATLASSIAN_OAUTH = "atlassian_oauth"
 
 
 class HomeAuthenticationError(Exception):
@@ -127,6 +128,26 @@ class HomeGraphQLClient:
                 page_variables["after"] = next_cursor
                 continue
             return all_nodes
+
+
+def _home_basic_credentials() -> tuple[str, str]:
+    home_email = os.environ.get("ATLASSIAN_EMAIL") or ""
+    home_token = os.environ.get("ATLASSIAN_API_TOKEN") or ""
+    if home_email and home_token:
+        return home_email, home_token
+
+    if (os.environ.get("JIRA_AUTH_MODE") or "basic").strip().lower() == AUTH_MODE_ATLASSIAN_OAUTH:
+        raise RuntimeError(
+            "ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN must be set to use Home/Townsquare in OAuth mode"
+        )
+
+    email = home_email or os.environ.get("JIRA_EMAIL") or ""
+    token = home_token or os.environ.get("JIRA_TOKEN") or ""
+    if not email or not token:
+        raise RuntimeError(
+            "ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (or JIRA_EMAIL/JIRA_TOKEN in basic auth mode) must be set to use the EPM view"
+        )
+    return email, token
 
 
 QUERY_GOALS_SEARCH = """
@@ -840,12 +861,7 @@ def normalize_project_tag_names(values: Any) -> list[str]:
 
 
 def build_teamwork_graph_client() -> HomeGraphQLClient:
-    email = os.environ.get("ATLASSIAN_EMAIL") or os.environ.get("JIRA_EMAIL") or ""
-    token = os.environ.get("ATLASSIAN_API_TOKEN") or os.environ.get("JIRA_TOKEN") or ""
-    if not email or not token:
-        raise RuntimeError(
-            "ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (or JIRA_EMAIL/JIRA_TOKEN) must be set to use the EPM view"
-        )
+    email, token = _home_basic_credentials()
     jira_url = get_configured_jira_url()
     if not jira_url:
         raise RuntimeError("JIRA_URL must be set to query Atlassian project tags")
@@ -974,12 +990,7 @@ def _shape_project_detail(project_id: str, payload: dict) -> dict:
 
 
 def build_home_graphql_client() -> HomeGraphQLClient:
-    email = os.environ.get("ATLASSIAN_EMAIL") or os.environ.get("JIRA_EMAIL") or ""
-    token = os.environ.get("ATLASSIAN_API_TOKEN") or os.environ.get("JIRA_TOKEN") or ""
-    if not email or not token:
-        raise RuntimeError(
-            "ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (or JIRA_EMAIL/JIRA_TOKEN) must be set to use the EPM view"
-        )
+    email, token = _home_basic_credentials()
     return HomeGraphQLClient(email, token, HOME_GRAPHQL_ENDPOINT)
 
 

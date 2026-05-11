@@ -228,7 +228,9 @@ def api_atlassian_callback():
             return jsonify({'error': 'user_inactive'}), 403
         resources = fetch_accessible_resources(token_data.get('access_token', ''))
         resource = choose_accessible_resource(resources, config.jira_url)
-        save_oauth_session(token_session_payload(token_data, resource, user_profile))
+        session_payload = token_session_payload(token_data, resource, user_profile)
+        session_payload.update(store_db_oauth_callback_session_metadata(token_data, resource, user_profile))
+        save_oauth_session(session_payload)
     except AuthError as error:
         save_oauth_session({})
         if error.code in {'missing_jira_url', 'missing_oauth_config', 'missing_flask_secret_key', 'invalid_auth_mode', 'local_token_store_not_allowed'}:

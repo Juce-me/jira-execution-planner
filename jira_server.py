@@ -33,7 +33,10 @@ from backend.epm.scope import build_epm_scope_clause, normalize_epm_sprint_field
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
 from backend.auth.cache_policy import jira_home_process_cache_enabled
 from backend.auth.context import RequestAuthContext, stable_local_workspace_id
-from backend.db.engine import validate_startup_database_config
+from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
+from backend.auth.db_tokens import store_oauth_callback_tokens
+from backend.auth.key_provider import key_provider_from_env
+from backend.db.engine import database_storage_enabled, session_scope, validate_startup_database_config
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
     AUTH_MODE_BASIC,
@@ -45,6 +48,7 @@ from backend.auth.jira_auth import (
     exchange_authorization_code,
     fetch_accessible_resources,
     fetch_current_user,
+    is_oauth_token_expired,
     jira_get,
     jira_post,
     jira_request,
@@ -358,6 +362,22 @@ def is_pre_db_tool_admin_account(atlassian_account_id):
     return bool(account_id)
 
 
+def store_db_oauth_callback_session_metadata(token_data, resource, user_profile):
+    if not database_storage_enabled():
+        return {}
+    with session_scope() as db_session:
+        stored = store_oauth_callback_tokens(
+            db_session,
+            token_data=token_data,
+            resource=resource,
+            user_profile=user_profile,
+            environment_key=APP_ENVIRONMENT_KEY.strip().lower() or 'local',
+            configured_jira_url=JIRA_URL or '',
+            key_provider=key_provider_from_env(),
+        )
+        return stored.session_metadata
+
+
 def current_auth_config():
     return AuthConfig(
         auth_mode=JIRA_AUTH_MODE,
@@ -538,6 +558,8 @@ def oauth_session_data_for_auth_context(context):
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return {}
     session_id = oauth_session_id_from_auth_context(context)
+    if not session_id and is_db_auth_context(context):
+        return db_oauth_session_data_for_auth_context(context)
     if not session_id:
         return {}
     now = time.time()
@@ -553,6 +575,25 @@ def oauth_session_data_for_auth_context(context):
         _drop_oauth_session(session_id)
         return {}
     return dict(data)
+
+
+def db_oauth_session_data_for_auth_context(context):
+    connection_id = getattr(context, 'auth_connection_id', '') or ''
+    now = time.time()
+    with OAUTH_TOKEN_STORE_LOCK:
+        _cleanup_expired_oauth_sessions(now)
+        for stored in OAUTH_TOKEN_STORE.values():
+            if stored.get('db_auth_connection_id') == connection_id:
+                data = dict(stored)
+                return {} if is_oauth_token_expired(data) else data
+        persistent_store = _read_persistent_oauth_token_store()
+        for session_id, stored in persistent_store.items():
+            if isinstance(stored, dict) and stored.get('db_auth_connection_id') == connection_id:
+                OAUTH_TOKEN_STORE[session_id] = dict(stored)
+                OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+                data = dict(stored)
+                return {} if is_oauth_token_expired(data) else data
+    return {}
 
 
 def save_oauth_session_for_auth_context(context, data):
@@ -587,6 +628,11 @@ def current_jira_session_data(context=None):
 
 def current_request_auth_context():
     session_data = jira_session_data()
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
+        return resolve_db_request_auth_context(
+            session_data,
+            required_scopes=ATLASSIAN_SCOPES,
+        )
     site_url = (session_data.get('site_url') or JIRA_URL or '').strip().rstrip('/')
     cloud_id = session_data.get('cloudid', '')
     workspace_id = stable_local_workspace_id(APP_ENVIRONMENT_KEY, site_url, cloud_id)
@@ -659,8 +705,9 @@ def current_oauth_session_callbacks(context=None):
 def current_jira_get(path, *, params=None, timeout=30, context=None):
     explicit_context = context is not None
     auth_context = current_jira_auth_context(context)
-    session_data = current_jira_session_data(auth_context if explicit_context else None)
-    session_callbacks = current_oauth_session_callbacks(auth_context if explicit_context else None)
+    session_context = auth_context if explicit_context or is_db_auth_context(auth_context) else None
+    session_data = current_jira_session_data(session_context)
+    session_callbacks = current_oauth_session_callbacks(session_context)
 
     def request_get(url, **kwargs):
         return resilient_jira_get(
@@ -694,8 +741,9 @@ def current_jira_search(payload, *, context=None, timeout=30):
 def current_jira_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
     explicit_context = context is not None
     auth_context = current_jira_auth_context(context)
-    session_data = current_jira_session_data(auth_context if explicit_context else None)
-    session_callbacks = current_oauth_session_callbacks(auth_context if explicit_context else None)
+    session_context = auth_context if explicit_context or is_db_auth_context(auth_context) else None
+    session_data = current_jira_session_data(session_context)
+    session_callbacks = current_oauth_session_callbacks(session_context)
 
     def request_fn(method_name, url, **kwargs):
         return HTTP_SESSION.request(method_name, url, **kwargs)

@@ -59,3 +59,10 @@ class OAuthJiraClientSourceGuardTests(unittest.TestCase):
         source = JIRA_SERVER_PATH.read_text(encoding="utf8")
         self.assertIn("def build_jira_headers():", source)
         self.assertIn("'route_not_oauth_ready'", source)
+
+    def test_db_auth_project_access_and_cache_invalidation_guards_are_wired(self):
+        source = JIRA_SERVER_PATH.read_text(encoding="utf8")
+
+        self.assertIn("project_access_denied_response(auth_context, project_filter)", source)
+        self.assertIn("def clear_auth_sensitive_caches", source)
+        self.assertIn("register_service_integration_cache_invalidator(clear_auth_sensitive_caches)", source)

@@ -39,6 +39,8 @@ from backend.auth.csrf import validate_csrf_token
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
 from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
 from backend.auth.key_provider import key_provider_from_env
+from backend.auth.project_access import project_access_denied_response
+from backend.auth.service_integrations import register_service_integration_cache_invalidator
 from backend.db.engine import database_storage_enabled, session_scope, validate_startup_database_config
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
@@ -385,6 +387,7 @@ def store_db_oauth_callback_session_metadata(token_data, resource, user_profile)
             user_id=stored.user_id,
             atlassian_account_id=(user_profile or {}).get('account_id'),
         )
+        clear_auth_sensitive_caches('oauth_reconnect')
         return stored.session_metadata
 
 
@@ -1948,6 +1951,48 @@ def clear_epm_caches():
         EPM_PROJECTS_CACHE.clear()
         EPM_ISSUES_CACHE.clear()
         EPM_ROLLUP_CACHE.clear()
+
+
+def invalidate_stats_cache():
+    try:
+        if os.path.exists(STATS_CACHE_FILE):
+            os.remove(STATS_CACHE_FILE)
+    except Exception as exc:
+        log_warning(f'Failed to invalidate stats cache file: {exc}')
+
+
+def clear_auth_sensitive_caches(reason='auth_context_change'):
+    global TEAM_FIELD_CACHE, PARENT_NAME_FIELD_CACHE, EPIC_LINK_FIELD_CACHE, CAPACITY_FIELD_CACHE
+    with _cache_lock:
+        TASKS_CACHE.clear()
+        EPIC_COHORT_CACHE.clear()
+        SCENARIO_CACHE['generatedAt'] = None
+        SCENARIO_CACHE['data'] = None
+        if 'PROJECTS_CACHE' in globals():
+            PROJECTS_CACHE['data'] = None
+            PROJECTS_CACHE['timestamp'] = 0
+        if 'COMPONENTS_CACHE' in globals():
+            COMPONENTS_CACHE['data'] = None
+            COMPONENTS_CACHE['timestamp'] = 0
+        if 'EPICS_SEARCH_CACHE' in globals():
+            EPICS_SEARCH_CACHE.clear()
+        if 'LABELS_CACHE' in globals():
+            LABELS_CACHE['data'] = None
+            LABELS_CACHE['timestamp'] = 0
+        if 'ISSUE_TYPES_CACHE' in globals():
+            ISSUE_TYPES_CACHE['data'] = None
+            ISSUE_TYPES_CACHE['timestamp'] = 0
+        TEAM_FIELD_CACHE = None
+        PARENT_NAME_FIELD_CACHE = None
+        EPIC_LINK_FIELD_CACHE = None
+        CAPACITY_FIELD_CACHE = None
+    clear_epm_caches()
+    invalidate_sprints_cache()
+    invalidate_stats_cache()
+    log_info(f'Cleared auth-sensitive caches reason={reason}')
+
+
+register_service_integration_cache_invalidator(clear_auth_sensitive_caches)
 
 
 def build_epm_projects_dependencies(context=None):
@@ -3703,6 +3748,10 @@ def fetch_tasks(include_team_name=False):
         )
         record_timing('parse_params', parse_started)
         auth_context = current_request_auth_context()
+        if project_filter in ('product', 'tech'):
+            denied_response, denied_status = project_access_denied_response(auth_context, project_filter)
+            if denied_response is not None:
+                return denied_response, denied_status
         cache_enabled = jira_home_process_cache_enabled(auth_context)
         cached_entry = None
         if cache_enabled:

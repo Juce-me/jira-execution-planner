@@ -12,6 +12,7 @@ from backend.db import models
 
 SERVICE_INTEGRATION_PROVIDERS = {'jira_basic', 'home_townsquare_basic'}
 _SUMMARY_CACHE: dict[tuple[str, int], dict] = {}
+_CACHE_INVALIDATORS = []
 
 
 def _utcnow():
@@ -31,6 +32,16 @@ def invalidate_service_integration_cache(service_integration_id: str | None = No
     for key in list(_SUMMARY_CACHE):
         if key[0] == service_integration_id:
             del _SUMMARY_CACHE[key]
+
+
+def register_service_integration_cache_invalidator(callback):
+    if callback not in _CACHE_INVALIDATORS:
+        _CACHE_INVALIDATORS.append(callback)
+
+
+def _invalidate_auth_sensitive_caches(reason):
+    for callback in list(_CACHE_INVALIDATORS):
+        callback(reason)
 
 
 def _replace_service_token(session, *, integration, api_token, key_provider):
@@ -116,6 +127,7 @@ def seed_service_integration(
     ))
     session.flush()
     invalidate_service_integration_cache(integration.id)
+    _invalidate_auth_sensitive_caches('service_credential_rotation')
     return integration
 
 

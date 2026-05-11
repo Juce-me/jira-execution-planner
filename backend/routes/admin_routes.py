@@ -202,6 +202,7 @@ def api_admin_user_status(user_id):
         ))
         db_session.flush()
         invalidate_auth_status_cache(user_id=user.id)
+        clear_auth_sensitive_caches('user_status_update')
         return jsonify({'user': _user_summary(db_session, user, context.workspace_id)})
 
 
@@ -222,6 +223,7 @@ def api_admin_user_grant(user_id):
         ))
         db_session.flush()
         invalidate_auth_status_cache(user_id=user.id)
+        clear_auth_sensitive_caches('admin_grant')
         return jsonify({'user': _user_summary(db_session, user, context.workspace_id)})
 
 
@@ -242,4 +244,5 @@ def api_admin_user_revoke(user_id):
         ))
         db_session.flush()
         invalidate_auth_status_cache(user_id=user.id)
+        clear_auth_sensitive_caches('admin_revoke')
         return jsonify({'user': _user_summary(db_session, user, context.workspace_id)})

@@ -6146,17 +6146,7 @@ def test_connection():
     try:
         log_info('Testing Jira connection')
 
-        response = jira_get(
-            current_auth_config(),
-            current_request_auth_context(),
-            jira_session_data(),
-            '/rest/api/3/myself',
-            http_get=resilient_jira_get,
-            save_session=save_oauth_session,
-            reload_session=oauth_session_data,
-            refresh_lock=oauth_refresh_lock(),
-            timeout=15,
-        )
+        response = current_jira_get('/rest/api/3/myself', timeout=15)
 
         log_info(f'Test response status={response.status_code}')
 

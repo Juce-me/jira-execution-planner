@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import jira_server
 from backend.auth.context import RequestAuthContext
-from tests.oauth_test_helpers import push_oauth_request
+from tests.oauth_test_helpers import install_oauth_session, push_oauth_request
 
 
 class FakeResponse:
@@ -195,6 +195,21 @@ class OAuthJiraClientTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         mock_search.assert_called_once_with({"jql": 'project = "PROD"', "fields": ["summary"]})
+
+    def test_api_test_route_uses_current_jira_get_boundary(self):
+        install_oauth_session(self.client)
+        context = self._oauth_context()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_request_auth_context", return_value=context), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {
+                 "displayName": "Synthetic User",
+             })) as mock_get, \
+             patch.object(jira_server, "jira_get", side_effect=AssertionError("/api/test must use current_jira_get")):
+            response = self.client.get("/api/test")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["status"], "success")
+        mock_get.assert_called_once_with("/rest/api/3/myself", timeout=15)
 
     def test_resolve_team_field_id_uses_current_jira_get_in_oauth_mode(self):
         self._push_oauth_request()

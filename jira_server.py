@@ -33,6 +33,7 @@ from backend.epm.scope import build_epm_scope_clause, normalize_epm_sprint_field
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
 from backend.auth.cache_policy import jira_home_process_cache_enabled
 from backend.auth.context import RequestAuthContext, stable_local_workspace_id
+from backend.db.engine import validate_startup_database_config
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
     AUTH_MODE_BASIC,
@@ -116,6 +117,7 @@ UPDATE_CHECK_BRANCH = os.getenv('UPDATE_CHECK_BRANCH', 'main').strip() or 'main'
 UPDATE_CHECK_TTL_SECONDS = int(os.getenv('UPDATE_CHECK_TTL_SECONDS', '300'))
 UPDATE_CHECK_RELEASE_INFO = os.getenv('UPDATE_CHECK_RELEASE_INFO', 'release-info.json').strip() or 'release-info.json'
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').strip().upper() or 'INFO'
+validate_startup_database_config()
 JIRA_RETRY_MAX_ATTEMPTS = int(os.getenv('JIRA_RETRY_MAX_ATTEMPTS', '4'))
 JIRA_RETRY_MAX_ELAPSED_SECONDS = float(os.getenv('JIRA_RETRY_MAX_ELAPSED_SECONDS', '10'))
 JIRA_RETRY_BASE_DELAY_SECONDS = float(os.getenv('JIRA_RETRY_BASE_DELAY_SECONDS', '0.5'))

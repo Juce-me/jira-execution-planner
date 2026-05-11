@@ -429,6 +429,16 @@ Expected: OAuth/Jira boundary tests pass, unsupported OAuth routes still return 
 - [ ] Ensure refresh-race tests refuse to run on SQLite or skip with a clear message because SQLite cannot prove PostgreSQL advisory-lock or `SELECT ... FOR UPDATE` semantics.
 - [ ] Commit with `git commit -m "Add database auth migration harness"`.
 
+Task 1 implementation notes:
+
+```bash
+createdb jep_local
+alembic -c backend/db/alembic.ini upgrade head
+alembic -c backend/db/alembic.ini downgrade base
+python3 -m backend.db.reset_local
+python3 -c "import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())"
+```
+
 ### Task 2: Token Encryption, Keyring, And Audit Redaction
 
 **Files:**

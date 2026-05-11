@@ -16,7 +16,9 @@ export default function SettingsModal(props) {
         testConfigurationLabel = 'Test configuration',
         testConfigurationMessage = '',
         onCancel,
+        cancelLabel = 'Cancel',
         onSave,
+        showSave = true,
         saveDisabled = false,
         saveTitle = '',
         saveLabel = 'Save',
@@ -85,20 +87,22 @@ export default function SettingsModal(props) {
                     )}
                     <div className="group-modal-button-row">
                         <button className="secondary compact lift-hover" onClick={handleCancel} type="button">
-                            Cancel
+                            {cancelLabel}
                         </button>
                     </div>
-                    <div className="group-modal-button-row">
-                        <button
-                            className="compact"
-                            onClick={onSave}
-                            disabled={saveDisabled}
-                            title={saveTitle}
-                            type="button"
-                        >
-                            {saveLabel}
-                        </button>
-                    </div>
+                    {showSave && (
+                        <div className="group-modal-button-row">
+                            <button
+                                className="compact"
+                                onClick={onSave}
+                                disabled={saveDisabled}
+                                title={saveTitle}
+                                type="button"
+                            >
+                                {saveLabel}
+                            </button>
+                        </div>
+                    )}
                 </div>
                 {showDiscardConfirm && (
                     <div className="group-confirm-backdrop" role="dialog" aria-modal="true" onClick={onKeepEditing}>

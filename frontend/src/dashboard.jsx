@@ -87,6 +87,7 @@ import EpmSettings from './epm/EpmSettings.jsx';
 import SettingsModal from './settings/SettingsModal.jsx';
 import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';
 import JiraFieldSettings from './settings/JiraFieldSettings.jsx';
+import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     filterEpmSettingsProjectsForView,
@@ -2308,6 +2309,11 @@ import {
                 setEpmSettingsTab('projects');
             };
 
+            const openUserConnectionsSettings = () => {
+                setShowGroupManage(true);
+                setGroupManageTab('connections');
+            };
+
             const focusEpmScopeField = React.useCallback((field) => {
                 setEpmSettingsTab('scope');
                 window.requestAnimationFrame(() => {
@@ -2825,6 +2831,9 @@ import {
                     const key = event.key;
                     if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 's') {
                         event.preventDefault();
+                        if (groupManageTab === 'connections') {
+                            return;
+                        }
                         if (groupManageTab === 'epm') {
                             if (!epmConfigSaving) {
                                 void saveEpmConfig().catch(() => {});
@@ -11021,6 +11030,11 @@ import {
                     title: labelsTabEnabled ? '' : 'Save at least one group first'
                 },
                 {
+                    id: 'connections',
+                    label: 'Connections',
+                    onClick: openUserConnectionsSettings
+                },
+                {
                     id: 'priorityWeights',
                     label: 'Priority weights',
                     onClick: () => setGroupManageTab('priorityWeights')
@@ -11035,6 +11049,7 @@ import {
             const settingsSaveHandler = groupManageTab === 'epm'
                 ? () => { void saveEpmConfig().catch(() => {}); }
                 : saveGroupsConfig;
+            const settingsShowsSave = groupManageTab !== 'connections';
             const settingsSaveDisabled = groupManageTab === 'epm'
                 ? (epmConfigLoading || epmConfigSaving)
                 : Boolean(saveBlockedReason);
@@ -13585,17 +13600,19 @@ import {
                         <SettingsModal
                             activeTab={groupManageTab}
                             tabs={settingsModalTabs}
-                            isDirty={isGroupDraftDirty}
-                            unsavedSectionsCount={unsavedSectionsCount}
+                            isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}
+                            unsavedSectionsCount={groupManageTab !== 'connections' ? unsavedSectionsCount : 0}
                             onRequestClose={requestCloseGroupManage}
-                            validationMessages={groupConfigValidationErrors}
-                            showTestConfiguration={groupManageTab !== 'epm'}
+                            validationMessages={groupManageTab !== 'connections' ? groupConfigValidationErrors : []}
+                            showTestConfiguration={groupManageTab !== 'epm' && groupManageTab !== 'connections'}
                             onTestConfiguration={testGroupsConfigConnection}
                             testConfigurationDisabled={groupTesting}
                             testConfigurationLabel={groupTesting ? 'Testing...' : 'Test configuration'}
                             testConfigurationMessage={groupTestMessage}
                             onCancel={requestCloseGroupManage}
+                            cancelLabel={groupManageTab === 'connections' ? 'Close' : 'Cancel'}
                             onSave={settingsSaveHandler}
+                            showSave={settingsShowsSave}
                             saveDisabled={settingsSaveDisabled}
                             saveTitle={settingsSaveTitle}
                             saveLabel={settingsSaveLabel}
@@ -13603,6 +13620,9 @@ import {
                             onDiscard={discardGroupDraftChanges}
                             onKeepEditing={() => setShowGroupDiscardConfirm(false)}
                         >
+                                {groupManageTab === 'connections' && (
+                                <UserConnectionsSettings backendUrl={BACKEND_URL} />
+                                )}
                                 {(groupManageTab === 'scope' || groupManageTab === 'source' || groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
                                 <JiraFieldSettings
                                     {...{

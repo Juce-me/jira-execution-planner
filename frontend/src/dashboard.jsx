@@ -378,8 +378,10 @@ import {
             const [mappingHoverKey, setMappingHoverKey] = useState(null);
             const [settingsAdminOnly, setSettingsAdminOnly] = useState(true);
             const [userCanEditSettings, setUserCanEditSettings] = useState(false);
+            const [userCanEditEpmConfig, setUserCanEditEpmConfig] = useState(false);
             const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);
             const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;
+            const canEditEpmConfiguration = canEditSharedConfiguration || userCanEditEpmConfig;
             const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';
             const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
             const [priorityWeightsSource, setPriorityWeightsSource] = useState('default');
@@ -2206,14 +2208,14 @@ import {
                 if (isParentNameFieldDirty) return true;
                 if (isStoryPointsFieldDirty) return true;
                 if (isTeamFieldDirty) return true;
-                if (isEpmConfigDirty) return true;
                 return false;
-            }, [isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty]);
+            }, [isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty]);
             const isGroupDraftDirty = React.useMemo(() => {
                 if (canEditSharedConfiguration && isSharedConfigurationDraftDirty) return true;
+                if (canEditEpmConfiguration && isEpmConfigDirty) return true;
                 if (!groupDraft) return false;
                 return groupDraftSignature !== groupDraftBaselineRef.current;
-            }, [groupDraftSignature, groupDraft, canEditSharedConfiguration, isSharedConfigurationDraftDirty]);
+            }, [groupDraftSignature, groupDraft, canEditSharedConfiguration, canEditEpmConfiguration, isSharedConfigurationDraftDirty, isEpmConfigDirty]);
             const unsavedSectionsCount = React.useMemo(() => {
                 return [
                     canEditSharedConfiguration && isProjectsDraftDirty,
@@ -2225,10 +2227,10 @@ import {
                     canEditSharedConfiguration && isParentNameFieldDirty,
                     canEditSharedConfiguration && isStoryPointsFieldDirty,
                     canEditSharedConfiguration && isTeamFieldDirty,
-                    canEditSharedConfiguration && isEpmConfigDirty,
+                    canEditEpmConfiguration && isEpmConfigDirty,
                     Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current)
                 ].filter(Boolean).length;
-            }, [canEditSharedConfiguration, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty, groupDraft, groupDraftSignature]);
+            }, [canEditSharedConfiguration, canEditEpmConfiguration, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty, groupDraft, groupDraftSignature]);
             const priorityWeightsValidationError = React.useMemo(() => {
                 for (const row of (priorityWeightsDraft || [])) {
                     const label = String(row?.priority || '').trim() || 'Priority';
@@ -2300,7 +2302,7 @@ import {
                 closeGroupManage();
             };
             const openEpmSettingsTab = () => {
-                if (!canEditSharedConfiguration) {
+                if (!canEditEpmConfiguration) {
                     return;
                 }
                 resetEpmSettingsProjectRows();
@@ -2706,6 +2708,10 @@ import {
                 setGroupSaving(true);
                 setGroupDraftError('');
                 try {
+                    if (canEditEpmConfiguration && isEpmConfigDirty) {
+                        await saveEpmConfig();
+                    }
+
                     let projectsChanged = false;
                     let priorityWeightsChanged = false;
                     let boardChanged = false;
@@ -2714,10 +2720,6 @@ import {
                     let issueTypesChanged = false;
 
                     if (canEditSharedConfiguration) {
-                        if (isEpmConfigDirty) {
-                            await saveEpmConfig();
-                        }
-
                         // Save project selection if changed
                         projectsChanged = isProjectsDraftDirty;
                         if (projectsChanged) {
@@ -2807,6 +2809,7 @@ import {
                         setCapacityEnabled(Boolean(cfg.capacityProject));
                         setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
                         setUserCanEditSettings(cfg.userCanEditSettings === true);
+                        setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);
                         setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
                     } catch (_) { /* best-effort */ }
 
@@ -2835,7 +2838,7 @@ import {
                             return;
                         }
                         if (groupManageTab === 'epm') {
-                            if (!epmConfigSaving) {
+                            if (canEditEpmConfiguration && !epmConfigSaving) {
                                 void saveEpmConfig().catch(() => {});
                             }
                         } else if (!groupSaving) {
@@ -2861,7 +2864,7 @@ import {
                 };
                 window.addEventListener('keydown', handleKey);
                 return () => window.removeEventListener('keydown', handleKey);
-            }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveEpmConfig, saveGroupsConfig]);
+            }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, canEditEpmConfiguration, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveEpmConfig, saveGroupsConfig]);
 
             const fetchJiraProjects = async () => {
                 setLoadingProjects(true);
@@ -3791,11 +3794,17 @@ import {
             const activeTeamIndex = activeGroupDraft ? (teamSearchIndex[activeGroupDraft.id] || 0) : 0;
             const labelsTabEnabled = (groupDraft?.groups || groupsConfig.groups || []).length > 0;
             useEffect(() => {
-                if (!showGroupManage || canEditSharedConfiguration) return;
-                if (SHARED_CONFIGURATION_TAB_IDS.has(groupManageTab)) {
+                if (!showGroupManage) return;
+                if (groupManageTab === 'epm') {
+                    if (!canEditEpmConfiguration) {
+                        setGroupManageTab('teams');
+                    }
+                    return;
+                }
+                if (!canEditSharedConfiguration && SHARED_CONFIGURATION_TAB_IDS.has(groupManageTab)) {
                     setGroupManageTab('teams');
                 }
-            }, [showGroupManage, canEditSharedConfiguration, groupManageTab]);
+            }, [showGroupManage, canEditSharedConfiguration, canEditEpmConfiguration, groupManageTab]);
             const getLabelRowKey = (groupId, teamId) => `${groupId || 'group'}::${teamId || 'team'}`;
             const getLabelSearchResults = (groupId, teamId) => {
                 const key = getLabelRowKey(groupId, teamId);
@@ -4813,6 +4822,7 @@ import {
                     setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
                     setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
                     setUserCanEditSettings(config.userCanEditSettings === true);
+                    setUserCanEditEpmConfig(config.userCanEditEpmConfig === true);
                     setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));
                     applySavedEpmConfig(config.epm);
                 } catch (err) {
@@ -11045,13 +11055,16 @@ import {
                     onClick: openEpmSettingsTab
                 }
             ];
-            const settingsModalTabs = settingsModalAllTabs.filter(tab => canEditSharedConfiguration || !SHARED_CONFIGURATION_TAB_IDS.has(tab.id));
+            const settingsModalTabs = settingsModalAllTabs.filter(tab => {
+                if (tab.id === 'epm') return canEditEpmConfiguration;
+                return canEditSharedConfiguration || !SHARED_CONFIGURATION_TAB_IDS.has(tab.id);
+            });
             const settingsSaveHandler = groupManageTab === 'epm'
                 ? () => { void saveEpmConfig().catch(() => {}); }
                 : saveGroupsConfig;
             const settingsShowsSave = groupManageTab !== 'connections';
             const settingsSaveDisabled = groupManageTab === 'epm'
-                ? (epmConfigLoading || epmConfigSaving)
+                ? (!canEditEpmConfiguration || epmConfigLoading || epmConfigSaving)
                 : Boolean(saveBlockedReason);
             const settingsSaveTitle = groupManageTab === 'epm' ? '' : (saveBlockedReason || '');
             const settingsSaveLabel = groupManageTab === 'epm'
@@ -11158,7 +11171,7 @@ import {
                                 {selectedView === 'epm' && (
                                     <>
                                         {renderEpmProjectCollapseAllButton('main')}
-                                        {canEditSharedConfiguration && (
+                                        {canEditEpmConfiguration && (
                                             <button
                                                 className="group-gear-button"
                                                 onClick={openEpmSettingsTab}
@@ -11198,7 +11211,7 @@ import {
                                             {shouldUseEpmSprint(epmTab) && renderSprintControl('compact')}
                                             {renderEpmControls('compact', false)}
                                             {renderEpmProjectCollapseAllButton('compact')}
-                                            {canEditSharedConfiguration && (
+                                            {canEditEpmConfiguration && (
                                                 <button
                                                     className="group-gear-button"
                                                     onClick={openEpmSettingsTab}

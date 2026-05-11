@@ -97,13 +97,13 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(dashboardSource.includes("import SettingsModal from './settings/SettingsModal.jsx';"), 'Expected dashboard to import extracted SettingsModal shell');
     assert.ok(settingsModalCallSource.includes('activeTab={groupManageTab}'), 'Expected dashboard to pass active settings tab into SettingsModal');
     assert.ok(settingsModalCallSource.includes('tabs={settingsModalTabs}'), 'Expected dashboard to pass tab descriptors into SettingsModal');
-    assert.ok(settingsModalCallSource.includes('isDirty={isGroupDraftDirty}'), 'Expected dashboard to pass dirty state into SettingsModal');
+    assert.ok(settingsModalCallSource.includes("isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}"), 'Expected dashboard to pass dirty state into SettingsModal');
     assert.ok(settingsModalCallSource.includes('onRequestClose={requestCloseGroupManage}'), 'Expected backdrop close handling to stay wired through dashboard');
     assert.ok(settingsModalCallSource.includes('showDiscardConfirm={showGroupDiscardConfirm}'), 'Expected discard-confirm state to stay owned by dashboard');
     assert.ok(settingsModalCallSource.includes('onDiscard={discardGroupDraftChanges}'), 'Expected discard action to stay owned by dashboard');
     assert.ok(settingsModalCallSource.includes('saveDisabled={settingsSaveDisabled}'), 'Expected dashboard to own save disabled state');
     assert.ok(settingsModalCallSource.includes('saveTitle={settingsSaveTitle}'), 'Expected dashboard to own save title state');
-    assert.ok(settingsModalCallSource.includes('validationMessages={groupConfigValidationErrors}'), 'Expected validation messages to render through the shell');
+    assert.ok(settingsModalCallSource.includes("validationMessages={groupManageTab !== 'connections' ? groupConfigValidationErrors : []}"), 'Expected validation messages to render through the shell');
     assert.ok(settingsModalCallSource.includes('onCancel={requestCloseGroupManage}'), 'Expected dashboard to wire cancel through the shared close handler');
     assert.ok(settingsModalCallSource.includes('onSave={settingsSaveHandler}'), 'Expected dashboard to wire save through the tab-aware save handler');
     assert.ok(settingsModalCallSource.includes('onKeepEditing={() => setShowGroupDiscardConfirm(false)}'), 'Expected dashboard to hide discard confirmation from the shell');
@@ -188,7 +188,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes("const epmConfigBaselineRef = useRef(JSON.stringify(createEmptyEpmConfigDraft()));"), 'Expected EPM config baseline tracking');
     assert.ok(epmViewDataSource.includes("const [epmProjectsError, setEpmProjectsError] = useState('');"), 'Expected EPM project error state');
     assert.ok(dashboardSource.includes('const isEpmConfigDirty = React.useMemo(() => {'), 'Expected EPM dirty-state tracking');
-    assert.ok(dashboardSource.includes('if (isEpmConfigDirty) return true;'), 'Expected EPM dirty-state participation in modal dirty checks');
+    assert.ok(dashboardSource.includes('if (canEditEpmConfiguration && isEpmConfigDirty) return true;'), 'Expected EPM dirty-state participation in modal dirty checks');
     assert.ok(dashboardSource.includes('isEpmConfigDirty,'), 'Expected EPM dirty-state participation in unsaved section counting');
     assert.ok(dashboardSource.includes('const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);'), 'Expected EPM config loader wrapper');
     assert.ok(dashboardSource.includes('const loadEpmScopeMeta = () => fetchEpmScope(BACKEND_URL);'), 'Expected EPM scope metadata loader wrapper');
@@ -230,7 +230,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const handleEpmRootGoalSearchKeyDown = (event) => {'), 'Expected root goal keyboard handler');
     assert.ok(dashboardSource.includes('const handleEpmSubGoalSearchKeyDown = (event) => {'), 'Expected sub-goal keyboard handler');
     assert.ok(dashboardSource.includes('void saveEpmConfig().catch(() => {});'), 'Expected direct EPM save callers to consume rejections');
-    assert.ok(dashboardSource.includes('if (isEpmConfigDirty) {') && dashboardSource.includes('await saveEpmConfig();'), 'Expected shared save path to persist EPM settings when dirty');
+    assert.ok(dashboardSource.includes('if (canEditEpmConfiguration && isEpmConfigDirty) {') && dashboardSource.includes('await saveEpmConfig();'), 'Expected save path to persist EPM settings when dirty and allowed');
     assert.ok(dashboardSource.includes("setGroupDraftError(message);") && dashboardSource.includes('throw err;'), 'Expected EPM save failures to surface and block shared save');
     assert.ok(epmSettingsUiSource.includes('Atlassian site'), 'Expected Atlassian site copy');
     assert.ok(epmSettingsUiSource.includes('Root goal'), 'Expected Root goal copy');
@@ -508,20 +508,25 @@ test('settings tabs distinguish tool-admin configuration from team grouping', ()
 
     assert.ok(dashboardSource.includes('const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);'), 'Expected environment-config state from /api/config');
     assert.ok(dashboardSource.includes('const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;'), 'Expected explicit shared-configuration edit permission');
+    assert.ok(dashboardSource.includes('const canEditEpmConfiguration = canEditSharedConfiguration || userCanEditEpmConfig;'), 'Expected EPM configuration to have user-owned edit permission');
     assert.ok(dashboardSource.includes("const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';"), 'Expected configured environments to open settings on Team Groups');
     assert.ok(tabsSource.includes("id: 'scope'"), 'Expected Scope Projects in the tool-admin tab list');
     assert.ok(tabsSource.includes("id: 'source'"), 'Expected Jira Source in the tool-admin tab list');
     assert.ok(tabsSource.includes("id: 'mapping'"), 'Expected Field Mapping in the tool-admin tab list');
     assert.ok(tabsSource.includes("id: 'capacity'"), 'Expected Capacity in the tool-admin tab list');
     assert.ok(tabsSource.includes("id: 'priorityWeights'"), 'Expected Priority Weights in the tool-admin tab list');
-    assert.ok(tabsSource.includes("id: 'epm'"), 'Expected EPM settings in the tool-admin tab list');
+    assert.ok(tabsSource.includes("id: 'epm'"), 'Expected EPM settings in the settings tab list');
     assert.ok(tabsSource.includes("id: 'teams'") && tabsSource.includes("onClick: () => setGroupManageTab('teams')"), 'Expected Team Groups to stay directly accessible');
     assert.ok(!tabsSource.includes('savedSelectedProjects.length === 0'), 'Team Groups tab must not be disabled because dashboard projects are unconfigured');
 });
 
 test('normal users do not receive admin-only settings tabs as disabled edit surfaces', () => {
     assert.ok(
-        dashboardSource.includes('const settingsModalTabs = settingsModalAllTabs.filter(tab => canEditSharedConfiguration || !SHARED_CONFIGURATION_TAB_IDS.has(tab.id));'),
+        dashboardSource.includes("if (tab.id === 'epm') return canEditEpmConfiguration;"),
+        'Expected EPM settings tab visibility to use user-owned EPM permission'
+    );
+    assert.ok(
+        dashboardSource.includes('return canEditSharedConfiguration || !SHARED_CONFIGURATION_TAB_IDS.has(tab.id);'),
         'Expected normal-user settings tabs to omit admin-only shared configuration tabs'
     );
     assert.ok(
@@ -536,8 +541,16 @@ test('shared configuration permission fails closed while user config is missing 
         'Expected settings edit permission to fail closed before /api/config returns'
     );
     assert.ok(
+        dashboardSource.includes('const [userCanEditEpmConfig, setUserCanEditEpmConfig] = useState(false);'),
+        'Expected EPM edit permission to fail closed before /api/config returns'
+    );
+    assert.ok(
         dashboardSource.includes('setUserCanEditSettings(config.userCanEditSettings === true);'),
         'Expected initial config load to require an explicit editable permission'
+    );
+    assert.ok(
+        dashboardSource.includes('setUserCanEditEpmConfig(config.userCanEditEpmConfig === true);'),
+        'Expected initial config load to require explicit EPM editable permission'
     );
     assert.ok(
         dashboardSource.includes('setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));'),
@@ -546,6 +559,10 @@ test('shared configuration permission fails closed while user config is missing 
     assert.ok(
         dashboardSource.includes('setUserCanEditSettings(cfg.userCanEditSettings === true);'),
         'Expected config refresh after save to require an explicit editable permission'
+    );
+    assert.ok(
+        dashboardSource.includes('setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);'),
+        'Expected config refresh after save to require explicit EPM editable permission'
     );
     assert.ok(
         dashboardSource.includes('setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));'),
@@ -566,13 +583,13 @@ test('team group save does not bundle admin-only shared config writes for normal
 
     assert.ok(!saveSource.includes('Tool admin access is required for shared configuration changes.'), 'Team group save must not block normal-user changes because hidden shared config drafts are dirty');
     assert.ok(saveSource.includes('if (canEditSharedConfiguration) {'), 'Expected shared config writes to be gated by tool-admin edit permission');
+    assert.ok(saveSource.includes('if (canEditEpmConfiguration && isEpmConfigDirty) {'), 'Expected EPM config writes to use user-owned EPM edit permission');
     const gatedStart = saveSource.indexOf('if (canEditSharedConfiguration) {');
     const groupSaveStart = saveSource.indexOf('const response = await requestSaveGroupsConfig');
     assert.ok(gatedStart !== -1 && groupSaveStart > gatedStart, 'Expected shared config gate before group config save');
     const beforeGate = saveSource.slice(0, gatedStart);
     const gatedSource = saveSource.slice(gatedStart, groupSaveStart);
     [
-        'await saveEpmConfig();',
         'await saveProjectSelection();',
         'await savePriorityWeightsConfig();',
         'await saveBoardConfig();',

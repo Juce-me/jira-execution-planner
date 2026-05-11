@@ -267,6 +267,20 @@ class UserViewConfigRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()['version'], 2)
 
+    def test_normal_user_config_reports_epm_edit_permission_without_admin_role(self):
+        with self._env_patch(), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'get_board_config', return_value={}), \
+             patch.object(jira_server, 'get_effective_capacity_project', return_value=''), \
+             patch.object(jira_server, 'resolve_groups_config_path', return_value='team-groups.json'), \
+             patch.object(jira_server, 'get_selected_projects', return_value=[]):
+            response = self.client.get('/api/config')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertFalse(body['userCanEditSettings'])
+        self.assertTrue(body['userCanEditEpmConfig'])
+
     def test_default_route_returns_resolved_default_view(self):
         create_response = self._post_view({
             'name': 'Default EPM',

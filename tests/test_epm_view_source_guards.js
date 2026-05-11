@@ -359,8 +359,8 @@ test('dashboard source exposes EPM settings access in both header contexts', () 
         'Expected Open EPM settings controls in both full and compact headers'
     );
     assert.ok(
-        countOccurrences(dashboardSource, '{canEditSharedConfiguration && (') >= 2,
-        'Expected EPM settings controls to render only for tool admins'
+        countOccurrences(dashboardSource, '{canEditEpmConfiguration && (') >= 2,
+        'Expected EPM settings controls to render for users with EPM configuration access'
     );
 });
 

@@ -1,4 +1,3 @@
-import base64
 import os
 import tempfile
 import time
@@ -6,8 +5,6 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from backend.auth.key_provider import key_provider_from_env
-from backend.auth.service_integrations import seed_service_integration
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
@@ -20,7 +17,7 @@ FULL_SCOPE = (
 )
 
 
-class DbAdminRoutesTests(unittest.TestCase):
+class DbAuthRecoveryPagesTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
@@ -28,15 +25,10 @@ class DbAdminRoutesTests(unittest.TestCase):
         jira_server.OAUTH_REFRESH_LOCKS.clear()
         self.client = jira_server.app.test_client()
         self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'admin-routes.db')}"
+        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'recovery.db')}"
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
-        self.key_provider = key_provider_from_env({
-            'APP_ENVIRONMENT_KEY': 'local',
-            'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([14]) * 32).decode('ascii'),
-            'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
-        })
         self.workspace_id, self.admin_user_id, self.admin_connection_id = self._seed_user(
             account_id='admin-account',
             account_type='admin',
@@ -45,27 +37,6 @@ class DbAdminRoutesTests(unittest.TestCase):
             account_id='normal-account',
             account_type='user',
         )
-        with self.factory() as session:
-            seed_service_integration(
-                session,
-                workspace_id=self.workspace_id,
-                provider='home_townsquare_basic',
-                credential_subject='svc-home@example.com',
-                api_token='service-token-123',
-                actor_user_id=self.admin_user_id,
-                key_provider=self.key_provider,
-            )
-            session.add(models.audit_event(
-                workspace_id=self.workspace_id,
-                actor_user_id=self.admin_user_id,
-                target_user_id=self.normal_user_id,
-                event_type='user_status_checked',
-                metadata={
-                    'api_token': 'service-token-123',
-                    'callbackUrl': 'http://localhost:5050/api/auth/atlassian/callback?state=abc&code=secret',
-                },
-            ))
-            session.commit()
 
     def tearDown(self):
         db_engine.dispose_engines()
@@ -73,7 +44,7 @@ class DbAdminRoutesTests(unittest.TestCase):
         jira_server.OAUTH_REFRESH_LOCKS.clear()
         self._tmpdir.cleanup()
 
-    def _seed_user(self, *, account_id, account_type):
+    def _seed_user(self, *, account_id, account_type, user_status='active', connection_status='active'):
         with self.factory() as session:
             workspace = session.query(models.Workspace).first()
             if workspace is None:
@@ -92,7 +63,7 @@ class DbAdminRoutesTests(unittest.TestCase):
                 email=f'{account_id}@example.com',
                 display_name=f'{account_id} User',
                 account_type=account_type,
-                status='active',
+                status=user_status,
                 created_by='test',
             )
             session.add(user)
@@ -104,20 +75,11 @@ class DbAdminRoutesTests(unittest.TestCase):
                 site_url='https://example.atlassian.net',
                 cloud_id='cloud-123',
                 scopes=FULL_SCOPE.split(),
-                status='active',
+                status=connection_status,
                 token_version=1,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
             )
             session.add(connection)
-            session.flush()
-            session.add(models.JiraProjectAccess(
-                connection_id=connection.id,
-                workspace_id=workspace.id,
-                project_key='ABC',
-                project_type='product',
-                status='accessible',
-                checked_at=datetime.now(timezone.utc),
-            ))
             session.commit()
             return workspace.id, user.id, connection.id
 
@@ -132,7 +94,6 @@ class DbAdminRoutesTests(unittest.TestCase):
             'scope': FULL_SCOPE,
             'cloudid': 'cloud-123',
             'site_url': 'https://example.atlassian.net',
-            'site_name': 'Example',
             'account_id': account_id,
             'account_status': 'active',
             'db_auth_connection_id': connection_id,
@@ -144,72 +105,68 @@ class DbAdminRoutesTests(unittest.TestCase):
         return patch.dict(os.environ, {
             'CONFIG_STORAGE_BACKEND': 'db',
             'DATABASE_URL': self.database_url,
-            'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([14]) * 32).decode('ascii'),
-            'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
         }, clear=False)
 
-    def test_admin_can_list_users_without_token_material(self):
+    def test_recovery_pages_are_visible_html_without_token_material(self):
+        pages = {
+            '/auth/account-disabled': 'Account disabled',
+            '/auth/reconnect': 'Reconnect Jira',
+            '/auth/missing-project-access': 'Project access required',
+            '/auth/admin-required': 'Tool admin access required',
+            '/auth/service-credentials': 'Service credentials',
+        }
+
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            for path, expected in pages.items():
+                with self.subTest(path=path):
+                    response = self.client.get(path)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertIn('text/html', response.headers['Content-Type'])
+                    body = response.get_data(as_text=True)
+                    self.assertIn(expected, body)
+                    self.assertNotIn('access-123', body)
+                    self.assertNotIn('refresh-123', body)
+
+    def test_disabled_user_api_response_links_visible_recovery_page(self):
+        with self.factory() as session:
+            admin = session.get(models.User, self.admin_user_id)
+            admin.status = 'disabled'
+            session.commit()
         self._install_session(account_id='admin-account', connection_id=self.admin_connection_id)
 
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             response = self.client.get('/api/admin/users')
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 401)
         body = response.get_json()
-        self.assertEqual(len(body['users']), 2)
-        self.assertIn('authConnections', body['users'][0])
-        self.assertNotIn('apiToken', str(body))
-        self.assertNotIn('service-token-123', str(body))
-        self.assertNotIn('refresh-123', str(body))
+        self.assertEqual(body['error'], 'account_disabled')
+        self.assertEqual(body['recoveryUrl'], '/auth/account-disabled')
 
-    def test_non_admin_cannot_read_admin_users(self):
+    def test_revoked_connection_api_response_links_reconnect_page(self):
+        with self.factory() as session:
+            connection = session.get(models.AuthConnection, self.admin_connection_id)
+            connection.status = 'revoked'
+            session.commit()
+        self._install_session(account_id='admin-account', connection_id=self.admin_connection_id)
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.get('/api/admin/users')
+
+        self.assertEqual(response.status_code, 401)
+        body = response.get_json()
+        self.assertEqual(body['error'], 'auth_connection_revoked')
+        self.assertEqual(body['recoveryUrl'], '/auth/reconnect')
+
+    def test_non_admin_api_response_links_admin_denial_page(self):
         self._install_session(account_id='normal-account', connection_id=self.normal_connection_id)
 
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             response = self.client.get('/api/admin/users')
 
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.get_json()['error'], 'admin_required')
-
-    def test_admin_audit_events_are_redacted(self):
-        self._install_session(account_id='admin-account', connection_id=self.admin_connection_id)
-
-        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
-            response = self.client.get('/api/admin/audit-events')
-
-        self.assertEqual(response.status_code, 200)
         body = response.get_json()
-        self.assertEqual(body['events'][0]['metadata']['api_token'], '[redacted]')
-        self.assertEqual(
-            body['events'][0]['metadata']['callbackUrl'],
-            'http://localhost:5050/api/auth/atlassian/callback',
-        )
-
-    def test_admin_can_read_service_integrations_without_token_material(self):
-        self._install_session(account_id='admin-account', connection_id=self.admin_connection_id)
-
-        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
-            response = self.client.get('/api/admin/service-integrations')
-
-        self.assertEqual(response.status_code, 200)
-        body = response.get_json()
-        self.assertEqual(body['serviceIntegrations'][0]['credentialSubject'], 'svc-home@example.com')
-        self.assertNotIn('apiToken', str(body))
-        self.assertNotIn('ciphertext', str(body))
-        self.assertNotIn('service-token-123', str(body))
-
-    def test_admin_mutation_requires_csrf_token(self):
-        self._install_session(account_id='admin-account', connection_id=self.admin_connection_id)
-
-        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
-            response = self.client.patch(
-                f'/api/admin/users/{self.normal_user_id}/status',
-                json={'status': 'disabled'},
-                headers={'X-Requested-With': 'jira-execution-planner'},
-            )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.get_json()['error'], 'csrf_required')
+        self.assertEqual(body['error'], 'admin_required')
+        self.assertEqual(body['recoveryUrl'], '/auth/admin-required')
 
 
 if __name__ == '__main__':

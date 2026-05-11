@@ -35,6 +35,7 @@ from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, sched
 from backend.auth.cache_policy import jira_home_process_cache_enabled
 from backend.auth.context import RequestAuthContext, stable_local_workspace_id
 from backend.auth.admin_bootstrap import bootstrap_first_tool_admin
+from backend.auth.csrf import validate_csrf_token
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
 from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
 from backend.auth.key_provider import key_provider_from_env
@@ -781,14 +782,31 @@ def _cache_policy_context(context=None):
 
 
 def auth_error_response(error, status=401):
-    return jsonify({'error': error.code, 'message': str(error)}), status
+    payload = {'error': error.code, 'message': str(error)}
+    recovery_url = auth_recovery_url(error.code)
+    if recovery_url:
+        payload['recoveryUrl'] = recovery_url
+    if error.code == 'auth_required':
+        payload['loginUrl'] = '/login?reason=session_expired'
+    return jsonify(payload), status
 
 
 def admin_required_payload():
     return {
         'error': 'admin_required',
         'message': 'Admin access is required for this configuration change.',
+        'recoveryUrl': '/auth/admin-required',
     }, 403
+
+
+def auth_recovery_url(error_code):
+    return {
+        'account_disabled': '/auth/account-disabled',
+        'auth_connection_revoked': '/auth/reconnect',
+        'auth_connection_stale': '/auth/reconnect',
+        'missing_oauth_scope': '/login?reason=missing_scope',
+        'missing_project_access': '/auth/missing-project-access',
+    }.get(error_code)
 
 
 def validate_local_token_store_allowed():
@@ -825,6 +843,25 @@ def require_oauth_unsafe_method_header():
     return jsonify({
         'error': 'csrf_required',
         'message': 'Unsafe OAuth requests require X-Requested-With: jira-execution-planner',
+    }), 403
+
+
+@app.before_request
+def require_db_admin_csrf_token():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if not database_storage_enabled():
+        return None
+    if request.method not in UNSAFE_METHODS:
+        return None
+    if not request.path.startswith('/api/admin/'):
+        return None
+    data = oauth_session_data()
+    if validate_csrf_token(session, data, request.headers.get('X-CSRF-Token')):
+        return None
+    return jsonify({
+        'error': 'csrf_required',
+        'message': 'A valid CSRF token is required for this request.',
     }), 403
 
 

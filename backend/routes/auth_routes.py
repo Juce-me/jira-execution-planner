@@ -2,6 +2,7 @@
 
 from flask import Blueprint, jsonify, redirect, request, session
 
+from backend.auth.csrf import issue_csrf_token
 from backend.auth.jira_auth import ensure_oauth_token, missing_oauth_scopes
 from backend.epm import home as epm_home
 
@@ -183,6 +184,130 @@ def auth_entry_page():
   </body>
 </html>
 """, 200, {'Content-Type': 'text/html; charset=utf-8'}
+
+
+def _recovery_page(title, copy, action_label=None, action_href=None):
+    action = ''
+    if action_label and action_href:
+        action = f'<a class="auth-action" href="{action_href}">{action_label}</a>'
+    return f"""
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{title}</title>
+    <style>
+      :root {{ color-scheme: light; }}
+      * {{ box-sizing: border-box; }}
+      body {{
+        margin: 0;
+        min-height: 100vh;
+        padding: 32px 18px;
+        background: #f4f7fb;
+        color: #172033;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.5;
+      }}
+      body, .auth-entry {{ display: flex; align-items: center; justify-content: center; }}
+      .auth-card {{
+        width: min(100%, 560px);
+        padding: 32px;
+        background: #ffffff;
+        border: 1px solid #d8e0eb;
+        border-radius: 8px;
+      }}
+      h1 {{ margin: 0; font-size: 2rem; line-height: 1.15; letter-spacing: 0; }}
+      p {{ margin: 12px 0 0; color: #4a5568; }}
+      .auth-action {{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        margin-top: 24px;
+        padding: 0 18px;
+        color: #ffffff;
+        background: #0c66e4;
+        border-radius: 6px;
+        font-weight: 700;
+        text-decoration: none;
+      }}
+    </style>
+  </head>
+  <body>
+    <main class="auth-entry">
+      <section class="auth-card" aria-labelledby="auth-title">
+        <h1 id="auth-title">{title}</h1>
+        <p>{copy}</p>
+        {action}
+      </section>
+    </main>
+  </body>
+</html>
+""", 200, {'Content-Type': 'text/html; charset=utf-8'}
+
+
+@bp.route('/auth/account-disabled', methods=['GET'])
+def auth_account_disabled_page():
+    return _recovery_page(
+        'Account disabled',
+        'Your Jira Execution Planner account is disabled. Contact a tool admin to restore access.',
+    )
+
+
+@bp.route('/auth/reconnect', methods=['GET'])
+def auth_reconnect_page():
+    return _recovery_page(
+        'Reconnect Jira',
+        'Your Jira connection needs to be reconnected before this workspace can load.',
+        'Reconnect with Atlassian',
+        '/api/auth/atlassian/login?prompt=consent',
+    )
+
+
+@bp.route('/auth/missing-project-access', methods=['GET'])
+def auth_missing_project_access_page():
+    return _recovery_page(
+        'Project access required',
+        'Your Jira account does not currently have access to the configured project scope.',
+    )
+
+
+@bp.route('/auth/admin-required', methods=['GET'])
+def auth_admin_required_page():
+    return _recovery_page(
+        'Tool admin access required',
+        'This area is limited to Jira Execution Planner tool admins.',
+    )
+
+
+@bp.route('/auth/service-credentials', methods=['GET'])
+def auth_service_credentials_page():
+    return _recovery_page(
+        'Service credentials',
+        'Tool admins can review workspace service credential status here without exposing token material.',
+        'View service integrations',
+        '/api/admin/service-integrations',
+    )
+
+
+@bp.route('/api/auth/csrf', methods=['GET'])
+def api_auth_csrf():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return jsonify({'csrfToken': issue_csrf_token(session, {})})
+    data = oauth_session_data()
+    if not data.get('access_token') or not data.get('cloudid'):
+        save_oauth_session({})
+        return jsonify({
+            'error': 'auth_required',
+            'message': 'Your Jira sign-in expired. Sign in again to continue.',
+            'loginUrl': '/login?reason=session_expired',
+        }), 401
+    try:
+        current_request_auth_context()
+    except AuthError as error:
+        return auth_error_response(error, 401)
+    return jsonify({'csrfToken': issue_csrf_token(session, data)})
 
 
 @bp.route('/api/auth/atlassian/login', methods=['GET'])

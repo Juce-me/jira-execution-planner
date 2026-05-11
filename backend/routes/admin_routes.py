@@ -1,7 +1,8 @@
 """Admin inspection route blueprint."""
 
-from flask import Blueprint, g, jsonify
+from flask import Blueprint, g, jsonify, request
 
+from backend.auth.db_context import invalidate_auth_status_cache
 from backend.auth.jira_auth import AuthError
 from backend.auth.service_integrations import (
     get_service_integration_summary,
@@ -172,23 +173,73 @@ def api_admin_service_integration(service_integration_id):
         return jsonify({'serviceIntegration': get_service_integration_summary(db_session, integration.id)})
 
 
-def _csrf_not_ready():
-    return jsonify({
-        'error': 'csrf_not_ready',
-        'message': 'Token-bound CSRF is required before admin mutations are enabled.',
-    }), 501
+def _load_workspace_user(session, workspace_id, user_id):
+    user = session.get(models.User, user_id)
+    if user is None:
+        return None
+    if not session.query(models.AuthConnection).filter_by(user_id=user.id, workspace_id=workspace_id).first():
+        return None
+    return user
 
 
 @bp.route('/api/admin/users/<user_id>/status', methods=['PATCH'])
 def api_admin_user_status(user_id):
-    return _csrf_not_ready()
+    context = g.auth_context
+    status = str((request.get_json(silent=True) or {}).get('status') or '').strip()
+    if status not in {'active', 'disabled'}:
+        return jsonify({'error': 'invalid_user_status'}), 400
+    with session_scope() as db_session:
+        user = _load_workspace_user(db_session, context.workspace_id, user_id)
+        if user is None:
+            return jsonify({'error': 'user_not_found'}), 404
+        user.status = status
+        db_session.add(models.audit_event(
+            workspace_id=context.workspace_id,
+            actor_user_id=context.user_id,
+            target_user_id=user.id,
+            event_type='user_status_updated',
+            metadata={'status': status},
+        ))
+        db_session.flush()
+        invalidate_auth_status_cache(user_id=user.id)
+        return jsonify({'user': _user_summary(db_session, user, context.workspace_id)})
 
 
 @bp.route('/api/admin/users/<user_id>/admin-grant', methods=['POST'])
 def api_admin_user_grant(user_id):
-    return _csrf_not_ready()
+    context = g.auth_context
+    with session_scope() as db_session:
+        user = _load_workspace_user(db_session, context.workspace_id, user_id)
+        if user is None:
+            return jsonify({'error': 'user_not_found'}), 404
+        user.account_type = 'admin'
+        db_session.add(models.audit_event(
+            workspace_id=context.workspace_id,
+            actor_user_id=context.user_id,
+            target_user_id=user.id,
+            event_type='admin_granted',
+            metadata={},
+        ))
+        db_session.flush()
+        invalidate_auth_status_cache(user_id=user.id)
+        return jsonify({'user': _user_summary(db_session, user, context.workspace_id)})
 
 
 @bp.route('/api/admin/users/<user_id>/admin-grant', methods=['DELETE'])
 def api_admin_user_revoke(user_id):
-    return _csrf_not_ready()
+    context = g.auth_context
+    with session_scope() as db_session:
+        user = _load_workspace_user(db_session, context.workspace_id, user_id)
+        if user is None:
+            return jsonify({'error': 'user_not_found'}), 404
+        user.account_type = 'user'
+        db_session.add(models.audit_event(
+            workspace_id=context.workspace_id,
+            actor_user_id=context.user_id,
+            target_user_id=user.id,
+            event_type='admin_revoked',
+            metadata={},
+        ))
+        db_session.flush()
+        invalidate_auth_status_cache(user_id=user.id)
+        return jsonify({'user': _user_summary(db_session, user, context.workspace_id)})

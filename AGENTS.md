@@ -267,6 +267,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - OAuth-ready EPM routes use hybrid auth: user OAuth for Jira REST and explicit Home/Townsquare service Basic creds for Home metadata; worker-thread Jira searches must carry the captured request auth context.
 - For OAuth Jira worker-thread fixes, verify a no-request-context test that reaches the real Jira auth wrapper; route mocks alone are not sufficient.
 - Name active auth/DB/Home migration docs with `EXEC-*`, executed docs with `DONE-*`, support/reference/setup docs with `SUPPORT-*`, and deferred scope with `FUTURE-*`; keep expectations in `docs/plans/README.md`.
+- Before executing a plan task, verify every named file in that task's file map exists unless the plan explicitly marks it `Create`.
 
 ---
 

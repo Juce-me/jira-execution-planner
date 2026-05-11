@@ -129,21 +129,25 @@ Not allowed:
 - Create: `backend/db/migrations/versions/*_user_api_token_connection.py`
 - Create: `backend/auth/user_api_tokens.py`
 - Create: `backend/auth/home_credentials.py`
-- Modify: `backend/auth/token_crypto.py`
-- Modify: `backend/routes/auth_routes.py`
+- Use existing: `backend/auth/token_crypto.py`
+- Modify: `backend/app.py`
+- Modify: `jira_server.py`
 - Create: `backend/routes/user_connection_routes.py`
 - Modify: `backend/epm/home.py`
 - Modify: `backend/routes/epm_routes.py` only when adding a concrete Home/Townsquare write action
-- Modify: `frontend/src/api/authApi.js`
+- Create: `frontend/src/api/authApi.js` because this module does not exist in the current repo
+- Modify: `frontend/src/api/epmApi.js` when adding the concrete Home update wrapper
 - Create: `frontend/src/settings/UserConnectionsSettings.jsx`
-- Modify: `frontend/src/settings/SettingsModal.jsx`
-- Modify: `frontend/src/dashboard.jsx` only to pass the new Connections tab state into the extracted settings component
+- Modify: `frontend/src/settings/SettingsModal.jsx` only to support the self-service Connections tab without the shared-config Save action
+- Modify: `frontend/src/epm/EpmRollupPanel.jsx` and `frontend/src/epm/EpmView.jsx` only when wiring the concrete Home update action
+- Modify: `frontend/src/dashboard.jsx` only to add the Connections tab state/opener and pass the concrete Home update action
 - Test: `tests/test_user_api_token_connections.py`
 - Test: `tests/test_home_credential_resolver.py`
 - Test: `tests/test_home_mutation_auth_guards.py`
 - Test: `tests/test_user_api_token_source_guard.py`
 - Test: `tests/test_db_admin_routes.py`
-- Test: `tests/ui/home_token_connection_settings.spec.js`
+- Create: `tests/ui/home_token_connection_settings.spec.js` because this Playwright spec does not exist in the current repo
+- Modify: `tests/test_frontend_api_source_guards.js` when adding frontend API wrappers
 
 ## Task 1: DB Schema And Provider Contract
 
@@ -172,7 +176,8 @@ Not allowed:
 **Files:**
 - Create: `backend/auth/user_api_tokens.py`
 - Create: `backend/routes/user_connection_routes.py`
-- Modify: `backend/routes/auth_routes.py`
+- Modify: `backend/app.py`
+- Modify: `jira_server.py`
 - Test: `tests/test_user_api_token_connections.py`
 
 - [ ] Add `GET /api/me/connections/home-token` returning only:
@@ -239,23 +244,26 @@ Not allowed:
 ## Task 4: Frontend Connections UI
 
 **Files:**
-- Modify: `frontend/src/api/authApi.js`
+- Create: `frontend/src/api/authApi.js`
 - Create: `frontend/src/settings/UserConnectionsSettings.jsx`
 - Modify: `frontend/src/settings/SettingsModal.jsx`
 - Modify: `frontend/src/dashboard.jsx`
-- Test: `tests/ui/home_token_connection_settings.spec.js`
+- Modify: `tests/test_frontend_api_source_guards.js`
+- Create: `tests/ui/home_token_connection_settings.spec.js`
 
-- [ ] Add API wrappers for `GET`, `POST`, and `DELETE /api/me/connections/home-token`.
+- [ ] Add API wrappers in `frontend/src/api/authApi.js` for `GET`, `POST`, and `DELETE /api/me/connections/home-token`, using `frontend/src/api/http.js` and never storing token material outside the single POST body.
+- [ ] Add frontend API source-guard coverage proving `authApi.js` owns the `/api/me/connections/home-token` endpoint construction.
 - [ ] Add a Settings -> Connections row named `Jira Home write access`.
 - [ ] Show connected, reconnect required, and not connected states without token material.
 - [ ] Prefill email from authenticated profile metadata when available.
 - [ ] Keep the API token in component state only until the connect request completes; clear it on success, failure, modal close, and navigation away.
-- [ ] When Home write routes return `home_user_token_required`, open the same connection flow.
+- [ ] Add a dashboard `openUserConnectionsSettings()` path that opens Settings -> Connections; do not wire Home write-route recovery here because the concrete Home write route is introduced in Task 5.
 - [ ] Run:
 
 ```bash
 npm run build
 node tests/test_frontend_api_source_guards.js
+npx playwright test tests/ui/home_token_connection_settings.spec.js
 ```
 
 - [ ] Commit with `git commit -m "Add user Home token connection UI"`.
@@ -265,12 +273,20 @@ node tests/test_frontend_api_source_guards.js
 **Files:**
 - Modify: `backend/routes/epm_routes.py`
 - Modify: `backend/epm/home.py`
+- Modify: `jira_server.py`
+- Modify: `frontend/src/api/epmApi.js`
+- Modify: `frontend/src/epm/EpmRollupPanel.jsx`
+- Modify: `frontend/src/epm/EpmView.jsx`
+- Modify: `frontend/src/dashboard.jsx`
 - Test: `tests/test_home_mutation_auth_guards.py`
 - Test: `tests/test_home_credential_resolver.py`
+- Test: `tests/ui/home_token_connection_settings.spec.js`
 
 - [ ] Add exactly one Home/Townsquare mutation route: `POST /api/epm/projects/<project_id>/home-update`.
 - [ ] Use the route only to post a Home/Townsquare project status update on behalf of the signed-in user.
-- [ ] Wire the EPM Project detail surface's `Post update` action to this route; when the user has not connected an API token, the action must show the `home_user_token_required` recovery state.
+- [ ] Add a specific Home project update helper in `backend/epm/home.py` that accepts an explicit `write_as_user` credential descriptor; do not add a generic GraphQL proxy.
+- [ ] Wire the EPM project board/update surface in `frontend/src/epm/EpmRollupPanel.jsx` through `frontend/src/epm/EpmView.jsx` and `frontend/src/dashboard.jsx` to this route.
+- [ ] When the route returns `home_user_token_required`, open the Settings -> Connections flow from Task 4.
 - [ ] Require active OAuth user, active DB user, active OAuth `auth_connection`, token-bound CSRF, and active `atlassian_user_api_token`.
 - [ ] Call `resolve_home_credential(context, "write_as_user")`; never fall back to the workspace `home_townsquare_basic` service integration.
 - [ ] Return `409 home_user_token_required` when the user API-token connection is missing.
@@ -284,6 +300,8 @@ node tests/test_frontend_api_source_guards.js
 
 ```bash
 .venv/bin/python -m unittest tests.test_home_mutation_auth_guards tests.test_home_credential_resolver
+npm run build
+npx playwright test tests/ui/home_token_connection_settings.spec.js
 ```
 
 - [ ] Commit with `git commit -m "Add Home project update route for user API token bridge"`.
@@ -309,6 +327,7 @@ node tests/test_auth_isolation_source_guard.js
 ```
 
 - [ ] Browser-verify: OAuth login, EPM tab read path with service integration, Home write action missing-token state, user token connect, retry write action, revoke token, retry write action returns `home_user_token_required`.
+- [ ] If no real local OAuth session and Home-authorized user API token are available, stop before this browser-verification checkbox and report the automated verification state; do not commit Task 6 as complete.
 - [ ] Commit with `git commit -m "Verify Home user token bridge"`.
 
 ## Critical Misses This Plan Prevents

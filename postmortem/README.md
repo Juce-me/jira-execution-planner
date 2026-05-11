@@ -31,6 +31,7 @@ Postmortems serve to:
 | [MRT013](./MRT013-epm-active-home-projects-hidden.md) | EPM Active Home Projects Hidden | 2026-04-30 | High | Resolved | Home project pagination and status-label normalization hid Active projects before rollup rendering |
 | [MRT014](./MRT014-epm-cold-load-cache-race.md) | EPM Cold Load Cache Race | 2026-04-30 | Medium | Resolved | EPM cold load could race Home project discovery with all-project rollup and lacked timing visibility |
 | [MRT015](./MRT015-epm-first-load-home-fanout-overfetch.md) | EPM First Load Home Fan-Out and Overfetch | 2026-05-01 | High | Resolved | Slow first EPM load came from per-project Home enrichment fan-out and unscoped all-project metadata fetches |
+| [MRT016](./MRT016-exec-02-plan-file-map-drift.md) | EXEC-02 Plan File Map Drift | 2026-05-11 | Medium | Resolved | EXEC-02 frontend task referenced future files as existing files and crossed task boundaries |
 
 ## Postmortem Template
 
@@ -84,8 +85,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 14
-- **Metadata complete (Date/Severity/Status)**: 14 (MRT001-MRT014)
+- **Total postmortems**: 16
+- **Metadata complete (Date/Severity/Status)**: 16 (MRT001-MRT016)
 
 ## Common Themes
 
@@ -139,5 +140,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-04-30*
-*Total Postmortems: 14*
+*Last Updated: 2026-05-11*
+*Total Postmortems: 16*

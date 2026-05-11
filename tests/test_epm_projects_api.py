@@ -7,10 +7,12 @@ import tempfile
 from werkzeug.exceptions import NotFound
 
 import jira_server
+from tests.auth_mode_test_utils import force_basic_auth_mode
 
 
 class TestEpmProjectsApi(unittest.TestCase):
     def setUp(self):
+        force_basic_auth_mode(self, jira_server)
         self.app = jira_server.app
         self.app.testing = True
         self.client = self.app.test_client()

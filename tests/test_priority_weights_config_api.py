@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from tests.auth_mode_test_utils import force_basic_auth_mode
+
 try:
     import jira_server
     _IMPORT_ERROR = None
@@ -14,6 +16,9 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestPriorityWeightsConfigApi(unittest.TestCase):
+    def setUp(self):
+        force_basic_auth_mode(self, jira_server)
+
     def test_env_priority_weights_parsing_and_aliases(self):
         rows = jira_server.parse_stats_priority_weights_env('Highest:0.4,Critical:0.3,Major:0.2,Low:0.1')
         self.assertEqual(len(rows), 4)

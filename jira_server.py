@@ -5552,11 +5552,12 @@ def _escape_jql_literal(value):
     return str(value or '').replace('\\', '\\\\').replace('"', '\\"')
 
 
-def _cohort_fetch_terminal_date_from_changelog(issue_key, target_status, headers):
+def _cohort_fetch_terminal_date_from_changelog(issue_key, target_status, headers, context=None):
     response = current_jira_get(
         f'/rest/api/3/issue/{issue_key}',
         params={'fields': 'status', 'expand': 'changelog'},
         timeout=20,
+        context=context,
     )
     if response.status_code != 200:
         return issue_key, None, f'changelog fetch failed ({response.status_code})'
@@ -5568,7 +5569,7 @@ def _cohort_fetch_terminal_date_from_changelog(issue_key, target_status, headers
     return issue_key, resolved, None
 
 
-def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None, component_names=None):
+def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None, component_names=None, context=None):
     start_date, _ = quarter_dates_from_label(start_quarter)
     if not start_date:
         return {
@@ -5667,7 +5668,7 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
             for issue_key, status_name in terminal_candidates:
                 if not issue_key:
                     continue
-                future = pool.submit(_cohort_fetch_terminal_date_from_changelog, issue_key, status_name, headers)
+                future = pool.submit(_cohort_fetch_terminal_date_from_changelog, issue_key, status_name, headers, context)
                 future_map[future] = issue_key
             try:
                 for future in as_completed(future_map, timeout=timeout_budget):
@@ -5945,7 +5946,8 @@ def get_epic_cohort_stats():
             None,
             team_field_id,
             team_ids=team_ids,
-            component_names=component_names
+            component_names=component_names,
+            context=auth_context,
         )
         if error_response is not None:
             return jsonify({

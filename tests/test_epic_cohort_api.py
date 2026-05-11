@@ -2,6 +2,8 @@ import unittest
 from unittest.mock import patch
 from datetime import date
 
+from tests.auth_mode_test_utils import force_basic_auth_mode
+
 try:
     import jira_server
     _IMPORT_ERROR = None
@@ -59,6 +61,9 @@ class TestEpicCohortHelpers(unittest.TestCase):
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestEpicCohortFetch(unittest.TestCase):
+    def setUp(self):
+        force_basic_auth_mode(self, jira_server)
+
     def _epic(self, key, created='2025-01-10', status='Done', resolution='2025-02-15'):
         return {
             'key': key,
@@ -159,6 +164,7 @@ class TestEpicCohortFetch(unittest.TestCase):
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestEpicCohortEndpoint(unittest.TestCase):
     def setUp(self):
+        force_basic_auth_mode(self, jira_server)
         app = jira_server.app
         app.testing = True
         self.client = app.test_client()

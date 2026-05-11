@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from tests.auth_mode_test_utils import force_basic_auth_mode
+
 try:
     import requests
     import jira_server
@@ -34,6 +36,9 @@ def _mock_response(status_code, payload=None, text=''):
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestJiraResilience(unittest.TestCase):
+    def setUp(self):
+        force_basic_auth_mode(self, jira_server)
+
     def test_timeout_then_success_retries(self):
         clock = _FakeClock()
         session = Mock()

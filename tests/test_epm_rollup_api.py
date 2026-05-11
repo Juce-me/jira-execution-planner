@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 import jira_server
+from tests.auth_mode_test_utils import force_basic_auth_mode
 
 
 def make_issue(key, issue_type='Story', summary=None, parent_key='', labels=None, sprint=None, epic_link='', status='To Do'):
@@ -56,6 +57,7 @@ def collect_hierarchy_issue_keys(payload):
 
 class TestEpmRollupApi(unittest.TestCase):
     def setUp(self):
+        force_basic_auth_mode(self, jira_server)
         self.app = jira_server.app
         self.app.testing = True
         self.client = self.app.test_client()

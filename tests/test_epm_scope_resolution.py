@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import jira_server
+from tests.auth_mode_test_utils import force_basic_auth_mode
 from backend.epm.scope import build_epm_scope_clause, build_rollup_jqls, normalize_epm_sprint_field, should_apply_epm_sprint
 
 
@@ -97,6 +98,7 @@ class TestEpmScopeResolution(unittest.TestCase):
 
 class TestEpmScopeResolutionEndpoint(unittest.TestCase):
     def setUp(self):
+        force_basic_auth_mode(self, jira_server)
         self.app = jira_server.app
         self.app.testing = True
         self.client = self.app.test_client()

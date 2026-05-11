@@ -113,6 +113,15 @@ class AuthConnection(Base):
             sqlite_where=text('site_url IS NOT NULL'),
             postgresql_where=text('site_url IS NOT NULL'),
         ),
+        Index(
+            'uq_auth_connections_user_api_token_cloud',
+            'user_id',
+            'workspace_id',
+            'cloud_id',
+            unique=True,
+            sqlite_where=text("provider = 'atlassian_user_api_token' AND cloud_id IS NOT NULL AND status != 'revoked'"),
+            postgresql_where=text("provider = 'atlassian_user_api_token' AND cloud_id IS NOT NULL AND status != 'revoked'"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -121,6 +130,8 @@ class AuthConnection(Base):
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     site_url: Mapped[str | None] = mapped_column(String(512))
     cloud_id: Mapped[str | None] = mapped_column(String(255))
+    credential_subject: Mapped[str | None] = mapped_column(String(255))
+    capabilities: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
     scopes: Mapped[list | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default='active')
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

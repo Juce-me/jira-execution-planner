@@ -36,6 +36,16 @@ class DbMigrationTests(unittest.TestCase):
             'audit_events',
         }.issubset(tables)
 
+    def _auth_connection_schema(self, database_url):
+        engine = create_engine(database_url, future=True)
+        try:
+            inspector = inspect(engine)
+            columns = {column['name'] for column in inspector.get_columns('auth_connections')}
+            indexes = {index['name'] for index in inspector.get_indexes('auth_connections')}
+        finally:
+            engine.dispose()
+        return columns, indexes
+
     def test_initial_auth_migration_upgrades_downgrades_and_reruns(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'migration.db')}"
@@ -43,12 +53,20 @@ class DbMigrationTests(unittest.TestCase):
 
             command.upgrade(config, 'head')
             self.assertTrue(self._has_auth_tables(database_url))
+            columns, indexes = self._auth_connection_schema(database_url)
+            self.assertIn('credential_subject', columns)
+            self.assertIn('capabilities', columns)
+            self.assertIn('uq_auth_connections_user_api_token_cloud', indexes)
 
             command.upgrade(config, 'head')
             self.assertTrue(self._has_auth_tables(database_url))
 
             command.downgrade(config, '-1')
-            self.assertFalse(self._has_auth_tables(database_url))
+            self.assertTrue(self._has_auth_tables(database_url))
+            columns, indexes = self._auth_connection_schema(database_url)
+            self.assertNotIn('credential_subject', columns)
+            self.assertNotIn('capabilities', columns)
+            self.assertNotIn('uq_auth_connections_user_api_token_cloud', indexes)
 
             command.upgrade(config, 'head')
             self.assertTrue(self._has_auth_tables(database_url))

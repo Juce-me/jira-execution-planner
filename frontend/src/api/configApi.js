@@ -1,7 +1,19 @@
 import { getJson } from './http.js';
 
+export const normalizeAppConfig = (config) => {
+    const normalized = { ...(config || {}) };
+    const viewConfig = normalized.viewConfig || normalized.resolvedView || null;
+    if (viewConfig && !normalized.viewConfig) {
+        normalized.viewConfig = viewConfig;
+    }
+    if (!normalized.epm && viewConfig?.view?.epm) {
+        normalized.epm = viewConfig.view.epm;
+    }
+    return normalized;
+};
+
 export const fetchAppConfig = (backendUrl) =>
-    getJson(`${backendUrl}/api/config`, 'Config');
+    getJson(`${backendUrl}/api/config?includeViewConfig=true`, 'Config').then(normalizeAppConfig);
 
 export const fetchVersionInfo = (backendUrl) =>
     getJson(`${backendUrl}/api/version`, 'Version', { cache: 'no-cache' });

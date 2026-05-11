@@ -355,7 +355,7 @@ test('settings API wrappers preserve save body shapes and no-cache reads', async
         await configApi.saveSelectedProjects('http://backend', selected);
 
         assert.deepEqual(appConfig, { ok: true });
-        assert.equal(calls[0].url, 'http://backend/api/config');
+        assert.equal(calls[0].url, 'http://backend/api/config?includeViewConfig=true');
         assert.deepEqual(calls[0].options, {});
 
         assert.equal(calls[1].url, 'http://backend/api/board-config');
@@ -378,6 +378,33 @@ test('settings API wrappers preserve save body shapes and no-cache reads', async
         assert.equal(calls[4].options.body, JSON.stringify({ selected }));
         assertJsonHeader(calls[4].options);
     });
+});
+
+test('app config wrapper preserves resolved view metadata and legacy epm shape', () => {
+    const { getJson } = loadHttpHelpers();
+    const configApi = loadApiModule('configApi.js', [
+        'normalizeAppConfig',
+    ], { getJson });
+
+    const epm = { version: 2, projects: { 'home-1': { label: 'rnd_project_synthetic' } } };
+    const normalized = configApi.normalizeAppConfig({
+        viewConfig: {
+            source: 'user_saved_view',
+            workspaceId: 'workspace-1',
+            viewConfigId: 'view-1',
+            viewType: 'epm',
+            view: { epm },
+        },
+    });
+
+    assert.deepEqual(normalized.epm, epm);
+    assert.equal(normalized.viewConfig.source, 'user_saved_view');
+
+    const withLegacyEpm = configApi.normalizeAppConfig({
+        epm: { version: 2, projects: {} },
+        viewConfig: { view: { epm } },
+    });
+    assert.deepEqual(withLegacyEpm.epm, { version: 2, projects: {} });
 });
 
 test('Jira catalog API wrappers preserve query params, cache flags, and abort signals', async () => {

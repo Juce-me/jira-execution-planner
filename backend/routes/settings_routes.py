@@ -2,6 +2,9 @@
 
 from flask import Blueprint
 
+from backend.config.db_repository import ViewConfigNotFound
+from backend.config.repository import config_storage_db_enabled, db_repository
+
 from . import bind_server_globals
 
 
@@ -53,6 +56,15 @@ def _environment_dashboard_config_exists():
             or _has_dashboard_config_value(epm.get('labelPrefix'))
         )
     return False
+
+
+def _resolve_bootstrap_view_config(auth_context):
+    if not config_storage_db_enabled():
+        return None
+    try:
+        return db_repository().resolve_effective_view_config(auth_context)
+    except ViewConfigNotFound:
+        return None
 
 
 @bp.route('/api/boards', methods=['GET'])
@@ -240,9 +252,12 @@ def get_sprints():
 def get_config():
     """Get public configuration"""
     auth_context = current_request_auth_context()
+    include_view_config = str(request.args.get('includeViewConfig') or '').strip().lower() in {'1', 'true', 'yes'}
+    view_config = _resolve_bootstrap_view_config(auth_context) if include_view_config else None
+    view_payload = (view_config or {}).get('view') or {}
     board_cfg = get_board_config()
-    epm_config = get_epm_config()
-    return jsonify({
+    epm_config = normalize_epm_config(view_payload.get('epm') or {}) if view_config else get_epm_config()
+    payload = {
         'jiraUrl': auth_context.site_url,
         'capacityProject': get_effective_capacity_project(),
         'boardId': board_cfg.get('boardId', ''),
@@ -257,7 +272,10 @@ def get_config():
         'projectsConfigured': bool(get_selected_projects()),
         'environmentConfigExists': _environment_dashboard_config_exists(),
         'epm': epm_config
-    })
+    }
+    if view_config is not None:
+        payload['viewConfig'] = view_config
+    return jsonify(payload)
 
 
 @bp.route('/api/version', methods=['GET'])

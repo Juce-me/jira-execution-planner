@@ -41,6 +41,13 @@ from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_t
 from backend.auth.key_provider import key_provider_from_env
 from backend.auth.project_access import project_access_denied_response
 from backend.auth.service_integrations import register_service_integration_cache_invalidator
+from backend.config.repository import (
+    ConfigStorageError,
+    config_storage_db_enabled,
+    db_repository as build_db_config_repository,
+    json_repository as build_json_config_repository,
+    validate_config_storage_startup,
+)
 from backend.db.engine import database_storage_enabled, session_scope, validate_startup_database_config
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
@@ -833,6 +840,10 @@ def validate_local_token_store_allowed():
 def validate_startup_auth_config():
     validate_auth_config(current_auth_config())
     validate_local_token_store_allowed()
+    try:
+        validate_config_storage_startup()
+    except ConfigStorageError as error:
+        raise AuthError('config_storage_invalid', str(error))
 
 
 @app.before_request
@@ -1766,20 +1777,40 @@ def resolve_dashboard_config_path():
     return _config_store.resolve_dashboard_config_path(DASHBOARD_CONFIG_PATH)
 
 
-def load_dashboard_config():
-    """Load the unified dashboard config, migrating from legacy team-groups.json if needed."""
-    return _config_store.load_dashboard_config(
-        resolve_dashboard_config_path(),
-        resolve_groups_config_path(),
-        load_groups_config_file,
-        save_dashboard_config,
-        log_warning_fn=log_warning
+def _json_config_repository():
+    return build_json_config_repository(
+        dashboard_path=resolve_dashboard_config_path(),
+        groups_path=resolve_groups_config_path(),
+        load_groups_config_file_fn=load_groups_config_file,
+        log_warning_fn=log_warning,
     )
 
 
-def save_dashboard_config(config):
-    """Write the unified dashboard config to disk."""
+def _load_dashboard_config_json():
+    return _json_config_repository().load_dashboard_config()
+
+
+def load_dashboard_config():
+    """Load the unified dashboard config."""
+    if config_storage_db_enabled() and has_request_context():
+        context = current_request_auth_context()
+        return build_db_config_repository().load_dashboard_config(
+            context,
+            fallback_loader=_load_dashboard_config_json,
+        )
+    return _load_dashboard_config_json()
+
+
+def _save_dashboard_config_json(config):
     return _config_store.save_dashboard_config(config, resolve_dashboard_config_path())
+
+
+def save_dashboard_config(config):
+    """Write the unified dashboard config."""
+    if config_storage_db_enabled() and has_request_context():
+        context = current_request_auth_context()
+        return build_db_config_repository().save_dashboard_config(context, config)
+    return _save_dashboard_config_json(config)
 
 
 def resolve_team_catalog_path():

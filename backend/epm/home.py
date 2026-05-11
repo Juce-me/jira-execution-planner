@@ -15,6 +15,9 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from backend.auth.cache_policy import jira_home_process_cache_enabled
+from backend.auth.home_credentials import HomeCredential, resolve_home_credential
+from backend.auth.jira_auth import AuthError
+from backend.db.engine import database_storage_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -860,9 +863,25 @@ def normalize_project_tag_names(values: Any) -> list[str]:
     return names
 
 
-def build_teamwork_graph_client() -> HomeGraphQLClient:
-    email, token = _home_basic_credentials()
-    jira_url = get_configured_jira_url()
+def _require_home_credential_descriptor(credential: HomeCredential | None) -> None:
+    if credential is None and database_storage_enabled():
+        raise RuntimeError("Home credential descriptor is required in DB mode")
+
+
+def _read_metadata_credential(context=None) -> HomeCredential | None:
+    if context is None or not database_storage_enabled():
+        return None
+    return resolve_home_credential(context, "read_metadata")
+
+
+def build_teamwork_graph_client(credential: HomeCredential | None = None) -> HomeGraphQLClient:
+    _require_home_credential_descriptor(credential)
+    if credential is not None:
+        email, token = credential.email, credential.api_token
+        jira_url = str(credential.site_url or "").rstrip("/")
+    else:
+        email, token = _home_basic_credentials()
+        jira_url = get_configured_jira_url()
     if not jira_url:
         raise RuntimeError("JIRA_URL must be set to query Atlassian project tags")
     return HomeGraphQLClient(email, token, f"{jira_url}/gateway/api/graphql/twg")
@@ -923,7 +942,12 @@ def fetch_project_tags(client: HomeGraphQLClient, project: dict, context=None) -
         logger.warning("Direct Home project tag fetch failed for %s: %s", project_id, exc)
 
     try:
-        teamwork_graph_client = build_teamwork_graph_client()
+        credential = _read_metadata_credential(context)
+        teamwork_graph_client = (
+            build_teamwork_graph_client(credential)
+            if credential is not None
+            else build_teamwork_graph_client()
+        )
         for project_ari in _project_ari_candidates(project, context=context):
             cypher = _project_tag_cypher(project_ari=project_ari)
             if not cypher:
@@ -945,7 +969,7 @@ def fetch_project_tags(client: HomeGraphQLClient, project: dict, context=None) -
                 {"cypherQuery": query, "params": params},
             )
             return _extract_project_tags_from_twg_response(response)
-    except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
+    except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError, AuthError) as exc:
         logger.warning("Teamwork Graph project tag fetch failed for %s: %s", project_id, exc)
         return direct_tags if direct_tags is not None else None
     return direct_tags if direct_tags is not None else []
@@ -989,8 +1013,12 @@ def _shape_project_detail(project_id: str, payload: dict) -> dict:
     }
 
 
-def build_home_graphql_client() -> HomeGraphQLClient:
-    email, token = _home_basic_credentials()
+def build_home_graphql_client(credential: HomeCredential | None = None) -> HomeGraphQLClient:
+    _require_home_credential_descriptor(credential)
+    if credential is not None:
+        email, token = credential.email, credential.api_token
+    else:
+        email, token = _home_basic_credentials()
     return HomeGraphQLClient(email, token, HOME_GRAPHQL_ENDPOINT)
 
 
@@ -998,12 +1026,14 @@ def _container_id_from_cloud(cloud_id: str) -> str:
     return f"ari:cloud:townsquare::site/{cloud_id}"
 
 
-def get_configured_jira_url() -> str:
+def get_configured_jira_url(context=None) -> str:
+    if context is not None and getattr(context, "site_url", ""):
+        return str(context.site_url).rstrip("/")
     return str(os.environ.get("JIRA_URL") or "").rstrip("/")
 
 
 def fetch_home_site_cloud_id(context=None) -> str:
-    jira_url = get_configured_jira_url()
+    jira_url = get_configured_jira_url(context)
     if not jira_url:
         raise RuntimeError("JIRA_URL must be set to detect the Atlassian site cloud ID")
     cache_enabled = jira_home_process_cache_enabled(context)
@@ -1296,9 +1326,15 @@ def fetch_epm_home_projects(epm_scope, context=None):
         return []
 
     try:
-        client = build_home_graphql_client()
-        cloud_id = fetch_home_site_cloud_id(context=context) if context is not None else fetch_home_site_cloud_id()
-    except RuntimeError as exc:
+        credential = _read_metadata_credential(context)
+        client = build_home_graphql_client(credential) if credential is not None else build_home_graphql_client()
+        if credential is not None and credential.cloud_id:
+            cloud_id = credential.cloud_id
+        elif context is not None:
+            cloud_id = fetch_home_site_cloud_id(context=context)
+        else:
+            cloud_id = fetch_home_site_cloud_id()
+    except (RuntimeError, AuthError) as exc:
         logger.warning("EPM home fetch failed: %s", exc)
         return []
 

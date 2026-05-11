@@ -76,3 +76,10 @@ def json_repository(*, dashboard_path, groups_path, load_groups_config_file_fn, 
 
 def db_repository(*, database_url=None):
     return DbConfigRepository(database_url=database_url)
+
+
+def resolve_effective_view_config(context, *, view_config_id=None, database_url=None):
+    return db_repository(database_url=database_url).resolve_effective_view_config(
+        context,
+        view_config_id=view_config_id,
+    )

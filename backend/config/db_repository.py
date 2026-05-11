@@ -9,6 +9,10 @@ from backend.db import engine as db_engine
 from backend.db import models
 
 
+class ViewConfigNotFound(LookupError):
+    """Raised when a user view cannot be resolved in the request workspace."""
+
+
 def infer_view_type(payload):
     if not isinstance(payload, dict):
         return 'eng'
@@ -38,6 +42,19 @@ class DbConfigRepository:
         )
         return session.execute(statement).scalars().first()
 
+    def _selected_view(self, session, context, view_config_id):
+        statement = (
+            select(models.ViewConfig)
+            .where(
+                models.ViewConfig.id == view_config_id,
+                models.ViewConfig.workspace_id == context.workspace_id,
+                models.ViewConfig.owner_user_id == context.user_id,
+                models.ViewConfig.visibility == 'private',
+                models.ViewConfig.archived_at.is_(None),
+            )
+        )
+        return session.execute(statement).scalars().first()
+
     def _next_version_number(self, session, view_config_id):
         statement = select(func.max(models.ViewConfigVersion.version_number)).where(
             models.ViewConfigVersion.view_config_id == view_config_id,
@@ -53,6 +70,23 @@ class DbConfigRepository:
         if fallback_loader is not None:
             return fallback_loader()
         return None
+
+    def resolve_effective_view_config(self, context, *, view_config_id=None):
+        with db_engine.session_scope(self.database_url) as session:
+            view = (
+                self._selected_view(session, context, view_config_id)
+                if view_config_id
+                else self._default_view(session, context)
+            )
+            if view is None:
+                raise ViewConfigNotFound('view config not found')
+            return {
+                'source': 'user_saved_view',
+                'workspaceId': view.workspace_id,
+                'viewConfigId': view.id,
+                'viewType': view.view_type,
+                'view': dict(view.payload or {}),
+            }
 
     def save_dashboard_config(self, context, payload, *, actor_user_id=None, change_note='compatibility save'):
         actor_user_id = actor_user_id or context.user_id

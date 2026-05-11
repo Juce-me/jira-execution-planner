@@ -250,6 +250,8 @@ def get_config():
         'boardConfigSource': board_cfg.get('source', 'default'),
         'settingsAdminOnly': bool(SETTINGS_ADMIN_ONLY),
         'userCanEditSettings': (not SETTINGS_ADMIN_ONLY) or bool(auth_context.is_admin),
+        'userCanEditViewConfig': True,
+        'userCanEditEpmConfig': True,
         'groupsConfigPath': resolve_groups_config_path(),
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),
         'projectsConfigured': bool(get_selected_projects()),

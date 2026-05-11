@@ -351,7 +351,6 @@ OAUTH_SHARED_CONFIG_WRITE_PATHS = {
     '/api/team-field/config',
     '/api/stats/priority-weights-config',
     '/api/issue-types/config',
-    '/api/epm/config',
 }
 
 
@@ -359,6 +358,8 @@ def is_oauth_ready_api_path(path):
     if path.startswith('/api/auth/') or path in OAUTH_READY_API_PATHS:
         return True
     if path.startswith('/api/admin/'):
+        return True
+    if path == '/api/me/views' or path.startswith('/api/me/views/'):
         return True
     if path.startswith('/api/me/connections/'):
         return True

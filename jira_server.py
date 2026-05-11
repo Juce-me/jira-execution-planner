@@ -353,6 +353,8 @@ def is_oauth_ready_api_path(path):
         return True
     if path.startswith('/api/admin/'):
         return True
+    if path.startswith('/api/me/connections/'):
+        return True
     if path.startswith('/api/epm/projects/') and (path.endswith('/issues') or path.endswith('/rollup')):
         return True
     return False

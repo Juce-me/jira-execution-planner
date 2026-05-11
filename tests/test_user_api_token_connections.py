@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from backend.auth.key_provider import key_provider_from_env
-from backend.auth.token_crypto import encrypt_token
+from backend.auth.token_crypto import decrypt_token, encrypt_token
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
@@ -329,6 +329,270 @@ class UserApiTokenConnectionTokenTests(unittest.TestCase):
         self.assertNotIn('wrapped_dek', rendered_users)
         self.assertNotIn('plain-user-api-token-123', rendered_audit)
         self.assertIn('[redacted]', rendered_audit)
+
+
+class FakeResponse:
+    def __init__(self, status_code=200, payload=None):
+        self.status_code = status_code
+        self._payload = payload if payload is not None else {}
+
+    def json(self):
+        return self._payload
+
+
+class TestUserApiTokenConnections(unittest.TestCase):
+    def setUp(self):
+        jira_server.app.config['TESTING'] = True
+        jira_server.app.secret_key = 'test-secret'
+        jira_server.OAUTH_TOKEN_STORE.clear()
+        jira_server.OAUTH_REFRESH_LOCKS.clear()
+        self.client = jira_server.app.test_client()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'home-token-routes.db')}"
+        self.engine = db_engine.get_engine(self.database_url)
+        models.Base.metadata.create_all(self.engine)
+        self.factory = db_engine.session_factory(self.database_url)
+        self.key_provider = key_provider_from_env({
+            'APP_ENVIRONMENT_KEY': 'local',
+            'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([22]) * 32).decode('ascii'),
+            'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
+        })
+        self.workspace_id, self.user_id, self.oauth_connection_id = self._seed_oauth_user(
+            account_id='normal-account',
+            email='normal@example.com',
+        )
+
+    def tearDown(self):
+        db_engine.dispose_engines()
+        jira_server.OAUTH_TOKEN_STORE.clear()
+        jira_server.OAUTH_REFRESH_LOCKS.clear()
+        self._tmpdir.cleanup()
+
+    def _seed_oauth_user(self, *, account_id, email=None):
+        with self.factory() as session:
+            workspace = models.Workspace(
+                environment_key='local',
+                name='Local',
+                jira_site_url='https://example.atlassian.net',
+                jira_cloud_id='cloud-1',
+                created_by='test',
+            )
+            user = models.User(
+                external_provider='atlassian',
+                external_subject=account_id,
+                email=email,
+                account_type='user',
+                status='active',
+                created_by='test',
+            )
+            session.add_all([workspace, user])
+            session.flush()
+            connection = models.AuthConnection(
+                user_id=user.id,
+                workspace_id=workspace.id,
+                provider='atlassian_oauth',
+                site_url=workspace.jira_site_url,
+                cloud_id=workspace.jira_cloud_id,
+                scopes=FULL_SCOPE.split(),
+                status='active',
+                token_version=1,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+            session.add(connection)
+            session.commit()
+            return workspace.id, user.id, connection.id
+
+    def _install_session(self, *, email='normal@example.com'):
+        session_id = 'session-normal'
+        with self.client.session_transaction() as flask_session:
+            flask_session['atlassian_oauth_session_id'] = session_id
+        data = {
+            'access_token': 'access-123',
+            'refresh_token': 'refresh-123',
+            'expires_at': time.time() + 3600,
+            'scope': FULL_SCOPE,
+            'cloudid': 'cloud-1',
+            'site_url': 'https://example.atlassian.net',
+            'site_name': 'Example',
+            'account_id': 'normal-account',
+            'account_status': 'active',
+            'db_auth_connection_id': self.oauth_connection_id,
+            'db_token_version': '1',
+            'stored_at': time.time(),
+        }
+        if email is not None:
+            data['email'] = email
+        jira_server.OAUTH_TOKEN_STORE[session_id] = data
+
+    def _env_patch(self):
+        return patch.dict(os.environ, {
+            'CONFIG_STORAGE_BACKEND': 'db',
+            'DATABASE_URL': self.database_url,
+            'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([22]) * 32).decode('ascii'),
+            'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
+        }, clear=False)
+
+    def _csrf(self):
+        response = self.client.get('/api/auth/csrf')
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return response.get_json()['csrfToken']
+
+    def _headers(self, csrf_token):
+        return {
+            'X-Requested-With': 'jira-execution-planner',
+            'X-CSRF-Token': csrf_token,
+        }
+
+    def _post_home_token(self, body, csrf_token=None):
+        headers = {'X-Requested-With': 'jira-execution-planner'}
+        if csrf_token is not None:
+            headers['X-CSRF-Token'] = csrf_token
+        return self.client.post('/api/me/connections/home-token', json=body, headers=headers)
+
+    def _delete_home_token(self, csrf_token):
+        return self.client.delete('/api/me/connections/home-token', headers=self._headers(csrf_token))
+
+    def _connection_and_token(self):
+        with self.factory() as session:
+            connection = session.query(models.AuthConnection).filter_by(
+                user_id=self.user_id,
+                workspace_id=self.workspace_id,
+                provider='atlassian_user_api_token',
+            ).first()
+            token = None
+            if connection is not None:
+                token = session.query(models.AuthToken).filter_by(
+                    connection_id=connection.id,
+                    token_kind='api_token',
+                ).first()
+            return connection, token
+
+    def test_connect_get_and_revoke_home_token_for_normal_user(self):
+        self._install_session()
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch('backend.auth.user_api_tokens.fetch_jira_myself_with_basic_auth', return_value={'accountId': 'normal-account'}), \
+             patch('backend.auth.user_api_tokens.probe_home_basic_credential', return_value=True):
+            missing = self.client.get('/api/me/connections/home-token')
+            self.assertEqual(missing.status_code, 200, missing.get_data(as_text=True))
+            self.assertEqual(missing.get_json(), {'connected': False})
+
+            connect = self._post_home_token(
+                {'email': 'normal@example.com', 'apiToken': 'plain-user-api-token-456'},
+                self._csrf(),
+            )
+            self.assertEqual(connect.status_code, 200, connect.get_data(as_text=True))
+            body = connect.get_json()
+            self.assertEqual(body['connected'], True)
+            self.assertEqual(body['provider'], 'atlassian_user_api_token')
+            self.assertEqual(body['credentialSubject'], 'normal@example.com')
+            self.assertEqual(body['status'], 'active')
+            self.assertEqual(body['needsReconnect'], False)
+            self.assertIn('lastValidatedAt', body)
+            self.assertNotIn('apiToken', str(body))
+            self.assertNotIn('plain-user-api-token-456', str(body))
+
+            connected = self.client.get('/api/me/connections/home-token')
+            self.assertEqual(connected.status_code, 200, connected.get_data(as_text=True))
+            self.assertEqual(set(connected.get_json().keys()), {
+                'connected',
+                'provider',
+                'credentialSubject',
+                'status',
+                'lastValidatedAt',
+                'needsReconnect',
+            })
+
+            revoke = self._delete_home_token(self._csrf())
+            self.assertEqual(revoke.status_code, 200, revoke.get_data(as_text=True))
+            self.assertEqual(revoke.get_json(), {'connected': False})
+
+        connection, token = self._connection_and_token()
+        self.assertIsNotNone(connection)
+        self.assertEqual(connection.status, 'revoked')
+        self.assertEqual(connection.token_version, 2)
+        self.assertIsNone(token)
+
+    def test_connect_uses_oauth_profile_email_when_body_email_missing(self):
+        self._install_session(email='profile@example.com')
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch('backend.auth.user_api_tokens.fetch_jira_myself_with_basic_auth', return_value={'accountId': 'normal-account'}), \
+             patch('backend.auth.user_api_tokens.probe_home_basic_credential', return_value=True):
+            response = self._post_home_token({'apiToken': 'plain-user-api-token-456'}, self._csrf())
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['credentialSubject'], 'profile@example.com')
+        connection, token = self._connection_and_token()
+        self.assertEqual(connection.credential_subject, 'profile@example.com')
+        decrypted = decrypt_token(
+            {
+                'algorithm': token.algorithm,
+                'ciphertext': token.ciphertext,
+                'nonce': token.nonce,
+                'wrapped_dek': token.wrapped_dek,
+                'key_id': token.key_id,
+                'aad_hash': token.aad_hash,
+            },
+            workspace_id=self.workspace_id,
+            auth_connection_id=connection.id,
+            token_kind='api_token',
+            key_provider=self.key_provider,
+        )
+        self.assertEqual(decrypted, 'plain-user-api-token-456')
+
+    def test_missing_email_returns_credential_email_required(self):
+        self._install_session(email=None)
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self._post_home_token({'apiToken': 'plain-user-api-token-456'}, self._csrf())
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'credential_email_required')
+
+    def test_post_home_token_requires_token_bound_csrf(self):
+        self._install_session()
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self._post_home_token({'email': 'normal@example.com', 'apiToken': 'plain-user-api-token-456'})
+
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'csrf_required')
+
+    def test_home_credential_rejected_when_home_probe_fails(self):
+        self._install_session()
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch('backend.auth.user_api_tokens.fetch_jira_myself_with_basic_auth', return_value={'accountId': 'normal-account'}), \
+             patch('backend.auth.user_api_tokens.probe_home_basic_credential', return_value=False):
+            response = self._post_home_token(
+                {'email': 'normal@example.com', 'apiToken': 'plain-user-api-token-456'},
+                self._csrf(),
+            )
+
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'home_credential_not_authorized')
+        connection, token = self._connection_and_token()
+        self.assertIsNone(connection)
+        self.assertIsNone(token)
+
+    def test_credential_subject_mismatch_when_account_id_differs(self):
+        self._install_session()
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch('backend.auth.user_api_tokens.fetch_jira_myself_with_basic_auth', return_value={'accountId': 'other-account'}), \
+             patch('backend.auth.user_api_tokens.probe_home_basic_credential') as home_probe:
+            response = self._post_home_token(
+                {'email': 'normal@example.com', 'apiToken': 'plain-user-api-token-456'},
+                self._csrf(),
+            )
+
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'credential_subject_mismatch')
+        home_probe.assert_not_called()
+        connection, token = self._connection_and_token()
+        self.assertIsNone(connection)
+        self.assertIsNone(token)
 
 
 if __name__ == '__main__':

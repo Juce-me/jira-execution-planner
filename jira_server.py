@@ -2640,9 +2640,20 @@ def fetch_home_site_cloud_id(context=None):
     return epm_home.fetch_home_site_cloud_id()
 
 
-def fetch_epm_goal_catalog():
-    client = epm_home.build_home_graphql_client()
-    cloud_id = fetch_home_site_cloud_id()
+def _build_epm_home_graphql_client(context=None):
+    auth_context = _cache_policy_context(context)
+    credential = epm_home._read_metadata_credential(auth_context)
+    return (
+        epm_home.build_home_graphql_client(credential)
+        if credential is not None
+        else epm_home.build_home_graphql_client()
+    )
+
+
+def fetch_epm_goal_catalog(context=None):
+    auth_context = _cache_policy_context(context)
+    client = _build_epm_home_graphql_client(context=auth_context)
+    cloud_id = fetch_home_site_cloud_id(context=auth_context)
     container_id = epm_home._container_id_from_cloud(cloud_id)
     return client.execute_paginated(
         epm_home.QUERY_GOALS_SEARCH,
@@ -2651,9 +2662,9 @@ def fetch_epm_goal_catalog():
     )
 
 
-def fetch_epm_sub_goals(root_goal_key):
-    auth_context = _cache_policy_context()
-    client = epm_home.build_home_graphql_client()
+def fetch_epm_sub_goals(root_goal_key, context=None):
+    auth_context = _cache_policy_context(context)
+    client = _build_epm_home_graphql_client(context=auth_context)
     cloud_id = fetch_home_site_cloud_id(context=auth_context)
     container_id = epm_home._container_id_from_cloud(cloud_id)
     return epm_home.fetch_sub_goals_for_root_key(client, root_goal_key, container_id, context=auth_context)

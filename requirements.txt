@@ -7,3 +7,4 @@ urllib3==2.6.3
 SQLAlchemy==2.0.44
 alembic==1.14.0
 psycopg[binary]==3.2.13
+cryptography==46.0.3

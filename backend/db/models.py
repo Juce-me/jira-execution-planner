@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import (
     CheckConstraint,
@@ -16,6 +17,8 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from backend.auth.token_crypto import redact_token_material
 
 
 def _uuid() -> str:
@@ -249,3 +252,47 @@ class AuditEvent(Base):
     event_type: Mapped[str] = mapped_column(String(128), nullable=False)
     event_metadata: Mapped[dict | None] = mapped_column('metadata', JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+def _strip_callback_query(value: str) -> str:
+    parsed = urlsplit(value)
+    if not parsed.scheme or not parsed.netloc or not parsed.query:
+        return value
+    if 'callback' not in parsed.path.lower():
+        return value
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, '', ''))
+
+
+def redact_audit_metadata(metadata):
+    redacted = redact_token_material(metadata or {})
+    return _redact_audit_urls(redacted)
+
+
+def _redact_audit_urls(value):
+    if isinstance(value, dict):
+        return {
+            key: _strip_callback_query(item) if isinstance(item, str) else _redact_audit_urls(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_audit_urls(item) for item in value]
+    return value
+
+
+def audit_event(
+    *,
+    workspace_id: str,
+    event_type: str,
+    metadata: dict | None = None,
+    actor_user_id: str | None = None,
+    target_user_id: str | None = None,
+    auth_connection_id: str | None = None,
+) -> AuditEvent:
+    return AuditEvent(
+        workspace_id=workspace_id,
+        actor_user_id=actor_user_id,
+        target_user_id=target_user_id,
+        auth_connection_id=auth_connection_id,
+        event_type=event_type,
+        event_metadata=redact_audit_metadata(metadata),
+    )

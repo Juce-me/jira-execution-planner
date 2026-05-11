@@ -522,6 +522,27 @@ class JiraAuthTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "auth_required")
 
+    def test_refresh_oauth_token_detects_reused_refresh_token_errors(self):
+        config = AuthConfig(
+            auth_mode=AUTH_MODE_ATLASSIAN_OAUTH,
+            jira_url="https://example.atlassian.net",
+            client_id="client-123",
+            client_secret="secret-123",
+        )
+        session_data = {"access_token": "old-access-123", "refresh_token": "old-refresh-123"}
+
+        with self.assertRaises(AuthError) as raised:
+            refresh_oauth_token(
+                config,
+                session_data,
+                http_post=lambda *args, **kwargs: FakeResponse(400, {
+                    "error": "invalid_request",
+                    "error_description": "token_already_used",
+                }),
+            )
+
+        self.assertEqual(raised.exception.code, "refresh_reuse_detected")
+
     def test_is_oauth_token_expired_uses_sixty_second_buffer(self):
         self.assertTrue(is_oauth_token_expired({"expires_at": int(time.time()) + 30}))
         self.assertFalse(is_oauth_token_expired({"expires_at": int(time.time()) + 600}))

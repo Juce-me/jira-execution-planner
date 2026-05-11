@@ -14,6 +14,7 @@ import threading
 import time
 import subprocess
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timedelta, date, timezone
 try:
     from zoneinfo import ZoneInfo
@@ -34,7 +35,7 @@ from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, sched
 from backend.auth.cache_policy import jira_home_process_cache_enabled
 from backend.auth.context import RequestAuthContext, stable_local_workspace_id
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
-from backend.auth.db_tokens import store_oauth_callback_tokens
+from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
 from backend.auth.key_provider import key_provider_from_env
 from backend.db.engine import database_storage_enabled, session_scope, validate_startup_database_config
 from backend.auth.jira_auth import (
@@ -48,7 +49,6 @@ from backend.auth.jira_auth import (
     exchange_authorization_code,
     fetch_accessible_resources,
     fetch_current_user,
-    is_oauth_token_expired,
     jira_get,
     jira_post,
     jira_request,
@@ -578,22 +578,14 @@ def oauth_session_data_for_auth_context(context):
 
 
 def db_oauth_session_data_for_auth_context(context):
-    connection_id = getattr(context, 'auth_connection_id', '') or ''
-    now = time.time()
-    with OAUTH_TOKEN_STORE_LOCK:
-        _cleanup_expired_oauth_sessions(now)
-        for stored in OAUTH_TOKEN_STORE.values():
-            if stored.get('db_auth_connection_id') == connection_id:
-                data = dict(stored)
-                return {} if is_oauth_token_expired(data) else data
-        persistent_store = _read_persistent_oauth_token_store()
-        for session_id, stored in persistent_store.items():
-            if isinstance(stored, dict) and stored.get('db_auth_connection_id') == connection_id:
-                OAUTH_TOKEN_STORE[session_id] = dict(stored)
-                OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
-                data = dict(stored)
-                return {} if is_oauth_token_expired(data) else data
-    return {}
+    with session_scope() as db_session:
+        return db_oauth_session_data(
+            db_session,
+            context,
+            config=current_auth_config(),
+            key_provider=key_provider_from_env(),
+            http_post=HTTP_SESSION.post,
+        )
 
 
 def save_oauth_session_for_auth_context(context, data):
@@ -688,6 +680,12 @@ def current_oauth_session_callbacks(context=None):
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return {}
     if context is not None:
+        if is_db_auth_context(context):
+            return {
+                'save_session': lambda data: None,
+                'reload_session': lambda: current_jira_session_data(context),
+                'refresh_lock': nullcontext(),
+            }
         return {
             'save_session': lambda data: save_oauth_session_for_auth_context(context, data),
             'reload_session': lambda: oauth_session_data_for_auth_context(context),

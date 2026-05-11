@@ -7,8 +7,13 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from backend.auth.jira_auth import normalize_site_url
-from backend.auth.token_crypto import encrypt_token
+from backend.auth.jira_auth import (
+    AuthError,
+    is_oauth_token_expired,
+    normalize_site_url,
+    request_oauth_refresh_token,
+)
+from backend.auth.token_crypto import decrypt_token, encrypt_token
 from backend.db import models
 
 
@@ -145,6 +150,185 @@ def _replace_token(session, *, connection, workspace, token_kind, plaintext, key
         expires_at=connection.expires_at if token_kind == 'access_token' else None,
         rotated_at=datetime.now(timezone.utc),
     ))
+
+
+def _token_envelope(token):
+    return {
+        'algorithm': token.algorithm,
+        'ciphertext': token.ciphertext,
+        'nonce': token.nonce,
+        'wrapped_dek': token.wrapped_dek,
+        'key_id': token.key_id,
+        'aad_hash': token.aad_hash,
+    }
+
+
+def _active_token(session, *, connection_id, token_kind):
+    return session.execute(
+        select(models.AuthToken)
+        .where(
+            models.AuthToken.connection_id == connection_id,
+            models.AuthToken.token_kind == token_kind,
+            models.AuthToken.revoked_at.is_(None),
+        )
+    ).scalars().first()
+
+
+def _decrypt_token_row(token, *, workspace_id, connection_id, key_provider):
+    return decrypt_token(
+        _token_envelope(token),
+        workspace_id=workspace_id,
+        auth_connection_id=connection_id,
+        token_kind=token.token_kind,
+        key_provider=key_provider,
+    )
+
+
+def _connection_for_update(session, connection_id):
+    return session.execute(
+        select(models.AuthConnection)
+        .where(models.AuthConnection.id == connection_id)
+        .with_for_update()
+    ).scalars().first()
+
+
+def _delete_usable_tokens(session, connection_id):
+    session.query(models.AuthToken).filter(
+        models.AuthToken.connection_id == connection_id,
+        models.AuthToken.revoked_at.is_(None),
+    ).delete(synchronize_session=False)
+
+
+def _revoke_for_refresh_reuse(session, *, connection, cause):
+    _delete_usable_tokens(session, connection.id)
+    connection.status = 'revoked'
+    connection.token_version = int(connection.token_version or 0) + 1
+    session.add(models.audit_event(
+        workspace_id=connection.workspace_id,
+        auth_connection_id=connection.id,
+        event_type='connection_revoked',
+        metadata={'cause': cause},
+    ))
+    session.flush()
+    raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
+
+
+def _expires_at_timestamp(expires_at):
+    if expires_at is None:
+        return 0
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return int(expires_at.timestamp())
+
+
+def _session_payload(connection, workspace, access_token):
+    return {
+        'access_token': access_token,
+        'expires_at': _expires_at_timestamp(connection.expires_at),
+        'scope': ' '.join(connection.scopes or []),
+        'cloudid': connection.cloud_id or '',
+        'site_url': connection.site_url or workspace.jira_site_url or '',
+        'db_user_id': connection.user_id,
+        'db_workspace_id': connection.workspace_id,
+        'db_auth_connection_id': connection.id,
+        'db_token_version': str(connection.token_version),
+    }
+
+
+def refresh_db_oauth_token(session, *, connection_id, config, key_provider, http_post):
+    connection = _connection_for_update(session, connection_id)
+    if connection is None or connection.status != 'active':
+        raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
+    workspace = session.get(models.Workspace, connection.workspace_id)
+    access_row = _active_token(session, connection_id=connection.id, token_kind='access_token')
+    if workspace is not None and access_row is not None:
+        session_data = _session_payload(
+            connection,
+            workspace,
+            _decrypt_token_row(
+                access_row,
+                workspace_id=workspace.id,
+                connection_id=connection.id,
+                key_provider=key_provider,
+            ),
+        )
+        if not is_oauth_token_expired(session_data):
+            return session_data
+    refresh_row = _active_token(session, connection_id=connection.id, token_kind='refresh_token')
+    if workspace is None or refresh_row is None:
+        _revoke_for_refresh_reuse(session, connection=connection, cause='missing_refresh_token')
+
+    refresh_token = _decrypt_token_row(
+        refresh_row,
+        workspace_id=workspace.id,
+        connection_id=connection.id,
+        key_provider=key_provider,
+    )
+    try:
+        token_data = request_oauth_refresh_token(config, refresh_token, http_post=http_post)
+    except AuthError as error:
+        if error.code == 'refresh_reuse_detected':
+            _revoke_for_refresh_reuse(session, connection=connection, cause='refresh_reuse_detected')
+        raise
+
+    expires_at = _expires_at(token_data)
+    if not token_data.get('access_token') or expires_at is None:
+        raise AuthError('auth_required', 'Atlassian authentication is required.')
+
+    connection.expires_at = expires_at
+    connection.status = 'active'
+    connection.token_version = int(connection.token_version or 0) + 1
+    if token_data.get('scope'):
+        connection.scopes = _scope_list(token_data)
+    connection.last_validated_at = datetime.now(timezone.utc)
+    _replace_token(
+        session,
+        connection=connection,
+        workspace=workspace,
+        token_kind='access_token',
+        plaintext=token_data.get('access_token') or '',
+        key_provider=key_provider,
+    )
+    if token_data.get('refresh_token'):
+        _replace_token(
+            session,
+            connection=connection,
+            workspace=workspace,
+            token_kind='refresh_token',
+            plaintext=token_data.get('refresh_token') or '',
+            key_provider=key_provider,
+        )
+    session.flush()
+    return _session_payload(connection, workspace, token_data.get('access_token') or '')
+
+
+def db_oauth_session_data(session, context, *, config, key_provider, http_post):
+    connection = session.get(models.AuthConnection, context.auth_connection_id)
+    if connection is None or connection.status != 'active':
+        raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
+    workspace = session.get(models.Workspace, connection.workspace_id)
+    access_row = _active_token(session, connection_id=connection.id, token_kind='access_token')
+    if workspace is None or access_row is None:
+        raise AuthError('auth_required', 'Atlassian authentication is required.')
+    session_data = _session_payload(
+        connection,
+        workspace,
+        _decrypt_token_row(
+            access_row,
+            workspace_id=workspace.id,
+            connection_id=connection.id,
+            key_provider=key_provider,
+        ),
+    )
+    if is_oauth_token_expired(session_data):
+        return refresh_db_oauth_token(
+            session,
+            connection_id=connection.id,
+            config=config,
+            key_provider=key_provider,
+            http_post=http_post,
+        )
+    return session_data
 
 
 def store_oauth_callback_tokens(

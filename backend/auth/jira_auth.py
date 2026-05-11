@@ -16,6 +16,7 @@ ATLASSIAN_TOKEN_URL = "https://auth.atlassian.com/oauth/token"
 ATLASSIAN_RESOURCES_URL = "https://api.atlassian.com/oauth/token/accessible-resources"
 ATLASSIAN_API_BASE = "https://api.atlassian.com"
 TOKEN_EXPIRY_BUFFER_SECONDS = 60
+REFRESH_REUSE_ERROR_CODES = {"invalid_grant", "token_already_used", "refresh_token_already_used"}
 
 
 class AuthError(Exception):
@@ -222,6 +223,19 @@ def refresh_oauth_token(config, session_data, http_post=requests.post):
     refresh_token = (session_data or {}).get("refresh_token")
     if not refresh_token:
         raise AuthError("auth_required", "Atlassian authentication is required.")
+    token_data = request_oauth_refresh_token(config, refresh_token, http_post=http_post)
+    expires_in = _usable_expires_in(token_data.get("expires_in"))
+    if not token_data.get("access_token") or expires_in is None:
+        raise AuthError("auth_required", "Atlassian authentication is required.")
+    merged = dict(session_data or {})
+    merged["access_token"] = token_data.get("access_token")
+    merged["refresh_token"] = token_data.get("refresh_token") or refresh_token
+    merged["expires_at"] = int(time.time()) + expires_in
+    merged["scope"] = token_data.get("scope") or merged.get("scope")
+    return merged
+
+
+def request_oauth_refresh_token(config, refresh_token, http_post=requests.post):
     payload = {
         "grant_type": "refresh_token",
         "client_id": config.client_id,
@@ -238,17 +252,19 @@ def refresh_oauth_token(config, session_data, http_post=requests.post):
     except requests.RequestException as exc:
         raise AuthError("auth_required", "Atlassian authentication is required.") from exc
     if response.status_code != 200:
+        try:
+            error_payload = response.json()
+        except ValueError:
+            error_payload = {}
+        if isinstance(error_payload, dict):
+            provider_error = " ".join(
+                str(error_payload.get(field) or "") for field in ("error", "error_description")
+            ).lower()
+            if any(marker in provider_error for marker in REFRESH_REUSE_ERROR_CODES):
+                raise AuthError("refresh_reuse_detected", "Refresh token reuse was detected.")
         raise AuthError("auth_required", "Atlassian authentication is required.")
     token_data = _response_json(response, dict, "auth_required", "Atlassian authentication is required.")
-    expires_in = _usable_expires_in(token_data.get("expires_in"))
-    if not token_data.get("access_token") or expires_in is None:
-        raise AuthError("auth_required", "Atlassian authentication is required.")
-    merged = dict(session_data or {})
-    merged["access_token"] = token_data.get("access_token")
-    merged["refresh_token"] = token_data.get("refresh_token") or refresh_token
-    merged["expires_at"] = int(time.time()) + expires_in
-    merged["scope"] = token_data.get("scope") or merged.get("scope")
-    return merged
+    return token_data
 
 
 def ensure_oauth_token(

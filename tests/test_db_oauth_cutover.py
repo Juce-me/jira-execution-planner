@@ -176,7 +176,7 @@ class DbOauthCutoverTests(unittest.TestCase):
         self.assertEqual(user_count, 1)
         self.assertEqual(token_count, 2)
 
-    def test_expired_db_mode_local_token_forces_reauth_until_db_refresh_lands(self):
+    def test_db_mode_session_data_reads_database_tokens_not_local_store(self):
         result = self._store_callback()
         context = jira_server.RequestAuthContext(
             auth_mode='atlassian_oauth',
@@ -201,8 +201,15 @@ class DbOauthCutoverTests(unittest.TestCase):
                 'stored_at': time.time(),
                 **result.session_metadata,
             }
-            with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
-                self.assertEqual(jira_server.current_jira_session_data(context), {})
+            with patch.dict(os.environ, {
+                'DATABASE_URL': self.database_url,
+                'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([7]) * 32).decode('ascii'),
+                'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
+            }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+                data = jira_server.current_jira_session_data(context)
+
+        self.assertEqual(data['access_token'], 'access-123')
+        self.assertNotEqual(data['access_token'], 'expired-access')
 
 
 if __name__ == '__main__':

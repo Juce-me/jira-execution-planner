@@ -34,6 +34,7 @@ from backend.epm.scope import build_epm_scope_clause, normalize_epm_sprint_field
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
 from backend.auth.cache_policy import jira_home_process_cache_enabled
 from backend.auth.context import RequestAuthContext, stable_local_workspace_id
+from backend.auth.admin_bootstrap import bootstrap_first_tool_admin
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
 from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
 from backend.auth.key_provider import key_provider_from_env
@@ -347,6 +348,8 @@ OAUTH_SHARED_CONFIG_WRITE_PATHS = {
 def is_oauth_ready_api_path(path):
     if path.startswith('/api/auth/') or path in OAUTH_READY_API_PATHS:
         return True
+    if path.startswith('/api/admin/'):
+        return True
     if path.startswith('/api/epm/projects/') and (path.endswith('/issues') or path.endswith('/rollup')):
         return True
     return False
@@ -374,6 +377,12 @@ def store_db_oauth_callback_session_metadata(token_data, resource, user_profile)
             environment_key=APP_ENVIRONMENT_KEY.strip().lower() or 'local',
             configured_jira_url=JIRA_URL or '',
             key_provider=key_provider_from_env(),
+        )
+        bootstrap_first_tool_admin(
+            db_session,
+            workspace_id=stored.workspace_id,
+            user_id=stored.user_id,
+            atlassian_account_id=(user_profile or {}).get('account_id'),
         )
         return stored.session_metadata
 

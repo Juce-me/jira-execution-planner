@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -83,6 +84,65 @@ class Workspace(Base):
     created_by: Mapped[str] = mapped_column(String(255), nullable=False, default='system')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+class ViewConfig(Base):
+    __tablename__ = 'view_configs'
+    __table_args__ = (
+        CheckConstraint("view_type in ('eng', 'epm', 'mixed')", name='ck_view_configs_type'),
+        CheckConstraint("mode_policy in ('configuration')", name='ck_view_configs_mode_policy'),
+        CheckConstraint("visibility in ('private')", name='ck_view_configs_visibility'),
+        Index('ix_view_configs_owner_workspace', 'workspace_id', 'owner_user_id'),
+        Index(
+            'uq_view_configs_active_default',
+            'workspace_id',
+            'owner_user_id',
+            unique=True,
+            sqlite_where=text('is_default = 1 AND archived_at IS NULL'),
+            postgresql_where=text('is_default IS TRUE AND archived_at IS NULL'),
+        ),
+        Index(
+            'uq_view_configs_import_source',
+            'workspace_id',
+            'owner_user_id',
+            'source_path',
+            'source_hash',
+            unique=True,
+            sqlite_where=text('source_path IS NOT NULL AND source_hash IS NOT NULL'),
+            postgresql_where=text('source_path IS NOT NULL AND source_hash IS NOT NULL'),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    view_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    mode_policy: Mapped[str] = mapped_column(String(32), nullable=False, default='configuration')
+    payload_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    visibility: Mapped[str] = mapped_column(String(32), nullable=False, default='private')
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source_path: Mapped[str | None] = mapped_column(String(1024))
+    source_hash: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ViewConfigVersion(Base):
+    __tablename__ = 'view_config_versions'
+    __table_args__ = (
+        UniqueConstraint('view_config_id', 'version_number', name='uq_view_config_versions_number'),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    view_config_id: Mapped[str] = mapped_column(ForeignKey('view_configs.id', ondelete='CASCADE'), nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    change_note: Mapped[str | None] = mapped_column(String(255))
 
 
 class AuthConnection(Base):

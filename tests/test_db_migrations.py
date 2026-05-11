@@ -61,7 +61,7 @@ class DbMigrationTests(unittest.TestCase):
             command.upgrade(config, 'head')
             self.assertTrue(self._has_auth_tables(database_url))
 
-            command.downgrade(config, '-1')
+            command.downgrade(config, '20260511_0001')
             self.assertTrue(self._has_auth_tables(database_url))
             columns, indexes = self._auth_connection_schema(database_url)
             self.assertNotIn('credential_subject', columns)

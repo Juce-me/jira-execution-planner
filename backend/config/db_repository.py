@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import func, select
 
+from backend.config.view_validation import validate_user_view_payload
 from backend.db import engine as db_engine
 from backend.db import models
 
@@ -56,6 +57,7 @@ class DbConfigRepository:
     def save_dashboard_config(self, context, payload, *, actor_user_id=None, change_note='compatibility save'):
         actor_user_id = actor_user_id or context.user_id
         payload = dict(payload or {})
+        validate_user_view_payload(payload)
         with db_engine.session_scope(self.database_url) as session:
             view = self._default_view(session, context)
             if view is None:

@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 
 from backend.auth.token_crypto import redact_token_material
 from backend.config.db_repository import infer_view_type
+from backend.config.view_validation import validate_user_view_payload
 from backend.db import engine as db_engine
 from backend.db import models
 
@@ -62,6 +63,7 @@ def import_dashboard_config(*, database_url=None, context, source_path, actor_us
     source_path = str(source_path)
     source_hash = _source_hash(source_path)
     payload = _load_json(source_path)
+    validate_user_view_payload(payload)
     actor_user_id = actor_user_id or context.user_id
     with db_engine.session_scope(database_url) as session:
         existing = session.execute(

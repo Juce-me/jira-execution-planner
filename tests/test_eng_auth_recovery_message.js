@@ -107,3 +107,31 @@ test('ENG task auth_required errors redirect to the login recovery page', async 
         }
     }
 });
+
+test('ENG task missing_project_access errors show project access recovery text', async () => {
+    const previousConsoleLog = console.log;
+    const previousConsoleError = console.error;
+    console.log = () => {};
+    console.error = () => {};
+
+    try {
+        const { api, errors } = createHarness(async () => ({
+            ok: false,
+            status: 403,
+            json: async () => ({
+                error: 'missing_project_access',
+                projectType: 'product',
+                projectAccessStatus: 'unknown',
+                recoveryUrl: '/auth/missing-project-access',
+            }),
+        }));
+
+        await api.fetchTasks('product');
+
+        assert.match(errors.at(-1), /Jira project access/);
+        assert.doesNotMatch(errors.at(-1), /Python server/);
+    } finally {
+        console.log = previousConsoleLog;
+        console.error = previousConsoleError;
+    }
+});

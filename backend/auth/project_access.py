@@ -12,16 +12,21 @@ from backend.db import models
 PROJECT_VIEW_TYPES = {'product', 'tech'}
 
 
+def _snapshots_for_project_type(context, project_type: str):
+    project_type = str(project_type or '').strip().lower()
+    return [
+        snapshot for snapshot in (getattr(context, 'project_access', ()) or ())
+        if getattr(snapshot, 'project_type', '') == project_type
+    ]
+
+
 def project_access_status(context, project_type: str) -> str:
     project_type = str(project_type or '').strip().lower()
     if project_type not in PROJECT_VIEW_TYPES:
         return 'accessible'
     if getattr(context, 'auth_mode', 'basic') == 'basic':
         return 'accessible'
-    snapshots = [
-        snapshot for snapshot in (getattr(context, 'project_access', ()) or ())
-        if getattr(snapshot, 'project_type', '') == project_type
-    ]
+    snapshots = _snapshots_for_project_type(context, project_type)
     if not snapshots:
         return 'unknown'
     if any(getattr(snapshot, 'status', '') == 'accessible' for snapshot in snapshots):
@@ -32,6 +37,12 @@ def project_access_status(context, project_type: str) -> str:
 
 
 def project_access_denied_response(context, project_type: str):
+    if (
+        str(project_type or '').strip().lower() in PROJECT_VIEW_TYPES
+        and getattr(context, 'auth_mode', 'basic') != 'basic'
+        and not _snapshots_for_project_type(context, project_type)
+    ):
+        return None, None
     status = project_access_status(context, project_type)
     if status == 'accessible':
         return None, None

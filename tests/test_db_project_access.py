@@ -63,6 +63,29 @@ class TestProjectAccess(unittest.TestCase):
     def test_tech_only_user_renders_tech_views(self):
         self._allowed_response('tech')
 
+    def test_new_user_without_project_access_snapshot_can_probe_live_project_view(self):
+        context = auth_context(project_access=[])
+        calls = []
+
+        def jira_search(payload):
+            calls.append(payload)
+            return jira_server.SyntheticJiraResponse(200, {
+                'issues': [],
+                'isLast': True,
+                'names': {},
+            })
+
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value=None), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value=None), \
+             patch.object(jira_server, 'get_sprint_field_id', return_value=None), \
+             patch.object(jira_server, 'jira_search_request', side_effect=jira_search):
+            response = self.client.get('/api/tasks?project=product')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertGreaterEqual(len(calls), 1)
+
     def test_user_with_no_project_access_blocked_with_clear_state(self):
         context = auth_context(project_access=[
             ProjectAccessSnapshot(project_key='PROD', project_type='product', status='inaccessible'),

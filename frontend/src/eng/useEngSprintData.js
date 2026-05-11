@@ -37,6 +37,9 @@ function taskLoadErrorMessage(err, backendUrl) {
     if (err.code === 'route_not_oauth_ready') {
         return `${OAUTH_ROUTE_NOT_READY_TASKS_MESSAGE} Verify OAuth with the auth status and test endpoints, or use Basic auth for the full dashboard until data routes are migrated.`;
     }
+    if (err.code === 'missing_project_access') {
+        return 'Jira project access is not confirmed for this view. Ask a tool admin to refresh your project access, then retry.';
+    }
     if (authRecoveryLoginUrl(err)) {
         return 'Sign in with Atlassian again to continue loading tasks.';
     }

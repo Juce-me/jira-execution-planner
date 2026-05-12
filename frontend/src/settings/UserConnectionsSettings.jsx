@@ -21,7 +21,7 @@ function errorMessage(error) {
     return error?.message || 'Connection update failed.';
 }
 
-export default function UserConnectionsSettings({ backendUrl }) {
+export default function UserConnectionsSettings({ backendUrl, onConnectionChange }) {
     const [connection, setConnection] = React.useState({ connected: false });
     const [profileEmail, setProfileEmail] = React.useState('');
     const [email, setEmail] = React.useState('');
@@ -46,6 +46,7 @@ export default function UserConnectionsSettings({ backendUrl }) {
             const authEmail = String(authStatus?.email || authStatus?.profile?.email || '').trim();
             const connectedEmail = String(nextConnection?.credentialSubject || '').trim();
             setConnection(nextConnection);
+            onConnectionChange?.(nextConnection);
             setProfileEmail(authEmail);
             setEmail(connectedEmail || authEmail);
         }).catch((loadError) => {
@@ -58,7 +59,7 @@ export default function UserConnectionsSettings({ backendUrl }) {
         return () => {
             cancelled = true;
         };
-    }, [backendUrl]);
+    }, [backendUrl, onConnectionChange]);
 
     const connect = async () => {
         setSaving(true);
@@ -70,6 +71,7 @@ export default function UserConnectionsSettings({ backendUrl }) {
                 apiToken,
             });
             setConnection(nextConnection || { connected: false });
+            onConnectionChange?.(nextConnection || { connected: false });
             setEmail(String(nextConnection?.credentialSubject || email || profileEmail || '').trim());
             setApiToken('');
             setMessage('Connection saved.');
@@ -86,8 +88,10 @@ export default function UserConnectionsSettings({ backendUrl }) {
         setMessage('');
         setError('');
         try {
-            await deleteHomeTokenConnection(backendUrl);
-            setConnection({ connected: false });
+            const nextConnection = await deleteHomeTokenConnection(backendUrl);
+            const normalizedConnection = nextConnection || { connected: false };
+            setConnection(normalizedConnection);
+            onConnectionChange?.(normalizedConnection);
             setApiToken('');
             setEmail(profileEmail || '');
             setMessage('Connection revoked.');

@@ -64,6 +64,18 @@ async function mockDashboardLoad(page) {
                 epm: epmConfig,
             });
         }
+        if (url.pathname === '/api/auth/refresh') {
+            return route.fulfill({ status: 204, body: '' });
+        }
+        if (url.pathname === '/api/me/connections/home-token') {
+            return json({
+                connected: true,
+                provider: 'atlassian_user_api_token',
+                credentialSubject: 'profile@example.com',
+                status: 'active',
+                needsReconnect: false,
+            });
+        }
         if (url.pathname === '/api/sprints') {
             return json({ sprints: [{ id: 34625, name: '2026Q2', state: 'active' }] });
         }

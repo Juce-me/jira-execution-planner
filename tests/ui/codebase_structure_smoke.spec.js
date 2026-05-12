@@ -355,6 +355,16 @@ async function installApiMocks(page, calls, options = {}) {
             body: JSON.stringify(body),
         });
 
+        if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
+        if (url.pathname === '/api/me/connections/home-token') {
+            return json({
+                connected: true,
+                provider: 'atlassian_user_api_token',
+                credentialSubject: 'profile@example.com',
+                status: 'active',
+                needsReconnect: false,
+            });
+        }
         if (url.pathname === '/api/config') {
             if (configGate) {
                 await configGate.promise;

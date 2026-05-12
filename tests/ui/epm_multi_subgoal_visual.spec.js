@@ -84,6 +84,18 @@ test('EPM multi sub-goal visual smoke', async ({ page }) => {
                 },
             });
         }
+        if (url.pathname === '/api/auth/refresh') {
+            return route.fulfill({ status: 204, body: '' });
+        }
+        if (url.pathname === '/api/me/connections/home-token') {
+            return json({
+                connected: true,
+                provider: 'atlassian_user_api_token',
+                credentialSubject: 'profile@example.com',
+                status: 'active',
+                needsReconnect: false,
+            });
+        }
         if (url.pathname === '/api/sprints') {
             return json({ sprints: [{ id: 42, name: 'Sprint 42', state: 'active' }] });
         }
@@ -155,6 +167,18 @@ test('EPM sub-goal filter resolves saved sibling names before narrowing', async 
                     issueTypes: { initiative: ['Initiative'], epic: ['Epic'], leaf: ['Story', 'Task'] },
                     projects: {},
                 },
+            });
+        }
+        if (url.pathname === '/api/auth/refresh') {
+            return route.fulfill({ status: 204, body: '' });
+        }
+        if (url.pathname === '/api/me/connections/home-token') {
+            return json({
+                connected: true,
+                provider: 'atlassian_user_api_token',
+                credentialSubject: 'profile@example.com',
+                status: 'active',
+                needsReconnect: false,
             });
         }
         if (url.pathname === '/api/sprints') {

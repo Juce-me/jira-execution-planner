@@ -88,6 +88,7 @@ import SettingsModal from './settings/SettingsModal.jsx';
 import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';
 import JiraFieldSettings from './settings/JiraFieldSettings.jsx';
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
+import { fetchHomeTokenConnection } from './api/authApi.js';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     filterEpmSettingsProjectsForView,
@@ -117,6 +118,9 @@ import {
         const EMPTY_OBJECT = Object.freeze({});
         const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';
         const SHARED_CONFIGURATION_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'epm']);
+        function isActiveHomeTokenConnection(connection) {
+            return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);
+        }
 
         const createEmptyEpmConfigDraft = () => ({
             version: 2,
@@ -279,7 +283,16 @@ import {
             const [showDone, setShowDone] = useState(savedPrefsRef.current.showDone ?? true);
             const [showTech, setShowTech] = useState(savedPrefsRef.current.showTech ?? true);
             const [showProduct, setShowProduct] = useState(savedPrefsRef.current.showProduct ?? true);
-            const [selectedView, setSelectedView] = useState(savedPrefsRef.current.selectedView ?? 'eng');
+            const savedInitialViewRef = useRef(savedPrefsRef.current.selectedView ?? 'eng');
+            const restoredInitialEpmViewRef = useRef(false);
+            const [selectedView, setSelectedView] = useState(savedInitialViewRef.current === 'epm' ? 'eng' : savedInitialViewRef.current);
+            const [homeTokenConnection, setHomeTokenConnection] = useState({ connected: false });
+            const [homeTokenConnectionLoaded, setHomeTokenConnectionLoaded] = useState(false);
+            const hasActiveHomeTokenConnection = React.useMemo(
+                () => isActiveHomeTokenConnection(homeTokenConnection),
+                [homeTokenConnection]
+            );
+            const showEpmNavigation = hasActiveHomeTokenConnection;
             const [sprintName, setSprintName] = useState('Sprint');
             const [statusFilter, setStatusFilter] = useState(savedPrefsRef.current.statusFilter ?? null); // null = show all, 'in-progress', 'todo-accepted', 'done', 'high-priority'
             const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
@@ -679,6 +692,45 @@ import {
                 if (!selectedSprint) return null;
                 return (availableSprints || []).find(sprint => String(sprint.id) === String(selectedSprint)) || null;
             }, [availableSprints, selectedSprint]);
+            const refreshHomeTokenConnectionStatus = React.useCallback(async () => {
+                try {
+                    const payload = await fetchHomeTokenConnection(BACKEND_URL);
+                    const nextConnection = payload || { connected: false };
+                    setHomeTokenConnection(nextConnection);
+                    return nextConnection;
+                } catch (err) {
+                    setHomeTokenConnection({ connected: false });
+                    return { connected: false };
+                } finally {
+                    setHomeTokenConnectionLoaded(true);
+                }
+            }, []);
+            const markHomeTokenRequired = React.useCallback(() => {
+                setHomeTokenConnection({ connected: false });
+                setHomeTokenConnectionLoaded(true);
+                void refreshHomeTokenConnectionStatus();
+            }, [refreshHomeTokenConnectionStatus]);
+            const handleHomeTokenConnectionChange = React.useCallback((connection) => {
+                const nextConnection = connection || { connected: false };
+                setHomeTokenConnection(nextConnection);
+                setHomeTokenConnectionLoaded(true);
+            }, []);
+            useEffect(() => {
+                void refreshHomeTokenConnectionStatus();
+            }, [refreshHomeTokenConnectionStatus]);
+            useEffect(() => {
+                if (!homeTokenConnectionLoaded) return;
+                if (hasActiveHomeTokenConnection) {
+                    if (!restoredInitialEpmViewRef.current && savedInitialViewRef.current === 'epm') {
+                        restoredInitialEpmViewRef.current = true;
+                        setSelectedView('epm');
+                    }
+                    return;
+                }
+                if (selectedView === 'epm') {
+                    setSelectedView('eng');
+                }
+            }, [homeTokenConnectionLoaded, hasActiveHomeTokenConnection, selectedView]);
             const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);
             const loadEpmScopeMeta = () => fetchEpmScope(BACKEND_URL);
             const loadEpmGoals = (rootGoalKey = '') => fetchEpmGoals(BACKEND_URL, rootGoalKey);
@@ -2035,9 +2087,9 @@ import {
                 [epmConfigDraft.scope?.rootGoalKey]
             );
             useEffect(() => {
-                if (selectedView !== 'epm' || !epmConfigLoaded || savedEpmSubGoalKeys.length <= 1 || !savedEpmRootGoalKey) return;
+                if (!showEpmNavigation || selectedView !== 'epm' || !epmConfigLoaded || savedEpmSubGoalKeys.length <= 1 || !savedEpmRootGoalKey) return;
                 void loadEpmSubGoalsForRoot(savedEpmRootGoalKey);
-            }, [selectedView, epmConfigLoaded, savedEpmRootGoalKey, savedEpmSubGoalKeys]);
+            }, [showEpmNavigation, selectedView, epmConfigLoaded, savedEpmRootGoalKey, savedEpmSubGoalKeys]);
             const {
                 epmTab,
                 setEpmTab,
@@ -2066,13 +2118,14 @@ import {
                 backendUrl: BACKEND_URL,
                 initialEpmTab: savedPrefsRef.current.epmTab ?? 'active',
                 initialEpmSelectedProjectId: savedPrefsRef.current.epmSelectedProjectId ?? '',
-                selectedView,
+                selectedView: showEpmNavigation ? selectedView : 'eng',
                 epmConfigLoaded,
                 hasSavedEpmScope,
                 savedEpmSubGoalKeys,
                 selectedSprint,
                 epmProjectSearch,
                 searchQuery,
+                onHomeTokenRequired: markHomeTokenRequired,
             });
             const [epmCollapsedProjectIds, setEpmCollapsedProjectIds] = useState(() => new Set());
             const epmVisibleProjectKeys = React.useMemo(() => {
@@ -10571,18 +10624,24 @@ import {
                 </ControlField>
             );
 
-            const renderViewSwitch = () => (
-                <SegmentedControl
-                    className="view-mode-control"
-                    ariaLabel="Dashboard view"
-                    value={selectedView}
-                    onChange={setSelectedView}
-                    options={[
-                        { value: 'eng', label: 'ENG' },
-                        { value: 'epm', label: 'EPM' }
-                    ]}
-                />
-            );
+            const renderViewSwitch = () => {
+                const options = [{ value: 'eng', label: 'ENG' }];
+                if (showEpmNavigation) {
+                    options.push({ value: 'epm', label: 'EPM' });
+                }
+                return (
+                    <SegmentedControl
+                        className="view-mode-control"
+                        ariaLabel="Dashboard view"
+                        value={showEpmNavigation ? selectedView : 'eng'}
+                        onChange={(nextView) => {
+                            if (nextView === 'epm' && !showEpmNavigation) return;
+                            setSelectedView(nextView);
+                        }}
+                        options={options}
+                    />
+                );
+            };
 
             const activeEngMode = showScenario
                 ? 'scenario'
@@ -13634,7 +13693,10 @@ import {
                             onKeepEditing={() => setShowGroupDiscardConfirm(false)}
                         >
                                 {groupManageTab === 'connections' && (
-                                <UserConnectionsSettings backendUrl={BACKEND_URL} />
+                                <UserConnectionsSettings
+                                    backendUrl={BACKEND_URL}
+                                    onConnectionChange={handleHomeTokenConnectionChange}
+                                />
                                 )}
                                 {(groupManageTab === 'scope' || groupManageTab === 'source' || groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
                                 <JiraFieldSettings

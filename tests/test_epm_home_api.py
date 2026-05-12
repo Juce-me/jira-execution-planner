@@ -58,6 +58,17 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual(latest['date'], '2026-04-09')
         self.assertEqual(latest['snippet'], 'Latest update')
 
+    def test_extract_latest_update_skips_empty_no_update_placeholders(self):
+        latest = extract_latest_update([
+            {'creationDate': '2026-05-10T08:00:00.000Z', 'summary': ''},
+            {
+                'creationDate': '2026-04-29T12:00:00.000Z',
+                'summary': '[on track] RFP AI bot and related deals AI work are progressing',
+            },
+        ])
+        self.assertEqual(latest['date'], '2026-04-29')
+        self.assertEqual(latest['snippet'], '[on track] RFP AI bot and related deals AI work are progressing')
+
     def test_extract_latest_update_includes_creator_name(self):
         latest = extract_latest_update([
             {
@@ -628,7 +639,7 @@ class TestEpmHomeApi(unittest.TestCase):
             ],
         )
 
-    def test_fetch_latest_project_update_requests_one_update_page_with_first_one(self):
+    def test_fetch_latest_project_update_requests_recent_updates(self):
         client = Mock()
         client.execute.return_value = {
             'data': {
@@ -639,8 +650,15 @@ class TestEpmHomeApi(unittest.TestCase):
                             {
                                 'node': {
                                     'id': 'update-1',
-                                    'creationDate': '2026-04-12T10:00:00.000Z',
-                                    'summary': 'Latest status',
+                                    'creationDate': '2026-05-10T10:00:00.000Z',
+                                    'summary': '',
+                                }
+                            },
+                            {
+                                'node': {
+                                    'id': 'update-2',
+                                    'creationDate': '2026-04-29T10:00:00.000Z',
+                                    'summary': 'Real status update',
                                 }
                             }
                         ],
@@ -653,9 +671,11 @@ class TestEpmHomeApi(unittest.TestCase):
 
         client.execute.assert_called_once_with(
             epm_home.QUERY_PROJECT_UPDATES,
-            {'projectId': 'proj-1', 'first': 1},
+            {'projectId': 'proj-1', 'first': 5},
         )
-        self.assertEqual(result, [{'id': 'update-1', 'creationDate': '2026-04-12T10:00:00.000Z', 'summary': 'Latest status'}])
+        self.assertEqual([
+            row['id'] for row in result
+        ], ['update-1', 'update-2'])
 
     @patch('backend.epm.home.fetch_latest_project_update')
     @patch('backend.epm.home.fetch_goal_project_links')
@@ -754,7 +774,7 @@ class TestEpmHomeApi(unittest.TestCase):
         query = client.execute.call_args.args[0]
         self.assertIn('state { label value }', query)
         self.assertIn('tags @optIn(to: "Townsquare")', query)
-        self.assertIn('updates(first: 1)', query)
+        self.assertIn('updates(first: 5)', query)
         self.assertIn('creator { accountId name }', query)
 
     @patch('backend.epm.home.fetch_goal_project_links')

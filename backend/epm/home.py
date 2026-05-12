@@ -28,6 +28,7 @@ HOME_GRAPHQL_ENDPOINT = "https://team.atlassian.com/gateway/api/graphql"
 HOME_TIMEOUT_SECONDS = 30
 HOME_MAX_RETRIES = 3
 HOME_PAGE_SIZE = 50
+HOME_UPDATE_PAGE_SIZE = 5
 HOME_MAX_PROJECTS_PER_GOAL = 500
 
 _CLOUD_ID_CACHE: dict[str, str] = {}
@@ -196,7 +197,7 @@ query GoalProjects($goalId: ID!, $first: Int!, $after: String) {
           tags @optIn(to: "Townsquare") {
             edges { node { id name url } }
           }
-          updates(first: 1) @optIn(to: "Townsquare") {
+          updates(first: 5) @optIn(to: "Townsquare") {
             edges { node { id url creationDate editDate summary updateType creator { accountId name } } }
           }
         }
@@ -873,19 +874,24 @@ def bucket_epm_state(state_value):
 
 
 def extract_latest_update(updates):
-    ordered = sorted(
-        [row for row in (updates or []) if row.get("creationDate")],
-        key=lambda row: row["creationDate"],
-        reverse=True,
-    )
+    candidates = []
+    for row in updates or []:
+        if not row.get("creationDate"):
+            continue
+        snippet = adf_to_text(row.get("summary")).strip()
+        html = adf_to_html(row.get("summary")).strip()
+        if not snippet and not html:
+            continue
+        candidates.append((row, snippet, html))
+    ordered = sorted(candidates, key=lambda item: item[0]["creationDate"], reverse=True)
     if not ordered:
         return {"date": "", "snippet": "", "author": ""}
-    latest = ordered[0]
+    latest, snippet, html = ordered[0]
     creator = latest.get("creator") if isinstance(latest.get("creator"), dict) else {}
     return {
         "date": str(latest["creationDate"])[:10],
-        "snippet": adf_to_text(latest.get("summary")).strip(),
-        "html": adf_to_html(latest.get("summary")).strip(),
+        "snippet": snippet,
+        "html": html,
         "author": str(creator.get("name") or "").strip(),
     }
 
@@ -1353,11 +1359,9 @@ def _fetch_home_project_record(client: HomeGraphQLClient, row: dict, context=Non
         return None
 
 
-def _extract_first_project_update(row: dict) -> list[dict]:
+def _extract_project_updates(row: dict) -> list[dict]:
     connection = row.get("updates") or {}
-    edge = next(iter(connection.get("edges", []) or []), None)
-    node = edge.get("node") if isinstance(edge, dict) else None
-    return [node] if node is not None else []
+    return _connection_nodes(connection)
 
 
 def _has_enriched_goal_project_fields(row: dict) -> bool:
@@ -1369,7 +1373,7 @@ def _build_home_project_record_from_goal_row(row: dict) -> dict | None:
     if not project_id:
         return None
     project = _shape_project_detail(project_id, row)
-    updates = _extract_first_project_update(row)
+    updates = _extract_project_updates(row)
     home_tags = normalize_project_tag_names(row.get("tags"))
     linkage = extract_home_jira_linkage(project)
     return build_home_project_record(project, updates, linkage, home_tags)
@@ -1399,12 +1403,10 @@ def fetch_latest_project_update(client: HomeGraphQLClient, project_id: str) -> l
     try:
         response = client.execute(
             QUERY_PROJECT_UPDATES,
-            {"projectId": project_id, "first": 1},
+            {"projectId": project_id, "first": HOME_UPDATE_PAGE_SIZE},
         )
         connection = (((response.get("data") or {}).get("projects_byId") or {}).get("updates") or {})
-        edge = next(iter(connection.get("edges", []) or []), None)
-        node = edge.get("node") if isinstance(edge, dict) else None
-        return [node] if node is not None else []
+        return _connection_nodes(connection)
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Latest update fetch failed for %s: %s", project_id, exc)
         return []

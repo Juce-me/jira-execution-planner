@@ -4956,6 +4956,209 @@ button.toggle.initiative-toggle.active {
   display: grid;
   gap: 0.8rem;
 }
+.excluded-capacity-panel {
+  display: grid;
+  gap: 0.8rem;
+}
+.excluded-capacity-controls {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+.excluded-capacity-summary .stat-value {
+  overflow-wrap: anywhere;
+}
+.excluded-capacity-line-chart {
+  display: grid;
+  gap: 0.45rem;
+}
+.excluded-capacity-line-svg {
+  width: 100%;
+  height: auto;
+  max-height: 260px;
+}
+.excluded-capacity-line-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+.excluded-capacity-line-axis-line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.excluded-capacity-line-tick,
+.excluded-capacity-line-axis {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  fill: var(--text-secondary);
+}
+.excluded-capacity-line-series {
+  transition: opacity 0.16s ease;
+}
+.excluded-capacity-line-legend {
+  margin-top: 0.35rem;
+}
+.excluded-capacity-line-legend-item {
+  cursor: pointer;
+}
+.excluded-capacity-line-legend-item.is-isolated {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.excluded-capacity-line-legend-reset {
+  border: none;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+.excluded-capacity-line-legend-reset:hover {
+  text-decoration: underline;
+}
+.excluded-capacity-line-empty {
+  color: var(--text-secondary);
+}
+.excluded-capacity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+.excluded-capacity-epic-filter {
+  position: relative;
+}
+.excluded-capacity-epic-chips {
+  margin-top: 0;
+  margin-bottom: 0.4rem;
+}
+.excluded-capacity-epic-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.excluded-capacity-epic-caret {
+  font-size: 0.75em;
+  color: var(--text-secondary);
+}
+.excluded-capacity-epic-menu {
+  max-height: 240px;
+  padding: 0.2rem 0;
+}
+.excluded-capacity-epic-menu-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.excluded-capacity-epic-action {
+  border: none;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0.1rem 0.2rem;
+}
+.excluded-capacity-epic-action:hover {
+  text-decoration: underline;
+}
+.excluded-capacity-epic-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+}
+.excluded-capacity-epic-option.is-checked {
+  background: rgba(212, 56, 13, 0.06);
+}
+.excluded-capacity-epic-primary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cohort-section-subtitle {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.6rem;
+  color: #64748b;
+  margin-bottom: 0.4rem;
+}
+.epic-mode-row-overall {
+  font-weight: 600;
+}
+.epic-mode-row-overall .epic-mode-track {
+  height: 22px;
+}
+.epic-mode-bars {
+  display: grid;
+  gap: 0.45rem;
+}
+.epic-mode-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 160px) minmax(0, 1fr) minmax(180px, auto);
+  gap: 0.55rem;
+  align-items: center;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+}
+.epic-mode-label {
+  min-width: 0;
+  color: #0f172a;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.epic-mode-track {
+  display: flex;
+  height: 16px;
+  min-width: 90px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  overflow: hidden;
+}
+.epic-mode-fill {
+  height: 100%;
+  min-width: 0;
+}
+.epic-mode-fill.mono {
+  background: #1d9a6c;
+}
+.epic-mode-fill.cross {
+  background: #f06b3b;
+}
+.epic-mode-values {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  color: #64748b;
+  flex-wrap: wrap;
+  white-space: normal;
+}
+@media (max-width: 760px) {
+  .epic-mode-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+  }
+  .epic-mode-values {
+    justify-content: flex-start;
+  }
+  .excluded-capacity-line-svg {
+    max-height: 220px;
+  }
+  .excluded-capacity-actions {
+    gap: 0.35rem;
+  }
+  .excluded-capacity-epic-menu {
+    left: -4px;
+    right: -4px;
+  }
+}
 .cohort-section {
   border: 1px solid var(--border);
   border-radius: 0.55rem;

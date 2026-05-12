@@ -10,8 +10,8 @@ Define later database-backed features that become possible after database-backed
 
 This plan depends on:
 
-- `docs/plans/EXEC-01-db-auth-foundation.md`
-- `docs/plans/EXEC-03-db-user-configuration.md`
+- `docs/plans/DONE-01-db-auth-foundation.md`
+- `docs/plans/DONE-03-db-user-configuration.md`
 
 ## Future Feature Areas
 

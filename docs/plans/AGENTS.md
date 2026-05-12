@@ -4,13 +4,25 @@ Plan-specific instructions for this repository.
 
 ## Plan Naming
 
-Use `EXEC-*` for implementation plans, `DONE-*` for executed plans kept for audit, `SUPPORT-*` for review, handoff, setup, gate, or historical-reference workflows, and `FUTURE-*` for deferred scope. Do not create new date-only auth/DB/Home migration docs.
+Use `EXEC-*` for implementation plans, `DONE-*` for executed plans kept for audit, `GATE-*` for blocked external capability gates that must be rechecked over time, `SUPPORT-*` for review, handoff, setup, or historical-reference workflows, and `FUTURE-*` for deferred scope. Do not create new date-only auth/DB/Home migration docs.
 
 Do not rename an `EXEC-*` plan to `DONE-*` until the implementation has been completed, verified, and accepted or merged. Add a short top note naming the execution commit or PR, for example:
 
 ```md
 > **Status:** Done. Executed in `<commit-or-PR>`. Kept for audit context only.
 ```
+
+## Startup Gate Sweep
+
+At the start of any session that touches auth, DB, Home/Townsquare, EPM, or plan execution:
+
+1. List gated docs with `rg --files docs/plans | rg '/GATE-'`.
+2. Open each `GATE-*` file.
+3. Check whether the external blocker might now be testable.
+4. Run the gate command only when the file's required credentials, approved target, and safety constraints are available.
+5. Update the gate's `Checked on` and `Last result` fields.
+6. Keep `Status` as `Blocked` unless the required command prints the documented `PASS` result.
+7. Never paste token material, personal emails, Authorization headers, OAuth callback URLs, bearer tokens, refresh tokens, or raw sensitive probe payloads into the gate doc.
 
 ## Home/Townsquare 3LO Gate
 

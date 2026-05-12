@@ -28,9 +28,9 @@ Plan packet to review:
 - docs/plans/SUPPORT-atlassian-oauth-auth.md
 - docs/plans/SUPPORT-oauth-jira-client-route-migration.md
 - docs/plans/SUPPORT-epm-home-oauth-migration.md
-- docs/plans/EXEC-01-db-auth-foundation.md
-- docs/plans/EXEC-02-db-home-user-api-token-bridge.md
-- docs/plans/EXEC-03-db-user-configuration.md
+- docs/plans/DONE-01-db-auth-foundation.md
+- docs/plans/DONE-02-db-home-user-api-token-bridge.md
+- docs/plans/DONE-03-db-user-configuration.md
 - docs/plans/FUTURE-db-additional-features.md
 
 Read order:
@@ -41,9 +41,9 @@ Read order:
 5. docs/plans/SUPPORT-atlassian-oauth-auth.md
 6. docs/plans/SUPPORT-oauth-jira-client-route-migration.md
 7. docs/plans/SUPPORT-epm-home-oauth-migration.md
-8. docs/plans/EXEC-01-db-auth-foundation.md
-9. docs/plans/EXEC-02-db-home-user-api-token-bridge.md
-10. docs/plans/EXEC-03-db-user-configuration.md
+8. docs/plans/DONE-01-db-auth-foundation.md
+9. docs/plans/DONE-02-db-home-user-api-token-bridge.md
+10. docs/plans/DONE-03-db-user-configuration.md
 11. docs/plans/FUTURE-db-additional-features.md
 
 Current implementation assumptions to preserve:
@@ -59,27 +59,27 @@ Current implementation assumptions to preserve:
 - A user API token must be verified by calling Jira `/rest/api/3/myself` and matching returned `accountId` to the signed-in OAuth `account_id`; email is not identity proof.
 
 Expected execution order to validate:
-1. Re-run the OAuth/Jira/Home preflight named in EXEC-01.
-2. Execute EXEC-01 first.
+1. Re-run the OAuth/Jira/Home preflight named in DONE-01 when auditing the completed foundation.
+2. Treat DONE-01 as completed audit context, not active execution work.
    - Task 0 is already completed pre-DB.
    - Tasks 1-8 are the active DB auth path.
 3. Keep Home/Townsquare EPM reads hybrid during DB auth:
    - user OAuth for Jira REST;
    - workspace `home_townsquare_basic` service integration for Home metadata;
    - cache partitioning by workspace plus user auth context or service-integration context.
-4. Execute EXEC-02 only after EXEC-01 has encrypted token storage, active user/connection checks, token-bound CSRF, and service integrations.
+4. Treat DONE-02 as completed user-token bridge context after DONE-01 has encrypted token storage, active user/connection checks, token-bound CSRF, and service integrations.
    - The bridge is for explicit Home/Townsquare writes as the user.
    - It is not required for login, dashboard load, or opening the EPM tab.
    - If no concrete Home/Townsquare write action exists, flag any generic mutation task as not execution-ready.
-5. Execute EXEC-03 only after EXEC-01 is stable and JSON fallback behavior is verified.
+5. Treat DONE-03 as completed user-configuration context after DONE-01 is stable and JSON fallback behavior is verified.
 6. Treat FUTURE-db-additional-features.md as deferred scope unless explicitly reopened.
 
 Review questions:
 1. Is the plan order coherent, or are tasks listed before prerequisites exist?
-2. Does EXEC-01 still contain blockers or preconditions that are unresolved by the current branch?
+2. Does DONE-01 still contain blockers or preconditions that are unresolved by the current branch?
 3. Does any active plan imply Home/Townsquare user 3LO is supported despite the current failing probe?
 4. Does any active plan store personal user API tokens as shared service credentials?
-5. Does EXEC-02 verify `accountId`, not email, before storing a user API token?
+5. Does DONE-02 verify `accountId`, not email, before storing a user API token?
 6. Are Home/Townsquare reads and writes separated clearly enough?
 7. Are normal users blocked from shared workspace configuration writes after DB roles land while still allowed to manage user-owned settings?
 8. Are token-bound CSRF and visible auth recovery screens prerequisites before browser-callable DB mutations?
@@ -111,7 +111,7 @@ Run these before sending the prompt to Claude:
 ```bash
 git status --short
 git log --oneline -15
-rg -n "T[B]D|TO[D]O|im[p]lement later|fill in detail[s]|Similar to Tas[k]" docs/plans/EXEC-01-db-auth-foundation.md docs/plans/EXEC-02-db-home-user-api-token-bridge.md docs/plans/EXEC-03-db-user-configuration.md docs/plans/SUPPORT-db-migration-claude-review-workflow.md
+rg -n "T[B]D|TO[D]O|im[p]lement later|fill in detail[s]|Similar to Tas[k]" docs/plans/DONE-01-db-auth-foundation.md docs/plans/DONE-02-db-home-user-api-token-bridge.md docs/plans/DONE-03-db-user-configuration.md docs/plans/SUPPORT-db-migration-claude-review-workflow.md
 git diff --check
 ```
 

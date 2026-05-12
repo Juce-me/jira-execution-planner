@@ -1,6 +1,6 @@
 # SUPPORT: Atlassian OAuth Auth Reference
 
-> **Support status:** Do not execute the unchecked task list in this file as a fresh implementation plan. The active checkout already contains the OAuth foundation and Jira REST migration primitives. Use the "Execution Status Reconciliation" table below as verification input before DB auth work, then use `docs/plans/SUPPORT-oauth-jira-client-route-migration.md` as support context and `docs/plans/EXEC-01-db-auth-foundation.md` for executable DB tasks.
+> **Support status:** Do not execute the unchecked task list in this file as a fresh implementation plan. The active checkout already contains the OAuth foundation and Jira REST migration primitives. Use the "Execution Status Reconciliation" table below as verification input and `docs/plans/DONE-01-db-auth-foundation.md` as completed DB foundation audit context.
 
 **Goal:** Add optional Atlassian OAuth 2.0 3LO login so Jira Execution Planner can call Jira on behalf of the signed-in user without requiring a personal API token.
 
@@ -51,7 +51,7 @@ This plan was drafted before the backend split. Implement it against current `ma
 
 ## Execution Status Reconciliation
 
-As of 2026-05-07, this plan's task checkboxes below are historical and must be reconciled before using this plan as a database-auth blocker. The current codebase already contains many OAuth-slice primitives; use this table as the pre-DB status source and rerun the listed verification commands before starting `docs/plans/EXEC-01-db-auth-foundation.md`.
+As of 2026-05-07, this plan's task checkboxes below are historical and must be reconciled before using this plan as a database-auth blocker. The current codebase already contains many OAuth-slice primitives; use this table as the pre-DB status source and rerun the listed verification commands before auditing `docs/plans/DONE-01-db-auth-foundation.md`.
 
 | Plan area | Current code status | Verification before DB auth |
 | --- | --- | --- |

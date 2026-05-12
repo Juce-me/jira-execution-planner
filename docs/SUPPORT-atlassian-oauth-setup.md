@@ -44,7 +44,7 @@ You do not add `offline_access` from the app's `Permissions` API list, and it do
 
 ## Local `.env`
 
-Copy `.env.example` to `.env`, comment the Basic auth block, and uncomment the Atlassian OAuth block. Use real values from the Atlassian Developer Console:
+Copy `.env.example` to `.env` and use real OAuth values from the Atlassian Developer Console. DB storage, migrations, and Home token setup are covered in [INSTALL.md](../INSTALL.md); this section only shows the OAuth app values.
 
 ```env
 JIRA_URL=https://your-company.atlassian.net
@@ -61,7 +61,7 @@ OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true
 OAUTH_TOKEN_STORE_PATH=.oauth-token-store.json
 OAUTH_TOKEN_STORE_TTL_SECONDS=2592000
 # Reserved for future DB-backed first-admin bootstrap.
-# Pre-DB OAuth treats every signed-in Atlassian user as a local tool admin.
+# Legacy pre-DB OAuth treated every signed-in Atlassian user as a local tool admin.
 # TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS=...
 ```
 
@@ -79,9 +79,9 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 
 Keep `OAUTH_TOKEN_STORE_PATH` local and ignored by git. The default local path `.oauth-token-store.json` is ignored by this repo. `OAUTH_TOKEN_STORE_TTL_SECONDS` defaults to 30 days; shorten it only if you want local sessions to expire sooner. Delete the token store file or use `/api/auth/logout` when you want to clear the saved local session.
 
-### Temporary Pre-DB Tool-Admin Writes
+### Legacy Pre-DB Tool-Admin Writes
 
-Until database-backed users and roles land, OAuth mode treats every signed-in Atlassian user as a local tool admin for shared configuration writes. This is a temporary local-runner simplification, not an Atlassian admin signal. `TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS` is reserved for future DB-backed first-admin bootstrap, where stable Atlassian `account_id` values will be identity keys and Atlassian tenant/admin status, email address, email domain, Jira project access, or Home/Townsquare access will not grant tool-admin rights.
+Older JSON-backed OAuth runs treated every signed-in Atlassian user as a local tool admin for shared configuration writes. DB-backed runs use explicit app/user state instead; Atlassian tenant/admin status, email address, email domain, Jira project access, or Home/Townsquare access must not grant tool-admin rights by itself.
 
 ## Test The Flow
 
@@ -95,7 +95,7 @@ Restart the Flask server after changing `.env`.
 6. Open `http://localhost:5050/api/auth/status`; it should report authenticated state and must not include tokens.
 7. Open `http://localhost:5050/api/test`; it should use OAuth.
 
-The ENG dashboard and Jira REST catalog/statistics routes are migrated through the OAuth Jira client. In DB/OAuth mode, EPM routes require the signed-in user's OAuth session for Jira REST reads and the same user's connected Home token for Home/Townsquare metadata. Connect that token in `Settings -> Connections`; it is stored encrypted as `atlassian_user_api_token` in DB `auth_tokens`. If another route returns `route_not_oauth_ready`, the OAuth session is valid but that route is intentionally outside the current OAuth Jira REST surface.
+The ENG dashboard and Jira REST catalog/statistics routes are migrated through the OAuth Jira client. In DB/OAuth mode, EPM routes require the signed-in user's OAuth session for Jira REST reads and the same user's connected Home token for Home/Townsquare metadata. Connect that token in `Settings -> Connections`; it is stored encrypted as `atlassian_user_api_token` in DB `auth_tokens`.
 
 If Atlassian reports a missing scope, add the named scope to the matching API on the app's `Permissions` page, save, then start again from `/login?reason=missing_scope`. That path forces a new consent prompt so Atlassian issues a grant with the updated scopes.
 
@@ -167,7 +167,7 @@ Start again from `/login` in the same browser tab. Do not reuse an old callback 
 
 `route_not_oauth_ready`
 
-The login session is valid, but the requested API route is intentionally outside the current OAuth Jira REST surface. The ENG dashboard, Jira REST catalog/statistics routes, and hybrid EPM Home/Townsquare routes are migrated; other routes may still be blocked until they have an explicit OAuth boundary.
+The login session is valid, but the requested API route is intentionally guarded because it has no supported OAuth boundary. The ENG dashboard, Jira REST catalog/statistics routes, and DB/OAuth EPM Home-token routes are migrated; do not fall back to process-global Basic credentials for guarded routes.
 
 `Local OAuth token storage requires APP_ENVIRONMENT_KEY=local or dev and OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`
 

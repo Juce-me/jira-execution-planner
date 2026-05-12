@@ -1,6 +1,6 @@
 # SUPPORT: OAuth Jira REST Route Migration Reference
 
-> **Support status:** This file is historical route-migration context for DB execution, not the active DB implementation plan. Do not re-run completed tasks from this file unless a review finds a regression. Use the reconciliation section and final verification items as support evidence for `docs/plans/DONE-01-db-auth-foundation.md`.
+> **Support status:** This file is historical route-migration context for DB execution, not the active DB implementation plan. Do not re-run completed tasks from this file unless a review finds a regression. Use the reconciliation section and final verification items as support evidence for `docs/plans/DONE-01-db-auth-foundation.md`. For current DB/OAuth EPM Home-token behavior, use `docs/plans/DONE-04-db-user-home-epm-read-token.md`.
 
 **Goal:** Migrate the dashboard's Jira REST calls from direct Basic-header construction to the request-scoped OAuth-aware Jira client boundary, while keeping Basic mode compatible.
 

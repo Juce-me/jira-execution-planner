@@ -2,6 +2,10 @@
 
 Use the header `ENG | EPM` switch to move between team delivery and project delivery.
 
+In DB/OAuth mode, EPM is intentionally hidden until the signed-in user connects a Home/Townsquare token in `Settings -> Connections`. Jira REST reads use the user's Atlassian OAuth session. Home/Townsquare metadata reads use the same user's connected `atlassian_user_api_token`, stored encrypted in DB `auth_tokens`. Shared service credentials are not a DB/OAuth EPM fallback.
+
+The Home token is a credential connection, not EPM saved-view state. Token material is not stored in dashboard config, EPM config, JSON files, browser local storage, API responses, or user view payloads.
+
 - `Active` uses both the selected project and the selected sprint, and includes pending, on-track, at-risk, and off-track Home projects.
 - `Backlog` ignores sprint and shows paused project work.
 - `Archived` ignores sprint and shows completed, cancelled, or archived project work.

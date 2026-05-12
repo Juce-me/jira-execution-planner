@@ -1,4 +1,6 @@
-# EXEC-04: Use Per-User Home Token for DB-Backed EPM Reads
+# DONE-04: Use Per-User Home Token for DB-Backed EPM Reads
+
+> **Status:** Done. Executed on branch `cdx/auth-db-context-plan` and merged to `main` in PR #19 (`1cd0618`). Kept for audit context only; do not execute as an active plan.
 
 ## Status
 
@@ -8,7 +10,7 @@
 - [x] Task 4: Gate EPM navigation on the user Home token
 - [x] Task 5: Partition or disable Home/EPM metadata caches by user token
 - [x] Task 6: Clean up DB/OAuth env and setup docs
-- [ ] Task 7: Run end-to-end verification
+- [x] Task 7: Run end-to-end verification
 
 ## Product Decision
 
@@ -41,7 +43,7 @@ This plan supersedes the earlier hybrid assumption that DB/OAuth EPM reads use u
 - Home validation: a real Home GraphQL read probe with the submitted email/token
 - storage: encrypted `auth_tokens`, not `service_integration_tokens`
 
-`EXEC-04` uses that connection for EPM Home reads. It does not add Home write routes, does not add raw Home GraphQL proxy routes, and does not put token material in user view payloads.
+`DONE-04` uses that connection for EPM Home reads. It does not add Home write routes, does not add raw Home GraphQL proxy routes, and does not put token material in user view payloads.
 
 The Home GraphQL OAuth probe gate remains a blocker for Home 3LO. Until that gate passes with a real local user session, this plan must not mark Home/Townsquare-backed EPM routes as OAuth-only.
 
@@ -76,9 +78,9 @@ These are the known differences between the active branch state and the DONE-01 
 - `DONE-01-db-auth-foundation.md` checkboxes were reconciled from branch commits on 2026-05-12, but those edits record commit history rather than a fresh rerun of every verification command.
 - `DONE-02` Tasks 1-4 checkboxes were reconciled from branch commits on 2026-05-12. Confirm current files/tests before depending on them because the worktree still contains later dirty edits.
 - `GATE-05-home-write-capability.md` owns the blocked Home write probe. The real Home write probe has not passed, so Home write routes and write UI remain blocked.
-- `DONE-02` still describes Home/Townsquare metadata reads as workspace service-integration-backed and user API tokens as write-only. `docs/plans/README.md` now records that `EXEC-04` intentionally supersedes that model for DB/OAuth EPM reads only.
+- `DONE-02` still describes Home/Townsquare metadata reads as workspace service-integration-backed and user API tokens as write-only. `docs/plans/README.md` now records that `DONE-04` intentionally supersedes that model for DB/OAuth EPM reads only.
 - `DONE-03` originally moved through a shared-workspace-default design, then was corrected to user-owned EPM saved view state. Current `DONE-03` reflects the corrected product decision, but older `DONE-01` acceptance text still says normal users cannot mutate EPM/APM configuration. For DB/OAuth saved views, use the later `DONE-03` decision: normal users can save their own EPM view/config.
-- `DONE-03` Home reference validation currently assumes a workspace service-backed Home catalog while the Home 3LO gate fails. `EXEC-04` must move DB/OAuth EPM Home validation and reads to the current user's connected Home token.
+- `DONE-03` Home reference validation currently assumes a workspace service-backed Home catalog while the Home 3LO gate fails. `DONE-04` moved DB/OAuth EPM Home validation and reads to the current user's connected Home token.
 - Current dirty files include docs/env/user-token handling changes. Do not assume those are landed until they are either committed in their scoped task or explicitly reverted by the user.
 
 ## Task 1: Verify Current Auth/Storage Baseline
@@ -319,7 +321,7 @@ Implementation:
   - user Home token connection in `auth_tokens`
   - operator/service integrations in `service_integration_tokens`
   - non-secret EPM saved view state in user view config
-- Update `docs/plans/README.md` so `EXEC-04` supersedes the earlier service-backed EPM read assumption.
+- Update `docs/plans/README.md` so `DONE-04` supersedes the earlier service-backed EPM read assumption.
 - Tighten `AGENTS.md` project learning so future work does not reintroduce DB/OAuth EPM env Basic credentials.
 
 Verification:

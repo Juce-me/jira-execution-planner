@@ -29,9 +29,9 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Completed DB user-configuration plan. Use for audit and prerequisite evidence; do not execute as active work.
    - Expected output: DB-backed user-owned saved views. EPM configuration is user-owned, including Home goal scope and project label mappings; service integrations remain admin/operator-controlled.
 
-5. `EXEC-04-db-user-home-epm-read-token.md`
-   - Execute after `DONE-03` user-owned EPM configuration is stable.
-   - Expected output: DB/OAuth EPM is hidden until the current user connects a Home/Townsquare API token in Settings, then EPM Home reads use that user-owned token while Jira REST remains OAuth-backed.
+5. `DONE-04-db-user-home-epm-read-token.md`
+   - Completed per-user Home token requirement for DB/OAuth EPM reads. Use for audit and prerequisite evidence; do not execute as active work.
+   - Output: DB/OAuth EPM is hidden until the current user connects a Home/Townsquare API token in Settings, then EPM Home reads use that user-owned token while Jira REST remains OAuth-backed.
 
 6. `GATE-05-home-write-capability.md`
    - Blocked external capability gate for Jira Home/Townsquare project update writes.
@@ -45,7 +45,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 - Before executing any `EXEC-*` plan, run the preflight commands named in that plan.
 - At session startup for relevant auth, DB, Home/Townsquare, EPM, or plan work, check every `GATE-*` doc and update `Checked on` plus `Last result`.
 - Keep Home/Townsquare user 3LO blocked unless `scripts/check_home_graphql_oauth.py` records a real `PASS home_graphql_3lo_supported`.
-- Before the `EXEC-04` commits, workspace Home/Townsquare reads were service-integration-backed while the Home 3LO gate failed.
-- `EXEC-04` supersedes that earlier service-backed EPM read assumption for DB/OAuth mode: EPM Home reads use the current user's connected `atlassian_user_api_token`, and that token is never a shared service credential.
+- Before the `DONE-04` commits, workspace Home/Townsquare reads were service-integration-backed while the Home 3LO gate failed.
+- `DONE-04` supersedes that earlier service-backed EPM read assumption for DB/OAuth mode: EPM Home reads use the current user's connected `atlassian_user_api_token`, and that token is never a shared service credential.
 - Commit each completed task with the commit message specified in the plan.
 - Rename an `EXEC-*` plan to `DONE-*` only after implementation is completed, verified, and accepted or merged, then add a top status note with the execution commit or PR.

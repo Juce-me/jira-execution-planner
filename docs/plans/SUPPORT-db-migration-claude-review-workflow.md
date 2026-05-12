@@ -48,7 +48,7 @@ Read order:
 
 Current implementation assumptions to preserve:
 - Tool admin is a tool-local role, not an Atlassian admin role.
-- Pre-DB OAuth treats every signed-in Atlassian user as a local tool admin only as a temporary local policy. DB auth must restore explicit tool-admin assignment.
+- Legacy pre-DB OAuth treated every signed-in Atlassian user as a local tool admin only as a temporary local policy. DB auth restored explicit tool-admin assignment.
 - Team Groups, Group Labels, and EPM-side user settings are user-owned/non-admin workflows where applicable.
 - Scope projects, Jira source, field mapping, capacity, priority weights, issue types, and shared EPM mappings are shared environment/workspace configuration controlled by tool admins.
 - Existing JSON configuration must not be silently overwritten with empty selected projects, empty groups, or missing EPM mappings.

@@ -111,7 +111,7 @@ When a user clicks a Home/Townsquare action that writes data:
 6. The token is accepted only if Basic Jira `/myself` returns the same Atlassian `accountId` as the current OAuth user.
 7. After connect, the original Home/Townsquare write can be retried.
 
-Historical DONE-02 behavior did not require the personal API token at login or to open the EPM tab. `EXEC-04-db-user-home-epm-read-token.md` supersedes this for DB/OAuth EPM reads: the EPM tab is hidden until the current user has connected a Home/Townsquare token.
+Historical DONE-02 behavior did not require the personal API token at login or to open the EPM tab. `DONE-04-db-user-home-epm-read-token.md` supersedes this for DB/OAuth EPM reads: the EPM tab is hidden until the current user has connected a Home/Townsquare token.
 
 ## Route Policy
 
@@ -290,7 +290,7 @@ Do not reopen this completed plan to add Home mutations. If `GATE-05` records `P
 
 - Service account writes to Home/Townsquare that appear to come from the end user.
 - Treating email as identity instead of verifying Atlassian `accountId`.
-- Requiring a personal API token just to read the EPM tab was out of scope for DONE-02. `EXEC-04-db-user-home-epm-read-token.md` later makes that an explicit DB/OAuth EPM read requirement.
+- Requiring a personal API token just to read the EPM tab was out of scope for DONE-02. `DONE-04-db-user-home-epm-read-token.md` later makes that an explicit DB/OAuth EPM read requirement.
 - Putting personal API tokens in service-integration storage.
 - Building a generic GraphQL proxy that can run unreviewed Home mutations.
 - Serving Home metadata from a cache warmed by one credential without including workspace, credential type, credential id, and token version in the cache key.

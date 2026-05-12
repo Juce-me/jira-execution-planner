@@ -1,6 +1,6 @@
 # SUPPORT: EPM/Home OAuth Migration Reference
 
-> **Support status:** This file is Home/Townsquare OAuth gate and route-migration context, not the active DB implementation plan. While Home/Townsquare user 3LO remains unsupported, use it as support evidence for the service-integration path documented by `docs/plans/DONE-01-db-auth-foundation.md`. Do not execute dormant user-3LO migration tasks unless a fresh real probe returns `PASS home_graphql_3lo_supported` and a new `EXEC-*` plan or explicit reopened scope points here.
+> **Support status:** This file is Home/Townsquare OAuth gate and route-migration context, not the active DB implementation plan. While Home/Townsquare user 3LO remains unsupported, DB/OAuth EPM now uses the per-user Home token path documented by `docs/plans/DONE-04-db-user-home-epm-read-token.md`. Do not execute dormant user-3LO migration tasks unless a fresh real probe returns `PASS home_graphql_3lo_supported` and a new `EXEC-*` plan or explicit reopened scope points here.
 
 **Goal:** Keep EPM/Home routes guarded while Home/Townsquare user 3LO is unsupported. Jira REST remains user-OAuth-backed; Home/Townsquare metadata remains server-side service-credential-backed until a fresh real Home GraphQL probe proves user 3LO works.
 

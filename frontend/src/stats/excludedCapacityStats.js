@@ -342,13 +342,20 @@ function summarizeEpicModeRow(row) {
     };
 }
 
-export function buildEpicTeamModeShare(tasks, options = {}) {
+function epicModeTasks(tasks, options = {}) {
+    if (options.includeAllEpics) {
+        return (tasks || []).filter(task => epicKeyFor(task) !== 'NO_EPIC');
+    }
     const excludedKeys = new Set((options.excludedEpicKeys || []).map(normalizeKey).filter(Boolean));
     const filterSet = normalizeFilterKeys(options);
     const scopedExcludedKeys = filterSet ? filterSet : excludedKeys;
-    const excludedTasks = (tasks || []).filter(task => scopedExcludedKeys.has(epicKeyFor(task)));
+    return (tasks || []).filter(task => scopedExcludedKeys.has(epicKeyFor(task)));
+}
+
+export function buildEpicTeamModeShare(tasks, options = {}) {
+    const scopedTasks = epicModeTasks(tasks, options);
     const selectedSprints = Array.isArray(options.sprints) ? options.sprints : [];
-    const buckets = buildEpicTeamModeBuckets(excludedTasks, { sprints: selectedSprints });
+    const buckets = buildEpicTeamModeBuckets(scopedTasks, { sprints: selectedSprints });
     const explicitTeams = (options.teams || [])
         .map(team => ({
             id: normalizeId(team?.id || team?.name || 'unknown') || 'unknown',
@@ -415,11 +422,8 @@ export function buildEpicTeamModeShare(tasks, options = {}) {
 }
 
 export function buildEpicTeamModeOverall(tasks, options = {}) {
-    const excludedKeys = new Set((options.excludedEpicKeys || []).map(normalizeKey).filter(Boolean));
-    const filterSet = normalizeFilterKeys(options);
-    const scopedExcludedKeys = filterSet ? filterSet : excludedKeys;
-    const excludedTasks = (tasks || []).filter(task => scopedExcludedKeys.has(epicKeyFor(task)));
-    const buckets = buildEpicTeamModeBuckets(excludedTasks, { sprints: Array.isArray(options.sprints) ? options.sprints : [] });
+    const scopedTasks = epicModeTasks(tasks, options);
+    const buckets = buildEpicTeamModeBuckets(scopedTasks, { sprints: Array.isArray(options.sprints) ? options.sprints : [] });
     const totals = buckets.reduce((acc, bucket) => {
         if (bucket.teamPoints.size > 1) {
             acc.crossPoints += bucket.totalPoints;
@@ -433,10 +437,7 @@ export function buildEpicTeamModeOverall(tasks, options = {}) {
 }
 
 export function buildEpicTeamModeSprintRows(tasks, options = {}) {
-    const excludedKeys = new Set((options.excludedEpicKeys || []).map(normalizeKey).filter(Boolean));
-    const filterSet = normalizeFilterKeys(options);
-    const scopedExcludedKeys = filterSet ? filterSet : excludedKeys;
-    const excludedTasks = (tasks || []).filter(task => scopedExcludedKeys.has(epicKeyFor(task)));
+    const scopedTasks = epicModeTasks(tasks, options);
     const selectedSprints = Array.isArray(options.sprints) ? options.sprints : [];
     const rowsBySprint = new Map();
     selectedSprints.forEach(sprint => {
@@ -449,7 +450,7 @@ export function buildEpicTeamModeSprintRows(tasks, options = {}) {
             sharedPoints: 0
         });
     });
-    buildEpicTeamModeBuckets(excludedTasks, { sprints: selectedSprints }).forEach(bucket => {
+    buildEpicTeamModeBuckets(scopedTasks, { sprints: selectedSprints }).forEach(bucket => {
         const row = rowsBySprint.get(bucket.sprintKey) || {
             sprintId: bucket.sprintId,
             sprintName: bucket.sprintName,

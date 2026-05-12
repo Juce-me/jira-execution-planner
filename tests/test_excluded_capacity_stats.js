@@ -241,6 +241,54 @@ test('buildEpicTeamModeShare classifies cross only from story teams in the same 
     );
 });
 
+test('buildEpicTeamModeShare counts included and excluded epics together when requested', async () => {
+    const { buildEpicTeamModeShare, buildEpicTeamModeOverall, buildEpicTeamModeSprintRows } = await loadModule();
+    const sprints = [{ id: 101, name: 'S1', startDate: '2025-10-01' }];
+    const tasks = [
+        story({ key: 'SYN-1', epicKey: 'BAU-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 3 }),
+        story({ key: 'SYN-2', epicKey: 'PLAN-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 2 }),
+        story({ key: 'SYN-3', epicKey: 'PLAN-1', teamId: 'team-beta', teamName: 'Beta', sprintId: 101, sprintName: 'S1', points: 5 })
+    ];
+    const options = {
+        includeAllEpics: true,
+        excludedEpicKeys: ['BAU-1'],
+        excludedEpicKeyFilters: ['BAU-1'],
+        sprints
+    };
+
+    const rows = buildEpicTeamModeShare(tasks, options);
+    assert.deepEqual(
+        rows.map(row => ({
+            teamId: row.teamId,
+            mono: row.monoPoints,
+            cross: row.crossPoints,
+            shared: row.sharedPoints,
+            percent: row.crossPercent
+        })),
+        [
+            { teamId: 'team-alpha', mono: 3, cross: 2, shared: 5, percent: 0.4 },
+            { teamId: 'team-beta', mono: 0, cross: 5, shared: 5, percent: 1 }
+        ]
+    );
+
+    const overall = buildEpicTeamModeOverall(tasks, options);
+    assert.equal(overall.monoPoints, 3);
+    assert.equal(overall.crossPoints, 7);
+    assert.equal(overall.sharedPoints, 10);
+    assert.equal(overall.crossPercent, 0.7);
+
+    const sprintRows = buildEpicTeamModeSprintRows(tasks, options);
+    assert.deepEqual(
+        sprintRows.map(row => ({
+            sprintId: row.sprintId,
+            cross: row.crossPoints,
+            shared: row.sharedPoints,
+            percent: row.crossPercent
+        })),
+        [{ sprintId: '101', cross: 7, shared: 10, percent: 0.7 }]
+    );
+});
+
 test('buildEpicTeamModeShare keeps scoped teams that have no excluded stories', async () => {
     const { buildEpicTeamModeShare } = await loadModule();
     const sprints = [{ id: 101, name: 'S1', startDate: '2025-10-01' }];

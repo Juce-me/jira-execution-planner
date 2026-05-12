@@ -6283,7 +6283,7 @@ import {
             }, [excludedCapacitySprintIds.length, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature]);
             useEffect(() => {
                 if (!showStats || (statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare')) return;
-                if (!excludedCapacityEpicOptions.length) {
+                if (statsView === 'excludedCapacity' && !excludedCapacityEpicOptions.length) {
                     setExcludedCapacityData(null);
                     setExcludedCapacityError('No excluded capacity epics are configured for this team group.');
                     setExcludedCapacityLoading(false);
@@ -6446,42 +6446,33 @@ import {
             ]);
             const excludedCapacityModeRows = React.useMemo(() => {
                 return buildEpicTeamModeShare(excludedCapacityIssues, {
-                    excludedEpicKeys: excludedCapacityEpicOptions,
-                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
+                    includeAllEpics: true,
                     sprints: excludedCapacitySprintRange,
                     teams: excludedCapacityTeams
                 });
             }, [
                 excludedCapacityIssues,
-                excludedCapacityEpicOptions,
-                excludedCapacityActiveFilters,
                 excludedCapacitySprintRange,
                 excludedCapacityTeams
             ]);
             const excludedCapacityModeOverall = React.useMemo(() => {
                 return buildEpicTeamModeOverall(excludedCapacityIssues, {
-                    excludedEpicKeys: excludedCapacityEpicOptions,
-                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
+                    includeAllEpics: true,
                     sprints: excludedCapacitySprintRange,
                     teams: excludedCapacityTeams
                 });
             }, [
                 excludedCapacityIssues,
-                excludedCapacityEpicOptions,
-                excludedCapacityActiveFilters,
                 excludedCapacitySprintRange,
                 excludedCapacityTeams
             ]);
             const excludedCapacityModeSprintRows = React.useMemo(() => {
                 return buildEpicTeamModeSprintRows(excludedCapacityIssues, {
-                    excludedEpicKeys: excludedCapacityEpicOptions,
-                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
+                    includeAllEpics: true,
                     sprints: excludedCapacitySprintRange
                 });
             }, [
                 excludedCapacityIssues,
-                excludedCapacityEpicOptions,
-                excludedCapacityActiveFilters,
                 excludedCapacitySprintRange
             ]);
             const excludedCapacityModeTeamOverall = React.useMemo(() => {
@@ -13137,7 +13128,7 @@ import {
                                         <div className="stats-card">
                                             <h4>Shared SP</h4>
                                             <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.sharedPoints)}</div>
-                                            <div className="stats-note">Total selected excluded epic/sprint SP</div>
+                                            <div className="stats-note">Total scoped epic/sprint SP</div>
                                         </div>
                                         <div className="stats-card">
                                             <h4>Cross Share</h4>
@@ -13153,16 +13144,16 @@ import {
                                         <div className="stats-note cohort-error">{excludedCapacityError}</div>
                                     )}
                                     {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityModeOverall.totalPoints === 0 && (
-                                        <div className="cohort-empty">No excluded epic share available for the current selection.</div>
+                                        <div className="cohort-empty">No epic share available for the current selection.</div>
                                     )}
                                     {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityModeOverall.totalPoints > 0 && (
                                         <div className="excluded-capacity-panel">
                                             <div className="cohort-section">
                                                 <div className="cohort-section-title">Cross-Team Epic Footprint</div>
                                                 <div className="cohort-section-subtitle">
-                                                    Cross = selected excluded epic has stories from more than one team in the same sprint.
+                                                    Cross = an epic has stories from more than one team in the same sprint.
                                                 </div>
-                                                <div className="epic-mode-bars" role="img" aria-label="Cross-team excluded epic share by sprint">
+                                                <div className="epic-mode-bars" role="img" aria-label="Cross-team epic share by sprint">
                                                     {[
                                                         { ...excludedCapacityModeOverall, sprintName: 'Total', sprintId: 'overall' },
                                                         ...excludedCapacityModeSprintRows
@@ -13189,9 +13180,9 @@ import {
                                             <div className="cohort-section">
                                                 <div className="cohort-section-title">Team Cross Share</div>
                                                 <div className="cohort-section-subtitle">
-                                                    Team cross SP is that team's stories inside cross epic/sprint buckets; shared SP is the team's total selected excluded-epic SP.
+                                                    Team cross SP is that team's stories inside cross epic/sprint buckets; shared SP is the team's total scoped epic SP.
                                                 </div>
-                                                <div className="epic-mode-bars" role="img" aria-label="Team cross share in selected excluded epic work">
+                                                <div className="epic-mode-bars" role="img" aria-label="Team cross share in scoped epic work">
                                                     {[excludedCapacityModeTeamOverall, ...excludedCapacityModeRows].map(row => (
                                                         <div className="epic-mode-row" key={row.teamId}>
                                                             <div className="epic-mode-label">{row.teamName}</div>

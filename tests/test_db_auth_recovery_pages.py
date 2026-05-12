@@ -157,6 +157,15 @@ class DbAuthRecoveryPagesTests(unittest.TestCase):
         self.assertEqual(body['error'], 'auth_connection_revoked')
         self.assertEqual(body['recoveryUrl'], '/auth/reconnect')
 
+    def test_reconnect_page_does_not_force_consent(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.get('/auth/reconnect')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('/api/auth/atlassian/login', body)
+        self.assertNotIn('prompt=consent', body)
+
     def test_non_admin_api_response_links_admin_denial_page(self):
         self._install_session(account_id='normal-account', connection_id=self.normal_connection_id)
 

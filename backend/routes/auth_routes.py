@@ -58,7 +58,6 @@ def auth_entry_page():
         message = '<p class="auth-notice" role="status">Your Jira sign-in expired. Sign in again to continue.</p>'
     elif request.args.get('reason') == 'missing_scope':
         message = '<p class="auth-notice" role="status">Your Jira sign-in needs updated permissions. Sign in again to continue.</p>'
-        login_url = '/api/auth/atlassian/login?prompt=consent'
     return f"""
 <!doctype html>
 <html lang="en">
@@ -261,7 +260,7 @@ def auth_reconnect_page():
         'Reconnect Jira',
         'Your Jira connection needs to be reconnected before this workspace can load.',
         'Reconnect with Atlassian',
-        '/api/auth/atlassian/login?prompt=consent',
+        '/api/auth/atlassian/login',
     )
 
 
@@ -353,8 +352,11 @@ def api_atlassian_callback():
             return jsonify({'error': 'user_inactive'}), 403
         resources = fetch_accessible_resources(token_data.get('access_token', ''))
         resource = choose_accessible_resource(resources, config.jira_url)
-        session_payload = token_session_payload(token_data, resource, user_profile)
-        session_payload.update(store_db_oauth_callback_session_metadata(token_data, resource, user_profile))
+        session_token_data = dict(token_data or {})
+        if not session_token_data.get('scope'):
+            session_token_data['scope'] = ATLASSIAN_SCOPES
+        session_payload = token_session_payload(session_token_data, resource, user_profile)
+        session_payload.update(store_db_oauth_callback_session_metadata(session_token_data, resource, user_profile))
         save_oauth_session(session_payload)
     except AuthError as error:
         save_oauth_session({})

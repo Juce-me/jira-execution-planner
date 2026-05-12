@@ -5858,12 +5858,32 @@
         }
 
         .excluded-capacity-line-legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            border: none;
+            background: none;
+            color: inherit;
             cursor: pointer;
+            font: inherit;
+            padding: 0;
+            text-align: left;
+            transition: color 0.16s ease, opacity 0.16s ease;
         }
 
         .excluded-capacity-line-legend-item.is-isolated {
             color: var(--text-primary);
             font-weight: 600;
+        }
+
+        .excluded-capacity-line-legend-item.dimmed {
+            opacity: 0.35;
+        }
+
+        .excluded-capacity-line-legend-item:focus-visible {
+            outline: 2px solid rgba(31, 111, 235, 0.35);
+            outline-offset: 3px;
+            border-radius: 4px;
         }
 
         .excluded-capacity-line-legend-reset {

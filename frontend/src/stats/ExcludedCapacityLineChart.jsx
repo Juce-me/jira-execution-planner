@@ -187,23 +187,16 @@ function ExcludedCapacityLineChart({
                     const isIsolated = isolatedSeriesId === entry.seriesId;
                     const isDimmed = isolatedSeriesId && isolatedSeriesId !== entry.seriesId;
                     return (
-                        <span
+                        <button
+                            type="button"
                             key={entry.seriesId}
                             className={`excluded-capacity-line-legend-item${isIsolated ? ' is-isolated' : ''}${isDimmed ? ' dimmed' : ''}`}
                             onClick={() => onSelectSeries && onSelectSeries(isIsolated ? null : entry.seriesId)}
-                            role="button"
-                            tabIndex={0}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter' || event.key === ' ') {
-                                    event.preventDefault();
-                                    onSelectSeries && onSelectSeries(isIsolated ? null : entry.seriesId);
-                                }
-                            }}
                             title={isIsolated ? 'Show all teams' : `Show only ${entry.label}`}
                         >
                             <i className="burnout-color" style={{ background: color }} />
                             {entry.label}
-                        </span>
+                        </button>
                     );
                 })}
                 {isolatedSeriesId && (

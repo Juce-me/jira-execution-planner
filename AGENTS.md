@@ -272,6 +272,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Name active auth/DB/Home migration docs with `EXEC-*`, executed docs with `DONE-*`, support/reference/setup docs with `SUPPORT-*`, and deferred scope with `FUTURE-*`; keep expectations in `docs/plans/README.md`.
 - Before executing a plan task, verify every named file in that task's file map exists unless the plan explicitly marks it `Create`.
 - In mono vs cross UI, label denominator story points as Total SP, not Shared SP.
+- Chart legends must use native button controls, not span role=button handlers.
 - In Mono vs Cross stats, Team Cross Share must render a per-sprint per-team graph of cross SP divided by total team story points; do not replace it with aggregate bars or text chips.
 - In dashboard filters, reuse existing dropdown classes such as `team-dropdown-*` or `sprint-dropdown-*`; do not create bespoke hover, caret, radius, or action styles for one-off dropdowns.
 

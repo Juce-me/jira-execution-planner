@@ -6,6 +6,7 @@ const path = require('node:path');
 const repoRoot = path.join(__dirname, '..');
 const dashboardSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx'), 'utf8');
 const cssSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'styles', 'dashboard.css'), 'utf8');
+const lineChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'ExcludedCapacityLineChart.jsx'), 'utf8');
 
 test('dashboard wires excluded-capacity analytics into the existing Statistics view', () => {
     assert.ok(
@@ -148,6 +149,32 @@ test('mono-cross team share renders as a per-sprint team line graph', () => {
     assert.ok(
         !dashboardSource.includes('epic-mode-sprint-breakdown'),
         'Team Cross Share should use the graph, not sprint text chips'
+    );
+});
+
+test('excluded-capacity line chart legend uses native clickable controls', () => {
+    assert.ok(
+        /<button[^>]*className=\{`excluded-capacity-line-legend-item/.test(lineChartSource),
+        'Expected line chart legend items to render the shared legend item class on native buttons'
+    );
+    assert.match(
+        lineChartSource,
+        /<button[^>]*type="button"[^>]*className=\{`excluded-capacity-line-legend-item/,
+        'Expected line chart legend item buttons to declare type="button"'
+    );
+    assert.doesNotMatch(
+        lineChartSource,
+        /<span[^>]*className=\{`excluded-capacity-line-legend-item/,
+        'Line chart legend items should not render as spans'
+    );
+    assert.ok(
+        !lineChartSource.includes('role="button"'),
+        'Line chart legend items should not rely on span role=button semantics'
+    );
+    assert.match(
+        cssSource,
+        /\.excluded-capacity-line-legend-item\s*\{[\s\S]*cursor:\s*pointer/,
+        'Expected line chart legend item button styling to keep pointer affordance'
     );
 });
 

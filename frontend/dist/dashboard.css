@@ -5181,6 +5181,8 @@ button.toggle.initiative-toggle.active {
   text-align: left;
   cursor: pointer;
   color: var(--text-primary);
+  appearance: none;
+  background: #fff;
 }
 .excluded-capacity-epic-caret {
   font-size: 0.75em;
@@ -5188,6 +5190,7 @@ button.toggle.initiative-toggle.active {
 }
 .excluded-capacity-epic-menu {
   max-height: 240px;
+  overflow-x: hidden;
   padding: 0.2rem 0;
 }
 .excluded-capacity-epic-menu-actions {
@@ -5210,18 +5213,29 @@ button.toggle.initiative-toggle.active {
 }
 .excluded-capacity-epic-option {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: 1.1rem minmax(0, 1fr);
+  align-items: start;
   gap: 0.45rem;
   cursor: pointer;
+}
+.excluded-capacity-epic-option input {
+  grid-column: 1;
+  margin-top: 0.1rem;
 }
 .excluded-capacity-epic-option.is-checked {
   background: rgba(212, 56, 13, 0.06);
 }
 .excluded-capacity-epic-primary {
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+.excluded-capacity-epic-option .component-result-meta {
+  grid-column: 2;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .cohort-section-subtitle {
   font-family: "IBM Plex Mono", monospace;

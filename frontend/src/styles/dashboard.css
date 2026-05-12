@@ -5863,6 +5863,8 @@
             text-align: left;
             cursor: pointer;
             color: var(--text-primary);
+            appearance: none;
+            background: #fff;
         }
 
         .excluded-capacity-epic-caret {
@@ -5872,6 +5874,7 @@
 
         .excluded-capacity-epic-menu {
             max-height: 240px;
+            overflow-x: hidden;
             padding: 0.2rem 0;
         }
 
@@ -5898,10 +5901,15 @@
 
         .excluded-capacity-epic-option {
             display: grid;
-            grid-template-columns: auto minmax(0, 1fr) auto;
-            align-items: center;
+            grid-template-columns: 1.1rem minmax(0, 1fr);
+            align-items: start;
             gap: 0.45rem;
             cursor: pointer;
+        }
+
+        .excluded-capacity-epic-option input {
+            grid-column: 1;
+            margin-top: 0.1rem;
         }
 
         .excluded-capacity-epic-option.is-checked {
@@ -5909,9 +5917,17 @@
         }
 
         .excluded-capacity-epic-primary {
+            min-width: 0;
             overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            line-height: 1.35;
+        }
+
+        .excluded-capacity-epic-option .component-result-meta {
+            grid-column: 2;
+            min-width: 0;
+            overflow-wrap: anywhere;
         }
 
         .cohort-section-subtitle {

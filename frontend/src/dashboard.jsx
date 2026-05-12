@@ -6380,19 +6380,15 @@ import {
                     excludedEpicKeys: excludedCapacityEpicOptions
                 });
             }, [excludedCapacityIssues, excludedCapacityEpicOptions]);
-            const excludedCapacityEpicLabelByKey = React.useMemo(() => {
-                const map = new Map();
-                excludedCapacityEpicCatalog.forEach(entry => {
-                    map.set(entry.key, entry.summary || entry.key);
-                });
-                return map;
-            }, [excludedCapacityEpicCatalog]);
+            const excludedCapacityAutoEpicKeys = React.useMemo(
+                () => pickAutoSelectedExcludedEpics(excludedCapacityEpicCatalog),
+                [excludedCapacityEpicCatalog]
+            );
             useEffect(() => {
                 if (excludedCapacitySelectedEpicKeys === null && excludedCapacityEpicCatalog.length) {
-                    const auto = pickAutoSelectedExcludedEpics(excludedCapacityEpicCatalog);
-                    setExcludedCapacitySelectedEpicKeys(auto);
+                    setExcludedCapacitySelectedEpicKeys(excludedCapacityAutoEpicKeys);
                 }
-            }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicCatalog]);
+            }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicCatalog, excludedCapacityAutoEpicKeys]);
             useEffect(() => {
                 if (!Array.isArray(excludedCapacitySelectedEpicKeys)) return;
                 const valid = new Set(excludedCapacityEpicOptions);
@@ -6405,6 +6401,18 @@ import {
                 if (!Array.isArray(excludedCapacitySelectedEpicKeys)) return [];
                 return excludedCapacitySelectedEpicKeys.filter(key => excludedCapacityEpicOptions.includes(key));
             }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicOptions]);
+            const excludedCapacityFilterLabel = React.useMemo(() => {
+                if (excludedCapacityEffectiveFilters.length === 0) {
+                    return `Filter: All configured (${excludedCapacityEpicOptions.length})`;
+                }
+                const autoSet = new Set(excludedCapacityAutoEpicKeys);
+                const isAutoSelection = autoSet.size === excludedCapacityEffectiveFilters.length &&
+                    excludedCapacityEffectiveFilters.every(key => autoSet.has(key));
+                if (isAutoSelection) {
+                    return `Filter: BAU / ad hoc (${excludedCapacityEffectiveFilters.length})`;
+                }
+                return `Filter: ${excludedCapacityEffectiveFilters.length} of ${excludedCapacityEpicOptions.length} selected`;
+            }, [excludedCapacityEffectiveFilters, excludedCapacityEpicOptions, excludedCapacityAutoEpicKeys]);
             const excludedCapacityActiveFilters = excludedCapacityEffectiveFilters.length
                 ? excludedCapacityEffectiveFilters
                 : excludedCapacityEpicOptions;
@@ -6513,6 +6521,9 @@ import {
             };
             const selectAllExcludedCapacityEpics = () => {
                 setExcludedCapacitySelectedEpicKeys(excludedCapacityEpicOptions.slice());
+            };
+            const selectAutoExcludedCapacityEpics = () => {
+                setExcludedCapacitySelectedEpicKeys(excludedCapacityAutoEpicKeys.slice());
             };
             useEffect(() => {
                 if (!excludedCapacityEpicDropdownOpen) return;
@@ -12911,27 +12922,6 @@ import {
                                         </div>
                                         <div className="stats-control-group excluded-capacity-epic-filter" ref={excludedCapacityEpicDropdownRef}>
                                             <label>Excluded Epics</label>
-                                            {excludedCapacityEffectiveFilters.length > 0 && (
-                                                <div className="selected-components-list excluded-capacity-epic-chips">
-                                                    {excludedCapacityEffectiveFilters.map((key) => {
-                                                        const label = excludedCapacityEpicLabelByKey.get(key) || key;
-                                                        return (
-                                                            <div className="component-chip" key={key}>
-                                                                <span className="component-name" title={`${label} (${key})`}>{label}</span>
-                                                                <button
-                                                                    type="button"
-                                                                    className="remove-btn"
-                                                                    aria-label={`Remove ${label}`}
-                                                                    title={`Remove ${label}`}
-                                                                    onClick={() => toggleExcludedCapacityEpicKey(key)}
-                                                                >
-                                                                    ×
-                                                                </button>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
                                             <div className="component-search-wrapper">
                                                 <button
                                                     type="button"
@@ -12940,11 +12930,7 @@ import {
                                                     aria-haspopup="listbox"
                                                     aria-expanded={excludedCapacityEpicDropdownOpen}
                                                 >
-                                                    <span>
-                                                        {excludedCapacityEffectiveFilters.length === 0
-                                                            ? `All configured (${excludedCapacityEpicOptions.length})`
-                                                            : `${excludedCapacityEffectiveFilters.length} of ${excludedCapacityEpicOptions.length} selected`}
-                                                    </span>
+                                                    <span>{excludedCapacityFilterLabel}</span>
                                                     <span className="excluded-capacity-epic-caret" aria-hidden="true">▾</span>
                                                 </button>
                                                 {excludedCapacityEpicDropdownOpen && (
@@ -12953,9 +12939,17 @@ import {
                                                             <button
                                                                 type="button"
                                                                 className="excluded-capacity-epic-action"
+                                                                onClick={selectAutoExcludedCapacityEpics}
+                                                                disabled={excludedCapacityAutoEpicKeys.length === 0}
+                                                            >
+                                                                BAU / ad hoc
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="excluded-capacity-epic-action"
                                                                 onClick={selectAllExcludedCapacityEpics}
                                                             >
-                                                                Select all
+                                                                All configured
                                                             </button>
                                                             <button
                                                                 type="button"

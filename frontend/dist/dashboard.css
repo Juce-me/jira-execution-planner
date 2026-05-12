@@ -5169,10 +5169,6 @@ button.toggle.initiative-toggle.active {
 .excluded-capacity-epic-filter {
   position: relative;
 }
-.excluded-capacity-epic-chips {
-  margin-top: 0;
-  margin-bottom: 0.4rem;
-}
 .excluded-capacity-epic-toggle {
   display: flex;
   justify-content: space-between;
@@ -5210,6 +5206,12 @@ button.toggle.initiative-toggle.active {
 }
 .excluded-capacity-epic-action:hover {
   text-decoration: underline;
+}
+.excluded-capacity-epic-action:disabled {
+  color: var(--text-secondary);
+  cursor: default;
+  opacity: 0.5;
+  text-decoration: none;
 }
 .excluded-capacity-epic-option {
   display: grid;

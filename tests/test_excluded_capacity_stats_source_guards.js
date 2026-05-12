@@ -55,3 +55,22 @@ test('excluded-capacity epic menu wraps long labels without horizontal scroll', 
         'Expected excluded epic keys to stay in the text column under the wrapped label'
     );
 });
+
+test('excluded-capacity epic filter stays compact without selected chips', () => {
+    assert.ok(
+        !dashboardSource.includes('excluded-capacity-epic-chips'),
+        'Excluded epic selections should live in the dropdown, not in removable chips above it'
+    );
+    assert.ok(
+        dashboardSource.includes('excludedCapacityAutoEpicKeys'),
+        'Expected dashboard to preserve the BAU/ad hoc auto-selection preset'
+    );
+    assert.ok(
+        dashboardSource.includes('Filter: BAU / ad hoc'),
+        'Expected compact dropdown label for the default BAU/ad hoc filter'
+    );
+    assert.ok(
+        dashboardSource.includes('selectAutoExcludedCapacityEpics'),
+        'Expected dropdown action to restore the BAU/ad hoc preset'
+    );
+});

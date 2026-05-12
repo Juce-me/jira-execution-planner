@@ -243,6 +243,73 @@ class DbOauthCutoverTests(unittest.TestCase):
         self.assertEqual(data['access_token'], 'access-123')
         self.assertNotEqual(data['access_token'], 'expired-access')
 
+    def test_auth_status_uses_signed_db_session_without_local_token_store(self):
+        result = self._store_callback()
+        with self.client.session_transaction() as session:
+            session['db_oauth_session'] = {
+                'db_auth_connection_id': result.connection_id,
+            }
+
+        with patch.dict(os.environ, {
+            'CONFIG_STORAGE_BACKEND': 'db',
+            'DATABASE_URL': self.database_url,
+        }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'ATLASSIAN_SCOPES', jira_server.ATLASSIAN_SCOPES):
+            response = self.client.get('/api/auth/status')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['authenticated'])
+        self.assertFalse(payload['loginRequired'])
+        self.assertEqual(payload['siteUrl'], 'https://example.atlassian.net')
+        self.assertNotIn('access-123', str(payload))
+        self.assertNotIn('refresh-123', str(payload))
+
+    def test_dashboard_entry_allows_signed_db_session_without_local_token_store(self):
+        result = self._store_callback()
+        with self.client.session_transaction() as session:
+            session['db_oauth_session'] = {
+                'db_auth_connection_id': result.connection_id,
+            }
+
+        with patch.dict(os.environ, {
+            'CONFIG_STORAGE_BACKEND': 'db',
+            'DATABASE_URL': self.database_url,
+        }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'ATLASSIAN_SCOPES', jira_server.ATLASSIAN_SCOPES):
+            response = self.client.get('/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('Jira Execution Planner', response.get_data(as_text=True))
+        self.assertNotIn('/login', response.headers.get('Location', ''))
+
+    def test_auth_refresh_uses_database_token_without_local_token_store(self):
+        result = self._store_callback()
+        with self.client.session_transaction() as session:
+            session['db_oauth_session'] = {
+                'db_auth_connection_id': result.connection_id,
+            }
+
+        with patch.dict(os.environ, {
+            'CONFIG_STORAGE_BACKEND': 'db',
+            'DATABASE_URL': self.database_url,
+            'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([7]) * 32).decode('ascii'),
+            'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
+        }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server.HTTP_SESSION, 'post', side_effect=AssertionError('fresh DB token should not refresh')):
+            response = self.client.post(
+                '/api/auth/refresh',
+                headers={'X-Requested-With': 'jira-execution-planner'},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['authenticated'])
+        self.assertFalse(payload['loginRequired'])
+        self.assertEqual(payload['siteUrl'], 'https://example.atlassian.net')
+        self.assertNotIn('access-123', str(payload))
+        self.assertNotIn('refresh-123', str(payload))
+
 
 if __name__ == '__main__':
     unittest.main()

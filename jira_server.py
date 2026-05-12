@@ -506,6 +506,38 @@ def _load_persistent_oauth_session(session_id):
     return data if isinstance(data, dict) else {}
 
 
+def _db_oauth_browser_session_payload(data):
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH or not database_storage_enabled():
+        return {}
+    connection_id = str((data or {}).get('db_auth_connection_id') or '').strip()
+    if not connection_id:
+        return {}
+    return {'db_auth_connection_id': connection_id}
+
+
+def remember_db_oauth_browser_session(data):
+    payload = _db_oauth_browser_session_payload(data)
+    if payload:
+        session['db_oauth_session'] = payload
+    else:
+        session.pop('db_oauth_session', None)
+
+
+def db_oauth_browser_session_data():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH or not database_storage_enabled():
+        return {}
+    stored = session.get('db_oauth_session')
+    if isinstance(stored, dict):
+        payload = _db_oauth_browser_session_payload(stored)
+        if payload:
+            return payload
+    local_session = oauth_session_data()
+    payload = _db_oauth_browser_session_payload(local_session)
+    if payload:
+        session['db_oauth_session'] = payload
+    return payload
+
+
 def _cleanup_expired_oauth_sessions(now=None):
     now = time.time() if now is None else now
     expired = [
@@ -521,6 +553,7 @@ def _cleanup_expired_oauth_sessions(now=None):
 
 def save_oauth_session(data):
     if not data:
+        session.pop('db_oauth_session', None)
         session_id = session.pop('atlassian_oauth_session_id', None)
         if session_id:
             with OAUTH_TOKEN_STORE_LOCK:
@@ -533,6 +566,7 @@ def save_oauth_session(data):
         return
     now = time.time()
     session_id = session.get('atlassian_oauth_session_id')
+    remember_db_oauth_browser_session(data)
     with OAUTH_TOKEN_STORE_LOCK:
         _cleanup_expired_oauth_sessions(now)
         if not session_id:
@@ -651,12 +685,14 @@ def current_jira_session_data(context=None):
 
 
 def current_request_auth_context():
-    session_data = jira_session_data()
     if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
-        return resolve_db_request_auth_context(
-            session_data,
-            required_scopes=ATLASSIAN_SCOPES,
-        )
+        db_session_data = db_oauth_browser_session_data()
+        if db_session_data:
+            return resolve_db_request_auth_context(
+                db_session_data,
+                required_scopes=ATLASSIAN_SCOPES,
+            )
+    session_data = jira_session_data()
     site_url = (session_data.get('site_url') or JIRA_URL or '').strip().rstrip('/')
     cloud_id = session_data.get('cloudid', '')
     workspace_id = stable_local_workspace_id(APP_ENVIRONMENT_KEY, site_url, cloud_id)
@@ -897,6 +933,12 @@ def redirect_unauthenticated_oauth_dashboard_entry():
         return None
     if request.path not in OAUTH_DASHBOARD_ENTRY_PATHS:
         return None
+    if database_storage_enabled() and db_oauth_browser_session_data():
+        try:
+            current_request_auth_context()
+            return None
+        except AuthError:
+            pass
     data = oauth_session_data()
     if data.get('access_token') and data.get('cloudid'):
         return None

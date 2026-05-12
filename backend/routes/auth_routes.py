@@ -25,6 +25,29 @@ def api_auth_status():
             'authenticated': bool(JIRA_URL and JIRA_EMAIL and JIRA_TOKEN),
             'loginRequired': False,
         })
+    if database_storage_enabled() and db_oauth_browser_session_data():
+        try:
+            context = current_request_auth_context()
+        except AuthError as error:
+            payload = {
+                'authMode': AUTH_MODE_ATLASSIAN_OAUTH,
+                'authenticated': False,
+                'loginRequired': True,
+            }
+            recovery_url = auth_recovery_url(error.code)
+            if recovery_url:
+                payload['recoveryUrl'] = recovery_url
+            if error.code == 'auth_required':
+                payload['loginUrl'] = '/login?reason=session_expired'
+            elif error.code == 'missing_oauth_scope':
+                payload['loginUrl'] = '/login?reason=missing_scope'
+            return jsonify(payload)
+        return jsonify({
+            'authMode': AUTH_MODE_ATLASSIAN_OAUTH,
+            'authenticated': True,
+            'loginRequired': False,
+            'siteUrl': context.site_url,
+        })
     data = oauth_session_data()
     authenticated = bool(data.get('access_token') and data.get('cloudid'))
     if authenticated and missing_oauth_scopes(data, ATLASSIAN_SCOPES):
@@ -49,6 +72,12 @@ def api_auth_status():
 def auth_entry_page():
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return redirect('/')
+    if database_storage_enabled() and db_oauth_browser_session_data():
+        try:
+            current_request_auth_context()
+            return redirect('/')
+        except AuthError:
+            pass
     data = oauth_session_data()
     if data.get('access_token') and data.get('cloudid'):
         return redirect('/')
@@ -370,6 +399,28 @@ def api_atlassian_callback():
 def api_auth_refresh():
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return jsonify({'authenticated': True, 'authMode': AUTH_MODE_BASIC})
+    if database_storage_enabled() and db_oauth_browser_session_data():
+        try:
+            context = current_request_auth_context()
+            active = current_jira_session_data(context)
+            remember_db_oauth_browser_session(active)
+        except AuthError as error:
+            if error.code == 'auth_required':
+                save_oauth_session({})
+                return jsonify({
+                    'error': 'auth_required',
+                    'message': 'Your Jira sign-in expired. Sign in again to continue.',
+                    'loginUrl': '/login?reason=session_expired',
+                }), 401
+            return auth_error_response(error, 401)
+        return jsonify({
+            'authMode': AUTH_MODE_ATLASSIAN_OAUTH,
+            'authenticated': True,
+            'loginRequired': False,
+            'expiresAt': active.get('expires_at'),
+            'siteUrl': active.get('site_url'),
+            'siteName': active.get('site_name'),
+        })
     data = oauth_session_data()
     if not data.get('access_token') or not data.get('cloudid'):
         save_oauth_session({})

@@ -276,6 +276,7 @@ test('ENG API wrappers preserve task, backlog, dependency, and alert request det
         'fetchEngTasks',
         'fetchBacklogEpics',
         'fetchDependencies',
+        'fetchExcludedCapacityStatsSource',
     ], { getJson });
     const signal = new AbortController().signal;
 
@@ -300,6 +301,11 @@ test('ENG API wrappers preserve task, backlog, dependency, and alert request det
         const backlogPayload = await engApi.fetchBacklogEpics('http://backend', {
             project: 'tech',
             teamIds: ['team-1'],
+        });
+        await engApi.fetchExcludedCapacityStatsSource('http://backend', {
+            sprintIds: ['101', '102'],
+            teamIds: ['team-1'],
+            signal,
         });
 
         const taskUrl = new URL(calls[0].url);
@@ -344,6 +350,18 @@ test('ENG API wrappers preserve task, backlog, dependency, and alert request det
         assert.equal(calls[3].options.cache, 'no-cache');
         assertJsonHeader(calls[3].options);
         assert.deepEqual(backlogPayload, { ok: true });
+
+        const excludedUrl = new URL(calls[4].url);
+        assert.equal(excludedUrl.pathname, '/api/stats/excluded-capacity-source');
+        assert.equal(calls[4].options.method, 'POST');
+        assert.equal(calls[4].options.cache, 'no-cache');
+        assert.equal(calls[4].options.signal, signal);
+        assert.deepEqual(JSON.parse(calls[4].options.body), {
+            sprintIds: ['101', '102'],
+            teamIds: ['team-1']
+        });
+        assertJsonHeader(calls[4].options);
+        assert.equal(new Headers(calls[4].options.headers).get('X-Requested-With'), 'jira-execution-planner');
     });
 });
 

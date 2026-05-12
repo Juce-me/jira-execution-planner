@@ -1,5 +1,7 @@
 """SQLAlchemy models for database-backed auth state."""
 
+from __future__ import annotations
+
 import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlsplit, urlunsplit

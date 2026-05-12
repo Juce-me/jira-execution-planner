@@ -148,6 +148,10 @@ EPIC_COHORT_CACHE_TTL_SECONDS = int(os.getenv('EPIC_COHORT_CACHE_TTL_SECONDS', '
 EPIC_COHORT_ENRICH_MAX_ISSUES = int(os.getenv('EPIC_COHORT_ENRICH_MAX_ISSUES', '200'))
 EPIC_COHORT_ENRICH_WORKERS = int(os.getenv('EPIC_COHORT_ENRICH_WORKERS', '4'))
 EPIC_COHORT_ENRICH_TIMEOUT_SECONDS = float(os.getenv('EPIC_COHORT_ENRICH_TIMEOUT_SECONDS', '10'))
+EXCLUDED_CAPACITY_STATS_MAX_SPRINTS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_SPRINTS', '24'))
+EXCLUDED_CAPACITY_STATS_MAX_ISSUES = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_ISSUES', '2000'))
+EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES', '500'))
+EXCLUDED_CAPACITY_STATS_MAX_EPICS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_EPICS', '200'))
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
@@ -347,6 +351,7 @@ OAUTH_READY_API_PATHS = {
     '/api/stats',
     '/api/stats/burnout',
     '/api/stats/epic-cohort',
+    '/api/stats/excluded-capacity-source',
 }
 
 OAUTH_SHARED_CONFIG_WRITE_PATHS = {
@@ -4231,7 +4236,7 @@ def fetch_tasks(include_team_name=False):
         return error_response, 500
 
 
-def fetch_issues_by_keys(keys, fields_list):
+def fetch_issues_by_keys(keys, fields_list, context=None):
     """Fetch issues by keys in batches."""
     if not keys:
         return []
@@ -4247,7 +4252,7 @@ def fetch_issues_by_keys(keys, fields_list):
             'maxResults': batch_size,
             'fields': fields_list
         }
-        response = jira_search_request(payload)
+        response = jira_search_request(payload, context=context)
         if response.status_code != 200:
             log_warning(f'Dependencies fetch error: status={response.status_code}')
             continue
@@ -5883,6 +5888,344 @@ def build_missing_info_scope_clause(team_ids, component_names, team_field_name='
     if len(clauses) == 1:
         return clauses[0]
     return f"({ ' OR '.join(clauses) })"
+
+
+def build_excluded_capacity_stats_jql(sprint_ids, team_ids=None):
+    base_jql = strip_sprint_clause(build_base_jql())
+    scoped_team_ids = normalize_team_ids(team_ids or [])
+    if scoped_team_ids and JQL_QUERY_TEMPLATE:
+        templated = apply_team_ids_to_template(scoped_team_ids)
+        if templated:
+            base_jql = strip_sprint_clause(templated)
+    elif scoped_team_ids:
+        base_jql = remove_team_filter_from_jql(base_jql)
+        if len(scoped_team_ids) == 1:
+            base_jql = add_clause_to_jql(base_jql, f'"Team[Team]" = "{_escape_jql_literal(scoped_team_ids[0])}"')
+        else:
+            quoted_teams = ', '.join(f'"{_escape_jql_literal(team_id)}"' for team_id in scoped_team_ids)
+            base_jql = add_clause_to_jql(base_jql, f'"Team[Team]" in ({quoted_teams})')
+
+    sprint_values = []
+    for sprint_id in sprint_ids:
+        text = str(sprint_id or '').strip()
+        if not text:
+            continue
+        sprint_values.append(text if text.isdigit() else f'"{_escape_jql_literal(text)}"')
+    base_jql = add_clause_to_jql(base_jql, f'Sprint in ({", ".join(sprint_values)})')
+
+    issue_types = get_configured_issue_types()
+    if issue_types:
+        if len(issue_types) == 1:
+            base_jql = add_clause_to_jql(base_jql, f'type = "{_escape_jql_literal(issue_types[0])}"')
+        else:
+            quoted_types = ', '.join(f'"{_escape_jql_literal(issue_type)}"' for issue_type in issue_types)
+            base_jql = add_clause_to_jql(base_jql, f'type in ({quoted_types})')
+    return base_jql
+
+
+def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id, epic_summary_by_key=None, team_name_by_id=None):
+    fields = issue.get('fields', {}) or {}
+    raw_team = fields.get(team_field_id) if team_field_id and fields.get(team_field_id) is not None else None
+    team_payload = build_team_value(raw_team) if raw_team is not None else {}
+    team_id = team_payload.get('id') if isinstance(team_payload, dict) else None
+    team_name = team_payload.get('name') if isinstance(team_payload, dict) else None
+    if not team_name:
+        team_name = extract_team_name(raw_team)
+    if (not team_name) and team_id and team_name_by_id:
+        resolved = team_name_by_id.get(str(team_id).strip())
+        if resolved:
+            team_name = resolved
+    if isinstance(team_payload, dict) and team_name and not team_payload.get('name'):
+        team_payload['name'] = team_name
+
+    epic_key = None
+    parent_field = fields.get('parent') or {}
+    parent_summary = (parent_field.get('fields') or {}).get('summary')
+    if epic_link_field_id and fields.get(epic_link_field_id):
+        epic_key = fields.get(epic_link_field_id)
+    elif parent_field.get('key') and \
+            (parent_field.get('fields') or {}).get('issuetype', {}).get('name', '').lower() == 'epic':
+        epic_key = parent_field.get('key')
+
+    epic_summary = ''
+    if epic_summary_by_key and epic_key:
+        epic_summary = str(epic_summary_by_key.get(epic_key) or '').strip()
+    if not epic_summary and epic_key and parent_field.get('key') == epic_key and parent_summary:
+        epic_summary = str(parent_summary or '').strip()
+
+    status = fields.get('status') or {}
+    priority = fields.get('priority') or {}
+    issuetype = fields.get('issuetype') or {}
+    assignee = fields.get('assignee') or {}
+    project_field = fields.get('project') or {}
+    story_points_field = get_story_points_field_id()
+    normalized_sprints = normalize_epm_sprint_field(fields.get(sprint_field_id)) if sprint_field_id else []
+
+    return {
+        'id': issue.get('id'),
+        'key': issue.get('key'),
+        'fields': {
+            'summary': fields.get('summary') or '',
+            'status': {'name': status.get('name')} if status else None,
+            'priority': {'name': priority.get('name')} if priority else None,
+            'issuetype': {'name': issuetype.get('name')} if issuetype else None,
+            'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
+            'updated': fields.get('updated'),
+            'customfield_10004': fields.get(story_points_field),
+            'team': team_payload,
+            'teamName': team_name,
+            'teamId': team_id,
+            'epicKey': epic_key,
+            'epicSummary': epic_summary,
+            'customfield_10101': normalized_sprints,
+            'parentSummary': parent_summary,
+            'projectKey': project_field.get('key', ''),
+            'projectName': project_field.get('name', '')
+        }
+    }
+
+
+def _link_category_for_capacity_stats(type_info):
+    text = ' '.join(str((type_info or {}).get(key) or '').lower() for key in ('name', 'inward', 'outward'))
+    if 'participat' in text:
+        return 'participation'
+    if 'depend' in text:
+        return 'dependency'
+    if 'block' in text:
+        return 'block'
+    return None
+
+
+def fetch_excluded_capacity_linked_snapshots(keys, context, fields_list, team_field_id, epic_link_field_id):
+    keys = sorted({str(key or '').strip() for key in keys if str(key or '').strip()})
+    if not keys:
+        return {}, []
+
+    warnings = []
+    if len(keys) > EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES:
+        warnings.append(f'linked issue enrichment capped at {EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES} issues')
+        keys = keys[:EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES]
+
+    snapshots = {}
+    batch_size = 100
+    for index in range(0, len(keys), batch_size):
+        batch = keys[index:index + batch_size]
+        quoted_keys = ', '.join(f'"{_escape_jql_literal(key)}"' for key in batch)
+        payload = {
+            'jql': f'key in ({quoted_keys})',
+            'maxResults': len(batch),
+            'fields': fields_list
+        }
+        response = jira_search_request(payload, context=context)
+        if response.status_code != 200:
+            warnings.append(f'linked issue enrichment failed for batch {index // batch_size + 1}')
+            continue
+        data = response.json() or {}
+        for issue in data.get('issues', []) or []:
+            snapshot = build_issue_snapshot(issue, team_field_id, epic_link_field_id)
+            issue_key = snapshot.get('key')
+            if issue_key:
+                snapshots[issue_key] = snapshot
+    return snapshots, warnings
+
+
+def build_excluded_capacity_dependencies(issues, linked_snapshots):
+    dependencies = {}
+    for issue in issues:
+        base_key = issue.get('key')
+        if not base_key:
+            continue
+        entries = []
+        for link in issue.get('fields', {}).get('issuelinks', []) or []:
+            type_info = link.get('type', {}) or {}
+            category = _link_category_for_capacity_stats(type_info)
+            if not category:
+                continue
+            linked_issue = link.get('outwardIssue') or link.get('inwardIssue')
+            linked_key = linked_issue.get('key') if linked_issue else None
+            if not linked_key:
+                continue
+            snapshot = linked_snapshots.get(linked_key) or {
+                'key': linked_key,
+                'summary': linked_issue.get('fields', {}).get('summary') if linked_issue else '',
+                'teamId': None,
+                'teamName': None,
+                'epicKey': None
+            }
+            entries.append({
+                **snapshot,
+                'category': category,
+                'relation': type_info.get('outward') if link.get('outwardIssue') else type_info.get('inward'),
+                'typeName': type_info.get('name')
+            })
+        if entries:
+            dependencies[base_key] = entries
+    return dependencies
+
+
+def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None):
+    team_field_id = resolve_team_field_id(None, context=context)
+    epic_link_field_id = resolve_epic_link_field_id(None, context=context)
+    sprint_field_id = get_sprint_field_id()
+    story_points_field = get_story_points_field_id()
+    try:
+        catalog = load_team_catalog() or {}
+    except Exception:
+        catalog = {}
+    team_name_by_id = {}
+    for cid, entry in (catalog or {}).items():
+        if isinstance(entry, dict):
+            name = str(entry.get('name') or '').strip()
+            if cid and name:
+                team_name_by_id[str(cid).strip()] = name
+    jql = build_excluded_capacity_stats_jql(sprint_ids, team_ids=team_ids)
+    fields_list = [
+        'summary',
+        'status',
+        'priority',
+        'issuetype',
+        'assignee',
+        'updated',
+        story_points_field,
+        'parent',
+        'project',
+        'issuelinks'
+    ]
+    for field_id in (sprint_field_id, epic_link_field_id, team_field_id):
+        if field_id and field_id not in fields_list:
+            fields_list.append(field_id)
+
+    warnings = []
+    collected_issues = []
+    next_page_token = None
+    page_count = 0
+    page_size = 100
+
+    while len(collected_issues) < EXCLUDED_CAPACITY_STATS_MAX_ISSUES:
+        payload = {
+            'jql': jql,
+            'maxResults': min(page_size, EXCLUDED_CAPACITY_STATS_MAX_ISSUES - len(collected_issues)),
+            'fields': fields_list
+        }
+        if next_page_token:
+            payload['nextPageToken'] = next_page_token
+        response = jira_search_request(payload, context=context)
+        if response.status_code != 200:
+            return None, response
+        data = response.json() or {}
+        issues = data.get('issues', []) or []
+        collected_issues.extend(issues)
+        page_count += 1
+        next_page_token = data.get('nextPageToken')
+        if data.get('isLast', True) or not next_page_token or not issues:
+            break
+
+    if len(collected_issues) >= EXCLUDED_CAPACITY_STATS_MAX_ISSUES:
+        warnings.append(f'issue fetch capped at {EXCLUDED_CAPACITY_STATS_MAX_ISSUES} issues')
+
+    linked_keys = set()
+    for issue in collected_issues:
+        for link in issue.get('fields', {}).get('issuelinks', []) or []:
+            if not _link_category_for_capacity_stats(link.get('type', {}) or {}):
+                continue
+            linked_issue = link.get('outwardIssue') or link.get('inwardIssue')
+            linked_key = linked_issue.get('key') if linked_issue else None
+            if linked_key:
+                linked_keys.add(linked_key)
+
+    linked_snapshots, linked_warnings = fetch_excluded_capacity_linked_snapshots(
+        linked_keys,
+        context,
+        fields_list,
+        team_field_id,
+        epic_link_field_id
+    )
+    warnings.extend(linked_warnings)
+
+    epic_keys = []
+    seen_epics = set()
+    for issue in collected_issues:
+        issue_fields = issue.get('fields', {}) or {}
+        epic_key = None
+        if epic_link_field_id and issue_fields.get(epic_link_field_id):
+            epic_key = issue_fields.get(epic_link_field_id)
+        else:
+            parent_field = issue_fields.get('parent') or {}
+            if parent_field.get('key') and \
+                    (parent_field.get('fields') or {}).get('issuetype', {}).get('name', '').lower() == 'epic':
+                epic_key = parent_field.get('key')
+        if epic_key and epic_key not in seen_epics:
+            seen_epics.add(epic_key)
+            epic_keys.append(epic_key)
+
+    epic_summary_by_key = {}
+    if epic_keys:
+        capped_epic_keys = epic_keys[:EXCLUDED_CAPACITY_STATS_MAX_EPICS]
+        if len(epic_keys) > EXCLUDED_CAPACITY_STATS_MAX_EPICS:
+            warnings.append(f'epic summary enrichment capped at {EXCLUDED_CAPACITY_STATS_MAX_EPICS} epics')
+        epic_records = fetch_issues_by_keys(capped_epic_keys, ['summary'], context=context)
+        for epic in epic_records:
+            key = epic.get('key')
+            summary = (epic.get('fields') or {}).get('summary')
+            if key and summary:
+                epic_summary_by_key[key] = summary
+
+    issues_payload = [
+        build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id, epic_summary_by_key, team_name_by_id)
+        for issue in collected_issues
+    ]
+
+    return {
+        'issues': issues_payload,
+        'dependencies': build_excluded_capacity_dependencies(collected_issues, linked_snapshots),
+        'meta': {
+            'warnings': warnings,
+            'truncated': bool(warnings),
+            'paginationMode': 'nextPageToken/isLast',
+            'queryPages': page_count,
+            'issueLimit': EXCLUDED_CAPACITY_STATS_MAX_ISSUES,
+            'linkedIssueLimit': EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES
+        }
+    }, None
+
+
+@app.route('/api/stats/excluded-capacity-source', methods=['POST'])
+def get_excluded_capacity_stats_source():
+    payload = request.get_json(silent=True) or {}
+    raw_sprint_ids = payload.get('sprintIds') if isinstance(payload, dict) else []
+    sprint_ids = [str(item or '').strip() for item in (raw_sprint_ids if isinstance(raw_sprint_ids, list) else []) if str(item or '').strip()]
+    if not sprint_ids:
+        return jsonify({'error': 'sprintIds is required'}), 400
+    if len(sprint_ids) > EXCLUDED_CAPACITY_STATS_MAX_SPRINTS:
+        return jsonify({'error': f'sprintIds is limited to {EXCLUDED_CAPACITY_STATS_MAX_SPRINTS} sprints'}), 400
+
+    raw_team_ids = payload.get('teamIds') if isinstance(payload, dict) else []
+    team_ids = normalize_team_ids(raw_team_ids if isinstance(raw_team_ids, list) else [])
+
+    try:
+        auth_context = current_request_auth_context()
+        stats_payload, error_response = fetch_excluded_capacity_stats_source(sprint_ids, context=auth_context, team_ids=team_ids)
+        if error_response is not None:
+            return jsonify({
+                'error': 'Failed to fetch excluded-capacity stats source',
+                'details': error_response.text
+            }), error_response.status_code
+
+        return jsonify({
+            'generatedAt': datetime.now().isoformat(),
+            'data': stats_payload
+        })
+    except AuthError as error:
+        if error.code == "auth_required":
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
+    except Exception as error:
+        logger.exception('Failed to fetch excluded-capacity stats source')
+        return jsonify({
+            'error': 'Failed to fetch excluded-capacity stats source',
+            'message': str(error)
+        }), 500
 
 
 @app.route('/api/stats', methods=['GET'])

@@ -169,13 +169,14 @@ class HomeCredentialResolverTests(unittest.TestCase):
             func()
         self.assertEqual(raised.exception.code, code)
 
-    def test_read_metadata_requires_active_service_integration(self):
+    def test_read_metadata_requires_active_user_token(self):
         from backend.auth.home_credentials import resolve_home_credential
 
+        self._add_service_integration()
         with self._env_patch():
             self._assert_auth_error(
                 lambda: resolve_home_credential(self.context, 'read_metadata'),
-                'home_service_credential_required',
+                'home_user_token_required',
             )
 
     def test_write_as_user_requires_active_user_token(self):
@@ -195,6 +196,17 @@ class HomeCredentialResolverTests(unittest.TestCase):
         with self._env_patch():
             self._assert_auth_error(
                 lambda: resolve_home_credential(self.context, 'write_as_user'),
+                'auth_connection_revoked',
+            )
+
+    def test_read_metadata_rejects_revoked_user_token_even_with_service_integration(self):
+        from backend.auth.home_credentials import resolve_home_credential
+
+        self._add_service_integration()
+        self._add_user_token_connection(status='revoked')
+        with self._env_patch():
+            self._assert_auth_error(
+                lambda: resolve_home_credential(self.context, 'read_metadata'),
                 'auth_connection_revoked',
             )
 
@@ -228,22 +240,22 @@ class HomeCredentialResolverTests(unittest.TestCase):
                 'auth_connection_revoked',
             )
 
-    def test_resolves_service_and_user_credentials_with_separate_cache_keys(self):
+    def test_read_metadata_ignores_service_integration_and_uses_user_token(self):
         from backend.auth.home_credentials import resolve_home_credential
 
-        service_id = self._add_service_integration()
+        self._add_service_integration()
         user_connection_id = self._add_user_token_connection()
 
         with self._env_patch():
-            service_credential = resolve_home_credential(self.context, 'read_metadata')
+            metadata_credential = resolve_home_credential(self.context, 'read_metadata')
             user_credential = resolve_home_credential(self.context, 'write_as_user')
 
-        self.assertEqual(service_credential.credential_type, 'service')
-        self.assertEqual(service_credential.provider, 'home_townsquare_basic')
-        self.assertEqual(service_credential.email, 'service@example.com')
-        self.assertEqual(service_credential.api_token, 'service-home-token')
-        self.assertEqual(service_credential.cache_key, (self.workspace_id, service_id, 3))
-        self.assertNotIn('service-home-token', repr(service_credential))
+        self.assertEqual(metadata_credential.credential_type, 'user')
+        self.assertEqual(metadata_credential.provider, 'atlassian_user_api_token')
+        self.assertEqual(metadata_credential.email, 'normal@example.com')
+        self.assertEqual(metadata_credential.api_token, 'user-home-token')
+        self.assertEqual(metadata_credential.cache_key, (self.workspace_id, self.user_id, user_connection_id, 5))
+        self.assertNotIn('user-home-token', repr(metadata_credential))
 
         self.assertEqual(user_credential.credential_type, 'user')
         self.assertEqual(user_credential.provider, 'atlassian_user_api_token')

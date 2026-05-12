@@ -13,7 +13,8 @@ from backend.db import engine as db_engine
 from backend.db import models
 
 
-READ_METADATA = 'read_metadata'
+READ_EPM_METADATA = 'read_metadata'
+READ_METADATA = READ_EPM_METADATA
 WRITE_AS_USER = 'write_as_user'
 
 
@@ -122,17 +123,17 @@ def _user_token_connection(session, context):
     return session.execute(statement).scalars().first()
 
 
-def _resolve_user_credential(session, context, key_provider):
+def _resolve_user_credential(session, context, key_provider, *, missing_message):
     connection = _user_token_connection(session, context)
     if connection is None:
-        raise AuthError('home_user_token_required', 'Connect your Atlassian API token to edit Jira Home as yourself.')
+        raise AuthError('home_user_token_required', missing_message)
     if connection.status != 'active':
         raise AuthError('auth_connection_revoked', 'Your Jira Home token connection needs to be reconnected.')
     if 'home_townsquare_graphql' not in (connection.capabilities or []):
-        raise AuthError('home_user_token_required', 'Connect your Atlassian API token to edit Jira Home as yourself.')
+        raise AuthError('home_user_token_required', missing_message)
     token = _active_auth_token(session, connection.id)
     if token is None:
-        raise AuthError('home_user_token_required', 'Connect your Atlassian API token to edit Jira Home as yourself.')
+        raise AuthError('home_user_token_required', missing_message)
     return HomeCredential(
         credential_type='user',
         provider=connection.provider,
@@ -152,11 +153,21 @@ def _resolve_user_credential(session, context, key_provider):
 
 
 def resolve_home_credential(context, purpose, *, database_url: str | None = None, key_provider=None):
-    if purpose not in {READ_METADATA, WRITE_AS_USER}:
+    if purpose not in {READ_EPM_METADATA, WRITE_AS_USER}:
         raise ValueError('Unsupported Home credential purpose.')
     key_provider = key_provider or key_provider_from_env()
     with db_engine.session_factory(database_url)() as session:
         _require_active_user_and_oauth(session, context)
-        if purpose == READ_METADATA:
-            return _resolve_service_credential(session, context, key_provider)
-        return _resolve_user_credential(session, context, key_provider)
+        if purpose == READ_EPM_METADATA:
+            return _resolve_user_credential(
+                session,
+                context,
+                key_provider,
+                missing_message='Connect your Atlassian API token to load EPM Home projects.',
+            )
+        return _resolve_user_credential(
+            session,
+            context,
+            key_provider,
+            missing_message='Connect your Atlassian API token to edit Jira Home as yourself.',
+        )

@@ -4,7 +4,7 @@
 
 - [x] Task 1: Verify current auth/storage baseline
 - [x] Task 2: Make the EPM Home credential resolver user-scoped in DB mode
-- [ ] Task 3: Propagate missing-token states through EPM APIs
+- [x] Task 3: Propagate missing-token states through EPM APIs
 - [ ] Task 4: Gate EPM navigation on the user Home token
 - [ ] Task 5: Partition or disable Home/EPM metadata caches by user token
 - [ ] Task 6: Clean up DB/OAuth env and setup docs

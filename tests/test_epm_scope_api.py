@@ -4,6 +4,7 @@ from unittest.mock import patch
 import jira_server
 from backend.auth.context import RequestAuthContext
 from backend.auth.home_credentials import HomeCredential
+from backend.auth.jira_auth import AuthError
 
 
 def _oauth_context():
@@ -109,6 +110,26 @@ class TestEpmScopeApi(unittest.TestCase):
         self.assertEqual(
             response.get_json(),
             {'goals': [], 'error': 'Auth failed'},
+        )
+
+    @patch('jira_server.fetch_epm_goal_catalog')
+    def test_goals_endpoint_returns_home_token_prerequisite(self, mock_catalog):
+        mock_catalog.side_effect = AuthError(
+            'home_user_token_required',
+            'Connect your Atlassian API token to load EPM Home projects.',
+        )
+
+        response = self.client.get('/api/epm/goals')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(
+            response.get_json(),
+            {
+                'goals': [],
+                'error': 'Connect your Atlassian API token to load EPM Home projects.',
+                'errorCode': 'home_user_token_required',
+                'connectUrl': '/settings/connections/home-token',
+            },
         )
 
     def test_goal_catalog_uses_db_home_service_credential_in_request_context(self):

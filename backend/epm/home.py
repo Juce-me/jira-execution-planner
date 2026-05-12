@@ -1334,7 +1334,7 @@ def fetch_epm_home_projects(epm_scope, context=None):
             cloud_id = fetch_home_site_cloud_id(context=context)
         else:
             cloud_id = fetch_home_site_cloud_id()
-    except (RuntimeError, AuthError) as exc:
+    except RuntimeError as exc:
         logger.warning("EPM home fetch failed: %s", exc)
         return []
 

@@ -5124,9 +5124,22 @@ button.toggle.initiative-toggle.active {
 .excluded-capacity-filter-controls .excluded-capacity-sprint-control {
   min-width: 0;
 }
-.excluded-capacity-filter-controls .scenario-input,
-.excluded-capacity-filter-controls .excluded-capacity-epic-toggle {
+.excluded-capacity-filter-controls .scenario-input {
   width: 100%;
+}
+.excluded-capacity-epic-dropdown {
+  width: 100%;
+  min-width: 0;
+}
+.excluded-capacity-epic-panel {
+  width: 100%;
+  min-width: 100%;
+  overflow-x: hidden;
+}
+.excluded-capacity-epic-panel .team-dropdown-option > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .excluded-capacity-summary .stat-value {
   overflow-wrap: anywhere;
@@ -5188,88 +5201,6 @@ button.toggle.initiative-toggle.active {
   gap: 0.5rem;
   align-items: center;
   margin-bottom: 0.75rem;
-}
-.excluded-capacity-epic-filter {
-  position: relative;
-}
-.excluded-capacity-epic-toggle {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.4rem;
-  text-align: left;
-  cursor: pointer;
-  color: var(--text-primary);
-  appearance: none;
-  background: #fff;
-}
-.excluded-capacity-epic-toggle:focus,
-.excluded-capacity-epic-toggle:active {
-  background-color: #fff;
-  color: var(--text-primary);
-  border-color: var(--accent);
-  box-shadow: none;
-}
-.excluded-capacity-epic-caret {
-  font-size: 0.75em;
-  color: var(--text-secondary);
-}
-.excluded-capacity-epic-menu {
-  max-height: 240px;
-  overflow-x: hidden;
-  padding: 0.2rem 0;
-}
-.excluded-capacity-epic-menu-actions {
-  display: flex;
-  justify-content: flex-start;
-  gap: 0.35rem;
-  padding: 0.35rem 0.6rem;
-  border-bottom: 1px solid var(--border);
-}
-.excluded-capacity-epic-action {
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: #fff;
-  color: var(--text-primary);
-  cursor: pointer;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 0.62rem;
-  padding: 0.25rem 0.4rem;
-}
-.excluded-capacity-epic-action:hover {
-  background: #f8f9fa;
-}
-.excluded-capacity-epic-action:disabled {
-  color: var(--text-secondary);
-  cursor: default;
-  opacity: 0.5;
-  text-decoration: none;
-}
-.excluded-capacity-epic-option {
-  display: grid;
-  grid-template-columns: 1.1rem minmax(0, 1fr);
-  align-items: start;
-  gap: 0.45rem;
-  cursor: pointer;
-}
-.excluded-capacity-epic-option input {
-  grid-column: 1;
-  margin-top: 0.1rem;
-}
-.excluded-capacity-epic-option.is-checked {
-  background: rgba(212, 56, 13, 0.06);
-}
-.excluded-capacity-epic-primary {
-  min-width: 0;
-  overflow: hidden;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  line-height: 1.35;
-}
-.excluded-capacity-epic-option .component-result-meta {
-  grid-column: 2;
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 .cohort-section-subtitle {
   font-family: "IBM Plex Mono", monospace;
@@ -5352,10 +5283,6 @@ button.toggle.initiative-toggle.active {
   }
   .excluded-capacity-actions {
     gap: 0.35rem;
-  }
-  .excluded-capacity-epic-menu {
-    left: -4px;
-    right: -4px;
   }
 }
 .cohort-section {

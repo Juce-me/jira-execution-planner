@@ -12897,45 +12897,54 @@ import {
                                     <div className="stats-controls excluded-capacity-controls excluded-capacity-filter-controls">
                                         <div className="stats-control-group excluded-capacity-epic-filter" ref={excludedCapacityEpicDropdownRef}>
                                             <label>Excluded Epics</label>
-                                            <div className="component-search-wrapper">
+                                            <div className="team-dropdown excluded-capacity-epic-dropdown">
                                                 <button
                                                     type="button"
-                                                    className="component-search-input excluded-capacity-epic-toggle"
+                                                    className={`team-dropdown-toggle ${excludedCapacityEpicDropdownOpen ? 'open' : ''}`}
                                                     onClick={() => setExcludedCapacityEpicDropdownOpen(prev => !prev)}
                                                     aria-haspopup="listbox"
                                                     aria-expanded={excludedCapacityEpicDropdownOpen}
                                                 >
                                                     <span>{excludedCapacityFilterLabel}</span>
-                                                    <span className="excluded-capacity-epic-caret" aria-hidden="true">▾</span>
+                                                    <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                                                        <path d="M6 9L1 4h10z" />
+                                                    </svg>
                                                 </button>
                                                 {excludedCapacityEpicDropdownOpen && (
-                                                    <div className="component-search-results excluded-capacity-epic-menu" role="listbox" aria-multiselectable="true">
-                                                        <div className="excluded-capacity-epic-menu-actions">
-                                                            <button
-                                                                type="button"
-                                                                className="excluded-capacity-epic-action"
-                                                                onClick={selectAutoExcludedCapacityEpics}
-                                                                disabled={excludedCapacityAutoEpicKeys.length === 0}
+                                                    <div className="team-dropdown-panel excluded-capacity-epic-panel" role="listbox" aria-multiselectable="true">
+                                                        <div className="sprint-dropdown-list">
+                                                            <div
+                                                                className="sprint-dropdown-option"
+                                                                role="button"
+                                                                tabIndex={0}
+                                                                onClick={() => {
+                                                                    if (excludedCapacityAutoEpicKeys.length > 0) {
+                                                                        selectAutoExcludedCapacityEpics();
+                                                                    }
+                                                                }}
+                                                                aria-disabled={excludedCapacityAutoEpicKeys.length === 0}
                                                             >
                                                                 BAU / ad hoc
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                className="excluded-capacity-epic-action"
+                                                            </div>
+                                                            <div
+                                                                className="sprint-dropdown-option"
+                                                                role="button"
+                                                                tabIndex={0}
                                                                 onClick={selectAllExcludedCapacityEpics}
                                                             >
                                                                 All configured
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                className="excluded-capacity-epic-action"
+                                                            </div>
+                                                            <div
+                                                                className="sprint-dropdown-option"
+                                                                role="button"
+                                                                tabIndex={0}
                                                                 onClick={clearExcludedCapacityEpicSelection}
                                                             >
                                                                 Clear
-                                                            </button>
+                                                            </div>
                                                         </div>
                                                         {excludedCapacityEpicCatalog.length === 0 ? (
-                                                            <div className="component-search-result-item is-empty">No excluded epics configured.</div>
+                                                            <div className="sprint-dropdown-option">No excluded epics configured.</div>
                                                         ) : (
                                                             excludedCapacityEpicCatalog.map((entry) => {
                                                                 const checked = excludedCapacityEffectiveFilters.includes(entry.key);
@@ -12943,7 +12952,7 @@ import {
                                                                 return (
                                                                     <label
                                                                         key={entry.key}
-                                                                        className={`component-search-result-item excluded-capacity-epic-option ${checked ? 'is-checked' : ''}`}
+                                                                        className="team-dropdown-option"
                                                                         role="option"
                                                                         aria-selected={checked}
                                                                     >
@@ -12952,8 +12961,10 @@ import {
                                                                             checked={checked}
                                                                             onChange={() => toggleExcludedCapacityEpicKey(entry.key)}
                                                                         />
-                                                                        <span className="excluded-capacity-epic-primary">{primary}</span>
-                                                                        <span className="component-result-meta">{entry.key}</span>
+                                                                        <span>
+                                                                            {primary}
+                                                                            <span className="component-result-meta"> · {entry.key}</span>
+                                                                        </span>
                                                                     </label>
                                                                 );
                                                             })

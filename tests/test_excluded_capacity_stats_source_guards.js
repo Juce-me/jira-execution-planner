@@ -29,48 +29,76 @@ test('dashboard wires excluded-capacity analytics into the existing Statistics v
 test('excluded-capacity analytics has dedicated chart styling', () => {
     assert.ok(cssSource.includes('.excluded-capacity-line-chart'), 'Expected excluded capacity line chart CSS');
     assert.ok(cssSource.includes('.excluded-capacity-line-legend'), 'Expected line chart legend CSS for click-to-isolate');
-    assert.ok(cssSource.includes('.excluded-capacity-epic-menu'), 'Expected multi-select excluded epic menu CSS');
+    assert.ok(cssSource.includes('.excluded-capacity-epic-panel'), 'Expected multi-select excluded epic panel CSS');
     assert.ok(cssSource.includes('.epic-mode-bars'), 'Expected mono/cross epic mode chart CSS');
 });
 
 test('excluded-capacity epic menu wraps long labels without horizontal scroll', () => {
     assert.match(
         cssSource,
-        /\.excluded-capacity-epic-menu\s*\{[\s\S]*overflow-x:\s*hidden/,
-        'Expected excluded epic menu to suppress horizontal scrolling'
+        /\.excluded-capacity-epic-panel\s*\{[\s\S]*overflow-x:\s*hidden/,
+        'Expected excluded epic panel to suppress horizontal scrolling'
     );
     assert.match(
         cssSource,
-        /\.excluded-capacity-epic-option\s*\{[\s\S]*grid-template-columns:\s*1\.1rem minmax\(0, 1fr\)/,
-        'Expected excluded epic options to keep checkbox in a fixed left column'
+        /\.team-dropdown-panel label\.team-dropdown-option\s*\{[\s\S]*grid-template-columns:\s*14px 1fr/,
+        'Expected excluded epic options to use the shared team dropdown checkbox layout'
     );
     assert.match(
         cssSource,
-        /\.excluded-capacity-epic-primary\s*\{[\s\S]*white-space:\s*normal[\s\S]*overflow-wrap:\s*anywhere/,
-        'Expected excluded epic labels to wrap long Home epic names'
+        /\.team-dropdown-panel label\.team-dropdown-option:hover\s*\{[\s\S]*background:\s*var\(--bg-primary\)/,
+        'Expected excluded epic option hover to come from the shared team dropdown style'
     );
     assert.match(
         cssSource,
-        /\.excluded-capacity-epic-option \.component-result-meta\s*\{[\s\S]*grid-column:\s*2/,
-        'Expected excluded epic keys to stay in the text column under the wrapped label'
+        /\.excluded-capacity-epic-panel \.team-dropdown-option > span\s*\{[\s\S]*overflow-wrap:\s*anywhere/,
+        'Expected long excluded epic labels to wrap inside the shared team dropdown option'
     );
 });
 
-test('excluded-capacity epic dropdown follows shared component-search styling', () => {
-    const actionBlock = cssSource.match(/\.excluded-capacity-epic-action\s*\{([\s\S]*?)\n\s*\}/)?.[1] || '';
+test('excluded-capacity epic dropdown follows shared team dropdown styling', () => {
     assert.match(
-        cssSource,
-        /\.excluded-capacity-epic-toggle:focus,\s*\.excluded-capacity-epic-toggle:active\s*\{[\s\S]*background-color:\s*#fff/,
-        'Expected excluded epic toggle to stay white on focus/active states'
-    );
-    assert.match(
-        cssSource,
-        /\.excluded-capacity-epic-action\s*\{[\s\S]*border:\s*1px solid var\(--border\)[\s\S]*color:\s*var\(--text-primary\)/,
-        'Expected excluded epic quick actions to use neutral component styling'
+        dashboardSource,
+        /className=\{`team-dropdown-toggle/,
+        'Expected excluded epic dropdown button to use the shared team dropdown toggle class'
     );
     assert.ok(
-        !actionBlock.includes('color: var(--accent)'),
-        'Excluded epic actions should not use the red accent-link menu style'
+        dashboardSource.includes('className="team-dropdown-panel excluded-capacity-epic-panel"'),
+        'Expected excluded epic menu to use the shared team dropdown panel class'
+    );
+    assert.ok(
+        dashboardSource.includes('className="team-dropdown-option"'),
+        'Expected excluded epic options to use the shared team dropdown option class'
+    );
+    assert.ok(
+        dashboardSource.includes('className="sprint-dropdown-option"'),
+        'Expected excluded epic commands to use the shared dropdown option row class'
+    );
+    [
+        'excluded-capacity-epic-toggle',
+        'excluded-capacity-epic-caret',
+        'excluded-capacity-epic-menu',
+        'excluded-capacity-epic-menu-actions',
+        'excluded-capacity-epic-action',
+        'excluded-capacity-epic-option',
+        'excluded-capacity-epic-primary'
+    ].forEach((className) => {
+        assert.ok(
+            !dashboardSource.includes(className),
+            `Excluded epic dropdown should not use bespoke ${className} markup`
+        );
+        assert.ok(
+            !cssSource.includes(`.${className}`),
+            `Excluded epic dropdown should not define bespoke ${className} CSS`
+        );
+    });
+    assert.ok(
+        cssSource.includes('.team-dropdown-toggle:hover'),
+        'Expected reusable team dropdown hover styling'
+    );
+    assert.ok(
+        cssSource.includes('.team-dropdown-toggle.open svg'),
+        'Expected reusable team dropdown chevron rotation styling'
     );
 });
 

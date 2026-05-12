@@ -188,12 +188,15 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 ### Repo-specific constraints
 - Review relevant postmortems before making related changes. Add new postmortems under `postmortem/` as `MRTXXX-short-title.md` and update `postmortem/README.md`.
 - Store Jira credentials in `.env`; never commit secrets.
+- Server-side Jira and Home/Townsquare API-token credentials in `.env` are dedicated service-account credentials; do not ask individual users to create personal Atlassian API tokens for shared app auth.
+- Service-account API tokens for `home_townsquare_basic` and `jira_basic` belong only in `service_integration_tokens`; never store them in normal-user `auth_tokens`.
 - Treat `team-groups.json`, `team-catalog.json`, and `sprints_cache.json` as generated local caches.
 - Never commit real Jira fixture data. Use synthetic or sanitized examples only, and never copy identifiable config-derived values into committed tests.
 - Jira API pagination uses `nextPageToken` / `isLast`, not `startAt` / `total`. Verify response shapes before coding against them.
 - Any new API plan in `docs/plans/` must use the same Jira pagination contract.
 - EPM Project rollups are label-driven; each Project has one exact Jira label. No wildcard/fallback. Metadata-only Home projects still render the Home card plus `Settings -> EPM` CTA.
 - `epm.labelPrefix` in `dashboard-config.json` is a Home tag mask such as `"rnd_project_*"` and also filters manual Jira-label autocomplete. Resolve each Home Project's exact matching tag as the Jira label; rollup JQL uses that full label, never the mask.
+- Home/Townsquare-backed and Jira-project-backed EPM/APM surfaces are read-oriented for normal users; any mutation route for those surfaces requires an explicit tool-admin or service-account guard in the plan and implementation.
 - Initial dashboard load is performance-critical. Avoid redundant requests, justify heavy endpoints, and measure before/after when claiming improvements.
 - For analytics-style views, prefer one scoped fetch plus client-side regrouping/filtering. Re-fetch only when scope changes or the user explicitly refreshes.
 - If per-issue Jira enrichment is required, define strict fan-out limits before implementation.
@@ -220,7 +223,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 
-- Keep auth-mode changes isolated from `frontend/src/dashboard.jsx` unless the user explicitly approves a dashboard UI change.
+- Keep auth-mode changes and OAuth entry screens isolated from `frontend/src/dashboard.jsx` unless the user explicitly approves dashboard auth UI.
 - Keep progress updates compact: state the action directly instead of explaining routine tool choices.
 - In settings UIs, when a value is already selected or the option set is small, default to a compact selected-state control and reveal search only on explicit change; do not leave persistent search inputs visible by default.
 - In EPM settings project lists, sort only by table data columns; keep Home as a subtle icon beside the project name, never as a sort option or primary row action.
@@ -240,10 +243,40 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In EPM settings Projects, put project name, Home status, Home link, and Jira label in stable cells so variable statuses do not distort the row.
 - In EPM settings Projects, use table-style header sorting and compact icon actions in cells; avoid bulky text sort/change controls in headers or label chips.
 - For UI screenshots, wait for CSS animations/transitions to settle or disable them before capturing visual proof.
+- Line-chart legends and points must use readable in-app hover/readout states; never rely on native `title` tooltips or dark hover pills.
 - In PR descriptions, never include secrets, token placeholders, credential env vars, or local absolute paths.
+- Treat Atlassian account ids only as stable identity keys for tool-local admin roles; never imply Atlassian tenant/admin status grants tool admin access.
+- Redact OAuth callback query strings from logs; never log authorization code or state values.
 - Store implementation plans in `docs/plans/` only.
+- Before creating or executing any Home/Townsquare auth migration plan, read `docs/plans/AGENTS.md` and run or document the Home GraphQL OAuth probe gate; do not mark Home/Townsquare-backed routes OAuth-ready unless it passes with a real local user 3LO session.
+- After DB auth exists, Home/Townsquare 3LO plans must use DB `auth_connections`/encrypted `auth_tokens` and must not resolve route tokens through local OAuth token-store helpers.
+- When an auth plan names a security gate, include the concrete implementation task and verification before the dependent handoff.
+- For Atlassian OAuth work, treat Microsoft Entra/Azure SSO through Atlassian Cloud SSO as a primary acceptance path.
+- Auth/backend plans must name and verify the user journey for each supported route surface; backend tests alone are not enough unless the route is explicitly developer-only.
+- OAuth cookie-session slices must include unsafe-method CSRF protection before the first supported browser POST route.
+- Local OAuth token stores must require both a local/dev environment key and an explicit allow flag at startup.
+- Auth-expired states must have a visible recovery screen or re-auth target; do not leave users with only backend `401` JSON.
+- Browser-focus auth refresh is an optimization only; keep the visible expired-auth recovery path as the fallback.
 - Keep local task changes in the checkout the user is actively viewing; use a secondary worktree only when the user explicitly asks for one.
 - For shared header/menu UI changes, add or update Playwright assertions for menu layering and icon/control geometry before reporting visual verification.
+- In settings, keep Team Groups/Group Labels and ENG/EPM view preferences separate from admin-only shared configuration; never bundle their saves with scope, field, priority, issue-type, or EPM mapping writes.
+- For cross-layer access or configuration changes, verify the backend response contract and the frontend render/edit/save gates together; do not treat backend route tests as enough when UI permissions control the user journey.
+- Pre-DB OAuth treats every signed-in Atlassian user as a local tool admin; when environment JSON exists, settings should default to Team Groups/EPM workflows instead of setup tabs.
+- Settings edit permission must fail closed until `/api/config` explicitly returns `userCanEditSettings: true`; never treat a missing flag or loading state as admin-editable.
+- Team Groups saves must allow empty `teamIds`; group-level components, labels, and exclusions must save even when team discovery returns no teams.
+- Dashboard config save endpoints must reject implicit empty overwrites of existing selected projects or groups; clearing shared JSON state needs an explicit action.
+- DB/OAuth EPM must not require Jira/Home Basic credential environment variables; Home/Townsquare EPM reads use the current user's connected `atlassian_user_api_token`.
+- DB/OAuth EPM routes use user OAuth for Jira REST and the current user's Home token only for Home/Townsquare metadata; worker-thread Jira searches must carry the captured request auth context.
+- In DB/OAuth mode, hide the EPM tab until the current user has connected a Home/Townsquare token in Settings; once visible, the EPM tab must expose an accessible EPM settings gear.
+- At the start of auth/DB/Home/EPM plan work, scan `docs/plans/GATE-*.md` and update each gate's `Checked on` and `Last result`; never mark a gate passed without its documented `PASS` output.
+- For OAuth Jira worker-thread fixes, verify a no-request-context test that reaches the real Jira auth wrapper; route mocks alone are not sufficient.
+- Name active auth/DB/Home migration docs with `EXEC-*`, executed docs with `DONE-*`, support/reference/setup docs with `SUPPORT-*`, and deferred scope with `FUTURE-*`; keep expectations in `docs/plans/README.md`.
+- Before executing a plan task, verify every named file in that task's file map exists unless the plan explicitly marks it `Create`.
+- In mono vs cross UI, label denominator story points as Total SP, not Shared SP.
+- Chart legends must use native button controls, not span role=button handlers.
+- Excluded Capacity and Mono vs Cross stats must use cached progressive stats-source requests and must not load or render ENG alerts, filters, or task lists for those tabs.
+- In Mono vs Cross stats, Team Cross Share must render a per-sprint per-team graph of cross SP divided by total team story points; do not replace it with aggregate bars or text chips.
+- In dashboard filters, reuse existing dropdown classes such as `team-dropdown-*` or `sprint-dropdown-*`; do not create bespoke hover, caret, radius, or action styles for one-off dropdowns.
 
 ---
 

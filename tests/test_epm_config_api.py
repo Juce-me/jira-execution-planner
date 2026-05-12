@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from tests.auth_mode_test_utils import force_basic_auth_mode
+
 try:
     import jira_server
     _IMPORT_ERROR = None
@@ -21,6 +23,7 @@ class TestEpmConfigApi(unittest.TestCase):
     }
 
     def setUp(self):
+        force_basic_auth_mode(self, jira_server)
         self.app = jira_server.app
         self.app.testing = True
         self.client = self.app.test_client()

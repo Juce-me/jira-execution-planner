@@ -125,6 +125,19 @@ test('frontend API endpoint literals live in api modules or approved transitiona
     assert.deepEqual(violations, []);
 });
 
+test('ENG startup uses cached task data unless the user explicitly refreshes', () => {
+    const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+
+    assert.ok(
+        dashboardSource.includes('const pageLoadRefreshRef = useRef(false);'),
+        'Initial ENG page load should not force refresh=true and bypass the server cache',
+    );
+    assert.ok(
+        !dashboardSource.includes('const pageLoadRefreshRef = useRef(true);'),
+        'Only explicit refresh actions should bypass the server cache',
+    );
+});
+
 test('shared API HTTP helpers preserve current JSON error behavior', async () => {
     const { json } = loadHttpHelpers();
 
@@ -238,6 +251,24 @@ test('Jira catalog API module owns Jira catalog request endpoint construction', 
     assert.ok(dashboardSource.includes("from './api/jiraCatalogApi.js'"), 'Expected dashboard to import Jira catalog API wrappers');
 });
 
+test('auth API module owns current-user connection endpoint construction', () => {
+    const authApiPath = path.join(frontendSrcPath, 'api', 'authApi.js');
+    const connectionsSettingsPath = path.join(frontendSrcPath, 'settings', 'UserConnectionsSettings.jsx');
+    assert.ok(fs.existsSync(authApiPath), 'Expected frontend/src/api/authApi.js to exist');
+    assert.ok(fs.existsSync(connectionsSettingsPath), 'Expected frontend/src/settings/UserConnectionsSettings.jsx to exist');
+
+    const authApiSource = readSource(authApiPath);
+    const connectionsSettingsSource = readSource(connectionsSettingsPath);
+    const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+
+    assert.ok(authApiSource.includes("from './http.js'"), 'Expected auth API module to use shared HTTP helpers');
+    assert.ok(authApiSource.includes('/api/me/connections/home-token'), 'Expected Home token URL construction in authApi.js');
+    assert.ok(authApiSource.includes('/api/auth/csrf'), 'Expected CSRF token URL construction in authApi.js');
+    assert.ok(connectionsSettingsSource.includes("from '../api/authApi.js'"), 'Expected Connections settings to import auth API wrappers');
+    assert.ok(dashboardSource.includes("from './settings/UserConnectionsSettings.jsx'"), 'Expected dashboard to import Connections settings');
+    assert.ok(!dashboardSource.includes('/api/me/connections/home-token'), 'dashboard.jsx must not own Home token endpoint literals');
+});
+
 test('ENG API wrappers preserve task, backlog, dependency, and alert request details', async () => {
     const { getJson } = loadHttpHelpers();
     const engApi = loadApiModule('engApi.js', [
@@ -330,6 +361,7 @@ test('ENG API wrappers preserve task, backlog, dependency, and alert request det
             teamIds: ['team-1']
         });
         assertJsonHeader(calls[4].options);
+        assert.equal(new Headers(calls[4].options.headers).get('X-Requested-With'), 'jira-execution-planner');
     });
 });
 
@@ -354,7 +386,7 @@ test('settings API wrappers preserve save body shapes and no-cache reads', async
         await configApi.saveSelectedProjects('http://backend', selected);
 
         assert.deepEqual(appConfig, { ok: true });
-        assert.equal(calls[0].url, 'http://backend/api/config');
+        assert.equal(calls[0].url, 'http://backend/api/config?includeViewConfig=true');
         assert.deepEqual(calls[0].options, {});
 
         assert.equal(calls[1].url, 'http://backend/api/board-config');
@@ -377,6 +409,33 @@ test('settings API wrappers preserve save body shapes and no-cache reads', async
         assert.equal(calls[4].options.body, JSON.stringify({ selected }));
         assertJsonHeader(calls[4].options);
     });
+});
+
+test('app config wrapper preserves resolved view metadata and legacy epm shape', () => {
+    const { getJson } = loadHttpHelpers();
+    const configApi = loadApiModule('configApi.js', [
+        'normalizeAppConfig',
+    ], { getJson });
+
+    const epm = { version: 2, projects: { 'home-1': { label: 'rnd_project_synthetic' } } };
+    const normalized = configApi.normalizeAppConfig({
+        viewConfig: {
+            source: 'user_saved_view',
+            workspaceId: 'workspace-1',
+            viewConfigId: 'view-1',
+            viewType: 'epm',
+            view: { epm },
+        },
+    });
+
+    assert.deepEqual(normalized.epm, epm);
+    assert.equal(normalized.viewConfig.source, 'user_saved_view');
+
+    const withLegacyEpm = configApi.normalizeAppConfig({
+        epm: { version: 2, projects: {} },
+        viewConfig: { view: { epm } },
+    });
+    assert.deepEqual(withLegacyEpm.epm, { version: 2, projects: {} });
 });
 
 test('Jira catalog API wrappers preserve query params, cache flags, and abort signals', async () => {
@@ -427,5 +486,52 @@ test('Jira catalog API wrappers preserve query params, cache flags, and abort si
         assert.equal(calls[3].options.method, 'GET');
         assert.equal(calls[3].options.cache, 'no-cache');
         assertJsonHeader(calls[3].options);
+    });
+});
+
+test('auth API wrappers preserve Home token request details and CSRF use', async () => {
+    const { json, getJson, postJson } = loadHttpHelpers();
+    const authApi = loadApiModule('authApi.js', [
+        'connectHomeTokenConnection',
+        'deleteHomeTokenConnection',
+        'fetchAuthStatus',
+        'fetchHomeTokenConnection',
+    ], { json, getJson, postJson });
+
+    await withMockFetch(async (calls) => {
+        await authApi.fetchAuthStatus('http://backend');
+        await authApi.fetchHomeTokenConnection('http://backend');
+        await authApi.connectHomeTokenConnection('http://backend', {
+            email: 'user@example.com',
+            apiToken: 'plain-user-token',
+        });
+        await authApi.deleteHomeTokenConnection('http://backend');
+
+        assert.equal(calls[0].url, 'http://backend/api/auth/status');
+        assert.equal(calls[0].options.cache, 'no-cache');
+
+        assert.equal(calls[1].url, 'http://backend/api/me/connections/home-token');
+        assert.equal(calls[1].options.cache, 'no-cache');
+
+        assert.equal(calls[2].url, 'http://backend/api/auth/csrf');
+        assert.equal(calls[3].url, 'http://backend/api/me/connections/home-token');
+        assert.equal(calls[3].options.method, 'POST');
+        assert.equal(calls[3].options.body, JSON.stringify({
+            email: 'user@example.com',
+            apiToken: 'plain-user-token',
+        }));
+        assert.equal(new Headers(calls[3].options.headers).get('X-CSRF-Token'), 'csrf-token-2');
+        assertJsonHeader(calls[3].options);
+
+        assert.equal(calls[4].url, 'http://backend/api/auth/csrf');
+        assert.equal(calls[5].url, 'http://backend/api/me/connections/home-token');
+        assert.equal(calls[5].options.method, 'DELETE');
+        assert.equal(new Headers(calls[5].options.headers).get('X-CSRF-Token'), 'csrf-token-4');
+        assertJsonHeader(calls[5].options);
+    }, (url, _options, index) => {
+        if (String(url).endsWith('/api/auth/csrf')) {
+            return jsonResponse({ csrfToken: `csrf-token-${index}` });
+        }
+        return jsonResponse({ ok: true });
     });
 });

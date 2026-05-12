@@ -257,7 +257,7 @@ class TestCreateStoriesAlertApi(unittest.TestCase):
             'isLast': True
         }
 
-        with patch('jira_server.requests.get', return_value=_mock_response(200, jira_payload)):
+        with patch.object(jira_server, 'current_jira_get', return_value=_mock_response(200, jira_payload)):
             response = client.get('/api/jira/labels?query=team_')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
@@ -283,7 +283,7 @@ class TestCreateStoriesAlertApi(unittest.TestCase):
         }
 
         with patch(
-            'jira_server.requests.get',
+            'jira_server.current_jira_get',
             side_effect=[_mock_response(200, first_page), _mock_response(200, second_page)]
         ) as mock_get:
             response = client.get('/api/jira/labels?query=team_')

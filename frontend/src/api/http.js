@@ -14,6 +14,9 @@ export function postJson(url, body, label, options = {}) {
     if (!headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');
     }
+    if (!headers.has('X-Requested-With')) {
+        headers.set('X-Requested-With', 'jira-execution-planner');
+    }
 
     return fetch(url, {
         ...options,

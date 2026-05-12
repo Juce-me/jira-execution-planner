@@ -25,9 +25,8 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertTrue(hasattr(config_store, 'save_dashboard_config'))
 
     def test_jira_search_wrapper_keeps_patchable_request_and_next_page_token(self):
-        with patch.object(jira_server, 'JIRA_URL', 'http://jira.example'), \
-             patch.object(jira_server, 'resilient_jira_get', return_value=sentinel.response) as mock_get:
-            response = jira_server.jira_search_request({'Authorization': 'Basic test'}, {
+        with patch.object(jira_server, 'current_jira_search', return_value=sentinel.response) as mock_search:
+            response = jira_server.jira_search_request({
                 'jql': 'project = TEST',
                 'fields': ['summary', 'status'],
                 'maxResults': 50,
@@ -35,11 +34,28 @@ class TestBackendServiceExtraction(unittest.TestCase):
             })
 
         self.assertIs(response, sentinel.response)
-        mock_get.assert_called_once()
-        args, kwargs = mock_get.call_args
-        self.assertEqual(args[0], 'http://jira.example/rest/api/3/search/jql')
-        self.assertEqual(kwargs['params']['nextPageToken'], 'page-2')
-        self.assertEqual(kwargs['params']['fields'], 'summary,status')
+        mock_search.assert_called_once_with({
+            'jql': 'project = TEST',
+            'fields': ['summary', 'status'],
+            'maxResults': 50,
+            'nextPageToken': 'page-2'
+        })
+
+    def test_search_params_reject_start_at_for_search_jql(self):
+        jira_client = importlib.import_module("backend.jira_client")
+        with self.assertRaises(ValueError):
+            jira_client.build_jira_search_params({"jql": "project = PROD", "startAt": 50, "maxResults": 100})
+
+    def test_search_params_allow_next_page_token(self):
+        jira_client = importlib.import_module("backend.jira_client")
+        params = jira_client.build_jira_search_params({
+            "jql": "project = PROD",
+            "nextPageToken": "page-2",
+            "maxResults": 100,
+        })
+
+        self.assertEqual(params["nextPageToken"], "page-2")
+        self.assertNotIn("startAt", params)
 
     def test_jira_client_requires_injected_request_state(self):
         jira_client = importlib.import_module('backend.jira_client')
@@ -77,6 +93,18 @@ class TestBackendServiceExtraction(unittest.TestCase):
                 self.assertEqual(saved_catalog['catalog']['team-1']['name'], 'Team A')
                 self.assertTrue(os.path.exists(team_catalog_path))
                 self.assertEqual(jira_server.load_team_catalog(), saved_catalog)
+
+    def test_dashboard_config_save_uses_atomic_replace(self):
+        config_store = importlib.import_module('backend.config_store')
+        with tempfile.TemporaryDirectory() as tmp:
+            dashboard_path = os.path.join(tmp, 'dashboard-config.json')
+            with patch.object(config_store.os, 'replace', wraps=config_store.os.replace) as mock_replace:
+                config_store.save_dashboard_config({'version': 1}, dashboard_path)
+
+            self.assertEqual(mock_replace.call_count, 1)
+            self.assertEqual(mock_replace.call_args[0][1], dashboard_path)
+            with open(dashboard_path, 'r') as handle:
+                self.assertEqual(json.load(handle), {'version': 1})
 
 
 if __name__ == '__main__':

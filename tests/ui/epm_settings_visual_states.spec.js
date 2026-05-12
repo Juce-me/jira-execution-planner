@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const viewports = [
     { name: 'desktop', width: 1440, height: 1000 },
@@ -38,8 +39,40 @@ const homeProjects = Array.from({ length: 18 }, (_, index) => ({
 }));
 
 async function mockSettings(page, overrides = {}) {
+    await installDashboardShell(page);
     await page.route('**/api/**', route => {
-        const url = route.request().url();
+        const requestUrl = new URL(route.request().url());
+        const url = requestUrl.href;
+        if (requestUrl.pathname === '/api/auth/refresh') {
+            return route.fulfill({ status: 204, body: '' });
+        }
+        if (requestUrl.pathname === '/api/config') {
+            return route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    jiraUrl: 'https://jira.example',
+                    projectsConfigured: true,
+                    settingsAdminOnly: false,
+                    userCanEditSettings: true,
+                    userCanEditEpmConfig: true,
+                    epm: { ...epmConfig, ...(overrides.config || {}) },
+                }),
+            });
+        }
+        if (requestUrl.pathname === '/api/me/connections/home-token') {
+            return route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    connected: true,
+                    provider: 'atlassian_user_api_token',
+                    credentialSubject: 'profile@example.com',
+                    status: 'active',
+                    needsReconnect: false,
+                }),
+            });
+        }
         const handledBySpecificMock = [
             '/api/epm/config',
             '/api/epm/scope',

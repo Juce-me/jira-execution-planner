@@ -39,6 +39,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 ## 📖 Technical Docs
 
 - Scenario Planner technical rules are included in [Scenario Planner](docs/features/scenario-planner.md)
+- Local install, DB mode, migrations, and Home token setup are covered in [INSTALL.md](INSTALL.md)
 
 ## 📋 Files
 
@@ -47,6 +48,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - `frontend/` - Frontend source (`src/`) and compiled bundle (`dist/`)
 - `docs/features/` - User-facing feature guides for alerts, statistics, and scenario planning
 - `.env.example` - Template for environment variables
+- `INSTALL.md` - Local install, PostgreSQL, DB migration, and Home token setup flow
 - `.gitignore` - Git ignore file (keeps secrets safe)
 - `requirements.txt` - Python dependencies
 - `AGENTS.md` - Contributor guide and workflow conventions
@@ -59,12 +61,14 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 If you just want to see the dashboard working locally:
 1. Install dependencies: `python3 -m pip install --user -r requirements.txt`
 2. Copy the env template: `cp .env.example .env`
-3. Edit `.env` and set **JIRA_URL**, **JIRA_EMAIL**, **JIRA_TOKEN**.
+3. Edit `.env`. For DB/OAuth mode, set the Jira URL, PostgreSQL URL, token-encryption key, and Atlassian OAuth client values from [INSTALL.md](INSTALL.md).
 4. Start the backend: `python3 jira_server.py`
 5. Visit `http://localhost:5050/api/test` in your browser to confirm connectivity.
 6. Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`), complete **Dashboard Settings** onboarding, then click **Save**.
 
 More detailed setup guidance remains below if you need it.
+
+For DB-backed OAuth/Home token setup, use [INSTALL.md](INSTALL.md). Starting `python3 jira_server.py` does not start PostgreSQL, create the database, or run migrations.
 
 ## 📦 Prebuilt download (no Node required)
 
@@ -118,7 +122,7 @@ python3 -m pip install --user flask flask-cors requests python-dotenv openpyxl "
 cp .env.example .env
 ```
 
-**Edit .env file and add your credentials:**
+**Edit .env file and add the DB/OAuth settings. The template is oriented to DB-backed OAuth with encrypted token storage. Server-side API-token auth remains a legacy compatibility mode, but it is not the DB/OAuth EPM path.**
 ```bash
 nano .env  # or use any text editor
 ```
@@ -126,12 +130,20 @@ nano .env  # or use any text editor
 ```env
 # Your Jira instance URL
 JIRA_URL=https://your-company.atlassian.net
+APP_ENVIRONMENT_KEY=local
 
-# Your Jira email
-JIRA_EMAIL=your-email@company.com
+JIRA_AUTH_MODE=atlassian_oauth
+ATLASSIAN_CLIENT_ID=<from Atlassian Developer Console>
+ATLASSIAN_CLIENT_SECRET=<from Atlassian Developer Console>
+ATLASSIAN_REDIRECT_URI=http://localhost:5050/api/auth/atlassian/callback
+ATLASSIAN_SCOPES=read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access
+FLASK_SECRET_KEY=<random secret>
+OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true
 
-# Your Jira API token
-JIRA_TOKEN=your-api-token-here
+CONFIG_STORAGE_BACKEND=db
+DATABASE_URL=postgresql+psycopg:///jep_local
+TOKEN_ENCRYPTION_MASTER_KEY_B64=<generated value>
+TOKEN_ENCRYPTION_KEY_ID=local-key
 
 # Optional: server port for the local backend
 SERVER_PORT=5050
@@ -146,10 +158,11 @@ LOG_LEVEL=INFO
 SCENARIO_OVERRIDES_PATH=./scenario-overrides.json
 ```
 
-**How to get Jira API token:**
-1. Go to https://id.atlassian.com/manage-profile/security/api-tokens
-2. Click "Create API token"
-3. Copy the token and paste it into `.env` file
+**Home/Townsquare token connection for EPM:**
+1. Start the DB/OAuth server and sign in with Atlassian OAuth.
+2. Open `Settings -> Connections`.
+3. Connect the current user's Home/Townsquare token. The app stores it encrypted as `atlassian_user_api_token` in `auth_tokens`.
+4. Keep EPM saved view state limited to non-secret settings. Operator/service credentials, when used by other workflows, belong in `service_integration_tokens`.
 
 ### Step 4: Start the server
 
@@ -162,10 +175,20 @@ You can override the environment values at launch time instead of editing `.env`
 ```bash
 python3 jira_server.py \
   --server_port 5050 \
-  --jira_url https://your-company.atlassian.net \
-  --jira_email your-email@company.com \
-  --jira_token your-api-token-here \
+  --jira_url https://your-company.atlassian.net
 ```
+
+### Atlassian OAuth login
+
+The dashboard can run with Atlassian OAuth 2.0 (3LO) for user Jira access instead of server-side Jira Basic auth.
+
+1. Create an OAuth 2.0 app in the Atlassian Developer Console.
+2. Add the required User Identity API and Jira API scopes documented in [docs/SUPPORT-atlassian-oauth-setup.md](docs/SUPPORT-atlassian-oauth-setup.md).
+3. Set the callback URL to `http://localhost:5050/api/auth/atlassian/callback`, or to an HTTPS tunnel URL if your Atlassian app requires HTTPS.
+4. In `.env`, set `JIRA_AUTH_MODE=atlassian_oauth`, `APP_ENVIRONMENT_KEY=local`, `JIRA_URL`, the Atlassian OAuth client settings, `FLASK_SECRET_KEY`, DB storage settings, token-encryption settings, and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true` for local single-process testing. `JIRA_URL` is required in OAuth mode to select the matching Atlassian cloud site after login. OAuth startup must fail unless both the environment key is local/dev and the local token store flag is true. If `OAUTH_TOKEN_STORE_TTL_SECONDS` is set, keep it at least `900` so the local bridge does not expire during a human SSO/consent flow.
+5. Start the server and open `/`. If no OAuth session exists, the app should show `/login` with a `Sign in with Atlassian` action. That action starts Atlassian OAuth; for managed Atlassian accounts backed by Microsoft Entra SSO, the flow should redirect through Microsoft automatically, then show the Atlassian authorization/consent screen for this app before returning to the app callback. Confirm `/api/auth/status` reports `authenticated: true`, then use the migrated endpoint `/api/test`. Full dashboard data-route migration is intentionally deferred; un-migrated API routes return `route_not_oauth_ready`/501 in OAuth mode. In DB/OAuth mode, EPM Home/Townsquare metadata becomes available after the signed-in user connects a Home token in `Settings -> Connections`.
+
+Jira still receives Atlassian OAuth tokens, not Microsoft Entra tokens. Direct Microsoft access tokens cannot be used as Jira REST API bearer tokens.
 
 ## 🧱 Frontend build (contributors)
 
@@ -186,12 +209,14 @@ CI will fail if `frontend/dist` is out of sync. We precompile JSX to avoid in-br
 
 ## EPM View
 
-Set the Atlassian Home credentials in `.env` (`ATLASSIAN_EMAIL`, `ATLASSIAN_API_TOKEN`). `ATLASSIAN_EMAIL` and `ATLASSIAN_API_TOKEN` fall back to `JIRA_EMAIL` and `JIRA_TOKEN` when left blank. Then open `Settings -> EPM`, confirm the detected Atlassian site, choose a root goal, and choose the child sub-goal that directly owns the EPM project catalog. Set the label prefix used for Jira label autocomplete, then assign each Project one exact Jira label; there is no epic key field or wildcard label fallback. You can also add custom Projects with a name and label only. Use the `ENG | EPM` switch in the dashboard header to browse Project rollups rendered as Initiative -> Epic -> Story/Task hierarchies. EPM Jira queries stay scoped to the Jira projects listed in `dashboard-config.json -> projects.selected`, so add the relevant Jira project there if an EPM Project points outside the current dashboard set.
+In DB/OAuth mode, EPM is hidden until the signed-in user connects a Home/Townsquare token in `Settings -> Connections`. Jira REST reads continue to use the user's OAuth session; Home/Townsquare GraphQL metadata reads use only the connected `atlassian_user_api_token` stored encrypted in DB `auth_tokens`. Token material is not stored in saved views, dashboard config, EPM config, JSON files, browser local storage, or API responses.
+
+After connecting the token, open `Settings -> EPM`, confirm the detected Atlassian site, choose a root goal, and choose the child sub-goal that directly owns the EPM project catalog. Set the label prefix used for Jira label autocomplete, then assign each Project one exact Jira label; there is no epic key field or wildcard label fallback. You can also add custom Projects with a name and label only. EPM saved view state is non-secret user view config. Operator/service credentials are separate `service_integration_tokens` and are not a DB/OAuth EPM fallback. EPM/Home/Townsquare-backed and Jira-project-backed routes are read-oriented for normal users; do not add user-facing mutations for these surfaces without an explicit admin or service-account guard. Use the `ENG | EPM` switch in the dashboard header to browse Project rollups rendered as Initiative -> Epic -> Story/Task hierarchies. EPM Jira queries stay scoped to the Jira projects listed in `dashboard-config.json -> projects.selected`, so add the relevant Jira project there if an EPM Project points outside the current dashboard set.
 
 You should see:
 ```
 🚀 Jira Proxy Server starting...
-📧 Using email: your-email@company.com
+📧 Using email: jep-service-account@company.com
 🔗 Jira URL: https://your-company.atlassian.net
 📊 Board ID: 1234
 📝 JQL Query: project IN (PROJECT1, PROJECT2) AND ...
@@ -325,7 +350,7 @@ See the full guide:
 - ✅ The `.env` file is already in `.gitignore`
 - ✅ Sprint cache file (`sprints_cache.json`) is also in `.gitignore`
 - ✅ Always use `.env.example` as a template for others
-- ✅ Keep your API token secure and don't share it
+- ✅ DB/OAuth EPM stores each user's Home token encrypted in DB `auth_tokens`; shared service credentials are not used as an EPM fallback
 - ✅ All API requests are READ-ONLY (no modifications to Jira)
 - ✅ No hardcoded company-specific URLs or IDs in code
 
@@ -337,9 +362,9 @@ See the full guide:
 **"ModuleNotFoundError" when starting server:**
 - Install dependencies: `python3 -m pip install --user flask flask-cors requests python-dotenv openpyxl "urllib3<2"`
 
-**"JIRA_URL, JIRA_EMAIL and JIRA_TOKEN must be set" error:**
+**"Required Jira Basic auth settings must be set" error:**
 - Make sure you created `.env` file from `.env.example`
-- Check that you filled in all required fields in `.env` (URL, email, token)
+- Check that you filled in the required Basic auth settings for legacy API-token mode, or switch to DB/OAuth mode with `JIRA_AUTH_MODE=atlassian_oauth`
 
 **"401 Unauthorized" error:**
 - Check that your email and API token are correct in `.env`

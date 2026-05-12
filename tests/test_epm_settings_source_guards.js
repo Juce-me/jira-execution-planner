@@ -4,6 +4,7 @@ const path = require('path');
 const test = require('node:test');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
+const dashboardCssPath = path.join(__dirname, '..', 'frontend', 'src', 'styles', 'dashboard.css');
 const epmSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmSettings.jsx');
 const settingsModalPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'SettingsModal.jsx');
 const teamGroupsSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'TeamGroupsSettings.jsx');
@@ -16,6 +17,7 @@ const epmViewDataPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'us
 const epmControlsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmControls.jsx');
 const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngView.jsx');
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+const dashboardCssSource = fs.readFileSync(dashboardCssPath, 'utf8');
 const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
 const settingsModalSource = fs.existsSync(settingsModalPath) ? fs.readFileSync(settingsModalPath, 'utf8') : '';
 const teamGroupsSettingsSource = fs.existsSync(teamGroupsSettingsPath) ? fs.readFileSync(teamGroupsSettingsPath, 'utf8') : '';
@@ -95,13 +97,13 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(dashboardSource.includes("import SettingsModal from './settings/SettingsModal.jsx';"), 'Expected dashboard to import extracted SettingsModal shell');
     assert.ok(settingsModalCallSource.includes('activeTab={groupManageTab}'), 'Expected dashboard to pass active settings tab into SettingsModal');
     assert.ok(settingsModalCallSource.includes('tabs={settingsModalTabs}'), 'Expected dashboard to pass tab descriptors into SettingsModal');
-    assert.ok(settingsModalCallSource.includes('isDirty={isGroupDraftDirty}'), 'Expected dashboard to pass dirty state into SettingsModal');
+    assert.ok(settingsModalCallSource.includes("isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}"), 'Expected dashboard to pass dirty state into SettingsModal');
     assert.ok(settingsModalCallSource.includes('onRequestClose={requestCloseGroupManage}'), 'Expected backdrop close handling to stay wired through dashboard');
     assert.ok(settingsModalCallSource.includes('showDiscardConfirm={showGroupDiscardConfirm}'), 'Expected discard-confirm state to stay owned by dashboard');
     assert.ok(settingsModalCallSource.includes('onDiscard={discardGroupDraftChanges}'), 'Expected discard action to stay owned by dashboard');
     assert.ok(settingsModalCallSource.includes('saveDisabled={settingsSaveDisabled}'), 'Expected dashboard to own save disabled state');
     assert.ok(settingsModalCallSource.includes('saveTitle={settingsSaveTitle}'), 'Expected dashboard to own save title state');
-    assert.ok(settingsModalCallSource.includes('validationMessages={groupConfigValidationErrors}'), 'Expected validation messages to render through the shell');
+    assert.ok(settingsModalCallSource.includes("validationMessages={groupManageTab !== 'connections' ? groupConfigValidationErrors : []}"), 'Expected validation messages to render through the shell');
     assert.ok(settingsModalCallSource.includes('onCancel={requestCloseGroupManage}'), 'Expected dashboard to wire cancel through the shared close handler');
     assert.ok(settingsModalCallSource.includes('onSave={settingsSaveHandler}'), 'Expected dashboard to wire save through the tab-aware save handler');
     assert.ok(settingsModalCallSource.includes('onKeepEditing={() => setShowGroupDiscardConfirm(false)}'), 'Expected dashboard to hide discard confirmation from the shell');
@@ -186,7 +188,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes("const epmConfigBaselineRef = useRef(JSON.stringify(createEmptyEpmConfigDraft()));"), 'Expected EPM config baseline tracking');
     assert.ok(epmViewDataSource.includes("const [epmProjectsError, setEpmProjectsError] = useState('');"), 'Expected EPM project error state');
     assert.ok(dashboardSource.includes('const isEpmConfigDirty = React.useMemo(() => {'), 'Expected EPM dirty-state tracking');
-    assert.ok(dashboardSource.includes('if (isEpmConfigDirty) return true;'), 'Expected EPM dirty-state participation in modal dirty checks');
+    assert.ok(dashboardSource.includes('if (canEditEpmConfiguration && isEpmConfigDirty) return true;'), 'Expected EPM dirty-state participation in modal dirty checks');
     assert.ok(dashboardSource.includes('isEpmConfigDirty,'), 'Expected EPM dirty-state participation in unsaved section counting');
     assert.ok(dashboardSource.includes('const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);'), 'Expected EPM config loader wrapper');
     assert.ok(dashboardSource.includes('const loadEpmScopeMeta = () => fetchEpmScope(BACKEND_URL);'), 'Expected EPM scope metadata loader wrapper');
@@ -228,16 +230,18 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const handleEpmRootGoalSearchKeyDown = (event) => {'), 'Expected root goal keyboard handler');
     assert.ok(dashboardSource.includes('const handleEpmSubGoalSearchKeyDown = (event) => {'), 'Expected sub-goal keyboard handler');
     assert.ok(dashboardSource.includes('void saveEpmConfig().catch(() => {});'), 'Expected direct EPM save callers to consume rejections');
-    assert.ok(dashboardSource.includes('if (isEpmConfigDirty) {') && dashboardSource.includes('await saveEpmConfig();'), 'Expected shared save path to persist EPM settings when dirty');
+    assert.ok(dashboardSource.includes('if (canEditEpmConfiguration && isEpmConfigDirty) {') && dashboardSource.includes('await saveEpmConfig();'), 'Expected save path to persist EPM settings when dirty and allowed');
     assert.ok(dashboardSource.includes("setGroupDraftError(message);") && dashboardSource.includes('throw err;'), 'Expected EPM save failures to surface and block shared save');
     assert.ok(epmSettingsUiSource.includes('Atlassian site'), 'Expected Atlassian site copy');
-    assert.ok(epmSettingsUiSource.includes('Root goal'), 'Expected Root goal copy');
+    assert.ok(epmSettingsUiSource.includes('Main goal'), 'Expected Main goal copy');
     assert.ok(epmSettingsUiSource.includes('Sub-goals'), 'Expected Sub-goals copy');
     assert.ok(epmSettingsUiSource.includes('Label prefix'), 'Expected Label prefix copy');
     assert.ok(epmSettingsUiSource.includes('Project name'), 'Expected Project name copy');
-    assert.ok(epmSettingsUiSource.includes('Select a root goal before choosing sub-goals.'), 'Expected root-goal prerequisite helper copy');
+    assert.ok(epmSettingsUiSource.includes('Select a main goal before choosing sub-goals.'), 'Expected main-goal prerequisite helper copy');
+    assert.ok(epmSettingsUiSource.includes('epm-scope-chip is-root'), 'Expected selected main goal to use compact EPM scope chip styling');
+    assert.ok(epmSettingsUiSource.includes('epm-scope-chip is-child'), 'Expected selected sub-goals to use compact EPM scope chip styling');
     assert.ok(epmSettingsUiSource.includes('These sub-goals have no direct Jira Home projects. Choose different child goals.'), 'Expected empty child-goal helper copy');
-    assert.ok(epmSettingsUiSource.includes('Loading root goals...'), 'Expected root goal loading copy');
+    assert.ok(epmSettingsUiSource.includes('Loading main goals...'), 'Expected main goal loading copy');
     assert.ok(epmSettingsUiSource.includes('Loading sub-goals...'), 'Expected sub-goal loading copy');
     assert.ok(dashboardSource.includes('setShowGroupManage(true);') && dashboardSource.includes('setGroupManageTab(\'epm\');'), 'Expected EPM settings open action to switch tabs without mutating main EPM project state');
     assert.ok(epmViewDataSource.includes("setEpmProjectsError(err?.message || 'Failed to load EPM projects.');"), 'Expected EPM project refresh failures to surface distinct settings-state copy');
@@ -447,12 +451,12 @@ test('dashboard source preserves saved EPM sub-goal on settings open', () => {
     const loadSettingsSource = dashboardSource.slice(loadSettingsStart, loadSettingsEnd);
 
     assert.ok(!loadSettingsSource.includes('clearEpmSubGoalOptions();'), 'EPM settings open must not clear saved sub-goal options');
-    assert.ok(!loadSettingsSource.includes('loadEpmSubGoalsForRoot(rootGoalKey, savedSubGoalKey)'), 'EPM settings open must not refetch sub-goals just to render the saved chip');
+    assert.ok(loadSettingsSource.includes('await loadEpmSubGoalsForRoot(rootGoalKey);'), 'EPM settings open must hydrate saved sub-goal names for chips');
     assert.ok(!loadSettingsSource.includes('resetEpmProjectPreview();'), 'EPM settings open must not use preview-named project reset state');
     assert.ok(!loadSettingsSource.includes('resetEpmSettingsProjectRows();'), 'EPM settings open must not erase cached project configuration rows');
     assert.ok(dashboardSource.includes('const epmSubGoalsCacheRef = useRef(new Map());'), 'Expected sub-goals cache by root goal');
     assert.ok(dashboardSource.includes('const resetEpmSettingsProjectRows = () => {'), 'Expected configuration-named project-row reset helper');
-    assert.ok(dashboardSource.includes('epmSubGoals.find((goal) => String(goal?.key || \'\').trim().toUpperCase() === key) || { key, name: key }'), 'Expected selected sub-goal fallback chip without refetch');
+    assert.ok(dashboardSource.includes('epmSubGoals.find((goal) => String(goal?.key || \'\').trim().toUpperCase() === key) || { key, name: key }'), 'Expected selected sub-goal fallback while hydration is loading or unavailable');
 });
 
 test('dashboard source clears EPM sub-goal only when root goal changes or user clears it', () => {
@@ -495,4 +499,131 @@ test('settings hotkey effect is declared after the save handlers it depends on',
     assert.ok(saveGroupsConfigIndex !== -1, 'Expected saveGroupsConfig in dashboard.jsx');
     assert.ok(hotkeyEffectIndex > saveEpmConfigIndex, 'Expected settings hotkey effect after saveEpmConfig');
     assert.ok(hotkeyEffectIndex > saveGroupsConfigIndex, 'Expected settings hotkey effect after saveGroupsConfig');
+});
+
+test('settings tabs distinguish tool-admin configuration from team grouping', () => {
+    const tabsStart = dashboardSource.indexOf('const settingsModalAllTabs = [');
+    const tabsEnd = dashboardSource.indexOf('];', tabsStart);
+    assert.notStrictEqual(tabsStart, -1, 'Expected settings tab descriptors');
+    assert.notStrictEqual(tabsEnd, -1, 'Expected settings tab descriptors end');
+    const tabsSource = dashboardSource.slice(tabsStart, tabsEnd);
+
+    assert.ok(dashboardSource.includes('const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);'), 'Expected environment-config state from /api/config');
+    assert.ok(dashboardSource.includes('const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;'), 'Expected explicit shared-configuration edit permission');
+    assert.ok(dashboardSource.includes('const canEditEpmConfiguration = canEditSharedConfiguration || userCanEditEpmConfig;'), 'Expected EPM configuration to have user-owned edit permission');
+    assert.ok(dashboardSource.includes("const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';"), 'Expected configured environments to open settings on Team Groups');
+    assert.ok(tabsSource.includes("id: 'scope'"), 'Expected Scope Projects in the tool-admin tab list');
+    assert.ok(tabsSource.includes("id: 'source'"), 'Expected Jira Source in the tool-admin tab list');
+    assert.ok(tabsSource.includes("id: 'mapping'"), 'Expected Field Mapping in the tool-admin tab list');
+    assert.ok(tabsSource.includes("id: 'capacity'"), 'Expected Capacity in the tool-admin tab list');
+    assert.ok(tabsSource.includes("id: 'priorityWeights'"), 'Expected Priority Weights in the tool-admin tab list');
+    assert.ok(tabsSource.includes("id: 'epm'"), 'Expected EPM settings in the settings tab list');
+    assert.ok(tabsSource.includes("id: 'teams'") && tabsSource.includes("onClick: () => setGroupManageTab('teams')"), 'Expected Team Groups to stay directly accessible');
+    assert.ok(!tabsSource.includes('savedSelectedProjects.length === 0'), 'Team Groups tab must not be disabled because dashboard projects are unconfigured');
+});
+
+test('normal users do not receive admin-only settings tabs as disabled edit surfaces', () => {
+    assert.ok(
+        dashboardSource.includes("if (tab.id === 'epm') return canEditEpmConfiguration;"),
+        'Expected EPM settings tab visibility to use user-owned EPM permission'
+    );
+    assert.ok(
+        dashboardSource.includes('return canEditSharedConfiguration || !SHARED_CONFIGURATION_TAB_IDS.has(tab.id);'),
+        'Expected normal-user settings tabs to omit admin-only shared configuration tabs'
+    );
+    assert.ok(
+        dashboardSource.includes('const settingsModalAllTabs = ['),
+        'Expected separate full tab list for tool admins'
+    );
+});
+
+test('shared configuration permission fails closed while user config is missing or loading', () => {
+    assert.ok(
+        dashboardSource.includes('const [userCanEditSettings, setUserCanEditSettings] = useState(false);'),
+        'Expected settings edit permission to fail closed before /api/config returns'
+    );
+    assert.ok(
+        dashboardSource.includes('const [userCanEditEpmConfig, setUserCanEditEpmConfig] = useState(false);'),
+        'Expected EPM edit permission to fail closed before /api/config returns'
+    );
+    assert.ok(
+        dashboardSource.includes('setUserCanEditSettings(config.userCanEditSettings === true);'),
+        'Expected initial config load to require an explicit editable permission'
+    );
+    assert.ok(
+        dashboardSource.includes('setUserCanEditEpmConfig(config.userCanEditEpmConfig === true);'),
+        'Expected initial config load to require explicit EPM editable permission'
+    );
+    assert.ok(
+        dashboardSource.includes('setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));'),
+        'Expected initial config load to preserve legacy projectsConfigured as an environment-config fallback'
+    );
+    assert.ok(
+        dashboardSource.includes('setUserCanEditSettings(cfg.userCanEditSettings === true);'),
+        'Expected config refresh after save to require an explicit editable permission'
+    );
+    assert.ok(
+        dashboardSource.includes('setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);'),
+        'Expected config refresh after save to require explicit EPM editable permission'
+    );
+    assert.ok(
+        dashboardSource.includes('setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));'),
+        'Expected config refresh after save to preserve legacy projectsConfigured as an environment-config fallback'
+    );
+    assert.ok(
+        !dashboardSource.includes('userCanEditSettings !== false'),
+        'Missing userCanEditSettings must not imply editable admin configuration'
+    );
+});
+
+test('team group save does not bundle admin-only shared config writes for normal users', () => {
+    const saveStart = dashboardSource.indexOf('const saveGroupsConfig = async () => {');
+    const saveEnd = dashboardSource.indexOf('useEffect(() => {', saveStart);
+    assert.notStrictEqual(saveStart, -1, 'Expected saveGroupsConfig implementation');
+    assert.notStrictEqual(saveEnd, -1, 'Expected saveGroupsConfig implementation end');
+    const saveSource = dashboardSource.slice(saveStart, saveEnd);
+
+    assert.ok(!saveSource.includes('Tool admin access is required for shared configuration changes.'), 'Team group save must not block normal-user changes because hidden shared config drafts are dirty');
+    assert.ok(saveSource.includes('if (canEditSharedConfiguration) {'), 'Expected shared config writes to be gated by tool-admin edit permission');
+    assert.ok(saveSource.includes('if (canEditEpmConfiguration && isEpmConfigDirty) {'), 'Expected EPM config writes to use user-owned EPM edit permission');
+    const gatedStart = saveSource.indexOf('if (canEditSharedConfiguration) {');
+    const groupSaveStart = saveSource.indexOf('const response = await requestSaveGroupsConfig');
+    assert.ok(gatedStart !== -1 && groupSaveStart > gatedStart, 'Expected shared config gate before group config save');
+    const beforeGate = saveSource.slice(0, gatedStart);
+    const gatedSource = saveSource.slice(gatedStart, groupSaveStart);
+    [
+        'await saveProjectSelection();',
+        'await savePriorityWeightsConfig();',
+        'await saveBoardConfig();',
+        'await saveCapacityConfig();',
+        'await saveSprintFieldConfig();',
+        'await saveParentNameFieldConfig();',
+        'await saveStoryPointsFieldConfig();',
+        'await saveTeamFieldConfig();',
+        'await saveIssueTypesConfig();',
+    ].forEach((call) => {
+        assert.ok(!beforeGate.includes(call), `Did not expect ${call} before shared config permission gate`);
+        assert.ok(gatedSource.includes(call), `Expected ${call} inside shared config permission gate`);
+    });
+});
+
+test('group labels tab is available for the current group draft', () => {
+    assert.ok(
+        dashboardSource.includes("const labelsTabEnabled = (groupDraft?.groups || groupsConfig.groups || []).length > 0;"),
+        'Group Labels should be enabled as soon as the draft has a group'
+    );
+    assert.ok(
+        !dashboardSource.includes("const labelsTabEnabled = (groupsConfig.groups || []).length > 0;"),
+        'Group Labels must not require a saved group round-trip before editing labels'
+    );
+});
+
+test('settings modal layer sits above sticky header search and view controls', () => {
+    const rootMatch = dashboardCssSource.match(/--sticky-search-z:\s*(\d+);[\s\S]*?--modal-backdrop-z:\s*(\d+);/);
+    assert.ok(rootMatch, 'Expected sticky and modal z-index CSS variables');
+    const stickySearchZ = Number(rootMatch[1]);
+    const modalBackdropZ = Number(rootMatch[2]);
+
+    assert.ok(modalBackdropZ > stickySearchZ, 'Settings modal backdrop must sit above sticky header search');
+    assert.ok(dashboardCssSource.includes('z-index: var(--modal-backdrop-z);'), 'Expected group modal backdrop to use modal z-index variable');
 });

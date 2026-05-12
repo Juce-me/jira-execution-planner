@@ -2,6 +2,8 @@ import unittest
 import re
 from pathlib import Path
 
+from tests.auth_mode_test_utils import force_basic_auth_mode
+
 try:
     import jira_server
     _IMPORT_ERROR = None
@@ -22,6 +24,7 @@ def _css_block(css, selector):
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestDashboardCssExtraction(unittest.TestCase):
     def setUp(self):
+        force_basic_auth_mode(self, jira_server)
         self.client = jira_server.app.test_client()
 
     def test_dashboard_html_links_external_stylesheet(self):

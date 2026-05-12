@@ -1,5 +1,9 @@
 # Environment variables (contains secrets!)
 .env
+.env.backup
+.env.backup*
+.oauth-token-store.json
+.oauth-token-store.json.tmp
 
 # Python
 __pycache__/
@@ -51,6 +55,7 @@ jira-dashboard.html.har
 # Local test data
 *.test.local.json
 verify.*.json
+test-results/
 
 # Example data
 *example*.json

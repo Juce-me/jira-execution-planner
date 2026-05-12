@@ -15,6 +15,13 @@ import {
 } from './epmProjectUtils.mjs';
 
 const { useState, useEffect, useRef } = React;
+const HOME_USER_TOKEN_REQUIRED = 'home_user_token_required';
+
+function isHomeTokenRequiredError(error) {
+    return error?.code === HOME_USER_TOKEN_REQUIRED ||
+        error?.payload?.error === HOME_USER_TOKEN_REQUIRED ||
+        error?.payload?.errorCode === HOME_USER_TOKEN_REQUIRED;
+}
 
 function getRuntimeEpmSubGoalKeys(selectedSubGoalKeys, savedSubGoalKeys) {
     const savedKeys = normalizeEpmScopeSubGoalKeys({ subGoalKeys: savedSubGoalKeys });
@@ -38,6 +45,7 @@ export function useEpmViewData({
     selectedSprint,
     epmProjectSearch,
     searchQuery,
+    onHomeTokenRequired,
 }) {
     const [epmTab, setEpmTab] = useState(initialEpmTab ?? 'active');
     const [epmProjects, setEpmProjects] = useState([]);
@@ -106,6 +114,9 @@ export function useEpmViewData({
                 return [];
             }
             console.error('Failed to fetch EPM projects:', err);
+            if (isHomeTokenRequiredError(err)) {
+                onHomeTokenRequired?.(err);
+            }
             if (!background) {
                 setEpmProjects([]);
             }
@@ -119,7 +130,7 @@ export function useEpmViewData({
                 setEpmProjectsLoading(false);
             }
         }
-    }, [backendUrl, epmTab, runtimeEpmSubGoalKeys]);
+    }, [backendUrl, epmTab, onHomeTokenRequired, runtimeEpmSubGoalKeys]);
 
     const refreshEpmRollup = React.useCallback(async (projectOverride = selectedEpmProject, projectIdOverride = epmSelectedProjectId) => {
         epmRollupRequestIdRef.current += 1;
@@ -187,6 +198,9 @@ export function useEpmViewData({
                     return;
                 }
                 console.error('Failed to fetch EPM all-projects rollup:', err);
+                if (isHomeTokenRequiredError(err)) {
+                    onHomeTokenRequired?.(err);
+                }
                 setEpmRollupBoards(null);
                 setEpmDuplicates({});
                 setEpmAggregateTruncated(false);
@@ -237,13 +251,16 @@ export function useEpmViewData({
                 return;
             }
             console.error('Failed to fetch EPM rollup:', err);
+            if (isHomeTokenRequiredError(err)) {
+                onHomeTokenRequired?.(err);
+            }
             setEpmRollupTree(null);
         } finally {
             if (epmRollupRequestIdRef.current === requestId) {
                 setEpmRollupLoading(false);
             }
         }
-    }, [backendUrl, epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, runtimeEpmSubGoalKeys, selectedEpmProject, selectedSprint, selectedView]);
+    }, [backendUrl, epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, onHomeTokenRequired, runtimeEpmSubGoalKeys, selectedEpmProject, selectedSprint, selectedView]);
 
     const loadArchivedEpmProjectRollup = React.useCallback(async (project) => {
         if (epmTab !== 'archived') return;
@@ -278,6 +295,9 @@ export function useEpmViewData({
         } catch (err) {
             if (epmRollupRequestIdRef.current === requestId) {
                 console.error('Failed to fetch archived EPM project rollup:', err);
+                if (isHomeTokenRequiredError(err)) {
+                    onHomeTokenRequired?.(err);
+                }
             }
         } finally {
             if (epmRollupRequestIdRef.current === requestId) {
@@ -288,7 +308,7 @@ export function useEpmViewData({
                 });
             }
         }
-    }, [backendUrl, epmProjectRollupLoadingIds, epmRollupBoards, epmTab, runtimeEpmSubGoalKeys, selectedSprint]);
+    }, [backendUrl, epmProjectRollupLoadingIds, epmRollupBoards, epmTab, onHomeTokenRequired, runtimeEpmSubGoalKeys, selectedSprint]);
 
     const refreshEpmView = React.useCallback(async () => {
         if (!epmConfigLoaded) {

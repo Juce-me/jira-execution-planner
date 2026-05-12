@@ -32,14 +32,16 @@ import {
 } from './cohort/cohortUtils.js';
 import {
     buildDefaultExcludedCapacityRange,
+    buildEpicTeamCrossShareLineSeries,
     buildEpicTeamModeOverall,
-    buildEpicTeamModeShare,
+    buildEpicTeamModeSprintRows,
     buildExcludedCapacityLineSeries,
     buildExcludedCapacityTimeSeries,
     buildExcludedEpicCatalog,
     compareSprintsChronologically,
     getSprintRange,
     getSprintQuarterLabel,
+    mergeExcludedCapacityStatsSourceChunks,
     pickAutoSelectedExcludedEpics
 } from './stats/excludedCapacityStats.js';
 import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';
@@ -101,6 +103,8 @@ import EpmSettings from './epm/EpmSettings.jsx';
 import SettingsModal from './settings/SettingsModal.jsx';
 import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';
 import JiraFieldSettings from './settings/JiraFieldSettings.jsx';
+import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
+import { fetchHomeTokenConnection } from './api/authApi.js';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     filterEpmSettingsProjectsForView,
@@ -129,6 +133,10 @@ import {
         const EMPTY_ARRAY = Object.freeze([]);
         const EMPTY_OBJECT = Object.freeze({});
         const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';
+        const SHARED_CONFIGURATION_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'epm']);
+        function isActiveHomeTokenConnection(connection) {
+            return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);
+        }
 
         const createEmptyEpmConfigDraft = () => ({
             version: 2,
@@ -291,7 +299,16 @@ import {
             const [showDone, setShowDone] = useState(savedPrefsRef.current.showDone ?? true);
             const [showTech, setShowTech] = useState(savedPrefsRef.current.showTech ?? true);
             const [showProduct, setShowProduct] = useState(savedPrefsRef.current.showProduct ?? true);
-            const [selectedView, setSelectedView] = useState(savedPrefsRef.current.selectedView ?? 'eng');
+            const savedInitialViewRef = useRef(savedPrefsRef.current.selectedView ?? 'eng');
+            const restoredInitialEpmViewRef = useRef(false);
+            const [selectedView, setSelectedView] = useState(savedInitialViewRef.current === 'epm' ? 'eng' : savedInitialViewRef.current);
+            const [homeTokenConnection, setHomeTokenConnection] = useState({ connected: false });
+            const [homeTokenConnectionLoaded, setHomeTokenConnectionLoaded] = useState(false);
+            const hasActiveHomeTokenConnection = React.useMemo(
+                () => isActiveHomeTokenConnection(homeTokenConnection),
+                [homeTokenConnection]
+            );
+            const showEpmNavigation = hasActiveHomeTokenConnection;
             const [sprintName, setSprintName] = useState('Sprint');
             const [statusFilter, setStatusFilter] = useState(savedPrefsRef.current.statusFilter ?? null); // null = show all, 'in-progress', 'todo-accepted', 'done', 'high-priority'
             const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
@@ -389,7 +406,12 @@ import {
             const [showTechnicalFieldIds, setShowTechnicalFieldIds] = useState(false);
             const [mappingHoverKey, setMappingHoverKey] = useState(null);
             const [settingsAdminOnly, setSettingsAdminOnly] = useState(true);
-            const [userCanEditSettings, setUserCanEditSettings] = useState(true);
+            const [userCanEditSettings, setUserCanEditSettings] = useState(false);
+            const [userCanEditEpmConfig, setUserCanEditEpmConfig] = useState(false);
+            const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);
+            const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;
+            const canEditEpmConfiguration = canEditSharedConfiguration || userCanEditEpmConfig;
+            const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';
             const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
             const [priorityWeightsSource, setPriorityWeightsSource] = useState('default');
             const [effectivePriorityWeightsRows, setEffectivePriorityWeightsRows] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
@@ -493,7 +515,7 @@ import {
             const [issueTypeSearchOpen, setIssueTypeSearchOpen] = useState(false);
             const [issueTypeSearchIndex, setIssueTypeSearchIndex] = useState(0);
             const issueTypeSearchInputRef = useRef(null);
-            const pageLoadRefreshRef = useRef(true);
+            const pageLoadRefreshRef = useRef(false);
             const [jiraUrl, setJiraUrl] = useState('');
             const [selectedTasks, setSelectedTasks] = useState({});
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
@@ -577,6 +599,7 @@ import {
             const [excludedCapacityIsolatedTeam, setExcludedCapacityIsolatedTeam] = useState(null);
             const [excludedCapacityEpicDropdownOpen, setExcludedCapacityEpicDropdownOpen] = useState(false);
             const excludedCapacityEpicDropdownRef = useRef(null);
+            const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare');
             const [burnoutHoverPoint, setBurnoutHoverPoint] = useState(null);
             const [burnoutHoverTeamKey, setBurnoutHoverTeamKey] = useState(null);
             const [burnoutTaskFilter, setBurnoutTaskFilter] = useState(null);
@@ -708,6 +731,45 @@ import {
                 if (!selectedSprint) return null;
                 return (availableSprints || []).find(sprint => String(sprint.id) === String(selectedSprint)) || null;
             }, [availableSprints, selectedSprint]);
+            const refreshHomeTokenConnectionStatus = React.useCallback(async () => {
+                try {
+                    const payload = await fetchHomeTokenConnection(BACKEND_URL);
+                    const nextConnection = payload || { connected: false };
+                    setHomeTokenConnection(nextConnection);
+                    return nextConnection;
+                } catch (err) {
+                    setHomeTokenConnection({ connected: false });
+                    return { connected: false };
+                } finally {
+                    setHomeTokenConnectionLoaded(true);
+                }
+            }, []);
+            const markHomeTokenRequired = React.useCallback(() => {
+                setHomeTokenConnection({ connected: false });
+                setHomeTokenConnectionLoaded(true);
+                void refreshHomeTokenConnectionStatus();
+            }, [refreshHomeTokenConnectionStatus]);
+            const handleHomeTokenConnectionChange = React.useCallback((connection) => {
+                const nextConnection = connection || { connected: false };
+                setHomeTokenConnection(nextConnection);
+                setHomeTokenConnectionLoaded(true);
+            }, []);
+            useEffect(() => {
+                void refreshHomeTokenConnectionStatus();
+            }, [refreshHomeTokenConnectionStatus]);
+            useEffect(() => {
+                if (!homeTokenConnectionLoaded) return;
+                if (hasActiveHomeTokenConnection) {
+                    if (!restoredInitialEpmViewRef.current && savedInitialViewRef.current === 'epm') {
+                        restoredInitialEpmViewRef.current = true;
+                        setSelectedView('epm');
+                    }
+                    return;
+                }
+                if (selectedView === 'epm') {
+                    setSelectedView('eng');
+                }
+            }, [homeTokenConnectionLoaded, hasActiveHomeTokenConnection, selectedView]);
             const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);
             const loadEpmScopeMeta = () => fetchEpmScope(BACKEND_URL);
             const loadEpmGoals = (rootGoalKey = '') => fetchEpmGoals(BACKEND_URL, rootGoalKey);
@@ -839,7 +901,10 @@ import {
                     const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraft);
                     const response = await fetch(`${BACKEND_URL}/api/epm/config`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'jira-execution-planner'
+                        },
                         body: JSON.stringify(normalizedDraft)
                     });
                     if (!response.ok) {
@@ -1460,8 +1525,8 @@ import {
                             setEpmRootGoalsLoading(false);
                         }
                     }
-                    if (!cancelled && rootGoalKey && epmSubGoalsCacheRef.current.has(rootGoalKey)) {
-                        setEpmSubGoals(epmSubGoalsCacheRef.current.get(rootGoalKey) || []);
+                    if (!cancelled && rootGoalKey) {
+                        await loadEpmSubGoalsForRoot(rootGoalKey);
                     }
                     if (!cancelled) {
                         setEpmConfigLoading(false);
@@ -1967,6 +2032,7 @@ import {
             };
 
             const openGroupManage = () => {
+                setGroupManageTab(preferredSettingsTab);
                 setShowGroupManage(true);
             };
 
@@ -1978,7 +2044,7 @@ import {
                 setShowGroupAdvanced(false);
                 setShowGroupDiscardConfirm(false);
                 setShowGroupListMobile(false);
-                setGroupManageTab('scope');
+                setGroupManageTab(preferredSettingsTab);
                 setProjectSearchQuery('');
                 setProjectSearchOpen(false);
                 setProjectSearchIndex(0);
@@ -2064,9 +2130,9 @@ import {
                 [epmConfigDraft.scope?.rootGoalKey]
             );
             useEffect(() => {
-                if (selectedView !== 'epm' || !epmConfigLoaded || savedEpmSubGoalKeys.length <= 1 || !savedEpmRootGoalKey) return;
+                if (!showEpmNavigation || selectedView !== 'epm' || !epmConfigLoaded || savedEpmSubGoalKeys.length < 1 || !savedEpmRootGoalKey) return;
                 void loadEpmSubGoalsForRoot(savedEpmRootGoalKey);
-            }, [selectedView, epmConfigLoaded, savedEpmRootGoalKey, savedEpmSubGoalKeys]);
+            }, [showEpmNavigation, selectedView, epmConfigLoaded, savedEpmRootGoalKey, savedEpmSubGoalKeys]);
             const {
                 epmTab,
                 setEpmTab,
@@ -2095,13 +2161,14 @@ import {
                 backendUrl: BACKEND_URL,
                 initialEpmTab: savedPrefsRef.current.epmTab ?? 'active',
                 initialEpmSelectedProjectId: savedPrefsRef.current.epmSelectedProjectId ?? '',
-                selectedView,
+                selectedView: showEpmNavigation ? selectedView : 'eng',
                 epmConfigLoaded,
                 hasSavedEpmScope,
                 savedEpmSubGoalKeys,
                 selectedSprint,
                 epmProjectSearch,
                 searchQuery,
+                onHomeTokenRequired: markHomeTokenRequired,
             });
             const [epmCollapsedProjectIds, setEpmCollapsedProjectIds] = useState(() => new Set());
             const epmVisibleProjectKeys = React.useMemo(() => {
@@ -2227,7 +2294,7 @@ import {
                 return sortEpmSettingsProjects(filterEpmSettingsProjectsForView(rows, epmSettingsProjectView), epmSettingsProjectSort);
             }, [epmConfigDraft, epmSettingsProjectSort, epmSettingsProjectView, epmSettingsProjects]);
 
-            const isGroupDraftDirty = React.useMemo(() => {
+            const isSharedConfigurationDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
                 if (isPriorityWeightsDirty) return true;
                 if (isBoardConfigDirty) return true;
@@ -2237,25 +2304,29 @@ import {
                 if (isParentNameFieldDirty) return true;
                 if (isStoryPointsFieldDirty) return true;
                 if (isTeamFieldDirty) return true;
-                if (isEpmConfigDirty) return true;
+                return false;
+            }, [isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty]);
+            const isGroupDraftDirty = React.useMemo(() => {
+                if (canEditSharedConfiguration && isSharedConfigurationDraftDirty) return true;
+                if (canEditEpmConfiguration && isEpmConfigDirty) return true;
                 if (!groupDraft) return false;
                 return groupDraftSignature !== groupDraftBaselineRef.current;
-            }, [groupDraftSignature, groupDraft, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty]);
+            }, [groupDraftSignature, groupDraft, canEditSharedConfiguration, canEditEpmConfiguration, isSharedConfigurationDraftDirty, isEpmConfigDirty]);
             const unsavedSectionsCount = React.useMemo(() => {
                 return [
-                    isProjectsDraftDirty,
-                    isPriorityWeightsDirty,
-                    isBoardConfigDirty,
-                    isCapacityDraftDirty,
-                    isIssueTypesDraftDirty,
-                    isSprintFieldDirty,
-                    isParentNameFieldDirty,
-                    isStoryPointsFieldDirty,
-                    isTeamFieldDirty,
-                    isEpmConfigDirty,
+                    canEditSharedConfiguration && isProjectsDraftDirty,
+                    canEditSharedConfiguration && isPriorityWeightsDirty,
+                    canEditSharedConfiguration && isBoardConfigDirty,
+                    canEditSharedConfiguration && isCapacityDraftDirty,
+                    canEditSharedConfiguration && isIssueTypesDraftDirty,
+                    canEditSharedConfiguration && isSprintFieldDirty,
+                    canEditSharedConfiguration && isParentNameFieldDirty,
+                    canEditSharedConfiguration && isStoryPointsFieldDirty,
+                    canEditSharedConfiguration && isTeamFieldDirty,
+                    canEditEpmConfiguration && isEpmConfigDirty,
                     Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current)
                 ].filter(Boolean).length;
-            }, [isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty, groupDraft, groupDraftSignature]);
+            }, [canEditSharedConfiguration, canEditEpmConfiguration, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty, groupDraft, groupDraftSignature]);
             const priorityWeightsValidationError = React.useMemo(() => {
                 for (const row of (priorityWeightsDraft || [])) {
                     const label = String(row?.priority || '').trim() || 'Priority';
@@ -2278,32 +2349,34 @@ import {
             }, [priorityWeightsDraft]);
             const groupConfigValidationErrors = React.useMemo(() => {
                 const errors = [];
-                if (!selectedProjectsDraft.length) {
-                    errors.push('Add at least one dashboard project before saving.');
-                }
-                if (!sprintFieldIdDraft) {
-                    errors.push('Sprint field is required.');
-                }
-                if (!parentNameFieldIdDraft) {
-                    errors.push('Parent name field is required.');
-                }
-                if (!storyPointsFieldIdDraft) {
-                    errors.push('Story points field is required.');
-                }
-                if (!teamFieldIdDraft) {
-                    errors.push('Team field is required.');
-                }
-                if (capacityProjectDraft && !capacityFieldIdDraft) {
-                    errors.push('Capacity field is required when a capacity project is selected.');
-                }
-                if (!capacityProjectDraft && capacityFieldIdDraft) {
-                    errors.push('Capacity project is required when a capacity field is selected.');
-                }
-                if (priorityWeightsValidationError) {
-                    errors.push(priorityWeightsValidationError);
+                if (canEditSharedConfiguration) {
+                    if (!selectedProjectsDraft.length) {
+                        errors.push('Add at least one dashboard project before saving.');
+                    }
+                    if (!sprintFieldIdDraft) {
+                        errors.push('Sprint field is required.');
+                    }
+                    if (!parentNameFieldIdDraft) {
+                        errors.push('Parent name field is required.');
+                    }
+                    if (!storyPointsFieldIdDraft) {
+                        errors.push('Story points field is required.');
+                    }
+                    if (!teamFieldIdDraft) {
+                        errors.push('Team field is required.');
+                    }
+                    if (capacityProjectDraft && !capacityFieldIdDraft) {
+                        errors.push('Capacity field is required when a capacity project is selected.');
+                    }
+                    if (!capacityProjectDraft && capacityFieldIdDraft) {
+                        errors.push('Capacity project is required when a capacity field is selected.');
+                    }
+                    if (priorityWeightsValidationError) {
+                        errors.push(priorityWeightsValidationError);
+                    }
                 }
                 return errors;
-            }, [selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError]);
+            }, [canEditSharedConfiguration, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError]);
             const saveBlockedReason = React.useMemo(() => {
                 if (groupSaving) return 'Save in progress';
                 if (groupConfigValidationErrors.length > 0) return groupConfigValidationErrors[0];
@@ -2325,10 +2398,18 @@ import {
                 closeGroupManage();
             };
             const openEpmSettingsTab = () => {
+                if (!canEditEpmConfiguration) {
+                    return;
+                }
                 resetEpmSettingsProjectRows();
                 setShowGroupManage(true);
                 setGroupManageTab('epm');
                 setEpmSettingsTab('projects');
+            };
+
+            const openUserConnectionsSettings = () => {
+                setShowGroupManage(true);
+                setGroupManageTab('connections');
             };
 
             const focusEpmScopeField = React.useCallback((field) => {
@@ -2723,43 +2804,52 @@ import {
                 setGroupSaving(true);
                 setGroupDraftError('');
                 try {
-                    if (isEpmConfigDirty) {
+                    if (canEditEpmConfiguration && isEpmConfigDirty) {
                         await saveEpmConfig();
                     }
 
-                    // Save project selection if changed
-                    const projectsChanged = isProjectsDraftDirty;
-                    if (projectsChanged) {
-                        await saveProjectSelection();
-                    }
+                    let projectsChanged = false;
+                    let priorityWeightsChanged = false;
+                    let boardChanged = false;
+                    let capacityChanged = false;
+                    let fieldConfigsChanged = false;
+                    let issueTypesChanged = false;
 
-                    const priorityWeightsChanged = isPriorityWeightsDirty;
-                    if (priorityWeightsChanged) {
-                        await savePriorityWeightsConfig();
-                    }
+                    if (canEditSharedConfiguration) {
+                        // Save project selection if changed
+                        projectsChanged = isProjectsDraftDirty;
+                        if (projectsChanged) {
+                            await saveProjectSelection();
+                        }
 
-                    const boardChanged = isBoardConfigDirty;
-                    if (boardChanged) {
-                        await saveBoardConfig();
-                    }
+                        priorityWeightsChanged = isPriorityWeightsDirty;
+                        if (priorityWeightsChanged) {
+                            await savePriorityWeightsConfig();
+                        }
 
-                    // Save capacity config if changed
-                    const capacityChanged = isCapacityDraftDirty;
-                    if (capacityChanged) {
-                        await saveCapacityConfig();
-                    }
+                        boardChanged = isBoardConfigDirty;
+                        if (boardChanged) {
+                            await saveBoardConfig();
+                        }
 
-                    // Save custom field configs if changed
-                    if (isSprintFieldDirty) await saveSprintFieldConfig();
-                    if (isParentNameFieldDirty) await saveParentNameFieldConfig();
-                    if (isStoryPointsFieldDirty) await saveStoryPointsFieldConfig();
-                    if (isTeamFieldDirty) await saveTeamFieldConfig();
-                    const fieldConfigsChanged = isSprintFieldDirty || isParentNameFieldDirty || isStoryPointsFieldDirty || isTeamFieldDirty;
+                        // Save capacity config if changed
+                        capacityChanged = isCapacityDraftDirty;
+                        if (capacityChanged) {
+                            await saveCapacityConfig();
+                        }
 
-                    // Save issue types config if changed
-                    const issueTypesChanged = isIssueTypesDraftDirty;
-                    if (issueTypesChanged) {
-                        await saveIssueTypesConfig();
+                        // Save custom field configs if changed
+                        if (isSprintFieldDirty) await saveSprintFieldConfig();
+                        if (isParentNameFieldDirty) await saveParentNameFieldConfig();
+                        if (isStoryPointsFieldDirty) await saveStoryPointsFieldConfig();
+                        if (isTeamFieldDirty) await saveTeamFieldConfig();
+                        fieldConfigsChanged = isSprintFieldDirty || isParentNameFieldDirty || isStoryPointsFieldDirty || isTeamFieldDirty;
+
+                        // Save issue types config if changed
+                        issueTypesChanged = isIssueTypesDraftDirty;
+                        if (issueTypesChanged) {
+                            await saveIssueTypesConfig();
+                        }
                     }
 
                     // Capture the current active group's team IDs before saving
@@ -2814,7 +2904,9 @@ import {
                         const cfg = await fetchAppConfig(BACKEND_URL);
                         setCapacityEnabled(Boolean(cfg.capacityProject));
                         setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
-                        setUserCanEditSettings(cfg.userCanEditSettings !== false);
+                        setUserCanEditSettings(cfg.userCanEditSettings === true);
+                        setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);
+                        setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
                     } catch (_) { /* best-effort */ }
 
                     invalidateSprintDataForConfigSave(refreshTarget);
@@ -2838,8 +2930,11 @@ import {
                     const key = event.key;
                     if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 's') {
                         event.preventDefault();
+                        if (groupManageTab === 'connections') {
+                            return;
+                        }
                         if (groupManageTab === 'epm') {
-                            if (!epmConfigSaving) {
+                            if (canEditEpmConfiguration && !epmConfigSaving) {
                                 void saveEpmConfig().catch(() => {});
                             }
                         } else if (!groupSaving) {
@@ -2865,7 +2960,7 @@ import {
                 };
                 window.addEventListener('keydown', handleKey);
                 return () => window.removeEventListener('keydown', handleKey);
-            }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveEpmConfig, saveGroupsConfig]);
+            }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, canEditEpmConfiguration, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveEpmConfig, saveGroupsConfig]);
 
             const fetchJiraProjects = async () => {
                 setLoadingProjects(true);
@@ -3793,7 +3888,19 @@ import {
             }, [activeGroupDraft, activeTeamQuery, availableTeams, groupDraft]);
             const activeTeamResultsLimited = activeTeamResults.slice(0, 10);
             const activeTeamIndex = activeGroupDraft ? (teamSearchIndex[activeGroupDraft.id] || 0) : 0;
-            const labelsTabEnabled = (groupsConfig.groups || []).length > 0;
+            const labelsTabEnabled = (groupDraft?.groups || groupsConfig.groups || []).length > 0;
+            useEffect(() => {
+                if (!showGroupManage) return;
+                if (groupManageTab === 'epm') {
+                    if (!canEditEpmConfiguration) {
+                        setGroupManageTab('teams');
+                    }
+                    return;
+                }
+                if (!canEditSharedConfiguration && SHARED_CONFIGURATION_TAB_IDS.has(groupManageTab)) {
+                    setGroupManageTab('teams');
+                }
+            }, [showGroupManage, canEditSharedConfiguration, canEditEpmConfiguration, groupManageTab]);
             const getLabelRowKey = (groupId, teamId) => `${groupId || 'group'}::${teamId || 'team'}`;
             const getLabelSearchResults = (groupId, teamId) => {
                 const key = getLabelRowKey(groupId, teamId);
@@ -4820,7 +4927,9 @@ import {
                     setCapacityEnabled(Boolean(config.capacityProject));
                     setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
                     setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
-                    setUserCanEditSettings(config.userCanEditSettings !== false);
+                    setUserCanEditSettings(config.userCanEditSettings === true);
+                    setUserCanEditEpmConfig(config.userCanEditEpmConfig === true);
+                    setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));
                     applySavedEpmConfig(config.epm);
                 } catch (err) {
                     console.error('Failed to load config:', err);
@@ -4830,6 +4939,7 @@ import {
 
             useEffect(() => {
                 if (selectedView !== 'eng') return;
+                if (isStatsSourceOnlyStatsView) return;
                 // Load tasks when sprint changes (team is filtered client-side)
                 if (selectedSprint === null) {
                     return;
@@ -4871,7 +4981,12 @@ import {
                 loadProductTasks();
                 loadTechTasks();
                 fetchMissingPlanningInfo(selectedSprint);
-            }, [selectedView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, (activeGroup?.missingInfoComponents || []).join(','), configRefreshNonce]);
+            }, [selectedView, isStatsSourceOnlyStatsView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, (activeGroup?.missingInfoComponents || []).join(','), configRefreshNonce]);
+
+            useEffect(() => {
+                if (!isStatsSourceOnlyStatsView) return;
+                abortSprintFetches();
+            }, [isStatsSourceOnlyStatsView, abortSprintFetches]);
 
             const fetchMissingPlanningInfo = async (sprintId) => {
                 const controller = registerSprintFetch();
@@ -5128,7 +5243,10 @@ import {
                 try {
                     const response = await fetch(`${BACKEND_URL}/api/scenario`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'jira-execution-planner'
+                        },
                         body: JSON.stringify(buildScenarioPayload()),
                         signal: controller.signal
                     });
@@ -5829,7 +5947,10 @@ import {
                     try {
                         const response = await fetch(`${BACKEND_URL}/api/stats/burnout`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Requested-With': 'jira-execution-planner'
+                            },
                             cache: 'no-cache',
                             signal: controller.signal,
                             body: JSON.stringify({
@@ -5952,7 +6073,10 @@ import {
                     try {
                         const response = await fetch(`${BACKEND_URL}/api/stats/epic-cohort`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Requested-With': 'jira-execution-planner'
+                            },
                             cache: 'no-cache',
                             signal: controller.signal,
                             body: JSON.stringify({
@@ -6167,7 +6291,7 @@ import {
             }, [excludedCapacitySprintIds.length, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature]);
             useEffect(() => {
                 if (!showStats || (statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare')) return;
-                if (!excludedCapacityEpicOptions.length) {
+                if (statsView === 'excludedCapacity' && !excludedCapacityEpicOptions.length) {
                     setExcludedCapacityData(null);
                     setExcludedCapacityError('No excluded capacity epics are configured for this team group.');
                     setExcludedCapacityLoading(false);
@@ -6185,7 +6309,8 @@ import {
                     setExcludedCapacityLoading(false);
                     return;
                 }
-                const cached = excludedCapacityCacheRef.current[excludedCapacityQueryKey];
+                const rangeCacheKey = `range::${excludedCapacityQueryKey}`;
+                const cached = excludedCapacityCacheRef.current[rangeCacheKey];
                 if (cached) {
                     setExcludedCapacityData(cached);
                     setExcludedCapacityError('');
@@ -6193,21 +6318,25 @@ import {
                     return;
                 }
 
-                const controller = new AbortController();
                 let cancelled = false;
-                const timeoutId = window.setTimeout(() => {
-                    try {
-                        controller.abort();
-                    } catch (err) {
-                        // ignore abort errors
-                    }
-                }, 30000);
-                const loadExcludedCapacity = async () => {
-                    setExcludedCapacityLoading(true);
-                    setExcludedCapacityError('');
+                const controllers = new Set();
+                const sprintCacheKeyFor = (sprintId) => `sprint::${String(sprintId || '').trim()}::${excludedCapacityScopedTeamSignature || 'all'}`;
+                const fetchSprintChunk = async (sprintId) => {
+                    const sprintCacheKey = sprintCacheKeyFor(sprintId);
+                    const cachedSprint = excludedCapacityCacheRef.current[sprintCacheKey];
+                    if (cachedSprint) return cachedSprint;
+                    const controller = new AbortController();
+                    controllers.add(controller);
+                    const timeoutId = window.setTimeout(() => {
+                        try {
+                            controller.abort();
+                        } catch (err) {
+                            // ignore abort errors
+                        }
+                    }, 30000);
                     try {
                         const response = await requestExcludedCapacityStatsSource(BACKEND_URL, {
-                            sprintIds: excludedCapacitySprintIds,
+                            sprintIds: [sprintId],
                             teamIds: excludedCapacityScopedTeamIds,
                             signal: controller.signal
                         });
@@ -6216,20 +6345,48 @@ import {
                             throw new Error(err.error || err.message || `Excluded capacity fetch failed (${response.status})`);
                         }
                         const payload = await response.json();
-                        if (cancelled) return;
                         const data = payload?.data || null;
-                        excludedCapacityCacheRef.current[excludedCapacityQueryKey] = data;
+                        if (data) {
+                            excludedCapacityCacheRef.current[sprintCacheKey] = data;
+                        }
+                        return data;
+                    } finally {
+                        window.clearTimeout(timeoutId);
+                        controllers.delete(controller);
+                    }
+                };
+                const loadExcludedCapacity = async () => {
+                    setExcludedCapacityLoading(true);
+                    setExcludedCapacityError('');
+                    const chunks = [];
+                    try {
+                        for (const sprintId of excludedCapacitySprintIds) {
+                            const chunk = await fetchSprintChunk(sprintId);
+                            if (cancelled) return;
+                            if (chunk) {
+                                chunks.push(chunk);
+                                setExcludedCapacityData(mergeExcludedCapacityStatsSourceChunks(chunks, {
+                                    loadedSprintCount: chunks.length,
+                                    totalSprintCount: excludedCapacitySprintIds.length
+                                }));
+                            }
+                        }
+                        if (cancelled) return;
+                        const data = mergeExcludedCapacityStatsSourceChunks(chunks, {
+                            loadedSprintCount: chunks.length,
+                            totalSprintCount: excludedCapacitySprintIds.length
+                        });
+                        excludedCapacityCacheRef.current[rangeCacheKey] = data;
                         setExcludedCapacityData(data);
                     } catch (err) {
                         if (cancelled) return;
                         if (err?.name === 'AbortError') {
-                            setExcludedCapacityError('Excluded capacity request timed out (30s). Narrow the sprint range or team filter.');
+                            setExcludedCapacityError('Excluded capacity sprint request timed out (30s). Narrow the sprint range or team filter.');
                         } else {
                             setExcludedCapacityError(String(err?.message || err || 'Failed to load excluded capacity data.'));
                         }
                         setExcludedCapacityData(null);
                     } finally {
-                        window.clearTimeout(timeoutId);
                         if (!cancelled) setExcludedCapacityLoading(false);
                     }
                 };
@@ -6237,12 +6394,14 @@ import {
                 return () => {
                     cancelled = true;
                     window.clearTimeout(debounceId);
-                    window.clearTimeout(timeoutId);
-                    try {
-                        controller.abort();
-                    } catch (err) {
-                        // ignore abort errors
-                    }
+                    controllers.forEach(controller => {
+                        try {
+                            controller.abort();
+                        } catch (err) {
+                            // ignore abort errors
+                        }
+                    });
+                    controllers.clear();
                 };
             }, [
                 showStats,
@@ -6257,27 +6416,20 @@ import {
             const excludedCapacityIssues = React.useMemo(() => {
                 return Array.isArray(excludedCapacityData?.issues) ? excludedCapacityData.issues : [];
             }, [excludedCapacityData]);
-            const excludedCapacityDependencies = React.useMemo(() => {
-                return excludedCapacityData?.dependencies || {};
-            }, [excludedCapacityData]);
             const excludedCapacityEpicCatalog = React.useMemo(() => {
                 return buildExcludedEpicCatalog(excludedCapacityIssues, {
                     excludedEpicKeys: excludedCapacityEpicOptions
                 });
             }, [excludedCapacityIssues, excludedCapacityEpicOptions]);
-            const excludedCapacityEpicLabelByKey = React.useMemo(() => {
-                const map = new Map();
-                excludedCapacityEpicCatalog.forEach(entry => {
-                    map.set(entry.key, entry.summary || entry.key);
-                });
-                return map;
-            }, [excludedCapacityEpicCatalog]);
+            const excludedCapacityAutoEpicKeys = React.useMemo(
+                () => pickAutoSelectedExcludedEpics(excludedCapacityEpicCatalog),
+                [excludedCapacityEpicCatalog]
+            );
             useEffect(() => {
                 if (excludedCapacitySelectedEpicKeys === null && excludedCapacityEpicCatalog.length) {
-                    const auto = pickAutoSelectedExcludedEpics(excludedCapacityEpicCatalog);
-                    setExcludedCapacitySelectedEpicKeys(auto);
+                    setExcludedCapacitySelectedEpicKeys(excludedCapacityAutoEpicKeys);
                 }
-            }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicCatalog]);
+            }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicCatalog, excludedCapacityAutoEpicKeys]);
             useEffect(() => {
                 if (!Array.isArray(excludedCapacitySelectedEpicKeys)) return;
                 const valid = new Set(excludedCapacityEpicOptions);
@@ -6290,6 +6442,18 @@ import {
                 if (!Array.isArray(excludedCapacitySelectedEpicKeys)) return [];
                 return excludedCapacitySelectedEpicKeys.filter(key => excludedCapacityEpicOptions.includes(key));
             }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicOptions]);
+            const excludedCapacityFilterLabel = React.useMemo(() => {
+                if (excludedCapacityEffectiveFilters.length === 0) {
+                    return `Filter: All configured (${excludedCapacityEpicOptions.length})`;
+                }
+                const autoSet = new Set(excludedCapacityAutoEpicKeys);
+                const isAutoSelection = autoSet.size === excludedCapacityEffectiveFilters.length &&
+                    excludedCapacityEffectiveFilters.every(key => autoSet.has(key));
+                if (isAutoSelection) {
+                    return `Filter: BAU / ad hoc (${excludedCapacityEffectiveFilters.length})`;
+                }
+                return `Filter: ${excludedCapacityEffectiveFilters.length} of ${excludedCapacityEpicOptions.length} selected`;
+            }, [excludedCapacityEffectiveFilters, excludedCapacityEpicOptions, excludedCapacityAutoEpicKeys]);
             const excludedCapacityActiveFilters = excludedCapacityEffectiveFilters.length
                 ? excludedCapacityEffectiveFilters
                 : excludedCapacityEpicOptions;
@@ -6323,30 +6487,36 @@ import {
                 excludedCapacityChartMode,
                 activeGroup?.name
             ]);
-            const excludedCapacityModeRows = React.useMemo(() => {
-                return buildEpicTeamModeShare(excludedCapacityIssues, {
-                    excludedEpicKeys: excludedCapacityEpicOptions,
-                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
-                    dependencies: excludedCapacityDependencies
-                });
-            }, [
-                excludedCapacityIssues,
-                excludedCapacityEpicOptions,
-                excludedCapacityActiveFilters,
-                excludedCapacityDependencies
-            ]);
             const excludedCapacityModeOverall = React.useMemo(() => {
                 return buildEpicTeamModeOverall(excludedCapacityIssues, {
-                    excludedEpicKeys: excludedCapacityEpicOptions,
-                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
-                    dependencies: excludedCapacityDependencies
+                    includeAllEpics: true,
+                    sprints: excludedCapacitySprintRange,
+                    teams: excludedCapacityTeams
                 });
             }, [
                 excludedCapacityIssues,
-                excludedCapacityEpicOptions,
-                excludedCapacityActiveFilters,
-                excludedCapacityDependencies
+                excludedCapacitySprintRange,
+                excludedCapacityTeams
             ]);
+            const excludedCapacityModeSprintRows = React.useMemo(() => {
+                return buildEpicTeamModeSprintRows(excludedCapacityIssues, {
+                    includeAllEpics: true,
+                    sprints: excludedCapacitySprintRange
+                });
+            }, [
+                excludedCapacityIssues,
+                excludedCapacitySprintRange
+            ]);
+            const excludedCapacityModeTeamLineSeries = React.useMemo(() => {
+                return buildEpicTeamCrossShareLineSeries(excludedCapacityIssues, excludedCapacitySprintRange, {
+                    teams: excludedCapacityTeams
+                });
+            }, [
+                excludedCapacityIssues,
+                excludedCapacitySprintRange,
+                excludedCapacityTeams
+            ]);
+            const excludedCapacityIsolatedSeries = statsView === 'monoCrossShare' ? excludedCapacityModeTeamLineSeries.series : excludedCapacityLineSeries.series;
             const excludedCapacityTotals = React.useMemo(() => {
                 const totals = excludedCapacityRows.reduce((acc, row) => {
                     acc.totalPoints += row.totalPoints || 0;
@@ -6363,16 +6533,16 @@ import {
                 return Array.isArray(warnings) ? warnings : [];
             }, [excludedCapacityData]);
             useEffect(() => {
-                if (excludedCapacityChartMode !== 'teams' && excludedCapacityIsolatedTeam) {
+                if (statsView === 'excludedCapacity' && excludedCapacityChartMode !== 'teams' && excludedCapacityIsolatedTeam) {
                     setExcludedCapacityIsolatedTeam(null);
                     return;
                 }
                 if (!excludedCapacityIsolatedTeam) return;
-                const known = new Set((excludedCapacityLineSeries.series || []).map(item => item.seriesId));
+                const known = new Set((excludedCapacityIsolatedSeries || []).map(item => item.seriesId));
                 if (!known.has(excludedCapacityIsolatedTeam)) {
                     setExcludedCapacityIsolatedTeam(null);
                 }
-            }, [excludedCapacityChartMode, excludedCapacityIsolatedTeam, excludedCapacityLineSeries.series]);
+            }, [statsView, excludedCapacityChartMode, excludedCapacityIsolatedTeam, excludedCapacityIsolatedSeries]);
             const formatExcludedPoints = (value) => {
                 const numeric = Number(value || 0);
                 if (!Number.isFinite(numeric)) return '0.0';
@@ -6394,6 +6564,9 @@ import {
             };
             const selectAllExcludedCapacityEpics = () => {
                 setExcludedCapacitySelectedEpicKeys(excludedCapacityEpicOptions.slice());
+            };
+            const selectAutoExcludedCapacityEpics = () => {
+                setExcludedCapacitySelectedEpicKeys(excludedCapacityAutoEpicKeys.slice());
             };
             useEffect(() => {
                 if (!excludedCapacityEpicDropdownOpen) return;
@@ -6775,7 +6948,10 @@ import {
                 try {
                     const res = await fetch(`${BACKEND_URL}/api/scenario/overrides`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'jira-execution-planner'
+                        },
                         body: JSON.stringify({
                             scope_key: scenarioScopeKey,
                             name: `Draft ${new Date().toISOString().slice(0, 10)}`,
@@ -8888,6 +9064,7 @@ import {
             }, [burnoutChartModel, statsView]);
             const canRenderStatsPanel = Boolean(effectiveStatsData) || statsView === 'burnout' || statsView === 'cohort' || statsView === 'excludedCapacity' || statsView === 'monoCrossShare';
             const isLeadTimesFocusMode = showStats && statsView === 'cohort';
+            const shouldRenderEngTaskList = selectedView === 'eng' && !isStatsSourceOnlyStatsView;
             const groupTasksByEpic = (taskList) => {
                 const grouped = {};
                 taskList.forEach(task => {
@@ -10868,18 +11045,24 @@ import {
                 </ControlField>
             );
 
-            const renderViewSwitch = () => (
-                <SegmentedControl
-                    className="view-mode-control"
-                    ariaLabel="Dashboard view"
-                    value={selectedView}
-                    onChange={setSelectedView}
-                    options={[
-                        { value: 'eng', label: 'ENG' },
-                        { value: 'epm', label: 'EPM' }
-                    ]}
-                />
-            );
+            const renderViewSwitch = () => {
+                const options = [{ value: 'eng', label: 'ENG' }];
+                if (showEpmNavigation) {
+                    options.push({ value: 'epm', label: 'EPM' });
+                }
+                return (
+                    <SegmentedControl
+                        className="view-mode-control"
+                        ariaLabel="Dashboard view"
+                        value={showEpmNavigation ? selectedView : 'eng'}
+                        onChange={(nextView) => {
+                            if (nextView === 'epm' && !showEpmNavigation) return;
+                            setSelectedView(nextView);
+                        }}
+                        options={options}
+                    />
+                );
+            };
 
             const activeEngMode = showScenario
                 ? 'scenario'
@@ -11303,17 +11486,31 @@ import {
                         );
             };
 
-            const settingsModalTabs = [
-                { id: 'scope', label: 'Scope projects', onClick: () => setGroupManageTab('scope') },
-                { id: 'source', label: 'Jira source', onClick: () => setGroupManageTab('source') },
-                { id: 'mapping', label: 'Field mapping', onClick: () => setGroupManageTab('mapping') },
-                { id: 'capacity', label: 'Capacity', onClick: () => setGroupManageTab('capacity') },
+            const settingsModalAllTabs = [
+                {
+                    id: 'scope',
+                    label: 'Scope projects',
+                    onClick: () => setGroupManageTab('scope')
+                },
+                {
+                    id: 'source',
+                    label: 'Jira source',
+                    onClick: () => setGroupManageTab('source')
+                },
+                {
+                    id: 'mapping',
+                    label: 'Field mapping',
+                    onClick: () => setGroupManageTab('mapping')
+                },
+                {
+                    id: 'capacity',
+                    label: 'Capacity',
+                    onClick: () => setGroupManageTab('capacity')
+                },
                 {
                     id: 'teams',
                     label: 'Team groups',
-                    onClick: () => savedSelectedProjects.length > 0 && setGroupManageTab('teams'),
-                    disabled: savedSelectedProjects.length === 0,
-                    title: savedSelectedProjects.length === 0 ? 'Configure data sources first' : ''
+                    onClick: () => setGroupManageTab('teams')
                 },
                 {
                     id: 'labels',
@@ -11322,14 +11519,32 @@ import {
                     disabled: !labelsTabEnabled,
                     title: labelsTabEnabled ? '' : 'Save at least one group first'
                 },
-                { id: 'priorityWeights', label: 'Priority weights', onClick: () => setGroupManageTab('priorityWeights') },
-                { id: 'epm', label: 'EPM', onClick: openEpmSettingsTab }
+                {
+                    id: 'connections',
+                    label: 'Connections',
+                    onClick: openUserConnectionsSettings
+                },
+                {
+                    id: 'priorityWeights',
+                    label: 'Priority weights',
+                    onClick: () => setGroupManageTab('priorityWeights')
+                },
+                {
+                    id: 'epm',
+                    label: 'EPM',
+                    onClick: openEpmSettingsTab
+                }
             ];
+            const settingsModalTabs = settingsModalAllTabs.filter(tab => {
+                if (tab.id === 'epm') return canEditEpmConfiguration;
+                return canEditSharedConfiguration || !SHARED_CONFIGURATION_TAB_IDS.has(tab.id);
+            });
             const settingsSaveHandler = groupManageTab === 'epm'
                 ? () => { void saveEpmConfig().catch(() => {}); }
                 : saveGroupsConfig;
+            const settingsShowsSave = groupManageTab !== 'connections';
             const settingsSaveDisabled = groupManageTab === 'epm'
-                ? (epmConfigLoading || epmConfigSaving)
+                ? (!canEditEpmConfiguration || epmConfigLoading || epmConfigSaving)
                 : Boolean(saveBlockedReason);
             const settingsSaveTitle = groupManageTab === 'epm' ? '' : (saveBlockedReason || '');
             const settingsSaveLabel = groupManageTab === 'epm'
@@ -11380,7 +11595,13 @@ import {
                                             }
                                             burnoutCacheRef.current = {};
                                             cohortCacheRef.current = {};
+                                            excludedCapacityCacheRef.current = {};
                                             loadSprints(true);
+                                            if (isStatsSourceOnlyStatsView) {
+                                                setExcludedCapacityData(null);
+                                                setExcludedCapacityError('');
+                                                return;
+                                            }
                                             loadProductTasks({ forceRefresh: true });
                                             loadTechTasks({ forceRefresh: true });
                                             loadReadyToCloseProductTasks({ forceRefresh: true });
@@ -11436,18 +11657,20 @@ import {
                                 {selectedView === 'epm' && (
                                     <>
                                         {renderEpmProjectCollapseAllButton('main')}
-                                        <button
-                                            className="group-gear-button"
-                                            onClick={openEpmSettingsTab}
-                                            title="Open EPM settings"
-                                            aria-label="Open EPM settings"
-                                            type="button"
-                                        >
-                                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
-                                                <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                                            </svg>
-                                        </button>
+                                        {canEditEpmConfiguration && (
+                                            <button
+                                                className="group-gear-button"
+                                                onClick={openEpmSettingsTab}
+                                                title="Open EPM settings"
+                                                aria-label="Open EPM settings"
+                                                type="button"
+                                            >
+                                                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                    <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
+                                                    <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                                </svg>
+                                            </button>
+                                        )}
                                     </>
                                 )}
                             </div>
@@ -11474,18 +11697,20 @@ import {
                                             {shouldUseEpmSprint(epmTab) && renderSprintControl('compact')}
                                             {renderEpmControls('compact', false)}
                                             {renderEpmProjectCollapseAllButton('compact')}
-                                            <button
-                                                className="group-gear-button"
-                                                onClick={openEpmSettingsTab}
-                                                title="Open EPM settings"
-                                                aria-label="Open EPM settings"
-                                                type="button"
-                                            >
-                                                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                    <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
-                                                    <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                                                </svg>
-                                            </button>
+                                            {canEditEpmConfiguration && (
+                                                <button
+                                                    className="group-gear-button"
+                                                    onClick={openEpmSettingsTab}
+                                                    title="Open EPM settings"
+                                                    aria-label="Open EPM settings"
+                                                    type="button"
+                                                >
+                                                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                        <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
+                                                        <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                                    </svg>
+                                                </button>
+                                            )}
                                         </>
                                     )}
                                 </div>
@@ -12720,8 +12945,86 @@ import {
                                 </div>
 
                                 <div className={`stats-view ${statsView === 'excludedCapacity' ? 'open' : ''}`}>
-                                    <div className="stats-controls excluded-capacity-controls">
-                                        <div className="stats-control-group">
+                                    <div className="stats-controls excluded-capacity-controls excluded-capacity-filter-controls">
+                                        <div className="stats-control-group excluded-capacity-epic-filter" ref={excludedCapacityEpicDropdownRef}>
+                                            <label>Excluded Epics</label>
+                                            <div className="team-dropdown excluded-capacity-epic-dropdown">
+                                                <button
+                                                    type="button"
+                                                    className={`team-dropdown-toggle ${excludedCapacityEpicDropdownOpen ? 'open' : ''}`}
+                                                    onClick={() => setExcludedCapacityEpicDropdownOpen(prev => !prev)}
+                                                    aria-haspopup="listbox"
+                                                    aria-expanded={excludedCapacityEpicDropdownOpen}
+                                                >
+                                                    <span>{excludedCapacityFilterLabel}</span>
+                                                    <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                                                        <path d="M6 9L1 4h10z" />
+                                                    </svg>
+                                                </button>
+                                                {excludedCapacityEpicDropdownOpen && (
+                                                    <div className="team-dropdown-panel excluded-capacity-epic-panel" role="listbox" aria-multiselectable="true">
+                                                        <div className="sprint-dropdown-list">
+                                                            <div
+                                                                className="sprint-dropdown-option"
+                                                                role="button"
+                                                                tabIndex={0}
+                                                                onClick={() => {
+                                                                    if (excludedCapacityAutoEpicKeys.length > 0) {
+                                                                        selectAutoExcludedCapacityEpics();
+                                                                    }
+                                                                }}
+                                                                aria-disabled={excludedCapacityAutoEpicKeys.length === 0}
+                                                            >
+                                                                BAU / ad hoc
+                                                            </div>
+                                                            <div
+                                                                className="sprint-dropdown-option"
+                                                                role="button"
+                                                                tabIndex={0}
+                                                                onClick={selectAllExcludedCapacityEpics}
+                                                            >
+                                                                All configured
+                                                            </div>
+                                                            <div
+                                                                className="sprint-dropdown-option"
+                                                                role="button"
+                                                                tabIndex={0}
+                                                                onClick={clearExcludedCapacityEpicSelection}
+                                                            >
+                                                                Clear
+                                                            </div>
+                                                        </div>
+                                                        {excludedCapacityEpicCatalog.length === 0 ? (
+                                                            <div className="sprint-dropdown-option">No excluded epics configured.</div>
+                                                        ) : (
+                                                            excludedCapacityEpicCatalog.map((entry) => {
+                                                                const checked = excludedCapacityEffectiveFilters.includes(entry.key);
+                                                                const primary = entry.summary || entry.key;
+                                                                return (
+                                                                    <label
+                                                                        key={entry.key}
+                                                                        className="team-dropdown-option"
+                                                                        role="option"
+                                                                        aria-selected={checked}
+                                                                    >
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={checked}
+                                                                            onChange={() => toggleExcludedCapacityEpicKey(entry.key)}
+                                                                        />
+                                                                        <span>
+                                                                            {primary}
+                                                                            <span className="component-result-meta"> · {entry.key}</span>
+                                                                        </span>
+                                                                    </label>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="stats-control-group excluded-capacity-sprint-control excluded-capacity-start-sprint-control">
                                             <label>Start Sprint</label>
                                             <select
                                                 className="scenario-input"
@@ -12733,7 +13036,7 @@ import {
                                                 ))}
                                             </select>
                                         </div>
-                                        <div className="stats-control-group">
+                                        <div className="stats-control-group excluded-capacity-sprint-control excluded-capacity-end-sprint-control">
                                             <label>End Sprint</label>
                                             <select
                                                 className="scenario-input"
@@ -12744,90 +13047,6 @@ import {
                                                     <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
                                                 ))}
                                             </select>
-                                        </div>
-                                        <div className="stats-control-group excluded-capacity-epic-filter" ref={excludedCapacityEpicDropdownRef}>
-                                            <label>Excluded Epics</label>
-                                            {excludedCapacityEffectiveFilters.length > 0 && (
-                                                <div className="selected-components-list excluded-capacity-epic-chips">
-                                                    {excludedCapacityEffectiveFilters.map((key) => {
-                                                        const label = excludedCapacityEpicLabelByKey.get(key) || key;
-                                                        return (
-                                                            <div className="component-chip" key={key}>
-                                                                <span className="component-name" title={`${label} (${key})`}>{label}</span>
-                                                                <button
-                                                                    type="button"
-                                                                    className="remove-btn"
-                                                                    aria-label={`Remove ${label}`}
-                                                                    title={`Remove ${label}`}
-                                                                    onClick={() => toggleExcludedCapacityEpicKey(key)}
-                                                                >
-                                                                    ×
-                                                                </button>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
-                                            <div className="component-search-wrapper">
-                                                <button
-                                                    type="button"
-                                                    className="component-search-input excluded-capacity-epic-toggle"
-                                                    onClick={() => setExcludedCapacityEpicDropdownOpen(prev => !prev)}
-                                                    aria-haspopup="listbox"
-                                                    aria-expanded={excludedCapacityEpicDropdownOpen}
-                                                >
-                                                    <span>
-                                                        {excludedCapacityEffectiveFilters.length === 0
-                                                            ? `All configured (${excludedCapacityEpicOptions.length})`
-                                                            : `${excludedCapacityEffectiveFilters.length} of ${excludedCapacityEpicOptions.length} selected`}
-                                                    </span>
-                                                    <span className="excluded-capacity-epic-caret" aria-hidden="true">▾</span>
-                                                </button>
-                                                {excludedCapacityEpicDropdownOpen && (
-                                                    <div className="component-search-results excluded-capacity-epic-menu" role="listbox" aria-multiselectable="true">
-                                                        <div className="excluded-capacity-epic-menu-actions">
-                                                            <button
-                                                                type="button"
-                                                                className="excluded-capacity-epic-action"
-                                                                onClick={selectAllExcludedCapacityEpics}
-                                                            >
-                                                                Select all
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                className="excluded-capacity-epic-action"
-                                                                onClick={clearExcludedCapacityEpicSelection}
-                                                            >
-                                                                Clear
-                                                            </button>
-                                                        </div>
-                                                        {excludedCapacityEpicCatalog.length === 0 ? (
-                                                            <div className="component-search-result-item is-empty">No excluded epics configured.</div>
-                                                        ) : (
-                                                            excludedCapacityEpicCatalog.map((entry) => {
-                                                                const checked = excludedCapacityEffectiveFilters.includes(entry.key);
-                                                                const primary = entry.summary || entry.key;
-                                                                return (
-                                                                    <label
-                                                                        key={entry.key}
-                                                                        className={`component-search-result-item excluded-capacity-epic-option ${checked ? 'is-checked' : ''}`}
-                                                                        role="option"
-                                                                        aria-selected={checked}
-                                                                    >
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={checked}
-                                                                            onChange={() => toggleExcludedCapacityEpicKey(entry.key)}
-                                                                        />
-                                                                        <span className="excluded-capacity-epic-primary">{primary}</span>
-                                                                        <span className="component-result-meta">{entry.key}</span>
-                                                                    </label>
-                                                                );
-                                                            })
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
                                         </div>
                                     </div>
 
@@ -12876,12 +13095,14 @@ import {
                                     </div>
 
                                     {excludedCapacityLoading && (
-                                        <div className="stats-note">Loading excluded capacity analytics...</div>
+                                        <div className="stats-note">
+                                            Loading excluded capacity analytics{excludedCapacityData?.meta?.totalSprintCount ? ` (${excludedCapacityData?.meta?.loadedSprintCount || 0}/${excludedCapacityData.meta.totalSprintCount} sprints)` : '...'}
+                                        </div>
                                     )}
-                                    {!excludedCapacityLoading && excludedCapacityError && (
+                                    {excludedCapacityError && excludedCapacityRows.length === 0 && (
                                         <div className="stats-note cohort-error">{excludedCapacityError}</div>
                                     )}
-                                    {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityWarnings.length > 0 && (
+                                    {!excludedCapacityError && excludedCapacityWarnings.length > 0 && (
                                         <div className="cohort-warnings">
                                             {excludedCapacityWarnings.map((warning, index) => (
                                                 <div key={`${warning}-${index}`}>- {warning}</div>
@@ -12891,7 +13112,7 @@ import {
                                     {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityRows.length === 0 && (
                                         <div className="cohort-empty">No excluded capacity stories found in the selected sprint range.</div>
                                     )}
-                                    {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityRows.length > 0 && (
+                                    {!excludedCapacityError && excludedCapacityRows.length > 0 && (
                                         <div className="excluded-capacity-panel">
                                             <div className="cohort-section cohort-section-fullbleed">
                                                 <div className="cohort-section-title">Excluded Capacity by Team and Sprint</div>
@@ -12946,80 +13167,81 @@ import {
                                             <div className="stats-note">Selected Jira sprints</div>
                                         </div>
                                         <div className="stats-card">
-                                            <h4>Mono SP</h4>
-                                            <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.monoPoints)}</div>
-                                            <div className="stats-note">{formatPercent(excludedCapacityModeOverall.monoPercent)} of excluded SP</div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Cross SP</h4>
+                                            <h4>Cross Epic SP</h4>
                                             <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.crossPoints)}</div>
-                                            <div className="stats-note">{formatPercent(excludedCapacityModeOverall.crossPercent)} of excluded SP</div>
+                                            <div className="stats-note">In multi-team epic/sprint buckets</div>
                                         </div>
                                         <div className="stats-card">
-                                            <h4>Classification</h4>
-                                            <div className="stat-value">Stories + Deps</div>
-                                            <div className="stats-note">Cross = multi-team stories or dependency/participation links</div>
+                                            <h4>Total SP</h4>
+                                            <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.sharedPoints)}</div>
+                                            <div className="stats-note">Total scoped epic/sprint SP</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Cross Share</h4>
+                                            <div className="stat-value">{formatPercent(excludedCapacityModeOverall.crossPercent)}</div>
+                                            <div className="stats-note">Cross SP / total SP</div>
                                         </div>
                                     </div>
 
                                     {excludedCapacityLoading && (
-                                        <div className="stats-note">Loading mono vs cross share...</div>
+                                        <div className="stats-note">
+                                            Loading mono vs cross share{excludedCapacityData?.meta?.totalSprintCount ? ` (${excludedCapacityData?.meta?.loadedSprintCount || 0}/${excludedCapacityData.meta.totalSprintCount} sprints)` : '...'}
+                                        </div>
                                     )}
-                                    {!excludedCapacityLoading && excludedCapacityError && (
+                                    {excludedCapacityError && excludedCapacityModeOverall.totalPoints === 0 && (
                                         <div className="stats-note cohort-error">{excludedCapacityError}</div>
                                     )}
                                     {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityModeOverall.totalPoints === 0 && (
-                                        <div className="cohort-empty">No excluded epic share available for the current selection.</div>
+                                        <div className="cohort-empty">No epic share available for the current selection.</div>
                                     )}
-                                    {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityModeOverall.totalPoints > 0 && (
+                                    {!excludedCapacityError && excludedCapacityModeOverall.totalPoints > 0 && (
                                         <div className="excluded-capacity-panel">
                                             <div className="cohort-section">
-                                                <div className="cohort-section-title">Mono-team vs Cross-team Share</div>
+                                                <div className="cohort-section-title">Cross-Team Epic Footprint</div>
                                                 <div className="cohort-section-subtitle">
-                                                    Aggregated across {excludedCapacitySprintRange.length} sprint{excludedCapacitySprintRange.length === 1 ? '' : 's'}
+                                                    Cross = an epic has stories from more than one team in the same sprint.
                                                 </div>
-                                                <div className="epic-mode-bars" role="img" aria-label="Mono-team versus cross-team excluded epic share aggregated over the selected sprint range">
-                                                    <div className="epic-mode-row epic-mode-row-overall">
-                                                        <div className="epic-mode-label">Overall</div>
-                                                        <div className="epic-mode-track">
-                                                            <div
-                                                                className="epic-mode-fill mono"
-                                                                style={{ width: `${Math.max(0, Math.min(100, excludedCapacityModeOverall.monoPercent * 100))}%` }}
-                                                                title={`Overall mono-team: ${formatPercent(excludedCapacityModeOverall.monoPercent)} (${formatExcludedPoints(excludedCapacityModeOverall.monoPoints)} SP)`}
-                                                            />
-                                                            <div
-                                                                className="epic-mode-fill cross"
-                                                                style={{ width: `${Math.max(0, Math.min(100, excludedCapacityModeOverall.crossPercent * 100))}%` }}
-                                                                title={`Overall cross-team: ${formatPercent(excludedCapacityModeOverall.crossPercent)} (${formatExcludedPoints(excludedCapacityModeOverall.crossPoints)} SP)`}
-                                                            />
-                                                        </div>
-                                                        <div className="epic-mode-values">
-                                                            <span>{formatPercent(excludedCapacityModeOverall.monoPercent)} mono</span>
-                                                            <span>{formatPercent(excludedCapacityModeOverall.crossPercent)} cross</span>
-                                                        </div>
-                                                    </div>
-                                                    {excludedCapacityModeRows.map(row => (
-                                                        <div className="epic-mode-row" key={row.teamId}>
-                                                            <div className="epic-mode-label">{row.teamName}</div>
+                                                <div className="epic-mode-bars" role="img" aria-label="Cross-team epic share by sprint">
+                                                    {[
+                                                        { ...excludedCapacityModeOverall, sprintName: 'Total', sprintId: 'overall' },
+                                                        ...excludedCapacityModeSprintRows
+                                                    ].map(row => (
+                                                        <div className="epic-mode-row" key={row.sprintId || row.sprintName}>
+                                                            <div className="epic-mode-label">{row.sprintName}</div>
                                                             <div className="epic-mode-track">
-                                                                <div
-                                                                    className="epic-mode-fill mono"
-                                                                    style={{ width: `${Math.max(0, Math.min(100, row.monoPercent * 100))}%` }}
-                                                                    title={`${row.teamName} mono-team: ${formatPercent(row.monoPercent)}`}
-                                                                />
                                                                 <div
                                                                     className="epic-mode-fill cross"
                                                                     style={{ width: `${Math.max(0, Math.min(100, row.crossPercent * 100))}%` }}
-                                                                    title={`${row.teamName} cross-team: ${formatPercent(row.crossPercent)}`}
+                                                                    title={`${row.sprintName}: ${formatExcludedPoints(row.crossPoints)} cross SP of ${formatExcludedPoints(row.sharedPoints)} total SP`}
                                                                 />
                                                             </div>
                                                             <div className="epic-mode-values">
-                                                                <span>{formatPercent(row.monoPercent)} mono</span>
-                                                                <span>{formatPercent(row.crossPercent)} cross</span>
+                                                                <span>{formatExcludedPoints(row.crossPoints)} cross</span>
+                                                                <span>{formatExcludedPoints(row.sharedPoints)} total</span>
+                                                                <span>{formatPercent(row.crossPercent)}</span>
                                                             </div>
                                                         </div>
                                                     ))}
                                                 </div>
+                                            </div>
+
+                                            <div className="cohort-section">
+                                                <div className="cohort-section-title">Team Cross Share</div>
+                                                <div className="cohort-section-subtitle">
+                                                    Percentage = team cross SP / total team story points in each sprint.
+                                                </div>
+                                                <ExcludedCapacityLineChart
+                                                    series={excludedCapacityModeTeamLineSeries.series}
+                                                    sprints={excludedCapacityModeTeamLineSeries.sprints}
+                                                    metric="percent"
+                                                    mode="teams"
+                                                    isolatedSeriesId={excludedCapacityIsolatedTeam}
+                                                    onSelectSeries={setExcludedCapacityIsolatedTeam}
+                                                    resolveTeamColor={resolveTeamColor}
+                                                    formatExcludedPoints={formatExcludedPoints}
+                                                    formatPercent={formatPercent}
+                                                    ariaLabel="Team cross share per sprint"
+                                                />
                                             </div>
                                         </div>
                                     )}
@@ -14043,121 +14265,122 @@ import {
                     )}
                     {!isLeadTimesFocusMode && (
                         <>
-                            {showBackToTop && (
+                            {shouldRenderEngTaskList && showBackToTop && (
                                 <button className="back-to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
                                     Back to top
                                 </button>
                             )}
 
-                            <EngView
-                                selectedView={selectedView}
-                                productTasksLoading={productTasksLoading}
-                                techTasksLoading={techTasksLoading}
-                                loading={loading}
-                                error={error}
-                                onRetry={fetchTasks}
-                                alertCelebrationPieces={alertCelebrationPieces}
-                                alertsPanel={(
-                                    <EngAlertsPanel
-                                        selectedView={selectedView}
-                                        alertItemCount={alertItemCount}
-                                        showAlertsPanel={showAlertsPanel}
-                                        setShowAlertsPanel={setShowAlertsPanel}
-                                        collapsed={!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert}
-                                        alertProps={{
-                                            analysisEpicTeams,
-                                            backlogEpicTeams,
-                                            backlogEpics,
-                                            blockedAlertTeams,
-                                            blockedTasks,
-                                            buildKeyListLink,
-                                            buildTeamStatusLink,
-                                            consolidatedMissingStories,
-                                            dismissAlertItem,
-                                            doneEpicTeams,
-                                            doneStoryEpics,
-                                            emptyEpicTeams,
-                                            emptyEpics,
-                                            emptyEpicsForAlert,
-                                            futureRoutedEpics,
-                                            getBlockedAlertStatusLabel,
-                                            getFuturePlanningNeedsStoriesReasonText,
-                                            handleAlertStoryClick,
-                                            isFutureSprintSelected,
-                                            jiraUrl,
-                                            missingAlertTeams,
-                                            missingLabelEpicTeams,
-                                            missingLabelEpics,
-                                            missingTeamEpicTeams,
-                                            missingTeamEpics,
-                                            needsStoriesEntries,
-                                            needsStoriesTeams,
-                                            postponedAlertTeams,
-                                            postponedEpicTeams,
-                                            postponedTasks,
-                                            setShowBacklogAlert,
-                                            setShowBlockedAlert,
-                                            setShowDoneEpicAlert,
-                                            setShowEmptyEpicAlert,
-                                            setShowMissingAlert,
-                                            setShowMissingLabelsAlert,
-                                            setShowMissingTeamAlert,
-                                            setShowNeedsStoriesAlert,
-                                            setShowPostponedAlert,
-                                            setShowWaitingAlert,
-                                            showBacklogAlert,
-                                            showBlockedAlert,
-                                            showDoneEpicAlert,
-                                            showEmptyEpicAlert,
-                                            showMissingAlert,
-                                            showMissingLabelsAlert,
-                                            showMissingTeamAlert,
-                                            showNeedsStoriesAlert,
-                                            showPostponedAlert,
-                                            showWaitingAlert,
-                                            waitingForStoriesEpics,
-                                        }}
-                                    />
-                                )}
-                                statusFilter={statusFilter}
-                                setStatusFilter={setStatusFilter}
-                                baseFilteredTasks={baseFilteredTasks}
-                                totalStoryPoints={totalStoryPoints}
-                                doneTasksCount={doneTasksCount}
-                                doneStoryPoints={doneStoryPoints}
-                                highPriorityCount={highPriorityCount}
-                                highPriorityStoryPoints={highPriorityStoryPoints}
-                                minorPriorityCount={minorPriorityCount}
-                                minorPriorityStoryPoints={minorPriorityStoryPoints}
-                                inProgressTasksCount={inProgressTasksCount}
-                                inProgressStoryPoints={inProgressStoryPoints}
-                                todoAcceptedTasksCount={todoAcceptedTasksCount}
-                                todoAcceptedStoryPoints={todoAcceptedStoryPoints}
-                                showTech={showTech}
-                                setShowTech={setShowTech}
-                                techTasksCount={techTasksCount}
-                                showProduct={showProduct}
-                                setShowProduct={setShowProduct}
-                                productTasksCount={productTasksCount}
-                                doneTasks={doneTasks}
-                                incompleteTasks={incompleteTasks}
-                                showDone={showDone}
-                                setShowDone={setShowDone}
-                                killedTasks={killedTasks}
-                                showKilled={showKilled}
-                                setShowKilled={setShowKilled}
-                                hasInitiativeData={hasInitiativeData}
-                                groupByInitiative={groupByInitiative}
-                                setGroupByInitiative={setGroupByInitiative}
-                                InitiativeIcon={InitiativeIcon}
-                                visibleTasksForList={visibleTasksForList}
-                                activeDependencyFocus={activeDependencyFocus}
-                                handleDependencyFocusClick={handleDependencyFocusClick}
-                                initiativeGroups={initiativeGroups}
-                                epicGroups={epicGroups}
-                                renderEpicBlock={renderEpicBlock}
-                                jiraUrl={jiraUrl}
-                            />
+                            {shouldRenderEngTaskList && (
+                                <EngView
+                                    selectedView={selectedView}
+                                    productTasksLoading={productTasksLoading}
+                                    techTasksLoading={techTasksLoading}
+                                    loading={loading}
+                                    error={error}
+                                    onRetry={fetchTasks}
+                                    alertCelebrationPieces={alertCelebrationPieces}
+                                    alertsPanel={(
+                                        <EngAlertsPanel
+                                            selectedView={selectedView}
+                                            alertItemCount={alertItemCount}
+                                            showAlertsPanel={showAlertsPanel}
+                                            setShowAlertsPanel={setShowAlertsPanel}
+                                            collapsed={!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert}
+                                            alertProps={{
+                                                analysisEpicTeams,
+                                                backlogEpicTeams,
+                                                backlogEpics,
+                                                blockedAlertTeams,
+                                                blockedTasks,
+                                                buildKeyListLink,
+                                                buildTeamStatusLink,
+                                                consolidatedMissingStories,
+                                                dismissAlertItem,
+                                                doneEpicTeams,
+                                                doneStoryEpics,
+                                                emptyEpicTeams,
+                                                emptyEpics,
+                                                emptyEpicsForAlert,
+                                                futureRoutedEpics,
+                                                getBlockedAlertStatusLabel,
+                                                getFuturePlanningNeedsStoriesReasonText,
+                                                handleAlertStoryClick,
+                                                isFutureSprintSelected,
+                                                jiraUrl,
+                                                missingAlertTeams,
+                                                missingLabelEpicTeams,
+                                                missingLabelEpics,
+                                                missingTeamEpicTeams,
+                                                missingTeamEpics,
+                                                needsStoriesEntries,
+                                                needsStoriesTeams,
+                                                postponedAlertTeams,
+                                                postponedEpicTeams,
+                                                postponedTasks,
+                                                setShowBacklogAlert,
+                                                setShowBlockedAlert,
+                                                setShowDoneEpicAlert,
+                                                setShowEmptyEpicAlert,
+                                                setShowMissingAlert,
+                                                setShowMissingLabelsAlert,
+                                                setShowMissingTeamAlert,
+                                                setShowNeedsStoriesAlert,
+                                                setShowPostponedAlert,
+                                                setShowWaitingAlert,
+                                                showBacklogAlert,
+                                                showBlockedAlert,
+                                                showDoneEpicAlert,
+                                                showEmptyEpicAlert,
+                                                showMissingAlert,
+                                                showMissingLabelsAlert,
+                                                showMissingTeamAlert,
+                                                showNeedsStoriesAlert,
+                                                showPostponedAlert,
+                                                showWaitingAlert,
+                                                waitingForStoriesEpics,
+                                            }}
+                                        />
+                                    )}
+                                    statusFilter={statusFilter}
+                                    setStatusFilter={setStatusFilter}
+                                    baseFilteredTasks={baseFilteredTasks}
+                                    totalStoryPoints={totalStoryPoints}
+                                    doneTasksCount={doneTasksCount}
+                                    doneStoryPoints={doneStoryPoints}
+                                    highPriorityCount={highPriorityCount}
+                                    highPriorityStoryPoints={highPriorityStoryPoints}
+                                    minorPriorityCount={minorPriorityCount}
+                                    minorPriorityStoryPoints={minorPriorityStoryPoints}
+                                    inProgressTasksCount={inProgressTasksCount}
+                                    inProgressStoryPoints={inProgressStoryPoints}
+                                    todoAcceptedTasksCount={todoAcceptedTasksCount}
+                                    todoAcceptedStoryPoints={todoAcceptedStoryPoints}
+                                    showTech={showTech}
+                                    setShowTech={setShowTech}
+                                    techTasksCount={techTasksCount}
+                                    showProduct={showProduct}
+                                    setShowProduct={setShowProduct}
+                                    productTasksCount={productTasksCount}
+                                    doneTasks={doneTasks}
+                                    incompleteTasks={incompleteTasks}
+                                    showDone={showDone}
+                                    setShowDone={setShowDone}
+                                    killedTasks={killedTasks}
+                                    showKilled={showKilled}
+                                    hasInitiativeData={hasInitiativeData}
+                                    groupByInitiative={groupByInitiative}
+                                    setGroupByInitiative={setGroupByInitiative}
+                                    InitiativeIcon={InitiativeIcon}
+                                    visibleTasksForList={visibleTasksForList}
+                                    activeDependencyFocus={activeDependencyFocus}
+                                    handleDependencyFocusClick={handleDependencyFocusClick}
+                                    initiativeGroups={initiativeGroups}
+                                    epicGroups={epicGroups}
+                                    renderEpicBlock={renderEpicBlock}
+                                    jiraUrl={jiraUrl}
+                                />
+                            )}
 
                             <IssueCardContext.Provider value={issueCardContext}>
                                 <EpmView
@@ -14192,17 +14415,19 @@ import {
                         <SettingsModal
                             activeTab={groupManageTab}
                             tabs={settingsModalTabs}
-                            isDirty={isGroupDraftDirty}
-                            unsavedSectionsCount={unsavedSectionsCount}
+                            isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}
+                            unsavedSectionsCount={groupManageTab !== 'connections' ? unsavedSectionsCount : 0}
                             onRequestClose={requestCloseGroupManage}
-                            validationMessages={groupConfigValidationErrors}
-                            showTestConfiguration={groupManageTab !== 'epm'}
+                            validationMessages={groupManageTab !== 'connections' ? groupConfigValidationErrors : []}
+                            showTestConfiguration={groupManageTab !== 'epm' && groupManageTab !== 'connections'}
                             onTestConfiguration={testGroupsConfigConnection}
                             testConfigurationDisabled={groupTesting}
                             testConfigurationLabel={groupTesting ? 'Testing...' : 'Test configuration'}
                             testConfigurationMessage={groupTestMessage}
                             onCancel={requestCloseGroupManage}
+                            cancelLabel={groupManageTab === 'connections' ? 'Close' : 'Cancel'}
                             onSave={settingsSaveHandler}
+                            showSave={settingsShowsSave}
                             saveDisabled={settingsSaveDisabled}
                             saveTitle={settingsSaveTitle}
                             saveLabel={settingsSaveLabel}
@@ -14210,6 +14435,12 @@ import {
                             onDiscard={discardGroupDraftChanges}
                             onKeepEditing={() => setShowGroupDiscardConfirm(false)}
                         >
+                                {groupManageTab === 'connections' && (
+                                <UserConnectionsSettings
+                                    backendUrl={BACKEND_URL}
+                                    onConnectionChange={handleHomeTokenConnectionChange}
+                                />
+                                )}
                                 {(groupManageTab === 'scope' || groupManageTab === 'source' || groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
                                 <JiraFieldSettings
                                     {...{
@@ -14510,8 +14741,8 @@ import {
                                 <div className="group-modal-body group-modal-split">
                                     <div className="group-pane group-list-pane">
                                         <div className="group-pane-header">
-                                            <div className="group-pane-title">Saved groups</div>
-                                            <div className="group-pane-subtitle">Choose a saved team group to map one Jira label per team.</div>
+                                            <div className="group-pane-title">Groups</div>
+                                            <div className="group-pane-subtitle">Choose a team group to map one Jira label per team.</div>
                                         </div>
                                         <div className="group-pane-list">
                                             {(filteredGroupDrafts || []).map((group) => {
@@ -14543,7 +14774,7 @@ import {
                                             <div className="group-pane-subtitle">Assign the team-specific epic label used with the selected sprint label.</div>
                                         </div>
                                         {!activeGroupDraft ? (
-                                            <div className="group-pane-empty">Select a saved group to edit its team label mappings.</div>
+                                            <div className="group-pane-empty">Select a group to edit its team label mappings.</div>
                                         ) : (activeGroupDraft.teamIds || []).length === 0 ? (
                                             <div className="group-pane-empty">Add teams in Team groups first, then return here to map labels.</div>
                                         ) : (

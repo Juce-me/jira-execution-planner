@@ -14,12 +14,21 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from backend.auth.cache_policy import (
+    build_jira_home_process_cache_key,
+    jira_home_partitioned_process_cache_enabled,
+)
+from backend.auth.home_credentials import HomeCredential, resolve_home_credential
+from backend.auth.jira_auth import AuthError
+from backend.db.engine import database_storage_enabled
+
 logger = logging.getLogger(__name__)
 
 HOME_GRAPHQL_ENDPOINT = "https://team.atlassian.com/gateway/api/graphql"
 HOME_TIMEOUT_SECONDS = 30
 HOME_MAX_RETRIES = 3
 HOME_PAGE_SIZE = 50
+HOME_UPDATE_PAGE_SIZE = 5
 HOME_MAX_PROJECTS_PER_GOAL = 500
 
 _CLOUD_ID_CACHE: dict[str, str] = {}
@@ -32,6 +41,7 @@ ARCHIVED_EPM_STATES = {"COMPLETED", "CANCELLED", "ARCHIVED", "DONE", "RELEASE", 
 MATCH_STATE_HOME_LINKED = "home-linked"
 MATCH_STATE_JEP_FALLBACK = "jep-fallback"
 MATCH_STATE_METADATA_ONLY = "metadata-only"
+AUTH_MODE_ATLASSIAN_OAUTH = "atlassian_oauth"
 
 
 class HomeAuthenticationError(Exception):
@@ -127,6 +137,26 @@ class HomeGraphQLClient:
             return all_nodes
 
 
+def _home_basic_credentials() -> tuple[str, str]:
+    home_email = os.environ.get("ATLASSIAN_EMAIL") or ""
+    home_token = os.environ.get("ATLASSIAN_API_TOKEN") or ""
+    if home_email and home_token:
+        return home_email, home_token
+
+    if (os.environ.get("JIRA_AUTH_MODE") or "basic").strip().lower() == AUTH_MODE_ATLASSIAN_OAUTH:
+        raise RuntimeError(
+            "ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN must be set to use Home/Townsquare in OAuth mode"
+        )
+
+    email = home_email or os.environ.get("JIRA_EMAIL") or ""
+    token = home_token or os.environ.get("JIRA_TOKEN") or ""
+    if not email or not token:
+        raise RuntimeError(
+            "ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (or JIRA_EMAIL/JIRA_TOKEN in basic auth mode) must be set to use the EPM view"
+        )
+    return email, token
+
+
 QUERY_GOALS_SEARCH = """
 query GoalsSearch($containerId: ID!, $first: Int!, $after: String) {
   goals_search(containerId: $containerId, searchString: "", first: $first, after: $after) {
@@ -167,7 +197,7 @@ query GoalProjects($goalId: ID!, $first: Int!, $after: String) {
           tags @optIn(to: "Townsquare") {
             edges { node { id name url } }
           }
-          updates(first: 1) @optIn(to: "Townsquare") {
+          updates(first: 5) @optIn(to: "Townsquare") {
             edges { node { id url creationDate editDate summary updateType creator { accountId name } } }
           }
         }
@@ -246,6 +276,463 @@ query EpmProjectTags($cypherQuery: String!, $params: CypherRequestParams) {
   }
 }
 """
+
+HOME_PROJECT_UPDATE_MUTATION = """
+mutation CreateProjectUpdateMutation($projectId: String!, $updateText: String!) {
+  projects_createUpdate(
+    input: {
+      projectId: $projectId
+      summary: $updateText
+    }
+  ) {
+    success
+    errors {
+      message
+    }
+    update {
+      id
+      url
+      creationDate
+      updateType
+      summary
+    }
+  }
+}
+"""
+
+HOME_PROJECT_UPDATE_ALLOWED_FIELDS = {"updateText", "clientMutationId"}
+HOME_WRITE_PROBE_SENSITIVE_KEYS = {
+    "email",
+    "api_token",
+    "apitoken",
+    "authorization",
+    "access_token",
+    "refresh_token",
+    "token",
+    "headers",
+}
+
+
+HOME_GRAPHQL_FEASIBILITY_OPERATION_NAMES = (
+    "goals_search",
+    "goal_by_key",
+    "sub_goals",
+    "goal_projects",
+    "project_details",
+    "project_updates",
+    "project_tags",
+    "teamwork_graph_project_tags",
+)
+
+HOME_GRAPHQL_AUTH_ERROR_MARKERS = (
+    "unauthorized",
+    "forbidden",
+    "scope does not match",
+    "does not contain the right authorisation scopes",
+    "does not contain the right authorization scopes",
+)
+
+HOME_GRAPHQL_PROBE_SENSITIVE_KEYS = {
+    "access_token",
+    "refresh_token",
+    "authorization",
+    "client_secret",
+    "code",
+    "oauth_code",
+    "oauth_pkce_verifier",
+    "pkce_verifier",
+}
+
+
+def home_graphql_feasibility_queries() -> dict[str, str]:
+    return {
+        "goals_search": QUERY_GOALS_SEARCH,
+        "goal_by_key": QUERY_GOAL_BY_KEY,
+        "sub_goals": QUERY_SUB_GOALS,
+        "goal_projects": QUERY_GOAL_PROJECTS,
+        "project_details": QUERY_PROJECT_DETAILS,
+        "project_updates": QUERY_PROJECT_UPDATES,
+        "project_tags": QUERY_PROJECT_TAGS,
+        "teamwork_graph_project_tags": QUERY_TEAMWORK_GRAPH_PROJECT_TAGS,
+    }
+
+
+def normalize_home_project_update_payload(payload: dict | None) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("invalid_home_update_payload")
+    unsupported = set(payload) - HOME_PROJECT_UPDATE_ALLOWED_FIELDS
+    if unsupported:
+        raise ValueError("unsupported_home_update_field")
+    update_text = str(payload.get("updateText") or "").strip()
+    if not update_text:
+        raise ValueError("update_text_required")
+    if len(update_text) > 4000:
+        raise ValueError("update_text_too_long")
+    normalized = {"updateText": update_text}
+    client_mutation_id = str(payload.get("clientMutationId") or "").strip()
+    if client_mutation_id:
+        normalized["clientMutationId"] = client_mutation_id
+    return normalized
+
+
+def _home_update_text_to_adf(update_text: str) -> str:
+    return json.dumps(
+        {
+            "version": 1,
+            "type": "doc",
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": update_text}],
+                }
+            ],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def build_home_project_update_variables(
+    project_id: str,
+    update_text: str,
+    client_mutation_id: str | None = None,
+) -> dict:
+    normalized = normalize_home_project_update_payload({
+        "updateText": update_text,
+        "clientMutationId": client_mutation_id or "",
+    })
+    normalized_project_id = str(project_id or "").strip()
+    if not normalized_project_id:
+        raise ValueError("project_id_required")
+    return {
+        "projectId": normalized_project_id,
+        "updateText": _home_update_text_to_adf(normalized["updateText"]),
+    }
+
+
+def redact_home_write_probe_payload(payload):
+    if isinstance(payload, dict):
+        redacted = {}
+        for key, value in payload.items():
+            if str(key).strip().lower() in HOME_WRITE_PROBE_SENSITIVE_KEYS:
+                redacted[key] = "[redacted]"
+                continue
+            redacted[key] = redact_home_write_probe_payload(value)
+        return redacted
+    if isinstance(payload, list):
+        return [redact_home_write_probe_payload(value) for value in payload]
+    if isinstance(payload, str) and (
+        "basic " in payload.lower()
+        or "bearer " in payload.lower()
+    ):
+        return "[redacted]"
+    return payload
+
+
+def redact_home_oauth_probe_payload(payload):
+    if isinstance(payload, dict):
+        redacted = {}
+        for key, value in payload.items():
+            if str(key).strip().lower() in HOME_GRAPHQL_PROBE_SENSITIVE_KEYS:
+                redacted[key] = "[redacted]"
+                continue
+            redacted[key] = redact_home_oauth_probe_payload(value)
+        return redacted
+    if isinstance(payload, list):
+        return [redact_home_oauth_probe_payload(value) for value in payload]
+    if isinstance(payload, str) and "bearer " in payload.lower():
+        return "[redacted]"
+    return payload
+
+
+def _home_graphql_probe_error_text(result: dict) -> str:
+    try:
+        return json.dumps(
+            {
+                "error": result.get("error"),
+                "errors": result.get("errors"),
+                "message": result.get("message"),
+            },
+            default=str,
+        ).lower()
+    except (TypeError, ValueError):
+        return str(result).lower()
+
+
+def classify_home_graphql_probe_results(results) -> dict:
+    rows = [row for row in (results or []) if isinstance(row, dict)]
+    for row in rows:
+        if row.get("reason") == "insufficient_home_fixture":
+            return {"decision": "fail", "reason": "insufficient_home_fixture"}
+        try:
+            status = int(row.get("status"))
+        except (TypeError, ValueError):
+            status = 0
+        if status in {401, 403}:
+            return {"decision": "fail", "reason": "home_graphql_3lo_unsupported"}
+        error_text = _home_graphql_probe_error_text(row)
+        if any(marker in error_text for marker in HOME_GRAPHQL_AUTH_ERROR_MARKERS):
+            return {"decision": "fail", "reason": "home_graphql_3lo_unsupported"}
+
+    required = set(HOME_GRAPHQL_FEASIBILITY_OPERATION_NAMES)
+    by_operation = {
+        str(row.get("operation")): row
+        for row in rows
+        if str(row.get("operation")) in required
+    }
+    if set(by_operation) != required:
+        return {"decision": "fail", "reason": "insufficient_home_fixture"}
+    for row in by_operation.values():
+        if row.get("ok") is not True:
+            return {"decision": "fail", "reason": "home_graphql_probe_failed"}
+    return {"decision": "pass", "reason": "home_graphql_3lo_supported"}
+
+
+def _graphql_error_messages(payload: dict) -> list[str]:
+    messages: list[str] = []
+    errors = payload.get("errors") if isinstance(payload, dict) else []
+    for error in errors or []:
+        if isinstance(error, dict):
+            messages.append(str(error.get("message") or error))
+        else:
+            messages.append(str(error))
+    return messages
+
+
+def _decode_graphql_probe_body(raw: bytes) -> dict:
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return {"errors": [{"message": "GraphQL probe returned invalid JSON."}]}
+    return payload if isinstance(payload, dict) else {"errors": [{"message": "GraphQL probe returned non-object JSON."}]}
+
+
+def _execute_home_oauth_probe_operation(
+    operation: str,
+    endpoint: str,
+    access_token: str,
+    query: str,
+    variables: dict,
+    endpoint_kind: str,
+) -> tuple[dict, dict]:
+    payload: dict[str, Any] = {"query": query, "variables": variables or {}}
+    request = Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token}",
+            "X-ExperimentalApi": "Townsquare",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=HOME_TIMEOUT_SECONDS) as response:
+            status = int(getattr(response, "status", response.getcode()))
+            response_payload = _decode_graphql_probe_body(response.read())
+    except HTTPError as exc:
+        status = int(exc.code)
+        response_payload = _decode_graphql_probe_body(exc.read())
+    except OSError as exc:
+        return {
+            "operation": operation,
+            "endpoint": endpoint_kind,
+            "status": 0,
+            "ok": False,
+            "errors": [str(exc)],
+        }, {}
+
+    errors = _graphql_error_messages(response_payload)
+    result = {
+        "operation": operation,
+        "endpoint": endpoint_kind,
+        "status": status,
+        "ok": 200 <= status < 300 and not errors,
+    }
+    if errors:
+        result["errors"] = errors[:3]
+    return result, response_payload
+
+
+def _connection_nodes(connection: dict) -> list[dict]:
+    nodes: list[dict] = []
+    for edge in (connection or {}).get("edges", []) or []:
+        node = edge.get("node") if isinstance(edge, dict) else None
+        if isinstance(node, dict):
+            nodes.append(node)
+    return nodes
+
+
+def _fixture_probe_result(message: str) -> dict:
+    return {
+        "operation": "fixture",
+        "status": 0,
+        "ok": False,
+        "reason": "insufficient_home_fixture",
+        "message": message,
+    }
+
+
+def _probe_twg_endpoint(jira_url: str) -> str:
+    return f"{str(jira_url or '').rstrip('/')}/gateway/api/graphql/twg"
+
+
+def run_home_graphql_oauth_probe(
+    access_token: str,
+    cloud_id: str,
+    epm_scope: dict | None = None,
+    root_goal_key: str = "",
+    sub_goal_key: str = "",
+    home_project_id: str = "",
+    jira_url: str = "",
+) -> dict:
+    scope = epm_scope if isinstance(epm_scope, dict) else {}
+    selected_root_key = _normalize_goal_key(root_goal_key or scope.get("rootGoalKey"))
+    selected_sub_goal_key = _normalize_goal_key(sub_goal_key)
+    if not selected_sub_goal_key:
+        sub_goal_keys = _epm_scope_sub_goal_keys(scope)
+        selected_sub_goal_key = sub_goal_keys[0] if sub_goal_keys else ""
+
+    results: list[dict] = []
+    if not access_token or not cloud_id:
+        results.append(_fixture_probe_result("OAuth access token and cloud ID are required."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+
+    container_id = _container_id_from_cloud(cloud_id)
+    queries = home_graphql_feasibility_queries()
+
+    result, goals_payload = _execute_home_oauth_probe_operation(
+        "goals_search",
+        HOME_GRAPHQL_ENDPOINT,
+        access_token,
+        queries["goals_search"],
+        {"containerId": container_id, "first": HOME_PAGE_SIZE, "after": None},
+        "home",
+    )
+    results.append(result)
+    if not result.get("ok"):
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    if not selected_root_key:
+        results.append(_fixture_probe_result("EPM rootGoalKey is required."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+
+    result, root_payload = _execute_home_oauth_probe_operation(
+        "goal_by_key",
+        HOME_GRAPHQL_ENDPOINT,
+        access_token,
+        queries["goal_by_key"],
+        {"containerId": container_id, "goalKey": selected_root_key},
+        "home",
+    )
+    results.append(result)
+    if not result.get("ok"):
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    root_goal = ((root_payload.get("data") or {}).get("goals_byKey") or {})
+    root_goal_id = root_goal.get("id")
+    if not root_goal_id:
+        results.append(_fixture_probe_result("EPM rootGoalKey did not resolve to a Home goal."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+
+    result, sub_goals_payload = _execute_home_oauth_probe_operation(
+        "sub_goals",
+        HOME_GRAPHQL_ENDPOINT,
+        access_token,
+        queries["sub_goals"],
+        {"goalId": root_goal_id, "first": HOME_PAGE_SIZE, "after": None},
+        "home",
+    )
+    results.append(result)
+    if not result.get("ok"):
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    if not selected_sub_goal_key:
+        results.append(_fixture_probe_result("EPM subGoalKey is required."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    sub_goal_nodes = _connection_nodes((((sub_goals_payload.get("data") or {}).get("goals_byId") or {}).get("subGoals") or {}))
+    sub_goal = next((goal for goal in sub_goal_nodes if _normalize_goal_key(goal.get("key")) == selected_sub_goal_key), None)
+    if not sub_goal:
+        results.append(_fixture_probe_result("EPM subGoalKey did not resolve under the root goal."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+
+    result, projects_payload = _execute_home_oauth_probe_operation(
+        "goal_projects",
+        HOME_GRAPHQL_ENDPOINT,
+        access_token,
+        queries["goal_projects"],
+        {"goalId": sub_goal.get("id"), "first": HOME_PAGE_SIZE, "after": None},
+        "home",
+    )
+    results.append(result)
+    if not result.get("ok"):
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    project_nodes = _connection_nodes((((projects_payload.get("data") or {}).get("goals_byId") or {}).get("projects") or {}))
+    selected_project_id = str(home_project_id or "").strip()
+    project = next((row for row in project_nodes if str(row.get("id") or "").strip() == selected_project_id), None)
+    if not project and selected_project_id:
+        project = {"id": selected_project_id, "url": ""}
+    if not project:
+        project = next(iter(project_nodes), None)
+    if not project or not project.get("id"):
+        results.append(_fixture_probe_result("EPM sub-goal must have at least one Home project."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    selected_project_id = str(project.get("id") or "").strip()
+
+    for operation in ("project_details", "project_updates", "project_tags"):
+        variables = {"projectId": selected_project_id}
+        if operation == "project_updates":
+            variables = {"projectId": selected_project_id, "first": 1, "after": None}
+        result, payload = _execute_home_oauth_probe_operation(
+            operation,
+            HOME_GRAPHQL_ENDPOINT,
+            access_token,
+            queries[operation],
+            variables,
+            "home",
+        )
+        results.append(result)
+        if operation == "project_details" and result.get("ok"):
+            detailed_project = ((payload.get("data") or {}).get("projects_byId") or {})
+            if isinstance(detailed_project, dict):
+                project = {**project, **detailed_project}
+        if not result.get("ok"):
+            decision = classify_home_graphql_probe_results(results)
+            return {**decision, "results": redact_home_oauth_probe_payload(results)}
+
+    if not jira_url:
+        results.append(_fixture_probe_result("Jira URL is required to build the Teamwork Graph endpoint."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    project_ari = selected_project_id if selected_project_id.startswith("ari:") else f"ari:cloud:townsquare:{cloud_id}:project/{selected_project_id}"
+    cypher = _project_tag_cypher(project_ari=project_ari)
+    if not cypher:
+        results.append(_fixture_probe_result("Home project ID is required for Teamwork Graph tag lookup."))
+        decision = classify_home_graphql_probe_results(results)
+        return {**decision, "results": redact_home_oauth_probe_payload(results)}
+    cypher_query, params = cypher
+    result, _ = _execute_home_oauth_probe_operation(
+        "teamwork_graph_project_tags",
+        _probe_twg_endpoint(jira_url),
+        access_token,
+        queries["teamwork_graph_project_tags"],
+        {"cypherQuery": cypher_query, "params": params},
+        "teamwork_graph",
+    )
+    results.append(result)
+
+    decision = classify_home_graphql_probe_results(results)
+    return {**decision, "results": redact_home_oauth_probe_payload(results)}
 
 
 def adf_to_text(value: Any) -> str:
@@ -387,19 +874,24 @@ def bucket_epm_state(state_value):
 
 
 def extract_latest_update(updates):
-    ordered = sorted(
-        [row for row in (updates or []) if row.get("creationDate")],
-        key=lambda row: row["creationDate"],
-        reverse=True,
-    )
+    candidates = []
+    for row in updates or []:
+        if not row.get("creationDate"):
+            continue
+        snippet = adf_to_text(row.get("summary")).strip()
+        html = adf_to_html(row.get("summary")).strip()
+        if not snippet and not html:
+            continue
+        candidates.append((row, snippet, html))
+    ordered = sorted(candidates, key=lambda item: item[0]["creationDate"], reverse=True)
     if not ordered:
         return {"date": "", "snippet": "", "author": ""}
-    latest = ordered[0]
+    latest, snippet, html = ordered[0]
     creator = latest.get("creator") if isinstance(latest.get("creator"), dict) else {}
     return {
         "date": str(latest["creationDate"])[:10],
-        "snippet": adf_to_text(latest.get("summary")).strip(),
-        "html": adf_to_html(latest.get("summary")).strip(),
+        "snippet": snippet,
+        "html": html,
         "author": str(creator.get("name") or "").strip(),
     }
 
@@ -487,14 +979,25 @@ def normalize_project_tag_names(values: Any) -> list[str]:
     return names
 
 
-def build_teamwork_graph_client() -> HomeGraphQLClient:
-    email = os.environ.get("ATLASSIAN_EMAIL") or os.environ.get("JIRA_EMAIL") or ""
-    token = os.environ.get("ATLASSIAN_API_TOKEN") or os.environ.get("JIRA_TOKEN") or ""
-    if not email or not token:
-        raise RuntimeError(
-            "ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (or JIRA_EMAIL/JIRA_TOKEN) must be set to use the EPM view"
-        )
-    jira_url = get_configured_jira_url()
+def _require_home_credential_descriptor(credential: HomeCredential | None) -> None:
+    if credential is None and database_storage_enabled():
+        raise RuntimeError("Home credential descriptor is required in DB mode")
+
+
+def _read_metadata_credential(context=None) -> HomeCredential | None:
+    if context is None or not database_storage_enabled():
+        return None
+    return resolve_home_credential(context, "read_metadata")
+
+
+def build_teamwork_graph_client(credential: HomeCredential | None = None) -> HomeGraphQLClient:
+    _require_home_credential_descriptor(credential)
+    if credential is not None:
+        email, token = credential.email, credential.api_token
+        jira_url = str(credential.site_url or "").rstrip("/")
+    else:
+        email, token = _home_basic_credentials()
+        jira_url = get_configured_jira_url()
     if not jira_url:
         raise RuntimeError("JIRA_URL must be set to query Atlassian project tags")
     return HomeGraphQLClient(email, token, f"{jira_url}/gateway/api/graphql/twg")
@@ -514,7 +1017,7 @@ def _project_tag_cypher(project_ari: str | None = None, project_url: str | None 
     return None
 
 
-def _project_ari_candidates(project: dict) -> list[str]:
+def _project_ari_candidates(project: dict, context=None) -> list[str]:
     project_id = str((project or {}).get("id") or "").strip()
     if not project_id:
         return []
@@ -522,7 +1025,7 @@ def _project_ari_candidates(project: dict) -> list[str]:
         return [project_id]
     candidates: list[str] = []
     try:
-        cloud_id = fetch_home_site_cloud_id()
+        cloud_id = fetch_home_site_cloud_id(context=context) if context is not None else fetch_home_site_cloud_id()
     except RuntimeError:
         cloud_id = ""
     if cloud_id:
@@ -541,7 +1044,7 @@ def _extract_project_tags_from_twg_response(response: dict) -> list[str]:
     return extract_tag_names(connection.get("edges"))
 
 
-def fetch_project_tags(client: HomeGraphQLClient, project: dict) -> list[str] | None:
+def fetch_project_tags(client: HomeGraphQLClient, project: dict, context=None) -> list[str] | None:
     project_id = str((project or {}).get("id") or "").strip()
     if not project_id:
         return []
@@ -555,8 +1058,13 @@ def fetch_project_tags(client: HomeGraphQLClient, project: dict) -> list[str] | 
         logger.warning("Direct Home project tag fetch failed for %s: %s", project_id, exc)
 
     try:
-        teamwork_graph_client = build_teamwork_graph_client()
-        for project_ari in _project_ari_candidates(project):
+        credential = _read_metadata_credential(context)
+        teamwork_graph_client = (
+            build_teamwork_graph_client(credential)
+            if credential is not None
+            else build_teamwork_graph_client()
+        )
+        for project_ari in _project_ari_candidates(project, context=context):
             cypher = _project_tag_cypher(project_ari=project_ari)
             if not cypher:
                 continue
@@ -577,7 +1085,7 @@ def fetch_project_tags(client: HomeGraphQLClient, project: dict) -> list[str] | 
                 {"cypherQuery": query, "params": params},
             )
             return _extract_project_tags_from_twg_response(response)
-    except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
+    except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError, AuthError) as exc:
         logger.warning("Teamwork Graph project tag fetch failed for %s: %s", project_id, exc)
         return direct_tags if direct_tags is not None else None
     return direct_tags if direct_tags is not None else []
@@ -621,13 +1129,12 @@ def _shape_project_detail(project_id: str, payload: dict) -> dict:
     }
 
 
-def build_home_graphql_client() -> HomeGraphQLClient:
-    email = os.environ.get("ATLASSIAN_EMAIL") or os.environ.get("JIRA_EMAIL") or ""
-    token = os.environ.get("ATLASSIAN_API_TOKEN") or os.environ.get("JIRA_TOKEN") or ""
-    if not email or not token:
-        raise RuntimeError(
-            "ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (or JIRA_EMAIL/JIRA_TOKEN) must be set to use the EPM view"
-        )
+def build_home_graphql_client(credential: HomeCredential | None = None) -> HomeGraphQLClient:
+    _require_home_credential_descriptor(credential)
+    if credential is not None:
+        email, token = credential.email, credential.api_token
+    else:
+        email, token = _home_basic_credentials()
     return HomeGraphQLClient(email, token, HOME_GRAPHQL_ENDPOINT)
 
 
@@ -635,16 +1142,20 @@ def _container_id_from_cloud(cloud_id: str) -> str:
     return f"ari:cloud:townsquare::site/{cloud_id}"
 
 
-def get_configured_jira_url() -> str:
+def get_configured_jira_url(context=None) -> str:
+    if context is not None and getattr(context, "site_url", ""):
+        return str(context.site_url).rstrip("/")
     return str(os.environ.get("JIRA_URL") or "").rstrip("/")
 
 
-def fetch_home_site_cloud_id() -> str:
-    jira_url = get_configured_jira_url()
+def fetch_home_site_cloud_id(context=None) -> str:
+    jira_url = get_configured_jira_url(context)
     if not jira_url:
         raise RuntimeError("JIRA_URL must be set to detect the Atlassian site cloud ID")
-    if jira_url in _CLOUD_ID_CACHE:
-        return _CLOUD_ID_CACHE[jira_url]
+    cache_enabled = jira_home_partitioned_process_cache_enabled(context)
+    cache_key = build_jira_home_process_cache_key(context, jira_url)
+    if cache_enabled and cache_key in _CLOUD_ID_CACHE:
+        return _CLOUD_ID_CACHE[cache_key]
     request = Request(f"{jira_url}/_edge/tenant_info", headers={"Accept": "application/json"}, method="GET")
     try:
         with urlopen(request, timeout=HOME_TIMEOUT_SECONDS) as response:
@@ -654,7 +1165,8 @@ def fetch_home_site_cloud_id() -> str:
     cloud_id = str(payload.get("cloudId") or "").strip()
     if not cloud_id:
         raise RuntimeError("Jira tenant_info did not return cloudId")
-    _CLOUD_ID_CACHE[jira_url] = cloud_id
+    if cache_enabled:
+        _CLOUD_ID_CACHE[cache_key] = cloud_id
     return cloud_id
 
 
@@ -669,13 +1181,15 @@ def _goal_cache_key(container_id: str, goal_key: str) -> str:
     }, sort_keys=True)
 
 
-def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: str) -> dict | None:
+def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: str, context=None) -> dict | None:
     expected_key = _normalize_goal_key(goal_key)
     if not expected_key:
         return None
     cache_key = _goal_cache_key(container_id, expected_key)
-    cached = _GOAL_BY_KEY_CACHE.get(cache_key)
-    if cached:
+    cache_enabled = jira_home_partitioned_process_cache_enabled(context)
+    cache_key = build_jira_home_process_cache_key(context, cache_key)
+    cached = _GOAL_BY_KEY_CACHE.get(cache_key) if cache_enabled else None
+    if cache_enabled and cached:
         return dict(cached)
     try:
         response = client.execute(
@@ -684,7 +1198,8 @@ def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: 
         )
         goal = ((response.get("data") or {}).get("goals_byKey") or {})
         if goal and _normalize_goal_key(goal.get("key")) == expected_key:
-            _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
+            if cache_enabled:
+                _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
             return goal
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Goal by key lookup failed for %s: %s", expected_key, exc)
@@ -700,7 +1215,8 @@ def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: 
         return None
     for goal in goals:
         if _normalize_goal_key(goal.get("key")) == expected_key:
-            _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
+            if cache_enabled:
+                _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
             return goal
     logger.warning("Goal %s not found among %d goals", goal_key, len(goals))
     return None
@@ -719,8 +1235,12 @@ def fetch_sub_goals(client: HomeGraphQLClient, root_goal_id: str) -> list[dict]:
     return [goal for goal in nodes if not goal.get("isArchived")]
 
 
-def fetch_sub_goals_for_root_key(client: HomeGraphQLClient, root_goal_key: str, container_id: str) -> list[dict]:
-    root_goal = resolve_goal_by_key(client, root_goal_key, container_id)
+def fetch_sub_goals_for_root_key(client: HomeGraphQLClient, root_goal_key: str, container_id: str, context=None) -> list[dict]:
+    root_goal = (
+        resolve_goal_by_key(client, root_goal_key, container_id, context=context)
+        if context is not None
+        else resolve_goal_by_key(client, root_goal_key, container_id)
+    )
     if not root_goal:
         return []
     return fetch_sub_goals(client, root_goal["id"])
@@ -745,14 +1265,18 @@ def _epm_scope_sub_goal_keys(scope: dict) -> list[str]:
     return normalized
 
 
-def resolve_sub_goals_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str) -> list[dict]:
+def resolve_sub_goals_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str, context=None) -> list[dict]:
     scope = epm_scope if isinstance(epm_scope, dict) else {}
     sub_goal_keys = _epm_scope_sub_goal_keys(scope)
     if not sub_goal_keys:
         return []
     root_goal_key = _normalize_goal_key(scope.get("rootGoalKey"))
     if root_goal_key:
-        child_goals = fetch_sub_goals_for_root_key(client, root_goal_key, container_id)
+        child_goals = (
+            fetch_sub_goals_for_root_key(client, root_goal_key, container_id, context=context)
+            if context is not None
+            else fetch_sub_goals_for_root_key(client, root_goal_key, container_id)
+        )
         goals_by_key = {_normalize_goal_key(goal.get("key")): goal for goal in child_goals}
         resolved = []
         for key in sub_goal_keys:
@@ -764,14 +1288,22 @@ def resolve_sub_goals_for_scope(client: HomeGraphQLClient, epm_scope: dict, cont
         return resolved
     resolved = []
     for key in sub_goal_keys:
-        goal = resolve_goal_by_key(client, key, container_id)
+        goal = (
+            resolve_goal_by_key(client, key, container_id, context=context)
+            if context is not None
+            else resolve_goal_by_key(client, key, container_id)
+        )
         if goal:
             resolved.append(goal)
     return resolved
 
 
-def resolve_sub_goal_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str) -> dict | None:
-    goals = resolve_sub_goals_for_scope(client, epm_scope, container_id)
+def resolve_sub_goal_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str, context=None) -> dict | None:
+    goals = (
+        resolve_sub_goals_for_scope(client, epm_scope, container_id, context=context)
+        if context is not None
+        else resolve_sub_goals_for_scope(client, epm_scope, container_id)
+    )
     return goals[0] if goals else None
 
 
@@ -810,7 +1342,7 @@ def fetch_goal_project_links(client: HomeGraphQLClient, goal_id: str) -> list[di
     return projects
 
 
-def _fetch_home_project_record(client: HomeGraphQLClient, row: dict) -> dict | None:
+def _fetch_home_project_record(client: HomeGraphQLClient, row: dict, context=None) -> dict | None:
     project_id = row.get("id")
     if not project_id:
         return None
@@ -819,7 +1351,7 @@ def _fetch_home_project_record(client: HomeGraphQLClient, row: dict) -> dict | N
         payload = (detail.get("data") or {}).get("projects_byId") or {}
         project = _shape_project_detail(project_id, payload)
         updates = fetch_latest_project_update(client, project_id)
-        home_tags = fetch_project_tags(client, project)
+        home_tags = fetch_project_tags(client, project, context=context)
         linkage = extract_home_jira_linkage(project)
         return build_home_project_record(project, updates, linkage, home_tags, tags_unavailable=home_tags is None)
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
@@ -827,11 +1359,9 @@ def _fetch_home_project_record(client: HomeGraphQLClient, row: dict) -> dict | N
         return None
 
 
-def _extract_first_project_update(row: dict) -> list[dict]:
+def _extract_project_updates(row: dict) -> list[dict]:
     connection = row.get("updates") or {}
-    edge = next(iter(connection.get("edges", []) or []), None)
-    node = edge.get("node") if isinstance(edge, dict) else None
-    return [node] if node is not None else []
+    return _connection_nodes(connection)
 
 
 def _has_enriched_goal_project_fields(row: dict) -> bool:
@@ -843,26 +1373,29 @@ def _build_home_project_record_from_goal_row(row: dict) -> dict | None:
     if not project_id:
         return None
     project = _shape_project_detail(project_id, row)
-    updates = _extract_first_project_update(row)
+    updates = _extract_project_updates(row)
     home_tags = normalize_project_tag_names(row.get("tags"))
     linkage = extract_home_jira_linkage(project)
     return build_home_project_record(project, updates, linkage, home_tags)
 
 
-def _fetch_or_build_home_project_record(client: HomeGraphQLClient, row: dict) -> dict | None:
+def _fetch_or_build_home_project_record(client: HomeGraphQLClient, row: dict, context=None) -> dict | None:
     if _has_enriched_goal_project_fields(row):
         return _build_home_project_record_from_goal_row(row)
-    return _fetch_home_project_record(client, row)
+    return _fetch_home_project_record(client, row, context=context)
 
 
-def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str) -> list[dict]:
+def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str, context=None) -> list[dict]:
     try:
         linked_projects = fetch_goal_project_links(client, goal_id)
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Goal project list fetch failed: %s", exc)
         return []
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        records = executor.map(lambda row: _fetch_or_build_home_project_record(client, row), linked_projects)
+        if context is not None:
+            records = executor.map(lambda row: _fetch_or_build_home_project_record(client, row, context=context), linked_projects)
+        else:
+            records = executor.map(lambda row: _fetch_or_build_home_project_record(client, row), linked_projects)
     return [record for record in records if record is not None]
 
 
@@ -870,12 +1403,10 @@ def fetch_latest_project_update(client: HomeGraphQLClient, project_id: str) -> l
     try:
         response = client.execute(
             QUERY_PROJECT_UPDATES,
-            {"projectId": project_id, "first": 1},
+            {"projectId": project_id, "first": HOME_UPDATE_PAGE_SIZE},
         )
         connection = (((response.get("data") or {}).get("projects_byId") or {}).get("updates") or {})
-        edge = next(iter(connection.get("edges", []) or []), None)
-        node = edge.get("node") if isinstance(edge, dict) else None
-        return [node] if node is not None else []
+        return _connection_nodes(connection)
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Latest update fetch failed for %s: %s", project_id, exc)
         return []
@@ -901,7 +1432,7 @@ def merge_epm_linkage(home_project, epm_config_row):
     return {"labels": labels, "epicKeys": epic_keys}, match_state
 
 
-def fetch_epm_home_projects(epm_scope):
+def fetch_epm_home_projects(epm_scope, context=None):
     scope = epm_scope if isinstance(epm_scope, dict) else {}
     sub_goal_keys = _epm_scope_sub_goal_keys(scope)
     if not sub_goal_keys:
@@ -909,14 +1440,24 @@ def fetch_epm_home_projects(epm_scope):
         return []
 
     try:
-        client = build_home_graphql_client()
-        cloud_id = fetch_home_site_cloud_id()
+        credential = _read_metadata_credential(context)
+        client = build_home_graphql_client(credential) if credential is not None else build_home_graphql_client()
+        if credential is not None and credential.cloud_id:
+            cloud_id = credential.cloud_id
+        elif context is not None:
+            cloud_id = fetch_home_site_cloud_id(context=context)
+        else:
+            cloud_id = fetch_home_site_cloud_id()
     except RuntimeError as exc:
         logger.warning("EPM home fetch failed: %s", exc)
         return []
 
     container_id = _container_id_from_cloud(cloud_id)
-    sub_goals = resolve_sub_goals_for_scope(client, scope, container_id)
+    sub_goals = (
+        resolve_sub_goals_for_scope(client, scope, container_id, context=context)
+        if context is not None
+        else resolve_sub_goals_for_scope(client, scope, container_id)
+    )
     if not sub_goals:
         return []
 
@@ -929,7 +1470,12 @@ def fetch_epm_home_projects(epm_scope):
             "key": sub_goal_key,
             "name": str(sub_goal.get("name") or "").strip(),
         }
-        for home_project in fetch_projects_for_goal(client, sub_goal["id"]):
+        projects = (
+            fetch_projects_for_goal(client, sub_goal["id"], context=context)
+            if context is not None
+            else fetch_projects_for_goal(client, sub_goal["id"])
+        )
+        for home_project in projects:
             project_id = home_project.get("homeProjectId") or home_project.get("id")
             if not project_id:
                 continue

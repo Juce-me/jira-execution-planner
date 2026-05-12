@@ -1,6 +1,10 @@
 """ENG task, team, and dependency route blueprint."""
 
+import time
+
 from flask import Blueprint
+
+from backend.auth.cache_policy import build_jira_home_process_cache_key, jira_home_partitioned_process_cache_enabled
 
 from . import bind_server_globals
 
@@ -18,22 +22,41 @@ def get_dependencies():
     """Fetch dependency links for a set of issues."""
     try:
         payload = request.get_json(silent=True) or {}
-        keys = payload.get('keys') or []
+        keys = sorted({str(key).strip() for key in (payload.get('keys') or []) if str(key).strip()})
         if not keys:
             return jsonify({'dependencies': {}})
 
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+        started_at = time.perf_counter()
+        auth_context = current_request_auth_context()
+        cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
+        cache_key = build_jira_home_process_cache_key(auth_context, 'dependencies', ','.join(keys))
+        cached_entry = None
+        if cache_enabled:
+            with _cache_lock:
+                cached_entry = DEPENDENCIES_CACHE.get(cache_key)
+        if cache_enabled and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < DEPENDENCIES_CACHE_TTL_SECONDS:
+            response = jsonify({'dependencies': cached_entry.get('data') or {}})
+            response.headers['Server-Timing'] = 'cache;dur=1'
+            return response
 
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        dependencies = collect_dependencies(keys, headers)
-        return jsonify({'dependencies': dependencies})
+        collect_started_at = time.perf_counter()
+        dependencies = collect_dependencies(keys, context=auth_context)
+        collect_ms = round((time.perf_counter() - collect_started_at) * 1000, 1)
+        if cache_enabled:
+            with _cache_lock:
+                DEPENDENCIES_CACHE[cache_key] = {
+                    'timestamp': time.time(),
+                    'data': dependencies,
+                }
+        total_ms = round((time.perf_counter() - started_at) * 1000, 1)
+        response = jsonify({'dependencies': dependencies})
+        response.headers['Server-Timing'] = f'collect;dur={collect_ms}, total;dur={total_ms}'
+        return response
+    except AuthError as error:
+        if error.code == "auth_required":
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
     except Exception as e:
         logger.exception('Dependencies endpoint error')
         return jsonify({'error': 'Failed to fetch dependencies', 'message': str(e)}), 500
@@ -50,18 +73,9 @@ def lookup_issues():
         if not keys and not ids:
             return jsonify({'issues': []})
 
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        team_field_id = resolve_team_field_id(headers)
-        epic_link_field_id = resolve_epic_link_field_id(headers)
+        auth_context = current_request_auth_context()
+        team_field_id = resolve_team_field_id(None, context=auth_context)
+        epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
 
         fields_list = [
             'summary',
@@ -79,18 +93,17 @@ def lookup_issues():
         issues = []
         if keys:
             unique_keys = sorted({str(k).strip() for k in keys if str(k).strip()})
-            issues.extend(fetch_issues_by_keys(unique_keys, headers, fields_list))
+            issues.extend(fetch_issues_by_keys(unique_keys, fields_list))
 
         if ids:
             unique_ids = sorted({str(i).strip() for i in ids if str(i).strip()})
             jql = f'id in ({",".join(unique_ids)})'
             payload = {
                 'jql': jql,
-                'startAt': 0,
                 'maxResults': len(unique_ids),
                 'fields': fields_list
             }
-            response = jira_search_request(headers, payload)
+            response = jira_search_request(payload)
             if response.status_code == 200:
                 data = response.json() or {}
                 issues.extend(data.get('issues', []) or [])
@@ -104,6 +117,11 @@ def lookup_issues():
             snapshots.append(snapshot)
 
         return jsonify({'issues': snapshots})
+    except AuthError as error:
+        if error.code == "auth_required":
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
     except Exception as e:
         logger.exception('Issue lookup error')
         return jsonify({'error': 'Failed to lookup issues', 'message': str(e)}), 500
@@ -113,6 +131,7 @@ def lookup_issues():
 def get_missing_info():
     """Find stories under epics in a given sprint that are missing key planning fields (sprint/SP/team)."""
     try:
+        started_at = time.perf_counter()
         sprint = request.args.get('sprint', '').strip()
         team_ids_param = request.args.get('teamIds', '').strip()
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
@@ -120,23 +139,34 @@ def get_missing_info():
         if not sprint:
             return jsonify({'error': 'Missing required query param: sprint'}), 400
 
-        # Prepare authorization
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
+        auth_context = current_request_auth_context()
+        effective_components = components_param or ([MISSING_INFO_COMPONENT] if MISSING_INFO_COMPONENT else [])
+        effective_team_ids = normalize_team_ids(team_ids or MISSING_INFO_TEAM_IDS)
+        cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
+        cache_key = build_jira_home_process_cache_key(
+            auth_context,
+            'missing-info',
+            sprint,
+            ','.join(effective_team_ids),
+            ','.join(sorted(effective_components)),
+        )
+        cached_entry = None
+        if cache_enabled:
+            with _cache_lock:
+                cached_entry = MISSING_INFO_CACHE.get(cache_key)
+        if cache_enabled and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < MISSING_INFO_CACHE_TTL_SECONDS:
+            response = jsonify(cached_entry.get('data') or {'issues': [], 'epics': [], 'count': 0})
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            response.headers['Server-Timing'] = 'cache;dur=1'
+            return response
 
         # Resolve fields
-        team_field_id = resolve_team_field_id(headers)
-        epic_link_field_id = resolve_epic_link_field_id(headers)
+        team_field_id = resolve_team_field_id(None, context=auth_context)
+        epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
 
-        effective_components = components_param or ([MISSING_INFO_COMPONENT] if MISSING_INFO_COMPONENT else [])
-        scope_clause = build_missing_info_scope_clause(team_ids or MISSING_INFO_TEAM_IDS, effective_components)
+        scope_clause = build_missing_info_scope_clause(effective_team_ids, effective_components)
 
         # 1) Fetch epics that are in the sprint (future sprint planning), scoped by component/team.
         epic_jql = f'Sprint = {sprint} AND issuetype = Epic'
@@ -149,9 +179,8 @@ def get_missing_info():
         if team_field_id:
             epic_fields.append(team_field_id)
 
-        epics_resp = jira_search_request(headers, {
+        epics_resp = jira_search_request({
             'jql': epic_jql,
-            'startAt': 0,
             'maxResults': 250,
             'fields': epic_fields
         })
@@ -162,7 +191,16 @@ def get_missing_info():
         epic_issues = epics_data.get('issues', []) or []
         epic_keys = [e.get('key') for e in epic_issues if e.get('key')]
         if not epic_keys:
-            return jsonify({'issues': [], 'epics': [], 'count': 0})
+            payload = {'issues': [], 'epics': [], 'count': 0}
+            if cache_enabled:
+                with _cache_lock:
+                    MISSING_INFO_CACHE[cache_key] = {
+                        'timestamp': time.time(),
+                        'data': payload,
+                    }
+            response = jsonify(payload)
+            response.headers['Server-Timing'] = f'total;dur={round((time.perf_counter() - started_at) * 1000, 1)}'
+            return response
 
         # Build epics summary for the response
         epics_summary = []
@@ -215,14 +253,16 @@ def get_missing_info():
             # find stories missing those fields. We only scope epics, then pull every story under them.
             story_jql = f'({link_clause} OR {parent_clause}) AND issuetype = Story AND status not in (Killed, Done, Postponed)'
 
-            start_at = 0
+            next_page_token = None
             while True:
-                resp = jira_search_request(headers, {
+                payload = {
                     'jql': story_jql,
-                    'startAt': start_at,
                     'maxResults': 250,
                     'fields': story_fields
-                })
+                }
+                if next_page_token:
+                    payload['nextPageToken'] = next_page_token
+                resp = jira_search_request(payload)
                 if resp.status_code != 200:
                     break
 
@@ -302,18 +342,28 @@ def get_missing_info():
                         }
                     })
 
-                start_at += len(issues)
-                total = data.get('total')
-                if total is not None and start_at >= total:
-                    break
-                if len(issues) < 250:
+                next_page_token = data.get('nextPageToken')
+                if data.get('isLast', not next_page_token) or not next_page_token:
                     break
 
-        response = jsonify({'issues': missing, 'epics': epics_summary, 'count': len(missing), 'epicCount': len(epic_keys)})
+        payload = {'issues': missing, 'epics': epics_summary, 'count': len(missing), 'epicCount': len(epic_keys)}
+        if cache_enabled:
+            with _cache_lock:
+                MISSING_INFO_CACHE[cache_key] = {
+                    'timestamp': time.time(),
+                    'data': payload,
+                }
+        response = jsonify(payload)
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
+        response.headers['Server-Timing'] = f'total;dur={round((time.perf_counter() - started_at) * 1000, 1)}'
         return response
+    except AuthError as error:
+        if error.code == "auth_required":
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
     except Exception as e:
         logger.exception('Missing-info error')
         return jsonify({'error': 'Failed to compute missing-info', 'message': str(e)}), 500
@@ -341,17 +391,6 @@ def get_teams():
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE) and not fetch_all
 
-        # Prepare authorization
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
         # Build JQL query from env or dashboard config
         if use_template:
             jql = apply_team_ids_to_template(team_ids)
@@ -364,97 +403,121 @@ def get_teams():
             return jsonify({'error': 'No projects configured', 'teams': []}), 400
 
         # If fetching all teams, remove team filter but keep sprint scope
+        project_scope_jql = None
         if fetch_all:
             jql = remove_team_filter_from_jql(jql)
+            project_scope_jql = jql
             if sprint:
                 jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
         elif sprint:
             jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
 
-        team_field_id = resolve_team_field_id(headers)
+        auth_context = current_request_auth_context()
+        team_field_id = resolve_team_field_id(None, context=auth_context)
 
         # Fetch tasks - paginate through all issues
         fields_list = ['summary', 'status']
         if team_field_id:
             fields_list.append(team_field_id)
 
-        max_results = 100
-        max_pages = 30  # Cap at ~3000 issues for team discovery
-        page_count = 0
-        next_page_token = None
-        all_issues = []
+        def fetch_team_issues(query):
+            max_results = 100
+            max_pages = 30  # Cap at ~3000 issues for team discovery
+            page_count = 0
+            next_page_token = None
+            all_issues = []
+            names_map = {}
 
-        while True:
-            payload = {
-                'jql': jql,
-                'maxResults': max_results,
-                'fields': fields_list
-            }
-            if next_page_token:
-                payload['nextPageToken'] = next_page_token
+            while True:
+                payload = {
+                    'jql': query,
+                    'maxResults': max_results,
+                    'fields': fields_list
+                }
+                if next_page_token:
+                    payload['nextPageToken'] = next_page_token
 
-            response = jira_search_request(headers, payload)
-            if response.status_code != 200:
-                return jsonify({'error': 'Failed to fetch teams', 'details': response.text}), response.status_code
+                response = jira_search_request(payload)
+                if response.status_code != 200:
+                    return all_issues, names_map, response
 
-            data = response.json()
-            issues = data.get('issues', [])
+                data = response.json()
+                names_map.update(data.get('names', {}) or {})
+                issues = data.get('issues', [])
 
-            if not issues:
-                break
+                if not issues:
+                    break
 
-            all_issues.extend(issues)
-            page_count += 1
-            if page_count >= max_pages:
-                break
+                all_issues.extend(issues)
+                page_count += 1
+                if page_count >= max_pages:
+                    break
 
-            # Check if we've fetched everything (using new pagination API)
-            is_last = data.get('isLast', True)
-            if is_last:
-                break
+                # Check if we've fetched everything (using new pagination API)
+                is_last = data.get('isLast', True)
+                if is_last:
+                    break
 
-            next_page_token = data.get('nextPageToken')
-            if not next_page_token:
-                break
+                next_page_token = data.get('nextPageToken')
+                if not next_page_token:
+                    break
 
-        names_map = data.get('names', {}) or {}
+            return all_issues, names_map, None
 
-        if not team_field_id:
-            team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
+        def collect_teams_from_issues(issues, names_map, teams_map):
+            effective_team_field_id = team_field_id
+            if not effective_team_field_id:
+                effective_team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
+
+            for issue in issues:
+                fields = issue.get('fields', {})
+                raw_team = None
+
+                if effective_team_field_id and fields.get(effective_team_field_id) is not None:
+                    raw_team = fields.get(effective_team_field_id)
+
+                if raw_team is not None:
+                    team_value = build_team_value(raw_team)
+                    team_id = team_value.get('id') if isinstance(team_value, dict) else None
+                    team_name = extract_team_name(raw_team)
+
+                    if team_id and team_name:
+                        teams_map[team_id] = {
+                            'id': team_id,
+                            'name': team_name
+                        }
+
+        all_issues, names_map, error_response = fetch_team_issues(jql)
+        if error_response is not None:
+            return jsonify({'error': 'Failed to fetch teams', 'details': error_response.text}), error_response.status_code
 
         # Extract unique teams (no filtering - return all teams)
         teams_map = {}
-        for issue in all_issues:
-            fields = issue.get('fields', {})
-            raw_team = None
-
-            if team_field_id and fields.get(team_field_id) is not None:
-                raw_team = fields.get(team_field_id)
-
-            if raw_team is not None:
-                team_value = build_team_value(raw_team)
-                team_id = team_value.get('id') if isinstance(team_value, dict) else None
-                team_name = extract_team_name(raw_team)
-
-                if team_id and team_name:
-                    teams_map[team_id] = {
-                        'id': team_id,
-                        'name': team_name
-                    }
+        collect_teams_from_issues(all_issues, names_map, teams_map)
 
         # When fetching all teams, also query Jira Teams API directly
         # to catch teams that have no issues in PRODUCT/TECH projects
         if fetch_all:
-            api_teams = fetch_teams_from_jira_api(headers)
+            api_teams = fetch_teams_from_jira_api()
             for tid, tval in api_teams.items():
                 if tid not in teams_map:
                     teams_map[tid] = tval
+            if not teams_map and sprint and project_scope_jql and project_scope_jql != jql:
+                fallback_issues, fallback_names_map, error_response = fetch_team_issues(project_scope_jql)
+                if error_response is not None:
+                    return jsonify({'error': 'Failed to fetch teams', 'details': error_response.text}), error_response.status_code
+                collect_teams_from_issues(fallback_issues, fallback_names_map, teams_map)
 
         # Sort teams by name
         teams_list = sorted(teams_map.values(), key=lambda t: t['name'].lower())
 
         return jsonify({'teams': teams_list})
 
+    except AuthError as error:
+        if error.code == "auth_required":
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
     except Exception as e:
         return jsonify({'error': 'Failed to fetch teams', 'details': str(e)}), 500
 
@@ -468,17 +531,8 @@ def resolve_team_names():
         if not team_ids:
             return jsonify({'error': 'teamIds is required'}), 400
 
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        team_field_id = resolve_team_field_id(headers)
+        auth_context = current_request_auth_context()
+        team_field_id = resolve_team_field_id(None, context=auth_context)
         if not team_field_id:
             team_field_id = TEAM_FIELD_DEFAULT
 
@@ -491,17 +545,18 @@ def resolve_team_names():
             fields_list.append(team_field_id)
 
         max_results = 250
-        start_at = 0
+        next_page_token = None
         teams_map = {}
 
         while True:
             payload = {
                 'jql': jql,
-                'startAt': start_at,
                 'maxResults': max_results,
                 'fields': fields_list
             }
-            response = jira_search_request(headers, payload)
+            if next_page_token:
+                payload['nextPageToken'] = next_page_token
+            response = jira_search_request(payload)
             if response.status_code != 200:
                 return jsonify({'error': 'Failed to resolve teams', 'details': response.text}), response.status_code
             data = response.json() or {}
@@ -525,16 +580,18 @@ def resolve_team_names():
             if len(teams_map) >= len(team_ids):
                 break
 
-            start_at += len(issues)
-            total = data.get('total')
-            if total is not None and start_at >= total:
-                break
-            if len(issues) < max_results:
+            next_page_token = data.get('nextPageToken')
+            if data.get('isLast', not next_page_token) or not next_page_token:
                 break
 
         missing = [team_id for team_id in team_ids if team_id not in teams_map]
         return jsonify({'teams': list(teams_map.values()), 'missing': missing})
 
+    except AuthError as error:
+        if error.code == "auth_required":
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
     except Exception as e:
         return jsonify({'error': 'Failed to resolve teams', 'details': str(e)}), 500
 
@@ -545,23 +602,13 @@ def get_all_teams_list():
     try:
         sprint = request.args.get('sprint', '')
 
-        # Prepare authorization
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
         # Build JQL query - remove team filter to get ALL teams
         jql = remove_team_filter_from_jql(build_base_jql())
         if sprint:
             jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
 
-        team_field_id = resolve_team_field_id(headers)
+        auth_context = current_request_auth_context()
+        team_field_id = resolve_team_field_id(None, context=auth_context)
 
         # Fetch tasks
         fields_list = ['summary', 'status']
@@ -582,7 +629,7 @@ def get_all_teams_list():
             if next_page_token:
                 payload['nextPageToken'] = next_page_token
 
-            response = jira_search_request(headers, payload)
+            response = jira_search_request(payload)
             if response.status_code != 200:
                 return jsonify({'error': 'Failed to fetch teams', 'details': response.text}), response.status_code
 
@@ -639,6 +686,11 @@ def get_all_teams_list():
             'teams': teams_list
         })
 
+    except AuthError as error:
+        if error.code == "auth_required":
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
     except Exception as e:
         return jsonify({'error': 'Failed to fetch all teams', 'details': str(e)}), 500
 
@@ -650,15 +702,6 @@ def get_backlog_epics():
         project_filter = request.args.get('project', '').strip().lower()
         team_ids_param = request.args.get('teamIds', '').strip()
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
-
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
 
         if team_ids and JQL_QUERY_TEMPLATE:
             jql = apply_team_ids_to_template(team_ids) or build_base_jql()
@@ -692,16 +735,22 @@ def get_backlog_epics():
                 quoted_types = ', '.join(f'"{issue_type}"' for issue_type in issue_types)
                 jql = add_clause_to_jql(jql, f'type in ({quoted_types})')
 
-        team_field_id = resolve_team_field_id(headers)
-        epic_link_field_id = resolve_epic_link_field_id(headers)
+        auth_context = current_request_auth_context()
+        team_field_id = resolve_team_field_id(None, context=auth_context)
+        epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
         sprint_field_id = get_sprint_field_id()
         epics = fetch_backlog_epics_for_alert(
             jql,
-            headers=headers,
+            headers=None,
             team_field_id=team_field_id,
             sprint_field_id=sprint_field_id,
             epic_link_field=epic_link_field_id
         )
         return jsonify({'epics': epics})
+    except AuthError as error:
+        if error.code == "auth_required":
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
     except Exception as e:
         return jsonify({'error': 'Failed to fetch backlog epics', 'details': str(e)}), 500

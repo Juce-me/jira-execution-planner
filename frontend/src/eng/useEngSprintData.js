@@ -10,6 +10,42 @@ import {
     sortTasksByPriority,
 } from './engTaskUtils.js';
 
+const OAUTH_ROUTE_NOT_READY_TASKS_MESSAGE = 'OAuth login succeeded, but this dashboard data route has not been migrated to Atlassian OAuth yet.';
+
+function authRecoveryLoginUrl(err) {
+    const loginUrl = String(err.loginUrl || '').trim();
+    if (!loginUrl.startsWith('/login')) {
+        return '';
+    }
+    if (err.status !== 401 && err.code !== 'auth_required') {
+        return '';
+    }
+    return loginUrl;
+}
+
+function redirectToAuthRecovery(err) {
+    const loginUrl = authRecoveryLoginUrl(err);
+    if (!loginUrl) {
+        return;
+    }
+    if (typeof window !== 'undefined' && window.location && typeof window.location.assign === 'function') {
+        window.location.assign(loginUrl);
+    }
+}
+
+function taskLoadErrorMessage(err, backendUrl) {
+    if (err.code === 'route_not_oauth_ready') {
+        return `${OAUTH_ROUTE_NOT_READY_TASKS_MESSAGE} Verify OAuth with the auth status and test endpoints, or use Basic auth for the full dashboard until data routes are migrated.`;
+    }
+    if (err.code === 'missing_project_access') {
+        return 'Jira project access is not confirmed for this view. Ask a tool admin to refresh your project access, then retry.';
+    }
+    if (authRecoveryLoginUrl(err)) {
+        return 'Sign in with Atlassian again to continue loading tasks.';
+    }
+    return `Failed to load tasks: ${err.message}. Make sure the Python server is running on ${backendUrl}`;
+}
+
 export function useEngSprintData({
     backendUrl,
     selectedSprint,
@@ -82,7 +118,11 @@ export function useEngSprintData({
                     error: `HTTP ${response.status}`
                 }));
                 console.error('Error data:', errorData);
-                throw new Error(errorData.error || `Error ${response.status}`);
+                const error = new Error(errorData.error || `Error ${response.status}`);
+                error.code = errorData.error;
+                error.loginUrl = errorData.loginUrl;
+                error.status = response.status;
+                throw error;
             }
 
             const data = await response.json();
@@ -116,9 +156,9 @@ export function useEngSprintData({
                 return [];
             }
             if (setErrors) {
-                const errorMsg = `Failed to load tasks: ${err.message}. Make sure the Python server is running on ${backendUrl}`;
-                setError(errorMsg);
+                setError(taskLoadErrorMessage(err, backendUrl));
             }
+            redirectToAuthRecovery(err);
             console.error('Full error details:', err);
             return [];
         } finally {

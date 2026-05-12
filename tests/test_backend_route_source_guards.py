@@ -5,6 +5,8 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
+from tests.auth_mode_test_utils import force_basic_auth_mode
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 JIRA_SERVER_PATH = REPO_ROOT / "jira_server.py"
@@ -71,6 +73,11 @@ def app_route_pattern(route_paths):
 
 
 class BackendRouteSourceGuardTests(unittest.TestCase):
+    def setUp(self):
+        import jira_server
+
+        force_basic_auth_mode(self, jira_server)
+
     def test_route_server_resolver_prefers_live_main_jira_server(self):
         from backend.routes import get_jira_server
 

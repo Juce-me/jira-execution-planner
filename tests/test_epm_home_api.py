@@ -1,3 +1,4 @@
+import base64
 import json
 import unittest
 import threading
@@ -56,6 +57,17 @@ class TestEpmHomeApi(unittest.TestCase):
         ])
         self.assertEqual(latest['date'], '2026-04-09')
         self.assertEqual(latest['snippet'], 'Latest update')
+
+    def test_extract_latest_update_skips_empty_no_update_placeholders(self):
+        latest = extract_latest_update([
+            {'creationDate': '2026-05-10T08:00:00.000Z', 'summary': ''},
+            {
+                'creationDate': '2026-04-29T12:00:00.000Z',
+                'summary': '[on track] RFP AI bot and related deals AI work are progressing',
+            },
+        ])
+        self.assertEqual(latest['date'], '2026-04-29')
+        self.assertEqual(latest['snippet'], '[on track] RFP AI bot and related deals AI work are progressing')
 
     def test_extract_latest_update_includes_creator_name(self):
         latest = extract_latest_update([
@@ -371,6 +383,36 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual(fetch_home_site_cloud_id(), 'cloud-456')
         self.assertEqual(mock_urlopen.call_args[0][0].full_url, 'https://env-override.atlassian.net/_edge/tenant_info')
 
+    @patch.dict('os.environ', {
+        'JIRA_AUTH_MODE': 'atlassian_oauth',
+        'JIRA_EMAIL': 'jira@example.com',
+        'JIRA_TOKEN': 'jira-token',
+    }, clear=True)
+    def test_home_graphql_client_oauth_requires_explicit_home_credentials(self):
+        with self.assertRaisesRegex(RuntimeError, 'ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN must be set'):
+            epm_home.build_home_graphql_client()
+
+    @patch.dict('os.environ', {
+        'JIRA_AUTH_MODE': 'atlassian_oauth',
+        'JIRA_URL': 'https://example.atlassian.net',
+        'JIRA_EMAIL': 'jira@example.com',
+        'JIRA_TOKEN': 'jira-token',
+    }, clear=True)
+    def test_teamwork_graph_client_oauth_requires_explicit_home_credentials(self):
+        with self.assertRaisesRegex(RuntimeError, 'ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN must be set'):
+            epm_home.build_teamwork_graph_client()
+
+    @patch.dict('os.environ', {
+        'JIRA_AUTH_MODE': 'basic',
+        'JIRA_EMAIL': 'jira@example.com',
+        'JIRA_TOKEN': 'jira-token',
+    }, clear=True)
+    def test_home_graphql_client_basic_keeps_jira_credential_fallback(self):
+        client = epm_home.build_home_graphql_client()
+
+        expected = base64.b64encode(b'jira@example.com:jira-token').decode('ascii')
+        self.assertEqual(client.headers['Authorization'], f'Basic {expected}')
+
     @patch('backend.epm.home.resolve_goal_by_key')
     def test_fetch_sub_goals_for_root_key_returns_non_archived_children(self, mock_resolve_goal):
         client = HomeGraphQLClient('user@example.com', 'token')
@@ -597,7 +639,7 @@ class TestEpmHomeApi(unittest.TestCase):
             ],
         )
 
-    def test_fetch_latest_project_update_requests_one_update_page_with_first_one(self):
+    def test_fetch_latest_project_update_requests_recent_updates(self):
         client = Mock()
         client.execute.return_value = {
             'data': {
@@ -608,8 +650,15 @@ class TestEpmHomeApi(unittest.TestCase):
                             {
                                 'node': {
                                     'id': 'update-1',
-                                    'creationDate': '2026-04-12T10:00:00.000Z',
-                                    'summary': 'Latest status',
+                                    'creationDate': '2026-05-10T10:00:00.000Z',
+                                    'summary': '',
+                                }
+                            },
+                            {
+                                'node': {
+                                    'id': 'update-2',
+                                    'creationDate': '2026-04-29T10:00:00.000Z',
+                                    'summary': 'Real status update',
                                 }
                             }
                         ],
@@ -622,9 +671,11 @@ class TestEpmHomeApi(unittest.TestCase):
 
         client.execute.assert_called_once_with(
             epm_home.QUERY_PROJECT_UPDATES,
-            {'projectId': 'proj-1', 'first': 1},
+            {'projectId': 'proj-1', 'first': 5},
         )
-        self.assertEqual(result, [{'id': 'update-1', 'creationDate': '2026-04-12T10:00:00.000Z', 'summary': 'Latest status'}])
+        self.assertEqual([
+            row['id'] for row in result
+        ], ['update-1', 'update-2'])
 
     @patch('backend.epm.home.fetch_latest_project_update')
     @patch('backend.epm.home.fetch_goal_project_links')
@@ -723,7 +774,7 @@ class TestEpmHomeApi(unittest.TestCase):
         query = client.execute.call_args.args[0]
         self.assertIn('state { label value }', query)
         self.assertIn('tags @optIn(to: "Townsquare")', query)
-        self.assertIn('updates(first: 1)', query)
+        self.assertIn('updates(first: 5)', query)
         self.assertIn('creator { accountId name }', query)
 
     @patch('backend.epm.home.fetch_goal_project_links')

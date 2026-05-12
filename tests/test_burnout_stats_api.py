@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch
 
+from tests.auth_mode_test_utils import force_basic_auth_mode
+
 try:
     import jira_server
     _IMPORT_ERROR = None
@@ -22,6 +24,7 @@ class DummyResponse:
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestBurnoutStatsApi(unittest.TestCase):
     def setUp(self):
+        force_basic_auth_mode(self, jira_server)
         app = jira_server.app
         app.testing = True
         self.client = app.test_client()
@@ -61,7 +64,7 @@ class TestBurnoutStatsApi(unittest.TestCase):
             }
         }
 
-        def fake_search(_headers, payload):
+        def fake_search(payload):
             calls.append(payload)
             return DummyResponse({'issues': [issue], 'total': 1})
 
@@ -106,7 +109,7 @@ class TestBurnoutStatsApi(unittest.TestCase):
             }
         }
 
-        def fake_search(_headers, _payload):
+        def fake_search(_payload):
             return DummyResponse({'issues': [issue], 'total': 1})
 
         with patch.object(jira_server, 'jira_search_request', side_effect=fake_search), \
@@ -124,7 +127,7 @@ class TestBurnoutStatsApi(unittest.TestCase):
     def test_burnout_post_issue_keys_uses_scoped_query(self):
         calls = []
 
-        def fake_search(_headers, payload):
+        def fake_search(payload):
             calls.append(payload)
             return DummyResponse({'issues': [], 'total': 0})
 
@@ -163,7 +166,7 @@ class TestBurnoutStatsApi(unittest.TestCase):
             }
         }
 
-        def fake_search(_headers, payload):
+        def fake_search(payload):
             calls.append(payload)
             return DummyResponse({'issues': [issue], 'total': 1})
 

@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from tests.auth_mode_test_utils import force_basic_auth_mode
+
 try:
     import requests
     import jira_server
@@ -34,6 +36,9 @@ def _mock_response(status_code, payload=None, text=''):
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestJiraResilience(unittest.TestCase):
+    def setUp(self):
+        force_basic_auth_mode(self, jira_server)
+
     def test_timeout_then_success_retries(self):
         clock = _FakeClock()
         session = Mock()
@@ -192,7 +197,7 @@ class TestJiraResilience(unittest.TestCase):
 
     def test_api_test_endpoint_fast_fails_when_circuit_is_open(self):
         breaker = jira_server.JiraCircuitBreaker(failure_threshold=1, open_seconds=30)
-        breaker.force_open(now=0.0)
+        breaker.force_open()
 
         with patch.object(jira_server, 'JIRA_SEARCH_CIRCUIT_BREAKER', breaker):
             client = jira_server.app.test_client()

@@ -358,6 +358,10 @@ test('dashboard source exposes EPM settings access in both header contexts', () 
         countOccurrences(dashboardSource, 'Open EPM settings') >= 2,
         'Expected Open EPM settings controls in both full and compact headers'
     );
+    assert.ok(
+        countOccurrences(dashboardSource, '{canEditEpmConfiguration && (') >= 2,
+        'Expected EPM settings controls to render for users with EPM configuration access'
+    );
 });
 
 test('dashboard places compact EPM collapse-all control before settings gears', () => {

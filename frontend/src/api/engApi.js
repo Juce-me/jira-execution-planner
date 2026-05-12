@@ -98,7 +98,10 @@ export const fetchBacklogEpics = (backendUrl, { project, teamIds = [] } = {}) =>
 export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], teamIds = [], signal } = {}) =>
     fetch(`${backendUrl}/api/stats/excluded-capacity-source`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'jira-execution-planner',
+        },
         cache: 'no-cache',
         signal,
         body: JSON.stringify({ sprintIds, teamIds })
@@ -107,7 +110,10 @@ export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], t
 export const fetchDependencies = (backendUrl, keys, { signal } = {}) =>
     fetch(`${backendUrl}/api/dependencies`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'jira-execution-planner',
+        },
         body: JSON.stringify({ keys }),
         signal
     });

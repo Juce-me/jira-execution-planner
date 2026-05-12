@@ -47,7 +47,7 @@ class TestSprintDatesInFetch(unittest.TestCase):
              patch.object(jira_server, 'JIRA_URL', 'https://jira.example.com'), \
              patch.object(jira_server, 'JIRA_EMAIL', 'test@test.com'), \
              patch.object(jira_server, 'JIRA_TOKEN', 'token'), \
-             patch('jira_server.requests.get', return_value=mock_response):
+             patch.object(jira_server, 'current_jira_get', return_value=mock_response):
             result = jira_server.fetch_sprints_from_jira()
 
         self.assertEqual(len(result), 2)
@@ -77,7 +77,7 @@ class TestSprintDatesInFetch(unittest.TestCase):
              patch.object(jira_server, 'JIRA_URL', 'https://jira.example.com'), \
              patch.object(jira_server, 'JIRA_EMAIL', 'test@test.com'), \
              patch.object(jira_server, 'JIRA_TOKEN', 'token'), \
-             patch('jira_server.requests.get', return_value=mock_response):
+             patch.object(jira_server, 'current_jira_get', return_value=mock_response):
             result = jira_server.fetch_sprints_from_jira()
 
         self.assertEqual(len(result), 1)
@@ -117,7 +117,7 @@ class TestSprintDatesInFetch(unittest.TestCase):
              patch.object(jira_server, 'JIRA_EMAIL', 'test@test.com'), \
              patch.object(jira_server, 'JIRA_TOKEN', 'token'), \
              patch.object(jira_server, 'STATS_JQL_BASE', 'project = "TEST"'), \
-             patch('jira_server.requests.get', return_value=mock_board_response), \
+             patch.object(jira_server, 'current_jira_get', return_value=mock_board_response), \
              patch('jira_server.jira_search_request', return_value=mock_search_response):
             result = jira_server.fetch_sprints_from_jira()
 
@@ -284,8 +284,8 @@ class TestMethod2BoardScoping(unittest.TestCase):
             ]
         }
 
-        def get_side_effect(url, **kwargs):
-            if '/sprint' in url and '/board/' in url:
+        def get_side_effect(path, **kwargs):
+            if '/sprint' in path and '/board/' in path:
                 # First call: Method 1 board sprint fetch (returns 404)
                 # Subsequent calls: fetch_board_sprint_ids (returns board sprints)
                 if not hasattr(get_side_effect, '_board_call_count'):
@@ -301,7 +301,7 @@ class TestMethod2BoardScoping(unittest.TestCase):
              patch.object(jira_server, 'JIRA_EMAIL', 'test@test.com'), \
              patch.object(jira_server, 'JIRA_TOKEN', 'token'), \
              patch.object(jira_server, 'STATS_JQL_BASE', 'project = "TEST"'), \
-             patch('jira_server.requests.get', side_effect=get_side_effect), \
+             patch.object(jira_server, 'current_jira_get', side_effect=get_side_effect), \
              patch('jira_server.jira_search_request', return_value=mock_search_response):
             # Reset call counter
             if hasattr(get_side_effect, '_board_call_count'):

@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from tests.auth_mode_test_utils import force_basic_auth_mode
+
 try:
     import jira_server
     _IMPORT_ERROR = None
@@ -15,6 +17,7 @@ except ModuleNotFoundError as exc:
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestTeamCatalogAPI(unittest.TestCase):
     def setUp(self):
+        force_basic_auth_mode(self, jira_server)
         self.app = jira_server.app
         self.app.testing = True
         self.client = self.app.test_client()

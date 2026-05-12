@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import unittest
@@ -26,9 +27,9 @@ class TestLoggingMigration(unittest.TestCase):
         response = Mock()
         response.status_code = 503
 
-        with patch.object(jira_server.HTTP_SESSION, 'get', return_value=response):
+        with patch.object(jira_server, 'current_jira_get', return_value=response):
             with self.assertLogs(jira_server.logger.name, level='WARNING') as captured:
-                teams = jira_server.fetch_teams_from_jira_api(headers={})
+                teams = jira_server.fetch_teams_from_jira_api()
 
         self.assertEqual(teams, {})
         output = '\n'.join(captured.output)
@@ -42,9 +43,9 @@ class TestLoggingMigration(unittest.TestCase):
             {'id': 'team-1', 'title': 'Example Team'}
         ]
 
-        with patch.object(jira_server.HTTP_SESSION, 'get', return_value=response):
+        with patch.object(jira_server, 'current_jira_get', return_value=response):
             with self.assertLogs(jira_server.logger.name, level='INFO') as captured:
-                teams = jira_server.fetch_teams_from_jira_api(headers={})
+                teams = jira_server.fetch_teams_from_jira_api()
 
         self.assertEqual(
             teams,
@@ -52,6 +53,21 @@ class TestLoggingMigration(unittest.TestCase):
         )
         output = '\n'.join(captured.output)
         self.assertIn('Fetched 1 teams from Jira Teams API', output)
+
+    @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
+    def test_werkzeug_logs_redact_oauth_callback_query(self):
+        werkzeug_logger = logging.getLogger('werkzeug')
+
+        with self.assertLogs('werkzeug', level='INFO') as captured:
+            werkzeug_logger.info(
+                '127.0.0.1 - - [06/May/2026 14:17:47] "%s" 302 -',
+                'GET /api/auth/atlassian/callback?state=state-secret&code=code-secret HTTP/1.1',
+            )
+
+        output = '\n'.join(captured.output)
+        self.assertIn('/api/auth/atlassian/callback?[redacted]', output)
+        self.assertNotIn('state-secret', output)
+        self.assertNotIn('code-secret', output)
 
 
 if __name__ == '__main__':

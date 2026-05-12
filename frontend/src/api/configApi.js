@@ -1,7 +1,19 @@
 import { getJson } from './http.js';
 
+export const normalizeAppConfig = (config) => {
+    const normalized = { ...(config || {}) };
+    const viewConfig = normalized.viewConfig || normalized.resolvedView || null;
+    if (viewConfig && !normalized.viewConfig) {
+        normalized.viewConfig = viewConfig;
+    }
+    if (!normalized.epm && viewConfig?.view?.epm) {
+        normalized.epm = viewConfig.view.epm;
+    }
+    return normalized;
+};
+
 export const fetchAppConfig = (backendUrl) =>
-    getJson(`${backendUrl}/api/config`, 'Config');
+    getJson(`${backendUrl}/api/config?includeViewConfig=true`, 'Config').then(normalizeAppConfig);
 
 export const fetchVersionInfo = (backendUrl) =>
     getJson(`${backendUrl}/api/version`, 'Version', { cache: 'no-cache' });
@@ -19,7 +31,10 @@ export const fetchGroupsConfig = (backendUrl) =>
 export const saveGroupsConfig = (backendUrl, payload) =>
     fetch(`${backendUrl}/api/groups-config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'jira-execution-planner'
+        },
         body: JSON.stringify(payload)
     });
 
@@ -33,7 +48,10 @@ export const fetchSelectedProjects = (backendUrl) =>
 export const saveSelectedProjects = (backendUrl, selected) =>
     fetch(`${backendUrl}/api/projects/selected`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'jira-execution-planner'
+        },
         body: JSON.stringify({ selected })
     });
 
@@ -47,7 +65,10 @@ export const fetchBoardConfig = (backendUrl) =>
 export const saveBoardConfig = (backendUrl, payload) =>
     fetch(`${backendUrl}/api/board-config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'jira-execution-planner'
+        },
         body: JSON.stringify(payload)
     });
 
@@ -61,7 +82,10 @@ export const fetchPriorityWeightsConfig = (backendUrl) =>
 export const savePriorityWeightsConfig = (backendUrl, weights) =>
     fetch(`${backendUrl}/api/stats/priority-weights-config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'jira-execution-planner'
+        },
         body: JSON.stringify({ weights })
     });
 
@@ -75,7 +99,10 @@ export const fetchCapacityConfig = (backendUrl) =>
 export const saveCapacityConfig = (backendUrl, payload) =>
     fetch(`${backendUrl}/api/capacity/config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'jira-execution-planner'
+        },
         body: JSON.stringify(payload)
     });
 
@@ -89,7 +116,10 @@ export const fetchFieldConfig = (backendUrl, endpoint) =>
 export const saveFieldConfig = (backendUrl, endpoint, payload) =>
     fetch(`${backendUrl}/api/${endpoint}/config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'jira-execution-planner'
+        },
         body: JSON.stringify(payload)
     });
 
@@ -103,7 +133,10 @@ export const fetchIssueTypesConfig = (backendUrl) =>
 export const saveIssueTypesConfig = (backendUrl, issueTypes) =>
     fetch(`${backendUrl}/api/issue-types/config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'jira-execution-planner'
+        },
         body: JSON.stringify({ issueTypes })
     });
 

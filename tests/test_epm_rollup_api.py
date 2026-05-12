@@ -1,7 +1,9 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from backend.auth.jira_auth import AuthError
 import jira_server
+from tests.auth_mode_test_utils import force_basic_auth_mode
 
 
 def make_issue(key, issue_type='Story', summary=None, parent_key='', labels=None, sprint=None, epic_link='', status='To Do'):
@@ -56,6 +58,7 @@ def collect_hierarchy_issue_keys(payload):
 
 class TestEpmRollupApi(unittest.TestCase):
     def setUp(self):
+        force_basic_auth_mode(self, jira_server)
         self.app = jira_server.app
         self.app.testing = True
         self.client = self.app.test_client()
@@ -216,6 +219,32 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         mock_projects.assert_called_once_with(saved_config, tab='active', sub_goal_keys=['CHILD-A', 'CHILD-B'])
         self.assertEqual(saved_config['scope']['subGoalKeys'], ['CHILD-A', 'CHILD-B', 'CHILD-C'])
+
+    def test_all_projects_rollup_returns_home_token_prerequisite(self):
+        with patch.object(jira_server, 'get_epm_config', return_value={
+            'version': 2,
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-A']},
+            'projects': {},
+        }), \
+             patch.object(
+                 jira_server,
+                 'fetch_epm_home_projects',
+                 side_effect=AuthError(
+                     'home_user_token_required',
+                     'Connect your Atlassian API token to load EPM Home projects.',
+                 ),
+             ):
+            response = self.client.get('/api/epm/projects/rollup/all?tab=active&sprint=42')
+
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        self.assertEqual(
+            response.get_json(),
+            {
+                'error': 'home_user_token_required',
+                'message': 'Connect your Atlassian API token to load EPM Home projects.',
+                'connectUrl': '/settings/connections/home-token',
+            },
+        )
 
     def test_all_projects_rollup_filters_visible_projects_and_reports_duplicates(self):
         projects = [
@@ -801,10 +830,8 @@ class TestEpmRollupApi(unittest.TestCase):
         ]
 
         try:
-            with patch.object(jira_server, 'requests') as mock_requests:
-                mock_requests.get.return_value = response
-
-                field_id = jira_server.resolve_epic_link_field_id({'Authorization': 'Basic synthetic'})
+            with patch.object(jira_server, 'current_jira_get', return_value=response):
+                field_id = jira_server.resolve_epic_link_field_id(None)
 
             self.assertEqual(field_id, 'customfield_epiclink')
             self.assertEqual(jira_server.EPIC_LINK_FIELD_CACHE, 'customfield_epiclink')

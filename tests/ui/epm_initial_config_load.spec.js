@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const epmConfig = {
     version: 2,
@@ -37,6 +38,7 @@ const epmProject = {
 
 async function mockDashboardLoad(page) {
     const calls = [];
+    await installDashboardShell(page);
     await page.addInitScript(() => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
             selectedView: 'epm',
@@ -62,6 +64,18 @@ async function mockDashboardLoad(page) {
                 userCanEditSettings: true,
                 projectsConfigured: true,
                 epm: epmConfig,
+            });
+        }
+        if (url.pathname === '/api/auth/refresh') {
+            return route.fulfill({ status: 204, body: '' });
+        }
+        if (url.pathname === '/api/me/connections/home-token') {
+            return json({
+                connected: true,
+                provider: 'atlassian_user_api_token',
+                credentialSubject: 'profile@example.com',
+                status: 'active',
+                needsReconnect: false,
             });
         }
         if (url.pathname === '/api/sprints') {

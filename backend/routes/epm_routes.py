@@ -2,15 +2,42 @@
 
 from flask import Blueprint
 
+from backend.auth.cache_policy import (
+    build_jira_home_process_cache_key,
+    jira_home_partitioned_process_cache_enabled,
+)
+from backend.auth.jira_auth import AuthError
+
 from . import bind_server_globals
 
 
 bp = Blueprint("epm_routes", __name__)
+HOME_USER_TOKEN_CONNECT_URL = '/settings/connections/home-token'
 
 
 @bp.before_request
 def _sync_server_globals():
     bind_server_globals(globals())
+
+
+def _is_home_user_token_required(error):
+    return isinstance(error, AuthError) and error.code == 'home_user_token_required'
+
+
+def _home_user_token_message(error):
+    return str(error) or 'Connect your Atlassian API token to load EPM Home projects.'
+
+
+def _home_user_token_required_payload(error):
+    return {
+        'error': 'home_user_token_required',
+        'message': _home_user_token_message(error),
+        'connectUrl': HOME_USER_TOKEN_CONNECT_URL,
+    }
+
+
+def _home_user_token_required_response(error):
+    return jsonify(_home_user_token_required_payload(error)), 409
 
 
 @bp.route('/api/epm/config', methods=['GET'])
@@ -51,6 +78,18 @@ def get_epm_goals_endpoint():
     ) as exc:
         goals = []
         error = str(exc)
+    except AuthError as exc:
+        if _is_home_user_token_required(exc):
+            return jsonify({
+                'goals': [],
+                'error': _home_user_token_message(exc),
+                'errorCode': exc.code,
+                'connectUrl': HOME_USER_TOKEN_CONNECT_URL,
+            })
+        if exc.code == 'auth_required':
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
     return jsonify({'goals': goals, 'error': error})
 
 
@@ -61,7 +100,12 @@ def get_epm_projects_endpoint():
     tab = normalize_epm_text(request.args.get('tab'))
     sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
     started = time.perf_counter()
-    payload = build_epm_projects_payload(epm_config, force_refresh=force_refresh, tab=tab, sub_goal_keys=sub_goal_keys)
+    try:
+        payload = build_epm_projects_payload(epm_config, force_refresh=force_refresh, tab=tab, sub_goal_keys=sub_goal_keys)
+    except AuthError as exc:
+        if _is_home_user_token_required(exc):
+            return _home_user_token_required_response(exc)
+        raise
     total_ms = round((time.perf_counter() - started) * 1000, 1)
     response = jsonify(payload)
     response.headers['Server-Timing'] = f'home-projects;dur={total_ms}, total;dur={total_ms}'
@@ -73,7 +117,12 @@ def configure_epm_projects_endpoint():
     payload = normalize_epm_config(request.get_json(silent=True) or {})
     force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
     started = time.perf_counter()
-    projects_payload = build_epm_projects_payload(payload, force_refresh=force_refresh)
+    try:
+        projects_payload = build_epm_projects_payload(payload, force_refresh=force_refresh)
+    except AuthError as exc:
+        if _is_home_user_token_required(exc):
+            return _home_user_token_required_response(exc)
+        raise
     total_ms = round((time.perf_counter() - started) * 1000, 1)
     response = jsonify(projects_payload)
     response.headers['Server-Timing'] = f'home-projects;dur={total_ms}, total;dur={total_ms}'
@@ -90,7 +139,12 @@ def get_all_epm_projects_rollup_endpoint():
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
     sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
-    payload, status, headers = build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=sub_goal_keys)
+    try:
+        payload, status, headers = build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=sub_goal_keys)
+    except AuthError as exc:
+        if _is_home_user_token_required(exc):
+            return _home_user_token_required_response(exc)
+        raise
     response = jsonify(payload)
     for key, value in headers.items():
         response.headers[key] = value
@@ -107,17 +161,29 @@ def get_epm_project_issues_endpoint(home_project_id):
         return jsonify(error_payload), status
 
     sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
-    project = find_epm_project_or_404(home_project_id, sub_goal_keys=sub_goal_keys)
+    try:
+        project = find_epm_project_or_404(home_project_id, sub_goal_keys=sub_goal_keys)
+    except AuthError as exc:
+        if _is_home_user_token_required(exc):
+            return _home_user_token_required_response(exc)
+        raise
     linkage = project['resolvedLinkage']
     scope_clause = build_epm_scope_clause(linkage)
     if not scope_clause:
         return jsonify({'project': project, 'issues': [], 'epics': {}, 'metadataOnly': True})
 
     base_jql = build_base_jql()
-    cache_key = f"{home_project_id}::{tab}::{sprint}::{base_jql}::{json.dumps(linkage, sort_keys=True)}"
-    with _epm_cache_lock:
-        cached = EPM_ISSUES_CACHE.get(cache_key)
-    if cached and (time.time() - cached['timestamp']) < EPM_ISSUES_CACHE_TTL_SECONDS:
+    auth_context = current_request_auth_context()
+    cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
+    cache_key = build_jira_home_process_cache_key(
+        auth_context,
+        f"{home_project_id}::{tab}::{sprint}::{base_jql}::{json.dumps(linkage, sort_keys=True)}",
+    )
+    cached = None
+    if cache_enabled:
+        with _epm_cache_lock:
+            cached = EPM_ISSUES_CACHE.get(cache_key)
+    if cache_enabled and cached and (time.time() - cached['timestamp']) < EPM_ISSUES_CACHE_TTL_SECONDS:
         response = jsonify(cached['data'])
         response.headers['Server-Timing'] = 'cache;dur=1'
         return response
@@ -126,7 +192,7 @@ def get_epm_project_issues_endpoint(home_project_id):
     jql = add_clause_to_jql(base_jql, scope_clause)
     if should_apply_epm_sprint(tab):
         jql = add_clause_to_jql(jql, f'Sprint = {sprint}')
-    issues = fetch_issues_by_jql(jql, build_jira_headers(), build_epm_fields_list())
+    issues = fetch_issues_by_jql(jql, build_epm_fields_list(), context=auth_context)
     slim_issues, epic_details = shape_epm_issue_payload(issues)
     payload = {
         'project': project,
@@ -134,8 +200,9 @@ def get_epm_project_issues_endpoint(home_project_id):
         'epics': epic_details,
         'metadataOnly': False,
     }
-    with _epm_cache_lock:
-        EPM_ISSUES_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
+    if cache_enabled:
+        with _epm_cache_lock:
+            EPM_ISSUES_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
     response = jsonify(payload)
     response.headers['Server-Timing'] = f'jira-search;dur={round((time.perf_counter() - started) * 1000, 1)}'
     return response
@@ -145,12 +212,17 @@ def get_epm_project_issues_endpoint(home_project_id):
 def get_epm_project_rollup_endpoint(project_id):
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
-    payload, status, headers = build_per_project_rollup(
-        project_id,
-        tab,
-        sprint,
-        build_epm_rollup_dependencies(sub_goal_keys=parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))),
-    )
+    try:
+        payload, status, headers = build_per_project_rollup(
+            project_id,
+            tab,
+            sprint,
+            build_epm_rollup_dependencies(sub_goal_keys=parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))),
+        )
+    except AuthError as exc:
+        if _is_home_user_token_required(exc):
+            return _home_user_token_required_response(exc)
+        raise
     response = jsonify(payload)
     for key, value in headers.items():
         response.headers[key] = value

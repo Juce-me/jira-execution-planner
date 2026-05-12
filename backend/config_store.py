@@ -2,6 +2,7 @@
 
 import json
 import os
+import tempfile
 
 
 def _noop_log(*_parts):
@@ -57,8 +58,17 @@ def save_dashboard_config(config, dashboard_path):
     directory = os.path.dirname(dashboard_path)
     if directory:
         os.makedirs(directory, exist_ok=True)
-    with open(dashboard_path, 'w') as handle:
-        json.dump(config, handle, indent=2)
+    tmp_name = None
+    try:
+        with tempfile.NamedTemporaryFile('w', dir=directory or None, delete=False) as handle:
+            tmp_name = handle.name
+            json.dump(config, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, dashboard_path)
+    finally:
+        if tmp_name and os.path.exists(tmp_name):
+            os.unlink(tmp_name)
 
 
 def resolve_team_catalog_path(team_catalog_path):

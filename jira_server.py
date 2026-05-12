@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from flask import abort, jsonify, request, send_file, send_from_directory
+from flask import abort, has_request_context, jsonify, redirect, request, send_file, send_from_directory, session
 import requests
 import argparse
 import base64
@@ -14,6 +14,7 @@ import threading
 import time
 import subprocess
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timedelta, date, timezone
 try:
     from zoneinfo import ZoneInfo
@@ -31,13 +32,54 @@ from backend.epm.home import fetch_epm_home_projects, merge_epm_linkage
 from backend.epm.rollup import EpmRollupDependencies, build_per_project_rollup
 from backend.epm.scope import build_epm_scope_clause, normalize_epm_sprint_field, should_apply_epm_sprint
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
+from backend.auth.cache_policy import (
+    build_jira_home_process_cache_key,
+    jira_home_partitioned_process_cache_enabled,
+    jira_home_process_cache_enabled,
+)
+from backend.auth.context import RequestAuthContext, build_auth_cache_key, stable_local_workspace_id
+from backend.auth.admin_bootstrap import bootstrap_first_tool_admin
+from backend.auth.csrf import validate_csrf_token
+from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
+from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
+from backend.auth.key_provider import key_provider_from_env
+from backend.auth.project_access import project_access_denied_response
+from backend.auth.service_integrations import register_service_integration_cache_invalidator
+from backend.config.repository import (
+    ConfigStorageError,
+    config_storage_db_enabled,
+    db_repository as build_db_config_repository,
+    json_repository as build_json_config_repository,
+    validate_config_storage_startup,
+)
+from backend.db.engine import database_storage_enabled, session_scope, validate_startup_database_config
+from backend.auth.jira_auth import (
+    AUTH_MODE_ATLASSIAN_OAUTH,
+    AUTH_MODE_BASIC,
+    AuthConfig,
+    AuthError,
+    build_authorize_url,
+    build_pkce_challenge,
+    choose_accessible_resource,
+    exchange_authorization_code,
+    fetch_accessible_resources,
+    fetch_current_user,
+    jira_get,
+    jira_post,
+    jira_request,
+    missing_oauth_scopes,
+    new_oauth_state,
+    new_pkce_verifier,
+    token_session_payload,
+    validate_auth_config,
+)
+
+# Load environment variables from .env file before constructing the Flask app.
+load_dotenv()
 from backend.app import app
 from backend import config_store as _config_store
 from backend import jira_client as _jira_client
 from backend.epm import projects as epm_projects
-
-# Load environment variables from .env file
-load_dotenv()
 
 # Reuse a single HTTP session to avoid reconnect overhead on repeated calls
 HTTP_SESSION = Session()
@@ -47,6 +89,21 @@ logger = logging.getLogger(__name__)
 JIRA_URL = os.getenv('JIRA_URL')
 JIRA_EMAIL = os.getenv('JIRA_EMAIL')
 JIRA_TOKEN = os.getenv('JIRA_TOKEN')
+JIRA_AUTH_MODE = os.getenv('JIRA_AUTH_MODE', AUTH_MODE_BASIC).strip() or AUTH_MODE_BASIC
+ATLASSIAN_CLIENT_ID = os.getenv('ATLASSIAN_CLIENT_ID', '').strip()
+ATLASSIAN_CLIENT_SECRET = os.getenv('ATLASSIAN_CLIENT_SECRET', '').strip()
+ATLASSIAN_REDIRECT_URI = os.getenv('ATLASSIAN_REDIRECT_URI', '').strip()
+ATLASSIAN_SCOPES = os.getenv(
+    'ATLASSIAN_SCOPES',
+    'read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access',
+).strip()
+FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', '').strip()
+app.secret_key = FLASK_SECRET_KEY or os.urandom(32)
+APP_ENVIRONMENT_KEY = os.getenv('APP_ENVIRONMENT_KEY', 'local').strip() or 'local'
+OAUTH_LOCAL_TOKEN_STORE_ALLOWED = os.getenv('OAUTH_LOCAL_TOKEN_STORE_ALLOWED', '').strip().lower() in {'1', 'true', 'yes'}
+OAUTH_TOKEN_STORE_TTL_SECONDS = int(os.getenv('OAUTH_TOKEN_STORE_TTL_SECONDS', '2592000'))
+OAUTH_TOKEN_STORE_MIN_TTL_SECONDS = 900
+OAUTH_TOKEN_STORE_PATH = os.getenv('OAUTH_TOKEN_STORE_PATH', '.oauth-token-store.json').strip()
 JQL_QUERY = os.getenv('JQL_QUERY', '').strip()
 JIRA_BOARD_ID = os.getenv('JIRA_BOARD_ID')  # Optional: board ID for faster sprint fetching
 JIRA_PRODUCT_PROJECT = os.getenv('JIRA_PRODUCT_PROJECT', 'PRODUCT ROADMAPS')
@@ -79,6 +136,7 @@ UPDATE_CHECK_BRANCH = os.getenv('UPDATE_CHECK_BRANCH', 'main').strip() or 'main'
 UPDATE_CHECK_TTL_SECONDS = int(os.getenv('UPDATE_CHECK_TTL_SECONDS', '300'))
 UPDATE_CHECK_RELEASE_INFO = os.getenv('UPDATE_CHECK_RELEASE_INFO', 'release-info.json').strip() or 'release-info.json'
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').strip().upper() or 'INFO'
+validate_startup_database_config()
 JIRA_RETRY_MAX_ATTEMPTS = int(os.getenv('JIRA_RETRY_MAX_ATTEMPTS', '4'))
 JIRA_RETRY_MAX_ELAPSED_SECONDS = float(os.getenv('JIRA_RETRY_MAX_ELAPSED_SECONDS', '10'))
 JIRA_RETRY_BASE_DELAY_SECONDS = float(os.getenv('JIRA_RETRY_BASE_DELAY_SECONDS', '0.5'))
@@ -92,18 +150,27 @@ EPIC_COHORT_ENRICH_WORKERS = int(os.getenv('EPIC_COHORT_ENRICH_WORKERS', '4'))
 EPIC_COHORT_ENRICH_TIMEOUT_SECONDS = float(os.getenv('EPIC_COHORT_ENRICH_TIMEOUT_SECONDS', '10'))
 EXCLUDED_CAPACITY_STATS_MAX_SPRINTS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_SPRINTS', '24'))
 EXCLUDED_CAPACITY_STATS_MAX_ISSUES = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_ISSUES', '2000'))
-EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES', '500'))
 EXCLUDED_CAPACITY_STATS_MAX_EPICS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_EPICS', '200'))
+EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS = int(os.getenv('EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS', '3600'))
+EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE = int(os.getenv('EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE', '100'))
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
 TASKS_CACHE_TTL_SECONDS = 60 * 5
 TASKS_CACHE_SCHEMA_VERSION = 'v2-empty-epic-actionable'
+MISSING_INFO_CACHE = {}
+MISSING_INFO_CACHE_TTL_SECONDS = 60 * 5
+DEPENDENCIES_CACHE = {}
+DEPENDENCIES_CACHE_TTL_SECONDS = 60 * 5
 UPDATE_CHECK_CACHE = {'ts': 0, 'data': None}
 EPIC_COHORT_CACHE = {}
+EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE = {}
 EPM_PROJECTS_CACHE = {}
 EPM_ISSUES_CACHE = {}
 EPM_ROLLUP_CACHE = {}
+OAUTH_TOKEN_STORE = {}
+OAUTH_TOKEN_STORE_LOCK = threading.RLock()
+OAUTH_REFRESH_LOCKS = {}
 EPM_PROJECTS_CACHE_TTL_SECONDS = 300
 EPM_ISSUES_CACHE_TTL_SECONDS = 300
 EPM_ROLLUP_CACHE_TTL_SECONDS = 300
@@ -135,6 +202,36 @@ PRIORITY_WEIGHT_NAME_ALIASES = {
 }
 
 
+SENSITIVE_CALLBACK_QUERY_RE = re.compile(
+    r'(/api/auth/atlassian/callback)\?[^ \t\r\n"]+'
+)
+
+
+def redact_sensitive_log_text(value):
+    if not isinstance(value, str):
+        return value
+    return SENSITIVE_CALLBACK_QUERY_RE.sub(r'\1?[redacted]', value)
+
+
+class SensitiveLogRedactionFilter(logging.Filter):
+    def filter(self, record):
+        record.msg = redact_sensitive_log_text(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(redact_sensitive_log_text(arg) for arg in record.args)
+        elif isinstance(record.args, dict):
+            record.args = {
+                key: redact_sensitive_log_text(value)
+                for key, value in record.args.items()
+            }
+        return True
+
+
+def _install_sensitive_log_filter(target_logger):
+    if any(isinstance(existing, SensitiveLogRedactionFilter) for existing in target_logger.filters):
+        return
+    target_logger.addFilter(SensitiveLogRedactionFilter())
+
+
 def configure_logging():
     """Initialize process logging once with a readable default format."""
     class CsvLineFormatter(logging.Formatter):
@@ -156,6 +253,9 @@ def configure_logging():
 
     formatter = CsvLineFormatter(datefmt='%Y-%m-%dT%H:%M:%S')
     root_logger = logging.getLogger()
+    _install_sensitive_log_filter(root_logger)
+    _install_sensitive_log_filter(logging.getLogger('werkzeug'))
+    _install_sensitive_log_filter(logger)
     if not root_logger.handlers:
         logging.basicConfig(
             level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -203,6 +303,700 @@ def log_error(*parts):
 
 
 configure_logging()
+
+
+UNSAFE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
+OAUTH_DASHBOARD_ENTRY_PATHS = {'/', '/jira-dashboard.html'}
+OAUTH_READY_API_PATHS = {
+    '/api/test',
+    '/api/tasks',
+    '/api/tasks-with-team-name',
+    '/api/missing-info',
+    '/api/dependencies',
+    '/api/issues/lookup',
+    '/api/teams',
+    '/api/teams/resolve',
+    '/api/teams/all',
+    '/api/backlog-epics',
+    '/api/config',
+    '/api/version',
+    '/api/groups-config',
+    '/api/team-catalog',
+    '/api/projects',
+    '/api/components',
+    '/api/epics/search',
+    '/api/jira/labels',
+    '/api/projects/selected',
+    '/api/capacity/config',
+    '/api/board-config',
+    '/api/sprint-field/config',
+    '/api/story-points-field/config',
+    '/api/parent-name-field/config',
+    '/api/team-field/config',
+    '/api/stats/priority-weights-config',
+    '/api/issue-types',
+    '/api/issue-types/config',
+    '/api/fields',
+    '/api/boards',
+    '/api/epm/config',
+    '/api/epm/scope',
+    '/api/epm/goals',
+    '/api/epm/projects',
+    '/api/epm/projects/configuration',
+    '/api/epm/projects/preview',
+    '/api/epm/projects/rollup/all',
+    '/api/sprints',
+    '/api/capacity',
+    '/api/planned-capacity',
+    '/api/scenario',
+    '/api/scenario/overrides',
+    '/api/stats',
+    '/api/stats/burnout',
+    '/api/stats/epic-cohort',
+    '/api/stats/excluded-capacity-source',
+}
+
+OAUTH_SHARED_CONFIG_WRITE_PATHS = {
+    '/api/projects/selected',
+    '/api/board-config',
+    '/api/capacity/config',
+    '/api/sprint-field/config',
+    '/api/story-points-field/config',
+    '/api/parent-name-field/config',
+    '/api/team-field/config',
+    '/api/stats/priority-weights-config',
+    '/api/issue-types/config',
+}
+
+
+def is_oauth_ready_api_path(path):
+    if path.startswith('/api/auth/') or path in OAUTH_READY_API_PATHS:
+        return True
+    if path.startswith('/api/admin/'):
+        return True
+    if path == '/api/me/views' or path.startswith('/api/me/views/'):
+        return True
+    if path.startswith('/api/me/connections/'):
+        return True
+    if path.startswith('/api/epm/projects/') and (path.endswith('/issues') or path.endswith('/rollup')):
+        return True
+    return False
+
+
+def bootstrap_tool_admin_account_ids():
+    raw = os.getenv('TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS', '')
+    return {account_id.strip() for account_id in raw.split(',') if account_id.strip()}
+
+
+def is_pre_db_tool_admin_account(atlassian_account_id):
+    account_id = str(atlassian_account_id or '').strip()
+    return bool(account_id)
+
+
+def store_db_oauth_callback_session_metadata(token_data, resource, user_profile):
+    if not database_storage_enabled():
+        return {}
+    with session_scope() as db_session:
+        stored = store_oauth_callback_tokens(
+            db_session,
+            token_data=token_data,
+            resource=resource,
+            user_profile=user_profile,
+            environment_key=APP_ENVIRONMENT_KEY.strip().lower() or 'local',
+            configured_jira_url=JIRA_URL or '',
+            key_provider=key_provider_from_env(),
+            requested_scopes=ATLASSIAN_SCOPES,
+        )
+        bootstrap_first_tool_admin(
+            db_session,
+            workspace_id=stored.workspace_id,
+            user_id=stored.user_id,
+            atlassian_account_id=(user_profile or {}).get('account_id'),
+        )
+        clear_auth_sensitive_caches('oauth_reconnect')
+        return stored.session_metadata
+
+
+def current_auth_config():
+    return AuthConfig(
+        auth_mode=JIRA_AUTH_MODE,
+        jira_url=JIRA_URL or '',
+        jira_email=JIRA_EMAIL or '',
+        jira_token=JIRA_TOKEN or '',
+        client_id=ATLASSIAN_CLIENT_ID,
+        client_secret=ATLASSIAN_CLIENT_SECRET,
+        redirect_uri=ATLASSIAN_REDIRECT_URI,
+        scopes=ATLASSIAN_SCOPES,
+        flask_secret_key=FLASK_SECRET_KEY,
+    )
+
+
+def _drop_oauth_session(session_id):
+    with OAUTH_TOKEN_STORE_LOCK:
+        OAUTH_TOKEN_STORE.pop(session_id, None)
+        OAUTH_REFRESH_LOCKS.pop(session_id, None)
+        _drop_persistent_oauth_session(session_id)
+
+
+def _oauth_token_store_persistence_enabled():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return False
+    if APP_ENVIRONMENT_KEY.strip().lower() not in {'local', 'dev'}:
+        return False
+    return bool(OAUTH_LOCAL_TOKEN_STORE_ALLOWED and OAUTH_TOKEN_STORE_PATH)
+
+
+def _read_persistent_oauth_token_store():
+    if not _oauth_token_store_persistence_enabled():
+        return {}
+    try:
+        with open(OAUTH_TOKEN_STORE_PATH, 'r', encoding='utf-8') as handle:
+            payload = json.load(handle)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        logger.warning('Failed to read local OAuth token store: %s', exc)
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_persistent_oauth_token_store(payload):
+    if not _oauth_token_store_persistence_enabled():
+        return
+    directory = os.path.dirname(OAUTH_TOKEN_STORE_PATH)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    if not payload:
+        try:
+            os.remove(OAUTH_TOKEN_STORE_PATH)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.warning('Failed to remove local OAuth token store: %s', exc)
+        return
+    temp_path = f'{OAUTH_TOKEN_STORE_PATH}.tmp'
+    try:
+        fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            json.dump(payload, handle)
+        os.replace(temp_path, OAUTH_TOKEN_STORE_PATH)
+        os.chmod(OAUTH_TOKEN_STORE_PATH, 0o600)
+    except OSError as exc:
+        logger.warning('Failed to write local OAuth token store: %s', exc)
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+
+
+def _drop_persistent_oauth_session(session_id):
+    if not _oauth_token_store_persistence_enabled():
+        return
+    payload = _read_persistent_oauth_token_store()
+    if session_id not in payload:
+        return
+    payload.pop(session_id, None)
+    _write_persistent_oauth_token_store(payload)
+
+
+def _save_persistent_oauth_session(session_id, data):
+    if not _oauth_token_store_persistence_enabled():
+        return
+    payload = _read_persistent_oauth_token_store()
+    payload[session_id] = dict(data)
+    _write_persistent_oauth_token_store(payload)
+
+
+def _load_persistent_oauth_session(session_id):
+    payload = _read_persistent_oauth_token_store()
+    data = payload.get(session_id)
+    return data if isinstance(data, dict) else {}
+
+
+def _db_oauth_browser_session_payload(data):
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH or not database_storage_enabled():
+        return {}
+    connection_id = str((data or {}).get('db_auth_connection_id') or '').strip()
+    if not connection_id:
+        return {}
+    return {'db_auth_connection_id': connection_id}
+
+
+def remember_db_oauth_browser_session(data):
+    payload = _db_oauth_browser_session_payload(data)
+    if payload:
+        session['db_oauth_session'] = payload
+    else:
+        session.pop('db_oauth_session', None)
+
+
+def db_oauth_browser_session_data():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH or not database_storage_enabled():
+        return {}
+    stored = session.get('db_oauth_session')
+    if isinstance(stored, dict):
+        payload = _db_oauth_browser_session_payload(stored)
+        if payload:
+            return payload
+    local_session = oauth_session_data()
+    payload = _db_oauth_browser_session_payload(local_session)
+    if payload:
+        session['db_oauth_session'] = payload
+    return payload
+
+
+def _cleanup_expired_oauth_sessions(now=None):
+    now = time.time() if now is None else now
+    expired = [
+        stored_id
+        for stored_id, stored in OAUTH_TOKEN_STORE.items()
+        if now - stored.get('stored_at', 0) > OAUTH_TOKEN_STORE_TTL_SECONDS
+    ]
+    for stored_id in expired:
+        OAUTH_TOKEN_STORE.pop(stored_id, None)
+        OAUTH_REFRESH_LOCKS.pop(stored_id, None)
+        _drop_persistent_oauth_session(stored_id)
+
+
+def save_oauth_session(data):
+    if not data:
+        session.pop('db_oauth_session', None)
+        session_id = session.pop('atlassian_oauth_session_id', None)
+        if session_id:
+            with OAUTH_TOKEN_STORE_LOCK:
+                refresh_lock = OAUTH_REFRESH_LOCKS.get(session_id)
+            if refresh_lock:
+                with refresh_lock:
+                    _drop_oauth_session(session_id)
+            else:
+                _drop_oauth_session(session_id)
+        return
+    now = time.time()
+    session_id = session.get('atlassian_oauth_session_id')
+    remember_db_oauth_browser_session(data)
+    with OAUTH_TOKEN_STORE_LOCK:
+        _cleanup_expired_oauth_sessions(now)
+        if not session_id:
+            session_id = new_oauth_state()
+            session['atlassian_oauth_session_id'] = session_id
+        stored = dict(data, stored_at=now)
+        OAUTH_TOKEN_STORE[session_id] = stored
+        OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+        _save_persistent_oauth_session(session_id, stored)
+
+
+def oauth_refresh_lock():
+    session_id = session.get('atlassian_oauth_session_id')
+    if not session_id:
+        return OAUTH_TOKEN_STORE_LOCK
+    with OAUTH_TOKEN_STORE_LOCK:
+        return OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+
+
+def oauth_session_data():
+    session_id = session.get('atlassian_oauth_session_id')
+    if not session_id:
+        with OAUTH_TOKEN_STORE_LOCK:
+            _cleanup_expired_oauth_sessions()
+        return {}
+    with OAUTH_TOKEN_STORE_LOCK:
+        _cleanup_expired_oauth_sessions()
+        data = OAUTH_TOKEN_STORE.get(session_id) or {}
+        if not data:
+            data = _load_persistent_oauth_session(session_id)
+            if data:
+                OAUTH_TOKEN_STORE[session_id] = dict(data)
+                OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+    if data and time.time() - data.get('stored_at', 0) > OAUTH_TOKEN_STORE_TTL_SECONDS:
+        save_oauth_session({})
+        return {}
+    return data
+
+
+def jira_session_data():
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+        return oauth_session_data()
+    return {}
+
+
+def oauth_session_id_from_auth_context(context):
+    connection_id = getattr(context, 'auth_connection_id', '') or ''
+    prefix = 'local-oauth-connection:'
+    if connection_id.startswith(prefix):
+        return connection_id[len(prefix):]
+    return ''
+
+
+def oauth_session_data_for_auth_context(context):
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return {}
+    session_id = oauth_session_id_from_auth_context(context)
+    if not session_id and is_db_auth_context(context):
+        return db_oauth_session_data_for_auth_context(context)
+    if not session_id:
+        return {}
+    now = time.time()
+    with OAUTH_TOKEN_STORE_LOCK:
+        _cleanup_expired_oauth_sessions(now)
+        data = OAUTH_TOKEN_STORE.get(session_id) or {}
+        if not data:
+            data = _load_persistent_oauth_session(session_id)
+            if data:
+                OAUTH_TOKEN_STORE[session_id] = dict(data)
+                OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+    if data and now - data.get('stored_at', 0) > OAUTH_TOKEN_STORE_TTL_SECONDS:
+        _drop_oauth_session(session_id)
+        return {}
+    return dict(data)
+
+
+def db_oauth_session_data_for_auth_context(context):
+    with session_scope() as db_session:
+        return db_oauth_session_data(
+            db_session,
+            context,
+            config=current_auth_config(),
+            key_provider=key_provider_from_env(),
+            http_post=HTTP_SESSION.post,
+        )
+
+
+def save_oauth_session_for_auth_context(context, data):
+    session_id = oauth_session_id_from_auth_context(context)
+    if not session_id:
+        return
+    if not data:
+        _drop_oauth_session(session_id)
+        return
+    now = time.time()
+    with OAUTH_TOKEN_STORE_LOCK:
+        _cleanup_expired_oauth_sessions(now)
+        stored = dict(data, stored_at=now)
+        OAUTH_TOKEN_STORE[session_id] = stored
+        OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+        _save_persistent_oauth_session(session_id, stored)
+
+
+def oauth_refresh_lock_for_auth_context(context):
+    session_id = oauth_session_id_from_auth_context(context)
+    if not session_id:
+        return OAUTH_TOKEN_STORE_LOCK
+    with OAUTH_TOKEN_STORE_LOCK:
+        return OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+
+
+def current_jira_session_data(context=None):
+    if context is not None and JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+        return oauth_session_data_for_auth_context(context)
+    return jira_session_data()
+
+
+def current_request_auth_context():
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
+        db_session_data = db_oauth_browser_session_data()
+        if db_session_data:
+            return resolve_db_request_auth_context(
+                db_session_data,
+                required_scopes=ATLASSIAN_SCOPES,
+            )
+    session_data = jira_session_data()
+    site_url = (session_data.get('site_url') or JIRA_URL or '').strip().rstrip('/')
+    cloud_id = session_data.get('cloudid', '')
+    workspace_id = stable_local_workspace_id(APP_ENVIRONMENT_KEY, site_url, cloud_id)
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+        session_id = session.get('atlassian_oauth_session_id') or ''
+        account_id = session_data.get('account_id', '')
+        return RequestAuthContext(
+            auth_mode=AUTH_MODE_ATLASSIAN_OAUTH,
+            user_id=f'local-oauth-user:{account_id}',
+            stable_subject=account_id,
+            atlassian_account_id=account_id,
+            workspace_id=workspace_id,
+            auth_connection_id=f'local-oauth-connection:{session_id}',
+            cloud_id=cloud_id,
+            site_url=site_url,
+            token_version=str(session_data.get('stored_at', '1')),
+            account_status=session_data.get('account_status', ''),
+            is_admin=is_pre_db_tool_admin_account(account_id),
+        )
+    return RequestAuthContext(
+        auth_mode=AUTH_MODE_BASIC,
+        user_id='local-basic-user',
+        stable_subject='local-basic',
+        atlassian_account_id='',
+        workspace_id=workspace_id,
+        auth_connection_id='local-basic-connection',
+        cloud_id='',
+        site_url=site_url,
+        token_version='1',
+        account_status='active',
+        is_admin=True,
+    )
+
+
+def oauth_auth_required_payload():
+    save_oauth_session({})
+    return {
+        'error': 'auth_required',
+        'message': 'Your Jira sign-in expired. Sign in again to continue.',
+        'loginUrl': '/login?reason=session_expired',
+    }, 401
+
+
+def current_jira_auth_context(context=None):
+    if context is not None:
+        return context
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and not has_request_context():
+        raise AuthError('auth_required', 'Atlassian authentication is required.')
+    return current_request_auth_context()
+
+
+def current_oauth_session_callbacks(context=None):
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return {}
+    if context is not None:
+        if is_db_auth_context(context):
+            return {
+                'save_session': lambda data: None,
+                'reload_session': lambda: current_jira_session_data(context),
+                'refresh_lock': nullcontext(),
+            }
+        return {
+            'save_session': lambda data: save_oauth_session_for_auth_context(context, data),
+            'reload_session': lambda: oauth_session_data_for_auth_context(context),
+            'refresh_lock': oauth_refresh_lock_for_auth_context(context),
+        }
+    if not has_request_context():
+        raise AuthError('auth_required', 'Atlassian authentication is required.')
+    return {
+        'save_session': save_oauth_session,
+        'reload_session': oauth_session_data,
+        'refresh_lock': oauth_refresh_lock(),
+    }
+
+
+def current_jira_get(path, *, params=None, timeout=30, context=None):
+    explicit_context = context is not None
+    auth_context = current_jira_auth_context(context)
+    session_context = auth_context if explicit_context or is_db_auth_context(auth_context) else None
+    session_data = current_jira_session_data(session_context)
+    session_callbacks = current_oauth_session_callbacks(session_context)
+
+    def request_get(url, **kwargs):
+        return resilient_jira_get(
+            url,
+            session=HTTP_SESSION,
+            breaker=JIRA_SEARCH_CIRCUIT_BREAKER,
+            **kwargs,
+        )
+
+    return jira_get(
+        current_auth_config(),
+        auth_context,
+        session_data,
+        path,
+        http_get=request_get,
+        params=params,
+        timeout=timeout,
+        **session_callbacks,
+    )
+
+
+def current_jira_search(payload, *, context=None, timeout=30):
+    return current_jira_get(
+        '/rest/api/3/search/jql',
+        params=_jira_client.build_jira_search_params(payload),
+        timeout=timeout,
+        context=context,
+    )
+
+
+def current_jira_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
+    explicit_context = context is not None
+    auth_context = current_jira_auth_context(context)
+    session_context = auth_context if explicit_context or is_db_auth_context(auth_context) else None
+    session_data = current_jira_session_data(session_context)
+    session_callbacks = current_oauth_session_callbacks(session_context)
+
+    def request_fn(method_name, url, **kwargs):
+        return HTTP_SESSION.request(method_name, url, **kwargs)
+
+    kwargs = {'timeout': timeout}
+    if json_body is not None:
+        kwargs['json'] = json_body
+    if params is not None:
+        kwargs['params'] = params
+    return jira_request(
+        current_auth_config(),
+        auth_context,
+        session_data,
+        method,
+        path,
+        request_fn,
+        **kwargs,
+        **session_callbacks,
+    )
+
+
+def _cache_policy_context(context=None):
+    if context is not None:
+        return context
+    if has_request_context():
+        return current_request_auth_context()
+    return None
+
+
+def auth_error_response(error, status=401):
+    payload = {'error': error.code, 'message': str(error)}
+    recovery_url = auth_recovery_url(error.code)
+    if recovery_url:
+        payload['recoveryUrl'] = recovery_url
+    if error.code == 'auth_required':
+        payload['loginUrl'] = '/login?reason=session_expired'
+    return jsonify(payload), status
+
+
+def admin_required_payload():
+    return {
+        'error': 'admin_required',
+        'message': 'Admin access is required for this configuration change.',
+        'recoveryUrl': '/auth/admin-required',
+    }, 403
+
+
+def auth_recovery_url(error_code):
+    return {
+        'account_disabled': '/auth/account-disabled',
+        'auth_connection_revoked': '/auth/reconnect',
+        'auth_connection_stale': '/auth/reconnect',
+        'missing_oauth_scope': '/login?reason=missing_scope',
+        'missing_project_access': '/auth/missing-project-access',
+    }.get(error_code)
+
+
+def validate_local_token_store_allowed():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return
+    environment = APP_ENVIRONMENT_KEY.strip().lower()
+    if environment not in {'local', 'dev'} or not OAUTH_LOCAL_TOKEN_STORE_ALLOWED:
+        raise AuthError(
+            'local_token_store_not_allowed',
+            'Local OAuth token storage requires APP_ENVIRONMENT_KEY=local or dev and OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true',
+        )
+    if OAUTH_TOKEN_STORE_TTL_SECONDS < OAUTH_TOKEN_STORE_MIN_TTL_SECONDS:
+        raise AuthError(
+            'oauth_token_store_ttl_too_low',
+            f'OAUTH_TOKEN_STORE_TTL_SECONDS must be at least {OAUTH_TOKEN_STORE_MIN_TTL_SECONDS} seconds for Atlassian OAuth local testing',
+        )
+
+
+def validate_startup_auth_config():
+    validate_auth_config(current_auth_config())
+    validate_local_token_store_allowed()
+    try:
+        validate_config_storage_startup()
+    except ConfigStorageError as error:
+        raise AuthError('config_storage_invalid', str(error))
+
+
+@app.before_request
+def require_oauth_unsafe_method_header():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if request.method not in UNSAFE_METHODS:
+        return None
+    if request.path.startswith('/api/') and not is_oauth_ready_api_path(request.path):
+        return None
+    if request.headers.get('X-Requested-With') == 'jira-execution-planner':
+        return None
+    return jsonify({
+        'error': 'csrf_required',
+        'message': 'Unsafe OAuth requests require X-Requested-With: jira-execution-planner',
+    }), 403
+
+
+@app.before_request
+def require_db_admin_csrf_token():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if not database_storage_enabled():
+        return None
+    if request.method not in UNSAFE_METHODS:
+        return None
+    if not request.path.startswith('/api/admin/'):
+        return None
+    data = oauth_session_data()
+    if validate_csrf_token(session, data, request.headers.get('X-CSRF-Token')):
+        return None
+    return jsonify({
+        'error': 'csrf_required',
+        'message': 'A valid CSRF token is required for this request.',
+    }), 403
+
+
+@app.before_request
+def redirect_unauthenticated_oauth_dashboard_entry():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if request.path not in OAUTH_DASHBOARD_ENTRY_PATHS:
+        return None
+    if database_storage_enabled() and db_oauth_browser_session_data():
+        try:
+            current_request_auth_context()
+            return None
+        except AuthError:
+            pass
+    data = oauth_session_data()
+    if data.get('access_token') and data.get('cloudid'):
+        return None
+    return redirect('/login?reason=session_expired' if session.get('atlassian_oauth_session_id') else '/login')
+
+
+@app.before_request
+def reject_unmigrated_oauth_routes():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if request.path.startswith('/api/') and not is_oauth_ready_api_path(request.path):
+        return jsonify({
+            'error': 'route_not_oauth_ready',
+            'message': 'This API route has not been migrated to Atlassian OAuth yet',
+        }), 501
+    return None
+
+
+@app.before_request
+def reject_stale_oauth_scope_api_sessions():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if not request.path.startswith('/api/') or request.path.startswith('/api/auth/'):
+        return None
+    if not is_oauth_ready_api_path(request.path):
+        return None
+    data = oauth_session_data()
+    if data.get('access_token') and data.get('cloudid') and missing_oauth_scopes(data, ATLASSIAN_SCOPES):
+        return jsonify({
+            'error': 'auth_required',
+            'loginUrl': '/login?reason=missing_scope',
+        }), 401
+    return None
+
+
+@app.before_request
+def require_oauth_shared_config_admin():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return None
+    if request.method not in UNSAFE_METHODS:
+        return None
+    if request.path not in OAUTH_SHARED_CONFIG_WRITE_PATHS:
+        return None
+    data = oauth_session_data()
+    if not data.get('access_token') or not data.get('cloudid'):
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
+    if current_request_auth_context().is_admin:
+        return None
+    payload, status = admin_required_payload()
+    return jsonify(payload), status
 
 
 def utc_now_iso(timespec=None):
@@ -297,17 +1091,20 @@ def parse_iso_date(value):
         return None
 
 
-def resolve_sprint_label(sprint_value):
+def resolve_sprint_label(sprint_value, cache_enabled=None):
     if sprint_value is None:
         return None
     sprint_str = str(sprint_value).strip()
     if not sprint_str:
         return None
     if sprint_str.isdigit():
-        cache = load_sprints_cache() or {}
-        for sprint in cache.get('sprints', []) or []:
-            if str(sprint.get('id')) == sprint_str:
-                return sprint.get('name') or sprint_str
+        if cache_enabled is None:
+            cache_enabled = jira_home_process_cache_enabled(_cache_policy_context())
+        if cache_enabled:
+            cache = load_sprints_cache() or {}
+            for sprint in cache.get('sprints', []) or []:
+                if str(sprint.get('id')) == sprint_str:
+                    return sprint.get('name') or sprint_str
     return sprint_str
 
 
@@ -453,20 +1250,23 @@ EPIC_LINK_FIELD_CACHE = None
 CAPACITY_FIELD_CACHE = None
 
 
-def resolve_team_field_id(headers):
+def resolve_team_field_id(headers, context=None):
     """Resolve the Jira custom field ID for Team[Team]."""
     global TEAM_FIELD_CACHE
+    cache_enabled = jira_home_process_cache_enabled(_cache_policy_context(context))
     with _cache_lock:
-        if TEAM_FIELD_CACHE:
+        if cache_enabled and TEAM_FIELD_CACHE:
             return TEAM_FIELD_CACHE
         # Check dashboard config first
         configured = get_team_field_id()
         if configured:
-            TEAM_FIELD_CACHE = configured
-            return TEAM_FIELD_CACHE
+            if cache_enabled:
+                TEAM_FIELD_CACHE = configured
+                return TEAM_FIELD_CACHE
+            return configured
 
         try:
-            response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
+            response = current_jira_get('/rest/api/3/field', timeout=20, context=context)
             if response.status_code != 200:
                 return None
 
@@ -474,29 +1274,35 @@ def resolve_team_field_id(headers):
             for field in fields:
                 name = str(field.get('name', '')).strip().lower()
                 if name == 'team[team]':
-                    TEAM_FIELD_CACHE = field.get('id')
-                    return TEAM_FIELD_CACHE
+                    field_id = field.get('id')
+                    if cache_enabled:
+                        TEAM_FIELD_CACHE = field_id
+                        return TEAM_FIELD_CACHE
+                    return field_id
         except Exception:
             return None
 
         return None
 
 
-def resolve_epic_link_field_id(headers, names_map=None):
+def resolve_epic_link_field_id(headers, names_map=None, context=None):
     """Resolve the Jira custom field ID for Epic Link."""
     global EPIC_LINK_FIELD_CACHE
+    cache_enabled = jira_home_process_cache_enabled(_cache_policy_context(context))
     with _cache_lock:
-        if EPIC_LINK_FIELD_CACHE:
+        if cache_enabled and EPIC_LINK_FIELD_CACHE:
             return EPIC_LINK_FIELD_CACHE
 
         if names_map:
             for field_id, field_name in (names_map or {}).items():
                 if str(field_name).strip().lower() == 'epic link':
-                    EPIC_LINK_FIELD_CACHE = field_id
-                    return EPIC_LINK_FIELD_CACHE
+                    if cache_enabled:
+                        EPIC_LINK_FIELD_CACHE = field_id
+                        return EPIC_LINK_FIELD_CACHE
+                    return field_id
 
         try:
-            response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
+            response = current_jira_get('/rest/api/3/field', timeout=20, context=context)
             if response.status_code != 200:
                 return None
 
@@ -504,31 +1310,37 @@ def resolve_epic_link_field_id(headers, names_map=None):
             for field in fields:
                 name = str(field.get('name', '')).strip().lower()
                 if name == 'epic link':
-                    EPIC_LINK_FIELD_CACHE = field.get('id')
-                    return EPIC_LINK_FIELD_CACHE
+                    field_id = field.get('id')
+                    if cache_enabled:
+                        EPIC_LINK_FIELD_CACHE = field_id
+                        return EPIC_LINK_FIELD_CACHE
+                    return field_id
         except Exception:
             return None
 
         return None
 
 
-def resolve_capacity_field_id(headers):
+def resolve_capacity_field_id(headers, context=None):
     """Resolve the Jira custom field ID for Team capacity."""
     global CAPACITY_FIELD_CACHE
+    cache_enabled = jira_home_process_cache_enabled(_cache_policy_context(context))
     with _cache_lock:
-        if CAPACITY_FIELD_CACHE:
+        if cache_enabled and CAPACITY_FIELD_CACHE:
             return CAPACITY_FIELD_CACHE
         cap = get_capacity_config()
         if cap['fieldId']:
-            CAPACITY_FIELD_CACHE = cap['fieldId']
-            return CAPACITY_FIELD_CACHE
+            if cache_enabled:
+                CAPACITY_FIELD_CACHE = cap['fieldId']
+                return CAPACITY_FIELD_CACHE
+            return cap['fieldId']
 
         field_name = cap['fieldName']
         if not field_name:
             return None
 
         try:
-            response = requests.get(f'{JIRA_URL}/rest/api/3/field', headers=headers, timeout=20)
+            response = current_jira_get('/rest/api/3/field', timeout=20, context=context)
             if response.status_code != 200:
                 return None
 
@@ -537,8 +1349,11 @@ def resolve_capacity_field_id(headers):
             for field in fields:
                 name = str(field.get('name', '')).strip().lower()
                 if name == target:
-                    CAPACITY_FIELD_CACHE = field.get('id')
-                    return CAPACITY_FIELD_CACHE
+                    field_id = field.get('id')
+                    if cache_enabled:
+                        CAPACITY_FIELD_CACHE = field_id
+                        return CAPACITY_FIELD_CACHE
+                    return field_id
         except Exception:
             return None
 
@@ -607,25 +1422,14 @@ def build_team_value(raw_team):
     return raw_team
 
 
-def jira_search_request(headers, payload):
-    """Call Jira search endpoint using query parameters for /search/jql."""
-    def request_fn(url, **kwargs):
-        return resilient_jira_get(
-            url,
-            session=HTTP_SESSION,
-            breaker=JIRA_SEARCH_CIRCUIT_BREAKER,
-            **kwargs
-        )
-
-    return _jira_client.jira_search_request(
-        JIRA_URL,
-        headers,
-        payload,
-        request_fn=request_fn
-    )
+def jira_search_request(payload, *, context=None):
+    """Call Jira search endpoint through the active request auth boundary."""
+    if context is None:
+        return current_jira_search(payload)
+    return current_jira_search(payload, context=context)
 
 
-def fetch_teams_from_jira_api(headers):
+def fetch_teams_from_jira_api():
     """Fetch teams directly from Jira Teams REST API (team registry, not issues).
 
     This catches teams that may not have any issues in PRODUCT/TECH projects.
@@ -633,14 +1437,12 @@ def fetch_teams_from_jira_api(headers):
     """
     teams = {}
     try:
-        url = f'{JIRA_URL}/rest/teams/1.0/teams/find'
         start_at = 0
         max_results = 200
         while True:
-            response = HTTP_SESSION.get(
-                url,
+            response = current_jira_get(
+                '/rest/teams/1.0/teams/find',
                 params={'query': '', 'maxResults': max_results, 'startAt': start_at},
-                headers=headers,
                 timeout=30
             )
             if response.status_code != 200:
@@ -712,11 +1514,10 @@ def fetch_capacity_for_sprint(sprint_name, headers, debug=False, team_names=None
         jqls.append(jql)
         payload = {
             'jql': jql,
-            'startAt': 0,
             'maxResults': 200,
             'fields': ['summary', capacity_field_id]
         }
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
         if response.status_code != 200:
             return None, response.text
         data = response.json() or {}
@@ -758,16 +1559,12 @@ def fetch_capacity_for_sprint(sprint_name, headers, debug=False, team_names=None
     return response_payload, None
 
 
-def fetch_watchers_count(issue_key, headers):
+def fetch_watchers_count(issue_key):
     """Fetch watchers count for an issue (fallback if watches field is missing)."""
     if not issue_key:
         return None
     try:
-        response = requests.get(
-            f'{JIRA_URL}/rest/api/3/issue/{issue_key}/watchers',
-            headers=headers,
-            timeout=20
-        )
+        response = current_jira_get(f'/rest/api/3/issue/{issue_key}/watchers', timeout=20)
         if response.status_code != 200:
             log_warning(f'Watchers fetch failed: status={response.status_code}')
             return None
@@ -798,11 +1595,10 @@ def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
         jqls.append(jql)
         payload = {
             'jql': jql,
-            'startAt': 0,
             'maxResults': 200,
             'fields': ['summary', 'watches', 'reporter']
         }
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
         if response.status_code != 200:
             log_warning(f'Capacity size fetch failed: status={response.status_code}')
             continue
@@ -826,7 +1622,7 @@ def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
         if isinstance(watches, dict):
             watch_count = watches.get('watchCount')
         if watch_count is None:
-            watch_count = fetch_watchers_count(issue.get('key'), headers)
+            watch_count = fetch_watchers_count(issue.get('key'))
         if watch_count is None:
             continue
         try:
@@ -1040,20 +1836,40 @@ def resolve_dashboard_config_path():
     return _config_store.resolve_dashboard_config_path(DASHBOARD_CONFIG_PATH)
 
 
-def load_dashboard_config():
-    """Load the unified dashboard config, migrating from legacy team-groups.json if needed."""
-    return _config_store.load_dashboard_config(
-        resolve_dashboard_config_path(),
-        resolve_groups_config_path(),
-        load_groups_config_file,
-        save_dashboard_config,
-        log_warning_fn=log_warning
+def _json_config_repository():
+    return build_json_config_repository(
+        dashboard_path=resolve_dashboard_config_path(),
+        groups_path=resolve_groups_config_path(),
+        load_groups_config_file_fn=load_groups_config_file,
+        log_warning_fn=log_warning,
     )
 
 
-def save_dashboard_config(config):
-    """Write the unified dashboard config to disk."""
+def _load_dashboard_config_json():
+    return _json_config_repository().load_dashboard_config()
+
+
+def load_dashboard_config():
+    """Load the unified dashboard config."""
+    if config_storage_db_enabled() and has_request_context():
+        context = current_request_auth_context()
+        return build_db_config_repository().load_dashboard_config(
+            context,
+            fallback_loader=_load_dashboard_config_json,
+        )
+    return _load_dashboard_config_json()
+
+
+def _save_dashboard_config_json(config):
     return _config_store.save_dashboard_config(config, resolve_dashboard_config_path())
+
+
+def save_dashboard_config(config):
+    """Write the unified dashboard config."""
+    if config_storage_db_enabled() and has_request_context():
+        context = current_request_auth_context()
+        return build_db_config_repository().save_dashboard_config(context, config)
+    return _save_dashboard_config_json(config)
 
 
 def resolve_team_catalog_path():
@@ -1229,9 +2045,60 @@ def clear_epm_caches():
         EPM_ROLLUP_CACHE.clear()
 
 
-def build_epm_projects_dependencies():
+def invalidate_stats_cache():
+    try:
+        if os.path.exists(STATS_CACHE_FILE):
+            os.remove(STATS_CACHE_FILE)
+    except Exception as exc:
+        log_warning(f'Failed to invalidate stats cache file: {exc}')
+
+
+def clear_auth_sensitive_caches(reason='auth_context_change'):
+    global TEAM_FIELD_CACHE, PARENT_NAME_FIELD_CACHE, EPIC_LINK_FIELD_CACHE, CAPACITY_FIELD_CACHE
+    with _cache_lock:
+        TASKS_CACHE.clear()
+        MISSING_INFO_CACHE.clear()
+        DEPENDENCIES_CACHE.clear()
+        EPIC_COHORT_CACHE.clear()
+        EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE.clear()
+        SCENARIO_CACHE['generatedAt'] = None
+        SCENARIO_CACHE['data'] = None
+        if 'PROJECTS_CACHE' in globals():
+            PROJECTS_CACHE['data'] = None
+            PROJECTS_CACHE['timestamp'] = 0
+        if 'COMPONENTS_CACHE' in globals():
+            COMPONENTS_CACHE['data'] = None
+            COMPONENTS_CACHE['timestamp'] = 0
+        if 'EPICS_SEARCH_CACHE' in globals():
+            EPICS_SEARCH_CACHE.clear()
+        if 'LABELS_CACHE' in globals():
+            LABELS_CACHE['data'] = None
+            LABELS_CACHE['timestamp'] = 0
+        if 'ISSUE_TYPES_CACHE' in globals():
+            ISSUE_TYPES_CACHE['data'] = None
+            ISSUE_TYPES_CACHE['timestamp'] = 0
+        TEAM_FIELD_CACHE = None
+        PARENT_NAME_FIELD_CACHE = None
+        EPIC_LINK_FIELD_CACHE = None
+        CAPACITY_FIELD_CACHE = None
+    clear_epm_caches()
+    invalidate_sprints_cache()
+    invalidate_stats_cache()
+    log_info(f'Cleared auth-sensitive caches reason={reason}')
+
+
+register_service_integration_cache_invalidator(clear_auth_sensitive_caches)
+
+
+def build_epm_projects_dependencies(context=None):
+    auth_context = context if context is not None else (current_request_auth_context() if has_request_context() else None)
+    fetch_context = auth_context if auth_context is not None and not jira_home_process_cache_enabled(auth_context) else None
     return epm_projects.EpmProjectsDependencies(
-        fetch_epm_home_projects=fetch_epm_home_projects,
+        fetch_epm_home_projects=(
+            lambda epm_scope: fetch_epm_home_projects(epm_scope, context=fetch_context)
+            if fetch_context is not None
+            else fetch_epm_home_projects(epm_scope)
+        ),
         merge_epm_linkage=merge_epm_linkage,
         normalize_epm_config=normalize_epm_config,
         utc_now_iso=utc_now_iso,
@@ -1241,6 +2108,7 @@ def build_epm_projects_dependencies():
         home_project_limit=epm_home.HOME_MAX_PROJECTS_PER_GOAL,
         get_epm_config=get_epm_config,
         abort_not_found=abort,
+        context=auth_context,
     )
 
 
@@ -1261,6 +2129,11 @@ def get_cached_epm_home_projects(epm_scope, force_refresh=False):
 
 
 def build_jira_headers():
+    if JIRA_AUTH_MODE != AUTH_MODE_BASIC:
+        raise AuthError(
+            'route_not_oauth_ready',
+            'This Jira route has not been migrated to Atlassian OAuth yet',
+        )
     credentials = base64.b64encode(f"{JIRA_EMAIL or ''}:{JIRA_TOKEN or ''}".encode()).decode()
     return {
         'Authorization': f'Basic {credentials}',
@@ -1446,12 +2319,12 @@ def build_epm_rollup_hierarchy(issues, issue_types):
     }
 
 
-def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_queries):
+def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_queries, context=None):
     raw_issues = fetch_issues_by_jql(
         jql,
-        headers,
         fields_list,
         max_results=EPM_ROLLUP_QUERY_MAX_RESULTS + 1,
+        context=context,
     )
     if len(raw_issues) > EPM_ROLLUP_QUERY_MAX_RESULTS:
         truncated_queries.append(query_name)
@@ -1460,26 +2333,46 @@ def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_quer
 
 
 def build_epm_rollup_dependencies(sub_goal_keys=None):
+    auth_context = current_request_auth_context() if has_request_context() else None
     return EpmRollupDependencies(
-        find_epm_project_or_404=lambda project_id: find_epm_project_or_404(project_id, sub_goal_keys=sub_goal_keys),
+        find_epm_project_or_404=lambda project_id: find_epm_project_or_404(
+            project_id,
+            sub_goal_keys=sub_goal_keys,
+            context=auth_context,
+        ),
         normalize_epm_text=normalize_epm_text,
         validate_epm_tab_sprint=validate_epm_tab_sprint,
         build_empty_epm_rollup_payload=build_empty_epm_rollup_payload,
         build_base_jql=build_base_jql,
         add_clause_to_jql=add_clause_to_jql,
-        build_jira_headers=build_jira_headers,
-        resolve_epic_link_field_id=resolve_epic_link_field_id,
-        resolve_team_field_id=resolve_team_field_id,
+        build_jira_headers=(
+            (lambda: {}) if auth_context is not None and auth_context.auth_mode != AUTH_MODE_BASIC
+            else build_jira_headers
+        ),
+        resolve_epic_link_field_id=(
+            lambda headers: resolve_epic_link_field_id(headers, context=auth_context)
+            if auth_context is not None
+            else resolve_epic_link_field_id(headers)
+        ),
+        resolve_team_field_id=(
+            lambda headers: resolve_team_field_id(headers, context=auth_context)
+            if auth_context is not None
+            else resolve_team_field_id(headers)
+        ),
         build_epm_rollup_fields_list=build_epm_rollup_fields_list,
         get_epm_config=get_epm_config,
         normalize_epm_issue_type_sets=normalize_epm_issue_type_sets,
-        fetch_epm_rollup_query=fetch_epm_rollup_query,
+        fetch_epm_rollup_query=(
+            lambda jql, query_name, headers, fields_list, truncated_queries:
+            fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_queries, context=auth_context)
+        ),
         shape_epm_rollup_issue_payload=shape_epm_rollup_issue_payload,
         dedupe_issues_by_key=dedupe_issues_by_key,
         build_epm_rollup_hierarchy=build_epm_rollup_hierarchy,
         cache=EPM_ROLLUP_CACHE,
         cache_lock=_epm_cache_lock,
         cache_ttl_seconds=EPM_ROLLUP_CACHE_TTL_SECONDS,
+        context=auth_context,
     )
 
 
@@ -1512,10 +2405,10 @@ def find_epm_config_row(projects, project_id):
     return epm_projects.find_epm_config_row(projects, project_id)
 
 
-def build_epm_projects_payload(epm_config, force_refresh=False, tab=None, sub_goal_keys=None):
+def build_epm_projects_payload(epm_config, force_refresh=False, tab=None, sub_goal_keys=None, context=None):
     return epm_projects.build_epm_projects_payload(
         epm_config,
-        build_epm_projects_dependencies(),
+        build_epm_projects_dependencies(context=context),
         force_refresh=force_refresh,
         tab=tab,
         sub_goal_keys=sub_goal_keys,
@@ -1644,11 +2537,15 @@ def build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=None):
     }
 
 
-def find_epm_project_or_404(project_id, sub_goal_keys=None):
+def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None):
     requested_sub_goal_keys = epm_projects.normalize_epm_sub_goal_keys(sub_goal_keys)
     if requested_sub_goal_keys:
         epm_config = get_epm_config()
-        projects_payload = build_epm_projects_payload(epm_config, sub_goal_keys=requested_sub_goal_keys)
+        projects_payload = build_epm_projects_payload(
+            epm_config,
+            sub_goal_keys=requested_sub_goal_keys,
+            context=context,
+        )
         for project in projects_payload.get('projects') or []:
             candidates = [
                 normalize_epm_text(project.get('id')),
@@ -1657,7 +2554,7 @@ def find_epm_project_or_404(project_id, sub_goal_keys=None):
             if normalize_epm_text(project_id) in candidates:
                 return project
         abort(404)
-    return epm_projects.find_epm_project_or_404(project_id, build_epm_projects_dependencies())
+    return epm_projects.find_epm_project_or_404(project_id, build_epm_projects_dependencies(context=context))
 
 
 def get_epm_project_payload_identity(project):
@@ -1797,13 +2694,27 @@ def get_epm_config():
     return normalize_epm_config(config.get('epm') or {})
 
 
-def fetch_home_site_cloud_id():
+def fetch_home_site_cloud_id(context=None):
+    auth_context = _cache_policy_context(context)
+    if auth_context is not None:
+        return epm_home.fetch_home_site_cloud_id(context=auth_context)
     return epm_home.fetch_home_site_cloud_id()
 
 
-def fetch_epm_goal_catalog():
-    client = epm_home.build_home_graphql_client()
-    cloud_id = fetch_home_site_cloud_id()
+def _build_epm_home_graphql_client(context=None):
+    auth_context = _cache_policy_context(context)
+    credential = epm_home._read_metadata_credential(auth_context)
+    return (
+        epm_home.build_home_graphql_client(credential)
+        if credential is not None
+        else epm_home.build_home_graphql_client()
+    )
+
+
+def fetch_epm_goal_catalog(context=None):
+    auth_context = _cache_policy_context(context)
+    client = _build_epm_home_graphql_client(context=auth_context)
+    cloud_id = fetch_home_site_cloud_id(context=auth_context)
     container_id = epm_home._container_id_from_cloud(cloud_id)
     return client.execute_paginated(
         epm_home.QUERY_GOALS_SEARCH,
@@ -1812,11 +2723,12 @@ def fetch_epm_goal_catalog():
     )
 
 
-def fetch_epm_sub_goals(root_goal_key):
-    client = epm_home.build_home_graphql_client()
-    cloud_id = fetch_home_site_cloud_id()
+def fetch_epm_sub_goals(root_goal_key, context=None):
+    auth_context = _cache_policy_context(context)
+    client = _build_epm_home_graphql_client(context=auth_context)
+    cloud_id = fetch_home_site_cloud_id(context=auth_context)
     container_id = epm_home._container_id_from_cloud(cloud_id)
-    return epm_home.fetch_sub_goals_for_root_key(client, root_goal_key, container_id)
+    return epm_home.fetch_sub_goals_for_root_key(client, root_goal_key, container_id, context=auth_context)
 
 
 # --- Custom field config getters ---
@@ -2265,9 +3177,8 @@ def fetch_board_sprint_ids(board_id, headers):
     start_at = 0
     try:
         while True:
-            response = requests.get(
-                f'{JIRA_URL}/rest/agile/1.0/board/{board_id}/sprint',
-                headers=headers,
+            response = current_jira_get(
+                f'/rest/agile/1.0/board/{board_id}/sprint',
                 params={'maxResults': 100, 'startAt': start_at, 'state': 'active,future,closed'},
                 timeout=30
             )
@@ -2283,6 +3194,8 @@ def fetch_board_sprint_ids(board_id, headers):
             if data.get('isLast', False) or not data.get('values'):
                 break
             start_at += len(data['values'])
+    except AuthError:
+        raise
     except Exception as e:
         log_warning(f'Failed to fetch board sprint IDs for board {board_id}: {e}')
     return sprint_ids
@@ -2318,16 +3231,7 @@ def deduplicate_sprints_by_name(sprints, board_sprint_ids=None):
 
 def fetch_sprints_from_jira():
     """Fetch sprints from Jira (not from cache)"""
-    auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-    auth_bytes = auth_string.encode('ascii')
-    auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-    headers = {
-        'Authorization': f'Basic {auth_base64}',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-    }
-
+    headers = None
     formatted_sprints = []
     effective_board_id = get_effective_board_id()
     board_sprint_ids = None  # lazily fetched when needed for dedup/filtering
@@ -2338,9 +3242,8 @@ def fetch_sprints_from_jira():
             log_info(f'Fetching sprints from board {effective_board_id}')
             start_at = 0
             while True:
-                response = requests.get(
-                    f'{JIRA_URL}/rest/agile/1.0/board/{effective_board_id}/sprint',
-                    headers=headers,
+                response = current_jira_get(
+                    f'/rest/agile/1.0/board/{effective_board_id}/sprint',
                     params={'maxResults': 100, 'startAt': start_at, 'state': 'active,future,closed'},
                     timeout=30
                 )
@@ -2382,6 +3285,8 @@ def fetch_sprints_from_jira():
                 log_info(f'Found {len(formatted_sprints)} sprints from board')
             else:
                 log_warning(f'Board API returned {response.status_code}, trying alternative method')
+        except AuthError:
+            raise
         except Exception as board_error:
             log_warning(f'Board API failed: {board_error}, trying alternative method')
 
@@ -2396,16 +3301,17 @@ def fetch_sprints_from_jira():
 
         def collect_sprints_by_jql(jql_query, sprints_dict):
             total_issues = 0
-            start_at = 0
+            next_page_token = None
             while True:
                 payload = {
                     'jql': jql_query,
-                    'startAt': start_at,
                     'maxResults': 200,  # Reduced from 1000 for better performance
                     'fields': [get_sprint_field_id()]  # Only get sprint field
                 }
+                if next_page_token:
+                    payload['nextPageToken'] = next_page_token
 
-                response = jira_search_request(headers, payload)
+                response = jira_search_request(payload)
                 if response.status_code != 200:
                     break
 
@@ -2431,10 +3337,9 @@ def fetch_sprints_from_jira():
                                     }
 
                 total_issues += len(issues)
-                if len(issues) < payload['maxResults']:
+                next_page_token = data.get('nextPageToken')
+                if data.get('isLast', not next_page_token) or not next_page_token:
                     break
-
-                start_at += len(issues)
 
             return total_issues
 
@@ -2495,7 +3400,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
         }
 
         try:
-            resp = jira_search_request(headers, payload)
+            resp = jira_search_request(payload)
             if resp.status_code != 200:
                 log_warning(f'Epic batch {start}-{start + len(batch_keys)} failed: status={resp.status_code}')
                 continue
@@ -2592,11 +3497,10 @@ def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sp
 
     payload = {
         'jql': epic_jql,
-        'startAt': 0,
         'maxResults': 250,
         'fields': fields_list
     }
-    resp = jira_search_request(headers, payload)
+    resp = jira_search_request(payload)
     if resp.status_code != 200:
         log_warning(f'Epic empty-state fetch failed: status={resp.status_code}')
         return []
@@ -2648,11 +3552,10 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
 
     payload = {
         'jql': epic_jql,
-        'startAt': 0,
         'maxResults': 250,
         'fields': epic_fields
     }
-    resp = jira_search_request(headers, payload)
+    resp = jira_search_request(payload)
     if resp.status_code != 200:
         log_warning(f'Backlog epic fetch failed: status={resp.status_code}')
         return []
@@ -2691,11 +3594,10 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
     children_jql = f'("Epic Link" in ({quoted_keys}) OR parent in ({quoted_keys})) AND issuetype != Epic'
     child_payload = {
         'jql': children_jql,
-        'startAt': 0,
         'maxResults': 250,
         'fields': [epic_link_field, 'parent', 'status', sprint_field_id]
     }
-    child_resp = jira_search_request(headers, child_payload)
+    child_resp = jira_search_request(child_payload)
     if child_resp.status_code != 200:
         log_warning(f'Backlog child fetch failed: status={child_resp.status_code}')
         return epics
@@ -2731,18 +3633,19 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
         return {}
 
     def count_by_query(batch_keys, jql, fields):
-        start_at = 0
+        next_page_token = None
         max_results = 250
         local_counts = {k: 0 for k in batch_keys}
 
         while True:
             payload = {
                 'jql': jql,
-                'startAt': start_at,
                 'maxResults': max_results,
                 'fields': fields
             }
-            resp = jira_search_request(headers, payload)
+            if next_page_token:
+                payload['nextPageToken'] = next_page_token
+            resp = jira_search_request(payload)
             if resp.status_code != 200:
                 return local_counts
 
@@ -2759,11 +3662,8 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
                 if epic_key in local_counts:
                     local_counts[epic_key] += 1
 
-            start_at += len(issues)
-            total = data.get('total')
-            if total is not None and start_at >= total:
-                break
-            if len(issues) < max_results:
+            next_page_token = data.get('nextPageToken')
+            if data.get('isLast', not next_page_token) or not next_page_token:
                 break
 
         return local_counts
@@ -2814,16 +3714,17 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
         quoted_keys = ', '.join(f'"{k}"' for k in batch_keys)
 
         def run_query(jql, fields):
-            start_at = 0
+            next_page_token = None
             max_results = 250
             while True:
                 payload = {
                     'jql': jql,
-                    'startAt': start_at,
                     'maxResults': max_results,
                     'fields': fields
                 }
-                resp = jira_search_request(headers, payload)
+                if next_page_token:
+                    payload['nextPageToken'] = next_page_token
+                resp = jira_search_request(payload)
                 if resp.status_code != 200:
                     return
                 data = resp.json() or {}
@@ -2837,11 +3738,8 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
                         epic_key = (fields_obj.get('parent') or {}).get('key')
                     if epic_key in distribution:
                         distribution[epic_key][bucket_name] += 1
-                start_at += len(issues)
-                total = data.get('total')
-                if total is not None and start_at >= total:
-                    break
-                if len(issues) < max_results:
+                next_page_token = data.get('nextPageToken')
+                if data.get('isLast', not next_page_token) or not next_page_token:
                     break
 
         if epic_link_field:
@@ -2860,16 +3758,17 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
         where_clause = f'Sprint = {selected_sprint} AND issuetype != Epic'
 
         def run_query(jql, fields):
-            start_at = 0
+            next_page_token = None
             max_results = 250
             while True:
                 payload = {
                     'jql': jql,
-                    'startAt': start_at,
                     'maxResults': max_results,
                     'fields': fields
                 }
-                resp = jira_search_request(headers, payload)
+                if next_page_token:
+                    payload['nextPageToken'] = next_page_token
+                resp = jira_search_request(payload)
                 if resp.status_code != 200:
                     return
                 data = resp.json() or {}
@@ -2887,11 +3786,8 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
                     status_name = ((fields_obj.get('status') or {}).get('name') if isinstance(fields_obj.get('status'), dict) else None)
                     if is_actionable_selected_status(status_name):
                         distribution[epic_key]['selectedActionableStories'] += 1
-                start_at += len(issues)
-                total = data.get('total')
-                if total is not None and start_at >= total:
-                    break
-                if len(issues) < max_results:
+                next_page_token = data.get('nextPageToken')
+                if data.get('isLast', not next_page_token) or not next_page_token:
                     break
 
         if epic_link_field:
@@ -2946,7 +3842,7 @@ def fetch_tasks(include_team_name=False):
         epic_keys_filter = sorted({t.strip() for t in epic_keys_param.split(',') if t.strip()})
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
         lightweight_ready_to_close = request_purpose == 'ready-to-close'
-        cache_key = build_tasks_cache_key(
+        raw_cache_key = build_tasks_cache_key(
             sprint,
             group_id,
             project_filter,
@@ -2957,9 +3853,18 @@ def fetch_tasks(include_team_name=False):
             epic_keys_filter
         )
         record_timing('parse_params', parse_started)
-        with _cache_lock:
-            cached_entry = TASKS_CACHE.get(cache_key)
-        if not force_refresh and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
+        auth_context = current_request_auth_context()
+        if project_filter in ('product', 'tech'):
+            denied_response, denied_status = project_access_denied_response(auth_context, project_filter)
+            if denied_response is not None:
+                return denied_response, denied_status
+        cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
+        cache_key = build_jira_home_process_cache_key(auth_context, raw_cache_key)
+        cached_entry = None
+        if cache_enabled:
+            with _cache_lock:
+                cached_entry = TASKS_CACHE.get(cache_key)
+        if cache_enabled and not force_refresh and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
             cached_response = jsonify(cached_entry.get('data') or {})
             cached_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             cached_response.headers['Pragma'] = 'no-cache'
@@ -2967,18 +3872,8 @@ def fetch_tasks(include_team_name=False):
             cached_response.headers['Server-Timing'] = 'cache;dur=1'
             return cached_response
 
-        # Prepare authorization
         auth_started = time.perf_counter()
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        # Prepare headers
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
+        headers = None
         record_timing('auth_headers', auth_started)
 
         # Build JQL query with sprint filter if provided
@@ -3036,8 +3931,8 @@ def fetch_tasks(include_team_name=False):
             tasks_jql = add_clause_to_jql(tasks_jql, f'("Epic Link" in ({quoted_epics}) OR parent in ({quoted_epics}))')
         record_timing('build_jql', jql_started)
 
-        team_field_id = resolve_team_field_id(headers)
-        epic_link_field_id = resolve_epic_link_field_id(headers)
+        team_field_id = resolve_team_field_id(headers, context=auth_context)
+        epic_link_field_id = resolve_epic_link_field_id(headers, context=auth_context)
 
         sprint_field_id = get_sprint_field_id()
 
@@ -3068,7 +3963,6 @@ def fetch_tasks(include_team_name=False):
 
         max_results = 250
         page_size = 100
-        start_at = 0
         next_page_token = None
         collected_issues = []
         names_map = {}
@@ -3090,10 +3984,8 @@ def fetch_tasks(include_team_name=False):
             }
             if next_page_token:
                 payload['nextPageToken'] = next_page_token
-            else:
-                payload['startAt'] = start_at
 
-            response = jira_search_request(headers, payload)
+            response = jira_search_request(payload)
             log_debug(f'Jira search page response status={response.status_code}')
 
             if response.status_code != 200:
@@ -3127,13 +4019,7 @@ def fetch_tasks(include_team_name=False):
 
             collected_issues.extend(issues)
             next_page_token = data.get('nextPageToken')
-            if next_page_token:
-                continue
-            start_at += len(issues)
-            if total_issues is not None and start_at >= total_issues:
-                break
-            # Stop when Jira signals we're at the end or when the last page is smaller than the request size
-            if len(issues) < page_limit:
+            if data.get('isLast', not next_page_token) or not next_page_token:
                 break
         record_timing('jira_search', jira_fetch_started)
 
@@ -3150,7 +4036,7 @@ def fetch_tasks(include_team_name=False):
 
         if not team_field_id:
             team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
-        epic_link_field = epic_link_field_id or resolve_epic_link_field_id(headers, names_map)
+        epic_link_field = epic_link_field_id or resolve_epic_link_field_id(headers, names_map, context=auth_context)
         epic_name_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic name'), None)
         epic_keys = set()
         normalize_started = time.perf_counter()
@@ -3194,18 +4080,28 @@ def fetch_tasks(include_team_name=False):
                 sprint_field_id=sprint_field_id
             )
         else:
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                future_epic_details = pool.submit(fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
-                future_epics_in_scope = pool.submit(
-                    fetch_epics_for_empty_alert,
+            if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+                epic_details = fetch_epic_details_bulk(epic_keys, headers, epic_name_field)
+                epics_in_scope = fetch_epics_for_empty_alert(
                     jql,
                     headers,
                     team_field_id,
                     epic_name_field,
                     sprint_field_id
                 )
-                epic_details = future_epic_details.result()
-                epics_in_scope = future_epics_in_scope.result()
+            else:
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    future_epic_details = pool.submit(fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
+                    future_epics_in_scope = pool.submit(
+                        fetch_epics_for_empty_alert,
+                        jql,
+                        headers,
+                        team_field_id,
+                        epic_name_field,
+                        sprint_field_id
+                    )
+                    epic_details = future_epic_details.result()
+                    epics_in_scope = future_epics_in_scope.result()
         record_timing('epic_enrichment', enrich_epics_started)
 
         if epic_keys_filter:
@@ -3214,16 +4110,23 @@ def fetch_tasks(include_team_name=False):
         if not lightweight_ready_to_close:
             enrich_counts_started = time.perf_counter()
             epic_scope_keys = [e.get('key') for e in epics_in_scope]
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                future_epic_story_counts = (
-                    pool.submit(fetch_story_counts_for_epics, epic_scope_keys, headers, epic_link_field)
+            if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+                epic_story_counts = (
+                    fetch_story_counts_for_epics(epic_scope_keys, headers, epic_link_field)
                     if epic_link_field else None
                 )
-                future_epic_story_distribution = pool.submit(
-                    fetch_story_distribution_for_epics, epic_scope_keys, headers, epic_link_field, sprint
-                )
-                epic_story_counts = future_epic_story_counts.result() if future_epic_story_counts else None
-                epic_story_distribution = future_epic_story_distribution.result()
+                epic_story_distribution = fetch_story_distribution_for_epics(epic_scope_keys, headers, epic_link_field, sprint)
+            else:
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    future_epic_story_counts = (
+                        pool.submit(fetch_story_counts_for_epics, epic_scope_keys, headers, epic_link_field)
+                        if epic_link_field else None
+                    )
+                    future_epic_story_distribution = pool.submit(
+                        fetch_story_distribution_for_epics, epic_scope_keys, headers, epic_link_field, sprint
+                    )
+                    epic_story_counts = future_epic_story_counts.result() if future_epic_story_counts else None
+                    epic_story_distribution = future_epic_story_distribution.result()
             record_timing('epic_counts_distribution', enrich_counts_started)
             for epic in epics_in_scope:
                 key = epic.get('key')
@@ -3298,13 +4201,14 @@ def fetch_tasks(include_team_name=False):
             f'project={project_filter or "all"} issues={len(slim_issues)} epics={len(epics_in_scope)} '
             f'timings_ms={timings_ms}'
         )
-        cache_store_started = time.perf_counter()
-        with _cache_lock:
-            TASKS_CACHE[cache_key] = {
-                'timestamp': time.time(),
-                'data': data
-            }
-        record_timing('cache_store', cache_store_started)
+        if cache_enabled:
+            cache_store_started = time.perf_counter()
+            with _cache_lock:
+                TASKS_CACHE[cache_key] = {
+                    'timestamp': time.time(),
+                    'data': data
+                }
+            record_timing('cache_store', cache_store_started)
 
         success_response = jsonify(data)
         success_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -3319,7 +4223,12 @@ def fetch_tasks(include_team_name=False):
         if server_timing_parts:
             success_response.headers['Server-Timing'] = ', '.join(server_timing_parts)
         return success_response
-        
+
+    except AuthError as error:
+        if error.code == "auth_required":
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
     except Exception as e:
         logger.exception('Failed to fetch tasks from Jira')
         error_response = jsonify({
@@ -3330,7 +4239,7 @@ def fetch_tasks(include_team_name=False):
         return error_response, 500
 
 
-def fetch_issues_by_keys(keys, headers, fields_list):
+def fetch_issues_by_keys(keys, fields_list, context=None):
     """Fetch issues by keys in batches."""
     if not keys:
         return []
@@ -3343,11 +4252,10 @@ def fetch_issues_by_keys(keys, headers, fields_list):
         jql = f'key in ({quoted_keys})'
         payload = {
             'jql': jql,
-            'startAt': 0,
             'maxResults': batch_size,
             'fields': fields_list
         }
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload, context=context)
         if response.status_code != 200:
             log_warning(f'Dependencies fetch error: status={response.status_code}')
             continue
@@ -3356,10 +4264,9 @@ def fetch_issues_by_keys(keys, headers, fields_list):
     return results
 
 
-def fetch_issues_by_jql(jql, headers, fields_list, max_results=500):
+def fetch_issues_by_jql(jql, fields_list, max_results=500, context=None):
     """Fetch issues by JQL with pagination."""
     results = []
-    start_at = 0
     next_page_token = None
     page_size = 100
     while len(results) < max_results:
@@ -3372,9 +4279,7 @@ def fetch_issues_by_jql(jql, headers, fields_list, max_results=500):
         }
         if next_page_token:
             payload['nextPageToken'] = next_page_token
-        else:
-            payload['startAt'] = start_at
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload, context=context)
         if response.status_code != 200:
             log_warning(f'Scenario fetch error: status={response.status_code}')
             break
@@ -3384,13 +4289,7 @@ def fetch_issues_by_jql(jql, headers, fields_list, max_results=500):
             break
         results.extend(issues)
         next_page_token = data.get('nextPageToken')
-        if next_page_token:
-            continue
-        start_at += len(issues)
-        total = data.get('total')
-        if total is not None and start_at >= total:
-            break
-        if len(issues) < page_limit:
+        if data.get('isLast', not next_page_token) or not next_page_token:
             break
     return results
 
@@ -3476,7 +4375,7 @@ def build_issue_snapshot(issue, team_field_id=None, epic_link_field_id=None):
     }
 
 
-def collect_dependencies(keys, headers):
+def collect_dependencies(keys, context=None):
     """Fetch dependency links for a set of issues."""
     keys = sorted({str(k).strip() for k in keys if str(k).strip()})
     if not keys:
@@ -3511,8 +4410,9 @@ def collect_dependencies(keys, headers):
             return (linked_key, base_key) if direction == 'outward' else (base_key, linked_key)
         return None, None
 
-    team_field_id = resolve_team_field_id(headers)
-    epic_link_field_id = resolve_epic_link_field_id(headers)
+    auth_context = context if context is not None else (current_request_auth_context() if has_request_context() else None)
+    team_field_id = resolve_team_field_id(None, context=auth_context)
+    epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
 
     fields_list = [
         'summary',
@@ -3528,7 +4428,7 @@ def collect_dependencies(keys, headers):
     if team_field_id and team_field_id not in fields_list:
         fields_list.append(team_field_id)
 
-    issues = fetch_issues_by_keys(keys, headers, fields_list)
+    issues = fetch_issues_by_keys(keys, fields_list)
     issue_map = {}
     linked_keys = set()
     for issue in issues:
@@ -3542,7 +4442,7 @@ def collect_dependencies(keys, headers):
 
     missing_linked = sorted(linked_keys - set(issue_map.keys()))
     if missing_linked:
-        linked_issues = fetch_issues_by_keys(missing_linked, headers, fields_list)
+        linked_issues = fetch_issues_by_keys(missing_linked, fields_list)
         for issue in linked_issues:
             snapshot = build_issue_snapshot(issue, team_field_id, epic_link_field_id)
             if snapshot.get('key'):
@@ -3616,23 +4516,27 @@ def collect_dependencies(keys, headers):
 @app.route('/api/scenario', methods=['GET', 'POST'])
 def scenario_planner():
     """Scenario planner endpoint."""
+    auth_context = current_request_auth_context()
+    cache_enabled = jira_home_process_cache_enabled(auth_context)
     if request.method == 'GET':
-        with _cache_lock:
-            if not SCENARIO_CACHE.get('data'):
-                return jsonify({'error': 'No scenario cached'}), 404
-            return jsonify(SCENARIO_CACHE)
+        if cache_enabled:
+            with _cache_lock:
+                if not SCENARIO_CACHE.get('data'):
+                    return jsonify({'error': 'No scenario cached'}), 404
+                return jsonify(SCENARIO_CACHE)
+        return jsonify({'error': 'No scenario cached'}), 404
 
     try:
         payload = request.get_json(silent=True) or {}
         config_payload = payload.get('config') or {}
         filters = payload.get('filters') or {}
 
-        sprint_label = resolve_sprint_label(filters.get('sprint'))
+        sprint_label = resolve_sprint_label(filters.get('sprint'), cache_enabled=cache_enabled)
         quarter_start, quarter_end = quarter_dates_from_label(sprint_label)
 
         # Build sprint boundaries (selected + previous/next neighbors)
         sprint_boundaries = None
-        if sprint_label:
+        if cache_enabled and sprint_label:
             cache_data = load_sprints_cache() or {}
             cached_sprints = cache_data.get('sprints') or []
             # Sort chronologically by name (e.g. 2025Q4, 2026Q1, 2026Q2)
@@ -3667,17 +4571,9 @@ def scenario_planner():
             lane_mode=config_payload.get('lane_mode', 'team'),
         )
 
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        team_field_id = resolve_team_field_id(headers)
-        epic_link_field_id = resolve_epic_link_field_id(headers)
+        headers = None
+        team_field_id = resolve_team_field_id(None, context=auth_context)
+        epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
 
         fields_list = [
             'summary',
@@ -3700,7 +4596,7 @@ def scenario_planner():
         search_query = (filters.get('search') or '').strip().lower()
         team_filter_ids = {t for t in (filters.get('teams') or []) if t}
         scenario_jql = build_scenario_jql(filters)
-        issues_raw = fetch_issues_by_jql(scenario_jql, headers, fields_list)
+        issues_raw = fetch_issues_by_jql(scenario_jql, fields_list)
 
         issues = []
         issue_keys = []
@@ -3770,7 +4666,7 @@ def scenario_planner():
                     'timeSpentSeconds': time_spent_seconds,
                 }
 
-        dependencies = collect_dependencies(issue_keys, headers)
+        dependencies = collect_dependencies(issue_keys)
         dependency_edges = {}
         edge_list = []
         edge_set = set()
@@ -3860,7 +4756,7 @@ def scenario_planner():
                     capacity_keys[name] = normalized
             capacity_sizes, capacity_details = fetch_capacity_team_sizes(
                 sprint_label,
-                headers,
+                None,
                 team_names=sorted(set(capacity_keys.values()))
             )
             scenario_config.team_sizes = {
@@ -3871,12 +4767,12 @@ def scenario_planner():
 
         epic_summary_by_key = {}
         if epic_keys:
-            epic_issues = fetch_issues_by_keys(sorted(epic_keys), headers, ['summary'])
+            epic_issues = fetch_issues_by_keys(sorted(epic_keys), ['summary'])
             for epic in epic_issues:
                 fields = epic.get('fields') or {}
                 epic_summary_by_key[epic.get('key')] = fields.get('summary')
 
-        jira_base_url = (JIRA_URL or '').rstrip('/')
+        jira_base_url = auth_context.site_url or (JIRA_URL or '').rstrip('/')
 
         capacity_by_team = {}
         if sprint_label:
@@ -4064,11 +4960,15 @@ def scenario_planner():
             'sprintBoundaries': sprint_boundaries,
         }
 
-        with _cache_lock:
-            SCENARIO_CACHE['generatedAt'] = result['generatedAt']
-            SCENARIO_CACHE['data'] = result
+        if cache_enabled:
+            with _cache_lock:
+                SCENARIO_CACHE['generatedAt'] = result['generatedAt']
+                SCENARIO_CACHE['data'] = result
 
         return jsonify(result)
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
     except Exception as e:
         logger.exception('Scenario error')
         return jsonify({'error': 'Failed to compute scenario', 'message': str(e)}), 500
@@ -4131,19 +5031,20 @@ def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):
         fields_list.append(team_field_id)
 
     page_size = 250
-    start_at = 0
+    next_page_token = None
     collected_issues = []
     total_issues = None
 
     while True:
         payload = {
             'jql': jql,
-            'startAt': start_at,
             'maxResults': page_size,
             'fields': fields_list
         }
+        if next_page_token:
+            payload['nextPageToken'] = next_page_token
 
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
         if response.status_code != 200:
             return None, response
 
@@ -4154,10 +5055,8 @@ def fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=None):
             break
 
         collected_issues.extend(issues)
-        if len(issues) < payload['maxResults']:
-            break
-        start_at += len(issues)
-        if total_issues is not None and start_at >= total_issues:
+        next_page_token = data.get('nextPageToken')
+        if data.get('isLast', not next_page_token) or not next_page_token:
             break
 
     def normalize_status(value):
@@ -4365,17 +5264,20 @@ def normalize_team_change_value(raw_id, raw_name):
     return {'id': team_id, 'name': team_name or team_id}
 
 
-def resolve_sprint_date_bounds(sprint_label):
-    cache = load_sprints_cache() or {}
-    for sprint in cache.get('sprints', []) or []:
-        if str(sprint.get('name') or '').strip() != str(sprint_label or '').strip():
-            continue
-        start_value = str(sprint.get('startDate') or '')[:10]
-        end_value = str(sprint.get('endDate') or '')[:10]
-        start_date = parse_iso_date(start_value)
-        end_date = parse_iso_date(end_value)
-        if start_date and end_date:
-            return start_date, end_date
+def resolve_sprint_date_bounds(sprint_label, cache_enabled=None):
+    if cache_enabled is None:
+        cache_enabled = jira_home_process_cache_enabled(_cache_policy_context())
+    if cache_enabled:
+        cache = load_sprints_cache() or {}
+        for sprint in cache.get('sprints', []) or []:
+            if str(sprint.get('name') or '').strip() != str(sprint_label or '').strip():
+                continue
+            start_value = str(sprint.get('startDate') or '')[:10]
+            end_value = str(sprint.get('endDate') or '')[:10]
+            start_date = parse_iso_date(start_value)
+            end_date = parse_iso_date(end_value)
+            if start_date and end_date:
+                return start_date, end_date
     return quarter_dates_from_label(sprint_label)
 
 
@@ -4536,7 +5438,8 @@ def fetch_burnout_events_for_sprint(
         team_field_id,
         team_ids=None,
         issue_keys=None,
-        include_post_sprint_closures=False
+        include_post_sprint_closures=False,
+        cache_enabled=None
 ):
     base_jql = STATS_JQL_BASE or f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")'
     base_jql = strip_sprint_clause(base_jql)
@@ -4564,7 +5467,7 @@ def fetch_burnout_events_for_sprint(
     if team_field_id and team_field_id not in fields_list:
         fields_list.append(team_field_id)
 
-    sprint_start, sprint_end = resolve_sprint_date_bounds(sprint_name)
+    sprint_start, sprint_end = resolve_sprint_date_bounds(sprint_name, cache_enabled=cache_enabled)
     timezone_info = get_stats_burnout_timezone()
     collected_issues = []
     normalized_issue_keys = []
@@ -4597,11 +5500,10 @@ def fetch_burnout_events_for_sprint(
             chunk_jql = f'issueKey in ({quoted_keys})'
             payload = {
                 'jql': chunk_jql,
-                'startAt': 0,
                 'maxResults': len(chunk),
                 'fields': fields_list
             }
-            response = jira_search_request(headers, payload)
+            response = jira_search_request(payload)
             if response.status_code != 200:
                 return None, response, payload
             data = response.json() or {}
@@ -4626,12 +5528,11 @@ def fetch_burnout_events_for_sprint(
             chunk_jql = add_clause_to_jql(chunk_scope_jql, closure_clause)
             payload = {
                 'jql': chunk_jql,
-                'startAt': 0,
                 'maxResults': len(chunk),
                 'fields': fields_list,
                 'expand': ['changelog']
             }
-            response = jira_search_request(headers, payload)
+            response = jira_search_request(payload)
             if response.status_code != 200:
                 return None, response, payload
             data = response.json() or {}
@@ -4647,18 +5548,19 @@ def fetch_burnout_events_for_sprint(
         collected_issues = list(issue_map.values())
     else:
         page_size = 100
-        start_at = 0
+        next_page_token = None
         total_issues = None
         debug_payload['mode'] = 'jql'
         while True:
             payload = {
                 'jql': jql,
-                'startAt': start_at,
                 'maxResults': page_size,
                 'fields': fields_list,
                 'expand': ['changelog']
             }
-            response = jira_search_request(headers, payload)
+            if next_page_token:
+                payload['nextPageToken'] = next_page_token
+            response = jira_search_request(payload)
             if response.status_code != 200:
                 return None, response, payload
             data = response.json() or {}
@@ -4667,10 +5569,8 @@ def fetch_burnout_events_for_sprint(
             if not issues:
                 break
             collected_issues.extend(issues)
-            if len(issues) < page_size:
-                break
-            start_at += len(issues)
-            if total_issues is not None and start_at >= total_issues:
+            next_page_token = data.get('nextPageToken')
+            if data.get('isLast', not next_page_token) or not next_page_token:
                 break
 
     events = []
@@ -4759,14 +5659,12 @@ def _escape_jql_literal(value):
     return str(value or '').replace('\\', '\\\\').replace('"', '\\"')
 
 
-def _cohort_fetch_terminal_date_from_changelog(issue_key, target_status, headers):
-    response = resilient_jira_get(
-        f'{JIRA_URL}/rest/api/3/issue/{issue_key}',
+def _cohort_fetch_terminal_date_from_changelog(issue_key, target_status, headers, context=None):
+    response = current_jira_get(
+        f'/rest/api/3/issue/{issue_key}',
         params={'fields': 'status', 'expand': 'changelog'},
-        headers=headers,
         timeout=20,
-        session=HTTP_SESSION,
-        breaker=JIRA_SEARCH_CIRCUIT_BREAKER
+        context=context,
     )
     if response.status_code != 200:
         return issue_key, None, f'changelog fetch failed ({response.status_code})'
@@ -4778,7 +5676,7 @@ def _cohort_fetch_terminal_date_from_changelog(issue_key, target_status, headers
     return issue_key, resolved, None
 
 
-def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None, component_names=None):
+def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None, component_names=None, context=None):
     start_date, _ = quarter_dates_from_label(start_quarter)
     if not start_date:
         return {
@@ -4832,7 +5730,7 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
         if next_page_token:
             payload['nextPageToken'] = next_page_token
 
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
         if response.status_code != 200:
             return None, response
         data = response.json() or {}
@@ -4877,7 +5775,7 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
             for issue_key, status_name in terminal_candidates:
                 if not issue_key:
                     continue
-                future = pool.submit(_cohort_fetch_terminal_date_from_changelog, issue_key, status_name, headers)
+                future = pool.submit(_cohort_fetch_terminal_date_from_changelog, issue_key, status_name, headers, context)
                 future_map[future] = issue_key
             try:
                 for future in as_completed(future_map, timeout=timeout_budget):
@@ -5090,87 +5988,67 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
     }
 
 
-def _link_category_for_capacity_stats(type_info):
-    text = ' '.join(str((type_info or {}).get(key) or '').lower() for key in ('name', 'inward', 'outward'))
-    if 'participat' in text:
-        return 'participation'
-    if 'depend' in text:
-        return 'dependency'
-    if 'block' in text:
-        return 'block'
-    return None
+def excluded_capacity_epic_summary_cache_key(epic_key, context=None):
+    normalized_key = str(epic_key or '').strip().upper()
+    if context is not None:
+        return build_auth_cache_key(context, 'excluded-capacity-epic-summary', normalized_key)
+    return ('excluded-capacity-epic-summary', 'basic', normalized_key)
 
 
-def fetch_excluded_capacity_linked_snapshots(keys, headers, fields_list, team_field_id, epic_link_field_id):
-    keys = sorted({str(key or '').strip() for key in keys if str(key or '').strip()})
-    if not keys:
-        return {}, []
-
-    warnings = []
-    if len(keys) > EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES:
-        warnings.append(f'linked issue enrichment capped at {EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES} issues')
-        keys = keys[:EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES]
-
-    snapshots = {}
-    batch_size = 100
-    for index in range(0, len(keys), batch_size):
-        batch = keys[index:index + batch_size]
-        quoted_keys = ', '.join(f'"{_escape_jql_literal(key)}"' for key in batch)
-        payload = {
-            'jql': f'key in ({quoted_keys})',
-            'maxResults': len(batch),
-            'fields': fields_list
-        }
-        response = jira_search_request(headers, payload)
-        if response.status_code != 200:
-            warnings.append(f'linked issue enrichment failed for batch {index // batch_size + 1}')
+def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
+    normalized_keys = []
+    original_by_normalized = {}
+    for key in epic_keys or []:
+        original = str(key or '').strip()
+        normalized = original.upper()
+        if not normalized or normalized in original_by_normalized:
             continue
-        data = response.json() or {}
-        for issue in data.get('issues', []) or []:
-            snapshot = build_issue_snapshot(issue, team_field_id, epic_link_field_id)
-            issue_key = snapshot.get('key')
-            if issue_key:
-                snapshots[issue_key] = snapshot
-    return snapshots, warnings
+        original_by_normalized[normalized] = original
+        normalized_keys.append(normalized)
+
+    if not normalized_keys:
+        return {}
+
+    now = time.time()
+    summaries_by_normalized = {}
+    missing_keys = []
+    with _cache_lock:
+        for normalized in normalized_keys:
+            cache_key = excluded_capacity_epic_summary_cache_key(normalized, context=context)
+            entry = EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE.get(cache_key)
+            if entry and now - entry.get('timestamp', 0) < EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS:
+                summaries_by_normalized[normalized] = entry.get('summary', '')
+            else:
+                missing_keys.append(normalized)
+
+    batch_size = max(1, EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE)
+    for index in range(0, len(missing_keys), batch_size):
+        batch = missing_keys[index:index + batch_size]
+        fetched = {}
+        epic_records = fetch_issues_by_keys(batch, ['summary'], context=context)
+        for epic in epic_records:
+            key = str(epic.get('key') or '').strip().upper()
+            summary = str((epic.get('fields') or {}).get('summary') or '').strip()
+            if key:
+                fetched[key] = summary
+        with _cache_lock:
+            for normalized in batch:
+                summary = fetched.get(normalized, '')
+                EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE[excluded_capacity_epic_summary_cache_key(normalized, context=context)] = {
+                    'summary': summary,
+                    'timestamp': time.time()
+                }
+                summaries_by_normalized[normalized] = summary
+
+    return {
+        original_by_normalized[normalized]: summaries_by_normalized.get(normalized, '')
+        for normalized in normalized_keys
+    }
 
 
-def build_excluded_capacity_dependencies(issues, linked_snapshots):
-    dependencies = {}
-    for issue in issues:
-        base_key = issue.get('key')
-        if not base_key:
-            continue
-        entries = []
-        for link in issue.get('fields', {}).get('issuelinks', []) or []:
-            type_info = link.get('type', {}) or {}
-            category = _link_category_for_capacity_stats(type_info)
-            if not category:
-                continue
-            linked_issue = link.get('outwardIssue') or link.get('inwardIssue')
-            linked_key = linked_issue.get('key') if linked_issue else None
-            if not linked_key:
-                continue
-            snapshot = linked_snapshots.get(linked_key) or {
-                'key': linked_key,
-                'summary': linked_issue.get('fields', {}).get('summary') if linked_issue else '',
-                'teamId': None,
-                'teamName': None,
-                'epicKey': None
-            }
-            entries.append({
-                **snapshot,
-                'category': category,
-                'relation': type_info.get('outward') if link.get('outwardIssue') else type_info.get('inward'),
-                'typeName': type_info.get('name')
-            })
-        if entries:
-            dependencies[base_key] = entries
-    return dependencies
-
-
-def fetch_excluded_capacity_stats_source(sprint_ids, headers, team_ids=None):
-    team_field_id = resolve_team_field_id(headers)
-    epic_link_field_id = resolve_epic_link_field_id(headers)
+def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None):
+    team_field_id = resolve_team_field_id(None, context=context)
+    epic_link_field_id = resolve_epic_link_field_id(None, context=context)
     sprint_field_id = get_sprint_field_id()
     story_points_field = get_story_points_field_id()
     try:
@@ -5193,8 +6071,7 @@ def fetch_excluded_capacity_stats_source(sprint_ids, headers, team_ids=None):
         'updated',
         story_points_field,
         'parent',
-        'project',
-        'issuelinks'
+        'project'
     ]
     for field_id in (sprint_field_id, epic_link_field_id, team_field_id):
         if field_id and field_id not in fields_list:
@@ -5214,7 +6091,7 @@ def fetch_excluded_capacity_stats_source(sprint_ids, headers, team_ids=None):
         }
         if next_page_token:
             payload['nextPageToken'] = next_page_token
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload, context=context)
         if response.status_code != 200:
             return None, response
         data = response.json() or {}
@@ -5227,25 +6104,6 @@ def fetch_excluded_capacity_stats_source(sprint_ids, headers, team_ids=None):
 
     if len(collected_issues) >= EXCLUDED_CAPACITY_STATS_MAX_ISSUES:
         warnings.append(f'issue fetch capped at {EXCLUDED_CAPACITY_STATS_MAX_ISSUES} issues')
-
-    linked_keys = set()
-    for issue in collected_issues:
-        for link in issue.get('fields', {}).get('issuelinks', []) or []:
-            if not _link_category_for_capacity_stats(link.get('type', {}) or {}):
-                continue
-            linked_issue = link.get('outwardIssue') or link.get('inwardIssue')
-            linked_key = linked_issue.get('key') if linked_issue else None
-            if linked_key:
-                linked_keys.add(linked_key)
-
-    linked_snapshots, linked_warnings = fetch_excluded_capacity_linked_snapshots(
-        linked_keys,
-        headers,
-        fields_list,
-        team_field_id,
-        epic_link_field_id
-    )
-    warnings.extend(linked_warnings)
 
     epic_keys = []
     seen_epics = set()
@@ -5263,17 +6121,7 @@ def fetch_excluded_capacity_stats_source(sprint_ids, headers, team_ids=None):
             seen_epics.add(epic_key)
             epic_keys.append(epic_key)
 
-    epic_summary_by_key = {}
-    if epic_keys:
-        capped_epic_keys = epic_keys[:EXCLUDED_CAPACITY_STATS_MAX_EPICS]
-        if len(epic_keys) > EXCLUDED_CAPACITY_STATS_MAX_EPICS:
-            warnings.append(f'epic summary enrichment capped at {EXCLUDED_CAPACITY_STATS_MAX_EPICS} epics')
-        epic_records = fetch_issues_by_keys(capped_epic_keys, headers, ['summary'])
-        for epic in epic_records:
-            key = epic.get('key')
-            summary = (epic.get('fields') or {}).get('summary')
-            if key and summary:
-                epic_summary_by_key[key] = summary
+    epic_summary_by_key = fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=context)
 
     issues_payload = [
         build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id, epic_summary_by_key, team_name_by_id)
@@ -5282,14 +6130,12 @@ def fetch_excluded_capacity_stats_source(sprint_ids, headers, team_ids=None):
 
     return {
         'issues': issues_payload,
-        'dependencies': build_excluded_capacity_dependencies(collected_issues, linked_snapshots),
         'meta': {
             'warnings': warnings,
             'truncated': bool(warnings),
             'paginationMode': 'nextPageToken/isLast',
             'queryPages': page_count,
-            'issueLimit': EXCLUDED_CAPACITY_STATS_MAX_ISSUES,
-            'linkedIssueLimit': EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES
+            'issueLimit': EXCLUDED_CAPACITY_STATS_MAX_ISSUES
         }
     }, None
 
@@ -5307,26 +6153,30 @@ def get_excluded_capacity_stats_source():
     raw_team_ids = payload.get('teamIds') if isinstance(payload, dict) else []
     team_ids = normalize_team_ids(raw_team_ids if isinstance(raw_team_ids, list) else [])
 
-    auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-    auth_bytes = auth_string.encode('ascii')
-    auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-    headers = {
-        'Authorization': f'Basic {auth_base64}',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-    }
+    try:
+        auth_context = current_request_auth_context()
+        stats_payload, error_response = fetch_excluded_capacity_stats_source(sprint_ids, context=auth_context, team_ids=team_ids)
+        if error_response is not None:
+            return jsonify({
+                'error': 'Failed to fetch excluded-capacity stats source',
+                'details': error_response.text
+            }), error_response.status_code
 
-    stats_payload, error_response = fetch_excluded_capacity_stats_source(sprint_ids, headers, team_ids=team_ids)
-    if error_response is not None:
+        return jsonify({
+            'generatedAt': datetime.now().isoformat(),
+            'data': stats_payload
+        })
+    except AuthError as error:
+        if error.code == "auth_required":
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
+    except Exception as error:
+        logger.exception('Failed to fetch excluded-capacity stats source')
         return jsonify({
             'error': 'Failed to fetch excluded-capacity stats source',
-            'details': error_response.text
-        }), error_response.status_code
-
-    return jsonify({
-        'generatedAt': datetime.now().isoformat(),
-        'data': stats_payload
-    })
+            'message': str(error)
+        }), 500
 
 
 @app.route('/api/stats', methods=['GET'])
@@ -5349,47 +6199,46 @@ def get_completed_sprint_stats():
         team_ids = [team_id]
     else:
         team_ids = get_stats_team_ids()
+    auth_context = current_request_auth_context()
+    cache_enabled = jira_home_process_cache_enabled(auth_context)
     cache_key = build_stats_cache_key(sprint_name, base_jql, team_ids, group_id=group_id)
-    cache_data = load_stats_cache()
-    if not refresh and cache_key in cache_data:
-        cached_payload = cache_data.get(cache_key, {})
-        response = {
-            'cached': True,
-            'generatedAt': cached_payload.get('generatedAt'),
-            'data': cached_payload.get('data')
-        }
-        return jsonify(response)
+    cache_data = {}
+    if cache_enabled:
+        cache_data = load_stats_cache()
+        if not refresh and cache_key in cache_data:
+            cached_payload = cache_data.get(cache_key, {})
+            response = {
+                'cached': True,
+                'generatedAt': cached_payload.get('generatedAt'),
+                'data': cached_payload.get('data')
+            }
+            return jsonify(response)
 
-    auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-    auth_bytes = auth_string.encode('ascii')
-    auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
+    try:
+        team_field_id = resolve_team_field_id(None, context=auth_context)
+        stats_payload, error_response = fetch_stats_for_sprint(sprint_name, None, team_field_id, team_ids=team_ids or None)
+        if error_response is not None:
+            return jsonify({
+                'error': 'Failed to fetch stats',
+                'details': error_response.text
+            }), error_response.status_code
 
-    headers = {
-        'Authorization': f'Basic {auth_base64}',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-    }
+        generated_at = datetime.now().isoformat()
+        if cache_enabled:
+            cache_data[cache_key] = {
+                'generatedAt': generated_at,
+                'data': stats_payload
+            }
+            save_stats_cache(cache_data)
 
-    team_field_id = resolve_team_field_id(headers)
-    stats_payload, error_response = fetch_stats_for_sprint(sprint_name, headers, team_field_id, team_ids=team_ids or None)
-    if error_response is not None:
         return jsonify({
-            'error': 'Failed to fetch stats',
-            'details': error_response.text
-        }), error_response.status_code
-
-    generated_at = datetime.now().isoformat()
-    cache_data[cache_key] = {
-        'generatedAt': generated_at,
-        'data': stats_payload
-    }
-    save_stats_cache(cache_data)
-
-    return jsonify({
-        'cached': False,
-        'generatedAt': generated_at,
-        'data': stats_payload
-    })
+            'cached': False,
+            'generatedAt': generated_at,
+            'data': stats_payload
+        })
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
 
 
 @app.route('/api/stats/burnout', methods=['GET', 'POST'])
@@ -5425,35 +6274,33 @@ def get_burnout_stats():
     elif team_id and team_id.lower() != 'all':
         scoped_team_ids = normalize_team_ids([team_id])
 
-    auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-    auth_bytes = auth_string.encode('ascii')
-    auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-    headers = {
-        'Authorization': f'Basic {auth_base64}',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-    }
+    try:
+        auth_context = current_request_auth_context()
+        cache_enabled = jira_home_process_cache_enabled(auth_context)
+        team_field_id = resolve_team_field_id(None, context=auth_context)
+        burnout_payload, error_response, debug_payload = fetch_burnout_events_for_sprint(
+            sprint_name,
+            None,
+            team_field_id,
+            team_ids=scoped_team_ids,
+            issue_keys=issue_keys,
+            include_post_sprint_closures=include_post_sprint_closures,
+            cache_enabled=cache_enabled
+        )
+        if error_response is not None:
+            return jsonify({
+                'error': 'Failed to fetch burnout stats',
+                'details': error_response.text,
+                'query': debug_payload
+            }), error_response.status_code
 
-    team_field_id = resolve_team_field_id(headers)
-    burnout_payload, error_response, debug_payload = fetch_burnout_events_for_sprint(
-        sprint_name,
-        headers,
-        team_field_id,
-        team_ids=scoped_team_ids,
-        issue_keys=issue_keys,
-        include_post_sprint_closures=include_post_sprint_closures
-    )
-    if error_response is not None:
         return jsonify({
-            'error': 'Failed to fetch burnout stats',
-            'details': error_response.text,
-            'query': debug_payload
-        }), error_response.status_code
-
-    return jsonify({
-        'generatedAt': datetime.now().isoformat(),
-        'data': burnout_payload
-    })
+            'generatedAt': datetime.now().isoformat(),
+            'data': burnout_payload
+        })
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
 
 
 @app.route('/api/stats/epic-cohort', methods=['POST'])
@@ -5470,47 +6317,48 @@ def get_epic_cohort_stats():
     refresh = _cohort_parse_bool(payload.get('refresh'))
     scoped_projects = _cohort_project_scope()
     cache_key = _build_epic_cohort_cache_key(start_quarter, team_ids, scoped_projects, component_names)
+    auth_context = current_request_auth_context()
+    cache_enabled = jira_home_process_cache_enabled(auth_context)
 
     now_ts = time.time()
-    with _cache_lock:
-        cached = EPIC_COHORT_CACHE.get(cache_key)
-    if cached and not refresh and (now_ts - float(cached.get('ts') or 0)) <= EPIC_COHORT_CACHE_TTL_SECONDS:
+    cached = None
+    if cache_enabled:
+        with _cache_lock:
+            cached = EPIC_COHORT_CACHE.get(cache_key)
+    if cache_enabled and cached and not refresh and (now_ts - float(cached.get('ts') or 0)) <= EPIC_COHORT_CACHE_TTL_SECONDS:
         return jsonify({
             'cached': True,
             'generatedAt': cached.get('generatedAt'),
             'data': cached.get('data')
         })
 
-    auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-    auth_bytes = auth_string.encode('ascii')
-    auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-    headers = {
-        'Authorization': f'Basic {auth_base64}',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-    }
-
-    team_field_id = resolve_team_field_id(headers)
-    cohort_payload, error_response = fetch_epic_cohort_data(
-        start_quarter,
-        headers,
-        team_field_id,
-        team_ids=team_ids,
-        component_names=component_names
-    )
-    if error_response is not None:
-        return jsonify({
-            'error': 'Failed to fetch epic cohort stats',
-            'details': error_response.text
-        }), error_response.status_code
+    try:
+        team_field_id = resolve_team_field_id(None, context=auth_context)
+        cohort_payload, error_response = fetch_epic_cohort_data(
+            start_quarter,
+            None,
+            team_field_id,
+            team_ids=team_ids,
+            component_names=component_names,
+            context=auth_context,
+        )
+        if error_response is not None:
+            return jsonify({
+                'error': 'Failed to fetch epic cohort stats',
+                'details': error_response.text
+            }), error_response.status_code
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
 
     generated_at = datetime.now().isoformat()
-    with _cache_lock:
-        EPIC_COHORT_CACHE[cache_key] = {
-            'ts': now_ts,
-            'generatedAt': generated_at,
-            'data': cohort_payload
-        }
+    if cache_enabled:
+        with _cache_lock:
+            EPIC_COHORT_CACHE[cache_key] = {
+                'ts': now_ts,
+                'generatedAt': generated_at,
+                'data': cohort_payload
+            }
 
     return jsonify({
         'cached': False,
@@ -5614,20 +6462,13 @@ def get_capacity():
         })
 
     try:
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        payload, error_message = fetch_capacity_for_sprint(sprint_name, headers, debug=debug, team_names=team_names)
+        payload, error_message = fetch_capacity_for_sprint(sprint_name, None, debug=debug, team_names=team_names)
         if error_message:
             return jsonify({'error': error_message}), 500
         return jsonify(payload)
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -5651,26 +6492,9 @@ def health_check():
 def test_connection():
     """Test Jira connection with simple query"""
     try:
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
-        # Simple test query - just get any 5 issues from PRODUCT project
-        test_payload = {
-            'jql': 'project = PRODUCT ORDER BY created DESC',
-            'maxResults': 5,
-            'fields': ['summary', 'status', 'priority']
-        }
-
         log_info('Testing Jira connection')
 
-        response = jira_search_request(headers, test_payload)
+        response = current_jira_get('/rest/api/3/myself', timeout=15)
 
         log_info(f'Test response status={response.status_code}')
 
@@ -5684,9 +6508,21 @@ def test_connection():
         data = response.json()
         return jsonify({
             'status': 'success',
-            'message': f'Connection OK! Found {len(data.get("issues", []))} test issues',
-            'sample_issue': data.get('issues', [{}])[0].get('key', 'N/A') if data.get('issues') else None
+            'message': f'Connection OK! Authenticated as {data.get("displayName") or data.get("emailAddress") or "Jira user"}',
+            'sample_issue': None,
         })
+    except AuthError as e:
+        if e.code == 'auth_required':
+            save_oauth_session({})
+            return jsonify({
+                'error': 'auth_required',
+                'message': 'Your Jira sign-in expired. Sign in again to continue.',
+                'loginUrl': '/login?reason=session_expired',
+            }), 401
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+        }), 500
 
     except Exception as e:
         return jsonify({
@@ -5718,7 +6554,7 @@ def debug_fields():
 
         log_info('Fetching all fields for debugging')
 
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
 
         if response.status_code != 200:
             return jsonify({
@@ -5783,7 +6619,7 @@ def get_tasks_fields():
 
         log_info(f'Fetching all fields for {limit_value} issues')
 
-        response = jira_search_request(headers, payload)
+        response = jira_search_request(payload)
 
         if response.status_code != 200:
             return jsonify({
@@ -5897,9 +6733,11 @@ if __name__ == '__main__':
         SERVER_PORT = args.server_port
 
     # Validate configuration
-    if not JIRA_URL or not JIRA_EMAIL or not JIRA_TOKEN:
-        log_error('JIRA_URL, JIRA_EMAIL and JIRA_TOKEN must be set via environment or CLI')
-        log_info('Please copy .env.example to .env, fill in credentials, or pass them as flags')
+    try:
+        validate_startup_auth_config()
+    except AuthError as error:
+        log_error(str(error))
+        log_info('Please copy .env.example to .env and configure either basic auth or Atlassian OAuth')
         exit(1)
 
     # Only print on first startup, not on reload
@@ -5910,7 +6748,9 @@ if __name__ == '__main__':
 
         log_info(f'Jira Proxy Server starting on http://localhost:{SERVER_PORT}')
         log_info(f'   Jira: {JIRA_URL}')
-        log_info(f'   Email: {JIRA_EMAIL}')
+        log_info(f'   Auth mode: {JIRA_AUTH_MODE}')
+        if JIRA_AUTH_MODE == AUTH_MODE_BASIC:
+            log_info(f'   Email: {JIRA_EMAIL}')
         effective_board_id = get_effective_board_id()
         if effective_board_id:
             log_info(f'   Board: {effective_board_id}')

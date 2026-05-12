@@ -110,7 +110,8 @@ class TestOauthCacheIsolation(unittest.TestCase):
         }
         try:
             with jira_server.app.test_request_context('/api/epm/projects/rollup/all?tab=active&sprint=42'):
-                with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+                with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                     patch.object(jira_server, 'current_request_auth_context', return_value=context('atlassian_oauth')):
                     deps = jira_server.build_epm_rollup_dependencies(sub_goal_keys=['GOAL'])
             with patch.object(jira_server, 'get_epm_config', return_value=epm_config), \
                  patch.object(jira_server, 'fetch_epm_home_projects', side_effect=fetch_home_projects):

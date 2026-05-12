@@ -499,7 +499,7 @@ import {
             const [issueTypeSearchOpen, setIssueTypeSearchOpen] = useState(false);
             const [issueTypeSearchIndex, setIssueTypeSearchIndex] = useState(0);
             const issueTypeSearchInputRef = useRef(null);
-            const pageLoadRefreshRef = useRef(true);
+            const pageLoadRefreshRef = useRef(false);
             const [jiraUrl, setJiraUrl] = useState('');
             const [selectedTasks, setSelectedTasks] = useState({});
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);

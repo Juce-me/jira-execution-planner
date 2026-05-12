@@ -198,6 +198,8 @@ class TestOauthCacheIsolation(unittest.TestCase):
             'jira_server.py': [
                 'SCENARIO_CACHE',
                 'TASKS_CACHE',
+                'MISSING_INFO_CACHE',
+                'DEPENDENCIES_CACHE',
                 'EPIC_COHORT_CACHE',
                 'EPM_PROJECTS_CACHE',
                 'EPM_ISSUES_CACHE',

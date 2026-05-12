@@ -1,6 +1,10 @@
 """ENG task, team, and dependency route blueprint."""
 
+import time
+
 from flask import Blueprint
+
+from backend.auth.cache_policy import build_jira_home_process_cache_key, jira_home_partitioned_process_cache_enabled
 
 from . import bind_server_globals
 
@@ -18,12 +22,36 @@ def get_dependencies():
     """Fetch dependency links for a set of issues."""
     try:
         payload = request.get_json(silent=True) or {}
-        keys = payload.get('keys') or []
+        keys = sorted({str(key).strip() for key in (payload.get('keys') or []) if str(key).strip()})
         if not keys:
             return jsonify({'dependencies': {}})
 
-        dependencies = collect_dependencies(keys)
-        return jsonify({'dependencies': dependencies})
+        started_at = time.perf_counter()
+        auth_context = current_request_auth_context()
+        cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
+        cache_key = build_jira_home_process_cache_key(auth_context, 'dependencies', ','.join(keys))
+        cached_entry = None
+        if cache_enabled:
+            with _cache_lock:
+                cached_entry = DEPENDENCIES_CACHE.get(cache_key)
+        if cache_enabled and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < DEPENDENCIES_CACHE_TTL_SECONDS:
+            response = jsonify({'dependencies': cached_entry.get('data') or {}})
+            response.headers['Server-Timing'] = 'cache;dur=1'
+            return response
+
+        collect_started_at = time.perf_counter()
+        dependencies = collect_dependencies(keys, context=auth_context)
+        collect_ms = round((time.perf_counter() - collect_started_at) * 1000, 1)
+        if cache_enabled:
+            with _cache_lock:
+                DEPENDENCIES_CACHE[cache_key] = {
+                    'timestamp': time.time(),
+                    'data': dependencies,
+                }
+        total_ms = round((time.perf_counter() - started_at) * 1000, 1)
+        response = jsonify({'dependencies': dependencies})
+        response.headers['Server-Timing'] = f'collect;dur={collect_ms}, total;dur={total_ms}'
+        return response
     except AuthError as error:
         if error.code == "auth_required":
             payload, status = oauth_auth_required_payload()
@@ -103,6 +131,7 @@ def lookup_issues():
 def get_missing_info():
     """Find stories under epics in a given sprint that are missing key planning fields (sprint/SP/team)."""
     try:
+        started_at = time.perf_counter()
         sprint = request.args.get('sprint', '').strip()
         team_ids_param = request.args.get('teamIds', '').strip()
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
@@ -110,13 +139,34 @@ def get_missing_info():
         if not sprint:
             return jsonify({'error': 'Missing required query param: sprint'}), 400
 
-        # Resolve fields
         auth_context = current_request_auth_context()
+        effective_components = components_param or ([MISSING_INFO_COMPONENT] if MISSING_INFO_COMPONENT else [])
+        effective_team_ids = normalize_team_ids(team_ids or MISSING_INFO_TEAM_IDS)
+        cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
+        cache_key = build_jira_home_process_cache_key(
+            auth_context,
+            'missing-info',
+            sprint,
+            ','.join(effective_team_ids),
+            ','.join(sorted(effective_components)),
+        )
+        cached_entry = None
+        if cache_enabled:
+            with _cache_lock:
+                cached_entry = MISSING_INFO_CACHE.get(cache_key)
+        if cache_enabled and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < MISSING_INFO_CACHE_TTL_SECONDS:
+            response = jsonify(cached_entry.get('data') or {'issues': [], 'epics': [], 'count': 0})
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            response.headers['Server-Timing'] = 'cache;dur=1'
+            return response
+
+        # Resolve fields
         team_field_id = resolve_team_field_id(None, context=auth_context)
         epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
 
-        effective_components = components_param or ([MISSING_INFO_COMPONENT] if MISSING_INFO_COMPONENT else [])
-        scope_clause = build_missing_info_scope_clause(team_ids or MISSING_INFO_TEAM_IDS, effective_components)
+        scope_clause = build_missing_info_scope_clause(effective_team_ids, effective_components)
 
         # 1) Fetch epics that are in the sprint (future sprint planning), scoped by component/team.
         epic_jql = f'Sprint = {sprint} AND issuetype = Epic'
@@ -141,7 +191,16 @@ def get_missing_info():
         epic_issues = epics_data.get('issues', []) or []
         epic_keys = [e.get('key') for e in epic_issues if e.get('key')]
         if not epic_keys:
-            return jsonify({'issues': [], 'epics': [], 'count': 0})
+            payload = {'issues': [], 'epics': [], 'count': 0}
+            if cache_enabled:
+                with _cache_lock:
+                    MISSING_INFO_CACHE[cache_key] = {
+                        'timestamp': time.time(),
+                        'data': payload,
+                    }
+            response = jsonify(payload)
+            response.headers['Server-Timing'] = f'total;dur={round((time.perf_counter() - started_at) * 1000, 1)}'
+            return response
 
         # Build epics summary for the response
         epics_summary = []
@@ -287,10 +346,18 @@ def get_missing_info():
                 if data.get('isLast', not next_page_token) or not next_page_token:
                     break
 
-        response = jsonify({'issues': missing, 'epics': epics_summary, 'count': len(missing), 'epicCount': len(epic_keys)})
+        payload = {'issues': missing, 'epics': epics_summary, 'count': len(missing), 'epicCount': len(epic_keys)}
+        if cache_enabled:
+            with _cache_lock:
+                MISSING_INFO_CACHE[cache_key] = {
+                    'timestamp': time.time(),
+                    'data': payload,
+                }
+        response = jsonify(payload)
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
+        response.headers['Server-Timing'] = f'total;dur={round((time.perf_counter() - started_at) * 1000, 1)}'
         return response
     except AuthError as error:
         if error.code == "auth_required":

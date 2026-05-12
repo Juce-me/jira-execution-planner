@@ -1,8 +1,10 @@
 import base64
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
+from backend.auth.cache_policy import build_jira_home_process_cache_key
 import jira_server
 from tests.oauth_test_helpers import install_oauth_session
 
@@ -52,6 +54,24 @@ def _synthetic_epic():
     }
 
 
+def _local_oauth_context(session_id="session-1", stored_at=0):
+    site_url = "https://example.atlassian.net"
+    cloud_id = "cloud-123"
+    return jira_server.RequestAuthContext(
+        auth_mode="atlassian_oauth",
+        user_id="local-oauth-user:account-123",
+        stable_subject="account-123",
+        atlassian_account_id="account-123",
+        workspace_id=jira_server.stable_local_workspace_id(jira_server.APP_ENVIRONMENT_KEY, site_url, cloud_id),
+        auth_connection_id=f"local-oauth-connection:{session_id}",
+        cloud_id=cloud_id,
+        site_url=site_url,
+        token_version=str(stored_at),
+        account_status="active",
+        is_admin=False,
+    )
+
+
 class OAuthEngRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
@@ -62,6 +82,11 @@ class OAuthEngRouteTests(unittest.TestCase):
     def tearDown(self):
         jira_server.OAUTH_TOKEN_STORE.clear()
         jira_server.OAUTH_REFRESH_LOCKS.clear()
+        jira_server.TASKS_CACHE.clear()
+        if hasattr(jira_server, "MISSING_INFO_CACHE"):
+            jira_server.MISSING_INFO_CACHE.clear()
+        if hasattr(jira_server, "DEPENDENCIES_CACHE"):
+            jira_server.DEPENDENCIES_CACHE.clear()
 
     def test_tasks_route_is_oauth_ready(self):
         issue = _synthetic_issue()
@@ -127,6 +152,39 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "auth_required")
         self.assertEqual(response.get_json()["loginUrl"], "/login?reason=session_expired")
 
+    def test_tasks_with_team_name_uses_oauth_partitioned_cache(self):
+        stored_at = time.time()
+        install_oauth_session(self.client, stored_at=stored_at)
+        auth_context = _local_oauth_context(stored_at=stored_at)
+        raw_key = jira_server.build_tasks_cache_key(
+            "2026Q2",
+            "default",
+            "all",
+            [],
+            True,
+            False,
+            "dashboard",
+            [],
+        )
+        partitioned_key = build_jira_home_process_cache_key(auth_context, raw_key)
+        jira_server.TASKS_CACHE[raw_key] = {
+            "timestamp": time.time(),
+            "data": {"issues": [{"key": "OTHER-1"}]},
+        }
+        jira_server.TASKS_CACHE[partitioned_key] = {
+            "timestamp": time.time(),
+            "data": {"issues": [{"key": "PROD-1"}]},
+        }
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "database_storage_enabled", return_value=False), \
+             patch.object(jira_server, "resolve_team_field_id", side_effect=AssertionError("cache hit should not resolve Jira fields")):
+            response = self.client.get("/api/tasks-with-team-name?sprint=2026Q2&project=all")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {"issues": [{"key": "PROD-1"}]})
+        self.assertEqual(response.headers.get("Server-Timing"), "cache;dur=1")
+
     def test_tasks_with_team_name_keeps_oauth_context_for_epic_enrichment(self):
         main_thread_id = threading.get_ident()
         calls = []
@@ -181,6 +239,33 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["issues"], [])
         mock_search.assert_called()
 
+    def test_missing_info_uses_oauth_partitioned_cache_and_timing(self):
+        stored_at = time.time()
+        install_oauth_session(self.client, stored_at=stored_at)
+        auth_context = _local_oauth_context(stored_at=stored_at)
+        if not hasattr(jira_server, "MISSING_INFO_CACHE"):
+            jira_server.MISSING_INFO_CACHE = {}
+        cache_key = build_jira_home_process_cache_key(
+            auth_context,
+            "missing-info",
+            "2026Q2",
+            "team-alpha",
+            "Comp A",
+        )
+        jira_server.MISSING_INFO_CACHE[cache_key] = {
+            "timestamp": time.time(),
+            "data": {"issues": [{"key": "PROD-1"}], "epics": [], "count": 1},
+        }
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "database_storage_enabled", return_value=False), \
+             patch.object(jira_server, "resolve_team_field_id", side_effect=AssertionError("cache hit should not resolve Jira fields")):
+            response = self.client.get("/api/missing-info?sprint=2026Q2&teamIds=team-alpha&components=Comp%20A")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {"issues": [{"key": "PROD-1"}], "epics": [], "count": 1})
+        self.assertEqual(response.headers.get("Server-Timing"), "cache;dur=1")
+
     def test_dependencies_requires_oauth_csrf_header(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
             response = self.client.post("/api/dependencies", json={"keys": ["PROD-1"]})
@@ -199,6 +284,35 @@ class OAuthEngRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json(), {"dependencies": {"PROD-1": []}})
+
+    def test_dependencies_uses_oauth_partitioned_cache_and_timing(self):
+        stored_at = time.time()
+        install_oauth_session(self.client, stored_at=stored_at)
+        auth_context = _local_oauth_context(stored_at=stored_at)
+        if not hasattr(jira_server, "DEPENDENCIES_CACHE"):
+            jira_server.DEPENDENCIES_CACHE = {}
+        cache_key = build_jira_home_process_cache_key(
+            auth_context,
+            "dependencies",
+            "PROD-1,TECH-2",
+        )
+        jira_server.DEPENDENCIES_CACHE[cache_key] = {
+            "timestamp": time.time(),
+            "data": {"PROD-1": [{"key": "TECH-2"}]},
+        }
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "database_storage_enabled", return_value=False), \
+             patch.object(jira_server, "collect_dependencies", side_effect=AssertionError("cache hit should not query Jira")):
+            response = self.client.post(
+                "/api/dependencies",
+                json={"keys": ["TECH-2", "PROD-1", "PROD-1"]},
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {"dependencies": {"PROD-1": [{"key": "TECH-2"}]}})
+        self.assertEqual(response.headers.get("Server-Timing"), "cache;dur=1")
 
     def test_dependencies_expired_oauth_returns_login_url(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \

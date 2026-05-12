@@ -32,7 +32,11 @@ from backend.epm.home import fetch_epm_home_projects, merge_epm_linkage
 from backend.epm.rollup import EpmRollupDependencies, build_per_project_rollup
 from backend.epm.scope import build_epm_scope_clause, normalize_epm_sprint_field, should_apply_epm_sprint
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
-from backend.auth.cache_policy import jira_home_process_cache_enabled
+from backend.auth.cache_policy import (
+    build_jira_home_process_cache_key,
+    jira_home_partitioned_process_cache_enabled,
+    jira_home_process_cache_enabled,
+)
 from backend.auth.context import RequestAuthContext, stable_local_workspace_id
 from backend.auth.admin_bootstrap import bootstrap_first_tool_admin
 from backend.auth.csrf import validate_csrf_token
@@ -149,6 +153,10 @@ SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
 TASKS_CACHE_TTL_SECONDS = 60 * 5
 TASKS_CACHE_SCHEMA_VERSION = 'v2-empty-epic-actionable'
+MISSING_INFO_CACHE = {}
+MISSING_INFO_CACHE_TTL_SECONDS = 60 * 5
+DEPENDENCIES_CACHE = {}
+DEPENDENCIES_CACHE_TTL_SECONDS = 60 * 5
 UPDATE_CHECK_CACHE = {'ts': 0, 'data': None}
 EPIC_COHORT_CACHE = {}
 EPM_PROJECTS_CACHE = {}
@@ -2000,6 +2008,8 @@ def clear_auth_sensitive_caches(reason='auth_context_change'):
     global TEAM_FIELD_CACHE, PARENT_NAME_FIELD_CACHE, EPIC_LINK_FIELD_CACHE, CAPACITY_FIELD_CACHE
     with _cache_lock:
         TASKS_CACHE.clear()
+        MISSING_INFO_CACHE.clear()
+        DEPENDENCIES_CACHE.clear()
         EPIC_COHORT_CACHE.clear()
         SCENARIO_CACHE['generatedAt'] = None
         SCENARIO_CACHE['data'] = None
@@ -3782,7 +3792,7 @@ def fetch_tasks(include_team_name=False):
         epic_keys_filter = sorted({t.strip() for t in epic_keys_param.split(',') if t.strip()})
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
         lightweight_ready_to_close = request_purpose == 'ready-to-close'
-        cache_key = build_tasks_cache_key(
+        raw_cache_key = build_tasks_cache_key(
             sprint,
             group_id,
             project_filter,
@@ -3798,7 +3808,8 @@ def fetch_tasks(include_team_name=False):
             denied_response, denied_status = project_access_denied_response(auth_context, project_filter)
             if denied_response is not None:
                 return denied_response, denied_status
-        cache_enabled = jira_home_process_cache_enabled(auth_context)
+        cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
+        cache_key = build_jira_home_process_cache_key(auth_context, raw_cache_key)
         cached_entry = None
         if cache_enabled:
             with _cache_lock:
@@ -4314,7 +4325,7 @@ def build_issue_snapshot(issue, team_field_id=None, epic_link_field_id=None):
     }
 
 
-def collect_dependencies(keys):
+def collect_dependencies(keys, context=None):
     """Fetch dependency links for a set of issues."""
     keys = sorted({str(k).strip() for k in keys if str(k).strip()})
     if not keys:
@@ -4349,7 +4360,7 @@ def collect_dependencies(keys):
             return (linked_key, base_key) if direction == 'outward' else (base_key, linked_key)
         return None, None
 
-    auth_context = current_request_auth_context() if has_request_context() else None
+    auth_context = context if context is not None else (current_request_auth_context() if has_request_context() else None)
     team_field_id = resolve_team_field_id(None, context=auth_context)
     epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
 

@@ -125,6 +125,19 @@ test('frontend API endpoint literals live in api modules or approved transitiona
     assert.deepEqual(violations, []);
 });
 
+test('ENG startup uses cached task data unless the user explicitly refreshes', () => {
+    const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+
+    assert.ok(
+        dashboardSource.includes('const pageLoadRefreshRef = useRef(false);'),
+        'Initial ENG page load should not force refresh=true and bypass the server cache',
+    );
+    assert.ok(
+        !dashboardSource.includes('const pageLoadRefreshRef = useRef(true);'),
+        'Only explicit refresh actions should bypass the server cache',
+    );
+});
+
 test('shared API HTTP helpers preserve current JSON error behavior', async () => {
     const { json } = loadHttpHelpers();
 

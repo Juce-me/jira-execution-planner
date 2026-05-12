@@ -7,7 +7,7 @@
 - [x] Task 3: Propagate missing-token states through EPM APIs
 - [x] Task 4: Gate EPM navigation on the user Home token
 - [x] Task 5: Partition or disable Home/EPM metadata caches by user token
-- [ ] Task 6: Clean up DB/OAuth env and setup docs
+- [x] Task 6: Clean up DB/OAuth env and setup docs
 - [ ] Task 7: Run end-to-end verification
 
 ## Product Decision

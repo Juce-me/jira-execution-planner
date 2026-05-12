@@ -95,7 +95,7 @@ Restart the Flask server after changing `.env`.
 6. Open `http://localhost:5050/api/auth/status`; it should report authenticated state and must not include tokens.
 7. Open `http://localhost:5050/api/test`; it should use OAuth.
 
-The ENG dashboard and Jira REST catalog/statistics routes are migrated through the OAuth Jira client. EPM routes use the hybrid model: the signed-in user OAuth session is still required for Jira REST reads, while Home/Townsquare metadata uses explicit server-side `ATLASSIAN_EMAIL` / `ATLASSIAN_API_TOKEN` service credentials. If another route returns `route_not_oauth_ready`, the OAuth session is valid but that route is intentionally outside the current OAuth Jira REST surface.
+The ENG dashboard and Jira REST catalog/statistics routes are migrated through the OAuth Jira client. In DB/OAuth mode, EPM routes require the signed-in user's OAuth session for Jira REST reads and the same user's connected Home token for Home/Townsquare metadata. Connect that token in `Settings -> Connections`; it is stored encrypted as `atlassian_user_api_token` in DB `auth_tokens`. If another route returns `route_not_oauth_ready`, the OAuth session is valid but that route is intentionally outside the current OAuth Jira REST surface.
 
 If Atlassian reports a missing scope, add the named scope to the matching API on the app's `Permissions` page, save, then start again from `/login?reason=missing_scope`. That path forces a new consent prompt so Atlassian issues a grant with the updated scopes.
 
@@ -113,7 +113,7 @@ FAIL home_graphql_3lo_unsupported
 
 The Jira OAuth session can read Jira REST and Jira Software APIs, but the Home GraphQL `goals_search` operation returns a Home scope authorization error for the current grant. Do not use the user's Jira OAuth access token for Home/Townsquare GraphQL calls while this gate fails.
 
-These Home/Townsquare-backed API routes are OAuth-ready only under the hybrid service-credential model:
+These Home/Townsquare-backed API routes are DB/OAuth-ready only after the signed-in user has an active Home token connection:
 
 ```text
 /api/epm/scope
@@ -126,19 +126,19 @@ These Home/Townsquare-backed API routes are OAuth-ready only under the hybrid se
 /api/epm/projects/<project_id>/rollup
 ```
 
-Home/Townsquare access needs server-side Basic service credentials until a fresh real probe returns PASS. In local JSON-backed runs, configure explicit `ATLASSIAN_EMAIL` and `ATLASSIAN_API_TOKEN`; OAuth mode must not fall back to `JIRA_EMAIL`/`JIRA_TOKEN` for Home/Townsquare. In DB-backed runs, store the same kind of credential as a `home_townsquare_basic` service integration, not as a normal user's token.
+Home/Townsquare access still cannot use the user's Jira OAuth access token while this gate fails. In DB-backed OAuth runs, use the explicit user Home token connection instead. Local JSON-backed legacy runs may still have their own service credential path, but that is not the DB/OAuth EPM read path.
 
 ### Home/Townsquare Visibility Model
 
-When Home/Townsquare-backed routes are migrated, use hybrid authorization:
+For DB/OAuth EPM, use user-token authorization:
 
 - Require a valid user Atlassian OAuth session before serving the route.
-- Use the user OAuth session for Jira REST reads, rollups, labels, issue search, and any user-specific Jira data.
-- Use the server-side Home/Townsquare service credential only for Home goals/projects metadata.
-- Limit service-credential Home reads to the configured Home root/sub-goals.
-- Do not claim that Home/Townsquare GraphQL verified per-user Home project or goal access. The local feasibility probe showed the user's Jira 3LO token cannot call that GraphQL surface.
+- Use the user OAuth session for Jira REST reads, rollups, labels, issue search, and user-specific Jira data.
+- Use the current user's connected `atlassian_user_api_token` only for Home goals/projects metadata.
+- Return a structured prerequisite state when that Home token is missing, rather than empty EPM data.
+- Do not claim that Home/Townsquare GraphQL verified Jira 3LO access. The local feasibility probe showed the user's Jira 3LO token cannot call that GraphQL surface.
 
-The intended internal policy is: any authenticated Atlassian user for the configured site may view configured Home/Townsquare metadata, while Jira-backed data remains constrained by that user's Jira OAuth permissions.
+The intended internal policy is: each authenticated Atlassian user for the configured site views Home/Townsquare metadata through their own connected Home token, while Jira-backed data remains constrained by that user's Jira OAuth permissions.
 
 ## Common Errors
 

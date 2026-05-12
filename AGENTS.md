@@ -264,8 +264,10 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Settings edit permission must fail closed until `/api/config` explicitly returns `userCanEditSettings: true`; never treat a missing flag or loading state as admin-editable.
 - Team Groups saves must allow empty `teamIds`; group-level components, labels, and exclusions must save even when team discovery returns no teams.
 - Dashboard config save endpoints must reject implicit empty overwrites of existing selected projects or groups; clearing shared JSON state needs an explicit action.
-- In OAuth mode, Home/Townsquare Basic service credentials must be explicit `ATLASSIAN_EMAIL`/`ATLASSIAN_API_TOKEN`; only Basic auth mode may fall back to `JIRA_EMAIL`/`JIRA_TOKEN`.
-- OAuth-ready EPM routes use hybrid auth: user OAuth for Jira REST and explicit Home/Townsquare service Basic creds for Home metadata; worker-thread Jira searches must carry the captured request auth context.
+- DB/OAuth EPM must not require Jira/Home Basic credential environment variables; Home/Townsquare EPM reads use the current user's connected `atlassian_user_api_token`.
+- DB/OAuth EPM routes use user OAuth for Jira REST and the current user's Home token only for Home/Townsquare metadata; worker-thread Jira searches must carry the captured request auth context.
+- In DB/OAuth mode, hide the EPM tab until the current user has connected a Home/Townsquare token in Settings; once visible, the EPM tab must expose an accessible EPM settings gear.
+- At the start of auth/DB/Home/EPM plan work, scan `docs/plans/GATE-*.md` and update each gate's `Checked on` and `Last result`; never mark a gate passed without its documented `PASS` output.
 - For OAuth Jira worker-thread fixes, verify a no-request-context test that reaches the real Jira auth wrapper; route mocks alone are not sufficient.
 - Name active auth/DB/Home migration docs with `EXEC-*`, executed docs with `DONE-*`, support/reference/setup docs with `SUPPORT-*`, and deferred scope with `FUTURE-*`; keep expectations in `docs/plans/README.md`.
 - Before executing a plan task, verify every named file in that task's file map exists unless the plan explicitly marks it `Create`.

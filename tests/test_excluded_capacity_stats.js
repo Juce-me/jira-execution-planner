@@ -180,8 +180,12 @@ test('buildExcludedCapacityLineSeries supports story-point and percent metrics c
     assert.equal(point.percent, 0.7);
 });
 
-test('buildEpicTeamModeShare honors multi-key filter and dependency-driven cross classification', async () => {
+test('buildEpicTeamModeShare classifies cross only from story teams in the same sprint', async () => {
     const { buildEpicTeamModeShare, buildEpicTeamModeOverall } = await loadModule();
+    const sprints = [
+        { id: 101, name: 'S1', startDate: '2025-10-01' },
+        { id: 102, name: 'S2', startDate: '2025-10-15' }
+    ];
     const tasks = [
         story({ key: 'SYN-1', epicKey: 'BAU-MONO', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 3 }),
         story({ key: 'SYN-2', epicKey: 'BAU-CROSS', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 2 }),
@@ -195,29 +199,36 @@ test('buildEpicTeamModeShare honors multi-key filter and dependency-driven cross
     const rows = buildEpicTeamModeShare(tasks, {
         excludedEpicKeys: ['BAU-MONO', 'BAU-CROSS', 'BAU-LINKED', 'OPS-1'],
         excludedEpicKeyFilters: ['BAU-MONO', 'BAU-CROSS', 'BAU-LINKED'],
+        sprints,
         dependencies
     });
     assert.deepEqual(
         rows.map(row => ({ teamId: row.teamId, mono: row.monoPoints, cross: row.crossPoints, total: row.totalPoints })),
         [
-            { teamId: 'team-alpha', mono: 3, cross: 3, total: 6 },
+            { teamId: 'team-alpha', mono: 4, cross: 2, total: 6 },
             { teamId: 'team-beta', mono: 0, cross: 4, total: 4 }
         ]
     );
     const overall = buildEpicTeamModeOverall(tasks, {
         excludedEpicKeys: ['BAU-MONO', 'BAU-CROSS', 'BAU-LINKED', 'OPS-1'],
         excludedEpicKeyFilters: ['BAU-MONO', 'BAU-CROSS', 'BAU-LINKED'],
+        sprints,
         dependencies
     });
-    assert.equal(overall.monoPoints, 3);
-    assert.equal(overall.crossPoints, 7);
+    assert.equal(overall.monoPoints, 4);
+    assert.equal(overall.crossPoints, 6);
     assert.equal(overall.totalPoints, 10);
-    assert.equal(overall.monoPercent, 0.3);
-    assert.equal(overall.crossPercent, 0.7);
+    assert.equal(overall.monoPercent, 0.4);
+    assert.equal(overall.crossPercent, 0.6);
 });
 
-test('buildEpicTeamModeOverall aggregates across the full selected sprint range, not per sprint', async () => {
+test('buildEpicTeamModeOverall classifies the same epic separately per sprint', async () => {
     const { buildEpicTeamModeOverall } = await loadModule();
+    const sprints = [
+        { id: 101, name: 'S1', startDate: '2025-10-01' },
+        { id: 102, name: 'S2', startDate: '2025-10-15' },
+        { id: 103, name: 'S3', startDate: '2025-10-29' }
+    ];
     const tasks = [
         story({ key: 'SYN-1', epicKey: 'BAU-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 5 }),
         story({ key: 'SYN-2', epicKey: 'BAU-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 102, sprintName: 'S2', points: 5 }),
@@ -225,12 +236,13 @@ test('buildEpicTeamModeOverall aggregates across the full selected sprint range,
     ];
     const overall = buildEpicTeamModeOverall(tasks, {
         excludedEpicKeys: ['BAU-1'],
+        sprints,
         dependencies: {}
     });
     assert.equal(overall.totalPoints, 15);
-    assert.equal(overall.crossPoints, 15);
-    assert.equal(overall.monoPoints, 0);
-    assert.equal(overall.crossPercent, 1);
+    assert.equal(overall.monoPoints, 15);
+    assert.equal(overall.crossPoints, 0);
+    assert.equal(overall.monoPercent, 1);
 });
 
 test('getSprintQuarterLabel groups by explicit sprint quarter before date fallback', async () => {

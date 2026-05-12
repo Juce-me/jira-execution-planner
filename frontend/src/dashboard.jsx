@@ -6442,24 +6442,28 @@ import {
                 return buildEpicTeamModeShare(excludedCapacityIssues, {
                     excludedEpicKeys: excludedCapacityEpicOptions,
                     excludedEpicKeyFilters: excludedCapacityActiveFilters,
+                    sprints: excludedCapacitySprintRange,
                     dependencies: excludedCapacityDependencies
                 });
             }, [
                 excludedCapacityIssues,
                 excludedCapacityEpicOptions,
                 excludedCapacityActiveFilters,
+                excludedCapacitySprintRange,
                 excludedCapacityDependencies
             ]);
             const excludedCapacityModeOverall = React.useMemo(() => {
                 return buildEpicTeamModeOverall(excludedCapacityIssues, {
                     excludedEpicKeys: excludedCapacityEpicOptions,
                     excludedEpicKeyFilters: excludedCapacityActiveFilters,
+                    sprints: excludedCapacitySprintRange,
                     dependencies: excludedCapacityDependencies
                 });
             }, [
                 excludedCapacityIssues,
                 excludedCapacityEpicOptions,
                 excludedCapacityActiveFilters,
+                excludedCapacitySprintRange,
                 excludedCapacityDependencies
             ]);
             const excludedCapacityTotals = React.useMemo(() => {
@@ -13117,8 +13121,8 @@ import {
                                         </div>
                                         <div className="stats-card">
                                             <h4>Classification</h4>
-                                            <div className="stat-value">Stories + Deps</div>
-                                            <div className="stats-note">Cross = multi-team stories or dependency/participation links</div>
+                                            <div className="stat-value">Per Sprint</div>
+                                            <div className="stats-note">Cross = same excluded epic has more than one story team in a sprint</div>
                                         </div>
                                     </div>
 

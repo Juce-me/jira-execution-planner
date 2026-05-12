@@ -287,24 +287,27 @@ export function buildExcludedCapacityLineSeries(tasks, sprints, options = {}) {
 }
 
 export function classifyEpicTeamMode(tasks, options = {}) {
-    const dependencies = options.dependencies || {};
+    const selectedSprints = Array.isArray(options.sprints) ? options.sprints : [];
+    const sprintBuckets = selectedSprints.length ? selectedSprints : [{ id: 'all', name: 'All selected sprints' }];
     const byEpic = new Map();
     (tasks || []).forEach(task => {
         const epicKey = epicKeyFor(task);
         const team = teamFor(task);
-        const entry = byEpic.get(epicKey) || { epicKey, teamIds: new Set(), crossTeamLink: false };
-        entry.teamIds.add(team.id);
-        (dependencies[task?.key] || []).forEach(dep => {
-            const linkedTeamId = normalizeId(dep?.teamId || dep?.team?.id || dep?.teamName || dep?.team?.name || '');
-            if (linkedTeamId && linkedTeamId !== team.id) {
-                entry.crossTeamLink = true;
-            }
+        const matchingSprints = sprintBuckets.filter(sprint => {
+            if (!selectedSprints.length) return true;
+            return taskMatchesSprint(task, sprint);
         });
-        byEpic.set(epicKey, entry);
+        matchingSprints.forEach(sprint => {
+            const sprintKey = normalizeId(sprint?.id) || String(sprint?.name || '').trim() || 'unscheduled';
+            const key = `${epicKey}::${sprintKey}`;
+            const entry = byEpic.get(key) || { epicKey, sprintKey, teamIds: new Set() };
+            entry.teamIds.add(team.id);
+            byEpic.set(key, entry);
+        });
     });
     const result = {};
-    byEpic.forEach((entry, epicKey) => {
-        result[epicKey] = entry.teamIds.size > 1 || entry.crossTeamLink ? 'cross' : 'mono';
+    byEpic.forEach((entry, key) => {
+        result[key] = entry.teamIds.size > 1 ? 'cross' : 'mono';
     });
     return result;
 }
@@ -314,7 +317,9 @@ export function buildEpicTeamModeShare(tasks, options = {}) {
     const filterSet = normalizeFilterKeys(options);
     const scopedExcludedKeys = filterSet ? filterSet : excludedKeys;
     const excludedTasks = (tasks || []).filter(task => scopedExcludedKeys.has(epicKeyFor(task)));
-    const classifications = classifyEpicTeamMode(excludedTasks, { dependencies: options.dependencies });
+    const selectedSprints = Array.isArray(options.sprints) ? options.sprints : [];
+    const sprintBuckets = selectedSprints.length ? selectedSprints : [{ id: 'all', name: 'All selected sprints' }];
+    const classifications = classifyEpicTeamMode(excludedTasks, { sprints: selectedSprints });
     const byTeam = new Map();
 
     excludedTasks.forEach(task => {
@@ -326,11 +331,19 @@ export function buildEpicTeamModeShare(tasks, options = {}) {
             crossPoints: 0
         };
         const points = storyPointsFor(task);
-        if (classifications[epicKeyFor(task)] === 'cross') {
-            entry.crossPoints += points;
-        } else {
-            entry.monoPoints += points;
-        }
+        const matchingSprints = sprintBuckets.filter(sprint => {
+            if (!selectedSprints.length) return true;
+            return taskMatchesSprint(task, sprint);
+        });
+        matchingSprints.forEach(sprint => {
+            const sprintKey = normalizeId(sprint?.id) || String(sprint?.name || '').trim() || 'unscheduled';
+            const classificationKey = `${epicKeyFor(task)}::${sprintKey}`;
+            if (classifications[classificationKey] === 'cross') {
+                entry.crossPoints += points;
+            } else {
+                entry.monoPoints += points;
+            }
+        });
         byTeam.set(team.id, entry);
     });
 

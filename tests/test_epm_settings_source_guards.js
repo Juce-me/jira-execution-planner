@@ -233,13 +233,15 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('if (canEditEpmConfiguration && isEpmConfigDirty) {') && dashboardSource.includes('await saveEpmConfig();'), 'Expected save path to persist EPM settings when dirty and allowed');
     assert.ok(dashboardSource.includes("setGroupDraftError(message);") && dashboardSource.includes('throw err;'), 'Expected EPM save failures to surface and block shared save');
     assert.ok(epmSettingsUiSource.includes('Atlassian site'), 'Expected Atlassian site copy');
-    assert.ok(epmSettingsUiSource.includes('Root goal'), 'Expected Root goal copy');
+    assert.ok(epmSettingsUiSource.includes('Main goal'), 'Expected Main goal copy');
     assert.ok(epmSettingsUiSource.includes('Sub-goals'), 'Expected Sub-goals copy');
     assert.ok(epmSettingsUiSource.includes('Label prefix'), 'Expected Label prefix copy');
     assert.ok(epmSettingsUiSource.includes('Project name'), 'Expected Project name copy');
-    assert.ok(epmSettingsUiSource.includes('Select a root goal before choosing sub-goals.'), 'Expected root-goal prerequisite helper copy');
+    assert.ok(epmSettingsUiSource.includes('Select a main goal before choosing sub-goals.'), 'Expected main-goal prerequisite helper copy');
+    assert.ok(epmSettingsUiSource.includes('epm-scope-chip is-root'), 'Expected selected main goal to use compact EPM scope chip styling');
+    assert.ok(epmSettingsUiSource.includes('epm-scope-chip is-child'), 'Expected selected sub-goals to use compact EPM scope chip styling');
     assert.ok(epmSettingsUiSource.includes('These sub-goals have no direct Jira Home projects. Choose different child goals.'), 'Expected empty child-goal helper copy');
-    assert.ok(epmSettingsUiSource.includes('Loading root goals...'), 'Expected root goal loading copy');
+    assert.ok(epmSettingsUiSource.includes('Loading main goals...'), 'Expected main goal loading copy');
     assert.ok(epmSettingsUiSource.includes('Loading sub-goals...'), 'Expected sub-goal loading copy');
     assert.ok(dashboardSource.includes('setShowGroupManage(true);') && dashboardSource.includes('setGroupManageTab(\'epm\');'), 'Expected EPM settings open action to switch tabs without mutating main EPM project state');
     assert.ok(epmViewDataSource.includes("setEpmProjectsError(err?.message || 'Failed to load EPM projects.');"), 'Expected EPM project refresh failures to surface distinct settings-state copy');
@@ -449,12 +451,12 @@ test('dashboard source preserves saved EPM sub-goal on settings open', () => {
     const loadSettingsSource = dashboardSource.slice(loadSettingsStart, loadSettingsEnd);
 
     assert.ok(!loadSettingsSource.includes('clearEpmSubGoalOptions();'), 'EPM settings open must not clear saved sub-goal options');
-    assert.ok(!loadSettingsSource.includes('loadEpmSubGoalsForRoot(rootGoalKey, savedSubGoalKey)'), 'EPM settings open must not refetch sub-goals just to render the saved chip');
+    assert.ok(loadSettingsSource.includes('await loadEpmSubGoalsForRoot(rootGoalKey);'), 'EPM settings open must hydrate saved sub-goal names for chips');
     assert.ok(!loadSettingsSource.includes('resetEpmProjectPreview();'), 'EPM settings open must not use preview-named project reset state');
     assert.ok(!loadSettingsSource.includes('resetEpmSettingsProjectRows();'), 'EPM settings open must not erase cached project configuration rows');
     assert.ok(dashboardSource.includes('const epmSubGoalsCacheRef = useRef(new Map());'), 'Expected sub-goals cache by root goal');
     assert.ok(dashboardSource.includes('const resetEpmSettingsProjectRows = () => {'), 'Expected configuration-named project-row reset helper');
-    assert.ok(dashboardSource.includes('epmSubGoals.find((goal) => String(goal?.key || \'\').trim().toUpperCase() === key) || { key, name: key }'), 'Expected selected sub-goal fallback chip without refetch');
+    assert.ok(dashboardSource.includes('epmSubGoals.find((goal) => String(goal?.key || \'\').trim().toUpperCase() === key) || { key, name: key }'), 'Expected selected sub-goal fallback while hydration is loading or unavailable');
 });
 
 test('dashboard source clears EPM sub-goal only when root goal changes or user clears it', () => {

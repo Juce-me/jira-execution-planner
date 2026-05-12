@@ -34,4 +34,13 @@ test('visible EPM tab exposes settings gear that opens EPM settings', async ({ p
     await expect(dialog.locator('.group-modal-tab.active', { hasText: 'EPM' })).toBeVisible();
     await expect(dialog.getByRole('tab', { name: 'Projects' })).toHaveAttribute('aria-selected', 'true');
     await expect(dialog.getByText('EPM projects')).toBeVisible();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    await expect(dialog.getByText('Main goal', { exact: true })).toBeVisible();
+    const mainGoalChip = dialog.locator('.epm-scope-chip.is-root');
+    await expect(mainGoalChip).toContainText('Connected Root Goal');
+    await expect(mainGoalChip).toContainText('ROOT-100');
+    const mainGoalBox = await mainGoalChip.boundingBox();
+    expect(mainGoalBox.width).toBeLessThan(420);
+    await expect(dialog.locator('.epm-scope-chip.is-child')).toContainText('Connected Child Goal');
+    await expect(dialog.getByText('Connected Child Goal (CHILD-200)')).toBeVisible();
 });

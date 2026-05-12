@@ -1482,8 +1482,8 @@ import {
                             setEpmRootGoalsLoading(false);
                         }
                     }
-                    if (!cancelled && rootGoalKey && epmSubGoalsCacheRef.current.has(rootGoalKey)) {
-                        setEpmSubGoals(epmSubGoalsCacheRef.current.get(rootGoalKey) || []);
+                    if (!cancelled && rootGoalKey) {
+                        await loadEpmSubGoalsForRoot(rootGoalKey);
                     }
                     if (!cancelled) {
                         setEpmConfigLoading(false);
@@ -2087,7 +2087,7 @@ import {
                 [epmConfigDraft.scope?.rootGoalKey]
             );
             useEffect(() => {
-                if (!showEpmNavigation || selectedView !== 'epm' || !epmConfigLoaded || savedEpmSubGoalKeys.length <= 1 || !savedEpmRootGoalKey) return;
+                if (!showEpmNavigation || selectedView !== 'epm' || !epmConfigLoaded || savedEpmSubGoalKeys.length < 1 || !savedEpmRootGoalKey) return;
                 void loadEpmSubGoalsForRoot(savedEpmRootGoalKey);
             }, [showEpmNavigation, selectedView, epmConfigLoaded, savedEpmRootGoalKey, savedEpmSubGoalKeys]);
             const {

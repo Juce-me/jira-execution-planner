@@ -13119,14 +13119,14 @@ import {
                                             <div className="stats-note">In multi-team epic/sprint buckets</div>
                                         </div>
                                         <div className="stats-card">
-                                            <h4>Shared SP</h4>
+                                            <h4>Total SP</h4>
                                             <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.sharedPoints)}</div>
                                             <div className="stats-note">Total scoped epic/sprint SP</div>
                                         </div>
                                         <div className="stats-card">
                                             <h4>Cross Share</h4>
                                             <div className="stat-value">{formatPercent(excludedCapacityModeOverall.crossPercent)}</div>
-                                            <div className="stats-note">Cross SP / shared SP</div>
+                                            <div className="stats-note">Cross SP / total SP</div>
                                         </div>
                                     </div>
 
@@ -13157,12 +13157,12 @@ import {
                                                                 <div
                                                                     className="epic-mode-fill cross"
                                                                     style={{ width: `${Math.max(0, Math.min(100, row.crossPercent * 100))}%` }}
-                                                                    title={`${row.sprintName}: ${formatExcludedPoints(row.crossPoints)} cross SP of ${formatExcludedPoints(row.sharedPoints)} shared SP`}
+                                                                    title={`${row.sprintName}: ${formatExcludedPoints(row.crossPoints)} cross SP of ${formatExcludedPoints(row.sharedPoints)} total SP`}
                                                                 />
                                                             </div>
                                                             <div className="epic-mode-values">
                                                                 <span>{formatExcludedPoints(row.crossPoints)} cross</span>
-                                                                <span>{formatExcludedPoints(row.sharedPoints)} shared</span>
+                                                                <span>{formatExcludedPoints(row.sharedPoints)} total</span>
                                                                 <span>{formatPercent(row.crossPercent)}</span>
                                                             </div>
                                                         </div>

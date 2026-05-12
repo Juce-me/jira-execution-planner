@@ -95,6 +95,15 @@ export const fetchBacklogEpics = (backendUrl, { project, teamIds = [] } = {}) =>
     });
 };
 
+export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], teamIds = [], signal } = {}) =>
+    fetch(`${backendUrl}/api/stats/excluded-capacity-source`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-cache',
+        signal,
+        body: JSON.stringify({ sprintIds, teamIds })
+    });
+
 export const fetchDependencies = (backendUrl, keys, { signal } = {}) =>
     fetch(`${backendUrl}/api/dependencies`, {
         method: 'POST',

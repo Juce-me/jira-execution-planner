@@ -12899,31 +12899,7 @@ import {
                                 </div>
 
                                 <div className={`stats-view ${statsView === 'excludedCapacity' ? 'open' : ''}`}>
-                                    <div className="stats-controls excluded-capacity-controls">
-                                        <div className="stats-control-group">
-                                            <label>Start Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityStartSprintId}
-                                                onChange={(event) => setExcludedCapacityStartSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="stats-control-group">
-                                            <label>End Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityEndSprintId}
-                                                onChange={(event) => setExcludedCapacityEndSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                    <div className="stats-controls excluded-capacity-controls excluded-capacity-filter-controls">
                                         <div className="stats-control-group excluded-capacity-epic-filter" ref={excludedCapacityEpicDropdownRef}>
                                             <label>Excluded Epics</label>
                                             <div className="component-search-wrapper">
@@ -12990,6 +12966,30 @@ import {
                                                     </div>
                                                 )}
                                             </div>
+                                        </div>
+                                        <div className="stats-control-group excluded-capacity-sprint-control excluded-capacity-start-sprint-control">
+                                            <label>Start Sprint</label>
+                                            <select
+                                                className="scenario-input"
+                                                value={excludedCapacityStartSprintId}
+                                                onChange={(event) => setExcludedCapacityStartSprintId(event.target.value)}
+                                            >
+                                                {excludedCapacitySprintOptions.map((sprint) => (
+                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="stats-control-group excluded-capacity-sprint-control excluded-capacity-end-sprint-control">
+                                            <label>End Sprint</label>
+                                            <select
+                                                className="scenario-input"
+                                                value={excludedCapacityEndSprintId}
+                                                onChange={(event) => setExcludedCapacityEndSprintId(event.target.value)}
+                                            >
+                                                {excludedCapacitySprintOptions.map((sprint) => (
+                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
+                                                ))}
+                                            </select>
                                         </div>
                                     </div>
 

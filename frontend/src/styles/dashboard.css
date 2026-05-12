@@ -5771,6 +5771,35 @@
             grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
         }
 
+        .excluded-capacity-filter-controls {
+            grid-template-columns: minmax(320px, 1fr) repeat(2, minmax(118px, 148px));
+        }
+
+        .excluded-capacity-filter-controls .excluded-capacity-epic-filter {
+            grid-column: 1;
+            grid-row: 1;
+            min-width: 0;
+        }
+
+        .excluded-capacity-filter-controls .excluded-capacity-start-sprint-control {
+            grid-column: 2;
+            grid-row: 1;
+        }
+
+        .excluded-capacity-filter-controls .excluded-capacity-end-sprint-control {
+            grid-column: 3;
+            grid-row: 1;
+        }
+
+        .excluded-capacity-filter-controls .excluded-capacity-sprint-control {
+            min-width: 0;
+        }
+
+        .excluded-capacity-filter-controls .scenario-input,
+        .excluded-capacity-filter-controls .excluded-capacity-epic-toggle {
+            width: 100%;
+        }
+
         .excluded-capacity-summary .stat-value {
             overflow-wrap: anywhere;
         }
@@ -6003,6 +6032,17 @@
         }
 
         @media (max-width: 760px) {
+            .excluded-capacity-filter-controls {
+                grid-template-columns: 1fr;
+            }
+
+            .excluded-capacity-filter-controls .excluded-capacity-epic-filter,
+            .excluded-capacity-filter-controls .excluded-capacity-start-sprint-control,
+            .excluded-capacity-filter-controls .excluded-capacity-end-sprint-control {
+                grid-column: auto;
+                grid-row: auto;
+            }
+
             .epic-mode-row {
                 grid-template-columns: minmax(0, 1fr);
                 gap: 0.25rem;

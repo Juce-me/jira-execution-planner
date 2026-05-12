@@ -74,3 +74,28 @@ test('excluded-capacity epic filter stays compact without selected chips', () =>
         'Expected dropdown action to restore the BAU/ad hoc preset'
     );
 });
+
+test('excluded-capacity controls reserve the wide column for the epic filter', () => {
+    assert.ok(
+        dashboardSource.includes('excluded-capacity-filter-controls'),
+        'Expected excluded capacity controls to opt into the compact sprint/filter layout'
+    );
+    assert.ok(
+        dashboardSource.includes('excluded-capacity-start-sprint-control'),
+        'Expected start sprint control to be targetable as a compact sprint selector'
+    );
+    assert.ok(
+        dashboardSource.includes('excluded-capacity-end-sprint-control'),
+        'Expected end sprint control to be targetable as a compact sprint selector'
+    );
+    assert.match(
+        cssSource,
+        /\.excluded-capacity-filter-controls\s*\{[\s\S]*grid-template-columns:\s*minmax\(320px, 1fr\) repeat\(2, minmax\(118px, 148px\)\)/,
+        'Expected excluded epics to get the flexible column and sprint selectors to stay compact'
+    );
+    assert.match(
+        cssSource,
+        /\.excluded-capacity-filter-controls \.excluded-capacity-epic-filter\s*\{[\s\S]*grid-column:\s*1/,
+        'Expected excluded epic filter to sit in the wide first column'
+    );
+});

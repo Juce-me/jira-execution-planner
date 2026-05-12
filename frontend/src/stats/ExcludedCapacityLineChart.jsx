@@ -30,7 +30,8 @@ function ExcludedCapacityLineChart({
     onSelectSeries,
     resolveTeamColor,
     formatPercent,
-    formatExcludedPoints
+    formatExcludedPoints,
+    ariaLabel
 }) {
     const sprintCount = (sprints || []).length;
     const seriesList = Array.isArray(series) ? series : [];
@@ -84,6 +85,7 @@ function ExcludedCapacityLineChart({
     };
 
     const tickLabelEvery = sprintCount <= 8 ? 1 : Math.ceil(sprintCount / 6);
+    const chartAriaLabel = ariaLabel || (mode === 'group' ? 'Group excluded capacity over sprints' : 'Excluded capacity per team over sprints');
 
     return (
         <div className="excluded-capacity-line-chart">
@@ -91,7 +93,7 @@ function ExcludedCapacityLineChart({
                 className="excluded-capacity-line-svg"
                 viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
                 role="img"
-                aria-label={mode === 'group' ? 'Group excluded capacity over sprints' : 'Excluded capacity per team over sprints'}
+                aria-label={chartAriaLabel}
             >
                 {yTicks.map((tick, index) => {
                     const y = yFor(tick);

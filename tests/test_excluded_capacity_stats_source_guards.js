@@ -94,15 +94,33 @@ test('excluded-capacity epic filter stays compact without selected chips', () =>
 });
 
 test('mono-cross share counts all scoped epics without excluded-capacity filters', () => {
-    const modeRowsBlock = dashboardSource.match(/const excludedCapacityModeRows = React\.useMemo\(\(\) => \{[\s\S]*?\n\s*\}\);/)?.[0] || '';
     const modeOverallBlock = dashboardSource.match(/const excludedCapacityModeOverall = React\.useMemo\(\(\) => \{[\s\S]*?\n\s*\}\);/)?.[0] || '';
     const modeSprintBlock = dashboardSource.match(/const excludedCapacityModeSprintRows = React\.useMemo\(\(\) => \{[\s\S]*?\n\s*\}\);/)?.[0] || '';
-    assert.ok(modeRowsBlock.includes('includeAllEpics: true'), 'Expected mono/cross team rows to include all scoped epics');
+    const modeTeamLineBlock = dashboardSource.match(/const excludedCapacityModeTeamLineSeries = React\.useMemo\(\(\) => \{[\s\S]*?\n\s*\}\);/)?.[0] || '';
     assert.ok(modeOverallBlock.includes('includeAllEpics: true'), 'Expected mono/cross overall row to include all scoped epics');
     assert.ok(modeSprintBlock.includes('includeAllEpics: true'), 'Expected mono/cross sprint rows to include all scoped epics');
-    assert.ok(!modeRowsBlock.includes('excludedEpicKeyFilters'), 'Mono/cross team rows should not use excluded-capacity filters');
     assert.ok(!modeOverallBlock.includes('excludedEpicKeyFilters'), 'Mono/cross overall row should not use excluded-capacity filters');
     assert.ok(!modeSprintBlock.includes('excludedEpicKeyFilters'), 'Mono/cross sprint rows should not use excluded-capacity filters');
+    assert.ok(!modeTeamLineBlock.includes('excludedEpicKeyFilters'), 'Mono/cross team graph should not use excluded-capacity filters');
+});
+
+test('mono-cross team share renders as a per-sprint team line graph', () => {
+    assert.ok(
+        dashboardSource.includes('buildEpicTeamCrossShareLineSeries'),
+        'Expected dashboard to build a team cross-share line series'
+    );
+    assert.ok(
+        dashboardSource.includes('excludedCapacityModeTeamLineSeries.series'),
+        'Expected Team Cross Share to render the line-series model'
+    );
+    assert.ok(
+        dashboardSource.includes('ariaLabel="Team cross share per sprint"'),
+        'Expected the Team Cross Share graph to expose a specific chart label'
+    );
+    assert.ok(
+        !dashboardSource.includes('epic-mode-sprint-breakdown'),
+        'Team Cross Share should use the graph, not sprint text chips'
+    );
 });
 
 test('excluded-capacity controls reserve the wide column for the epic filter', () => {

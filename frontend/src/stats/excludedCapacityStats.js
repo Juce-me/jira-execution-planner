@@ -421,6 +421,75 @@ export function buildEpicTeamModeShare(tasks, options = {}) {
         .sort((a, b) => a.teamName.localeCompare(b.teamName));
 }
 
+export function buildEpicTeamCrossShareLineSeries(tasks, sprints, options = {}) {
+    const selectedSprints = Array.isArray(sprints) ? sprints : [];
+    const orderedSprints = selectedSprints.map(sprint => ({
+        sprintId: normalizeId(sprint?.id),
+        sprintName: String(sprint?.name || sprint?.id || '').trim(),
+        quarter: getSprintQuarterLabel(sprint)
+    }));
+    const explicitTeams = (options.teams || [])
+        .map(team => ({
+            id: normalizeId(team?.id || team?.name || 'unknown') || 'unknown',
+            name: String(team?.name || team?.id || 'Unknown Team').trim() || 'Unknown Team'
+        }))
+        .filter(team => team.id);
+    const teamsById = new Map(explicitTeams.map(team => [team.id, team]));
+    (tasks || []).forEach(task => {
+        const team = teamFor(task);
+        const existing = teamsById.get(team.id);
+        if (!existing || (existing.name === existing.id && team.name && team.name !== team.id)) {
+            teamsById.set(team.id, team);
+        }
+    });
+
+    const totalsByTeamSprint = new Map();
+    (tasks || []).forEach(task => {
+        const team = teamFor(task);
+        selectedSprints.forEach(sprint => {
+            if (!taskMatchesSprint(task, sprint)) return;
+            const sprintId = normalizeId(sprint?.id);
+            const key = `${team.id}::${sprintId}`;
+            totalsByTeamSprint.set(key, (totalsByTeamSprint.get(key) || 0) + storyPointsFor(task));
+        });
+    });
+
+    const crossByTeamSprint = new Map();
+    const scopedTasks = (tasks || []).filter(task => epicKeyFor(task) !== 'NO_EPIC');
+    buildEpicTeamModeBuckets(scopedTasks, { sprints: selectedSprints }).forEach(bucket => {
+        if (bucket.teamPoints.size <= 1) return;
+        bucket.teamPoints.forEach((points, teamId) => {
+            const key = `${teamId}::${bucket.sprintId}`;
+            crossByTeamSprint.set(key, (crossByTeamSprint.get(key) || 0) + points);
+        });
+    });
+
+    const series = Array.from(teamsById.values())
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(team => ({
+            seriesId: team.id,
+            label: team.name,
+            points: orderedSprints.map(sprint => {
+                const key = `${team.id}::${sprint.sprintId}`;
+                const totalPoints = totalsByTeamSprint.get(key) || 0;
+                const crossPoints = crossByTeamSprint.get(key) || 0;
+                return {
+                    sprintId: sprint.sprintId,
+                    sprintName: sprint.sprintName,
+                    quarter: sprint.quarter,
+                    totalPoints: roundMetric(totalPoints),
+                    excludedPoints: roundMetric(crossPoints),
+                    percent: totalPoints > 0 ? roundMetric(crossPoints / totalPoints) : 0
+                };
+            })
+        }));
+    return {
+        mode: 'teams',
+        sprints: orderedSprints,
+        series
+    };
+}
+
 export function buildEpicTeamModeOverall(tasks, options = {}) {
     const scopedTasks = epicModeTasks(tasks, options);
     const buckets = buildEpicTeamModeBuckets(scopedTasks, { sprints: Array.isArray(options.sprints) ? options.sprints : [] });

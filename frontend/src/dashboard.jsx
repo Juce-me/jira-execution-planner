@@ -32,8 +32,8 @@ import {
 } from './cohort/cohortUtils.js';
 import {
     buildDefaultExcludedCapacityRange,
+    buildEpicTeamCrossShareLineSeries,
     buildEpicTeamModeOverall,
-    buildEpicTeamModeShare,
     buildEpicTeamModeSprintRows,
     buildExcludedCapacityLineSeries,
     buildExcludedCapacityTimeSeries,
@@ -6444,17 +6444,6 @@ import {
                 excludedCapacityChartMode,
                 activeGroup?.name
             ]);
-            const excludedCapacityModeRows = React.useMemo(() => {
-                return buildEpicTeamModeShare(excludedCapacityIssues, {
-                    includeAllEpics: true,
-                    sprints: excludedCapacitySprintRange,
-                    teams: excludedCapacityTeams
-                });
-            }, [
-                excludedCapacityIssues,
-                excludedCapacitySprintRange,
-                excludedCapacityTeams
-            ]);
             const excludedCapacityModeOverall = React.useMemo(() => {
                 return buildEpicTeamModeOverall(excludedCapacityIssues, {
                     includeAllEpics: true,
@@ -6475,21 +6464,14 @@ import {
                 excludedCapacityIssues,
                 excludedCapacitySprintRange
             ]);
-            const excludedCapacityModeTeamOverall = React.useMemo(() => {
-                const totals = excludedCapacityModeRows.reduce((acc, row) => {
-                    acc.crossPoints += row.crossPoints || 0;
-                    acc.sharedPoints += row.sharedPoints || 0;
-                    return acc;
-                }, { crossPoints: 0, sharedPoints: 0 });
-                return {
-                    teamId: 'team-total',
-                    teamName: 'Team total',
-                    crossPoints: totals.crossPoints,
-                    sharedPoints: totals.sharedPoints,
-                    crossPercent: totals.sharedPoints > 0 ? Math.round((totals.crossPoints / totals.sharedPoints) * 1000) / 1000 : 0
-                };
+            const excludedCapacityModeTeamLineSeries = React.useMemo(() => {
+                return buildEpicTeamCrossShareLineSeries(excludedCapacityIssues, excludedCapacitySprintRange, {
+                    teams: excludedCapacityTeams
+                });
             }, [
-                excludedCapacityModeRows
+                excludedCapacityIssues,
+                excludedCapacitySprintRange,
+                excludedCapacityTeams
             ]);
             const excludedCapacityTotals = React.useMemo(() => {
                 const totals = excludedCapacityRows.reduce((acc, row) => {
@@ -13180,38 +13162,20 @@ import {
                                             <div className="cohort-section">
                                                 <div className="cohort-section-title">Team Cross Share</div>
                                                 <div className="cohort-section-subtitle">
-                                                    Team cross SP is that team's stories inside cross epic/sprint buckets; shared SP is the team's total scoped epic SP.
+                                                    Percentage = team cross SP / total team story points in each sprint.
                                                 </div>
-                                                <div className="epic-mode-bars" role="img" aria-label="Team cross share in scoped epic work">
-                                                    {[excludedCapacityModeTeamOverall, ...excludedCapacityModeRows].map(row => (
-                                                        <div className="epic-mode-row" key={row.teamId}>
-                                                            <div className="epic-mode-label">{row.teamName}</div>
-                                                            <div>
-                                                                <div className="epic-mode-track">
-                                                                    <div
-                                                                        className="epic-mode-fill cross"
-                                                                        style={{ width: `${Math.max(0, Math.min(100, row.crossPercent * 100))}%` }}
-                                                                        title={`${row.teamName}: ${formatExcludedPoints(row.crossPoints)} cross SP of ${formatExcludedPoints(row.sharedPoints)} shared SP`}
-                                                                    />
-                                                                </div>
-                                                                {Array.isArray(row.sprintRows) && row.sprintRows.length > 0 && (
-                                                                    <div className="epic-mode-sprint-breakdown">
-                                                                        {row.sprintRows.map(sprintRow => (
-                                                                            <span key={`${row.teamId}-${sprintRow.sprintId || sprintRow.sprintName}`}>
-                                                                                {sprintRow.sprintName}: {formatExcludedPoints(sprintRow.crossPoints)}/{formatExcludedPoints(sprintRow.sharedPoints)} ({formatPercent(sprintRow.crossPercent)})
-                                                                            </span>
-                                                                        ))}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                            <div className="epic-mode-values">
-                                                                <span>{formatExcludedPoints(row.crossPoints)} cross</span>
-                                                                <span>{formatExcludedPoints(row.sharedPoints)} shared</span>
-                                                                <span>{formatPercent(row.crossPercent)}</span>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                                <ExcludedCapacityLineChart
+                                                    series={excludedCapacityModeTeamLineSeries.series}
+                                                    sprints={excludedCapacityModeTeamLineSeries.sprints}
+                                                    metric="percent"
+                                                    mode="teams"
+                                                    isolatedSeriesId={excludedCapacityIsolatedTeam}
+                                                    onSelectSeries={setExcludedCapacityIsolatedTeam}
+                                                    resolveTeamColor={resolveTeamColor}
+                                                    formatExcludedPoints={formatExcludedPoints}
+                                                    formatPercent={formatPercent}
+                                                    ariaLabel="Team cross share per sprint"
+                                                />
                                             </div>
                                         </div>
                                     )}

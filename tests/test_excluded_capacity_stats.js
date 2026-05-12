@@ -289,6 +289,40 @@ test('buildEpicTeamModeShare counts included and excluded epics together when re
     );
 });
 
+test('buildEpicTeamCrossShareLineSeries uses total sprint team story points as denominator', async () => {
+    const { buildEpicTeamCrossShareLineSeries } = await loadModule();
+    const sprints = [{ id: 101, name: 'S1', startDate: '2025-10-01' }];
+    const tasks = [
+        story({ key: 'SYN-1', epicKey: 'BAU-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 3 }),
+        story({ key: 'SYN-2', epicKey: 'PLAN-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 2 }),
+        story({ key: 'SYN-3', epicKey: 'PLAN-1', teamId: 'team-beta', teamName: 'Beta', sprintId: 101, sprintName: 'S1', points: 5 }),
+        story({ key: 'SYN-4', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 4 })
+    ];
+
+    const model = buildEpicTeamCrossShareLineSeries(tasks, sprints, {
+        teams: [
+            { id: 'team-alpha', name: 'Alpha' },
+            { id: 'team-beta', name: 'Beta' }
+        ]
+    });
+
+    assert.deepEqual(
+        model.series.map(row => ({
+            teamId: row.seriesId,
+            points: row.points.map(point => ({
+                sprintId: point.sprintId,
+                cross: point.excludedPoints,
+                total: point.totalPoints,
+                percent: point.percent
+            }))
+        })),
+        [
+            { teamId: 'team-alpha', points: [{ sprintId: '101', cross: 2, total: 9, percent: roundMetric(2 / 9) }] },
+            { teamId: 'team-beta', points: [{ sprintId: '101', cross: 5, total: 5, percent: 1 }] }
+        ]
+    );
+});
+
 test('buildEpicTeamModeShare keeps scoped teams that have no excluded stories', async () => {
     const { buildEpicTeamModeShare } = await loadModule();
     const sprints = [{ id: 101, name: 'S1', startDate: '2025-10-01' }];

@@ -34,6 +34,7 @@ import {
     buildDefaultExcludedCapacityRange,
     buildEpicTeamModeOverall,
     buildEpicTeamModeShare,
+    buildEpicTeamModeSprintRows,
     buildExcludedCapacityLineSeries,
     buildExcludedCapacityTimeSeries,
     buildExcludedEpicCatalog,
@@ -6372,9 +6373,6 @@ import {
             const excludedCapacityIssues = React.useMemo(() => {
                 return Array.isArray(excludedCapacityData?.issues) ? excludedCapacityData.issues : [];
             }, [excludedCapacityData]);
-            const excludedCapacityDependencies = React.useMemo(() => {
-                return excludedCapacityData?.dependencies || {};
-            }, [excludedCapacityData]);
             const excludedCapacityEpicCatalog = React.useMemo(() => {
                 return buildExcludedEpicCatalog(excludedCapacityIssues, {
                     excludedEpicKeys: excludedCapacityEpicOptions
@@ -6451,32 +6449,56 @@ import {
                     excludedEpicKeys: excludedCapacityEpicOptions,
                     excludedEpicKeyFilters: excludedCapacityActiveFilters,
                     sprints: excludedCapacitySprintRange,
-                    teams: excludedCapacityTeams,
-                    dependencies: excludedCapacityDependencies
+                    teams: excludedCapacityTeams
                 });
             }, [
                 excludedCapacityIssues,
                 excludedCapacityEpicOptions,
                 excludedCapacityActiveFilters,
                 excludedCapacitySprintRange,
-                excludedCapacityTeams,
-                excludedCapacityDependencies
+                excludedCapacityTeams
             ]);
             const excludedCapacityModeOverall = React.useMemo(() => {
                 return buildEpicTeamModeOverall(excludedCapacityIssues, {
                     excludedEpicKeys: excludedCapacityEpicOptions,
                     excludedEpicKeyFilters: excludedCapacityActiveFilters,
                     sprints: excludedCapacitySprintRange,
-                    teams: excludedCapacityTeams,
-                    dependencies: excludedCapacityDependencies
+                    teams: excludedCapacityTeams
                 });
             }, [
                 excludedCapacityIssues,
                 excludedCapacityEpicOptions,
                 excludedCapacityActiveFilters,
                 excludedCapacitySprintRange,
-                excludedCapacityTeams,
-                excludedCapacityDependencies
+                excludedCapacityTeams
+            ]);
+            const excludedCapacityModeSprintRows = React.useMemo(() => {
+                return buildEpicTeamModeSprintRows(excludedCapacityIssues, {
+                    excludedEpicKeys: excludedCapacityEpicOptions,
+                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
+                    sprints: excludedCapacitySprintRange
+                });
+            }, [
+                excludedCapacityIssues,
+                excludedCapacityEpicOptions,
+                excludedCapacityActiveFilters,
+                excludedCapacitySprintRange
+            ]);
+            const excludedCapacityModeTeamOverall = React.useMemo(() => {
+                const totals = excludedCapacityModeRows.reduce((acc, row) => {
+                    acc.crossPoints += row.crossPoints || 0;
+                    acc.sharedPoints += row.sharedPoints || 0;
+                    return acc;
+                }, { crossPoints: 0, sharedPoints: 0 });
+                return {
+                    teamId: 'team-total',
+                    teamName: 'Team total',
+                    crossPoints: totals.crossPoints,
+                    sharedPoints: totals.sharedPoints,
+                    crossPercent: totals.sharedPoints > 0 ? Math.round((totals.crossPoints / totals.sharedPoints) * 1000) / 1000 : 0
+                };
+            }, [
+                excludedCapacityModeRows
             ]);
             const excludedCapacityTotals = React.useMemo(() => {
                 const totals = excludedCapacityRows.reduce((acc, row) => {
@@ -13108,19 +13130,19 @@ import {
                                             <div className="stats-note">Selected Jira sprints</div>
                                         </div>
                                         <div className="stats-card">
-                                            <h4>Mono SP</h4>
-                                            <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.monoPoints)}</div>
-                                            <div className="stats-note">{formatPercent(excludedCapacityModeOverall.monoPercent)} of excluded SP</div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Cross SP</h4>
+                                            <h4>Cross Epic SP</h4>
                                             <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.crossPoints)}</div>
-                                            <div className="stats-note">{formatPercent(excludedCapacityModeOverall.crossPercent)} of excluded SP</div>
+                                            <div className="stats-note">In multi-team epic/sprint buckets</div>
                                         </div>
                                         <div className="stats-card">
-                                            <h4>Classification</h4>
-                                            <div className="stat-value">Per Sprint</div>
-                                            <div className="stats-note">Cross = same excluded epic has more than one story team in a sprint</div>
+                                            <h4>Shared SP</h4>
+                                            <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.sharedPoints)}</div>
+                                            <div className="stats-note">Total selected excluded epic/sprint SP</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Cross Share</h4>
+                                            <div className="stat-value">{formatPercent(excludedCapacityModeOverall.crossPercent)}</div>
+                                            <div className="stats-note">Cross SP / shared SP</div>
                                         </div>
                                     </div>
 
@@ -13136,48 +13158,65 @@ import {
                                     {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityModeOverall.totalPoints > 0 && (
                                         <div className="excluded-capacity-panel">
                                             <div className="cohort-section">
-                                                <div className="cohort-section-title">Mono-team vs Cross-team Share</div>
+                                                <div className="cohort-section-title">Cross-Team Epic Footprint</div>
                                                 <div className="cohort-section-subtitle">
-                                                    Aggregated across {excludedCapacitySprintRange.length} sprint{excludedCapacitySprintRange.length === 1 ? '' : 's'}
+                                                    Cross = selected excluded epic has stories from more than one team in the same sprint.
                                                 </div>
-                                                <div className="epic-mode-bars" role="img" aria-label="Mono-team versus cross-team excluded epic share aggregated over the selected sprint range">
-                                                    <div className="epic-mode-row epic-mode-row-overall">
-                                                        <div className="epic-mode-label">Overall</div>
-                                                        <div className="epic-mode-track">
-                                                            <div
-                                                                className="epic-mode-fill mono"
-                                                                style={{ width: `${Math.max(0, Math.min(100, excludedCapacityModeOverall.monoPercent * 100))}%` }}
-                                                                title={`Overall mono-team: ${formatPercent(excludedCapacityModeOverall.monoPercent)} (${formatExcludedPoints(excludedCapacityModeOverall.monoPoints)} SP)`}
-                                                            />
-                                                            <div
-                                                                className="epic-mode-fill cross"
-                                                                style={{ width: `${Math.max(0, Math.min(100, excludedCapacityModeOverall.crossPercent * 100))}%` }}
-                                                                title={`Overall cross-team: ${formatPercent(excludedCapacityModeOverall.crossPercent)} (${formatExcludedPoints(excludedCapacityModeOverall.crossPoints)} SP)`}
-                                                            />
-                                                        </div>
-                                                        <div className="epic-mode-values">
-                                                            <span>{formatPercent(excludedCapacityModeOverall.monoPercent)} mono</span>
-                                                            <span>{formatPercent(excludedCapacityModeOverall.crossPercent)} cross</span>
-                                                        </div>
-                                                    </div>
-                                                    {excludedCapacityModeRows.map(row => (
-                                                        <div className="epic-mode-row" key={row.teamId}>
-                                                            <div className="epic-mode-label">{row.teamName}</div>
+                                                <div className="epic-mode-bars" role="img" aria-label="Cross-team excluded epic share by sprint">
+                                                    {[
+                                                        { ...excludedCapacityModeOverall, sprintName: 'Total', sprintId: 'overall' },
+                                                        ...excludedCapacityModeSprintRows
+                                                    ].map(row => (
+                                                        <div className="epic-mode-row" key={row.sprintId || row.sprintName}>
+                                                            <div className="epic-mode-label">{row.sprintName}</div>
                                                             <div className="epic-mode-track">
-                                                                <div
-                                                                    className="epic-mode-fill mono"
-                                                                    style={{ width: `${Math.max(0, Math.min(100, row.monoPercent * 100))}%` }}
-                                                                    title={`${row.teamName} mono-team: ${formatPercent(row.monoPercent)}`}
-                                                                />
                                                                 <div
                                                                     className="epic-mode-fill cross"
                                                                     style={{ width: `${Math.max(0, Math.min(100, row.crossPercent * 100))}%` }}
-                                                                    title={`${row.teamName} cross-team: ${formatPercent(row.crossPercent)}`}
+                                                                    title={`${row.sprintName}: ${formatExcludedPoints(row.crossPoints)} cross SP of ${formatExcludedPoints(row.sharedPoints)} shared SP`}
                                                                 />
                                                             </div>
                                                             <div className="epic-mode-values">
-                                                                <span>{formatPercent(row.monoPercent)} mono</span>
-                                                                <span>{formatPercent(row.crossPercent)} cross</span>
+                                                                <span>{formatExcludedPoints(row.crossPoints)} cross</span>
+                                                                <span>{formatExcludedPoints(row.sharedPoints)} shared</span>
+                                                                <span>{formatPercent(row.crossPercent)}</span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="cohort-section">
+                                                <div className="cohort-section-title">Team Cross Share</div>
+                                                <div className="cohort-section-subtitle">
+                                                    Team cross SP is that team's stories inside cross epic/sprint buckets; shared SP is the team's total selected excluded-epic SP.
+                                                </div>
+                                                <div className="epic-mode-bars" role="img" aria-label="Team cross share in selected excluded epic work">
+                                                    {[excludedCapacityModeTeamOverall, ...excludedCapacityModeRows].map(row => (
+                                                        <div className="epic-mode-row" key={row.teamId}>
+                                                            <div className="epic-mode-label">{row.teamName}</div>
+                                                            <div>
+                                                                <div className="epic-mode-track">
+                                                                    <div
+                                                                        className="epic-mode-fill cross"
+                                                                        style={{ width: `${Math.max(0, Math.min(100, row.crossPercent * 100))}%` }}
+                                                                        title={`${row.teamName}: ${formatExcludedPoints(row.crossPoints)} cross SP of ${formatExcludedPoints(row.sharedPoints)} shared SP`}
+                                                                    />
+                                                                </div>
+                                                                {Array.isArray(row.sprintRows) && row.sprintRows.length > 0 && (
+                                                                    <div className="epic-mode-sprint-breakdown">
+                                                                        {row.sprintRows.map(sprintRow => (
+                                                                            <span key={`${row.teamId}-${sprintRow.sprintId || sprintRow.sprintName}`}>
+                                                                                {sprintRow.sprintName}: {formatExcludedPoints(sprintRow.crossPoints)}/{formatExcludedPoints(sprintRow.sharedPoints)} ({formatPercent(sprintRow.crossPercent)})
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div className="epic-mode-values">
+                                                                <span>{formatExcludedPoints(row.crossPoints)} cross</span>
+                                                                <span>{formatExcludedPoints(row.sharedPoints)} shared</span>
+                                                                <span>{formatPercent(row.crossPercent)}</span>
                                                             </div>
                                                         </div>
                                                     ))}

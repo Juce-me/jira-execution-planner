@@ -36,29 +36,6 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
                 team_field: {"id": "team-alpha", "name": "Alpha"},
                 "parent": {},
                 "project": {"key": "SYN", "name": "Synthetic Project"},
-                "issuelinks": [
-                    {
-                        "type": {"name": "Dependency", "outward": "depends on", "inward": "is depended on by"},
-                        "outwardIssue": {"key": "SYN-9", "fields": {"summary": "Synthetic linked task"}}
-                    }
-                ],
-            },
-        }
-        linked_issue = {
-            "id": "10009",
-            "key": "SYN-9",
-            "fields": {
-                "summary": "Synthetic linked task",
-                "status": {"name": "To Do"},
-                "priority": {"name": "Major"},
-                "issuetype": {"name": "Story"},
-                story_points_field: 2,
-                sprint_field: [{"id": 101, "name": "2025Q4 Sprint 1"}],
-                epic_field: "PLAN-1",
-                team_field: {"id": "team-beta", "name": "Beta"},
-                "parent": {},
-                "project": {"key": "SYN", "name": "Synthetic Project"},
-                "issuelinks": [],
             },
         }
 
@@ -71,16 +48,6 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
         responses = [
             FakeJiraResponse({
                 "issues": [base_issue],
-                "names": {
-                    team_field: "Team[Team]",
-                    epic_field: "Epic Link",
-                    sprint_field: "Sprint",
-                    story_points_field: "Story Points",
-                },
-                "isLast": True,
-            }),
-            FakeJiraResponse({
-                "issues": [linked_issue],
                 "names": {
                     team_field: "Team[Team]",
                     epic_field: "Epic Link",
@@ -118,11 +85,13 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
         self.assertEqual(payload["issues"][0]["fields"]["epicKey"], "BAU-1")
         self.assertEqual(payload["issues"][0]["fields"]["epicSummary"], "BAU Workstream")
         self.assertEqual(payload["issues"][0]["fields"]["teamId"], "team-alpha")
-        self.assertEqual(payload["dependencies"]["SYN-1"][0]["teamId"], "team-beta")
+        self.assertNotIn("dependencies", payload)
+        self.assertEqual(mock_search.call_count, 2)
 
         first_search_payload = mock_search.call_args_list[0].args[0]
         self.assertIn("Sprint in (101, 102)", first_search_payload["jql"])
         self.assertIn('"Team[Team]" = "team-alpha"', first_search_payload["jql"])
+        self.assertNotIn("issuelinks", first_search_payload["fields"])
         self.assertNotIn("startAt", first_search_payload)
 
     def test_excluded_capacity_source_requires_sprint_ids(self):

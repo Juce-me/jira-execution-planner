@@ -150,7 +150,6 @@ EPIC_COHORT_ENRICH_WORKERS = int(os.getenv('EPIC_COHORT_ENRICH_WORKERS', '4'))
 EPIC_COHORT_ENRICH_TIMEOUT_SECONDS = float(os.getenv('EPIC_COHORT_ENRICH_TIMEOUT_SECONDS', '10'))
 EXCLUDED_CAPACITY_STATS_MAX_SPRINTS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_SPRINTS', '24'))
 EXCLUDED_CAPACITY_STATS_MAX_ISSUES = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_ISSUES', '2000'))
-EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES', '500'))
 EXCLUDED_CAPACITY_STATS_MAX_EPICS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_EPICS', '200'))
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
@@ -5985,84 +5984,6 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
     }
 
 
-def _link_category_for_capacity_stats(type_info):
-    text = ' '.join(str((type_info or {}).get(key) or '').lower() for key in ('name', 'inward', 'outward'))
-    if 'participat' in text:
-        return 'participation'
-    if 'depend' in text:
-        return 'dependency'
-    if 'block' in text:
-        return 'block'
-    return None
-
-
-def fetch_excluded_capacity_linked_snapshots(keys, context, fields_list, team_field_id, epic_link_field_id):
-    keys = sorted({str(key or '').strip() for key in keys if str(key or '').strip()})
-    if not keys:
-        return {}, []
-
-    warnings = []
-    if len(keys) > EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES:
-        warnings.append(f'linked issue enrichment capped at {EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES} issues')
-        keys = keys[:EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES]
-
-    snapshots = {}
-    batch_size = 100
-    for index in range(0, len(keys), batch_size):
-        batch = keys[index:index + batch_size]
-        quoted_keys = ', '.join(f'"{_escape_jql_literal(key)}"' for key in batch)
-        payload = {
-            'jql': f'key in ({quoted_keys})',
-            'maxResults': len(batch),
-            'fields': fields_list
-        }
-        response = jira_search_request(payload, context=context)
-        if response.status_code != 200:
-            warnings.append(f'linked issue enrichment failed for batch {index // batch_size + 1}')
-            continue
-        data = response.json() or {}
-        for issue in data.get('issues', []) or []:
-            snapshot = build_issue_snapshot(issue, team_field_id, epic_link_field_id)
-            issue_key = snapshot.get('key')
-            if issue_key:
-                snapshots[issue_key] = snapshot
-    return snapshots, warnings
-
-
-def build_excluded_capacity_dependencies(issues, linked_snapshots):
-    dependencies = {}
-    for issue in issues:
-        base_key = issue.get('key')
-        if not base_key:
-            continue
-        entries = []
-        for link in issue.get('fields', {}).get('issuelinks', []) or []:
-            type_info = link.get('type', {}) or {}
-            category = _link_category_for_capacity_stats(type_info)
-            if not category:
-                continue
-            linked_issue = link.get('outwardIssue') or link.get('inwardIssue')
-            linked_key = linked_issue.get('key') if linked_issue else None
-            if not linked_key:
-                continue
-            snapshot = linked_snapshots.get(linked_key) or {
-                'key': linked_key,
-                'summary': linked_issue.get('fields', {}).get('summary') if linked_issue else '',
-                'teamId': None,
-                'teamName': None,
-                'epicKey': None
-            }
-            entries.append({
-                **snapshot,
-                'category': category,
-                'relation': type_info.get('outward') if link.get('outwardIssue') else type_info.get('inward'),
-                'typeName': type_info.get('name')
-            })
-        if entries:
-            dependencies[base_key] = entries
-    return dependencies
-
-
 def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None):
     team_field_id = resolve_team_field_id(None, context=context)
     epic_link_field_id = resolve_epic_link_field_id(None, context=context)
@@ -6088,8 +6009,7 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
         'updated',
         story_points_field,
         'parent',
-        'project',
-        'issuelinks'
+        'project'
     ]
     for field_id in (sprint_field_id, epic_link_field_id, team_field_id):
         if field_id and field_id not in fields_list:
@@ -6122,25 +6042,6 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
 
     if len(collected_issues) >= EXCLUDED_CAPACITY_STATS_MAX_ISSUES:
         warnings.append(f'issue fetch capped at {EXCLUDED_CAPACITY_STATS_MAX_ISSUES} issues')
-
-    linked_keys = set()
-    for issue in collected_issues:
-        for link in issue.get('fields', {}).get('issuelinks', []) or []:
-            if not _link_category_for_capacity_stats(link.get('type', {}) or {}):
-                continue
-            linked_issue = link.get('outwardIssue') or link.get('inwardIssue')
-            linked_key = linked_issue.get('key') if linked_issue else None
-            if linked_key:
-                linked_keys.add(linked_key)
-
-    linked_snapshots, linked_warnings = fetch_excluded_capacity_linked_snapshots(
-        linked_keys,
-        context,
-        fields_list,
-        team_field_id,
-        epic_link_field_id
-    )
-    warnings.extend(linked_warnings)
 
     epic_keys = []
     seen_epics = set()
@@ -6177,14 +6078,12 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
 
     return {
         'issues': issues_payload,
-        'dependencies': build_excluded_capacity_dependencies(collected_issues, linked_snapshots),
         'meta': {
             'warnings': warnings,
             'truncated': bool(warnings),
             'paginationMode': 'nextPageToken/isLast',
             'queryPages': page_count,
-            'issueLimit': EXCLUDED_CAPACITY_STATS_MAX_ISSUES,
-            'linkedIssueLimit': EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES
+            'issueLimit': EXCLUDED_CAPACITY_STATS_MAX_ISSUES
         }
     }, None
 

@@ -56,6 +56,24 @@ test('excluded-capacity epic menu wraps long labels without horizontal scroll', 
     );
 });
 
+test('excluded-capacity epic dropdown follows shared component-search styling', () => {
+    const actionBlock = cssSource.match(/\.excluded-capacity-epic-action\s*\{([\s\S]*?)\n\s*\}/)?.[1] || '';
+    assert.match(
+        cssSource,
+        /\.excluded-capacity-epic-toggle:focus,\s*\.excluded-capacity-epic-toggle:active\s*\{[\s\S]*background-color:\s*#fff/,
+        'Expected excluded epic toggle to stay white on focus/active states'
+    );
+    assert.match(
+        cssSource,
+        /\.excluded-capacity-epic-action\s*\{[\s\S]*border:\s*1px solid var\(--border\)[\s\S]*color:\s*var\(--text-primary\)/,
+        'Expected excluded epic quick actions to use neutral component styling'
+    );
+    assert.ok(
+        !actionBlock.includes('color: var(--accent)'),
+        'Excluded epic actions should not use the red accent-link menu style'
+    );
+});
+
 test('excluded-capacity epic filter stays compact without selected chips', () => {
     assert.ok(
         !dashboardSource.includes('excluded-capacity-epic-chips'),

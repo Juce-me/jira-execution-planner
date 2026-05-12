@@ -2,7 +2,10 @@ from dataclasses import dataclass
 from typing import Callable, MutableMapping
 import time
 
-from backend.auth.cache_policy import jira_home_process_cache_enabled
+from backend.auth.cache_policy import (
+    build_jira_home_process_cache_key,
+    jira_home_partitioned_process_cache_enabled,
+)
 from backend.epm.scope import build_rollup_jqls, should_apply_epm_sprint
 
 
@@ -139,8 +142,8 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
         return deps.build_empty_epm_rollup_payload(project, metadata_only=True), 200, {}
 
     base_jql = deps.build_base_jql()
-    cache_enabled = jira_home_process_cache_enabled(deps.context)
-    cache_key = f"{project_id}::{tab}::{sprint}::{label}::{base_jql}"
+    cache_enabled = jira_home_partitioned_process_cache_enabled(deps.context)
+    cache_key = build_jira_home_process_cache_key(deps.context, f"{project_id}::{tab}::{sprint}::{label}::{base_jql}")
     cached = None
     if cache_enabled:
         with deps.cache_lock:

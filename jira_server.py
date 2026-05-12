@@ -390,6 +390,7 @@ def store_db_oauth_callback_session_metadata(token_data, resource, user_profile)
             environment_key=APP_ENVIRONMENT_KEY.strip().lower() or 'local',
             configured_jira_url=JIRA_URL or '',
             key_provider=key_provider_from_env(),
+            requested_scopes=ATLASSIAN_SCOPES,
         )
         bootstrap_first_tool_admin(
             db_session,

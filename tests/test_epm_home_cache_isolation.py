@@ -2,6 +2,7 @@ import threading
 import unittest
 
 from backend.auth.context import RequestAuthContext
+from backend.auth.cache_policy import build_jira_home_process_cache_key
 from backend.auth.jira_auth import AuthError
 from backend.epm import home as epm_home
 from backend.epm.projects import EpmProjectsDependencies, build_epm_home_projects_state
@@ -84,7 +85,7 @@ class EpmHomeCacheIsolationTests(unittest.TestCase):
         self.assertEqual(state_b['homeProjects'], [{'homeProjectId': 'project-b'}])
         self.assertEqual(user_a_calls, ['fetch'])
         self.assertEqual(user_b_calls, ['fetch'])
-        self.assertEqual(cache, {})
+        self.assertEqual(len(cache), 2)
 
     def test_token_update_refetches_home_project_metadata(self):
         cache = {}
@@ -111,7 +112,7 @@ class EpmHomeCacheIsolationTests(unittest.TestCase):
         self.assertEqual(first_state['homeProjects'], [{'homeProjectId': 'before-update'}])
         self.assertEqual(second_state['homeProjects'], [{'homeProjectId': 'after-update'}])
         self.assertEqual(calls, ['v1', 'v2'])
-        self.assertEqual(cache, {})
+        self.assertEqual(len(cache), 2)
 
     def test_revoked_token_does_not_return_stale_home_projects(self):
         cache = {}
@@ -139,7 +140,7 @@ class EpmHomeCacheIsolationTests(unittest.TestCase):
             )
 
         self.assertEqual(raised.exception.code, 'home_user_token_required')
-        self.assertEqual(cache, {})
+        self.assertEqual(len(cache), 1)
 
     def test_goal_lookup_bypasses_process_cache_for_oauth_context(self):
         container_id = 'ari:cloud:townsquare::site/cloud-1'
@@ -165,6 +166,8 @@ class EpmHomeCacheIsolationTests(unittest.TestCase):
         self.assertEqual(goal['id'], 'fresh-goal')
         self.assertEqual(client.execute_calls, 1)
         self.assertEqual(epm_home._GOAL_BY_KEY_CACHE[cache_key]['id'], 'cached-goal')
+        partitioned_key = build_jira_home_process_cache_key(oauth_context(), cache_key)
+        self.assertEqual(epm_home._GOAL_BY_KEY_CACHE[partitioned_key]['id'], 'fresh-goal')
 
 
 if __name__ == '__main__':

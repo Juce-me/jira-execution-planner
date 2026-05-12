@@ -36,8 +36,8 @@ def _expires_at(token_data) -> datetime | None:
     return datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
 
-def _scope_list(token_data) -> list[str]:
-    raw = (token_data or {}).get('scope') or ''
+def _scope_list(token_data, fallback_scopes: str = '') -> list[str]:
+    raw = (token_data or {}).get('scope') or fallback_scopes or ''
     if isinstance(raw, str):
         return [scope for scope in raw.split() if scope]
     return [str(scope).strip() for scope in raw or [] if str(scope).strip()]
@@ -340,6 +340,7 @@ def store_oauth_callback_tokens(
     environment_key,
     configured_jira_url,
     key_provider,
+    requested_scopes='',
 ) -> StoredOAuthConnection:
     user = _upsert_user(session, user_profile)
     workspace = _upsert_workspace(
@@ -348,7 +349,10 @@ def store_oauth_callback_tokens(
         resource=resource,
         configured_jira_url=configured_jira_url,
     )
-    connection = _upsert_connection(session, user=user, workspace=workspace, resource=resource, token_data=token_data)
+    token_data_for_connection = dict(token_data or {})
+    if requested_scopes and not token_data_for_connection.get('scope'):
+        token_data_for_connection['scope'] = requested_scopes
+    connection = _upsert_connection(session, user=user, workspace=workspace, resource=resource, token_data=token_data_for_connection)
     _replace_token(
         session,
         connection=connection,

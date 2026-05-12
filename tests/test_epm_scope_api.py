@@ -132,6 +132,20 @@ class TestEpmScopeApi(unittest.TestCase):
             },
         )
 
+    @patch('jira_server.fetch_epm_goal_catalog')
+    def test_goals_endpoint_returns_oauth_auth_required(self, mock_catalog):
+        mock_catalog.side_effect = AuthError(
+            'auth_required',
+            'Atlassian authentication is required.',
+        )
+
+        response = self.client.get('/api/epm/goals')
+
+        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertEqual(body['error'], 'auth_required')
+        self.assertEqual(body['loginUrl'], '/login?reason=session_expired')
+
     def test_goal_catalog_uses_db_home_service_credential_in_request_context(self):
         context = _oauth_context()
         credential = _home_credential()

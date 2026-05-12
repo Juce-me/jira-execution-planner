@@ -4,9 +4,9 @@ from flask import Blueprint, g, jsonify, request, session
 
 from backend.auth.csrf import validate_csrf_token
 from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthError
-from backend.auth.key_provider import key_provider_from_env
+from backend.auth.key_provider import KeyProviderConfigurationError, key_provider_from_env
 from backend.auth import user_api_tokens
-from backend.db.engine import session_scope
+from backend.db.engine import DatabaseConfigurationError, session_scope
 
 from . import bind_server_globals
 
@@ -40,6 +40,8 @@ def _require_authenticated_user():
         g.auth_context = current_request_auth_context()
     except AuthError as error:
         return auth_error_response(error, 401)
+    except DatabaseConfigurationError as error:
+        return _storage_error_response(error)
     return None
 
 
@@ -56,12 +58,22 @@ def _error_response(error):
     return jsonify({'error': error.code, 'message': error.message}), status
 
 
+def _storage_error_response(_error):
+    return jsonify({
+        'error': 'credential_storage_unavailable',
+        'message': 'Credential storage is not configured for Home token connections.',
+    }), 503
+
+
 @bp.route('/api/me/connections/home-token', methods=['GET'])
 def api_me_home_token_connection():
     context = g.auth_context
-    with session_scope() as db_session:
-        connection = user_api_tokens.home_token_connection_for_context(db_session, context)
-        return jsonify(user_api_tokens.home_token_summary(connection))
+    try:
+        with session_scope() as db_session:
+            connection = user_api_tokens.home_token_connection_for_context(db_session, context)
+            return jsonify(user_api_tokens.home_token_summary(connection))
+    except DatabaseConfigurationError as error:
+        return _storage_error_response(error)
 
 
 @bp.route('/api/me/connections/home-token', methods=['POST'])
@@ -85,12 +97,17 @@ def api_me_connect_home_token():
             return jsonify(user_api_tokens.home_token_summary(connection))
     except user_api_tokens.UserApiTokenError as error:
         return _error_response(error)
+    except (DatabaseConfigurationError, KeyProviderConfigurationError) as error:
+        return _storage_error_response(error)
 
 
 @bp.route('/api/me/connections/home-token', methods=['DELETE'])
 def api_me_revoke_home_token():
     context = g.auth_context
-    with session_scope() as db_session:
-        user_api_tokens.revoke_home_user_api_token(db_session, context=context)
-        clear_auth_sensitive_caches('user_api_token_revoked')
-    return jsonify({'connected': False})
+    try:
+        with session_scope() as db_session:
+            user_api_tokens.revoke_home_user_api_token(db_session, context=context)
+            clear_auth_sensitive_caches('user_api_token_revoked')
+        return jsonify({'connected': False})
+    except DatabaseConfigurationError as error:
+        return _storage_error_response(error)

@@ -14,7 +14,10 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from backend.auth.cache_policy import jira_home_process_cache_enabled
+from backend.auth.cache_policy import (
+    build_jira_home_process_cache_key,
+    jira_home_partitioned_process_cache_enabled,
+)
 from backend.auth.home_credentials import HomeCredential, resolve_home_credential
 from backend.auth.jira_auth import AuthError
 from backend.db.engine import database_storage_enabled
@@ -273,6 +276,41 @@ query EpmProjectTags($cypherQuery: String!, $params: CypherRequestParams) {
 }
 """
 
+HOME_PROJECT_UPDATE_MUTATION = """
+mutation CreateProjectUpdateMutation($projectId: String!, $updateText: String!) {
+  projects_createUpdate(
+    input: {
+      projectId: $projectId
+      summary: $updateText
+    }
+  ) {
+    success
+    errors {
+      message
+    }
+    update {
+      id
+      url
+      creationDate
+      updateType
+      summary
+    }
+  }
+}
+"""
+
+HOME_PROJECT_UPDATE_ALLOWED_FIELDS = {"updateText", "clientMutationId"}
+HOME_WRITE_PROBE_SENSITIVE_KEYS = {
+    "email",
+    "api_token",
+    "apitoken",
+    "authorization",
+    "access_token",
+    "refresh_token",
+    "token",
+    "headers",
+}
+
 
 HOME_GRAPHQL_FEASIBILITY_OPERATION_NAMES = (
     "goals_search",
@@ -316,6 +354,78 @@ def home_graphql_feasibility_queries() -> dict[str, str]:
         "project_tags": QUERY_PROJECT_TAGS,
         "teamwork_graph_project_tags": QUERY_TEAMWORK_GRAPH_PROJECT_TAGS,
     }
+
+
+def normalize_home_project_update_payload(payload: dict | None) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("invalid_home_update_payload")
+    unsupported = set(payload) - HOME_PROJECT_UPDATE_ALLOWED_FIELDS
+    if unsupported:
+        raise ValueError("unsupported_home_update_field")
+    update_text = str(payload.get("updateText") or "").strip()
+    if not update_text:
+        raise ValueError("update_text_required")
+    if len(update_text) > 4000:
+        raise ValueError("update_text_too_long")
+    normalized = {"updateText": update_text}
+    client_mutation_id = str(payload.get("clientMutationId") or "").strip()
+    if client_mutation_id:
+        normalized["clientMutationId"] = client_mutation_id
+    return normalized
+
+
+def _home_update_text_to_adf(update_text: str) -> str:
+    return json.dumps(
+        {
+            "version": 1,
+            "type": "doc",
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": update_text}],
+                }
+            ],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def build_home_project_update_variables(
+    project_id: str,
+    update_text: str,
+    client_mutation_id: str | None = None,
+) -> dict:
+    normalized = normalize_home_project_update_payload({
+        "updateText": update_text,
+        "clientMutationId": client_mutation_id or "",
+    })
+    normalized_project_id = str(project_id or "").strip()
+    if not normalized_project_id:
+        raise ValueError("project_id_required")
+    return {
+        "projectId": normalized_project_id,
+        "updateText": _home_update_text_to_adf(normalized["updateText"]),
+    }
+
+
+def redact_home_write_probe_payload(payload):
+    if isinstance(payload, dict):
+        redacted = {}
+        for key, value in payload.items():
+            if str(key).strip().lower() in HOME_WRITE_PROBE_SENSITIVE_KEYS:
+                redacted[key] = "[redacted]"
+                continue
+            redacted[key] = redact_home_write_probe_payload(value)
+        return redacted
+    if isinstance(payload, list):
+        return [redact_home_write_probe_payload(value) for value in payload]
+    if isinstance(payload, str) and (
+        "basic " in payload.lower()
+        or "bearer " in payload.lower()
+    ):
+        return "[redacted]"
+    return payload
 
 
 def redact_home_oauth_probe_payload(payload):
@@ -1036,9 +1146,10 @@ def fetch_home_site_cloud_id(context=None) -> str:
     jira_url = get_configured_jira_url(context)
     if not jira_url:
         raise RuntimeError("JIRA_URL must be set to detect the Atlassian site cloud ID")
-    cache_enabled = jira_home_process_cache_enabled(context)
-    if cache_enabled and jira_url in _CLOUD_ID_CACHE:
-        return _CLOUD_ID_CACHE[jira_url]
+    cache_enabled = jira_home_partitioned_process_cache_enabled(context)
+    cache_key = build_jira_home_process_cache_key(context, jira_url)
+    if cache_enabled and cache_key in _CLOUD_ID_CACHE:
+        return _CLOUD_ID_CACHE[cache_key]
     request = Request(f"{jira_url}/_edge/tenant_info", headers={"Accept": "application/json"}, method="GET")
     try:
         with urlopen(request, timeout=HOME_TIMEOUT_SECONDS) as response:
@@ -1049,7 +1160,7 @@ def fetch_home_site_cloud_id(context=None) -> str:
     if not cloud_id:
         raise RuntimeError("Jira tenant_info did not return cloudId")
     if cache_enabled:
-        _CLOUD_ID_CACHE[jira_url] = cloud_id
+        _CLOUD_ID_CACHE[cache_key] = cloud_id
     return cloud_id
 
 
@@ -1069,7 +1180,8 @@ def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: 
     if not expected_key:
         return None
     cache_key = _goal_cache_key(container_id, expected_key)
-    cache_enabled = jira_home_process_cache_enabled(context)
+    cache_enabled = jira_home_partitioned_process_cache_enabled(context)
+    cache_key = build_jira_home_process_cache_key(context, cache_key)
     cached = _GOAL_BY_KEY_CACHE.get(cache_key) if cache_enabled else None
     if cache_enabled and cached:
         return dict(cached)

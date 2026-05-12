@@ -559,6 +559,57 @@ class TestUserApiTokenConnections(unittest.TestCase):
         self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
         self.assertEqual(response.get_json()['error'], 'csrf_required')
 
+    def test_missing_token_encryption_key_returns_storage_error(self):
+        self._install_session()
+
+        with patch.dict(os.environ, {
+            'APP_ENVIRONMENT_KEY': 'local',
+            'CONFIG_STORAGE_BACKEND': 'db',
+            'DATABASE_URL': self.database_url,
+        }, clear=True), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch('backend.auth.user_api_tokens.fetch_jira_myself_with_basic_auth', return_value={'accountId': 'normal-account'}), \
+             patch('backend.auth.user_api_tokens.probe_home_basic_credential', return_value=True):
+            response = self._post_home_token(
+                {'email': 'normal@example.com', 'apiToken': 'plain-user-api-token-456'},
+                self._csrf(),
+            )
+
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'credential_storage_unavailable')
+        self.assertNotIn('plain-user-api-token-456', response.get_data(as_text=True))
+
+    def test_missing_database_url_returns_storage_error_for_home_token_routes(self):
+        self._install_session()
+
+        with patch.dict(os.environ, {'APP_ENVIRONMENT_KEY': 'local'}, clear=True), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            responses = [
+                self.client.get('/api/me/connections/home-token'),
+                self._post_home_token(
+                    {'email': 'normal@example.com', 'apiToken': 'plain-user-api-token-456'},
+                    self._csrf(),
+                ),
+                self._delete_home_token(self._csrf()),
+            ]
+
+        for response in responses:
+            with self.subTest(status=response.status_code):
+                self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+                self.assertEqual(response.get_json()['error'], 'credential_storage_unavailable')
+                self.assertNotIn('plain-user-api-token-456', response.get_data(as_text=True))
+
+    def test_missing_database_url_in_db_mode_returns_storage_error_before_auth_context(self):
+        self._install_session()
+
+        with patch.dict(os.environ, {
+            'APP_ENVIRONMENT_KEY': 'local',
+            'CONFIG_STORAGE_BACKEND': 'db',
+        }, clear=True), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.get('/api/me/connections/home-token')
+
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'credential_storage_unavailable')
+
     def test_home_credential_rejected_when_home_probe_fails(self):
         self._install_session()
 

@@ -2,7 +2,10 @@
 
 from flask import Blueprint
 
-from backend.auth.cache_policy import jira_home_process_cache_enabled
+from backend.auth.cache_policy import (
+    build_jira_home_process_cache_key,
+    jira_home_partitioned_process_cache_enabled,
+)
 from backend.auth.jira_auth import AuthError
 
 from . import bind_server_globals
@@ -76,14 +79,17 @@ def get_epm_goals_endpoint():
         goals = []
         error = str(exc)
     except AuthError as exc:
-        if not _is_home_user_token_required(exc):
-            raise
-        return jsonify({
-            'goals': [],
-            'error': _home_user_token_message(exc),
-            'errorCode': exc.code,
-            'connectUrl': HOME_USER_TOKEN_CONNECT_URL,
-        })
+        if _is_home_user_token_required(exc):
+            return jsonify({
+                'goals': [],
+                'error': _home_user_token_message(exc),
+                'errorCode': exc.code,
+                'connectUrl': HOME_USER_TOKEN_CONNECT_URL,
+            })
+        if exc.code == 'auth_required':
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
     return jsonify({'goals': goals, 'error': error})
 
 
@@ -168,8 +174,11 @@ def get_epm_project_issues_endpoint(home_project_id):
 
     base_jql = build_base_jql()
     auth_context = current_request_auth_context()
-    cache_enabled = jira_home_process_cache_enabled(auth_context)
-    cache_key = f"{home_project_id}::{tab}::{sprint}::{base_jql}::{json.dumps(linkage, sort_keys=True)}"
+    cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
+    cache_key = build_jira_home_process_cache_key(
+        auth_context,
+        f"{home_project_id}::{tab}::{sprint}::{base_jql}::{json.dumps(linkage, sort_keys=True)}",
+    )
     cached = None
     if cache_enabled:
         with _epm_cache_lock:

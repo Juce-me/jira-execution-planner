@@ -96,6 +96,38 @@ class DbOauthCutoverTests(unittest.TestCase):
             )
             self.assertIn(decrypted, {'access-123', 'refresh-123'})
 
+    def test_callback_persists_requested_scopes_when_provider_omits_scope(self):
+        with self.factory() as session:
+            result = store_oauth_callback_tokens(
+                session,
+                token_data={
+                    'access_token': 'access-123',
+                    'refresh_token': 'refresh-123',
+                    'expires_in': 3600,
+                },
+                resource={
+                    'id': 'cloud-123',
+                    'url': 'https://example.atlassian.net/',
+                    'name': 'Example Jira',
+                },
+                user_profile={
+                    'account_id': 'account-123',
+                    'account_status': 'active',
+                    'email': 'user@example.com',
+                    'display_name': 'User Example',
+                },
+                environment_key='local',
+                configured_jira_url='https://example.atlassian.net',
+                key_provider=self.key_provider,
+                requested_scopes=jira_server.ATLASSIAN_SCOPES,
+            )
+            session.commit()
+
+        with self.factory() as session:
+            connection = session.get(models.AuthConnection, result.connection_id)
+
+        self.assertEqual(connection.scopes, jira_server.ATLASSIAN_SCOPES.split())
+
     def test_current_request_context_prefers_db_connection_metadata(self):
         result = self._store_callback()
         with jira_server.app.test_request_context('/'):

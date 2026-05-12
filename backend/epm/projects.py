@@ -3,7 +3,10 @@ import json
 import time
 from typing import Callable, MutableMapping
 
-from backend.auth.cache_policy import jira_home_process_cache_enabled
+from backend.auth.cache_policy import (
+    build_jira_home_process_cache_key,
+    jira_home_partitioned_process_cache_enabled,
+)
 from backend.epm import home as epm_home
 
 
@@ -65,8 +68,8 @@ def build_epm_home_projects_cache_key(epm_scope):
 
 
 def build_epm_home_projects_state(epm_scope, deps, force_refresh=False):
-    cache_enabled = jira_home_process_cache_enabled(deps.context)
-    cache_key = build_epm_home_projects_cache_key(epm_scope)
+    cache_enabled = jira_home_partitioned_process_cache_enabled(deps.context)
+    cache_key = build_jira_home_process_cache_key(deps.context, build_epm_home_projects_cache_key(epm_scope))
     if cache_enabled and not force_refresh:
         with deps.cache_lock:
             cached = deps.cache.get(cache_key)

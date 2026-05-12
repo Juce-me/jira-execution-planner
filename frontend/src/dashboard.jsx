@@ -527,7 +527,7 @@ import {
             const planningHydratedScopeRef = useRef('');
             const teamSelectionHydratedScopeRef = useRef('');
             const teamSelectionSkipPersistScopeRef = useRef('');
-            const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout' || value === 'cohort' || value === 'excludedCapacity') ? value : 'teams';
+            const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout' || value === 'cohort' || value === 'excludedCapacity' || value === 'monoCrossShare') ? value : 'teams';
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
             const resolveBurndownMetric = (value) => (value === 'issueCount' || value === 'storyPoints') ? value : 'storyPoints';
             const resolveCohortGroupBy = (value) => (value === 'month' || value === 'quarter') ? value : 'quarter';
@@ -6166,7 +6166,7 @@ import {
                 return `${excludedCapacitySprintIdsSignature}::${excludedCapacityScopedTeamSignature || 'all'}`;
             }, [excludedCapacitySprintIds.length, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature]);
             useEffect(() => {
-                if (!showStats || statsView !== 'excludedCapacity') return;
+                if (!showStats || (statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare')) return;
                 if (!excludedCapacityEpicOptions.length) {
                     setExcludedCapacityData(null);
                     setExcludedCapacityError('No excluded capacity epics are configured for this team group.');
@@ -8886,7 +8886,7 @@ import {
                 const target = Math.max(0, todayX - (chart.clientWidth * 0.6));
                 chart.scrollLeft = target;
             }, [burnoutChartModel, statsView]);
-            const canRenderStatsPanel = Boolean(effectiveStatsData) || statsView === 'burnout' || statsView === 'cohort' || statsView === 'excludedCapacity';
+            const canRenderStatsPanel = Boolean(effectiveStatsData) || statsView === 'burnout' || statsView === 'cohort' || statsView === 'excludedCapacity' || statsView === 'monoCrossShare';
             const isLeadTimesFocusMode = showStats && statsView === 'cohort';
             const groupTasksByEpic = (taskList) => {
                 const grouped = {};
@@ -11897,7 +11897,7 @@ import {
 
                         {canRenderStatsPanel && (
                             <>
-                                {statsView !== 'cohort' && statsView !== 'excludedCapacity' && (
+                                {statsView !== 'cohort' && statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && (
                                 <div className="stats-summary">
                                     <div
                                         className={`stats-card selectable ${statsGraphMode === 'absolute' ? 'active' : ''}`}
@@ -11982,6 +11982,12 @@ import {
                                         onClick={() => setStatsView('excludedCapacity')}
                                     >
                                         Excluded Capacity
+                                    </button>
+                                    <button
+                                        className={`stats-toggle ${statsView === 'monoCrossShare' ? 'active' : ''}`}
+                                        onClick={() => setStatsView('monoCrossShare')}
+                                    >
+                                        Mono vs Cross
                                     </button>
                                 </div>
 
@@ -12901,58 +12907,119 @@ import {
                                                     formatPercent={formatPercent}
                                                 />
                                             </div>
+                                        </div>
+                                    )}
+                                </div>
 
+                                <div className={`stats-view ${statsView === 'monoCrossShare' ? 'open' : ''}`}>
+                                    <div className="stats-controls excluded-capacity-controls">
+                                        <div className="stats-control-group">
+                                            <label>Start Sprint</label>
+                                            <select
+                                                className="scenario-input"
+                                                value={excludedCapacityStartSprintId}
+                                                onChange={(event) => setExcludedCapacityStartSprintId(event.target.value)}
+                                            >
+                                                {excludedCapacitySprintOptions.map((sprint) => (
+                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="stats-control-group">
+                                            <label>End Sprint</label>
+                                            <select
+                                                className="scenario-input"
+                                                value={excludedCapacityEndSprintId}
+                                                onChange={(event) => setExcludedCapacityEndSprintId(event.target.value)}
+                                            >
+                                                {excludedCapacitySprintOptions.map((sprint) => (
+                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="stats-summary excluded-capacity-summary">
+                                        <div className="stats-card">
+                                            <h4>Range</h4>
+                                            <div className="stat-value">{excludedCapacitySprintRange.length}</div>
+                                            <div className="stats-note">Selected Jira sprints</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Mono SP</h4>
+                                            <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.monoPoints)}</div>
+                                            <div className="stats-note">{formatPercent(excludedCapacityModeOverall.monoPercent)} of excluded SP</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Cross SP</h4>
+                                            <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.crossPoints)}</div>
+                                            <div className="stats-note">{formatPercent(excludedCapacityModeOverall.crossPercent)} of excluded SP</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Classification</h4>
+                                            <div className="stat-value">Stories + Deps</div>
+                                            <div className="stats-note">Cross = multi-team stories or dependency/participation links</div>
+                                        </div>
+                                    </div>
+
+                                    {excludedCapacityLoading && (
+                                        <div className="stats-note">Loading mono vs cross share...</div>
+                                    )}
+                                    {!excludedCapacityLoading && excludedCapacityError && (
+                                        <div className="stats-note cohort-error">{excludedCapacityError}</div>
+                                    )}
+                                    {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityModeOverall.totalPoints === 0 && (
+                                        <div className="cohort-empty">No excluded epic share available for the current selection.</div>
+                                    )}
+                                    {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityModeOverall.totalPoints > 0 && (
+                                        <div className="excluded-capacity-panel">
                                             <div className="cohort-section">
                                                 <div className="cohort-section-title">Mono-team vs Cross-team Share</div>
                                                 <div className="cohort-section-subtitle">
                                                     Aggregated across {excludedCapacitySprintRange.length} sprint{excludedCapacitySprintRange.length === 1 ? '' : 's'}
                                                 </div>
-                                                {excludedCapacityModeOverall.totalPoints === 0 ? (
-                                                    <div className="cohort-empty">No excluded epic share available for the selected filter.</div>
-                                                ) : (
-                                                    <div className="epic-mode-bars" role="img" aria-label="Mono-team versus cross-team excluded epic share aggregated over the selected sprint range">
-                                                        <div className="epic-mode-row epic-mode-row-overall">
-                                                            <div className="epic-mode-label">Overall</div>
+                                                <div className="epic-mode-bars" role="img" aria-label="Mono-team versus cross-team excluded epic share aggregated over the selected sprint range">
+                                                    <div className="epic-mode-row epic-mode-row-overall">
+                                                        <div className="epic-mode-label">Overall</div>
+                                                        <div className="epic-mode-track">
+                                                            <div
+                                                                className="epic-mode-fill mono"
+                                                                style={{ width: `${Math.max(0, Math.min(100, excludedCapacityModeOverall.monoPercent * 100))}%` }}
+                                                                title={`Overall mono-team: ${formatPercent(excludedCapacityModeOverall.monoPercent)} (${formatExcludedPoints(excludedCapacityModeOverall.monoPoints)} SP)`}
+                                                            />
+                                                            <div
+                                                                className="epic-mode-fill cross"
+                                                                style={{ width: `${Math.max(0, Math.min(100, excludedCapacityModeOverall.crossPercent * 100))}%` }}
+                                                                title={`Overall cross-team: ${formatPercent(excludedCapacityModeOverall.crossPercent)} (${formatExcludedPoints(excludedCapacityModeOverall.crossPoints)} SP)`}
+                                                            />
+                                                        </div>
+                                                        <div className="epic-mode-values">
+                                                            <span>{formatPercent(excludedCapacityModeOverall.monoPercent)} mono</span>
+                                                            <span>{formatPercent(excludedCapacityModeOverall.crossPercent)} cross</span>
+                                                        </div>
+                                                    </div>
+                                                    {excludedCapacityModeRows.map(row => (
+                                                        <div className="epic-mode-row" key={row.teamId}>
+                                                            <div className="epic-mode-label">{row.teamName}</div>
                                                             <div className="epic-mode-track">
                                                                 <div
                                                                     className="epic-mode-fill mono"
-                                                                    style={{ width: `${Math.max(0, Math.min(100, excludedCapacityModeOverall.monoPercent * 100))}%` }}
-                                                                    title={`Overall mono-team: ${formatPercent(excludedCapacityModeOverall.monoPercent)} (${formatExcludedPoints(excludedCapacityModeOverall.monoPoints)} SP)`}
+                                                                    style={{ width: `${Math.max(0, Math.min(100, row.monoPercent * 100))}%` }}
+                                                                    title={`${row.teamName} mono-team: ${formatPercent(row.monoPercent)}`}
                                                                 />
                                                                 <div
                                                                     className="epic-mode-fill cross"
-                                                                    style={{ width: `${Math.max(0, Math.min(100, excludedCapacityModeOverall.crossPercent * 100))}%` }}
-                                                                    title={`Overall cross-team: ${formatPercent(excludedCapacityModeOverall.crossPercent)} (${formatExcludedPoints(excludedCapacityModeOverall.crossPoints)} SP)`}
+                                                                    style={{ width: `${Math.max(0, Math.min(100, row.crossPercent * 100))}%` }}
+                                                                    title={`${row.teamName} cross-team: ${formatPercent(row.crossPercent)}`}
                                                                 />
                                                             </div>
                                                             <div className="epic-mode-values">
-                                                                <span>{formatPercent(excludedCapacityModeOverall.monoPercent)} mono</span>
-                                                                <span>{formatPercent(excludedCapacityModeOverall.crossPercent)} cross</span>
+                                                                <span>{formatPercent(row.monoPercent)} mono</span>
+                                                                <span>{formatPercent(row.crossPercent)} cross</span>
                                                             </div>
                                                         </div>
-                                                        {excludedCapacityModeRows.map(row => (
-                                                            <div className="epic-mode-row" key={row.teamId}>
-                                                                <div className="epic-mode-label">{row.teamName}</div>
-                                                                <div className="epic-mode-track">
-                                                                    <div
-                                                                        className="epic-mode-fill mono"
-                                                                        style={{ width: `${Math.max(0, Math.min(100, row.monoPercent * 100))}%` }}
-                                                                        title={`${row.teamName} mono-team: ${formatPercent(row.monoPercent)}`}
-                                                                    />
-                                                                    <div
-                                                                        className="epic-mode-fill cross"
-                                                                        style={{ width: `${Math.max(0, Math.min(100, row.crossPercent * 100))}%` }}
-                                                                        title={`${row.teamName} cross-team: ${formatPercent(row.crossPercent)}`}
-                                                                    />
-                                                                </div>
-                                                                <div className="epic-mode-values">
-                                                                    <span>{formatPercent(row.monoPercent)} mono</span>
-                                                                    <span>{formatPercent(row.crossPercent)} cross</span>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
+                                                    ))}
+                                                </div>
                                             </div>
                                         </div>
                                     )}

@@ -34,13 +34,10 @@ function ExcludedCapacityLineChart({
 }) {
     const sprintCount = (sprints || []).length;
     const seriesList = Array.isArray(series) ? series : [];
-    const visibleSeries = isolatedSeriesId
-        ? seriesList.filter(item => item.seriesId === isolatedSeriesId)
-        : seriesList;
 
     const maxValue = React.useMemo(() => {
         const all = [];
-        visibleSeries.forEach(item => {
+        seriesList.forEach(item => {
             (item.points || []).forEach(point => {
                 all.push(valueFor(point, metric));
             });
@@ -56,7 +53,7 @@ function ExcludedCapacityLineChart({
             if (target <= step) return step;
         }
         return Math.ceil(target / 100) * 100;
-    }, [visibleSeries, metric]);
+    }, [seriesList, metric]);
 
     const yTicks = React.useMemo(() => {
         const count = 4;
@@ -140,8 +137,10 @@ function ExcludedCapacityLineChart({
                     y2={yFor(0)}
                     className="excluded-capacity-line-axis-line"
                 />
-                {visibleSeries.map((entry) => {
+                {seriesList.map((entry) => {
                     const color = colorFor(entry);
+                    const isIsolated = isolatedSeriesId === entry.seriesId;
+                    const isDimmed = Boolean(isolatedSeriesId && !isIsolated);
                     const path = (entry.points || [])
                         .map((point, idx) => {
                             const x = xFor(idx);
@@ -150,8 +149,12 @@ function ExcludedCapacityLineChart({
                         })
                         .join(' ');
                     return (
-                        <g key={entry.seriesId} className="excluded-capacity-line-series">
-                            <path d={path} stroke={color} fill="none" strokeWidth={2} />
+                        <g
+                            key={entry.seriesId}
+                            className={`excluded-capacity-line-series${isDimmed ? ' is-dimmed' : ''}${isIsolated ? ' is-isolated' : ''}`}
+                            opacity={isDimmed ? 0.18 : 1}
+                        >
+                            <path d={path} stroke={color} fill="none" strokeWidth={isIsolated ? 2.5 : 2} />
                             {(entry.points || []).map((point, idx) => {
                                 const value = valueFor(point, metric);
                                 const tooltip = `${entry.label} · ${point.sprintName || point.sprintId}: ${
@@ -164,7 +167,7 @@ function ExcludedCapacityLineChart({
                                         key={`${entry.seriesId}-${point.sprintId || idx}`}
                                         cx={xFor(idx)}
                                         cy={yFor(value)}
-                                        r={3}
+                                        r={isIsolated ? 3.5 : 3}
                                         fill={color}
                                     >
                                         <title>{tooltip}</title>

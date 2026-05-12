@@ -5028,7 +5028,7 @@ def build_excluded_capacity_stats_jql(sprint_ids, team_ids=None):
     return base_jql
 
 
-def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id, epic_summary_by_key=None):
+def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id, epic_summary_by_key=None, team_name_by_id=None):
     fields = issue.get('fields', {}) or {}
     raw_team = fields.get(team_field_id) if team_field_id and fields.get(team_field_id) is not None else None
     team_payload = build_team_value(raw_team) if raw_team is not None else {}
@@ -5036,6 +5036,12 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
     team_name = team_payload.get('name') if isinstance(team_payload, dict) else None
     if not team_name:
         team_name = extract_team_name(raw_team)
+    if (not team_name) and team_id and team_name_by_id:
+        resolved = team_name_by_id.get(str(team_id).strip())
+        if resolved:
+            team_name = resolved
+    if isinstance(team_payload, dict) and team_name and not team_payload.get('name'):
+        team_payload['name'] = team_name
 
     epic_key = None
     parent_field = fields.get('parent') or {}
@@ -5167,6 +5173,16 @@ def fetch_excluded_capacity_stats_source(sprint_ids, headers, team_ids=None):
     epic_link_field_id = resolve_epic_link_field_id(headers)
     sprint_field_id = get_sprint_field_id()
     story_points_field = get_story_points_field_id()
+    try:
+        catalog = load_team_catalog() or {}
+    except Exception:
+        catalog = {}
+    team_name_by_id = {}
+    for cid, entry in (catalog or {}).items():
+        if isinstance(entry, dict):
+            name = str(entry.get('name') or '').strip()
+            if cid and name:
+                team_name_by_id[str(cid).strip()] = name
     jql = build_excluded_capacity_stats_jql(sprint_ids, team_ids=team_ids)
     fields_list = [
         'summary',
@@ -5260,7 +5276,7 @@ def fetch_excluded_capacity_stats_source(sprint_ids, headers, team_ids=None):
                 epic_summary_by_key[key] = summary
 
     issues_payload = [
-        build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id, epic_summary_by_key)
+        build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id, epic_summary_by_key, team_name_by_id)
         for issue in collected_issues
     ]
 

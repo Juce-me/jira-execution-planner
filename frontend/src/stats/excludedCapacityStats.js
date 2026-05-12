@@ -181,7 +181,14 @@ export function buildExcludedCapacityTimeSeries(tasks, sprints, options = {}) {
 
     (tasks || []).forEach(task => {
         const team = teamFor(task);
-        if (!teamsById.has(team.id)) teamsById.set(team.id, team);
+        const existing = teamsById.get(team.id);
+        if (!existing) {
+            teamsById.set(team.id, team);
+            return;
+        }
+        if (existing.name === existing.id && team.name && team.name !== team.id) {
+            teamsById.set(team.id, { id: existing.id, name: team.name });
+        }
     });
 
     const rows = [];

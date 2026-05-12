@@ -5642,6 +5642,10 @@
             fill: var(--text-secondary);
         }
 
+        .excluded-capacity-line-series {
+            transition: opacity 0.16s ease;
+        }
+
         .excluded-capacity-line-legend {
             margin-top: 0.35rem;
         }

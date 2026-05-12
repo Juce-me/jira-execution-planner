@@ -180,6 +180,41 @@ test('buildExcludedCapacityLineSeries supports story-point and percent metrics c
     assert.equal(point.percent, 0.7);
 });
 
+test('mergeExcludedCapacityStatsSourceChunks deduplicates sprint chunks and suppresses summary cap warnings', async () => {
+    const { mergeExcludedCapacityStatsSourceChunks } = await loadModule();
+    const chunks = [
+        {
+            issues: [
+                story({ key: 'SYN-1', epicKey: 'BAU-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 3 }),
+                story({ key: 'SYN-2', epicKey: 'PLAN-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 5 })
+            ],
+            meta: {
+                warnings: ['epic summary enrichment capped at 200 epics'],
+                queryPages: 1
+            }
+        },
+        {
+            issues: [
+                story({ key: 'SYN-1', epicKey: 'BAU-1', epicSummary: 'BAU Workstream', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 3 }),
+                story({ key: 'SYN-3', epicKey: 'OPS-1', teamId: 'team-beta', teamName: 'Beta', sprintId: 102, sprintName: 'S2', points: 2 })
+            ],
+            meta: {
+                warnings: ['issue fetch capped at 2000 issues'],
+                queryPages: 2
+            }
+        }
+    ];
+
+    const merged = mergeExcludedCapacityStatsSourceChunks(chunks, { totalSprintCount: 2 });
+
+    assert.deepEqual(merged.issues.map(issue => issue.key), ['SYN-1', 'SYN-2', 'SYN-3']);
+    assert.equal(merged.issues[0].fields.epicSummary, 'BAU Workstream');
+    assert.deepEqual(merged.meta.warnings, ['issue fetch capped at 2000 issues']);
+    assert.equal(merged.meta.queryPages, 3);
+    assert.equal(merged.meta.loadedSprintCount, 2);
+    assert.equal(merged.meta.totalSprintCount, 2);
+});
+
 test('buildEpicTeamModeShare classifies cross only from story teams in the same sprint', async () => {
     const { buildEpicTeamModeShare, buildEpicTeamModeOverall, buildEpicTeamModeSprintRows } = await loadModule();
     const sprints = [

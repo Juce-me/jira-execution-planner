@@ -41,6 +41,7 @@ import {
     compareSprintsChronologically,
     getSprintRange,
     getSprintQuarterLabel,
+    mergeExcludedCapacityStatsSourceChunks,
     pickAutoSelectedExcludedEpics
 } from './stats/excludedCapacityStats.js';
 import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';
@@ -598,6 +599,7 @@ import {
             const [excludedCapacityIsolatedTeam, setExcludedCapacityIsolatedTeam] = useState(null);
             const [excludedCapacityEpicDropdownOpen, setExcludedCapacityEpicDropdownOpen] = useState(false);
             const excludedCapacityEpicDropdownRef = useRef(null);
+            const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare');
             const [burnoutHoverPoint, setBurnoutHoverPoint] = useState(null);
             const [burnoutHoverTeamKey, setBurnoutHoverTeamKey] = useState(null);
             const [burnoutTaskFilter, setBurnoutTaskFilter] = useState(null);
@@ -4937,6 +4939,7 @@ import {
 
             useEffect(() => {
                 if (selectedView !== 'eng') return;
+                if (isStatsSourceOnlyStatsView) return;
                 // Load tasks when sprint changes (team is filtered client-side)
                 if (selectedSprint === null) {
                     return;
@@ -4978,7 +4981,12 @@ import {
                 loadProductTasks();
                 loadTechTasks();
                 fetchMissingPlanningInfo(selectedSprint);
-            }, [selectedView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, (activeGroup?.missingInfoComponents || []).join(','), configRefreshNonce]);
+            }, [selectedView, isStatsSourceOnlyStatsView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, (activeGroup?.missingInfoComponents || []).join(','), configRefreshNonce]);
+
+            useEffect(() => {
+                if (!isStatsSourceOnlyStatsView) return;
+                abortSprintFetches();
+            }, [isStatsSourceOnlyStatsView, abortSprintFetches]);
 
             const fetchMissingPlanningInfo = async (sprintId) => {
                 const controller = registerSprintFetch();
@@ -6301,7 +6309,8 @@ import {
                     setExcludedCapacityLoading(false);
                     return;
                 }
-                const cached = excludedCapacityCacheRef.current[excludedCapacityQueryKey];
+                const rangeCacheKey = `range::${excludedCapacityQueryKey}`;
+                const cached = excludedCapacityCacheRef.current[rangeCacheKey];
                 if (cached) {
                     setExcludedCapacityData(cached);
                     setExcludedCapacityError('');
@@ -6309,21 +6318,25 @@ import {
                     return;
                 }
 
-                const controller = new AbortController();
                 let cancelled = false;
-                const timeoutId = window.setTimeout(() => {
-                    try {
-                        controller.abort();
-                    } catch (err) {
-                        // ignore abort errors
-                    }
-                }, 30000);
-                const loadExcludedCapacity = async () => {
-                    setExcludedCapacityLoading(true);
-                    setExcludedCapacityError('');
+                const controllers = new Set();
+                const sprintCacheKeyFor = (sprintId) => `sprint::${String(sprintId || '').trim()}::${excludedCapacityScopedTeamSignature || 'all'}`;
+                const fetchSprintChunk = async (sprintId) => {
+                    const sprintCacheKey = sprintCacheKeyFor(sprintId);
+                    const cachedSprint = excludedCapacityCacheRef.current[sprintCacheKey];
+                    if (cachedSprint) return cachedSprint;
+                    const controller = new AbortController();
+                    controllers.add(controller);
+                    const timeoutId = window.setTimeout(() => {
+                        try {
+                            controller.abort();
+                        } catch (err) {
+                            // ignore abort errors
+                        }
+                    }, 30000);
                     try {
                         const response = await requestExcludedCapacityStatsSource(BACKEND_URL, {
-                            sprintIds: excludedCapacitySprintIds,
+                            sprintIds: [sprintId],
                             teamIds: excludedCapacityScopedTeamIds,
                             signal: controller.signal
                         });
@@ -6332,20 +6345,48 @@ import {
                             throw new Error(err.error || err.message || `Excluded capacity fetch failed (${response.status})`);
                         }
                         const payload = await response.json();
-                        if (cancelled) return;
                         const data = payload?.data || null;
-                        excludedCapacityCacheRef.current[excludedCapacityQueryKey] = data;
+                        if (data) {
+                            excludedCapacityCacheRef.current[sprintCacheKey] = data;
+                        }
+                        return data;
+                    } finally {
+                        window.clearTimeout(timeoutId);
+                        controllers.delete(controller);
+                    }
+                };
+                const loadExcludedCapacity = async () => {
+                    setExcludedCapacityLoading(true);
+                    setExcludedCapacityError('');
+                    const chunks = [];
+                    try {
+                        for (const sprintId of excludedCapacitySprintIds) {
+                            const chunk = await fetchSprintChunk(sprintId);
+                            if (cancelled) return;
+                            if (chunk) {
+                                chunks.push(chunk);
+                                setExcludedCapacityData(mergeExcludedCapacityStatsSourceChunks(chunks, {
+                                    loadedSprintCount: chunks.length,
+                                    totalSprintCount: excludedCapacitySprintIds.length
+                                }));
+                            }
+                        }
+                        if (cancelled) return;
+                        const data = mergeExcludedCapacityStatsSourceChunks(chunks, {
+                            loadedSprintCount: chunks.length,
+                            totalSprintCount: excludedCapacitySprintIds.length
+                        });
+                        excludedCapacityCacheRef.current[rangeCacheKey] = data;
                         setExcludedCapacityData(data);
                     } catch (err) {
                         if (cancelled) return;
                         if (err?.name === 'AbortError') {
-                            setExcludedCapacityError('Excluded capacity request timed out (30s). Narrow the sprint range or team filter.');
+                            setExcludedCapacityError('Excluded capacity sprint request timed out (30s). Narrow the sprint range or team filter.');
                         } else {
                             setExcludedCapacityError(String(err?.message || err || 'Failed to load excluded capacity data.'));
                         }
                         setExcludedCapacityData(null);
                     } finally {
-                        window.clearTimeout(timeoutId);
                         if (!cancelled) setExcludedCapacityLoading(false);
                     }
                 };
@@ -6353,12 +6394,14 @@ import {
                 return () => {
                     cancelled = true;
                     window.clearTimeout(debounceId);
-                    window.clearTimeout(timeoutId);
-                    try {
-                        controller.abort();
-                    } catch (err) {
-                        // ignore abort errors
-                    }
+                    controllers.forEach(controller => {
+                        try {
+                            controller.abort();
+                        } catch (err) {
+                            // ignore abort errors
+                        }
+                    });
+                    controllers.clear();
                 };
             }, [
                 showStats,
@@ -9020,6 +9063,7 @@ import {
             }, [burnoutChartModel, statsView]);
             const canRenderStatsPanel = Boolean(effectiveStatsData) || statsView === 'burnout' || statsView === 'cohort' || statsView === 'excludedCapacity' || statsView === 'monoCrossShare';
             const isLeadTimesFocusMode = showStats && statsView === 'cohort';
+            const shouldRenderEngTaskList = selectedView === 'eng' && !isStatsSourceOnlyStatsView;
             const groupTasksByEpic = (taskList) => {
                 const grouped = {};
                 taskList.forEach(task => {
@@ -11550,7 +11594,13 @@ import {
                                             }
                                             burnoutCacheRef.current = {};
                                             cohortCacheRef.current = {};
+                                            excludedCapacityCacheRef.current = {};
                                             loadSprints(true);
+                                            if (isStatsSourceOnlyStatsView) {
+                                                setExcludedCapacityData(null);
+                                                setExcludedCapacityError('');
+                                                return;
+                                            }
                                             loadProductTasks({ forceRefresh: true });
                                             loadTechTasks({ forceRefresh: true });
                                             loadReadyToCloseProductTasks({ forceRefresh: true });
@@ -13044,12 +13094,14 @@ import {
                                     </div>
 
                                     {excludedCapacityLoading && (
-                                        <div className="stats-note">Loading excluded capacity analytics...</div>
+                                        <div className="stats-note">
+                                            Loading excluded capacity analytics{excludedCapacityData?.meta?.totalSprintCount ? ` (${excludedCapacityData?.meta?.loadedSprintCount || 0}/${excludedCapacityData.meta.totalSprintCount} sprints)` : '...'}
+                                        </div>
                                     )}
-                                    {!excludedCapacityLoading && excludedCapacityError && (
+                                    {excludedCapacityError && excludedCapacityRows.length === 0 && (
                                         <div className="stats-note cohort-error">{excludedCapacityError}</div>
                                     )}
-                                    {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityWarnings.length > 0 && (
+                                    {!excludedCapacityError && excludedCapacityWarnings.length > 0 && (
                                         <div className="cohort-warnings">
                                             {excludedCapacityWarnings.map((warning, index) => (
                                                 <div key={`${warning}-${index}`}>- {warning}</div>
@@ -13059,7 +13111,7 @@ import {
                                     {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityRows.length === 0 && (
                                         <div className="cohort-empty">No excluded capacity stories found in the selected sprint range.</div>
                                     )}
-                                    {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityRows.length > 0 && (
+                                    {!excludedCapacityError && excludedCapacityRows.length > 0 && (
                                         <div className="excluded-capacity-panel">
                                             <div className="cohort-section cohort-section-fullbleed">
                                                 <div className="cohort-section-title">Excluded Capacity by Team and Sprint</div>
@@ -13131,15 +13183,17 @@ import {
                                     </div>
 
                                     {excludedCapacityLoading && (
-                                        <div className="stats-note">Loading mono vs cross share...</div>
+                                        <div className="stats-note">
+                                            Loading mono vs cross share{excludedCapacityData?.meta?.totalSprintCount ? ` (${excludedCapacityData?.meta?.loadedSprintCount || 0}/${excludedCapacityData.meta.totalSprintCount} sprints)` : '...'}
+                                        </div>
                                     )}
-                                    {!excludedCapacityLoading && excludedCapacityError && (
+                                    {excludedCapacityError && excludedCapacityModeOverall.totalPoints === 0 && (
                                         <div className="stats-note cohort-error">{excludedCapacityError}</div>
                                     )}
                                     {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityModeOverall.totalPoints === 0 && (
                                         <div className="cohort-empty">No epic share available for the current selection.</div>
                                     )}
-                                    {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityModeOverall.totalPoints > 0 && (
+                                    {!excludedCapacityError && excludedCapacityModeOverall.totalPoints > 0 && (
                                         <div className="excluded-capacity-panel">
                                             <div className="cohort-section">
                                                 <div className="cohort-section-title">Cross-Team Epic Footprint</div>
@@ -14210,121 +14264,122 @@ import {
                     )}
                     {!isLeadTimesFocusMode && (
                         <>
-                            {showBackToTop && (
+                            {shouldRenderEngTaskList && showBackToTop && (
                                 <button className="back-to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
                                     Back to top
                                 </button>
                             )}
 
-                            <EngView
-                                selectedView={selectedView}
-                                productTasksLoading={productTasksLoading}
-                                techTasksLoading={techTasksLoading}
-                                loading={loading}
-                                error={error}
-                                onRetry={fetchTasks}
-                                alertCelebrationPieces={alertCelebrationPieces}
-                                alertsPanel={(
-                                    <EngAlertsPanel
-                                        selectedView={selectedView}
-                                        alertItemCount={alertItemCount}
-                                        showAlertsPanel={showAlertsPanel}
-                                        setShowAlertsPanel={setShowAlertsPanel}
-                                        collapsed={!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert}
-                                        alertProps={{
-                                            analysisEpicTeams,
-                                            backlogEpicTeams,
-                                            backlogEpics,
-                                            blockedAlertTeams,
-                                            blockedTasks,
-                                            buildKeyListLink,
-                                            buildTeamStatusLink,
-                                            consolidatedMissingStories,
-                                            dismissAlertItem,
-                                            doneEpicTeams,
-                                            doneStoryEpics,
-                                            emptyEpicTeams,
-                                            emptyEpics,
-                                            emptyEpicsForAlert,
-                                            futureRoutedEpics,
-                                            getBlockedAlertStatusLabel,
-                                            getFuturePlanningNeedsStoriesReasonText,
-                                            handleAlertStoryClick,
-                                            isFutureSprintSelected,
-                                            jiraUrl,
-                                            missingAlertTeams,
-                                            missingLabelEpicTeams,
-                                            missingLabelEpics,
-                                            missingTeamEpicTeams,
-                                            missingTeamEpics,
-                                            needsStoriesEntries,
-                                            needsStoriesTeams,
-                                            postponedAlertTeams,
-                                            postponedEpicTeams,
-                                            postponedTasks,
-                                            setShowBacklogAlert,
-                                            setShowBlockedAlert,
-                                            setShowDoneEpicAlert,
-                                            setShowEmptyEpicAlert,
-                                            setShowMissingAlert,
-                                            setShowMissingLabelsAlert,
-                                            setShowMissingTeamAlert,
-                                            setShowNeedsStoriesAlert,
-                                            setShowPostponedAlert,
-                                            setShowWaitingAlert,
-                                            showBacklogAlert,
-                                            showBlockedAlert,
-                                            showDoneEpicAlert,
-                                            showEmptyEpicAlert,
-                                            showMissingAlert,
-                                            showMissingLabelsAlert,
-                                            showMissingTeamAlert,
-                                            showNeedsStoriesAlert,
-                                            showPostponedAlert,
-                                            showWaitingAlert,
-                                            waitingForStoriesEpics,
-                                        }}
-                                    />
-                                )}
-                                statusFilter={statusFilter}
-                                setStatusFilter={setStatusFilter}
-                                baseFilteredTasks={baseFilteredTasks}
-                                totalStoryPoints={totalStoryPoints}
-                                doneTasksCount={doneTasksCount}
-                                doneStoryPoints={doneStoryPoints}
-                                highPriorityCount={highPriorityCount}
-                                highPriorityStoryPoints={highPriorityStoryPoints}
-                                minorPriorityCount={minorPriorityCount}
-                                minorPriorityStoryPoints={minorPriorityStoryPoints}
-                                inProgressTasksCount={inProgressTasksCount}
-                                inProgressStoryPoints={inProgressStoryPoints}
-                                todoAcceptedTasksCount={todoAcceptedTasksCount}
-                                todoAcceptedStoryPoints={todoAcceptedStoryPoints}
-                                showTech={showTech}
-                                setShowTech={setShowTech}
-                                techTasksCount={techTasksCount}
-                                showProduct={showProduct}
-                                setShowProduct={setShowProduct}
-                                productTasksCount={productTasksCount}
-                                doneTasks={doneTasks}
-                                incompleteTasks={incompleteTasks}
-                                showDone={showDone}
-                                setShowDone={setShowDone}
-                                killedTasks={killedTasks}
-                                showKilled={showKilled}
-                                setShowKilled={setShowKilled}
-                                hasInitiativeData={hasInitiativeData}
-                                groupByInitiative={groupByInitiative}
-                                setGroupByInitiative={setGroupByInitiative}
-                                InitiativeIcon={InitiativeIcon}
-                                visibleTasksForList={visibleTasksForList}
-                                activeDependencyFocus={activeDependencyFocus}
-                                handleDependencyFocusClick={handleDependencyFocusClick}
-                                initiativeGroups={initiativeGroups}
-                                epicGroups={epicGroups}
-                                renderEpicBlock={renderEpicBlock}
-                                jiraUrl={jiraUrl}
-                            />
+                            {shouldRenderEngTaskList && (
+                                <EngView
+                                    selectedView={selectedView}
+                                    productTasksLoading={productTasksLoading}
+                                    techTasksLoading={techTasksLoading}
+                                    loading={loading}
+                                    error={error}
+                                    onRetry={fetchTasks}
+                                    alertCelebrationPieces={alertCelebrationPieces}
+                                    alertsPanel={(
+                                        <EngAlertsPanel
+                                            selectedView={selectedView}
+                                            alertItemCount={alertItemCount}
+                                            showAlertsPanel={showAlertsPanel}
+                                            setShowAlertsPanel={setShowAlertsPanel}
+                                            collapsed={!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert}
+                                            alertProps={{
+                                                analysisEpicTeams,
+                                                backlogEpicTeams,
+                                                backlogEpics,
+                                                blockedAlertTeams,
+                                                blockedTasks,
+                                                buildKeyListLink,
+                                                buildTeamStatusLink,
+                                                consolidatedMissingStories,
+                                                dismissAlertItem,
+                                                doneEpicTeams,
+                                                doneStoryEpics,
+                                                emptyEpicTeams,
+                                                emptyEpics,
+                                                emptyEpicsForAlert,
+                                                futureRoutedEpics,
+                                                getBlockedAlertStatusLabel,
+                                                getFuturePlanningNeedsStoriesReasonText,
+                                                handleAlertStoryClick,
+                                                isFutureSprintSelected,
+                                                jiraUrl,
+                                                missingAlertTeams,
+                                                missingLabelEpicTeams,
+                                                missingLabelEpics,
+                                                missingTeamEpicTeams,
+                                                missingTeamEpics,
+                                                needsStoriesEntries,
+                                                needsStoriesTeams,
+                                                postponedAlertTeams,
+                                                postponedEpicTeams,
+                                                postponedTasks,
+                                                setShowBacklogAlert,
+                                                setShowBlockedAlert,
+                                                setShowDoneEpicAlert,
+                                                setShowEmptyEpicAlert,
+                                                setShowMissingAlert,
+                                                setShowMissingLabelsAlert,
+                                                setShowMissingTeamAlert,
+                                                setShowNeedsStoriesAlert,
+                                                setShowPostponedAlert,
+                                                setShowWaitingAlert,
+                                                showBacklogAlert,
+                                                showBlockedAlert,
+                                                showDoneEpicAlert,
+                                                showEmptyEpicAlert,
+                                                showMissingAlert,
+                                                showMissingLabelsAlert,
+                                                showMissingTeamAlert,
+                                                showNeedsStoriesAlert,
+                                                showPostponedAlert,
+                                                showWaitingAlert,
+                                                waitingForStoriesEpics,
+                                            }}
+                                        />
+                                    )}
+                                    statusFilter={statusFilter}
+                                    setStatusFilter={setStatusFilter}
+                                    baseFilteredTasks={baseFilteredTasks}
+                                    totalStoryPoints={totalStoryPoints}
+                                    doneTasksCount={doneTasksCount}
+                                    doneStoryPoints={doneStoryPoints}
+                                    highPriorityCount={highPriorityCount}
+                                    highPriorityStoryPoints={highPriorityStoryPoints}
+                                    minorPriorityCount={minorPriorityCount}
+                                    minorPriorityStoryPoints={minorPriorityStoryPoints}
+                                    inProgressTasksCount={inProgressTasksCount}
+                                    inProgressStoryPoints={inProgressStoryPoints}
+                                    todoAcceptedTasksCount={todoAcceptedTasksCount}
+                                    todoAcceptedStoryPoints={todoAcceptedStoryPoints}
+                                    showTech={showTech}
+                                    setShowTech={setShowTech}
+                                    techTasksCount={techTasksCount}
+                                    showProduct={showProduct}
+                                    setShowProduct={setShowProduct}
+                                    productTasksCount={productTasksCount}
+                                    doneTasks={doneTasks}
+                                    incompleteTasks={incompleteTasks}
+                                    showDone={showDone}
+                                    setShowDone={setShowDone}
+                                    killedTasks={killedTasks}
+                                    showKilled={showKilled}
+                                    hasInitiativeData={hasInitiativeData}
+                                    groupByInitiative={groupByInitiative}
+                                    setGroupByInitiative={setGroupByInitiative}
+                                    InitiativeIcon={InitiativeIcon}
+                                    visibleTasksForList={visibleTasksForList}
+                                    activeDependencyFocus={activeDependencyFocus}
+                                    handleDependencyFocusClick={handleDependencyFocusClick}
+                                    initiativeGroups={initiativeGroups}
+                                    epicGroups={epicGroups}
+                                    renderEpicBlock={renderEpicBlock}
+                                    jiraUrl={jiraUrl}
+                                />
+                            )}
 
                             <IssueCardContext.Provider value={issueCardContext}>
                                 <EpmView

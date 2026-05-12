@@ -37,7 +37,7 @@ from backend.auth.cache_policy import (
     jira_home_partitioned_process_cache_enabled,
     jira_home_process_cache_enabled,
 )
-from backend.auth.context import RequestAuthContext, stable_local_workspace_id
+from backend.auth.context import RequestAuthContext, build_auth_cache_key, stable_local_workspace_id
 from backend.auth.admin_bootstrap import bootstrap_first_tool_admin
 from backend.auth.csrf import validate_csrf_token
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
@@ -151,6 +151,8 @@ EPIC_COHORT_ENRICH_TIMEOUT_SECONDS = float(os.getenv('EPIC_COHORT_ENRICH_TIMEOUT
 EXCLUDED_CAPACITY_STATS_MAX_SPRINTS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_SPRINTS', '24'))
 EXCLUDED_CAPACITY_STATS_MAX_ISSUES = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_ISSUES', '2000'))
 EXCLUDED_CAPACITY_STATS_MAX_EPICS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_EPICS', '200'))
+EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS = int(os.getenv('EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS', '3600'))
+EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE = int(os.getenv('EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE', '100'))
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
@@ -162,6 +164,7 @@ DEPENDENCIES_CACHE = {}
 DEPENDENCIES_CACHE_TTL_SECONDS = 60 * 5
 UPDATE_CHECK_CACHE = {'ts': 0, 'data': None}
 EPIC_COHORT_CACHE = {}
+EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE = {}
 EPM_PROJECTS_CACHE = {}
 EPM_ISSUES_CACHE = {}
 EPM_ROLLUP_CACHE = {}
@@ -2057,6 +2060,7 @@ def clear_auth_sensitive_caches(reason='auth_context_change'):
         MISSING_INFO_CACHE.clear()
         DEPENDENCIES_CACHE.clear()
         EPIC_COHORT_CACHE.clear()
+        EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE.clear()
         SCENARIO_CACHE['generatedAt'] = None
         SCENARIO_CACHE['data'] = None
         if 'PROJECTS_CACHE' in globals():
@@ -5984,6 +5988,64 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
     }
 
 
+def excluded_capacity_epic_summary_cache_key(epic_key, context=None):
+    normalized_key = str(epic_key or '').strip().upper()
+    if context is not None:
+        return build_auth_cache_key(context, 'excluded-capacity-epic-summary', normalized_key)
+    return ('excluded-capacity-epic-summary', 'basic', normalized_key)
+
+
+def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
+    normalized_keys = []
+    original_by_normalized = {}
+    for key in epic_keys or []:
+        original = str(key or '').strip()
+        normalized = original.upper()
+        if not normalized or normalized in original_by_normalized:
+            continue
+        original_by_normalized[normalized] = original
+        normalized_keys.append(normalized)
+
+    if not normalized_keys:
+        return {}
+
+    now = time.time()
+    summaries_by_normalized = {}
+    missing_keys = []
+    with _cache_lock:
+        for normalized in normalized_keys:
+            cache_key = excluded_capacity_epic_summary_cache_key(normalized, context=context)
+            entry = EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE.get(cache_key)
+            if entry and now - entry.get('timestamp', 0) < EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS:
+                summaries_by_normalized[normalized] = entry.get('summary', '')
+            else:
+                missing_keys.append(normalized)
+
+    batch_size = max(1, EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE)
+    for index in range(0, len(missing_keys), batch_size):
+        batch = missing_keys[index:index + batch_size]
+        fetched = {}
+        epic_records = fetch_issues_by_keys(batch, ['summary'], context=context)
+        for epic in epic_records:
+            key = str(epic.get('key') or '').strip().upper()
+            summary = str((epic.get('fields') or {}).get('summary') or '').strip()
+            if key:
+                fetched[key] = summary
+        with _cache_lock:
+            for normalized in batch:
+                summary = fetched.get(normalized, '')
+                EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE[excluded_capacity_epic_summary_cache_key(normalized, context=context)] = {
+                    'summary': summary,
+                    'timestamp': time.time()
+                }
+                summaries_by_normalized[normalized] = summary
+
+    return {
+        original_by_normalized[normalized]: summaries_by_normalized.get(normalized, '')
+        for normalized in normalized_keys
+    }
+
+
 def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None):
     team_field_id = resolve_team_field_id(None, context=context)
     epic_link_field_id = resolve_epic_link_field_id(None, context=context)
@@ -6059,17 +6121,7 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
             seen_epics.add(epic_key)
             epic_keys.append(epic_key)
 
-    epic_summary_by_key = {}
-    if epic_keys:
-        capped_epic_keys = epic_keys[:EXCLUDED_CAPACITY_STATS_MAX_EPICS]
-        if len(epic_keys) > EXCLUDED_CAPACITY_STATS_MAX_EPICS:
-            warnings.append(f'epic summary enrichment capped at {EXCLUDED_CAPACITY_STATS_MAX_EPICS} epics')
-        epic_records = fetch_issues_by_keys(capped_epic_keys, ['summary'], context=context)
-        for epic in epic_records:
-            key = epic.get('key')
-            summary = (epic.get('fields') or {}).get('summary')
-            if key and summary:
-                epic_summary_by_key[key] = summary
+    epic_summary_by_key = fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=context)
 
     issues_payload = [
         build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id, epic_summary_by_key, team_name_by_id)

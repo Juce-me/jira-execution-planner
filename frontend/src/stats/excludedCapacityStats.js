@@ -138,6 +138,62 @@ export function getSprintRange(sprints, startSprintId, endSprintId) {
     return ordered.slice(from, to + 1);
 }
 
+function isSuppressedSourceWarning(warning) {
+    return /epic summary enrichment capped/i.test(String(warning || ''));
+}
+
+function mergeIssuePayload(existing, incoming) {
+    if (!existing) return incoming;
+    const existingSummary = epicSummaryFor(existing);
+    const incomingSummary = epicSummaryFor(incoming);
+    if (existingSummary || !incomingSummary) return existing;
+    return {
+        ...existing,
+        fields: {
+            ...(existing.fields || {}),
+            epicSummary: incomingSummary
+        }
+    };
+}
+
+export function mergeExcludedCapacityStatsSourceChunks(chunks, options = {}) {
+    const issuesByKey = new Map();
+    const warnings = [];
+    const warningSet = new Set();
+    let queryPages = 0;
+    let issueLimit = 0;
+    (chunks || []).filter(Boolean).forEach(chunk => {
+        (chunk.issues || []).forEach(issue => {
+            const issueKey = normalizeKey(issue?.key || issue?.id || '');
+            if (!issueKey) return;
+            issuesByKey.set(issueKey, mergeIssuePayload(issuesByKey.get(issueKey), issue));
+        });
+        const meta = chunk.meta || {};
+        queryPages += Number(meta.queryPages || 0);
+        issueLimit = Math.max(issueLimit, Number(meta.issueLimit || 0));
+        (meta.warnings || []).forEach(warning => {
+            const text = String(warning || '').trim();
+            if (!text || isSuppressedSourceWarning(text) || warningSet.has(text)) return;
+            warningSet.add(text);
+            warnings.push(text);
+        });
+    });
+    const loadedSprintCount = Number(options.loadedSprintCount ?? (chunks || []).filter(Boolean).length);
+    const totalSprintCount = Number(options.totalSprintCount ?? loadedSprintCount);
+    return {
+        issues: Array.from(issuesByKey.values()),
+        meta: {
+            warnings,
+            truncated: warnings.length > 0,
+            paginationMode: 'progressive-sprint',
+            queryPages,
+            issueLimit,
+            loadedSprintCount,
+            totalSprintCount
+        }
+    };
+}
+
 export function buildExcludedEpicCatalog(tasks, options = {}) {
     const configured = (options.excludedEpicKeys || []).map(normalizeKey).filter(key => key && key !== 'NO_EPIC');
     if (!configured.length) return [];

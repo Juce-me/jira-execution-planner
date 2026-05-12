@@ -152,6 +152,33 @@ test('mono-cross team share renders as a per-sprint team line graph', () => {
     );
 });
 
+test('excluded-capacity stats source loads progressively and source-only tabs skip ENG task surfaces', () => {
+    assert.ok(
+        dashboardSource.includes('mergeExcludedCapacityStatsSourceChunks'),
+        'Expected dashboard to merge progressive excluded-capacity sprint chunks'
+    );
+    assert.ok(
+        dashboardSource.includes('sprintIds: [sprintId]'),
+        'Expected excluded-capacity stats source requests to load one sprint at a time'
+    );
+    assert.ok(
+        !dashboardSource.includes('sprintIds: excludedCapacitySprintIds,'),
+        'Excluded-capacity stats source should not request the whole sprint range in one blocking call'
+    );
+    assert.ok(
+        dashboardSource.includes("const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare');"),
+        'Expected source-only stats tabs to be identified explicitly'
+    );
+    assert.ok(
+        dashboardSource.includes('if (isStatsSourceOnlyStatsView) return;'),
+        'Expected ENG task fetch effect to skip source-only stats tabs'
+    );
+    assert.ok(
+        dashboardSource.includes('{shouldRenderEngTaskList && ('),
+        'Expected source-only stats tabs to hide the ENG filter/alert/task list surface'
+    );
+});
+
 test('excluded-capacity line chart legend uses native clickable controls', () => {
     assert.ok(
         /<button[^>]*className=\{`excluded-capacity-line-legend-item/.test(lineChartSource),

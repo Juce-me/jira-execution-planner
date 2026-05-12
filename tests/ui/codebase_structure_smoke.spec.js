@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
+const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const screenshotDir = '/tmp/codebase-structure-qa';
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -332,6 +333,7 @@ async function expectArchivedMetadataOnlyStickyContract(page) {
 }
 
 async function installApiMocks(page, calls, options = {}) {
+    await installDashboardShell(page);
     const configGate = options.delayConfig ? createDeferred() : null;
     const epmProjectCount = options.epmProjectCount || 1;
     const unexpectedCalls = [];
@@ -424,6 +426,15 @@ async function installApiMocks(page, calls, options = {}) {
             const tab = url.searchParams.get('tab') || 'active';
             return json({
                 projects: Array.from({ length: epmProjectCount }, (_, index) => epmProject(tab, index + 1)),
+            });
+        }
+        if (url.pathname === '/api/epm/goals') {
+            return json({
+                goals: [
+                    { id: 'root', key: 'ROOT-100', name: 'Synthetic Root Goal' },
+                    { id: 'child', key: 'CHILD-200', name: 'Synthetic Child Goal' },
+                ],
+                error: '',
             });
         }
         if (url.pathname === '/api/epm/projects/rollup/all') {
@@ -624,19 +635,21 @@ test('EPM all-project board can collapse and expand all visible projects', async
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await expect(page.locator('.epm-project-board')).toHaveCount(3);
     await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Collapse all projects' })).toBeVisible();
+    const collapseAllButton = page.getByRole('button', { name: 'Collapse all projects' }).first();
+    const expandAllButton = page.getByRole('button', { name: 'Expand all projects' }).first();
+    await expect(collapseAllButton).toBeVisible();
     await page.screenshot({ path: `${screenshotDir}/epm-collapse-all-projects.png`, fullPage: true });
 
-    await page.getByRole('button', { name: 'Collapse all projects' }).click();
+    await collapseAllButton.click();
     await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(3);
     await expect(page.locator('.epm-project-board:not(.is-collapsed) .epic-header')).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Expand all projects' }).click();
+    await expandAllButton.click();
     await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(0);
     await expect(page.locator('.epm-project-board:not(.is-collapsed) .epic-header')).toHaveCount(3);
 
     await page.getByRole('button', { name: 'Active Project 2' }).click();
     await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(1);
-    await expect(page.getByRole('button', { name: 'Collapse all projects' })).toBeVisible();
+    await expect(collapseAllButton).toBeVisible();
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });

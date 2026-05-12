@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
+const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const screenshotDir = '/tmp/header-update-badge-qa';
@@ -9,6 +10,7 @@ test.beforeAll(() => {
 });
 
 test('header update badge compacts while search is active', async ({ page }) => {
+    await installDashboardShell(page);
     await page.addInitScript(() => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
             selectedView: 'epm',

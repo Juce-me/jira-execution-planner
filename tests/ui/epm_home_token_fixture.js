@@ -91,33 +91,7 @@ async function installDashboardFixture(page, options = {}) {
     let currentConnection = options.connection || disconnectedHomeTokenConnection();
     let epmPrerequisite = Boolean(options.epmPrerequisite);
 
-    await page.route(`${appBaseUrl}/`, route => route.fulfill({
-        status: 200,
-        contentType: 'text/html',
-        body: dashboardHtml,
-    }));
-    await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
-        status: 200,
-        contentType: 'application/javascript',
-        body: dashboardJs,
-    }));
-    await page.route('**/frontend/dist/dashboard.css', route => route.fulfill({
-        status: 200,
-        contentType: 'text/css',
-        body: dashboardCss,
-    }));
-    await page.route('**/epm-burst.svg', route => route.fulfill({
-        status: 200,
-        contentType: 'image/svg+xml',
-        body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>',
-    }));
-    await page.route('**/favicon.ico', route => route.fulfill({ status: 204, body: '' }));
-    await page.route('https://fonts.googleapis.com/**', route => route.fulfill({
-        status: 200,
-        contentType: 'text/css',
-        body: '',
-    }));
-    await page.route('https://fonts.gstatic.com/**', route => route.fulfill({ status: 204, body: '' }));
+    await installDashboardShell(page);
 
     await page.route('**/api/**', async route => {
         const request = route.request();
@@ -247,6 +221,41 @@ async function installDashboardFixture(page, options = {}) {
     };
 }
 
+async function installDashboardShell(page) {
+    await page.route(/https?:\/\/[^/]+\/$/, route => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: dashboardHtml,
+    }));
+    await page.route('**/jira-dashboard.html', route => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: dashboardHtml,
+    }));
+    await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: dashboardJs,
+    }));
+    await page.route('**/frontend/dist/dashboard.css', route => route.fulfill({
+        status: 200,
+        contentType: 'text/css',
+        body: dashboardCss,
+    }));
+    await page.route('**/epm-burst.svg', route => route.fulfill({
+        status: 200,
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>',
+    }));
+    await page.route('**/favicon.ico', route => route.fulfill({ status: 204, body: '' }));
+    await page.route('https://fonts.googleapis.com/**', route => route.fulfill({
+        status: 200,
+        contentType: 'text/css',
+        body: '',
+    }));
+    await page.route('https://fonts.gstatic.com/**', route => route.fulfill({ status: 204, body: '' }));
+}
+
 function epmMetadataCalls(calls) {
     return calls.filter(call => (
         call.pathname === '/api/epm/goals' ||
@@ -271,6 +280,7 @@ module.exports = {
     disconnectedHomeTokenConnection,
     epmMetadataCalls,
     installDashboardFixture,
+    installDashboardShell,
     openConnectionsSettings,
     selectedSprintId,
     selectedSprintName,

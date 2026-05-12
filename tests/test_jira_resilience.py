@@ -197,7 +197,7 @@ class TestJiraResilience(unittest.TestCase):
 
     def test_api_test_endpoint_fast_fails_when_circuit_is_open(self):
         breaker = jira_server.JiraCircuitBreaker(failure_threshold=1, open_seconds=30)
-        breaker.force_open(now=0.0)
+        breaker.force_open()
 
         with patch.object(jira_server, 'JIRA_SEARCH_CIRCUIT_BREAKER', breaker):
             client = jira_server.app.test_client()

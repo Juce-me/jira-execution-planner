@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const screenshotDir = '/tmp/epm-multi-subgoal-qa';
@@ -53,6 +54,7 @@ function emptyRollup(project) {
 }
 
 test('EPM multi sub-goal visual smoke', async ({ page }) => {
+    await installDashboardShell(page);
     await page.addInitScript(() => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
             selectedView: 'epm',
@@ -138,6 +140,7 @@ test('EPM multi sub-goal visual smoke', async ({ page }) => {
 });
 
 test('EPM sub-goal filter resolves saved sibling names before narrowing', async ({ page }) => {
+    await installDashboardShell(page);
     await page.addInitScript(() => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
             selectedView: 'epm',

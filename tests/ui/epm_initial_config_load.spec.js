@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const epmConfig = {
     version: 2,
@@ -37,6 +38,7 @@ const epmProject = {
 
 async function mockDashboardLoad(page) {
     const calls = [];
+    await installDashboardShell(page);
     await page.addInitScript(() => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
             selectedView: 'epm',

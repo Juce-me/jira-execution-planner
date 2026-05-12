@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
+const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const screenshotDir = '/tmp/eng-dependency-chip-qa';
@@ -33,6 +34,7 @@ function story(key, status, summary) {
 }
 
 test('ENG blocked-by chip turns green when blockers are done', async ({ page }) => {
+    await installDashboardShell(page);
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {

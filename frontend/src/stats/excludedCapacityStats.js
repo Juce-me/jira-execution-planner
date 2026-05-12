@@ -320,7 +320,18 @@ export function buildEpicTeamModeShare(tasks, options = {}) {
     const selectedSprints = Array.isArray(options.sprints) ? options.sprints : [];
     const sprintBuckets = selectedSprints.length ? selectedSprints : [{ id: 'all', name: 'All selected sprints' }];
     const classifications = classifyEpicTeamMode(excludedTasks, { sprints: selectedSprints });
-    const byTeam = new Map();
+    const explicitTeams = (options.teams || [])
+        .map(team => ({
+            id: normalizeId(team?.id || team?.name || 'unknown') || 'unknown',
+            name: String(team?.name || team?.id || 'Unknown Team').trim() || 'Unknown Team'
+        }))
+        .filter(team => team.id);
+    const byTeam = new Map(explicitTeams.map(team => [team.id, {
+        teamId: team.id,
+        teamName: team.name,
+        monoPoints: 0,
+        crossPoints: 0
+    }]));
 
     excludedTasks.forEach(task => {
         const team = teamFor(task);
@@ -330,6 +341,9 @@ export function buildEpicTeamModeShare(tasks, options = {}) {
             monoPoints: 0,
             crossPoints: 0
         };
+        if (entry.teamName === entry.teamId && team.name && team.name !== team.id) {
+            entry.teamName = team.name;
+        }
         const points = storyPointsFor(task);
         const matchingSprints = sprintBuckets.filter(sprint => {
             if (!selectedSprints.length) return true;

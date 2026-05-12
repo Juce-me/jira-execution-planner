@@ -222,6 +222,31 @@ test('buildEpicTeamModeShare classifies cross only from story teams in the same 
     assert.equal(overall.crossPercent, 0.6);
 });
 
+test('buildEpicTeamModeShare keeps scoped teams that have no excluded stories', async () => {
+    const { buildEpicTeamModeShare } = await loadModule();
+    const sprints = [{ id: 101, name: 'S1', startDate: '2025-10-01' }];
+    const tasks = [
+        story({ key: 'SYN-1', epicKey: 'BAU-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 3 }),
+        story({ key: 'SYN-2', epicKey: 'PLAN-1', teamId: 'team-beta', teamName: 'Beta', sprintId: 101, sprintName: 'S1', points: 5 })
+    ];
+    const rows = buildEpicTeamModeShare(tasks, {
+        excludedEpicKeys: ['BAU-1'],
+        sprints,
+        teams: [
+            { id: 'team-alpha', name: 'Alpha' },
+            { id: 'team-beta', name: 'Beta' }
+        ]
+    });
+
+    assert.deepEqual(
+        rows.map(row => ({ teamId: row.teamId, mono: row.monoPoints, cross: row.crossPoints, total: row.totalPoints })),
+        [
+            { teamId: 'team-alpha', mono: 3, cross: 0, total: 3 },
+            { teamId: 'team-beta', mono: 0, cross: 0, total: 0 }
+        ]
+    );
+});
+
 test('buildEpicTeamModeOverall classifies the same epic separately per sprint', async () => {
     const { buildEpicTeamModeOverall } = await loadModule();
     const sprints = [

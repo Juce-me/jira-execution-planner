@@ -6451,6 +6451,7 @@ import {
                     excludedEpicKeys: excludedCapacityEpicOptions,
                     excludedEpicKeyFilters: excludedCapacityActiveFilters,
                     sprints: excludedCapacitySprintRange,
+                    teams: excludedCapacityTeams,
                     dependencies: excludedCapacityDependencies
                 });
             }, [
@@ -6458,6 +6459,7 @@ import {
                 excludedCapacityEpicOptions,
                 excludedCapacityActiveFilters,
                 excludedCapacitySprintRange,
+                excludedCapacityTeams,
                 excludedCapacityDependencies
             ]);
             const excludedCapacityModeOverall = React.useMemo(() => {
@@ -6465,6 +6467,7 @@ import {
                     excludedEpicKeys: excludedCapacityEpicOptions,
                     excludedEpicKeyFilters: excludedCapacityActiveFilters,
                     sprints: excludedCapacitySprintRange,
+                    teams: excludedCapacityTeams,
                     dependencies: excludedCapacityDependencies
                 });
             }, [
@@ -6472,6 +6475,7 @@ import {
                 excludedCapacityEpicOptions,
                 excludedCapacityActiveFilters,
                 excludedCapacitySprintRange,
+                excludedCapacityTeams,
                 excludedCapacityDependencies
             ]);
             const excludedCapacityTotals = React.useMemo(() => {

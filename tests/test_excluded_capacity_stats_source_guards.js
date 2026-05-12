@@ -27,6 +27,8 @@ test('dashboard wires excluded-capacity analytics into the existing Statistics v
 });
 
 test('excluded-capacity analytics has dedicated chart styling', () => {
-    assert.ok(cssSource.includes('.excluded-capacity-chart'), 'Expected excluded capacity chart CSS');
+    assert.ok(cssSource.includes('.excluded-capacity-line-chart'), 'Expected excluded capacity line chart CSS');
+    assert.ok(cssSource.includes('.excluded-capacity-line-legend'), 'Expected line chart legend CSS for click-to-isolate');
+    assert.ok(cssSource.includes('.excluded-capacity-epic-menu'), 'Expected multi-select excluded epic menu CSS');
     assert.ok(cssSource.includes('.epic-mode-bars'), 'Expected mono/cross epic mode chart CSS');
 });

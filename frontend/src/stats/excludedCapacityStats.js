@@ -25,6 +25,12 @@ function epicKeyFor(task) {
     return normalizeKey(task?.fields?.epicKey || task?.epicKey || 'NO_EPIC') || 'NO_EPIC';
 }
 
+function epicSummaryFor(task) {
+    const fields = task?.fields || {};
+    const summary = fields.epicSummary ?? task?.epicSummary ?? fields.parentSummary ?? task?.parentSummary ?? '';
+    return String(summary || '').trim();
+}
+
 function collectSprintTokens(value, tokens) {
     if (value === null || value === undefined) return;
     if (Array.isArray(value)) {
@@ -75,6 +81,16 @@ function roundMetric(value) {
     return Math.round((Number(value) || 0) * 1000) / 1000;
 }
 
+function normalizeFilterKeys(options) {
+    if (Array.isArray(options?.excludedEpicKeyFilters)) {
+        const filters = options.excludedEpicKeyFilters.map(normalizeKey).filter(Boolean);
+        if (filters.length) return new Set(filters);
+    }
+    const single = normalizeKey(options?.excludedEpicKeyFilter || '');
+    if (single) return new Set([single]);
+    return null;
+}
+
 export function getSprintQuarterLabel(sprint) {
     const name = String(sprint?.name || '').trim();
     const nameMatch = name.match(/\b(20\d{2})\s*Q([1-4])\b/i);
@@ -122,10 +138,39 @@ export function getSprintRange(sprints, startSprintId, endSprintId) {
     return ordered.slice(from, to + 1);
 }
 
+export function buildExcludedEpicCatalog(tasks, options = {}) {
+    const configured = (options.excludedEpicKeys || []).map(normalizeKey).filter(key => key && key !== 'NO_EPIC');
+    if (!configured.length) return [];
+    const summariesByKey = new Map();
+    (tasks || []).forEach(task => {
+        const key = epicKeyFor(task);
+        if (!summariesByKey.has(key)) {
+            const summary = epicSummaryFor(task);
+            if (summary) summariesByKey.set(key, summary);
+        }
+    });
+    return configured.map(key => ({
+        key,
+        summary: summariesByKey.get(key) || ''
+    })).sort((a, b) => {
+        const aLabel = (a.summary || a.key).toLowerCase();
+        const bLabel = (b.summary || b.key).toLowerCase();
+        return aLabel.localeCompare(bLabel);
+    });
+}
+
+const AUTOSELECT_SUMMARY_PATTERN = /\b(bau|ad[\s_-]?hoc)\b/i;
+
+export function pickAutoSelectedExcludedEpics(catalog) {
+    return (catalog || [])
+        .filter(entry => entry && entry.summary && AUTOSELECT_SUMMARY_PATTERN.test(entry.summary))
+        .map(entry => entry.key);
+}
+
 export function buildExcludedCapacityTimeSeries(tasks, sprints, options = {}) {
     const excludedKeys = new Set((options.excludedEpicKeys || []).map(normalizeKey).filter(Boolean));
-    const filterKey = normalizeKey(options.excludedEpicKeyFilter || '');
-    const numeratorKeys = filterKey ? new Set([filterKey]) : excludedKeys;
+    const filterSet = normalizeFilterKeys(options);
+    const numeratorKeys = filterSet ? filterSet : excludedKeys;
     const explicitTeams = (options.teams || [])
         .map(team => ({
             id: normalizeId(team?.id || team?.name || 'unknown') || 'unknown',
@@ -172,6 +217,68 @@ export function buildExcludedCapacityTimeSeries(tasks, sprints, options = {}) {
     return rows;
 }
 
+export function buildExcludedCapacityLineSeries(tasks, sprints, options = {}) {
+    const mode = options.mode === 'group' ? 'group' : 'teams';
+    const rows = buildExcludedCapacityTimeSeries(tasks, sprints, options);
+    const orderedSprints = (sprints || []).map(sprint => ({
+        sprintId: normalizeId(sprint?.id),
+        sprintName: String(sprint?.name || sprint?.id || '').trim(),
+        quarter: getSprintQuarterLabel(sprint)
+    }));
+
+    if (mode === 'group') {
+        const groupLabel = String(options.groupName || 'Group').trim() || 'Group';
+        const points = orderedSprints.map(sprint => {
+            const sprintRows = rows.filter(row => row.sprintId === sprint.sprintId);
+            const total = sprintRows.reduce((sum, row) => sum + (row.totalPoints || 0), 0);
+            const excluded = sprintRows.reduce((sum, row) => sum + (row.excludedPoints || 0), 0);
+            return {
+                sprintId: sprint.sprintId,
+                sprintName: sprint.sprintName,
+                quarter: sprint.quarter,
+                totalPoints: roundMetric(total),
+                excludedPoints: roundMetric(excluded),
+                percent: total > 0 ? roundMetric(excluded / total) : 0
+            };
+        });
+        return {
+            mode: 'group',
+            sprints: orderedSprints,
+            series: [{
+                seriesId: 'group',
+                label: groupLabel,
+                points
+            }]
+        };
+    }
+
+    const teamMap = new Map();
+    rows.forEach(row => {
+        if (!teamMap.has(row.teamId)) {
+            teamMap.set(row.teamId, { seriesId: row.teamId, label: row.teamName, points: [] });
+        }
+    });
+    teamMap.forEach(entry => {
+        entry.points = orderedSprints.map(sprint => {
+            const match = rows.find(row => row.teamId === entry.seriesId && row.sprintId === sprint.sprintId);
+            return {
+                sprintId: sprint.sprintId,
+                sprintName: sprint.sprintName,
+                quarter: sprint.quarter,
+                totalPoints: match ? match.totalPoints : 0,
+                excludedPoints: match ? match.excludedPoints : 0,
+                percent: match ? match.percent : 0
+            };
+        });
+    });
+    const series = Array.from(teamMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+    return {
+        mode: 'teams',
+        sprints: orderedSprints,
+        series
+    };
+}
+
 export function classifyEpicTeamMode(tasks, options = {}) {
     const dependencies = options.dependencies || {};
     const byEpic = new Map();
@@ -197,8 +304,8 @@ export function classifyEpicTeamMode(tasks, options = {}) {
 
 export function buildEpicTeamModeShare(tasks, options = {}) {
     const excludedKeys = new Set((options.excludedEpicKeys || []).map(normalizeKey).filter(Boolean));
-    const filterKey = normalizeKey(options.excludedEpicKeyFilter || '');
-    const scopedExcludedKeys = filterKey ? new Set([filterKey]) : excludedKeys;
+    const filterSet = normalizeFilterKeys(options);
+    const scopedExcludedKeys = filterSet ? filterSet : excludedKeys;
     const excludedTasks = (tasks || []).filter(task => scopedExcludedKeys.has(epicKeyFor(task)));
     const classifications = classifyEpicTeamMode(excludedTasks, { dependencies: options.dependencies });
     const byTeam = new Map();
@@ -233,4 +340,21 @@ export function buildEpicTeamModeShare(tasks, options = {}) {
             };
         })
         .sort((a, b) => a.teamName.localeCompare(b.teamName));
+}
+
+export function buildEpicTeamModeOverall(tasks, options = {}) {
+    const rows = buildEpicTeamModeShare(tasks, options);
+    const totals = rows.reduce((acc, row) => {
+        acc.monoPoints += row.monoPoints;
+        acc.crossPoints += row.crossPoints;
+        return acc;
+    }, { monoPoints: 0, crossPoints: 0 });
+    const totalPoints = totals.monoPoints + totals.crossPoints;
+    return {
+        monoPoints: roundMetric(totals.monoPoints),
+        crossPoints: roundMetric(totals.crossPoints),
+        totalPoints: roundMetric(totalPoints),
+        monoPercent: totalPoints > 0 ? roundMetric(totals.monoPoints / totalPoints) : 0,
+        crossPercent: totalPoints > 0 ? roundMetric(totals.crossPoints / totalPoints) : 0
+    };
 }

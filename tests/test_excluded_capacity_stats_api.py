@@ -62,6 +62,12 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
             },
         }
 
+        bau_epic = {
+            "id": "20001",
+            "key": "BAU-1",
+            "fields": {"summary": "BAU Workstream"},
+        }
+
         responses = [
             FakeJiraResponse({
                 "issues": [base_issue],
@@ -81,6 +87,10 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
                     sprint_field: "Sprint",
                     story_points_field: "Story Points",
                 },
+                "isLast": True,
+            }),
+            FakeJiraResponse({
+                "issues": [bau_epic],
                 "isLast": True,
             }),
         ]
@@ -105,6 +115,7 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
         self.assertEqual(payload["meta"]["paginationMode"], "nextPageToken/isLast")
         self.assertEqual(payload["issues"][0]["key"], "SYN-1")
         self.assertEqual(payload["issues"][0]["fields"]["epicKey"], "BAU-1")
+        self.assertEqual(payload["issues"][0]["fields"]["epicSummary"], "BAU Workstream")
         self.assertEqual(payload["issues"][0]["fields"]["teamId"], "team-alpha")
         self.assertEqual(payload["dependencies"]["SYN-1"][0]["teamId"], "team-beta")
 

@@ -93,6 +93,7 @@ EPIC_COHORT_ENRICH_TIMEOUT_SECONDS = float(os.getenv('EPIC_COHORT_ENRICH_TIMEOUT
 EXCLUDED_CAPACITY_STATS_MAX_SPRINTS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_SPRINTS', '24'))
 EXCLUDED_CAPACITY_STATS_MAX_ISSUES = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_ISSUES', '2000'))
 EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_LINKED_ISSUES', '500'))
+EXCLUDED_CAPACITY_STATS_MAX_EPICS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_EPICS', '200'))
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE = {}
@@ -5027,7 +5028,7 @@ def build_excluded_capacity_stats_jql(sprint_ids, team_ids=None):
     return base_jql
 
 
-def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id):
+def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id, epic_summary_by_key=None):
     fields = issue.get('fields', {}) or {}
     raw_team = fields.get(team_field_id) if team_field_id and fields.get(team_field_id) is not None else None
     team_payload = build_team_value(raw_team) if raw_team is not None else {}
@@ -5037,11 +5038,19 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
         team_name = extract_team_name(raw_team)
 
     epic_key = None
+    parent_field = fields.get('parent') or {}
+    parent_summary = (parent_field.get('fields') or {}).get('summary')
     if epic_link_field_id and fields.get(epic_link_field_id):
         epic_key = fields.get(epic_link_field_id)
-    elif fields.get('parent') and fields['parent'].get('key') and \
-            fields['parent'].get('fields', {}).get('issuetype', {}).get('name', '').lower() == 'epic':
-        epic_key = fields['parent'].get('key')
+    elif parent_field.get('key') and \
+            (parent_field.get('fields') or {}).get('issuetype', {}).get('name', '').lower() == 'epic':
+        epic_key = parent_field.get('key')
+
+    epic_summary = ''
+    if epic_summary_by_key and epic_key:
+        epic_summary = str(epic_summary_by_key.get(epic_key) or '').strip()
+    if not epic_summary and epic_key and parent_field.get('key') == epic_key and parent_summary:
+        epic_summary = str(parent_summary or '').strip()
 
     status = fields.get('status') or {}
     priority = fields.get('priority') or {}
@@ -5066,8 +5075,9 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
             'teamName': team_name,
             'teamId': team_id,
             'epicKey': epic_key,
+            'epicSummary': epic_summary,
             'customfield_10101': normalized_sprints,
-            'parentSummary': fields.get('parent', {}).get('fields', {}).get('summary'),
+            'parentSummary': parent_summary,
             'projectKey': project_field.get('key', ''),
             'projectName': project_field.get('name', '')
         }
@@ -5220,8 +5230,37 @@ def fetch_excluded_capacity_stats_source(sprint_ids, headers, team_ids=None):
         epic_link_field_id
     )
     warnings.extend(linked_warnings)
+
+    epic_keys = []
+    seen_epics = set()
+    for issue in collected_issues:
+        issue_fields = issue.get('fields', {}) or {}
+        epic_key = None
+        if epic_link_field_id and issue_fields.get(epic_link_field_id):
+            epic_key = issue_fields.get(epic_link_field_id)
+        else:
+            parent_field = issue_fields.get('parent') or {}
+            if parent_field.get('key') and \
+                    (parent_field.get('fields') or {}).get('issuetype', {}).get('name', '').lower() == 'epic':
+                epic_key = parent_field.get('key')
+        if epic_key and epic_key not in seen_epics:
+            seen_epics.add(epic_key)
+            epic_keys.append(epic_key)
+
+    epic_summary_by_key = {}
+    if epic_keys:
+        capped_epic_keys = epic_keys[:EXCLUDED_CAPACITY_STATS_MAX_EPICS]
+        if len(epic_keys) > EXCLUDED_CAPACITY_STATS_MAX_EPICS:
+            warnings.append(f'epic summary enrichment capped at {EXCLUDED_CAPACITY_STATS_MAX_EPICS} epics')
+        epic_records = fetch_issues_by_keys(capped_epic_keys, headers, ['summary'])
+        for epic in epic_records:
+            key = epic.get('key')
+            summary = (epic.get('fields') or {}).get('summary')
+            if key and summary:
+                epic_summary_by_key[key] = summary
+
     issues_payload = [
-        build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id)
+        build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id, epic_summary_by_key)
         for issue in collected_issues
     ]
 

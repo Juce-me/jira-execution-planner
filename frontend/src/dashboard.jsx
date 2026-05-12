@@ -32,12 +32,17 @@ import {
 } from './cohort/cohortUtils.js';
 import {
     buildDefaultExcludedCapacityRange,
+    buildEpicTeamModeOverall,
     buildEpicTeamModeShare,
+    buildExcludedCapacityLineSeries,
     buildExcludedCapacityTimeSeries,
+    buildExcludedEpicCatalog,
     compareSprintsChronologically,
     getSprintRange,
-    getSprintQuarterLabel
+    getSprintQuarterLabel,
+    pickAutoSelectedExcludedEpics
 } from './stats/excludedCapacityStats.js';
+import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
@@ -556,7 +561,22 @@ import {
             const [excludedCapacityError, setExcludedCapacityError] = useState('');
             const [excludedCapacityStartSprintId, setExcludedCapacityStartSprintId] = useState(savedPrefsRef.current.excludedCapacityStartSprintId || '');
             const [excludedCapacityEndSprintId, setExcludedCapacityEndSprintId] = useState(savedPrefsRef.current.excludedCapacityEndSprintId || '');
-            const [excludedCapacityEpicFilter, setExcludedCapacityEpicFilter] = useState(savedPrefsRef.current.excludedCapacityEpicFilter || 'all');
+            const [excludedCapacitySelectedEpicKeys, setExcludedCapacitySelectedEpicKeys] = useState(() => {
+                const saved = savedPrefsRef.current.excludedCapacitySelectedEpicKeys;
+                if (Array.isArray(saved)) {
+                    return saved.map(key => String(key || '').trim().toUpperCase()).filter(Boolean);
+                }
+                return null;
+            });
+            const [excludedCapacityChartMode, setExcludedCapacityChartMode] = useState(
+                savedPrefsRef.current.excludedCapacityChartMode === 'group' ? 'group' : 'teams'
+            );
+            const [excludedCapacityMetric, setExcludedCapacityMetric] = useState(
+                savedPrefsRef.current.excludedCapacityMetric === 'storyPoints' ? 'storyPoints' : 'percent'
+            );
+            const [excludedCapacityIsolatedTeam, setExcludedCapacityIsolatedTeam] = useState(null);
+            const [excludedCapacityEpicDropdownOpen, setExcludedCapacityEpicDropdownOpen] = useState(false);
+            const excludedCapacityEpicDropdownRef = useRef(null);
             const [burnoutHoverPoint, setBurnoutHoverPoint] = useState(null);
             const [burnoutHoverTeamKey, setBurnoutHoverTeamKey] = useState(null);
             const [burnoutTaskFilter, setBurnoutTaskFilter] = useState(null);
@@ -4725,7 +4745,9 @@ import {
                     cohortStatusToggles,
                     excludedCapacityStartSprintId,
                     excludedCapacityEndSprintId,
-                    excludedCapacityEpicFilter,
+                    excludedCapacitySelectedEpicKeys,
+                    excludedCapacityChartMode,
+                    excludedCapacityMetric,
                     scenarioLaneMode,
                     excludedStatsEpics,
                     hideExcludedStats,
@@ -4771,7 +4793,9 @@ import {
                 cohortStatusToggles,
                 excludedCapacityStartSprintId,
                 excludedCapacityEndSprintId,
-                excludedCapacityEpicFilter,
+                excludedCapacitySelectedEpicKeys,
+                excludedCapacityChartMode,
+                excludedCapacityMetric,
                 scenarioLaneMode,
                 excludedStatsEpics,
                 hideExcludedStats,
@@ -6117,12 +6141,6 @@ import {
                     .filter(key => key && key !== 'NO_EPIC')
                     .sort((a, b) => a.localeCompare(b));
             }, [excludedEpicSet]);
-            useEffect(() => {
-                if (excludedCapacityEpicFilter === 'all') return;
-                if (!excludedCapacityEpicOptions.includes(excludedCapacityEpicFilter)) {
-                    setExcludedCapacityEpicFilter('all');
-                }
-            }, [excludedCapacityEpicFilter, excludedCapacityEpicOptions]);
             const excludedCapacityScopedTeamIds = React.useMemo(() => {
                 if (isAllTeamsSelected) {
                     return Array.from(new Set((activeGroupTeamIds || []).map(id => String(id || '').trim()).filter(Boolean))).sort();
@@ -6242,41 +6260,91 @@ import {
             const excludedCapacityDependencies = React.useMemo(() => {
                 return excludedCapacityData?.dependencies || {};
             }, [excludedCapacityData]);
-            const excludedCapacitySelectedEpic = excludedCapacityEpicFilter === 'all' ? '' : excludedCapacityEpicFilter;
+            const excludedCapacityEpicCatalog = React.useMemo(() => {
+                return buildExcludedEpicCatalog(excludedCapacityIssues, {
+                    excludedEpicKeys: excludedCapacityEpicOptions
+                });
+            }, [excludedCapacityIssues, excludedCapacityEpicOptions]);
+            const excludedCapacityEpicLabelByKey = React.useMemo(() => {
+                const map = new Map();
+                excludedCapacityEpicCatalog.forEach(entry => {
+                    map.set(entry.key, entry.summary || entry.key);
+                });
+                return map;
+            }, [excludedCapacityEpicCatalog]);
+            useEffect(() => {
+                if (excludedCapacitySelectedEpicKeys === null && excludedCapacityEpicCatalog.length) {
+                    const auto = pickAutoSelectedExcludedEpics(excludedCapacityEpicCatalog);
+                    setExcludedCapacitySelectedEpicKeys(auto);
+                }
+            }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicCatalog]);
+            useEffect(() => {
+                if (!Array.isArray(excludedCapacitySelectedEpicKeys)) return;
+                const valid = new Set(excludedCapacityEpicOptions);
+                const filtered = excludedCapacitySelectedEpicKeys.filter(key => valid.has(key));
+                if (filtered.length !== excludedCapacitySelectedEpicKeys.length) {
+                    setExcludedCapacitySelectedEpicKeys(filtered);
+                }
+            }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicOptions]);
+            const excludedCapacityEffectiveFilters = React.useMemo(() => {
+                if (!Array.isArray(excludedCapacitySelectedEpicKeys)) return [];
+                return excludedCapacitySelectedEpicKeys.filter(key => excludedCapacityEpicOptions.includes(key));
+            }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicOptions]);
+            const excludedCapacityActiveFilters = excludedCapacityEffectiveFilters.length
+                ? excludedCapacityEffectiveFilters
+                : excludedCapacityEpicOptions;
             const excludedCapacityRows = React.useMemo(() => {
                 return buildExcludedCapacityTimeSeries(excludedCapacityIssues, excludedCapacitySprintRange, {
                     excludedEpicKeys: excludedCapacityEpicOptions,
-                    excludedEpicKeyFilter: excludedCapacitySelectedEpic,
+                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
                     teams: excludedCapacityTeams
                 });
             }, [
                 excludedCapacityIssues,
                 excludedCapacitySprintRange,
                 excludedCapacityEpicOptions,
-                excludedCapacitySelectedEpic,
+                excludedCapacityActiveFilters,
                 excludedCapacityTeams
             ]);
-            const excludedCapacitySprintGroups = React.useMemo(() => {
-                return excludedCapacitySprintRange.map(sprint => {
-                    const sprintId = String(sprint.id);
-                    return {
-                        sprint,
-                        sprintId,
-                        quarter: getSprintQuarterLabel(sprint),
-                        rows: excludedCapacityRows.filter(row => row.sprintId === sprintId)
-                    };
+            const excludedCapacityLineSeries = React.useMemo(() => {
+                return buildExcludedCapacityLineSeries(excludedCapacityIssues, excludedCapacitySprintRange, {
+                    excludedEpicKeys: excludedCapacityEpicOptions,
+                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
+                    teams: excludedCapacityTeams,
+                    mode: excludedCapacityChartMode,
+                    groupName: activeGroup?.name || 'Group'
                 });
-            }, [excludedCapacitySprintRange, excludedCapacityRows]);
+            }, [
+                excludedCapacityIssues,
+                excludedCapacitySprintRange,
+                excludedCapacityEpicOptions,
+                excludedCapacityActiveFilters,
+                excludedCapacityTeams,
+                excludedCapacityChartMode,
+                activeGroup?.name
+            ]);
             const excludedCapacityModeRows = React.useMemo(() => {
                 return buildEpicTeamModeShare(excludedCapacityIssues, {
                     excludedEpicKeys: excludedCapacityEpicOptions,
-                    excludedEpicKeyFilter: excludedCapacitySelectedEpic,
+                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
                     dependencies: excludedCapacityDependencies
                 });
             }, [
                 excludedCapacityIssues,
                 excludedCapacityEpicOptions,
-                excludedCapacitySelectedEpic,
+                excludedCapacityActiveFilters,
+                excludedCapacityDependencies
+            ]);
+            const excludedCapacityModeOverall = React.useMemo(() => {
+                return buildEpicTeamModeOverall(excludedCapacityIssues, {
+                    excludedEpicKeys: excludedCapacityEpicOptions,
+                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
+                    dependencies: excludedCapacityDependencies
+                });
+            }, [
+                excludedCapacityIssues,
+                excludedCapacityEpicOptions,
+                excludedCapacityActiveFilters,
                 excludedCapacityDependencies
             ]);
             const excludedCapacityTotals = React.useMemo(() => {
@@ -6294,11 +6362,50 @@ import {
                 const warnings = excludedCapacityData?.meta?.warnings;
                 return Array.isArray(warnings) ? warnings : [];
             }, [excludedCapacityData]);
+            useEffect(() => {
+                if (excludedCapacityChartMode !== 'teams' && excludedCapacityIsolatedTeam) {
+                    setExcludedCapacityIsolatedTeam(null);
+                    return;
+                }
+                if (!excludedCapacityIsolatedTeam) return;
+                const known = new Set((excludedCapacityLineSeries.series || []).map(item => item.seriesId));
+                if (!known.has(excludedCapacityIsolatedTeam)) {
+                    setExcludedCapacityIsolatedTeam(null);
+                }
+            }, [excludedCapacityChartMode, excludedCapacityIsolatedTeam, excludedCapacityLineSeries.series]);
             const formatExcludedPoints = (value) => {
                 const numeric = Number(value || 0);
                 if (!Number.isFinite(numeric)) return '0.0';
                 return numeric.toFixed(1);
             };
+            const toggleExcludedCapacityEpicKey = (epicKey) => {
+                const normalized = String(epicKey || '').trim().toUpperCase();
+                if (!normalized) return;
+                setExcludedCapacitySelectedEpicKeys(prev => {
+                    const base = Array.isArray(prev) ? prev.slice() : [];
+                    const index = base.indexOf(normalized);
+                    if (index >= 0) base.splice(index, 1);
+                    else base.push(normalized);
+                    return base;
+                });
+            };
+            const clearExcludedCapacityEpicSelection = () => {
+                setExcludedCapacitySelectedEpicKeys([]);
+            };
+            const selectAllExcludedCapacityEpics = () => {
+                setExcludedCapacitySelectedEpicKeys(excludedCapacityEpicOptions.slice());
+            };
+            useEffect(() => {
+                if (!excludedCapacityEpicDropdownOpen) return;
+                const handleClickOutside = (event) => {
+                    const node = excludedCapacityEpicDropdownRef.current;
+                    if (node && !node.contains(event.target)) {
+                        setExcludedCapacityEpicDropdownOpen(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, [excludedCapacityEpicDropdownOpen]);
 
             const scenarioRawIssues = scenarioData?.issues || EMPTY_ARRAY;
             const scenarioConfig = scenarioData?.config || EMPTY_OBJECT;
@@ -12632,19 +12739,111 @@ import {
                                                 ))}
                                             </select>
                                         </div>
-                                        <div className="stats-control-group">
-                                            <label>Excluded Epic</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityEpicFilter}
-                                                onChange={(event) => setExcludedCapacityEpicFilter(event.target.value)}
-                                            >
-                                                <option value="all">All excluded epics</option>
-                                                {excludedCapacityEpicOptions.map((epicKey) => (
-                                                    <option key={epicKey} value={epicKey}>{epicKey}</option>
-                                                ))}
-                                            </select>
+                                        <div className="stats-control-group excluded-capacity-epic-filter" ref={excludedCapacityEpicDropdownRef}>
+                                            <label>Excluded Epics</label>
+                                            {excludedCapacityEffectiveFilters.length > 0 && (
+                                                <div className="selected-components-list excluded-capacity-epic-chips">
+                                                    {excludedCapacityEffectiveFilters.map((key) => {
+                                                        const label = excludedCapacityEpicLabelByKey.get(key) || key;
+                                                        return (
+                                                            <div className="component-chip" key={key}>
+                                                                <span className="component-name" title={`${label} (${key})`}>{label}</span>
+                                                                <button
+                                                                    type="button"
+                                                                    className="remove-btn"
+                                                                    aria-label={`Remove ${label}`}
+                                                                    title={`Remove ${label}`}
+                                                                    onClick={() => toggleExcludedCapacityEpicKey(key)}
+                                                                >
+                                                                    ×
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                            <div className="component-search-wrapper">
+                                                <button
+                                                    type="button"
+                                                    className="component-search-input excluded-capacity-epic-toggle"
+                                                    onClick={() => setExcludedCapacityEpicDropdownOpen(prev => !prev)}
+                                                    aria-haspopup="listbox"
+                                                    aria-expanded={excludedCapacityEpicDropdownOpen}
+                                                >
+                                                    <span>
+                                                        {excludedCapacityEffectiveFilters.length === 0
+                                                            ? `All configured (${excludedCapacityEpicOptions.length})`
+                                                            : `${excludedCapacityEffectiveFilters.length} of ${excludedCapacityEpicOptions.length} selected`}
+                                                    </span>
+                                                    <span className="excluded-capacity-epic-caret" aria-hidden="true">▾</span>
+                                                </button>
+                                                {excludedCapacityEpicDropdownOpen && (
+                                                    <div className="component-search-results excluded-capacity-epic-menu" role="listbox" aria-multiselectable="true">
+                                                        <div className="excluded-capacity-epic-menu-actions">
+                                                            <button
+                                                                type="button"
+                                                                className="excluded-capacity-epic-action"
+                                                                onClick={selectAllExcludedCapacityEpics}
+                                                            >
+                                                                Select all
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="excluded-capacity-epic-action"
+                                                                onClick={clearExcludedCapacityEpicSelection}
+                                                            >
+                                                                Clear
+                                                            </button>
+                                                        </div>
+                                                        {excludedCapacityEpicCatalog.length === 0 ? (
+                                                            <div className="component-search-result-item is-empty">No excluded epics configured.</div>
+                                                        ) : (
+                                                            excludedCapacityEpicCatalog.map((entry) => {
+                                                                const checked = excludedCapacityEffectiveFilters.includes(entry.key);
+                                                                const primary = entry.summary || entry.key;
+                                                                return (
+                                                                    <label
+                                                                        key={entry.key}
+                                                                        className={`component-search-result-item excluded-capacity-epic-option ${checked ? 'is-checked' : ''}`}
+                                                                        role="option"
+                                                                        aria-selected={checked}
+                                                                    >
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={checked}
+                                                                            onChange={() => toggleExcludedCapacityEpicKey(entry.key)}
+                                                                        />
+                                                                        <span className="excluded-capacity-epic-primary">{primary}</span>
+                                                                        <span className="component-result-meta">{entry.key}</span>
+                                                                    </label>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
+                                    </div>
+
+                                    <div className="excluded-capacity-actions">
+                                        <SegmentedControl
+                                            ariaLabel="Series mode"
+                                            value={excludedCapacityChartMode}
+                                            onChange={setExcludedCapacityChartMode}
+                                            options={[
+                                                { value: 'teams', label: 'Teams' },
+                                                { value: 'group', label: 'Group' }
+                                            ]}
+                                        />
+                                        <SegmentedControl
+                                            ariaLabel="Metric"
+                                            value={excludedCapacityMetric}
+                                            onChange={setExcludedCapacityMetric}
+                                            options={[
+                                                { value: 'percent', label: 'Percentage' },
+                                                { value: 'storyPoints', label: 'Story Points' }
+                                            ]}
+                                        />
                                     </div>
 
                                     <div className="stats-summary excluded-capacity-summary">
@@ -12690,46 +12889,47 @@ import {
                                         <div className="excluded-capacity-panel">
                                             <div className="cohort-section cohort-section-fullbleed">
                                                 <div className="cohort-section-title">Excluded Capacity by Team and Sprint</div>
-                                                <div className="excluded-capacity-chart" role="img" aria-label="Excluded capacity percentage by team and sprint">
-                                                    {excludedCapacitySprintGroups.map(group => (
-                                                        <div className="excluded-capacity-sprint-group" key={group.sprintId}>
-                                                            <div className="excluded-capacity-quarter">{group.quarter}</div>
-                                                            <div className="excluded-capacity-sprint">{group.sprint.name || group.sprintId}</div>
-                                                            <div className="excluded-capacity-bars">
-                                                                {group.rows.map(row => {
-                                                                    const color = resolveTeamColor(row.teamId);
-                                                                    return (
-                                                                        <div
-                                                                            className="excluded-capacity-bar"
-                                                                            key={`${group.sprintId}-${row.teamId}`}
-                                                                            title={`${row.teamName}: ${formatPercent(row.percent)} excluded (${formatExcludedPoints(row.excludedPoints)} / ${formatExcludedPoints(row.totalPoints)} SP)`}
-                                                                        >
-                                                                            <div className="excluded-capacity-bar-value">{formatPercent(row.percent)}</div>
-                                                                            <div className="excluded-capacity-bar-track">
-                                                                                <div
-                                                                                    className="excluded-capacity-bar-fill"
-                                                                                    style={{
-                                                                                        height: `${Math.min(100, row.percent * 100)}%`,
-                                                                                        background: color
-                                                                                    }}
-                                                                                />
-                                                                            </div>
-                                                                            <div className="excluded-capacity-bar-label">{row.teamName}</div>
-                                                                        </div>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                                <ExcludedCapacityLineChart
+                                                    series={excludedCapacityLineSeries.series}
+                                                    sprints={excludedCapacityLineSeries.sprints}
+                                                    metric={excludedCapacityMetric}
+                                                    mode={excludedCapacityLineSeries.mode}
+                                                    isolatedSeriesId={excludedCapacityIsolatedTeam}
+                                                    onSelectSeries={setExcludedCapacityIsolatedTeam}
+                                                    resolveTeamColor={resolveTeamColor}
+                                                    formatExcludedPoints={formatExcludedPoints}
+                                                    formatPercent={formatPercent}
+                                                />
                                             </div>
 
                                             <div className="cohort-section">
                                                 <div className="cohort-section-title">Mono-team vs Cross-team Share</div>
-                                                {excludedCapacityModeRows.length === 0 ? (
+                                                <div className="cohort-section-subtitle">
+                                                    Aggregated across {excludedCapacitySprintRange.length} sprint{excludedCapacitySprintRange.length === 1 ? '' : 's'}
+                                                </div>
+                                                {excludedCapacityModeOverall.totalPoints === 0 ? (
                                                     <div className="cohort-empty">No excluded epic share available for the selected filter.</div>
                                                 ) : (
-                                                    <div className="epic-mode-bars" role="img" aria-label="Mono-team versus cross-team excluded epic share by team">
+                                                    <div className="epic-mode-bars" role="img" aria-label="Mono-team versus cross-team excluded epic share aggregated over the selected sprint range">
+                                                        <div className="epic-mode-row epic-mode-row-overall">
+                                                            <div className="epic-mode-label">Overall</div>
+                                                            <div className="epic-mode-track">
+                                                                <div
+                                                                    className="epic-mode-fill mono"
+                                                                    style={{ width: `${Math.max(0, Math.min(100, excludedCapacityModeOverall.monoPercent * 100))}%` }}
+                                                                    title={`Overall mono-team: ${formatPercent(excludedCapacityModeOverall.monoPercent)} (${formatExcludedPoints(excludedCapacityModeOverall.monoPoints)} SP)`}
+                                                                />
+                                                                <div
+                                                                    className="epic-mode-fill cross"
+                                                                    style={{ width: `${Math.max(0, Math.min(100, excludedCapacityModeOverall.crossPercent * 100))}%` }}
+                                                                    title={`Overall cross-team: ${formatPercent(excludedCapacityModeOverall.crossPercent)} (${formatExcludedPoints(excludedCapacityModeOverall.crossPoints)} SP)`}
+                                                                />
+                                                            </div>
+                                                            <div className="epic-mode-values">
+                                                                <span>{formatPercent(excludedCapacityModeOverall.monoPercent)} mono</span>
+                                                                <span>{formatPercent(excludedCapacityModeOverall.crossPercent)} cross</span>
+                                                            </div>
+                                                        </div>
                                                         {excludedCapacityModeRows.map(row => (
                                                             <div className="epic-mode-row" key={row.teamId}>
                                                                 <div className="epic-mode-label">{row.teamName}</div>

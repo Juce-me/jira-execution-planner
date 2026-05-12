@@ -150,6 +150,10 @@ test('mono-cross team share renders as a per-sprint team line graph', () => {
         !dashboardSource.includes('epic-mode-sprint-breakdown'),
         'Team Cross Share should use the graph, not sprint text chips'
     );
+    assert.ok(
+        dashboardSource.includes("statsView === 'monoCrossShare' ? excludedCapacityModeTeamLineSeries.series : excludedCapacityLineSeries.series"),
+        'Expected isolated team validation to use the Mono vs Cross team series while that tab is active'
+    );
 });
 
 test('excluded-capacity stats source loads progressively and source-only tabs skip ENG task surfaces', () => {
@@ -198,10 +202,47 @@ test('excluded-capacity line chart legend uses native clickable controls', () =>
         !lineChartSource.includes('role="button"'),
         'Line chart legend items should not rely on span role=button semantics'
     );
+    assert.ok(
+        lineChartSource.includes('aria-label={isIsolated ?'),
+        'Expected legend buttons to use accessible labels instead of native title tooltips'
+    );
+    assert.ok(
+        !lineChartSource.includes('title={isIsolated ?'),
+        'Legend buttons should not use native title tooltips'
+    );
     assert.match(
         cssSource,
         /\.excluded-capacity-line-legend-item\s*\{[\s\S]*cursor:\s*pointer/,
         'Expected line chart legend item button styling to keep pointer affordance'
+    );
+});
+
+test('excluded-capacity line chart uses a readable custom hover readout', () => {
+    assert.ok(
+        lineChartSource.includes('excluded-capacity-line-hover-capture'),
+        'Expected line chart to have a hover capture layer'
+    );
+    assert.ok(
+        lineChartSource.includes('excluded-capacity-line-hover-bubble'),
+        'Expected line chart to render a custom hover bubble'
+    );
+    assert.ok(
+        lineChartSource.includes('setHoverPoint'),
+        'Expected line chart to track hover point state'
+    );
+    assert.ok(
+        !lineChartSource.includes('<title>{tooltip}</title>'),
+        'Line chart points should not rely on native SVG title tooltips'
+    );
+    assert.match(
+        cssSource,
+        /\.excluded-capacity-line-hover-bubble\s*\{[\s\S]*background:\s*rgba\(255,\s*255,\s*255/,
+        'Expected custom hover bubble to use a readable light background'
+    );
+    assert.match(
+        cssSource,
+        /\.excluded-capacity-line-legend-item:hover\s*\{[\s\S]*box-shadow:/,
+        'Expected legend hover to use a subtle glow instead of a dark tooltip'
     );
 });
 

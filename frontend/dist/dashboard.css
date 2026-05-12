@@ -5147,6 +5147,7 @@ button.toggle.initiative-toggle.active {
 .excluded-capacity-line-chart {
   display: grid;
   gap: 0.45rem;
+  position: relative;
 }
 .excluded-capacity-line-svg {
   width: 100%;
@@ -5171,6 +5172,36 @@ button.toggle.initiative-toggle.active {
 .excluded-capacity-line-series {
   transition: opacity 0.16s ease;
 }
+.excluded-capacity-line-point {
+  transition: r 0.12s ease, filter 0.12s ease;
+}
+.excluded-capacity-line-point.is-hovered {
+  filter: drop-shadow(0 0 4px rgba(15, 23, 42, 0.35));
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 1.2px;
+}
+.excluded-capacity-line-hover-capture {
+  fill: transparent;
+  cursor: crosshair;
+}
+.excluded-capacity-line-hover-marker {
+  pointer-events: none;
+}
+.excluded-capacity-line-hover-line {
+  stroke: rgba(0, 0, 0, 0.35);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.excluded-capacity-line-hover-bubble {
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.97);
+}
+.excluded-capacity-line-hover-bubble .burnout-hover-row {
+  align-items: center;
+  display: flex;
+  gap: 0.28rem;
+}
 .excluded-capacity-line-legend {
   margin-top: 0.35rem;
 }
@@ -5183,9 +5214,19 @@ button.toggle.initiative-toggle.active {
   color: inherit;
   cursor: pointer;
   font: inherit;
-  padding: 0;
+  padding: 0.06rem 0.14rem;
+  border-radius: 4px;
   text-align: left;
-  transition: color 0.16s ease, opacity 0.16s ease;
+  transition:
+    background 0.16s ease,
+    box-shadow 0.16s ease,
+    color 0.16s ease,
+    opacity 0.16s ease;
+}
+.excluded-capacity-line-legend-item:hover {
+  background: rgba(31, 111, 235, 0.06);
+  box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.08);
+  color: var(--text-primary);
 }
 .excluded-capacity-line-legend-item.is-isolated {
   color: var(--text-primary);

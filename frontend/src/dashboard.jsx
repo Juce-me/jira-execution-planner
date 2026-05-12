@@ -6516,6 +6516,7 @@ import {
                 excludedCapacitySprintRange,
                 excludedCapacityTeams
             ]);
+            const excludedCapacityIsolatedSeries = statsView === 'monoCrossShare' ? excludedCapacityModeTeamLineSeries.series : excludedCapacityLineSeries.series;
             const excludedCapacityTotals = React.useMemo(() => {
                 const totals = excludedCapacityRows.reduce((acc, row) => {
                     acc.totalPoints += row.totalPoints || 0;
@@ -6532,16 +6533,16 @@ import {
                 return Array.isArray(warnings) ? warnings : [];
             }, [excludedCapacityData]);
             useEffect(() => {
-                if (excludedCapacityChartMode !== 'teams' && excludedCapacityIsolatedTeam) {
+                if (statsView === 'excludedCapacity' && excludedCapacityChartMode !== 'teams' && excludedCapacityIsolatedTeam) {
                     setExcludedCapacityIsolatedTeam(null);
                     return;
                 }
                 if (!excludedCapacityIsolatedTeam) return;
-                const known = new Set((excludedCapacityLineSeries.series || []).map(item => item.seriesId));
+                const known = new Set((excludedCapacityIsolatedSeries || []).map(item => item.seriesId));
                 if (!known.has(excludedCapacityIsolatedTeam)) {
                     setExcludedCapacityIsolatedTeam(null);
                 }
-            }, [excludedCapacityChartMode, excludedCapacityIsolatedTeam, excludedCapacityLineSeries.series]);
+            }, [statsView, excludedCapacityChartMode, excludedCapacityIsolatedTeam, excludedCapacityIsolatedSeries]);
             const formatExcludedPoints = (value) => {
                 const numeric = Number(value || 0);
                 if (!Number.isFinite(numeric)) return '0.0';

@@ -21,6 +21,10 @@ function formatTick(value, metric, formatPercent, formatExcludedPoints) {
     return formatPercent(value);
 }
 
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
 function ExcludedCapacityLineChart({
     series,
     sprints,
@@ -35,6 +39,7 @@ function ExcludedCapacityLineChart({
 }) {
     const sprintCount = (sprints || []).length;
     const seriesList = Array.isArray(series) ? series : [];
+    const [hoverPoint, setHoverPoint] = React.useState(null);
 
     const maxValue = React.useMemo(() => {
         const all = [];
@@ -83,12 +88,70 @@ function ExcludedCapacityLineChart({
         if (mode === 'group') return GROUP_LINE_COLOR;
         return resolveTeamColor ? resolveTeamColor(entry.seriesId) : '#1f6feb';
     };
+    const valueTextFor = (point) => {
+        if (metric === 'storyPoints') return `${formatExcludedPoints(valueFor(point, metric))} SP`;
+        return formatPercent(valueFor(point, metric));
+    };
+    const detailTextFor = (point) => {
+        const crossPoints = formatExcludedPoints(point?.excludedPoints || 0);
+        const totalPoints = formatExcludedPoints(point?.totalPoints || 0);
+        if (metric === 'storyPoints') {
+            return `${formatPercent(point?.percent || 0)} of total (${crossPoints} / ${totalPoints} SP)`;
+        }
+        return `${crossPoints} cross SP / ${totalPoints} total SP`;
+    };
+    const resolveHoverPoint = (event) => {
+        const svg = event.currentTarget.ownerSVGElement;
+        const rect = svg?.getBoundingClientRect?.();
+        if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+        const localX = ((event.clientX - rect.left) / rect.width) * CHART_WIDTH;
+        const localY = ((event.clientY - rect.top) / rect.height) * CHART_HEIGHT;
+        if (
+            localX < PADDING_LEFT ||
+            localX > CHART_WIDTH - PADDING_RIGHT ||
+            localY < PADDING_TOP ||
+            localY > CHART_HEIGHT - PADDING_BOTTOM
+        ) {
+            return null;
+        }
+        const rawIndex = sprintCount === 1
+            ? 0
+            : Math.round(((localX - PADDING_LEFT) / PLOT_WIDTH) * (sprintCount - 1));
+        const pointIndex = clamp(rawIndex, 0, sprintCount - 1);
+        let nearest = null;
+        seriesList.forEach(entry => {
+            if (isolatedSeriesId && isolatedSeriesId !== entry.seriesId) return;
+            const point = (entry.points || [])[pointIndex];
+            if (!point) return;
+            const value = valueFor(point, metric);
+            const y = yFor(value);
+            const distance = Math.abs(y - localY);
+            if (!nearest || distance < nearest.distance) {
+                const x = xFor(pointIndex);
+                nearest = {
+                    distance,
+                    seriesId: entry.seriesId,
+                    label: entry.label,
+                    color: colorFor(entry),
+                    pointIndex,
+                    sprintName: point.sprintName || point.sprintId || '',
+                    x,
+                    y,
+                    leftPercent: clamp((x / CHART_WIDTH) * 100, 10, 90),
+                    topPercent: clamp((y / CHART_HEIGHT) * 100, 12, 78),
+                    valueText: valueTextFor(point),
+                    detailText: detailTextFor(point)
+                };
+            }
+        });
+        return nearest;
+    };
 
     const tickLabelEvery = sprintCount <= 8 ? 1 : Math.ceil(sprintCount / 6);
     const chartAriaLabel = ariaLabel || (mode === 'group' ? 'Group excluded capacity over sprints' : 'Excluded capacity per team over sprints');
 
     return (
-        <div className="excluded-capacity-line-chart">
+        <div className="excluded-capacity-line-chart" onMouseLeave={() => setHoverPoint(null)}>
             <svg
                 className="excluded-capacity-line-svg"
                 viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
@@ -159,27 +222,66 @@ function ExcludedCapacityLineChart({
                             <path d={path} stroke={color} fill="none" strokeWidth={isIsolated ? 2.5 : 2} />
                             {(entry.points || []).map((point, idx) => {
                                 const value = valueFor(point, metric);
-                                const tooltip = `${entry.label} · ${point.sprintName || point.sprintId}: ${
-                                    metric === 'storyPoints'
-                                        ? `${formatExcludedPoints(point.excludedPoints)} / ${formatExcludedPoints(point.totalPoints)} SP`
-                                        : `${formatPercent(point.percent)} (${formatExcludedPoints(point.excludedPoints)} / ${formatExcludedPoints(point.totalPoints)} SP)`
-                                }`;
                                 return (
                                     <circle
                                         key={`${entry.seriesId}-${point.sprintId || idx}`}
+                                        className="excluded-capacity-line-point"
                                         cx={xFor(idx)}
                                         cy={yFor(value)}
                                         r={isIsolated ? 3.5 : 3}
                                         fill={color}
-                                    >
-                                        <title>{tooltip}</title>
-                                    </circle>
+                                    />
                                 );
                             })}
                         </g>
                     );
                 })}
+                <rect
+                    className="excluded-capacity-line-hover-capture"
+                    x={PADDING_LEFT}
+                    y={PADDING_TOP}
+                    width={PLOT_WIDTH}
+                    height={PLOT_HEIGHT}
+                    onMouseMove={(event) => {
+                        const nextPoint = resolveHoverPoint(event);
+                        setHoverPoint(nextPoint);
+                    }}
+                />
+                {hoverPoint && (
+                    <g className="excluded-capacity-line-hover-marker">
+                        <line
+                            className="excluded-capacity-line-hover-line"
+                            x1={hoverPoint.x}
+                            x2={hoverPoint.x}
+                            y1={PADDING_TOP}
+                            y2={CHART_HEIGHT - PADDING_BOTTOM}
+                        />
+                        <circle
+                            className="excluded-capacity-line-point is-hovered"
+                            cx={hoverPoint.x}
+                            cy={hoverPoint.y}
+                            r={4.5}
+                            fill={hoverPoint.color}
+                        />
+                    </g>
+                )}
             </svg>
+            {hoverPoint && (
+                <div
+                    className="burnout-hover-bubble excluded-capacity-line-hover-bubble"
+                    style={{
+                        left: `${hoverPoint.leftPercent}%`,
+                        top: `${hoverPoint.topPercent}%`
+                    }}
+                >
+                    <div className="burnout-hover-title">{hoverPoint.sprintName}</div>
+                    <div className="burnout-hover-row">
+                        <i className="burnout-color" style={{ background: hoverPoint.color }} />
+                        <span>{hoverPoint.label}: <strong>{hoverPoint.valueText}</strong></span>
+                    </div>
+                    <div className="burnout-hover-row muted">{hoverPoint.detailText}</div>
+                </div>
+            )}
             <div className="burnout-legend excluded-capacity-line-legend">
                 {seriesList.length === 0 && <span className="excluded-capacity-line-empty">No data in range.</span>}
                 {seriesList.map((entry) => {
@@ -192,7 +294,7 @@ function ExcludedCapacityLineChart({
                             key={entry.seriesId}
                             className={`excluded-capacity-line-legend-item${isIsolated ? ' is-isolated' : ''}${isDimmed ? ' dimmed' : ''}`}
                             onClick={() => onSelectSeries && onSelectSeries(isIsolated ? null : entry.seriesId)}
-                            title={isIsolated ? 'Show all teams' : `Show only ${entry.label}`}
+                            aria-label={isIsolated ? 'Show all teams' : `Show only ${entry.label}`}
                         >
                             <i className="burnout-color" style={{ background: color }} />
                             {entry.label}

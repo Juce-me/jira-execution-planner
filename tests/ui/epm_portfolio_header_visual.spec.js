@@ -25,19 +25,15 @@ async function loadHeaderFixture(page) {
                 <div class="task-list epm-issue-board epm-portfolio-board">
                     <section class="epm-project-board">
                         <div class="epm-project-board-header">
-                            <button type="button" class="epm-project-board-toggle" aria-expanded="true" aria-label="Collapse AI for RFP creation">
-                                <span class="epm-project-board-chevron">
-                                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-                                        <path d="M5.5 3.75L9.75 8l-4.25 4.25" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
-                                    </svg>
-                                </span>
-                            </button>
                             <div class="epm-project-board-title-block">
-                                <h3 class="epm-project-board-name">AI for RFP creation</h3>
-                                <div class="epm-project-board-meta" aria-label="Project metadata">
-                                    <span class="epm-project-board-status-pill">On track</span>
+                                <div class="epm-project-board-title-row">
+                                    <h3 class="epm-project-board-name">
+                                        <a class="epm-project-board-name-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-324">AI for RFP creation</a>
+                                    </h3>
                                     <span class="epm-project-board-label-pill">RnD_Project_RFP_AI</span>
-                                    <a class="epm-project-board-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-324">Home</a>
+                                </div>
+                                <div class="epm-project-board-meta" aria-label="Project metadata">
+                                    <span class="status-pill task-status epm-project-board-status-pill on-track">On track</span>
                                 </div>
                             </div>
                         </div>
@@ -53,6 +49,16 @@ async function loadHeaderFixture(page) {
                                 </div>
                             </article>
                         </div>
+                        <div class="epm-project-board-rollup-control">
+                            <button type="button" class="epm-project-board-toggle" aria-expanded="true" aria-label="Hide Jira rollup for AI for RFP creation">
+                                <span class="epm-project-board-chevron">
+                                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                                        <path d="M5.5 3.75L9.75 8l-4.25 4.25" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+                                    </svg>
+                                </span>
+                                <span class="epm-project-board-toggle-label">Jira rollup</span>
+                            </button>
+                        </div>
                         <div class="epm-project-board-body">
                             <div class="epic-card">
                                 <div class="epic-title">AI for RFP creation <span class="issue-key">PRODUCT-29920</span></div>
@@ -61,19 +67,15 @@ async function loadHeaderFixture(page) {
                     </section>
                     <section class="epm-project-board">
                         <div class="epm-project-board-header">
-                            <button type="button" class="epm-project-board-toggle" aria-expanded="true" aria-label="Collapse Data Partnership: Support Revenue Share Fee Model">
-                                <span class="epm-project-board-chevron">
-                                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-                                        <path d="M5.5 3.75L9.75 8l-4.25 4.25" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
-                                    </svg>
-                                </span>
-                            </button>
                             <div class="epm-project-board-title-block">
-                                <h3 class="epm-project-board-name">Data Partnership: Support Revenue Share Fee Model</h3>
-                                <div class="epm-project-board-meta" aria-label="Project metadata">
-                                    <span class="epm-project-board-status-pill">On track</span>
+                                <div class="epm-project-board-title-row">
+                                    <h3 class="epm-project-board-name">
+                                        <a class="epm-project-board-name-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-325">Data Partnership: Support Revenue Share Fee Model</a>
+                                    </h3>
                                     <span class="epm-project-board-label-pill">rnd_project_bsw_enriched_deals_revenue_share_fee_model_long_label</span>
-                                    <a class="epm-project-board-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-325">Home</a>
+                                </div>
+                                <div class="epm-project-board-meta" aria-label="Project metadata">
+                                    <span class="status-pill task-status epm-project-board-status-pill on-track">On track</span>
                                 </div>
                             </div>
                         </div>
@@ -91,6 +93,16 @@ async function loadHeaderFixture(page) {
                                 </div>
                             </article>
                         </div>
+                        <div class="epm-project-board-rollup-control">
+                            <button type="button" class="epm-project-board-toggle" aria-expanded="true" aria-label="Hide Jira rollup for Data Partnership: Support Revenue Share Fee Model">
+                                <span class="epm-project-board-chevron">
+                                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                                        <path d="M5.5 3.75L9.75 8l-4.25 4.25" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+                                    </svg>
+                                </span>
+                                <span class="epm-project-board-toggle-label">Jira rollup</span>
+                            </button>
+                        </div>
                         <div class="epm-project-board-body">
                             <div class="epic-card">
                                 <div class="epic-title">Revenue share rollout <span class="issue-key">PRODUCT-29921</span></div>
@@ -99,23 +111,19 @@ async function loadHeaderFixture(page) {
                     </section>
                     <section class="epm-project-board is-collapsed">
                         <div class="epm-project-board-header">
-                            <button type="button" class="epm-project-board-toggle" aria-expanded="false" aria-label="Expand Dynamic Floor Harness With Pricing Analysis Rollout Controls">
-                                <span class="epm-project-board-chevron">
-                                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-                                        <path d="M5.5 3.75L9.75 8l-4.25 4.25" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
-                                    </svg>
-                                </span>
-                            </button>
                             <div class="epm-project-board-title-block">
-                                <h3 class="epm-project-board-name">Dynamic Floor Harness With Pricing Analysis Rollout Controls</h3>
-                                <div class="epm-project-board-meta" aria-label="Project metadata">
-                                    <span class="epm-project-board-status-pill">On track</span>
+                                <div class="epm-project-board-title-row">
+                                    <h3 class="epm-project-board-name">
+                                        <a class="epm-project-board-name-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-326">Dynamic Floor Harness With Pricing Analysis Rollout Controls</a>
+                                    </h3>
                                     <span class="epm-project-board-label-pill">rnd_project_dynamic_floor_harness</span>
-                                    <a class="epm-project-board-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-326">Home</a>
+                                </div>
+                                <div class="epm-project-board-meta" aria-label="Project metadata">
+                                    <span class="status-pill task-status epm-project-board-status-pill on-track">On track</span>
                                 </div>
                             </div>
                         </div>
-                        <div class="epm-project-board-update-row is-collapsed">
+                        <div class="epm-project-board-update-row">
                             <article class="epm-project-board-update" aria-label="Latest Home update">
                                 <div class="epm-project-board-update-meta">
                                     <span class="epm-project-board-update-date">today</span>
@@ -123,6 +131,16 @@ async function loadHeaderFixture(page) {
                                 </div>
                                 <span class="epm-project-board-update-copy">Rollout beyond 5% traffic is gated on coefficient work and clearer separation of profitable pairs.</span>
                             </article>
+                        </div>
+                        <div class="epm-project-board-rollup-control">
+                            <button type="button" class="epm-project-board-toggle" aria-expanded="false" aria-label="Show Jira rollup for Dynamic Floor Harness With Pricing Analysis Rollout Controls">
+                                <span class="epm-project-board-chevron">
+                                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                                        <path d="M5.5 3.75L9.75 8l-4.25 4.25" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+                                    </svg>
+                                </span>
+                                <span class="epm-project-board-toggle-label">Jira rollup</span>
+                            </button>
                         </div>
                         <div class="epm-project-board-body">
                             <div class="epic-card">
@@ -150,9 +168,12 @@ for (const viewport of [
         const header = board.locator('.epm-project-board-header');
         const body = board.locator('.epm-project-board-body');
         const toggle = board.locator('.epm-project-board-toggle');
+        const chevron = board.locator('.epm-project-board-chevron');
         const meta = board.locator('.epm-project-board-meta');
         const title = board.locator('.epm-project-board-name');
-        const homeLink = board.locator('.epm-project-board-link');
+        const nameLink = board.locator('.epm-project-board-name-link');
+        const labelPill = board.locator('.epm-project-board-label-pill');
+        const rollupControl = board.locator('.epm-project-board-rollup-control');
         const updateRow = board.locator('.epm-project-board-update-row');
         const update = board.locator('.epm-project-board-update').first();
         const updateMeta = board.locator('.epm-project-board-update-meta').first();
@@ -167,16 +188,23 @@ for (const viewport of [
         await expect(page.locator('.epm-project-board')).toHaveCount(3);
         await expect(collapsedBoard).toHaveCount(1);
         await expect(collapsedBoard.locator('.epm-project-board-toggle')).toHaveAttribute('aria-expanded', 'false');
+        await expect(header.locator('.epm-project-board-toggle')).toHaveCount(0);
+        await expect(toggle).toHaveText('Jira rollup');
         await expect(toggle.locator('a')).toHaveCount(0);
         await expect(toggle.locator('.epm-project-board-update')).toHaveCount(0);
         await expect(toggle.locator('.epm-project-board-name')).toHaveCount(0);
-        await expect(homeLink).toHaveText('Home');
+        await expect(nameLink).toHaveAttribute('href', 'https://home.atlassian.com/o/example/s/example/project/CRITE-324');
+        await expect(labelPill).toHaveText('RnD_Project_RFP_AI');
+        await expect(board.locator('.epm-project-board-status-pill')).toHaveClass(/task-status/);
 
         const headerBox = await header.boundingBox();
         const bodyBox = await body.boundingBox();
         const toggleBox = await toggle.boundingBox();
+        const chevronBox = await chevron.boundingBox();
         const metaBox = await meta.boundingBox();
         const titleBox = await title.boundingBox();
+        const labelBox = await labelPill.boundingBox();
+        const rollupControlBox = await rollupControl.boundingBox();
         const updateRowBox = await updateRow.boundingBox();
         const updateBox = await update.boundingBox();
         const updateMetaBox = await updateMeta.boundingBox();
@@ -188,8 +216,11 @@ for (const viewport of [
         expect(headerBox).toBeTruthy();
         expect(bodyBox).toBeTruthy();
         expect(toggleBox).toBeTruthy();
+        expect(chevronBox).toBeTruthy();
         expect(metaBox).toBeTruthy();
         expect(titleBox).toBeTruthy();
+        expect(labelBox).toBeTruthy();
+        expect(rollupControlBox).toBeTruthy();
         expect(updateRowBox).toBeTruthy();
         expect(updateBox).toBeTruthy();
         expect(updateMetaBox).toBeTruthy();
@@ -200,7 +231,14 @@ for (const viewport of [
 
         expect(boxesOverlap(toggleBox, metaBox)).toBe(false);
         expect(boxesOverlap(titleBox, metaBox)).toBe(false);
-        expect(bodyBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height - 0.5);
+        if (viewport.width >= 900) {
+            expect(labelBox.x).toBeGreaterThan(titleBox.x + titleBox.width);
+        } else {
+            expect(labelBox.y).toBeGreaterThanOrEqual(titleBox.y);
+        }
+        expect(updateBox.y).toBeGreaterThan(headerBox.y + headerBox.height);
+        expect(toggleBox.y).toBeGreaterThan(updateBox.y + updateBox.height);
+        expect(bodyBox.y).toBeGreaterThanOrEqual(rollupControlBox.y + rollupControlBox.height - 0.5);
         expect(updateRowBox.x + updateRowBox.width).toBeLessThanOrEqual(headerBox.x + headerBox.width + 0.5);
         expect(updateAuthorBox.x).toBeGreaterThan(updateDateBox.x + updateDateBox.width);
         await expect(update.locator('strong')).toHaveText('RFP AI bot');
@@ -208,6 +246,7 @@ for (const viewport of [
         await expect(update.locator('a')).toHaveAttribute('href', 'https://example.test/client-testing');
         await expect(page.locator('.epm-project-board-update-copy li')).toHaveCount(2);
         await expect(collapsedUpdate.locator('li')).toHaveCount(0);
+        await expect(collapsedCopy).toContainText('profitable pairs');
 
         const titleStyle = await title.evaluate((node) => {
             const style = window.getComputedStyle(node);
@@ -288,10 +327,10 @@ for (const viewport of [
             };
         });
         const railCenterX = bodyBox.x + railStyle.left + (railStyle.width / 2);
-        const toggleCenterX = toggleBox.x + (toggleBox.width / 2);
+        const chevronCenterX = chevronBox.x + (chevronBox.width / 2);
         const railStartY = bodyBox.y + railStyle.top;
         expect(railStyle.content).not.toBe('none');
-        expect(Math.abs(railCenterX - toggleCenterX)).toBeGreaterThanOrEqual(8);
+        expect(Math.abs(railCenterX - chevronCenterX)).toBeGreaterThanOrEqual(8);
         expect(railStartY).toBeGreaterThan(toggleBox.y + toggleBox.height + 8);
 
         const collapsedBodyDisplay = await collapsedBody.evaluate((node) => (
@@ -305,11 +344,15 @@ for (const viewport of [
                 whiteSpace: style.whiteSpace,
             };
         });
+        const collapsedUpdateFit = await collapsedUpdate.evaluate((node) => ({
+            clientHeight: node.clientHeight,
+            scrollHeight: node.scrollHeight,
+        }));
         expect(collapsedBodyDisplay).toBe('none');
-        expect(collapsedCopyStyle.overflow).toBe('hidden');
-        expect(collapsedCopyStyle.textOverflow).toBe('ellipsis');
-        expect(collapsedCopyStyle.whiteSpace).toBe('nowrap');
-        expect(collapsedUpdateBox.height).toBeLessThan(44);
+        expect(collapsedCopyStyle.overflow).toBe('visible');
+        expect(collapsedCopyStyle.textOverflow).toBe('clip');
+        expect(collapsedCopyStyle.whiteSpace).toBe('normal');
+        expect(collapsedUpdateFit.scrollHeight).toBeLessThanOrEqual(collapsedUpdateFit.clientHeight + 1);
         expect(collapsedBoardBox.height).toBeLessThan(boardBox.height);
 
         await toggle.hover();

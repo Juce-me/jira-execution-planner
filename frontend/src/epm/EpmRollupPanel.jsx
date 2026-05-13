@@ -48,10 +48,10 @@ export function EpmRollupPanel({
         </svg>
     );
 
-    const renderProjectUpdate = (updateLine, collapsed = false) => {
+    const renderProjectUpdate = (updateLine) => {
         if (!updateLine?.text) return null;
         return (
-            <div className={`epm-project-board-update-row ${collapsed ? 'is-collapsed' : ''}`} title={updateLine.title || undefined}>
+            <div className="epm-project-board-update-row" title={updateLine.title || undefined}>
                 <article className="epm-project-board-update" aria-label="Latest Home update">
                     {(updateLine.relativeDate || updateLine.author) && (
                         <div className="epm-project-board-update-meta">
@@ -59,7 +59,7 @@ export function EpmRollupPanel({
                             {updateLine.author && <span className="epm-project-board-update-author">{updateLine.author}</span>}
                         </div>
                     )}
-                    {!collapsed && updateLine.messageHtml ? (
+                    {updateLine.messageHtml ? (
                         <div className="epm-project-board-update-copy" dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }} />
                     ) : (
                         <span className="epm-project-board-update-copy">{updateLine.message || updateLine.text}</span>
@@ -73,46 +73,63 @@ export function EpmRollupPanel({
         const collapsed = isCollapsed(project);
         const updateLine = buildEpmProjectUpdateLine(project);
         const projectStatus = String(project?.stateLabel || project?.stateValue || '').trim();
+        const projectName = getEpmProjectDisplayName(project);
         return (
             <>
                 <div
                     className={`epm-project-board-header ${collapsed ? 'is-collapsed' : ''}`}
                 >
-                    <button
-                        type="button"
-                        className="epm-project-board-toggle"
-                        onClick={() => toggleCollapsed(project)}
-                        aria-expanded={!collapsed}
-                        aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${getEpmProjectDisplayName(project)}`}
-                    >
-                        <span className="epm-project-board-chevron">{renderChevron()}</span>
-                    </button>
                     <div className="epm-project-board-title-block">
-                        <h3 className="epm-project-board-name">{getEpmProjectDisplayName(project)}</h3>
-                        <div className="epm-project-board-meta" aria-label="Project metadata">
-                            {projectStatus && (
-                                <StatusPill className="epm-project-board-status-pill" label={projectStatus} />
-                            )}
+                        <div className="epm-project-board-title-row">
+                            <h3 className="epm-project-board-name">
+                                {project?.homeUrl ? (
+                                    <a
+                                        className="epm-project-board-name-link"
+                                        href={project.homeUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        {projectName}
+                                    </a>
+                                ) : (
+                                    projectName
+                                )}
+                            </h3>
                             {project?.label && (
                                 <StatusPill className="epm-project-board-label-pill" label={project.label} />
                             )}
-                            {project?.homeUrl && (
-                                <a
-                                    className="epm-project-board-link"
-                                    href={project.homeUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    Home
-                                </a>
+                        </div>
+                        <div className="epm-project-board-meta" aria-label="Project metadata">
+                            {projectStatus && (
+                                <StatusPill
+                                    className={getIssueStatusClassName(projectStatus, 'epm-project-board-status-pill')}
+                                    label={projectStatus}
+                                    title={`Project status: ${projectStatus}`}
+                                    aria-label={`Project status: ${projectStatus}`}
+                                />
                             )}
                         </div>
                     </div>
                 </div>
-                {renderProjectUpdate(updateLine, collapsed)}
+                {renderProjectUpdate(updateLine)}
             </>
         );
     };
+
+    const renderProjectRollupToggle = (project, collapsed) => (
+        <div className="epm-project-board-rollup-control">
+            <button
+                type="button"
+                className="epm-project-board-toggle"
+                onClick={() => toggleCollapsed(project)}
+                aria-expanded={!collapsed}
+                aria-label={`${collapsed ? 'Show' : 'Hide'} Jira rollup for ${getEpmProjectDisplayName(project)}`}
+            >
+                <span className="epm-project-board-chevron">{renderChevron()}</span>
+                <span className="epm-project-board-toggle-label">Jira rollup</span>
+            </button>
+        </div>
+    );
 
     const buildDuplicateClusters = () => {
         const projectsById = new Map();
@@ -408,6 +425,7 @@ export function EpmRollupPanel({
                             key={getProjectKey(project)}
                         >
                             {renderPortfolioHeader(project)}
+                            {renderProjectRollupToggle(project, collapsed)}
                             <div className="epm-project-board-body">
                                 {projectLoading && (
                                     <LoadingState

@@ -625,16 +625,24 @@ test('EPM portfolio project header separates collapse control from metadata', ()
     const headerSource = getSnippetBetween(
         epmRollupPanelSource,
         'const renderPortfolioHeader = (project) => {',
+        'const renderProjectRollupToggle = (project, collapsed) => ('
+    );
+    const toggleSource = getSnippetBetween(
+        epmRollupPanelSource,
+        'const renderProjectRollupToggle = (project, collapsed) => (',
         'const buildDuplicateClusters = () => {'
     );
-    const toggleStart = headerSource.indexOf('className="epm-project-board-toggle"');
-    const toggleEnd = headerSource.indexOf('</button>', toggleStart);
-    assert.notStrictEqual(toggleStart, -1, 'Expected a dedicated project board toggle button');
-    assert.notStrictEqual(toggleEnd, -1, 'Expected project board toggle button to close');
-    const toggleSource = headerSource.slice(toggleStart, toggleEnd);
 
     assert.ok(headerSource.includes('className={`epm-project-board-header ${collapsed ? \'is-collapsed\' : \'\'}`}'), 'Expected project header wrapper');
     assert.ok(headerSource.includes('className="epm-project-board-meta"'), 'Expected project metadata wrapper outside the toggle');
+    assert.ok(headerSource.includes('className="epm-project-board-name-link"'), 'Expected project name to own the Home link');
+    assert.ok(headerSource.includes('className="epm-project-board-label-pill"'), 'Expected project label to stay outside the update and rollup toggle');
+    assert.ok(headerSource.includes('Project status: ${projectStatus}'), 'Expected project status to be labeled as project-level metadata');
+    assert.ok(!headerSource.includes('className="epm-project-board-toggle"'), 'Project header must not contain the Jira rollup disclosure');
+    assert.ok(toggleSource.includes('className="epm-project-board-rollup-control"'), 'Expected a dedicated rollup control row');
+    assert.ok(toggleSource.includes('className="epm-project-board-toggle"'), 'Expected a dedicated project board toggle button');
+    assert.ok(toggleSource.includes('epm-project-board-toggle-label">Jira rollup'), 'Expected toggle label to clarify the controlled Jira rollup');
+    assert.ok(toggleSource.includes("aria-expanded={!collapsed}"), 'Expected rollup disclosure to expose expanded state');
     assert.ok(!toggleSource.includes('epm-project-board-link'), 'Project Home link must not be nested inside the toggle button');
     assert.ok(!toggleSource.includes('epm-project-board-update'), 'Project update text must not be nested inside the toggle button');
     assert.ok(!toggleSource.includes('<a'), 'Project toggle button must not contain nested anchors');
@@ -646,10 +654,10 @@ test('EPM portfolio update line renders below the project header with relative d
     const headerSource = getSnippetBetween(
         epmRollupPanelSource,
         'const renderPortfolioHeader = (project) => {',
-        'const buildDuplicateClusters = () => {'
+        'const renderProjectRollupToggle = (project, collapsed) => ('
     );
     const headerCloseIndex = headerSource.indexOf('</div>');
-    const updateIndex = headerSource.indexOf('renderProjectUpdate(updateLine, collapsed)');
+    const updateIndex = headerSource.indexOf('renderProjectUpdate(updateLine)');
     assert.ok(epmRollupPanelSource.includes('className="epm-project-board-update"'), 'Expected visible project board update line');
     assert.ok(updateIndex > headerCloseIndex, 'Project update line must render after the header wrapper');
 
@@ -663,13 +671,14 @@ test('EPM portfolio update line renders below the project header with relative d
 });
 
 test('EPM portfolio update line preserves formatted Home update HTML safely', () => {
-    assert.ok(epmRollupPanelSource.includes("className={`epm-project-board-update-row ${collapsed ? 'is-collapsed' : ''}`}"), 'Expected collapsed update row to use a compact preview class');
+    assert.ok(epmRollupPanelSource.includes('className="epm-project-board-update-row"'), 'Expected project update row to remain fully readable in collapsed project rows');
+    assert.ok(!epmRollupPanelSource.includes("epm-project-board-update-row ${collapsed ? 'is-collapsed' : ''}"), 'Collapsed project rows must not truncate the project update');
     assert.ok(epmRollupPanelSource.includes('updateLine.messageHtml'), 'Expected update renderer to branch on formatted Home update HTML');
-    assert.ok(epmRollupPanelSource.includes('!collapsed && updateLine.messageHtml'), 'Expected formatted Home update HTML only in expanded project rows');
+    assert.ok(!epmRollupPanelSource.includes('!collapsed && updateLine.messageHtml'), 'Formatted Home update HTML should remain visible in collapsed project rows');
     assert.ok(epmRollupPanelSource.includes('dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }}'), 'Expected formatted update HTML to be injected from sanitized server output');
     const updateRendererSource = getSnippetBetween(
         epmRollupPanelSource,
-        'const renderProjectUpdate = (updateLine, collapsed = false) => {',
+        'const renderProjectUpdate = (updateLine) => {',
         'const renderPortfolioHeader = (project) => {'
     );
     assert.ok(updateRendererSource.includes('epm-project-board-update-date'), 'Expected relative date label in the update bubble');

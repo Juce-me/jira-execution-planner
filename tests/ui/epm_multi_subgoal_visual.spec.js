@@ -132,16 +132,16 @@ test('EPM multi sub-goal visual smoke', async ({ page }) => {
     await expect(page.locator('.epm-subgoal-option-name', { hasText: '[EPM]' })).toHaveCount(0);
     await page.screenshot({ path: `${screenshotDir}/active-subgoal-dropdown-open.png`, fullPage: true });
     await page.locator('[data-sub-goal-key="CHILD-A"]').click();
-    await expect(page.locator('.epm-project-board-name', { hasText: 'Active Alpha' })).toBeVisible();
-    await expect(page.locator('.epm-project-board-name', { hasText: 'Active Beta' })).toHaveCount(0);
-    await page.screenshot({ path: `${screenshotDir}/active-narrowed-subgoal.png`, fullPage: true });
+    await expect(page.locator('.epm-project-board-name', { hasText: 'Active Alpha' })).toHaveCount(0);
+    await expect(page.locator('.epm-project-board-name', { hasText: 'Active Beta' })).toBeVisible();
+    await page.screenshot({ path: `${screenshotDir}/active-deselected-subgoal.png`, fullPage: true });
 
     await page.getByRole('radio', { name: 'Backlog' }).first().click();
-    await expect(page.locator('.epm-project-board-name', { hasText: 'Backlog Alpha' })).toBeVisible();
+    await expect(page.locator('.epm-project-board-name', { hasText: 'Backlog Beta' })).toBeVisible();
     await page.screenshot({ path: `${screenshotDir}/backlog-narrowed-subgoal.png`, fullPage: true });
 
     await page.getByRole('radio', { name: 'Archived' }).first().click();
-    await expect(page.locator('.epm-project-board-name', { hasText: 'Archived Alpha' })).toBeVisible();
+    await expect(page.locator('.epm-project-board-name', { hasText: 'Archived Beta' })).toBeVisible();
     await page.screenshot({ path: `${screenshotDir}/archived-narrowed-subgoal.png`, fullPage: true });
 });
 

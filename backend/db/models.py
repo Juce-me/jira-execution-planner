@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import (
@@ -47,14 +48,14 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     external_provider: Mapped[str] = mapped_column(String(64), nullable=False)
     external_subject: Mapped[str] = mapped_column(String(255), nullable=False)
-    email: Mapped[str | None] = mapped_column(String(255))
-    display_name: Mapped[str | None] = mapped_column(String(255))
+    email: Mapped[Optional[str]] = mapped_column(String(255))
+    display_name: Mapped[Optional[str]] = mapped_column(String(255))
     account_type: Mapped[str] = mapped_column(String(32), nullable=False, default='user')
     status: Mapped[str] = mapped_column(String(32), nullable=False, default='active')
     created_by: Mapped[str] = mapped_column(String(255), nullable=False, default='system')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
-    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class Workspace(Base):
@@ -81,8 +82,8 @@ class Workspace(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     environment_key: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    jira_site_url: Mapped[str | None] = mapped_column(String(512))
-    jira_cloud_id: Mapped[str | None] = mapped_column(String(255))
+    jira_site_url: Mapped[Optional[str]] = mapped_column(String(512))
+    jira_cloud_id: Mapped[Optional[str]] = mapped_column(String(255))
     created_by: Mapped[str] = mapped_column(String(255), nullable=False, default='system')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
@@ -125,11 +126,11 @@ class ViewConfig(Base):
     payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     visibility: Mapped[str] = mapped_column(String(32), nullable=False, default='private')
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    source_path: Mapped[str | None] = mapped_column(String(1024))
-    source_hash: Mapped[str | None] = mapped_column(String(128))
+    source_path: Mapped[Optional[str]] = mapped_column(String(1024))
+    source_hash: Mapped[Optional[str]] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
-    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class ViewConfigVersion(Base):
@@ -142,9 +143,9 @@ class ViewConfigVersion(Base):
     view_config_id: Mapped[str] = mapped_column(ForeignKey('view_configs.id', ondelete='CASCADE'), nullable=False)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
-    created_by: Mapped[str | None] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    change_note: Mapped[str | None] = mapped_column(String(255))
+    change_note: Mapped[Optional[str]] = mapped_column(String(255))
 
 
 class AuthConnection(Base):
@@ -190,15 +191,15 @@ class AuthConnection(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
-    site_url: Mapped[str | None] = mapped_column(String(512))
-    cloud_id: Mapped[str | None] = mapped_column(String(255))
-    credential_subject: Mapped[str | None] = mapped_column(String(255))
+    site_url: Mapped[Optional[str]] = mapped_column(String(512))
+    cloud_id: Mapped[Optional[str]] = mapped_column(String(255))
+    credential_subject: Mapped[Optional[str]] = mapped_column(String(255))
     capabilities: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
-    scopes: Mapped[list | None] = mapped_column(JSON)
+    scopes: Mapped[Optional[list]] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default='active')
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    last_validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
@@ -226,9 +227,9 @@ class AuthToken(Base):
     wrapped_dek: Mapped[str] = mapped_column(Text, nullable=False)
     key_id: Mapped[str] = mapped_column(String(255), nullable=False)
     aad_hash: Mapped[str] = mapped_column(String(128), nullable=False)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    rotated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class ServiceIntegration(Base):
@@ -255,10 +256,10 @@ class ServiceIntegration(Base):
     credential_subject: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default='active')
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    last_validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_by: Mapped[str | None] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
-    updated_by: Mapped[str | None] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    last_validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    updated_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
@@ -286,8 +287,8 @@ class ServiceIntegrationToken(Base):
     wrapped_dek: Mapped[str] = mapped_column(Text, nullable=False)
     key_id: Mapped[str] = mapped_column(String(255), nullable=False)
     aad_hash: Mapped[str] = mapped_column(String(128), nullable=False)
-    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rotated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class JiraProjectAccess(Base):
@@ -310,7 +311,7 @@ class JiraProjectAccess(Base):
     project_key: Mapped[str] = mapped_column(String(64), nullable=False)
     project_type: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default='unknown')
-    error_code: Mapped[str | None] = mapped_column(String(128))
+    error_code: Mapped[Optional[str]] = mapped_column(String(128))
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
@@ -319,11 +320,11 @@ class AuditEvent(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
-    actor_user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
-    target_user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
-    auth_connection_id: Mapped[str | None] = mapped_column(String(36), ForeignKey('auth_connections.id', ondelete='SET NULL'))
+    actor_user_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    target_user_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    auth_connection_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('auth_connections.id', ondelete='SET NULL'))
     event_type: Mapped[str] = mapped_column(String(128), nullable=False)
-    event_metadata: Mapped[dict | None] = mapped_column('metadata', JSON)
+    event_metadata: Mapped[Optional[dict]] = mapped_column('metadata', JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 

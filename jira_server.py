@@ -4,6 +4,7 @@ from flask import abort, has_request_context, jsonify, redirect, request, send_f
 import requests
 import argparse
 import base64
+import copy
 import csv
 import logging
 import os
@@ -151,6 +152,7 @@ EPIC_COHORT_ENRICH_TIMEOUT_SECONDS = float(os.getenv('EPIC_COHORT_ENRICH_TIMEOUT
 EXCLUDED_CAPACITY_STATS_MAX_SPRINTS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_SPRINTS', '24'))
 EXCLUDED_CAPACITY_STATS_MAX_ISSUES = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_ISSUES', '2000'))
 EXCLUDED_CAPACITY_STATS_MAX_EPICS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_EPICS', '200'))
+EXCLUDED_CAPACITY_STATS_SOURCE_CACHE_TTL_SECONDS = int(os.getenv('EXCLUDED_CAPACITY_STATS_SOURCE_CACHE_TTL_SECONDS', '300'))
 EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS = int(os.getenv('EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS', '3600'))
 EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE = int(os.getenv('EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE', '100'))
 
@@ -164,6 +166,7 @@ DEPENDENCIES_CACHE = {}
 DEPENDENCIES_CACHE_TTL_SECONDS = 60 * 5
 UPDATE_CHECK_CACHE = {'ts': 0, 'data': None}
 EPIC_COHORT_CACHE = {}
+EXCLUDED_CAPACITY_STATS_SOURCE_CACHE = {}
 EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE = {}
 EPM_PROJECTS_CACHE = {}
 EPM_ISSUES_CACHE = {}
@@ -2060,6 +2063,7 @@ def clear_auth_sensitive_caches(reason='auth_context_change'):
         MISSING_INFO_CACHE.clear()
         DEPENDENCIES_CACHE.clear()
         EPIC_COHORT_CACHE.clear()
+        EXCLUDED_CAPACITY_STATS_SOURCE_CACHE.clear()
         EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE.clear()
         SCENARIO_CACHE['generatedAt'] = None
         SCENARIO_CACHE['data'] = None
@@ -6046,11 +6050,69 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
     }
 
 
-def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None):
+def _record_excluded_capacity_timing(timings_ms, key, started):
+    if timings_ms is not None:
+        timings_ms[key] = round((time.perf_counter() - started) * 1000, 2)
+
+
+def _excluded_capacity_server_timing_header(timings_ms):
+    if not timings_ms:
+        return ''
+    if 'cache' in timings_ms:
+        return 'cache;dur=1'
+    token_names = {
+        'field_config': 'field-config',
+        'catalog': 'catalog',
+        'jira_search': 'jira-search',
+        'epic_summaries': 'epic-summaries',
+        'build_payload': 'build-payload',
+        'cache_store': 'cache-store',
+    }
+    parts = []
+    for key, token in token_names.items():
+        value = timings_ms.get(key)
+        if value is not None:
+            parts.append(f'{token};dur={value}')
+    return ', '.join(parts)
+
+
+def _build_excluded_capacity_stats_source_fields(story_points_field, sprint_field_id, epic_link_field_id, team_field_id):
+    fields = []
+    for field_id in (story_points_field, 'parent', sprint_field_id, epic_link_field_id, team_field_id):
+        if field_id and field_id not in fields:
+            fields.append(field_id)
+    return fields
+
+
+def _excluded_capacity_stats_source_cache_key(context, sprint_ids, team_ids, jql, fields_list):
+    sprint_signature = ','.join(str(item or '').strip() for item in (sprint_ids or []) if str(item or '').strip())
+    team_signature = ','.join(normalize_team_ids(team_ids or []))
+    source_signature = hashlib.sha256(
+        json.dumps({
+            'jql': jql,
+            'fields': fields_list,
+        }, sort_keys=True).encode('utf-8')
+    ).hexdigest()
+    parts = (
+        'excluded-capacity-stats-source',
+        sprint_signature,
+        team_signature,
+        source_signature,
+    )
+    if context is not None:
+        return build_jira_home_process_cache_key(context, *parts)
+    return parts
+
+
+def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None, refresh=False, timings_ms=None):
+    field_started = time.perf_counter()
     team_field_id = resolve_team_field_id(None, context=context)
     epic_link_field_id = resolve_epic_link_field_id(None, context=context)
     sprint_field_id = get_sprint_field_id()
     story_points_field = get_story_points_field_id()
+    _record_excluded_capacity_timing(timings_ms, 'field_config', field_started)
+
+    catalog_started = time.perf_counter()
     try:
         catalog = load_team_catalog() or {}
     except Exception:
@@ -6061,21 +6123,26 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
             name = str(entry.get('name') or '').strip()
             if cid and name:
                 team_name_by_id[str(cid).strip()] = name
+    _record_excluded_capacity_timing(timings_ms, 'catalog', catalog_started)
+
     jql = build_excluded_capacity_stats_jql(sprint_ids, team_ids=team_ids)
-    fields_list = [
-        'summary',
-        'status',
-        'priority',
-        'issuetype',
-        'assignee',
-        'updated',
+    fields_list = _build_excluded_capacity_stats_source_fields(
         story_points_field,
-        'parent',
-        'project'
-    ]
-    for field_id in (sprint_field_id, epic_link_field_id, team_field_id):
-        if field_id and field_id not in fields_list:
-            fields_list.append(field_id)
+        sprint_field_id,
+        epic_link_field_id,
+        team_field_id,
+    )
+
+    cache_enabled = context is not None and jira_home_partitioned_process_cache_enabled(context)
+    cache_key = _excluded_capacity_stats_source_cache_key(context, sprint_ids, team_ids, jql, fields_list)
+    if cache_enabled and not refresh:
+        now = time.time()
+        with _cache_lock:
+            cached = EXCLUDED_CAPACITY_STATS_SOURCE_CACHE.get(cache_key)
+            if cached and now - cached.get('timestamp', 0) < EXCLUDED_CAPACITY_STATS_SOURCE_CACHE_TTL_SECONDS:
+                if timings_ms is not None:
+                    timings_ms['cache'] = 1
+                return copy.deepcopy(cached.get('data') or {}), None
 
     warnings = []
     collected_issues = []
@@ -6083,6 +6150,7 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
     page_count = 0
     page_size = 100
 
+    jira_search_started = time.perf_counter()
     while len(collected_issues) < EXCLUDED_CAPACITY_STATS_MAX_ISSUES:
         payload = {
             'jql': jql,
@@ -6101,6 +6169,7 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
         next_page_token = data.get('nextPageToken')
         if data.get('isLast', True) or not next_page_token or not issues:
             break
+    _record_excluded_capacity_timing(timings_ms, 'jira_search', jira_search_started)
 
     if len(collected_issues) >= EXCLUDED_CAPACITY_STATS_MAX_ISSUES:
         warnings.append(f'issue fetch capped at {EXCLUDED_CAPACITY_STATS_MAX_ISSUES} issues')
@@ -6121,14 +6190,17 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
             seen_epics.add(epic_key)
             epic_keys.append(epic_key)
 
+    epic_summary_started = time.perf_counter()
     epic_summary_by_key = fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=context)
+    _record_excluded_capacity_timing(timings_ms, 'epic_summaries', epic_summary_started)
 
+    build_payload_started = time.perf_counter()
     issues_payload = [
         build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id, epic_summary_by_key, team_name_by_id)
         for issue in collected_issues
     ]
 
-    return {
+    result = {
         'issues': issues_payload,
         'meta': {
             'warnings': warnings,
@@ -6137,7 +6209,19 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
             'queryPages': page_count,
             'issueLimit': EXCLUDED_CAPACITY_STATS_MAX_ISSUES
         }
-    }, None
+    }
+    _record_excluded_capacity_timing(timings_ms, 'build_payload', build_payload_started)
+
+    if cache_enabled:
+        cache_store_started = time.perf_counter()
+        with _cache_lock:
+            EXCLUDED_CAPACITY_STATS_SOURCE_CACHE[cache_key] = {
+                'timestamp': time.time(),
+                'data': copy.deepcopy(result)
+            }
+        _record_excluded_capacity_timing(timings_ms, 'cache_store', cache_store_started)
+
+    return result, None
 
 
 @app.route('/api/stats/excluded-capacity-source', methods=['POST'])
@@ -6152,20 +6236,33 @@ def get_excluded_capacity_stats_source():
 
     raw_team_ids = payload.get('teamIds') if isinstance(payload, dict) else []
     team_ids = normalize_team_ids(raw_team_ids if isinstance(raw_team_ids, list) else [])
+    refresh = bool(payload.get('refresh')) if isinstance(payload, dict) else False
 
     try:
         auth_context = current_request_auth_context()
-        stats_payload, error_response = fetch_excluded_capacity_stats_source(sprint_ids, context=auth_context, team_ids=team_ids)
+        timings_ms = {}
+        stats_payload, error_response = fetch_excluded_capacity_stats_source(
+            sprint_ids,
+            context=auth_context,
+            team_ids=team_ids,
+            refresh=refresh,
+            timings_ms=timings_ms,
+        )
         if error_response is not None:
             return jsonify({
                 'error': 'Failed to fetch excluded-capacity stats source',
                 'details': error_response.text
             }), error_response.status_code
 
-        return jsonify({
+        response = jsonify({
+            'cached': 'cache' in timings_ms,
             'generatedAt': datetime.now().isoformat(),
             'data': stats_payload
         })
+        server_timing = _excluded_capacity_server_timing_header(timings_ms)
+        if server_timing:
+            response.headers['Server-Timing'] = server_timing
+        return response
     except AuthError as error:
         if error.code == "auth_required":
             payload, status = oauth_auth_required_payload()

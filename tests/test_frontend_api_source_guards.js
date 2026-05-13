@@ -411,6 +411,28 @@ test('settings API wrappers preserve save body shapes and no-cache reads', async
     });
 });
 
+test('excluded capacity stats source wrapper can request a backend refresh', async () => {
+    const engApi = loadApiModule('engApi.js', [
+        'fetchExcludedCapacityStatsSource',
+    ]);
+
+    await withMockFetch(async (calls) => {
+        await engApi.fetchExcludedCapacityStatsSource('http://backend', {
+            sprintIds: ['101'],
+            teamIds: ['team-1'],
+            refresh: true,
+        });
+
+        assert.equal(calls[0].url, 'http://backend/api/stats/excluded-capacity-source');
+        assert.deepEqual(JSON.parse(calls[0].options.body), {
+            sprintIds: ['101'],
+            teamIds: ['team-1'],
+            refresh: true,
+        });
+        assertJsonHeader(calls[0].options);
+    });
+});
+
 test('app config wrapper preserves resolved view metadata and legacy epm shape', () => {
     const { getJson } = loadHttpHelpers();
     const configApi = loadApiModule('configApi.js', [

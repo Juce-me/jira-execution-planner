@@ -58,10 +58,10 @@ test('dashboard source wires EPM rollup loading and metadata-only rendering', ()
     assert.ok(epmViewDataSource.includes('fetchEpmProjects(backendUrl, { tab, subGoalKeys: runtimeEpmSubGoalKeys });'), 'Expected EPM hook to load EPM projects through tab and sub-goal scoped wrapper');
     assert.ok(epmApiSource.includes('const query = params.toString();'), 'Expected EPM projects wrapper to build tab query string');
     assert.ok(epmApiSource.includes('const url = query ? `${backendUrl}/api/epm/projects?${query}` : `${backendUrl}/api/epm/projects`;'), 'Expected EPM projects wrapper to preserve scoped and unscoped project URLs');
-    assert.ok(epmApiSource.includes("getEpmJson(url, 'EPM projects', { cache: 'no-cache' })"), 'Expected EPM projects fetch to use the tab-scoped wrapper URL');
+    assert.ok(epmApiSource.includes("getJson(url, 'EPM projects', { cache: 'no-cache' })"), 'Expected EPM projects fetch to use the tab-scoped wrapper URL');
     assert.ok(epmApiSource.includes('export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {}) {'), 'Expected EPM configuration project loader');
     assert.ok(epmApiSource.includes('const refreshParam = forceRefresh ? \'?refresh=true\' : \'\';'), 'Expected project configuration refresh query support');
-    assert.ok(epmApiSource.includes('postEpmJson(`${backendUrl}/api/epm/projects/configuration${refreshParam}`'), 'Expected configuration fetch endpoint');
+    assert.ok(epmApiSource.includes('postJson(`${backendUrl}/api/epm/projects/configuration${refreshParam}`'), 'Expected configuration fetch endpoint');
     assert.ok(!epmApiSource.includes('/api/epm/projects/preview'), 'EPM settings must not call preview endpoint');
     assert.ok(epmViewDataSource.includes("if (epmTab === 'active' && !selectedSprint) {"), 'Expected Active EPM sprint guard in useEpmViewData.js');
     assert.ok(epmViewDataSource.includes('setEpmRollupTree(null);'), 'Expected Active EPM sprint guard to clear rollup tree');

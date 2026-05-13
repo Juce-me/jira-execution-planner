@@ -41,6 +41,7 @@ import {
     compareSprintsChronologically,
     getSprintRange,
     getSprintQuarterLabel,
+    loadExcludedCapacityStatsSourceChunks,
     mergeExcludedCapacityStatsSourceChunks,
     pickAutoSelectedExcludedEpics
 } from './stats/excludedCapacityStats.js';
@@ -133,6 +134,7 @@ import {
         const EMPTY_ARRAY = Object.freeze([]);
         const EMPTY_OBJECT = Object.freeze({});
         const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';
+        const EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY = 3;
         const SHARED_CONFIGURATION_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'epm']);
         function isActiveHomeTokenConnection(connection) {
             return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);
@@ -598,6 +600,7 @@ import {
             );
             const [excludedCapacityIsolatedTeam, setExcludedCapacityIsolatedTeam] = useState(null);
             const [excludedCapacityEpicDropdownOpen, setExcludedCapacityEpicDropdownOpen] = useState(false);
+            const [excludedCapacityRefreshNonce, setExcludedCapacityRefreshNonce] = useState(0);
             const excludedCapacityEpicDropdownRef = useRef(null);
             const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare');
             const [burnoutHoverPoint, setBurnoutHoverPoint] = useState(null);
@@ -606,6 +609,7 @@ import {
             const burnoutCacheRef = useRef({});
             const cohortCacheRef = useRef({});
             const excludedCapacityCacheRef = useRef({});
+            const excludedCapacityForceRefreshRef = useRef(false);
             const burnoutChartRef = useRef(null);
             const [showTeamDropdown, setShowTeamDropdown] = useState(false);
             const teamDropdownRefs = useRef({ main: null, compact: null });
@@ -6309,9 +6313,13 @@ import {
                     setExcludedCapacityLoading(false);
                     return;
                 }
+                const forceRefresh = excludedCapacityForceRefreshRef.current;
+                if (forceRefresh) {
+                    excludedCapacityForceRefreshRef.current = false;
+                }
                 const rangeCacheKey = `range::${excludedCapacityQueryKey}`;
                 const cached = excludedCapacityCacheRef.current[rangeCacheKey];
-                if (cached) {
+                if (!forceRefresh && cached) {
                     setExcludedCapacityData(cached);
                     setExcludedCapacityError('');
                     setExcludedCapacityLoading(false);
@@ -6324,10 +6332,12 @@ import {
                 const fetchSprintChunk = async (sprintId) => {
                     const sprintCacheKey = sprintCacheKeyFor(sprintId);
                     const cachedSprint = excludedCapacityCacheRef.current[sprintCacheKey];
-                    if (cachedSprint) return cachedSprint;
+                    if (!forceRefresh && cachedSprint) return cachedSprint;
                     const controller = new AbortController();
                     controllers.add(controller);
+                    let timedOut = false;
                     const timeoutId = window.setTimeout(() => {
+                        timedOut = true;
                         try {
                             controller.abort();
                         } catch (err) {
@@ -6338,6 +6348,7 @@ import {
                         const response = await requestExcludedCapacityStatsSource(BACKEND_URL, {
                             sprintIds: [sprintId],
                             teamIds: excludedCapacityScopedTeamIds,
+                            refresh: forceRefresh,
                             signal: controller.signal
                         });
                         if (!response.ok) {
@@ -6350,6 +6361,13 @@ import {
                             excludedCapacityCacheRef.current[sprintCacheKey] = data;
                         }
                         return data;
+                    } catch (err) {
+                        if (err?.name === 'AbortError' && timedOut) {
+                            const timeoutError = new Error('request timed out after 30s');
+                            timeoutError.name = 'ExcludedCapacitySprintTimeout';
+                            throw timeoutError;
+                        }
+                        throw err;
                     } finally {
                         window.clearTimeout(timeoutId);
                         controllers.delete(controller);
@@ -6358,22 +6376,24 @@ import {
                 const loadExcludedCapacity = async () => {
                     setExcludedCapacityLoading(true);
                     setExcludedCapacityError('');
-                    const chunks = [];
                     try {
-                        for (const sprintId of excludedCapacitySprintIds) {
-                            const chunk = await fetchSprintChunk(sprintId);
-                            if (cancelled) return;
-                            if (chunk) {
-                                chunks.push(chunk);
+                        const result = await loadExcludedCapacityStatsSourceChunks(excludedCapacitySprintIds, fetchSprintChunk, {
+                            maxConcurrent: EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY,
+                            isCancelled: () => cancelled,
+                            onProgress: (chunks, progressMeta) => {
+                                if (cancelled) return;
                                 setExcludedCapacityData(mergeExcludedCapacityStatsSourceChunks(chunks, {
-                                    loadedSprintCount: chunks.length,
-                                    totalSprintCount: excludedCapacitySprintIds.length
+                                    loadedSprintCount: progressMeta.loadedSprintCount,
+                                    totalSprintCount: progressMeta.totalSprintCount
                                 }));
                             }
-                        }
+                        });
                         if (cancelled) return;
-                        const data = mergeExcludedCapacityStatsSourceChunks(chunks, {
-                            loadedSprintCount: chunks.length,
+                        if (result.errors.length === excludedCapacitySprintIds.length) {
+                            throw new Error('Excluded capacity source failed for all selected sprints.');
+                        }
+                        const data = mergeExcludedCapacityStatsSourceChunks(result.chunks, {
+                            loadedSprintCount: result.chunks.length,
                             totalSprintCount: excludedCapacitySprintIds.length
                         });
                         excludedCapacityCacheRef.current[rangeCacheKey] = data;
@@ -6411,7 +6431,8 @@ import {
                 excludedCapacityScopedTeamSignature,
                 excludedCapacityEpicOptions,
                 activeGroupId,
-                activeGroupTeamIds.length
+                activeGroupTeamIds.length,
+                excludedCapacityRefreshNonce
             ]);
             const excludedCapacityIssues = React.useMemo(() => {
                 return Array.isArray(excludedCapacityData?.issues) ? excludedCapacityData.issues : [];
@@ -11598,8 +11619,10 @@ import {
                                             excludedCapacityCacheRef.current = {};
                                             loadSprints(true);
                                             if (isStatsSourceOnlyStatsView) {
+                                                excludedCapacityForceRefreshRef.current = true;
                                                 setExcludedCapacityData(null);
                                                 setExcludedCapacityError('');
+                                                setExcludedCapacityRefreshNonce(prev => prev + 1);
                                                 return;
                                             }
                                             loadProductTasks({ forceRefresh: true });
@@ -12122,6 +12145,21 @@ import {
 
                         {canRenderStatsPanel && (
                             <>
+                                <SegmentedControl
+                                    className="eng-mode-control stats-view-toggle"
+                                    ariaLabel="Statistics view"
+                                    value={statsView}
+                                    onChange={setStatsView}
+                                    options={[
+                                        { value: 'teams', label: 'Teams' },
+                                        { value: 'priority', label: 'Priority' },
+                                        { value: 'burnout', label: 'Burndown' },
+                                        { value: 'cohort', label: 'Lead Times' },
+                                        { value: 'excludedCapacity', label: 'Excluded Capacity' },
+                                        { value: 'monoCrossShare', label: 'Mono vs Cross' }
+                                    ]}
+                                />
+
                                 {statsView !== 'cohort' && statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && (
                                 <div className="stats-summary">
                                     <div
@@ -12176,45 +12214,6 @@ import {
                                     </div>
                                 </div>
                                 )}
-
-                                <div className="stats-view-toggle">
-                                    <button
-                                        className={`stats-toggle ${statsView === 'teams' ? 'active' : ''}`}
-                                        onClick={() => setStatsView('teams')}
-                                    >
-                                        Teams
-                                    </button>
-                                    <button
-                                        className={`stats-toggle ${statsView === 'priority' ? 'active' : ''}`}
-                                        onClick={() => setStatsView('priority')}
-                                    >
-                                        Priority
-                                    </button>
-                                    <button
-                                        className={`stats-toggle ${statsView === 'burnout' ? 'active' : ''}`}
-                                        onClick={() => setStatsView('burnout')}
-                                    >
-                                        Burndown
-                                    </button>
-                                    <button
-                                        className={`stats-toggle ${statsView === 'cohort' ? 'active' : ''}`}
-                                        onClick={() => setStatsView('cohort')}
-                                    >
-                                        Lead Times
-                                    </button>
-                                    <button
-                                        className={`stats-toggle ${statsView === 'excludedCapacity' ? 'active' : ''}`}
-                                        onClick={() => setStatsView('excludedCapacity')}
-                                    >
-                                        Excluded Capacity
-                                    </button>
-                                    <button
-                                        className={`stats-toggle ${statsView === 'monoCrossShare' ? 'active' : ''}`}
-                                        onClick={() => setStatsView('monoCrossShare')}
-                                    >
-                                        Mono vs Cross
-                                    </button>
-                                </div>
 
                                 <div className={`stats-view ${statsView === 'teams' ? 'open' : ''}`}>
                                     <div className="stats-bars" style={{ '--stats-bar-columns': statsBarColumns }}>

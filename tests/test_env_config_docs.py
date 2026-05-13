@@ -21,6 +21,20 @@ FORBIDDEN_DB_OAUTH_EPM_ENV_NAMES = (
 
 
 class EnvConfigDocsTests(unittest.TestCase):
+    def test_requirements_pin_libressl_compatible_urllib3(self):
+        requirements = (REPO_ROOT / "requirements.txt").read_text(encoding="utf8").splitlines()
+        urllib3_pins = [
+            line.strip()
+            for line in requirements
+            if line.strip().lower().startswith("urllib3==")
+        ]
+
+        self.assertEqual(
+            urllib3_pins,
+            ["urllib3==1.26.20"],
+            "The local Python 3.9 venv is linked against LibreSSL; urllib3 v2 emits a startup warning.",
+        )
+
     def test_db_oauth_epm_docs_do_not_reference_basic_credential_env_names(self):
         offenders = []
         for path in DOC_PATHS:

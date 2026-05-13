@@ -156,6 +156,20 @@ import {
                 ? `${window.location.protocol}//${window.location.hostname}:${DEFAULT_BACKEND_PORT}`
                 : `http://localhost:${DEFAULT_BACKEND_PORT}`);
 
+        function isBackendConnectionFailure(err) {
+            if (!err || err.name === 'AbortError') return false;
+            const message = String(err.message || err || '').toLowerCase();
+            return message.includes('failed to fetch') ||
+                message.includes('load failed') ||
+                message.includes('networkerror') ||
+                message.includes('network error') ||
+                message.includes('connection refused');
+        }
+
+        function getServerConnectionErrorMessage(backendUrl) {
+            return `Server is not responding at ${backendUrl}. Start the Python server, then retry.`;
+        }
+
         // Get current quarter in format "2025Q1"
         function getCurrentQuarter() {
             const now = new Date();
@@ -299,6 +313,7 @@ import {
             const [techLoaded, setTechLoaded] = useState(false);
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
+            const [serverConnectionError, setServerConnectionError] = useState('');
             const [showKilled, setShowKilled] = useState(savedPrefsRef.current.showKilled ?? false);
             const [showDone, setShowDone] = useState(savedPrefsRef.current.showDone ?? true);
             const [showTech, setShowTech] = useState(savedPrefsRef.current.showTech ?? true);
@@ -739,19 +754,29 @@ import {
                 if (!selectedSprint) return null;
                 return (availableSprints || []).find(sprint => String(sprint.id) === String(selectedSprint)) || null;
             }, [availableSprints, selectedSprint]);
+            const clearServerConnectionError = React.useCallback(() => {
+                setServerConnectionError('');
+            }, []);
+            const reportServerConnectionError = React.useCallback((err) => {
+                if (!isBackendConnectionFailure(err)) return false;
+                setServerConnectionError(getServerConnectionErrorMessage(BACKEND_URL));
+                return true;
+            }, []);
             const refreshHomeTokenConnectionStatus = React.useCallback(async () => {
                 try {
                     const payload = await fetchHomeTokenConnection(BACKEND_URL);
                     const nextConnection = payload || { connected: false };
+                    clearServerConnectionError();
                     setHomeTokenConnection(nextConnection);
                     return nextConnection;
                 } catch (err) {
+                    reportServerConnectionError(err);
                     setHomeTokenConnection({ connected: false });
                     return { connected: false };
                 } finally {
                     setHomeTokenConnectionLoaded(true);
                 }
-            }, []);
+            }, [clearServerConnectionError, reportServerConnectionError]);
             const markHomeTokenRequired = React.useCallback(() => {
                 setHomeTokenConnection({ connected: false });
                 setHomeTokenConnectionLoaded(true);
@@ -1866,6 +1891,7 @@ import {
                     }
                     const payload = await response.json();
                     const normalized = normalizeGroupsConfig(payload);
+                    clearServerConnectionError();
                     setGroupsConfig(normalized);
                     setGroupWarnings(payload.warnings || []);
                     setGroupConfigSource(payload.source || '');
@@ -1880,7 +1906,11 @@ import {
                         return resolveInitialGroupId(normalized);
                     });
                 } catch (err) {
-                    setGroupsError(err.message || 'Failed to load groups config.');
+                    if (reportServerConnectionError(err)) {
+                        setGroupsError('');
+                    } else {
+                        setGroupsError(err.message || 'Failed to load groups config.');
+                    }
                 } finally {
                     setGroupsLoading(false);
                 }
@@ -2177,6 +2207,7 @@ import {
                 epmProjectSearch,
                 searchQuery,
                 onHomeTokenRequired: markHomeTokenRequired,
+                onServerConnectionFailure: reportServerConnectionError,
             });
             const [epmCollapsedProjectIds, setEpmCollapsedProjectIds] = useState(() => new Set());
             const epmVisibleProjectKeys = React.useMemo(() => {
@@ -3376,11 +3407,14 @@ import {
                     if (!response.ok) throw new Error(`Selected projects fetch error ${response.status}`);
                     const data = await response.json();
                     const selected = data.selected || [];
+                    clearServerConnectionError();
                     setSelectedProjectsDraft(selected);
                     setSavedSelectedProjects(selected);
                     selectedProjectsBaselineRef.current = JSON.stringify(selected);
                 } catch (err) {
-                    console.error('Failed to load selected projects:', err);
+                    if (!reportServerConnectionError(err)) {
+                        console.error('Failed to load selected projects:', err);
+                    }
                 }
             };
 
@@ -3405,12 +3439,15 @@ import {
                     if (!response.ok) return;
                     const data = await response.json();
                     const rows = clonePriorityWeightRows(data.weights);
+                    clearServerConnectionError();
                     setPriorityWeightsDraft(rows);
                     setEffectivePriorityWeightsRows(rows);
                     setPriorityWeightsSource(String(data.source || 'default'));
                     priorityWeightsBaselineRef.current = JSON.stringify(rows);
                 } catch (err) {
-                    console.error('Failed to load priority weights config:', err);
+                    if (!reportServerConnectionError(err)) {
+                        console.error('Failed to load priority weights config:', err);
+                    }
                 }
             };
 
@@ -5004,6 +5041,7 @@ import {
             const loadConfig = async () => {
                 try {
                     const config = await fetchAppConfig(BACKEND_URL);
+                    clearServerConnectionError();
                     setJiraUrl(config.jiraUrl || '');
                     setCapacityEnabled(Boolean(config.capacityProject));
                     setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
@@ -5013,7 +5051,9 @@ import {
                     setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));
                     applySavedEpmConfig(config.epm);
                 } catch (err) {
-                    console.error('Failed to load config:', err);
+                    if (!reportServerConnectionError(err)) {
+                        console.error('Failed to load config:', err);
+                    }
                     applySavedEpmConfig(createEmptyEpmConfigDraft());
                 }
             };
@@ -5146,9 +5186,12 @@ import {
                     }
 
                     console.log('✅ Loaded sprints:', sprints);
+                    clearServerConnectionError();
                 } catch (err) {
-                    console.error('Failed to load sprints:', err);
-                    setError(`Failed to load sprints: ${err.message}`);
+                    if (!reportServerConnectionError(err)) {
+                        console.error('Failed to load sprints:', err);
+                        setError(`Failed to load sprints: ${err.message}`);
+                    }
                 } finally {
                     setSprintsLoading(false);
                 }
@@ -5266,6 +5309,7 @@ import {
                 setReadyToCloseTechTasks,
                 setReadyToCloseProductEpicsInScope,
                 setReadyToCloseTechEpicsInScope,
+                onServerConnectionFailure: reportServerConnectionError,
             });
 
             const fetchDependencies = async (keys) => {
@@ -11471,6 +11515,20 @@ import {
                 onDependencyFocusClick: handleDependencyFocusClick,
             };
 
+            const retryServerConnection = () => {
+                clearServerConnectionError();
+                setError('');
+                void refreshHomeTokenConnectionStatus();
+                void loadConfig();
+                void loadGroupsConfig();
+                void loadSelectedProjects();
+                void loadPriorityWeightsConfig();
+                void loadSprints(true);
+                if (selectedView === 'epm') {
+                    void refreshEpmView();
+                }
+            };
+
             const renderEpicBlock = (epicGroup) => {
                         const epicInfo = epicGroup.epic;
                         const epicTitle = epicInfo?.summary || epicGroup.parentSummary ||
@@ -11802,6 +11860,18 @@ import {
                             </>
                         )}
                     </div>
+
+                    {serverConnectionError && (
+                        <div className="server-unavailable-banner" role="alert">
+                            <div>
+                                <div className="server-unavailable-title">Server is not responding</div>
+                                <p>{serverConnectionError}</p>
+                            </div>
+                            <button type="button" onClick={retryServerConnection}>
+                                Retry connection
+                            </button>
+                        </div>
+                    )}
 
                     {selectedView === 'eng' && !isCompletedSprintSelected && (
                         <div className={`capacity-panel ${showPlanning ? 'open' : ''}`}>

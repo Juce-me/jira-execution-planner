@@ -52,6 +52,30 @@ test('dashboard without Home token hides EPM and skips EPM metadata startup', as
     await expect(dialog.getByRole('button', { name: /^Save$/ })).toHaveCount(0);
 });
 
+test('basic auth mode shows EPM without a per-user Home token connection', async ({ page }) => {
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'epm',
+        epmTab: 'active',
+        epmSelectedProjectId: '',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+    });
+    const fixture = await installDashboardFixture(page, {
+        authMode: 'basic',
+        connection: disconnectedHomeTokenConnection(),
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    const viewSwitch = page.getByRole('radiogroup', { name: 'Dashboard view' });
+    await expect(viewSwitch.getByRole('radio', { name: 'EPM' })).toBeVisible();
+    await expect(viewSwitch.getByRole('radio', { name: 'EPM' })).toBeChecked();
+    await expect(page.locator('.epm-project-board-name', { hasText: 'Connected Home Project' })).toBeVisible();
+    expect(epmMetadataCalls(fixture.calls).map(call => call.pathname)).toContain('/api/epm/projects');
+});
+
 test('connecting and revoking Home token updates EPM visibility without restart', async ({ page }) => {
     const fixture = await installDashboardFixture(page, {
         connection: disconnectedHomeTokenConnection(),

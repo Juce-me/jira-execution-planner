@@ -88,6 +88,8 @@ function requestBody(request) {
 
 async function installDashboardFixture(page, options = {}) {
     const calls = [];
+    const authMode = options.authMode || 'atlassian_oauth';
+    const requiresHomeTokenConnection = authMode !== 'basic';
     let currentConnection = options.connection || disconnectedHomeTokenConnection();
     let epmPrerequisite = Boolean(options.epmPrerequisite);
 
@@ -115,7 +117,7 @@ async function installDashboardFixture(page, options = {}) {
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/status') {
-            return json({ authenticated: true, email: 'profile@example.com', profile: { email: 'profile@example.com' } });
+            return json({ authMode, authenticated: true, email: 'profile@example.com', profile: { email: 'profile@example.com' } });
         }
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-token' });
         if (url.pathname === '/api/me/connections/home-token' && request.method() === 'GET') {
@@ -136,6 +138,7 @@ async function installDashboardFixture(page, options = {}) {
                 jiraUrl: 'https://jira.example',
                 capacityProject: '',
                 groupQueryTemplateEnabled: false,
+                authMode,
                 settingsAdminOnly: options.settingsAdminOnly ?? false,
                 userCanEditSettings: options.userCanEditSettings ?? true,
                 userCanEditEpmConfig: options.userCanEditEpmConfig ?? true,
@@ -166,7 +169,7 @@ async function installDashboardFixture(page, options = {}) {
         if (url.pathname === '/api/epm/config') return json({ ...epmConfig, ...(options.epmConfig || {}) });
         if (url.pathname === '/api/epm/scope') return json({ cloudId: 'synthetic-cloud', error: '' });
         if (url.pathname === '/api/epm/goals') {
-            if (epmPrerequisite || !isActiveHomeToken(currentConnection)) {
+            if (requiresHomeTokenConnection && (epmPrerequisite || !isActiveHomeToken(currentConnection))) {
                 return json({
                     goals: [],
                     error: 'Connect your Atlassian API token to load EPM Home projects.',
@@ -180,7 +183,7 @@ async function installDashboardFixture(page, options = {}) {
             return json({ goals: [{ id: 'root', key: 'ROOT-100', name: 'Connected Root Goal' }], error: '' });
         }
         if (url.pathname === '/api/epm/projects/configuration') {
-            if (epmPrerequisite || !isActiveHomeToken(currentConnection)) {
+            if (requiresHomeTokenConnection && (epmPrerequisite || !isActiveHomeToken(currentConnection))) {
                 currentConnection = disconnectedHomeTokenConnection();
                 return homeTokenRequired();
             }
@@ -188,14 +191,14 @@ async function installDashboardFixture(page, options = {}) {
         }
         if (url.pathname === '/api/jira/labels') return json({ labels: ['rnd_project_connected'] });
         if (url.pathname === '/api/epm/projects') {
-            if (epmPrerequisite || !isActiveHomeToken(currentConnection)) {
+            if (requiresHomeTokenConnection && (epmPrerequisite || !isActiveHomeToken(currentConnection))) {
                 currentConnection = disconnectedHomeTokenConnection();
                 return homeTokenRequired();
             }
             return json({ projects: [epmProject(url.searchParams.get('tab') || 'active')] });
         }
         if (url.pathname === '/api/epm/projects/rollup/all') {
-            if (epmPrerequisite || !isActiveHomeToken(currentConnection)) {
+            if (requiresHomeTokenConnection && (epmPrerequisite || !isActiveHomeToken(currentConnection))) {
                 currentConnection = disconnectedHomeTokenConnection();
                 return homeTokenRequired();
             }
@@ -203,7 +206,7 @@ async function installDashboardFixture(page, options = {}) {
             return json({ projects: [emptyRollup(project)], duplicates: {}, truncated: false, fallback: true });
         }
         if (url.pathname.startsWith('/api/epm/projects/') && url.pathname.endsWith('/rollup')) {
-            if (epmPrerequisite || !isActiveHomeToken(currentConnection)) {
+            if (requiresHomeTokenConnection && (epmPrerequisite || !isActiveHomeToken(currentConnection))) {
                 currentConnection = disconnectedHomeTokenConnection();
                 return homeTokenRequired();
             }

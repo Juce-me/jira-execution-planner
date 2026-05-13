@@ -259,6 +259,7 @@ def get_config():
     epm_config = normalize_epm_config(view_payload.get('epm') or {}) if view_config else get_epm_config()
     payload = {
         'jiraUrl': auth_context.site_url,
+        'authMode': auth_context.auth_mode,
         'capacityProject': get_effective_capacity_project(),
         'boardId': board_cfg.get('boardId', ''),
         'boardName': board_cfg.get('boardName', ''),

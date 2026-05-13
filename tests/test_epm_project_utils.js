@@ -285,6 +285,23 @@ test('EPM sub-goal display names remove the technical prefix and keep keys separ
     );
 });
 
+test('EPM sub-goal selection toggles checked goals instead of narrowing from all', async () => {
+    const { getNextEpmSubGoalSelection } = await import(helperUrl);
+
+    assert.deepStrictEqual(
+        getNextEpmSubGoalSelection(['child-a', 'CHILD-B', 'CHILD-C'], [], 'child-a'),
+        ['CHILD-B', 'CHILD-C']
+    );
+    assert.deepStrictEqual(
+        getNextEpmSubGoalSelection(['CHILD-A', 'CHILD-B', 'CHILD-C'], ['child-b'], 'child-c'),
+        ['CHILD-B', 'CHILD-C']
+    );
+    assert.deepStrictEqual(
+        getNextEpmSubGoalSelection(['CHILD-A', 'CHILD-B'], ['CHILD-A'], 'child-b'),
+        []
+    );
+});
+
 test('hydrateEpmProjectDraft fills blank draft name and label from Home project', async () => {
     const { hydrateEpmProjectDraft } = await import(helperUrl);
 

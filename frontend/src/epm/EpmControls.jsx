@@ -5,6 +5,7 @@ import {
     getEpmSubGoalDisplayParts,
     getEpmProjectDisplayName,
     getEpmProjectIdentity,
+    getNextEpmSubGoalSelection,
     normalizeEpmScopeSubGoalKeys,
 } from './epmProjectUtils.mjs';
 
@@ -204,18 +205,7 @@ export function EpmControls({
                                             className="sprint-dropdown-option"
                                             data-sub-goal-key={key}
                                             onClick={() => {
-                                                if (!narrowed) {
-                                                    setEpmSelectedSubGoalKeys([key]);
-                                                    return;
-                                                }
-                                                const nextSet = new Set(selectedSubGoalKeys);
-                                                if (nextSet.has(key)) {
-                                                    nextSet.delete(key);
-                                                } else {
-                                                    nextSet.add(key);
-                                                }
-                                                const nextKeys = savedSubGoalKeys.filter(savedKey => nextSet.has(savedKey));
-                                                setEpmSelectedSubGoalKeys(nextKeys.length === savedSubGoalKeys.length ? [] : nextKeys);
+                                                setEpmSelectedSubGoalKeys(getNextEpmSubGoalSelection(savedSubGoalKeys, selectedSubGoalKeys, key));
                                             }}
                                         >
                                             <input type="checkbox" readOnly checked={checked} tabIndex={-1} />

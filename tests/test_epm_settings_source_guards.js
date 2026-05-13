@@ -95,7 +95,7 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(fs.existsSync(settingsModalPath), 'Expected extracted SettingsModal shell component');
     assert.ok(settingsModalSource.includes('export default function SettingsModal'), 'Expected SettingsModal default component export');
     assert.ok(dashboardSource.includes("import SettingsModal from './settings/SettingsModal.jsx';"), 'Expected dashboard to import extracted SettingsModal shell');
-    assert.ok(settingsModalCallSource.includes('activeTab={groupManageTab}'), 'Expected dashboard to pass active settings tab into SettingsModal');
+    assert.ok(settingsModalCallSource.includes('activeTab={activeSettingsModalTab}'), 'Expected dashboard to pass grouped active settings tab into SettingsModal');
     assert.ok(settingsModalCallSource.includes('tabs={settingsModalTabs}'), 'Expected dashboard to pass tab descriptors into SettingsModal');
     assert.ok(settingsModalCallSource.includes("isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}"), 'Expected dashboard to pass dirty state into SettingsModal');
     assert.ok(settingsModalCallSource.includes('onRequestClose={requestCloseGroupManage}'), 'Expected backdrop close handling to stay wired through dashboard');
@@ -125,12 +125,8 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(jiraFieldSettingsSource.includes('export default function JiraFieldSettings'), 'Expected JiraFieldSettings default component export');
     assert.ok(dashboardSource.includes("import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';"), 'Expected dashboard to import TeamGroupsSettings');
     assert.ok(dashboardSource.includes("import JiraFieldSettings from './settings/JiraFieldSettings.jsx';"), 'Expected dashboard to import JiraFieldSettings');
-    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'teams'") && settingsModalChildrenSource.includes('<TeamGroupsSettings'), 'Expected dashboard to delegate team group tab content');
-    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'source'") && settingsModalChildrenSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate Jira source tab content');
-    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'scope'") && settingsModalChildrenSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate Jira scope tab content');
-    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'mapping'") && settingsModalChildrenSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate Jira mapping tab content');
-    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'capacity'") && settingsModalChildrenSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate Jira capacity tab content');
-    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'priorityWeights'") && settingsModalChildrenSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate priority weights tab content');
+    assert.ok(settingsModalChildrenSource.includes('DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab)') && settingsModalChildrenSource.includes('<TeamGroupsSettings'), 'Expected dashboard to delegate department tab content');
+    assert.ok(settingsModalChildrenSource.includes('ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)') && settingsModalChildrenSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate admin tab content');
     assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'labels'"), 'Expected group label tab content to stay in dashboard');
     assert.ok(!teamGroupsSettingsSource.includes('useState('), 'TeamGroupsSettings must not own settings state');
     assert.ok(!jiraFieldSettingsSource.includes('useState('), 'JiraFieldSettings must not own settings state');
@@ -512,14 +508,37 @@ test('settings tabs distinguish tool-admin configuration from team grouping', ()
     assert.ok(dashboardSource.includes('const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;'), 'Expected explicit shared-configuration edit permission');
     assert.ok(dashboardSource.includes('const canEditEpmConfiguration = canEditSharedConfiguration || userCanEditEpmConfig;'), 'Expected EPM configuration to have user-owned edit permission');
     assert.ok(dashboardSource.includes("const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';"), 'Expected configured environments to open settings on Team Groups');
-    assert.ok(tabsSource.includes("id: 'scope'"), 'Expected Scope Projects in the tool-admin tab list');
-    assert.ok(tabsSource.includes("id: 'source'"), 'Expected Jira Source in the tool-admin tab list');
-    assert.ok(tabsSource.includes("id: 'mapping'"), 'Expected Field Mapping in the tool-admin tab list');
-    assert.ok(tabsSource.includes("id: 'capacity'"), 'Expected Capacity in the tool-admin tab list');
-    assert.ok(tabsSource.includes("id: 'priorityWeights'"), 'Expected Priority Weights in the tool-admin tab list');
+    assert.ok(tabsSource.includes("id: 'departments'"), 'Expected Departments as the team grouping top-level tab');
+    assert.ok(tabsSource.includes("label: 'Departments'"), 'Expected Departments tab label');
+    assert.ok(tabsSource.includes("id: 'admin'"), 'Expected Admin as the shared configuration top-level tab');
+    assert.ok(tabsSource.includes("label: 'Admin'"), 'Expected Admin tab label');
+    assert.ok(tabsSource.indexOf("id: 'admin'") < tabsSource.indexOf("id: 'departments'"), 'Expected Admin to appear before Departments');
     assert.ok(tabsSource.includes("id: 'epm'"), 'Expected EPM settings in the settings tab list');
-    assert.ok(tabsSource.includes("id: 'teams'") && tabsSource.includes("onClick: () => setGroupManageTab('teams')"), 'Expected Team Groups to stay directly accessible');
+    assert.ok(!tabsSource.includes("id: 'scope'"), 'Scope Projects must live under Admin instead of the top-level tab list');
+    assert.ok(!tabsSource.includes("id: 'source'"), 'Jira Source must live under Admin instead of the top-level tab list');
+    assert.ok(!tabsSource.includes("id: 'mapping'"), 'Field Mapping must live under Admin instead of the top-level tab list');
+    assert.ok(!tabsSource.includes("id: 'capacity'"), 'Capacity must live under Admin instead of the top-level tab list');
+    assert.ok(!tabsSource.includes("id: 'priorityWeights'"), 'Priority Weights must live under Admin instead of the top-level tab list');
+    assert.ok(!tabsSource.includes("id: 'teams'"), 'Team Groups must live under Departments instead of the top-level tab list');
+    assert.ok(!tabsSource.includes("id: 'labels'"), 'Group Labels must live under Departments instead of the top-level tab list');
     assert.ok(!tabsSource.includes('savedSelectedProjects.length === 0'), 'Team Groups tab must not be disabled because dashboard projects are unconfigured');
+});
+
+test('settings modal groups department and admin leaves behind local sub-tabs', () => {
+    assert.ok(dashboardSource.includes("const [adminSettingsTab, setAdminSettingsTab] = useState('scope');"), 'Expected Admin-local settings tab state');
+    assert.ok(dashboardSource.includes("const [departmentSettingsTab, setDepartmentSettingsTab] = useState('teams');"), 'Expected Departments-local settings tab state');
+    assert.ok(dashboardSource.includes("const activeSettingsModalTab = ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)"), 'Expected leaf settings tabs to resolve to grouped top-level tabs');
+    assert.ok(dashboardSource.includes('id="department-settings-teams-tab"'), 'Expected Team Groups local tab');
+    assert.ok(dashboardSource.includes('id="department-settings-labels-tab"'), 'Expected Group Labels local tab');
+    assert.ok(dashboardSource.includes('id="admin-settings-scope-tab"'), 'Expected Scope Projects local admin tab');
+    assert.ok(dashboardSource.includes('id="admin-settings-source-tab"'), 'Expected Jira Source local admin tab');
+    assert.ok(dashboardSource.includes('id="admin-settings-mapping-tab"'), 'Expected Field Mapping local admin tab');
+    assert.ok(dashboardSource.includes('id="admin-settings-capacity-tab"'), 'Expected Capacity local admin tab');
+    assert.ok(dashboardSource.includes('id="admin-settings-priorityWeights-tab"'), 'Expected Priority Weights local admin tab');
+    assert.ok(dashboardSource.includes('aria-label="Departments settings sections"'), 'Expected accessible Departments sub-tab list');
+    assert.ok(dashboardSource.includes('aria-label="Admin settings sections"'), 'Expected accessible Admin sub-tab list');
+    assert.ok(dashboardSource.includes('const handleDepartmentSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for Departments sub-tabs');
+    assert.ok(dashboardSource.includes('const handleAdminSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for Admin sub-tabs');
 });
 
 test('normal users do not receive admin-only settings tabs as disabled edit surfaces', () => {
@@ -528,7 +547,7 @@ test('normal users do not receive admin-only settings tabs as disabled edit surf
         'Expected EPM settings tab visibility to use user-owned EPM permission'
     );
     assert.ok(
-        dashboardSource.includes('return canEditSharedConfiguration || !SHARED_CONFIGURATION_TAB_IDS.has(tab.id);'),
+        dashboardSource.includes("if (tab.id === 'admin') return canEditSharedConfiguration;"),
         'Expected normal-user settings tabs to omit admin-only shared configuration tabs'
     );
     assert.ok(

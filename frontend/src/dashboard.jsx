@@ -133,7 +133,9 @@ import {
         const EMPTY_ARRAY = Object.freeze([]);
         const EMPTY_OBJECT = Object.freeze({});
         const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';
-        const SHARED_CONFIGURATION_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'epm']);
+        const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights']);
+        const DEPARTMENT_SETTINGS_TAB_IDS = new Set(['teams', 'labels']);
+        const SHARED_CONFIGURATION_TAB_IDS = new Set([...ADMIN_SETTINGS_TAB_IDS, 'epm']);
         function isActiveHomeTokenConnection(connection) {
             return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);
         }
@@ -337,6 +339,8 @@ import {
             const [epmSettingsProjectSort, setEpmSettingsProjectSort] = useState('status');
             const [epmSettingsProjectView, setEpmSettingsProjectView] = useState('current');
             const [epmSettingsTab, setEpmSettingsTab] = useState('scope');
+            const [adminSettingsTab, setAdminSettingsTab] = useState('scope');
+            const [departmentSettingsTab, setDepartmentSettingsTab] = useState('teams');
             const [epmLabelShowAll, setEpmLabelShowAll] = useState({});
             const [epmLabelChanging, setEpmLabelChanging] = useState({});
             const [epmLabelMenuAnchor, setEpmLabelMenuAnchor] = useState(null);
@@ -2397,6 +2401,7 @@ import {
                 setShowGroupDiscardConfirm(false);
                 closeGroupManage();
             };
+            const labelsTabEnabled = (groupDraft?.groups || groupsConfig.groups || []).length > 0;
             const openEpmSettingsTab = () => {
                 if (!canEditEpmConfiguration) {
                     return;
@@ -2456,6 +2461,71 @@ import {
                     setEpmSettingsTab('projects');
                     focusTab('projects');
                 }
+            };
+
+            const focusSettingsSubTab = (prefix, tab) => {
+                window.requestAnimationFrame(() => {
+                    const node = document.getElementById(`${prefix}-${tab}-tab`);
+                    if (node && typeof node.focus === 'function') {
+                        node.focus();
+                    }
+                });
+            };
+
+            const handleSettingsSubTabKeyDown = (event, tabs, currentTab, setTab, prefix) => {
+                const currentIndex = Math.max(0, tabs.indexOf(currentTab));
+                if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    const direction = event.key === 'ArrowRight' ? 1 : -1;
+                    const nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
+                    const nextTab = tabs[nextIndex];
+                    setTab(nextTab);
+                    focusSettingsSubTab(prefix, nextTab);
+                    return;
+                }
+                if (event.key === 'Home') {
+                    event.preventDefault();
+                    setTab(tabs[0]);
+                    focusSettingsSubTab(prefix, tabs[0]);
+                    return;
+                }
+                if (event.key === 'End') {
+                    event.preventDefault();
+                    const nextTab = tabs[tabs.length - 1];
+                    setTab(nextTab);
+                    focusSettingsSubTab(prefix, nextTab);
+                }
+            };
+
+            const selectDepartmentSettingsTab = (tab) => {
+                if (tab === 'labels' && !labelsTabEnabled) return;
+                setDepartmentSettingsTab(tab);
+                setGroupManageTab(tab);
+            };
+
+            const selectAdminSettingsTab = (tab) => {
+                setAdminSettingsTab(tab);
+                setGroupManageTab(tab);
+            };
+
+            const handleDepartmentSettingsTabKeyDown = (event) => {
+                handleSettingsSubTabKeyDown(
+                    event,
+                    labelsTabEnabled ? ['teams', 'labels'] : ['teams'],
+                    departmentSettingsTab,
+                    selectDepartmentSettingsTab,
+                    'department-settings'
+                );
+            };
+
+            const handleAdminSettingsTabKeyDown = (event) => {
+                handleSettingsSubTabKeyDown(
+                    event,
+                    ['scope', 'source', 'mapping', 'capacity', 'priorityWeights'],
+                    adminSettingsTab,
+                    selectAdminSettingsTab,
+                    'admin-settings'
+                );
             };
 
             const closeAllTeamSearchDropdowns = () => {
@@ -3888,7 +3958,6 @@ import {
             }, [activeGroupDraft, activeTeamQuery, availableTeams, groupDraft]);
             const activeTeamResultsLimited = activeTeamResults.slice(0, 10);
             const activeTeamIndex = activeGroupDraft ? (teamSearchIndex[activeGroupDraft.id] || 0) : 0;
-            const labelsTabEnabled = (groupDraft?.groups || groupsConfig.groups || []).length > 0;
             useEffect(() => {
                 if (!showGroupManage) return;
                 if (groupManageTab === 'epm') {
@@ -3901,6 +3970,14 @@ import {
                     setGroupManageTab('teams');
                 }
             }, [showGroupManage, canEditSharedConfiguration, canEditEpmConfiguration, groupManageTab]);
+            useEffect(() => {
+                if (ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)) {
+                    setAdminSettingsTab(groupManageTab);
+                }
+                if (DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab)) {
+                    setDepartmentSettingsTab(groupManageTab);
+                }
+            }, [groupManageTab]);
             const getLabelRowKey = (groupId, teamId) => `${groupId || 'group'}::${teamId || 'team'}`;
             const getLabelSearchResults = (groupId, teamId) => {
                 const key = getLabelRowKey(groupId, teamId);
@@ -11486,48 +11563,29 @@ import {
                         );
             };
 
+            const activeSettingsModalTab = ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)
+                ? 'admin'
+                : DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab)
+                    ? 'departments'
+                    : groupManageTab;
+            const activeDepartmentSettingsTab = departmentSettingsTab === 'labels' && !labelsTabEnabled
+                ? 'teams'
+                : departmentSettingsTab;
             const settingsModalAllTabs = [
                 {
-                    id: 'scope',
-                    label: 'Scope projects',
-                    onClick: () => setGroupManageTab('scope')
+                    id: 'admin',
+                    label: 'Admin',
+                    onClick: () => setGroupManageTab(adminSettingsTab)
                 },
                 {
-                    id: 'source',
-                    label: 'Jira source',
-                    onClick: () => setGroupManageTab('source')
-                },
-                {
-                    id: 'mapping',
-                    label: 'Field mapping',
-                    onClick: () => setGroupManageTab('mapping')
-                },
-                {
-                    id: 'capacity',
-                    label: 'Capacity',
-                    onClick: () => setGroupManageTab('capacity')
-                },
-                {
-                    id: 'teams',
-                    label: 'Team groups',
-                    onClick: () => setGroupManageTab('teams')
-                },
-                {
-                    id: 'labels',
-                    label: 'Group labels',
-                    onClick: () => labelsTabEnabled && setGroupManageTab('labels'),
-                    disabled: !labelsTabEnabled,
-                    title: labelsTabEnabled ? '' : 'Save at least one group first'
+                    id: 'departments',
+                    label: 'Departments',
+                    onClick: () => setGroupManageTab(activeDepartmentSettingsTab)
                 },
                 {
                     id: 'connections',
                     label: 'Connections',
                     onClick: openUserConnectionsSettings
-                },
-                {
-                    id: 'priorityWeights',
-                    label: 'Priority weights',
-                    onClick: () => setGroupManageTab('priorityWeights')
                 },
                 {
                     id: 'epm',
@@ -11537,7 +11595,8 @@ import {
             ];
             const settingsModalTabs = settingsModalAllTabs.filter(tab => {
                 if (tab.id === 'epm') return canEditEpmConfiguration;
-                return canEditSharedConfiguration || !SHARED_CONFIGURATION_TAB_IDS.has(tab.id);
+                if (tab.id === 'admin') return canEditSharedConfiguration;
+                return true;
             });
             const settingsSaveHandler = groupManageTab === 'epm'
                 ? () => { void saveEpmConfig().catch(() => {}); }
@@ -14413,7 +14472,7 @@ import {
 
                     {showGroupManage && (
                         <SettingsModal
-                            activeTab={groupManageTab}
+                            activeTab={activeSettingsModalTab}
                             tabs={settingsModalTabs}
                             isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}
                             unsavedSectionsCount={groupManageTab !== 'connections' ? unsavedSectionsCount : 0}
@@ -14441,7 +14500,65 @@ import {
                                     onConnectionChange={handleHomeTokenConnectionChange}
                                 />
                                 )}
-                                {(groupManageTab === 'scope' || groupManageTab === 'source' || groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
+                                {ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && (
+                                <>
+                                <div
+                                    className="group-modal-tabs epm-settings-tabs"
+                                    role="tablist"
+                                    aria-label="Admin settings sections"
+                                    onKeyDown={handleAdminSettingsTabKeyDown}
+                                >
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'scope' ? 'active' : ''}`}
+                                        onClick={() => selectAdminSettingsTab('scope')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'scope'}
+                                        aria-controls="admin-settings-scope-panel"
+                                        id="admin-settings-scope-tab"
+                                        type="button"
+                                    >Scope projects</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'source' ? 'active' : ''}`}
+                                        onClick={() => selectAdminSettingsTab('source')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'source'}
+                                        aria-controls="admin-settings-source-panel"
+                                        id="admin-settings-source-tab"
+                                        type="button"
+                                    >Jira source</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'mapping' ? 'active' : ''}`}
+                                        onClick={() => selectAdminSettingsTab('mapping')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'mapping'}
+                                        aria-controls="admin-settings-mapping-panel"
+                                        id="admin-settings-mapping-tab"
+                                        type="button"
+                                    >Field mapping</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'capacity' ? 'active' : ''}`}
+                                        onClick={() => selectAdminSettingsTab('capacity')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'capacity'}
+                                        aria-controls="admin-settings-capacity-panel"
+                                        id="admin-settings-capacity-tab"
+                                        type="button"
+                                    >Capacity</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'priorityWeights' ? 'active' : ''}`}
+                                        onClick={() => selectAdminSettingsTab('priorityWeights')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'priorityWeights'}
+                                        aria-controls="admin-settings-priorityWeights-panel"
+                                        id="admin-settings-priorityWeights-tab"
+                                        type="button"
+                                    >Priority weights</button>
+                                </div>
+                                <div
+                                    id={`admin-settings-${groupManageTab}-panel`}
+                                    role="tabpanel"
+                                    aria-labelledby={`admin-settings-${groupManageTab}-tab`}
+                                >
                                 <JiraFieldSettings
                                     {...{
                                         groupManageTab,
@@ -14579,6 +14696,8 @@ import {
                                         priorityWeightsValidationError,
                                     }}
                                 />
+                                </div>
+                                </>
                                 )}
                                 {groupManageTab === 'epm' && (
                                 <EpmSettings
@@ -14665,7 +14784,41 @@ import {
                                     }}
                                 />
                                 )}
+                                {DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab) && (
+                                <>
+                                <div
+                                    className="group-modal-tabs epm-settings-tabs"
+                                    role="tablist"
+                                    aria-label="Departments settings sections"
+                                    onKeyDown={handleDepartmentSettingsTabKeyDown}
+                                >
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'teams' ? 'active' : ''}`}
+                                        onClick={() => selectDepartmentSettingsTab('teams')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'teams'}
+                                        aria-controls="department-settings-teams-panel"
+                                        id="department-settings-teams-tab"
+                                        type="button"
+                                    >Team groups</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'labels' ? 'active' : ''}`}
+                                        onClick={() => selectDepartmentSettingsTab('labels')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'labels'}
+                                        aria-controls="department-settings-labels-panel"
+                                        id="department-settings-labels-tab"
+                                        type="button"
+                                        disabled={!labelsTabEnabled}
+                                        title={labelsTabEnabled ? '' : 'Save at least one group first'}
+                                    >Group labels</button>
+                                </div>
                                 {groupManageTab === 'teams' && (
+                                <div
+                                    id="department-settings-teams-panel"
+                                    role="tabpanel"
+                                    aria-labelledby="department-settings-teams-tab"
+                                >
                                 <TeamGroupsSettings
                                     {...{
                                         groupManageTab,
@@ -14736,8 +14889,14 @@ import {
                                         removeGroupDraft,
                                     }}
                                 />
+                                </div>
                                 )}
                                 {groupManageTab === 'labels' && (
+                                <div
+                                    id="department-settings-labels-panel"
+                                    role="tabpanel"
+                                    aria-labelledby="department-settings-labels-tab"
+                                >
                                 <div className="group-modal-body group-modal-split">
                                     <div className="group-pane group-list-pane">
                                         <div className="group-pane-header">
@@ -14850,6 +15009,9 @@ import {
                                         )}
                                     </div>
                                 </div>
+                                </div>
+                                )}
+                                </>
                                 )}
                         </SettingsModal>
                     )}

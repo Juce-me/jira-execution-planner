@@ -53,6 +53,12 @@ function emptyRollup(project) {
     };
 }
 
+async function box(locator) {
+    const rect = await locator.boundingBox();
+    expect(rect).not.toBeNull();
+    return rect;
+}
+
 test('EPM multi sub-goal visual smoke', async ({ page }) => {
     await installDashboardShell(page);
     await page.addInitScript(() => {
@@ -217,4 +223,123 @@ test('EPM sub-goal filter resolves saved sibling names before narrowing', async 
     await expect(page.locator('[data-sub-goal-key="CHILD-B"] .epm-subgoal-option-name')).toHaveText('AI Labs');
     await expect(page.locator('[data-sub-goal-key="CHILD-B"] .epm-subgoal-option-key')).toHaveText('CHILD-B');
     await page.screenshot({ path: `${screenshotDir}/saved-sibling-subgoal-name.png`, fullPage: true });
+});
+
+test('EPM control dropdowns size to short labels and long options', async ({ page }) => {
+    const viewportWidth = 900;
+    await page.setViewportSize({ width: viewportWidth, height: 720 });
+    await installDashboardShell(page);
+    await page.addInitScript(() => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'epm',
+            epmTab: 'active',
+            epmSelectedProjectId: '',
+            selectedSprint: 42,
+            sprintName: '2026Q2',
+        }));
+    });
+    const projects = [
+        project('active', 'CHILD-A', 'AI for RFP creation'),
+        {
+            ...project('active', 'CHILD-B', 'Data Partnership Support Revenue Share Fee Model'),
+            name: 'Data Partnership: Support Revenue Share Fee Model',
+            displayName: 'Data Partnership: Support Revenue Share Fee Model',
+        },
+    ];
+    await page.route('**/api/**', route => {
+        const url = new URL(route.request().url());
+        const json = (body) => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(body),
+        });
+        if (url.pathname === '/api/config') {
+            return json({
+                jiraUrl: 'https://jira.example',
+                projectsConfigured: true,
+                settingsAdminOnly: false,
+                userCanEditSettings: true,
+                epm: {
+                    version: 2,
+                    labelPrefix: 'rnd_project_',
+                    scope: { rootGoalKey: 'ROOT-100', subGoalKeys: ['CHILD-A', 'CHILD-B'] },
+                    issueTypes: { initiative: ['Initiative'], epic: ['Epic'], leaf: ['Story', 'Task'] },
+                    projects: {},
+                },
+            });
+        }
+        if (url.pathname === '/api/auth/refresh') {
+            return route.fulfill({ status: 204, body: '' });
+        }
+        if (url.pathname === '/api/me/connections/home-token') {
+            return json({
+                connected: true,
+                provider: 'atlassian_user_api_token',
+                credentialSubject: 'profile@example.com',
+                status: 'active',
+                needsReconnect: false,
+            });
+        }
+        if (url.pathname === '/api/sprints') {
+            return json({
+                sprints: [
+                    { id: 44, name: '2026Q4', state: 'future' },
+                    { id: 43, name: '2026Q3', state: 'future' },
+                    { id: 42, name: '2026Q2', state: 'active' },
+                ],
+            });
+        }
+        if (url.pathname === '/api/epm/goals' && url.searchParams.get('rootGoalKey') === 'ROOT-100') {
+            return json({
+                goals: [
+                    { key: 'CHILD-A', name: '[EPM] BidSwitch' },
+                    { key: 'CHILD-B', name: '[EPM] AI Labs' },
+                ],
+            });
+        }
+        if (url.pathname === '/api/epm/projects') {
+            return json({ projects });
+        }
+        if (url.pathname === '/api/epm/projects/rollup/all') {
+            return json({
+                projects: projects.map(emptyRollup),
+                duplicates: {},
+                truncated: false,
+                fallback: true,
+            });
+        }
+        return json({});
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
+    const controls = page.locator('.view-filters').first();
+    await expect(controls.getByRole('button', { name: 'Select sprint' })).toBeVisible();
+
+    const sprintToggle = controls.getByRole('button', { name: 'Select sprint' });
+    await sprintToggle.click();
+    const sprintPanel = controls.locator('.sprint-dropdown').first().locator('.sprint-dropdown-panel');
+    await expect(sprintPanel).toBeVisible();
+    const sprintToggleBox = await box(sprintToggle);
+    const sprintPanelBox = await box(sprintPanel);
+    expect(sprintToggleBox.width).toBeLessThan(180);
+    expect(Math.abs(sprintPanelBox.width - sprintToggleBox.width)).toBeLessThanOrEqual(2);
+
+    const subGoalToggle = controls.getByRole('button', { name: 'Filter EPM sub-goals' });
+    await subGoalToggle.click();
+    const subGoalPanel = controls.locator('.epm-subgoal-dropdown .sprint-dropdown-panel');
+    await expect(subGoalPanel).toBeVisible();
+    const subGoalToggleBox = await box(subGoalToggle);
+    const subGoalPanelBox = await box(subGoalPanel);
+    expect(subGoalPanelBox.width).toBeLessThanOrEqual(subGoalToggleBox.width + 2);
+
+    const projectToggle = controls.getByRole('button', { name: 'Select Project' });
+    await projectToggle.click();
+    const projectPanel = controls.locator('.epm-project-dropdown .sprint-dropdown-panel');
+    await expect(projectPanel).toBeVisible();
+    const projectToggleBox = await box(projectToggle);
+    const projectPanelBox = await box(projectPanel);
+    expect(projectToggleBox.width).toBeLessThan(180);
+    expect(projectPanelBox.width).toBeGreaterThan(projectToggleBox.width + 40);
+    expect(projectPanelBox.x + projectPanelBox.width).toBeLessThanOrEqual(viewportWidth - 8);
+    await page.screenshot({ path: `${screenshotDir}/control-dropdown-widths.png`, fullPage: false });
 });

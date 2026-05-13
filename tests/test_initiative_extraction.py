@@ -30,6 +30,7 @@ class TestInitiativeExtraction(unittest.TestCase):
                 'key': 'PROD-100',
                 'fields': {
                     'summary': 'Payment Gateway v2',
+                    'status': {'name': 'Done'},
                     'reporter': {'displayName': 'Alice'},
                     'assignee': {'displayName': 'Bob'},
                     'customfield_10011': None,
@@ -51,8 +52,10 @@ class TestInitiativeExtraction(unittest.TestCase):
             ['PROD-100'], {'Authorization': 'Bearer test'}, 'customfield_10011'
         )
 
+        self.assertIn('status', mock_search.call_args.args[0]['fields'])
         self.assertIn('PROD-100', result)
         epic = result['PROD-100']
+        self.assertEqual(epic['status'], 'Done')
         self.assertIn('initiative', epic)
         self.assertEqual(epic['initiative']['key'], 'INIT-42')
         self.assertEqual(epic['initiative']['summary'], 'Payments Initiative')

@@ -55,6 +55,18 @@ class TestDashboardCssExtraction(unittest.TestCase):
         finally:
             resp.close()
 
+    def test_dashboard_js_source_map_asset_served_as_valid_json(self):
+        resp = self.client.get('/frontend/dist/dashboard.js.map')
+        try:
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.mimetype, 'application/json')
+            source_map = resp.get_json()
+            self.assertEqual(source_map.get('version'), 3)
+            self.assertIsInstance(source_map.get('sources'), list)
+            self.assertGreater(len(source_map.get('sources')), 0)
+        finally:
+            resp.close()
+
 
 class TestDashboardCssFileContract(unittest.TestCase):
     def test_dashboard_css_source_exists_under_frontend_src_styles(self):

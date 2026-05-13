@@ -4916,10 +4916,12 @@ button.toggle.initiative-toggle.active {
   margin-bottom: 0.4rem;
 }
 .stats-view-toggle {
-  display: inline-flex;
-  gap: 0.4rem;
-  margin: 0.6rem 0 0.8rem;
-  flex-wrap: wrap;
+  margin: 0 0 0.8rem;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.stats-view-toggle .segmented-control-button {
+  white-space: nowrap;
 }
 .stats-view {
   opacity: 0;

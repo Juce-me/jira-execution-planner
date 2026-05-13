@@ -29,14 +29,32 @@ export function EpmRollupPanel({
 
     const getProjectKey = (project) => project?.id || getEpmProjectDisplayName(project) || '';
     const isCollapsed = (project) => activeCollapsedProjectIds.has(getProjectKey(project));
-    const toggleCollapsed = (project) => {
+    const scrollProjectBoardIntoView = (projectBoard) => {
+        if (!projectBoard || typeof window === 'undefined') return;
+        const scroll = () => {
+            projectBoard.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start',
+                inline: 'nearest',
+            });
+        };
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(scroll);
+        } else {
+            scroll();
+        }
+    };
+
+    const toggleCollapsed = (project, event) => {
         const key = getProjectKey(project);
         const willExpand = activeCollapsedProjectIds.has(key);
+        const projectBoard = event?.currentTarget?.closest?.('.epm-project-board');
         setCollapsedProjectIds((prev) => {
             const next = new Set(prev instanceof Set ? prev : activeCollapsedProjectIds);
             if (next.has(key)) next.delete(key); else next.add(key);
             return next;
         });
+        scrollProjectBoardIntoView(projectBoard);
         if (willExpand && onProjectExpand) {
             onProjectExpand(project);
         }
@@ -224,7 +242,7 @@ export function EpmRollupPanel({
             <button
                 type="button"
                 className="epm-project-board-toggle"
-                onClick={() => toggleCollapsed(project)}
+                onClick={(event) => toggleCollapsed(project, event)}
                 aria-expanded={!collapsed}
                 aria-label={`${collapsed ? 'Show' : 'Hide'} Jira rollup for ${getEpmProjectDisplayName(project)}`}
             >

@@ -647,6 +647,11 @@ test('EPM portfolio project header separates collapse control from metadata', ()
     assert.ok(toggleSource.includes('className="epm-project-board-toggle"'), 'Expected a dedicated project board toggle button');
     assert.ok(toggleSource.includes('epm-project-board-toggle-label">Jira rollup'), 'Expected toggle label to clarify the controlled Jira rollup');
     assert.ok(toggleSource.includes("aria-expanded={!collapsed}"), 'Expected rollup disclosure to expose expanded state');
+    assert.ok(toggleSource.includes('onClick={(event) => toggleCollapsed(project, event)}'), 'Expected single-project rollup clicks to pass the clicked control for scroll targeting');
+    assert.ok(epmRollupPanelSource.includes("event?.currentTarget?.closest?.('.epm-project-board')"), 'Expected single-project rollup clicks to resolve the project board as the scroll target');
+    assert.ok(epmRollupPanelSource.includes("projectBoard.scrollIntoView({"), 'Expected single-project rollup clicks to scroll the project board into view');
+    assert.ok(epmRollupPanelSource.includes("block: 'start'"), 'Expected project board scroll to align to the top of the project');
+    assert.ok(dashboardCssSource.includes("scroll-margin-top: calc(var(--compact-header-offset, 0px) + 0.75rem);"), 'Expected project board scroll target to account for sticky EPM controls');
     assert.ok(!toggleSource.includes('epm-project-board-link'), 'Project Home link must not be nested inside the toggle button');
     assert.ok(!toggleSource.includes('epm-project-board-update'), 'Project update text must not be nested inside the toggle button');
     assert.ok(!toggleSource.includes('<a'), 'Project toggle button must not contain nested anchors');

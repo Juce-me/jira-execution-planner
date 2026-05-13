@@ -6689,6 +6689,7 @@ button.toggle.initiative-toggle.active {
   border-radius: 8px;
   background: var(--epm-project-surface);
   box-shadow: 0 8px 24px rgba(9, 30, 66, 0.06);
+  scroll-margin-top: calc(var(--compact-header-offset, 0px) + 0.75rem);
 }
 .epm-project-collapse-all-button {
   color: var(--epm-project-accent);

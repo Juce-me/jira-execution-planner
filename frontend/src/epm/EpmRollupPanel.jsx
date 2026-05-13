@@ -69,11 +69,109 @@ export function EpmRollupPanel({
         );
     };
 
+    const getProjectIcon = (project) => (
+        String(project?.iconEmoji || project?.emoji || '').trim() || '📌'
+    );
+
+    const getProjectOwnerName = (project) => (
+        String(project?.ownerName || project?.owner?.name || project?.owner?.displayName || '').trim()
+    );
+
+    const getProjectOwnerAvatarUrl = (project) => (
+        String(project?.ownerAvatarUrl || project?.owner?.avatarUrl || project?.owner?.picture || '').trim()
+    );
+
+    const getOwnerInitials = (name) => {
+        const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+        if (parts.length === 0) return '?';
+        return parts.slice(0, 2).map(part => part.charAt(0).toUpperCase()).join('');
+    };
+
+    const formatProjectDateValue = (value) => {
+        const text = String(value || '').trim();
+        if (!text) return '';
+        const dateMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (!dateMatch) return text;
+        const date = new Date(`${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}T00:00:00`);
+        if (Number.isNaN(date.getTime())) return text;
+        return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+    };
+
+    const formatProjectDateRange = (startValue, endValue) => {
+        const startText = String(startValue || '').trim();
+        const endText = String(endValue || '').trim();
+        if (!startText || !endText) return formatProjectDateValue(startText || endText);
+        const start = new Date(`${startText.slice(0, 10)}T00:00:00`);
+        const end = new Date(`${endText.slice(0, 10)}T00:00:00`);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+            return formatProjectDateValue(endText || startText);
+        }
+        const startMonth = start.toLocaleDateString('en-US', { month: 'short' });
+        const endMonth = end.toLocaleDateString('en-US', { month: 'short' });
+        if (startMonth !== endMonth) return `${startMonth}-${endMonth}`;
+        return end.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+    };
+
+    const getProjectTargetDateLabel = (project) => {
+        const target = project?.targetDate;
+        const rangeLabel = formatProjectDateRange(project?.targetDateStart, project?.targetDateEnd);
+        if (project?.targetDateLabel || rangeLabel) {
+            return String(project?.targetDateLabel || rangeLabel).trim();
+        }
+        if (typeof target === 'object' && target !== null) {
+            return String(
+                project?.targetDateLabel ||
+                target.label ||
+                target.text ||
+                target.display ||
+                target.displayValue ||
+                formatProjectDateRange(target.startDate, target.endDate) ||
+                formatProjectDateValue(target.value || target.date)
+            ).trim();
+        }
+        return String(project?.targetDateLabel || formatProjectDateValue(target || project?.dueDate)).trim();
+    };
+
+    const renderProjectTargetDate = (project) => {
+        const label = getProjectTargetDateLabel(project);
+        if (!label) return null;
+        return (
+            <span className="epm-project-board-target-date" title={`Target date: ${label}`}>
+                <span className="epm-project-board-target-date-icon" aria-hidden="true">
+                    <svg viewBox="0 0 16 16">
+                        <path d="M4.5 1.75v2.5M11.5 1.75v2.5M2.75 6.25h10.5M3.5 3.25h9a1.5 1.5 0 0 1 1.5 1.5v7.75a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12.5V4.75a1.5 1.5 0 0 1 1.5-1.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                    </svg>
+                </span>
+                {label}
+            </span>
+        );
+    };
+
+    const renderProjectOwner = (project) => {
+        const ownerName = getProjectOwnerName(project);
+        const avatarUrl = getProjectOwnerAvatarUrl(project);
+        if (!ownerName && !avatarUrl) return null;
+        return (
+            <span className="epm-project-board-owner" title={ownerName ? `Owner: ${ownerName}` : 'Project owner'}>
+                <span className="epm-project-board-owner-avatar" aria-hidden="true">
+                    {avatarUrl ? (
+                        <img src={avatarUrl} alt="" />
+                    ) : (
+                        getOwnerInitials(ownerName)
+                    )}
+                </span>
+                {ownerName && <span className="epm-project-board-owner-name">{ownerName}</span>}
+            </span>
+        );
+    };
+
     const renderPortfolioHeader = (project) => {
         const collapsed = isCollapsed(project);
         const updateLine = buildEpmProjectUpdateLine(project);
         const projectStatus = String(project?.stateLabel || project?.stateValue || '').trim();
         const projectName = getEpmProjectDisplayName(project);
+        const projectTargetDate = renderProjectTargetDate(project);
+        const projectOwner = renderProjectOwner(project);
         return (
             <>
                 <div
@@ -81,6 +179,7 @@ export function EpmRollupPanel({
                 >
                     <div className="epm-project-board-title-block">
                         <div className="epm-project-board-title-row">
+                            <span className="epm-project-board-home-icon" aria-hidden="true">{getProjectIcon(project)}</span>
                             <h3 className="epm-project-board-name">
                                 {project?.homeUrl ? (
                                     <a
@@ -95,11 +194,6 @@ export function EpmRollupPanel({
                                     projectName
                                 )}
                             </h3>
-                            {project?.label && (
-                                <StatusPill className="epm-project-board-label-pill" label={project.label} />
-                            )}
-                        </div>
-                        <div className="epm-project-board-meta" aria-label="Project metadata">
                             {projectStatus && (
                                 <StatusPill
                                     className={getIssueStatusClassName(projectStatus, 'epm-project-board-status-pill')}
@@ -108,7 +202,16 @@ export function EpmRollupPanel({
                                     aria-label={`Project status: ${projectStatus}`}
                                 />
                             )}
+                            {project?.label && (
+                                <StatusPill className="epm-project-board-label-pill" label={project.label} />
+                            )}
                         </div>
+                        {(projectTargetDate || projectOwner) && (
+                            <div className="epm-project-board-meta" aria-label="Project metadata">
+                                {projectTargetDate}
+                                {projectOwner}
+                            </div>
+                        )}
                     </div>
                 </div>
                 {renderProjectUpdate(updateLine)}

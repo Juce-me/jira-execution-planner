@@ -7624,9 +7624,20 @@
 
         .epm-project-board-title-row {
             display: flex;
-            align-items: baseline;
+            align-items: center;
             gap: 0.75rem;
             min-width: 0;
+        }
+
+        .epm-project-board-home-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.4rem;
+            height: 1.4rem;
+            flex: 0 0 auto;
+            font-size: 1rem;
+            line-height: 1;
         }
 
         .epm-project-board-toggle {
@@ -7641,7 +7652,7 @@
             border: 1px solid #dbe4f0;
             cursor: pointer;
             color: var(--epm-project-accent);
-            border-radius: 6px;
+            border-radius: 8px;
             box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8);
             transition: background-color 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, color 0.14s ease;
         }
@@ -7658,7 +7669,7 @@
         .epm-project-board-toggle:focus-visible {
             outline: 2px solid var(--epm-project-accent);
             outline-offset: 2px;
-            border-radius: 6px;
+            border-radius: 8px;
             background: var(--epm-project-hover-surface);
             transform: none;
             box-shadow: 0 2px 8px rgba(7, 71, 166, 0.12);
@@ -7695,6 +7706,62 @@
             min-width: 0;
             max-width: 100%;
             margin-top: 0.25rem;
+        }
+
+        .epm-project-board-target-date,
+        .epm-project-board-owner {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            min-width: 0;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.62rem;
+            color: var(--text-secondary);
+        }
+
+        .epm-project-board-target-date {
+            font-weight: 600;
+        }
+
+        .epm-project-board-target-date-icon {
+            display: inline-flex;
+            width: 0.9rem;
+            height: 0.9rem;
+            color: currentColor;
+        }
+
+        .epm-project-board-target-date-icon svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .epm-project-board-owner-avatar {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.28rem;
+            height: 1.28rem;
+            border-radius: 999px;
+            background: #2f2f2f;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 0.55rem;
+            font-weight: 700;
+            overflow: hidden;
+            flex: 0 0 auto;
+        }
+
+        .epm-project-board-owner-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .epm-project-board-owner-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .epm-project-board-name {
@@ -7744,6 +7811,9 @@
             font-size: 0.58rem;
             padding: 0.18rem 0.48rem;
             border-radius: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+            font-weight: 700;
             white-space: nowrap;
             flex: 0 0 auto;
         }
@@ -7797,7 +7867,7 @@
             text-align: left;
             background: #fbfcfe;
             border: 1px solid #e5ebf3;
-            border-radius: 7px;
+            border-radius: 8px;
             box-shadow: none;
         }
 
@@ -7908,7 +7978,7 @@
             }
 
             .epm-project-board-title-row {
-                align-items: flex-start;
+                align-items: center;
                 flex-wrap: wrap;
                 gap: 0.45rem;
             }

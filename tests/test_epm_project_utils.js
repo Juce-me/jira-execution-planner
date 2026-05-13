@@ -439,6 +439,26 @@ test('buildEpmProjectUpdateLine exposes formatted Home update html when availabl
     );
 });
 
+test('buildEpmProjectUpdateLine exposes specific Home update url when available', async () => {
+    const { buildEpmProjectUpdateLine } = await import(helperUrl);
+    const now = new Date('2026-04-30T12:00:00Z');
+
+    assert.deepStrictEqual(
+        buildEpmProjectUpdateLine({
+            latestUpdateDate: '2026-04-29',
+            latestUpdateSnippet: 'Build ready and linked.',
+            latestUpdateUrl: 'https://home.atlassian.com/o/example/s/example/project/PROJ/updates/update-1'
+        }, now),
+        {
+            text: 'yesterday · Build ready and linked.',
+            title: '2026-04-29',
+            relativeDate: 'yesterday',
+            message: 'Build ready and linked.',
+            url: 'https://home.atlassian.com/o/example/s/example/project/PROJ/updates/update-1'
+        }
+    );
+});
+
 test('empty custom EPM project rows are disposable before save', async () => {
     const { isEmptyCustomEpmProjectRow } = await import(helperUrl);
 

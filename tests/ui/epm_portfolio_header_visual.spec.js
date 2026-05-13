@@ -54,14 +54,15 @@ async function loadHeaderFixture(page) {
                         </div>
                         <div class="epm-project-board-update-row">
                             <article class="epm-project-board-update" aria-label="Latest Home update">
-                                <div class="epm-project-board-update-meta">
+                                <a class="epm-project-board-update-meta epm-project-board-update-meta-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-324/updates/update-1">
                                     <span class="epm-project-board-update-date">yesterday</span>
                                     <span class="epm-project-board-update-author">Ada Lovelace</span>
-                                </div>
+                                </a>
                                 <div class="epm-project-board-update-copy">
                                     <p><strong>RFP AI bot</strong> and related <em>deals AI</em> work are progressing.</p>
                                     <p>Build is ready for <a href="https://example.test/client-testing">client testing</a>; rollout model defined.</p>
                                 </div>
+                                <a class="epm-project-board-update-more" href="https://home.atlassian.com/o/example/s/example/project/CRITE-324/updates/update-1">More details</a>
                             </article>
                         </div>
                         <div class="epm-project-board-rollup-control">
@@ -111,16 +112,17 @@ async function loadHeaderFixture(page) {
                         </div>
                         <div class="epm-project-board-update-row">
                             <article class="epm-project-board-update" aria-label="Latest Home update">
-                                <div class="epm-project-board-update-meta">
+                                <a class="epm-project-board-update-meta epm-project-board-update-meta-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-325/updates/update-2">
                                     <span class="epm-project-board-update-date">1 week ago</span>
                                     <span class="epm-project-board-update-author">Grace Hopper</span>
-                                </div>
+                                </a>
                                 <div class="epm-project-board-update-copy">
                                     <ul>
                                         <li><strong>[release]</strong> Finance Gateway shipped support for the revenue-share fee model.</li>
                                         <li><strong>[at risk]</strong> Broad rollout remains blocked on duplication and yes-bid handling.</li>
                                     </ul>
                                 </div>
+                                <a class="epm-project-board-update-more" href="https://home.atlassian.com/o/example/s/example/project/CRITE-325/updates/update-2">More details</a>
                             </article>
                         </div>
                         <div class="epm-project-board-rollup-control">
@@ -170,11 +172,12 @@ async function loadHeaderFixture(page) {
                         </div>
                         <div class="epm-project-board-update-row">
                             <article class="epm-project-board-update" aria-label="Latest Home update">
-                                <div class="epm-project-board-update-meta">
+                                <a class="epm-project-board-update-meta epm-project-board-update-meta-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-326/updates/update-3">
                                     <span class="epm-project-board-update-date">today</span>
                                     <span class="epm-project-board-update-author">Katherine Johnson</span>
-                                </div>
+                                </a>
                                 <span class="epm-project-board-update-copy">Rollout beyond 5% traffic is gated on coefficient work and clearer separation of profitable pairs.</span>
+                                <a class="epm-project-board-update-more" href="https://home.atlassian.com/o/example/s/example/project/CRITE-326/updates/update-3">More details</a>
                             </article>
                         </div>
                         <div class="epm-project-board-rollup-control">
@@ -228,8 +231,11 @@ for (const viewport of [
         const updateRow = board.locator('.epm-project-board-update-row');
         const update = board.locator('.epm-project-board-update').first();
         const updateMeta = board.locator('.epm-project-board-update-meta').first();
+        const updateMetaLink = board.locator('.epm-project-board-update-meta-link').first();
         const updateDate = board.locator('.epm-project-board-update-date').first();
         const updateAuthor = board.locator('.epm-project-board-update-author').first();
+        const updateCopyLink = board.locator('.epm-project-board-update-copy a').first();
+        const updateMoreLink = board.locator('.epm-project-board-update-more').first();
         const collapsedBoard = page.locator('.epm-project-board.is-collapsed');
         const collapsedUpdate = collapsedBoard.locator('.epm-project-board-update');
         const collapsedCopy = collapsedBoard.locator('.epm-project-board-update-copy');
@@ -328,7 +334,10 @@ for (const viewport of [
         expect(updateAuthorBox.x).toBeGreaterThan(updateDateBox.x + updateDateBox.width);
         await expect(update.locator('strong')).toHaveText('RFP AI bot');
         await expect(update.locator('em')).toHaveText('deals AI');
-        await expect(update.locator('a')).toHaveAttribute('href', 'https://example.test/client-testing');
+        await expect(updateMetaLink).toHaveAttribute('href', 'https://home.atlassian.com/o/example/s/example/project/CRITE-324/updates/update-1');
+        await expect(updateCopyLink).toHaveAttribute('href', 'https://example.test/client-testing');
+        await expect(updateMoreLink).toHaveText('More details');
+        await expect(updateMoreLink).toHaveAttribute('href', 'https://home.atlassian.com/o/example/s/example/project/CRITE-324/updates/update-1');
         await expect(page.locator('.epm-project-board-update-copy li')).toHaveCount(2);
         await expect(collapsedUpdate.locator('li')).toHaveCount(0);
         await expect(collapsedCopy).toContainText('profitable pairs');

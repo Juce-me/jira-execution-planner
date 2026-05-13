@@ -68,19 +68,47 @@ export function EpmRollupPanel({
 
     const renderProjectUpdate = (updateLine) => {
         if (!updateLine?.text) return null;
+        const updateHref = String(updateLine.url || '').trim();
+        const renderUpdateMeta = () => {
+            if (!updateLine.relativeDate && !updateLine.author) return null;
+            const metaContent = (
+                <>
+                    {updateLine.relativeDate && <span className="epm-project-board-update-date">{updateLine.relativeDate}</span>}
+                    {updateLine.author && <span className="epm-project-board-update-author">{updateLine.author}</span>}
+                </>
+            );
+            if (updateHref) {
+                return (
+                    <a
+                        className="epm-project-board-update-meta epm-project-board-update-meta-link"
+                        href={updateHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="Open latest Home update"
+                    >
+                        {metaContent}
+                    </a>
+                );
+            }
+            return (
+                <div className="epm-project-board-update-meta">
+                    {metaContent}
+                </div>
+            );
+        };
         return (
             <div className="epm-project-board-update-row" title={updateLine.title || undefined}>
                 <article className="epm-project-board-update" aria-label="Latest Home update">
-                    {(updateLine.relativeDate || updateLine.author) && (
-                        <div className="epm-project-board-update-meta">
-                            {updateLine.relativeDate && <span className="epm-project-board-update-date">{updateLine.relativeDate}</span>}
-                            {updateLine.author && <span className="epm-project-board-update-author">{updateLine.author}</span>}
-                        </div>
-                    )}
+                    {renderUpdateMeta()}
                     {updateLine.messageHtml ? (
                         <div className="epm-project-board-update-copy" dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }} />
                     ) : (
                         <span className="epm-project-board-update-copy">{updateLine.message || updateLine.text}</span>
+                    )}
+                    {updateHref && (
+                        <a className="epm-project-board-update-more" href={updateHref} target="_blank" rel="noopener noreferrer">
+                            More details
+                        </a>
                     )}
                 </article>
             </div>

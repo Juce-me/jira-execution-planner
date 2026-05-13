@@ -7027,6 +7027,7 @@ button.toggle.initiative-toggle.active {
 .epm-project-board-update-meta {
   position: static;
   display: flex;
+  width: fit-content;
   align-items: center;
   gap: 0.35rem;
   max-width: 100%;
@@ -7035,6 +7036,18 @@ button.toggle.initiative-toggle.active {
   line-height: 1.2;
   padding: 0;
   margin-bottom: 0.18rem;
+}
+.epm-project-board-update-meta-link {
+  color: inherit;
+  text-decoration: none;
+  border-radius: 4px;
+}
+.epm-project-board-update-meta-link:hover,
+.epm-project-board-update-meta-link:focus-visible {
+  color: var(--epm-project-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
 }
 .epm-project-board-update-date,
 .epm-project-board-update-author {
@@ -7055,6 +7068,12 @@ button.toggle.initiative-toggle.active {
   content: "\b7";
   margin-right: 0.35rem;
   color: var(--text-secondary);
+}
+.epm-project-board-update-meta-link:hover .epm-project-board-update-date,
+.epm-project-board-update-meta-link:hover .epm-project-board-update-author,
+.epm-project-board-update-meta-link:focus-visible .epm-project-board-update-date,
+.epm-project-board-update-meta-link:focus-visible .epm-project-board-update-author {
+  color: var(--epm-project-accent);
 }
 .epm-project-board-update-copy {
   min-width: 0;
@@ -7085,6 +7104,17 @@ button.toggle.initiative-toggle.active {
 }
 .epm-project-board-update-copy em {
   font-style: italic;
+}
+.epm-project-board-update-more {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 0.38rem;
+  color: var(--epm-project-accent);
+  font-size: 0.78rem;
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-color: rgba(7, 71, 166, 0.35);
+  text-underline-offset: 2px;
 }
 .epm-project-board-body {
   position: relative;

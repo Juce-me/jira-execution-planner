@@ -716,6 +716,21 @@ test('EPM portfolio update line preserves formatted Home update HTML safely', ()
     assert.ok(helperSource.includes('message:'), 'Expected shared update helper to expose plain message without the date');
 });
 
+test('EPM portfolio update line links to the specific Home update', () => {
+    const updateRendererSource = getSnippetBetween(
+        epmRollupPanelSource,
+        'const renderProjectUpdate = (updateLine) => {',
+        'const renderPortfolioHeader = (project) => {'
+    );
+    assert.ok(helperSource.includes('const updateUrl = String(project?.latestUpdateUrl || \'\').trim();'), 'Expected shared update helper to read the latest Home update URL');
+    assert.ok(helperSource.includes('line.url = updateUrl'), 'Expected shared update helper to expose the latest Home update URL');
+    assert.ok(updateRendererSource.includes('const updateHref = String(updateLine.url || \'\').trim();'), 'Expected update renderer to normalize the update URL');
+    assert.ok(updateRendererSource.includes('className="epm-project-board-update-meta epm-project-board-update-meta-link"'), 'Expected the top update metadata to be a link when Home exposes a URL');
+    assert.ok(updateRendererSource.includes('href={updateHref}'), 'Expected update links to target the specific Home update URL');
+    assert.ok(updateRendererSource.includes('className="epm-project-board-update-more"'), 'Expected detailed Home updates to show a More details link');
+    assert.ok(updateRendererSource.includes('More details'), 'Expected explicit More details link copy');
+});
+
 test('EPM project hover states document and enforce accessible contrast', () => {
     assert.ok(
         dashboardCssSource.includes('EPM hover contrast principle:'),

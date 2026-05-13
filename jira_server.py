@@ -3400,7 +3400,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
         payload = {
             'jql': jql,
             'maxResults': len(batch_keys),
-            'fields': ['summary', 'reporter', 'assignee', 'parent', epic_field]
+            'fields': ['summary', 'status', 'reporter', 'assignee', 'parent', epic_field]
         }
 
         try:
@@ -3416,6 +3416,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
                 epic_details[key] = {
                     'key': key,
                     'summary': fields.get('summary'),
+                    'status': (fields.get('status') or {}).get('name') or '',
                     'reporter': (fields.get('reporter') or {}).get('displayName'),
                     'assignee': {'displayName': (fields.get('assignee') or {}).get('displayName')} if fields.get('assignee') else None,
                 }

@@ -494,6 +494,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
     await waitForCallCount(calls, call => call.pathname === '/api/missing-info', 1);
     await expect(page.locator('.epic-header').first()).toBeVisible();
+    await expect(page.locator('.task-list > .epic-block').first().locator('.epic-status-pill')).toHaveText('In Progress');
     await expectJiraExportMenu(page);
     await page.screenshot({ path: `${screenshotDir}/catch-up.png`, fullPage: true });
     await expectWindowSticky(page, '.epic-header');

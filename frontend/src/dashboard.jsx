@@ -11,6 +11,7 @@ import ControlField from './ui/ControlField.jsx';
 import IconButton from './ui/IconButton.jsx';
 import LoadingRows from './ui/LoadingRows.jsx';
 import EmptyState from './ui/EmptyState.jsx';
+import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
@@ -135,7 +136,9 @@ import {
         const EMPTY_OBJECT = Object.freeze({});
         const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';
         const EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY = 3;
-        const SHARED_CONFIGURATION_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'epm']);
+        const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights']);
+        const DEPARTMENT_SETTINGS_TAB_IDS = new Set(['teams', 'labels']);
+        const SHARED_CONFIGURATION_TAB_IDS = new Set([...ADMIN_SETTINGS_TAB_IDS, 'epm']);
         function isActiveHomeTokenConnection(connection) {
             return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);
         }
@@ -153,6 +156,20 @@ import {
             (window.location.protocol.startsWith('http')
                 ? `${window.location.protocol}//${window.location.hostname}:${DEFAULT_BACKEND_PORT}`
                 : `http://localhost:${DEFAULT_BACKEND_PORT}`);
+
+        function isBackendConnectionFailure(err) {
+            if (!err || err.name === 'AbortError') return false;
+            const message = String(err.message || err || '').toLowerCase();
+            return message.includes('failed to fetch') ||
+                message.includes('load failed') ||
+                message.includes('networkerror') ||
+                message.includes('network error') ||
+                message.includes('connection refused');
+        }
+
+        function getServerConnectionErrorMessage(backendUrl) {
+            return `Server is not responding at ${backendUrl}. Start the Python server, then retry.`;
+        }
 
         // Get current quarter in format "2025Q1"
         function getCurrentQuarter() {
@@ -297,6 +314,7 @@ import {
             const [techLoaded, setTechLoaded] = useState(false);
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
+            const [serverConnectionError, setServerConnectionError] = useState('');
             const [showKilled, setShowKilled] = useState(savedPrefsRef.current.showKilled ?? false);
             const [showDone, setShowDone] = useState(savedPrefsRef.current.showDone ?? true);
             const [showTech, setShowTech] = useState(savedPrefsRef.current.showTech ?? true);
@@ -339,6 +357,8 @@ import {
             const [epmSettingsProjectSort, setEpmSettingsProjectSort] = useState('status');
             const [epmSettingsProjectView, setEpmSettingsProjectView] = useState('current');
             const [epmSettingsTab, setEpmSettingsTab] = useState('scope');
+            const [adminSettingsTab, setAdminSettingsTab] = useState('scope');
+            const [departmentSettingsTab, setDepartmentSettingsTab] = useState('teams');
             const [epmLabelShowAll, setEpmLabelShowAll] = useState({});
             const [epmLabelChanging, setEpmLabelChanging] = useState({});
             const [epmLabelMenuAnchor, setEpmLabelMenuAnchor] = useState(null);
@@ -735,19 +755,29 @@ import {
                 if (!selectedSprint) return null;
                 return (availableSprints || []).find(sprint => String(sprint.id) === String(selectedSprint)) || null;
             }, [availableSprints, selectedSprint]);
+            const clearServerConnectionError = React.useCallback(() => {
+                setServerConnectionError('');
+            }, []);
+            const reportServerConnectionError = React.useCallback((err) => {
+                if (!isBackendConnectionFailure(err)) return false;
+                setServerConnectionError(getServerConnectionErrorMessage(BACKEND_URL));
+                return true;
+            }, []);
             const refreshHomeTokenConnectionStatus = React.useCallback(async () => {
                 try {
                     const payload = await fetchHomeTokenConnection(BACKEND_URL);
                     const nextConnection = payload || { connected: false };
+                    clearServerConnectionError();
                     setHomeTokenConnection(nextConnection);
                     return nextConnection;
                 } catch (err) {
+                    reportServerConnectionError(err);
                     setHomeTokenConnection({ connected: false });
                     return { connected: false };
                 } finally {
                     setHomeTokenConnectionLoaded(true);
                 }
-            }, []);
+            }, [clearServerConnectionError, reportServerConnectionError]);
             const markHomeTokenRequired = React.useCallback(() => {
                 setHomeTokenConnection({ connected: false });
                 setHomeTokenConnectionLoaded(true);
@@ -1862,6 +1892,7 @@ import {
                     }
                     const payload = await response.json();
                     const normalized = normalizeGroupsConfig(payload);
+                    clearServerConnectionError();
                     setGroupsConfig(normalized);
                     setGroupWarnings(payload.warnings || []);
                     setGroupConfigSource(payload.source || '');
@@ -1876,7 +1907,11 @@ import {
                         return resolveInitialGroupId(normalized);
                     });
                 } catch (err) {
-                    setGroupsError(err.message || 'Failed to load groups config.');
+                    if (reportServerConnectionError(err)) {
+                        setGroupsError('');
+                    } else {
+                        setGroupsError(err.message || 'Failed to load groups config.');
+                    }
                 } finally {
                     setGroupsLoading(false);
                 }
@@ -2173,6 +2208,7 @@ import {
                 epmProjectSearch,
                 searchQuery,
                 onHomeTokenRequired: markHomeTokenRequired,
+                onServerConnectionFailure: reportServerConnectionError,
             });
             const [epmCollapsedProjectIds, setEpmCollapsedProjectIds] = useState(() => new Set());
             const epmVisibleProjectKeys = React.useMemo(() => {
@@ -2401,6 +2437,7 @@ import {
                 setShowGroupDiscardConfirm(false);
                 closeGroupManage();
             };
+            const labelsTabEnabled = (groupDraft?.groups || groupsConfig.groups || []).length > 0;
             const openEpmSettingsTab = () => {
                 if (!canEditEpmConfiguration) {
                     return;
@@ -2460,6 +2497,71 @@ import {
                     setEpmSettingsTab('projects');
                     focusTab('projects');
                 }
+            };
+
+            const focusSettingsSubTab = (prefix, tab) => {
+                window.requestAnimationFrame(() => {
+                    const node = document.getElementById(`${prefix}-${tab}-tab`);
+                    if (node && typeof node.focus === 'function') {
+                        node.focus();
+                    }
+                });
+            };
+
+            const handleSettingsSubTabKeyDown = (event, tabs, currentTab, setTab, prefix) => {
+                const currentIndex = Math.max(0, tabs.indexOf(currentTab));
+                if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    const direction = event.key === 'ArrowRight' ? 1 : -1;
+                    const nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
+                    const nextTab = tabs[nextIndex];
+                    setTab(nextTab);
+                    focusSettingsSubTab(prefix, nextTab);
+                    return;
+                }
+                if (event.key === 'Home') {
+                    event.preventDefault();
+                    setTab(tabs[0]);
+                    focusSettingsSubTab(prefix, tabs[0]);
+                    return;
+                }
+                if (event.key === 'End') {
+                    event.preventDefault();
+                    const nextTab = tabs[tabs.length - 1];
+                    setTab(nextTab);
+                    focusSettingsSubTab(prefix, nextTab);
+                }
+            };
+
+            const selectDepartmentSettingsTab = (tab) => {
+                if (tab === 'labels' && !labelsTabEnabled) return;
+                setDepartmentSettingsTab(tab);
+                setGroupManageTab(tab);
+            };
+
+            const selectAdminSettingsTab = (tab) => {
+                setAdminSettingsTab(tab);
+                setGroupManageTab(tab);
+            };
+
+            const handleDepartmentSettingsTabKeyDown = (event) => {
+                handleSettingsSubTabKeyDown(
+                    event,
+                    labelsTabEnabled ? ['teams', 'labels'] : ['teams'],
+                    departmentSettingsTab,
+                    selectDepartmentSettingsTab,
+                    'department-settings'
+                );
+            };
+
+            const handleAdminSettingsTabKeyDown = (event) => {
+                handleSettingsSubTabKeyDown(
+                    event,
+                    ['scope', 'source', 'mapping', 'capacity', 'priorityWeights'],
+                    adminSettingsTab,
+                    selectAdminSettingsTab,
+                    'admin-settings'
+                );
             };
 
             const closeAllTeamSearchDropdowns = () => {
@@ -3306,11 +3408,14 @@ import {
                     if (!response.ok) throw new Error(`Selected projects fetch error ${response.status}`);
                     const data = await response.json();
                     const selected = data.selected || [];
+                    clearServerConnectionError();
                     setSelectedProjectsDraft(selected);
                     setSavedSelectedProjects(selected);
                     selectedProjectsBaselineRef.current = JSON.stringify(selected);
                 } catch (err) {
-                    console.error('Failed to load selected projects:', err);
+                    if (!reportServerConnectionError(err)) {
+                        console.error('Failed to load selected projects:', err);
+                    }
                 }
             };
 
@@ -3335,12 +3440,15 @@ import {
                     if (!response.ok) return;
                     const data = await response.json();
                     const rows = clonePriorityWeightRows(data.weights);
+                    clearServerConnectionError();
                     setPriorityWeightsDraft(rows);
                     setEffectivePriorityWeightsRows(rows);
                     setPriorityWeightsSource(String(data.source || 'default'));
                     priorityWeightsBaselineRef.current = JSON.stringify(rows);
                 } catch (err) {
-                    console.error('Failed to load priority weights config:', err);
+                    if (!reportServerConnectionError(err)) {
+                        console.error('Failed to load priority weights config:', err);
+                    }
                 }
             };
 
@@ -3892,7 +4000,6 @@ import {
             }, [activeGroupDraft, activeTeamQuery, availableTeams, groupDraft]);
             const activeTeamResultsLimited = activeTeamResults.slice(0, 10);
             const activeTeamIndex = activeGroupDraft ? (teamSearchIndex[activeGroupDraft.id] || 0) : 0;
-            const labelsTabEnabled = (groupDraft?.groups || groupsConfig.groups || []).length > 0;
             useEffect(() => {
                 if (!showGroupManage) return;
                 if (groupManageTab === 'epm') {
@@ -3905,6 +4012,14 @@ import {
                     setGroupManageTab('teams');
                 }
             }, [showGroupManage, canEditSharedConfiguration, canEditEpmConfiguration, groupManageTab]);
+            useEffect(() => {
+                if (ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)) {
+                    setAdminSettingsTab(groupManageTab);
+                }
+                if (DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab)) {
+                    setDepartmentSettingsTab(groupManageTab);
+                }
+            }, [groupManageTab]);
             const getLabelRowKey = (groupId, teamId) => `${groupId || 'group'}::${teamId || 'team'}`;
             const getLabelSearchResults = (groupId, teamId) => {
                 const key = getLabelRowKey(groupId, teamId);
@@ -4927,6 +5042,7 @@ import {
             const loadConfig = async () => {
                 try {
                     const config = await fetchAppConfig(BACKEND_URL);
+                    clearServerConnectionError();
                     setJiraUrl(config.jiraUrl || '');
                     setCapacityEnabled(Boolean(config.capacityProject));
                     setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
@@ -4936,7 +5052,9 @@ import {
                     setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));
                     applySavedEpmConfig(config.epm);
                 } catch (err) {
-                    console.error('Failed to load config:', err);
+                    if (!reportServerConnectionError(err)) {
+                        console.error('Failed to load config:', err);
+                    }
                     applySavedEpmConfig(createEmptyEpmConfigDraft());
                 }
             };
@@ -5069,9 +5187,12 @@ import {
                     }
 
                     console.log('✅ Loaded sprints:', sprints);
+                    clearServerConnectionError();
                 } catch (err) {
-                    console.error('Failed to load sprints:', err);
-                    setError(`Failed to load sprints: ${err.message}`);
+                    if (!reportServerConnectionError(err)) {
+                        console.error('Failed to load sprints:', err);
+                        setError(`Failed to load sprints: ${err.message}`);
+                    }
                 } finally {
                     setSprintsLoading(false);
                 }
@@ -5189,6 +5310,7 @@ import {
                 setReadyToCloseTechTasks,
                 setReadyToCloseProductEpicsInScope,
                 setReadyToCloseTechEpicsInScope,
+                onServerConnectionFailure: reportServerConnectionError,
             });
 
             const fetchDependencies = async (keys) => {
@@ -11394,11 +11516,31 @@ import {
                 onDependencyFocusClick: handleDependencyFocusClick,
             };
 
+            const retryServerConnection = () => {
+                clearServerConnectionError();
+                setError('');
+                void refreshHomeTokenConnectionStatus();
+                void loadConfig();
+                void loadGroupsConfig();
+                void loadSelectedProjects();
+                void loadPriorityWeightsConfig();
+                void loadSprints(true);
+                if (selectedView === 'epm') {
+                    void refreshEpmView();
+                }
+            };
+
             const renderEpicBlock = (epicGroup) => {
                         const epicInfo = epicGroup.epic;
                         const epicTitle = epicInfo?.summary || epicGroup.parentSummary ||
                             (epicGroup.key === 'NO_EPIC' ? 'No Epic Linked' : epicGroup.key);
                         const epicTotalSp = epicGroup.storyPoints || 0;
+                        const epicStatus = typeof epicInfo?.status === 'string'
+                            ? epicInfo.status
+                            : epicInfo?.status?.name || '';
+                        const epicStatusClassName = epicStatus
+                            ? getIssueStatusClassName(epicStatus, 'epic-status-pill')
+                            : '';
                         return (
                             <div
                                 key={epicGroup.key}
@@ -11467,6 +11609,12 @@ import {
                                         </div>
 	                                    </div>
 	                                    <div className="epic-meta">
+                                            {epicStatus && (
+                                                <StatusPill
+                                                    className={epicStatusClassName}
+                                                    label={epicStatus}
+                                                />
+                                            )}
 	                                        <span>SP: {epicTotalSp.toFixed(1)}</span>
 	                                        {epicInfo?.assignee?.displayName && (
 	                                            <span className="task-assignee epic-assignee">
@@ -11507,48 +11655,29 @@ import {
                         );
             };
 
+            const activeSettingsModalTab = ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)
+                ? 'admin'
+                : DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab)
+                    ? 'departments'
+                    : groupManageTab;
+            const activeDepartmentSettingsTab = departmentSettingsTab === 'labels' && !labelsTabEnabled
+                ? 'teams'
+                : departmentSettingsTab;
             const settingsModalAllTabs = [
                 {
-                    id: 'scope',
-                    label: 'Scope projects',
-                    onClick: () => setGroupManageTab('scope')
+                    id: 'admin',
+                    label: 'Admin',
+                    onClick: () => setGroupManageTab(adminSettingsTab)
                 },
                 {
-                    id: 'source',
-                    label: 'Jira source',
-                    onClick: () => setGroupManageTab('source')
-                },
-                {
-                    id: 'mapping',
-                    label: 'Field mapping',
-                    onClick: () => setGroupManageTab('mapping')
-                },
-                {
-                    id: 'capacity',
-                    label: 'Capacity',
-                    onClick: () => setGroupManageTab('capacity')
-                },
-                {
-                    id: 'teams',
-                    label: 'Team groups',
-                    onClick: () => setGroupManageTab('teams')
-                },
-                {
-                    id: 'labels',
-                    label: 'Group labels',
-                    onClick: () => labelsTabEnabled && setGroupManageTab('labels'),
-                    disabled: !labelsTabEnabled,
-                    title: labelsTabEnabled ? '' : 'Save at least one group first'
+                    id: 'departments',
+                    label: 'Departments',
+                    onClick: () => setGroupManageTab(activeDepartmentSettingsTab)
                 },
                 {
                     id: 'connections',
                     label: 'Connections',
                     onClick: openUserConnectionsSettings
-                },
-                {
-                    id: 'priorityWeights',
-                    label: 'Priority weights',
-                    onClick: () => setGroupManageTab('priorityWeights')
                 },
                 {
                     id: 'epm',
@@ -11558,7 +11687,8 @@ import {
             ];
             const settingsModalTabs = settingsModalAllTabs.filter(tab => {
                 if (tab.id === 'epm') return canEditEpmConfiguration;
-                return canEditSharedConfiguration || !SHARED_CONFIGURATION_TAB_IDS.has(tab.id);
+                if (tab.id === 'admin') return canEditSharedConfiguration;
+                return true;
             });
             const settingsSaveHandler = groupManageTab === 'epm'
                 ? () => { void saveEpmConfig().catch(() => {}); }
@@ -11743,6 +11873,18 @@ import {
                             </>
                         )}
                     </div>
+
+                    {serverConnectionError && (
+                        <div className="server-unavailable-banner" role="alert">
+                            <div>
+                                <div className="server-unavailable-title">Server is not responding</div>
+                                <p>{serverConnectionError}</p>
+                            </div>
+                            <button type="button" onClick={retryServerConnection}>
+                                Retry connection
+                            </button>
+                        </div>
+                    )}
 
                     {selectedView === 'eng' && !isCompletedSprintSelected && (
                         <div className={`capacity-panel ${showPlanning ? 'open' : ''}`}>
@@ -14412,7 +14554,7 @@ import {
 
                     {showGroupManage && (
                         <SettingsModal
-                            activeTab={groupManageTab}
+                            activeTab={activeSettingsModalTab}
                             tabs={settingsModalTabs}
                             isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}
                             unsavedSectionsCount={groupManageTab !== 'connections' ? unsavedSectionsCount : 0}
@@ -14440,7 +14582,65 @@ import {
                                     onConnectionChange={handleHomeTokenConnectionChange}
                                 />
                                 )}
-                                {(groupManageTab === 'scope' || groupManageTab === 'source' || groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
+                                {ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && (
+                                <>
+                                <div
+                                    className="group-modal-tabs epm-settings-tabs"
+                                    role="tablist"
+                                    aria-label="Admin settings sections"
+                                    onKeyDown={handleAdminSettingsTabKeyDown}
+                                >
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'scope' ? 'active' : ''}`}
+                                        onClick={() => selectAdminSettingsTab('scope')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'scope'}
+                                        aria-controls="admin-settings-scope-panel"
+                                        id="admin-settings-scope-tab"
+                                        type="button"
+                                    >Scope projects</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'source' ? 'active' : ''}`}
+                                        onClick={() => selectAdminSettingsTab('source')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'source'}
+                                        aria-controls="admin-settings-source-panel"
+                                        id="admin-settings-source-tab"
+                                        type="button"
+                                    >Jira source</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'mapping' ? 'active' : ''}`}
+                                        onClick={() => selectAdminSettingsTab('mapping')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'mapping'}
+                                        aria-controls="admin-settings-mapping-panel"
+                                        id="admin-settings-mapping-tab"
+                                        type="button"
+                                    >Field mapping</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'capacity' ? 'active' : ''}`}
+                                        onClick={() => selectAdminSettingsTab('capacity')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'capacity'}
+                                        aria-controls="admin-settings-capacity-panel"
+                                        id="admin-settings-capacity-tab"
+                                        type="button"
+                                    >Capacity</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'priorityWeights' ? 'active' : ''}`}
+                                        onClick={() => selectAdminSettingsTab('priorityWeights')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'priorityWeights'}
+                                        aria-controls="admin-settings-priorityWeights-panel"
+                                        id="admin-settings-priorityWeights-tab"
+                                        type="button"
+                                    >Priority weights</button>
+                                </div>
+                                <div
+                                    id={`admin-settings-${groupManageTab}-panel`}
+                                    role="tabpanel"
+                                    aria-labelledby={`admin-settings-${groupManageTab}-tab`}
+                                >
                                 <JiraFieldSettings
                                     {...{
                                         groupManageTab,
@@ -14578,6 +14778,8 @@ import {
                                         priorityWeightsValidationError,
                                     }}
                                 />
+                                </div>
+                                </>
                                 )}
                                 {groupManageTab === 'epm' && (
                                 <EpmSettings
@@ -14664,7 +14866,41 @@ import {
                                     }}
                                 />
                                 )}
+                                {DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab) && (
+                                <>
+                                <div
+                                    className="group-modal-tabs epm-settings-tabs"
+                                    role="tablist"
+                                    aria-label="Departments settings sections"
+                                    onKeyDown={handleDepartmentSettingsTabKeyDown}
+                                >
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'teams' ? 'active' : ''}`}
+                                        onClick={() => selectDepartmentSettingsTab('teams')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'teams'}
+                                        aria-controls="department-settings-teams-panel"
+                                        id="department-settings-teams-tab"
+                                        type="button"
+                                    >Team groups</button>
+                                    <button
+                                        className={`group-modal-tab ${groupManageTab === 'labels' ? 'active' : ''}`}
+                                        onClick={() => selectDepartmentSettingsTab('labels')}
+                                        role="tab"
+                                        aria-selected={groupManageTab === 'labels'}
+                                        aria-controls="department-settings-labels-panel"
+                                        id="department-settings-labels-tab"
+                                        type="button"
+                                        disabled={!labelsTabEnabled}
+                                        title={labelsTabEnabled ? '' : 'Save at least one group first'}
+                                    >Group labels</button>
+                                </div>
                                 {groupManageTab === 'teams' && (
+                                <div
+                                    id="department-settings-teams-panel"
+                                    role="tabpanel"
+                                    aria-labelledby="department-settings-teams-tab"
+                                >
                                 <TeamGroupsSettings
                                     {...{
                                         groupManageTab,
@@ -14735,8 +14971,14 @@ import {
                                         removeGroupDraft,
                                     }}
                                 />
+                                </div>
                                 )}
                                 {groupManageTab === 'labels' && (
+                                <div
+                                    id="department-settings-labels-panel"
+                                    role="tabpanel"
+                                    aria-labelledby="department-settings-labels-tab"
+                                >
                                 <div className="group-modal-body group-modal-split">
                                     <div className="group-pane group-list-pane">
                                         <div className="group-pane-header">
@@ -14849,6 +15091,9 @@ import {
                                         )}
                                     </div>
                                 </div>
+                                </div>
+                                )}
+                                </>
                                 )}
                         </SettingsModal>
                     )}

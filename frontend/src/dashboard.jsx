@@ -11,6 +11,7 @@ import ControlField from './ui/ControlField.jsx';
 import IconButton from './ui/IconButton.jsx';
 import LoadingRows from './ui/LoadingRows.jsx';
 import EmptyState from './ui/EmptyState.jsx';
+import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
@@ -11534,6 +11535,12 @@ import {
                         const epicTitle = epicInfo?.summary || epicGroup.parentSummary ||
                             (epicGroup.key === 'NO_EPIC' ? 'No Epic Linked' : epicGroup.key);
                         const epicTotalSp = epicGroup.storyPoints || 0;
+                        const epicStatus = typeof epicInfo?.status === 'string'
+                            ? epicInfo.status
+                            : epicInfo?.status?.name || '';
+                        const epicStatusClassName = epicStatus
+                            ? getIssueStatusClassName(epicStatus, 'epic-status-pill')
+                            : '';
                         return (
                             <div
                                 key={epicGroup.key}
@@ -11602,6 +11609,12 @@ import {
                                         </div>
 	                                    </div>
 	                                    <div className="epic-meta">
+                                            {epicStatus && (
+                                                <StatusPill
+                                                    className={epicStatusClassName}
+                                                    label={epicStatus}
+                                                />
+                                            )}
 	                                        <span>SP: {epicTotalSp.toFixed(1)}</span>
 	                                        {epicInfo?.assignee?.displayName && (
 	                                            <span className="task-assignee epic-assignee">

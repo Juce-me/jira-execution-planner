@@ -53,6 +53,15 @@ function emptyRollup(project) {
     };
 }
 
+function boxesOverlap(a, b) {
+    return (
+        a.x < b.x + b.width &&
+        a.x + a.width > b.x &&
+        a.y < b.y + b.height &&
+        a.y + a.height > b.y
+    );
+}
+
 async function box(locator) {
     const rect = await locator.boundingBox();
     expect(rect).not.toBeNull();
@@ -342,4 +351,130 @@ test('EPM control dropdowns size to short labels and long options', async ({ pag
     expect(projectPanelBox.width).toBeGreaterThan(projectToggleBox.width + 40);
     expect(projectPanelBox.x + projectPanelBox.width).toBeLessThanOrEqual(viewportWidth - 8);
     await page.screenshot({ path: `${screenshotDir}/control-dropdown-widths.png`, fullPage: false });
+});
+
+test('EPM compact sticky controls show project picker without settings or state tabs', async ({ page }) => {
+    const viewportWidth = 1180;
+    await page.setViewportSize({ width: viewportWidth, height: 680 });
+    await installDashboardShell(page);
+    await page.addInitScript(() => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'epm',
+            epmTab: 'active',
+            epmSelectedProjectId: '',
+            selectedSprint: 42,
+            sprintName: '2026Q2',
+        }));
+    });
+    const projects = [
+        project('active', 'CHILD-A', 'Alpha'),
+        project('active', 'CHILD-B', 'Beta'),
+        project('active', 'CHILD-A', 'Gamma'),
+        project('active', 'CHILD-B', 'Delta'),
+        project('active', 'CHILD-A', 'Epsilon'),
+        project('active', 'CHILD-B', 'Zeta'),
+    ].map((item, index) => ({
+        ...item,
+        id: `${item.id}-${index}`,
+        homeProjectId: `${item.homeProjectId}-${index}`,
+        displayName: `${item.displayName} Project ${index + 1}`,
+        name: `${item.name} Project ${index + 1}`,
+    }));
+    await page.route('**/api/**', route => {
+        const url = new URL(route.request().url());
+        const json = (body) => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(body),
+        });
+        if (url.pathname === '/api/config') {
+            return json({
+                jiraUrl: 'https://jira.example',
+                projectsConfigured: true,
+                settingsAdminOnly: false,
+                userCanEditSettings: true,
+                epm: {
+                    version: 2,
+                    labelPrefix: 'rnd_project_',
+                    scope: { rootGoalKey: 'ROOT-100', subGoalKeys: ['CHILD-A', 'CHILD-B'] },
+                    issueTypes: { initiative: ['Initiative'], epic: ['Epic'], leaf: ['Story', 'Task'] },
+                    projects: {},
+                },
+            });
+        }
+        if (url.pathname === '/api/auth/refresh') {
+            return route.fulfill({ status: 204, body: '' });
+        }
+        if (url.pathname === '/api/me/connections/home-token') {
+            return json({
+                connected: true,
+                provider: 'atlassian_user_api_token',
+                credentialSubject: 'profile@example.com',
+                status: 'active',
+                needsReconnect: false,
+            });
+        }
+        if (url.pathname === '/api/sprints') {
+            return json({
+                sprints: [
+                    { id: 43, name: '2026Q3', state: 'future' },
+                    { id: 42, name: '2026Q2', state: 'active' },
+                ],
+            });
+        }
+        if (url.pathname === '/api/epm/goals' && url.searchParams.get('rootGoalKey') === 'ROOT-100') {
+            return json({
+                goals: [
+                    { key: 'CHILD-A', name: '[EPM] BidSwitch' },
+                    { key: 'CHILD-B', name: '[EPM] AI Labs' },
+                ],
+            });
+        }
+        if (url.pathname === '/api/epm/projects') {
+            return json({ projects });
+        }
+        if (url.pathname === '/api/epm/projects/rollup/all') {
+            return json({
+                projects: projects.map(emptyRollup),
+                duplicates: {},
+                truncated: false,
+                fallback: true,
+            });
+        }
+        return json({});
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.locator('.epm-project-board')).toHaveCount(projects.length);
+    await page.evaluate(() => window.scrollTo(0, 420));
+    const sticky = page.locator('.compact-sticky-header.is-visible');
+    await expect(sticky).toBeVisible();
+    await expect(sticky.getByRole('button', { name: 'Select sprint' })).toBeVisible();
+    await expect(sticky.getByRole('button', { name: 'Filter EPM sub-goals' })).toBeVisible();
+    await expect(sticky.getByRole('button', { name: 'Select Project' })).toBeVisible();
+    await expect(sticky.getByRole('button', { name: 'Collapse all projects' })).toBeVisible();
+    await expect(sticky.getByRole('button', { name: 'Open EPM settings' })).toHaveCount(0);
+    await expect(sticky.getByRole('radiogroup', { name: 'EPM project state' })).toHaveCount(0);
+    await expect(sticky.locator('.epm-project-collapse-all-icon')).toBeVisible();
+    await expect(sticky.locator('.epm-project-collapse-all-stack rect')).toHaveCount(3);
+    await expect(sticky.locator('.epm-project-collapse-all-arrows path')).toHaveCount(4);
+
+    const sprintBox = await box(sticky.getByRole('button', { name: 'Select sprint' }));
+    const subGoalBox = await box(sticky.getByRole('button', { name: 'Filter EPM sub-goals' }));
+    const projectToggle = sticky.getByRole('button', { name: 'Select Project' });
+    const projectBox = await box(projectToggle);
+    const collapseBox = await box(sticky.getByRole('button', { name: 'Collapse all projects' }));
+    expect(boxesOverlap(sprintBox, subGoalBox)).toBe(false);
+    expect(boxesOverlap(subGoalBox, projectBox)).toBe(false);
+    expect(boxesOverlap(projectBox, collapseBox)).toBe(false);
+
+    await projectToggle.click();
+    const projectPanel = sticky.locator('.epm-project-dropdown .sprint-dropdown-panel');
+    await expect(projectPanel).toBeVisible();
+    await expect(projectPanel.locator('[data-project-id=""]')).toHaveText('All projects');
+    await expect(projectPanel.locator('[data-project-id]').first()).toBeVisible();
+    const projectPanelBox = await box(projectPanel);
+    expect(projectPanelBox.y).toBeGreaterThanOrEqual(projectBox.y + projectBox.height - 1);
+    expect(projectPanelBox.x + projectPanelBox.width).toBeLessThanOrEqual(viewportWidth - 8);
+    await page.screenshot({ path: `${screenshotDir}/compact-sticky-project-picker.png`, fullPage: false });
 });

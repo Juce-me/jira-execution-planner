@@ -7683,6 +7683,24 @@
             white-space: nowrap;
         }
 
+        .epm-project-collapse-all-button .epm-project-collapse-all-icon {
+            width: 20px;
+            height: 20px;
+        }
+
+        .epm-project-collapse-all-stack rect {
+            fill: rgba(255, 255, 255, 0.78);
+            stroke: currentColor;
+            stroke-width: 1.25;
+        }
+
+        .epm-project-collapse-all-arrows path {
+            stroke: currentColor;
+            stroke-width: 1.75;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
         .epm-project-collapse-all-button:hover {
             background: var(--epm-project-hover-surface);
             color: var(--epm-project-accent);

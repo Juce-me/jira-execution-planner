@@ -215,6 +215,54 @@ test('mergeExcludedCapacityStatsSourceChunks deduplicates sprint chunks and supp
     assert.equal(merged.meta.totalSprintCount, 2);
 });
 
+test('loadExcludedCapacityStatsSourceChunks loads sprint chunks with bounded concurrency and keeps partial failures', async () => {
+    const { loadExcludedCapacityStatsSourceChunks } = await loadModule();
+    const activeCounts = [];
+    let active = 0;
+    const releases = [];
+    const fetchSprintChunk = async (sprintId) => {
+        active += 1;
+        activeCounts.push(active);
+        await new Promise(resolve => {
+            releases.push(resolve);
+        });
+        active -= 1;
+        if (sprintId === '102') {
+            throw new Error('Jira timeout');
+        }
+        return {
+            issues: [story({ key: `SYN-${sprintId}`, epicKey: 'BAU-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId, sprintName: sprintId, points: 1 })],
+            meta: { warnings: [], queryPages: 1 }
+        };
+    };
+
+    const progress = [];
+    const loading = loadExcludedCapacityStatsSourceChunks(['101', '102', '103'], fetchSprintChunk, {
+        maxConcurrent: 2,
+        onProgress: (chunks, meta) => {
+            progress.push({ loaded: meta.loadedSprintCount, chunks: chunks.length });
+        }
+    });
+    while (releases.length < 2) {
+        await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.equal(Math.max(...activeCounts), 2);
+    releases.shift()();
+    while (releases.length < 2) {
+        await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.equal(activeCounts[activeCounts.length - 1], 2);
+    releases.forEach(resolve => resolve());
+    const result = await loading;
+
+    assert.equal(result.errors.length, 1);
+    assert.equal(result.errors[0].sprintId, '102');
+    assert.equal(result.chunks.length, 3);
+    assert.deepEqual(result.chunks.map(chunk => chunk.issues.length), [1, 0, 1]);
+    assert.ok(result.chunks[1].meta.warnings[0].includes('102'));
+    assert.deepEqual(progress.map(item => item.loaded), [1, 2, 3]);
+});
+
 test('buildEpicTeamModeShare classifies cross only from story teams in the same sprint', async () => {
     const { buildEpicTeamModeShare, buildEpicTeamModeOverall, buildEpicTeamModeSprintRows } = await loadModule();
     const sprints = [

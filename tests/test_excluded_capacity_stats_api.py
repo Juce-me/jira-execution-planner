@@ -148,7 +148,7 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
             )
             second = client.post(
                 "/api/stats/excluded-capacity-source",
-                json={"sprintIds": ["101"], "teamIds": ["team-alpha"]},
+                json={"sprintIds": ["101"], "teamIds": ["team-alpha"], "refresh": True},
                 headers={"X-Requested-With": "jira-execution-planner"},
             )
 
@@ -168,6 +168,96 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
         self.assertIn('"BAU-2"', epic_summary_jql)
         self.assertIn('"BAU-3"', epic_summary_jql)
         self.assertEqual(mock_search.call_count, 3)
+
+    def test_excluded_capacity_source_caches_source_payload_for_same_scope(self):
+        sprint_field = "customfield_sprint"
+        team_field = "customfield_team"
+        epic_field = "customfield_epic"
+        story_points_field = "customfield_sp"
+        issue = {
+            "id": "10001",
+            "key": "SYN-1",
+            "fields": {
+                "summary": "Synthetic ad hoc task",
+                "issuetype": {"name": "Story"},
+                story_points_field: 3,
+                sprint_field: [{"id": 101, "name": "2025Q4 Sprint 1"}],
+                epic_field: "BAU-1",
+                team_field: {"id": "team-alpha", "name": "Alpha"},
+                "parent": {},
+                "project": {"key": "SYN", "name": "Synthetic Project"},
+            },
+        }
+        epic = {
+            "id": "20001",
+            "key": "BAU-1",
+            "fields": {"summary": "BAU Workstream"},
+        }
+        responses = [
+            FakeJiraResponse({"issues": [issue], "isLast": True}),
+            FakeJiraResponse({"issues": [epic], "isLast": True}),
+        ]
+
+        with jira_server.app.test_client() as client, \
+             patch.object(jira_server, "EXCLUDED_CAPACITY_STATS_SOURCE_CACHE", {}, create=True), \
+             patch.object(jira_server, "EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE", {}, create=True), \
+             patch.object(jira_server, "JQL_QUERY_TEMPLATE", ""), \
+             patch.object(jira_server, "build_base_jql", return_value='project = "SYN"'), \
+             patch.object(jira_server, "get_configured_issue_types", return_value=["Story"]), \
+             patch.object(jira_server, "resolve_team_field_id", return_value=team_field), \
+             patch.object(jira_server, "resolve_epic_link_field_id", return_value=epic_field), \
+             patch.object(jira_server, "get_sprint_field_id", return_value=sprint_field), \
+             patch.object(jira_server, "get_story_points_field_id", return_value=story_points_field), \
+             patch.object(jira_server, "jira_search_request", side_effect=responses) as mock_search:
+            first = client.post(
+                "/api/stats/excluded-capacity-source",
+                json={"sprintIds": ["101"], "teamIds": ["team-alpha"]},
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+            second = client.post(
+                "/api/stats/excluded-capacity-source",
+                json={"sprintIds": ["101"], "teamIds": ["team-alpha"]},
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+
+        self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+        self.assertEqual(second.status_code, 200, second.get_data(as_text=True))
+        self.assertFalse(first.get_json()["cached"])
+        self.assertTrue(second.get_json()["cached"])
+        self.assertEqual(second.get_json()["data"]["issues"][0]["fields"]["epicSummary"], "BAU Workstream")
+        self.assertIn("Server-Timing", first.headers)
+        self.assertEqual(second.headers.get("Server-Timing"), "cache;dur=1")
+        self.assertEqual(mock_search.call_count, 2)
+
+    def test_excluded_capacity_source_requests_only_stats_fields(self):
+        sprint_field = "customfield_sprint"
+        team_field = "customfield_team"
+        epic_field = "customfield_epic"
+        story_points_field = "customfield_sp"
+
+        with patch.object(jira_server, "JQL_QUERY_TEMPLATE", ""), \
+             patch.object(jira_server, "build_base_jql", return_value='project = "SYN"'), \
+             patch.object(jira_server, "get_configured_issue_types", return_value=["Story"]), \
+             patch.object(jira_server, "resolve_team_field_id", return_value=team_field), \
+             patch.object(jira_server, "resolve_epic_link_field_id", return_value=epic_field), \
+             patch.object(jira_server, "get_sprint_field_id", return_value=sprint_field), \
+             patch.object(jira_server, "get_story_points_field_id", return_value=story_points_field), \
+             patch.object(jira_server, "jira_search_request", return_value=FakeJiraResponse({"issues": [], "isLast": True})) as mock_search:
+            payload, error = jira_server.fetch_excluded_capacity_stats_source(
+                ["101"],
+                team_ids=["team-alpha"],
+            )
+
+        self.assertIsNone(error)
+        self.assertEqual(payload["issues"], [])
+        fields = mock_search.call_args.args[0]["fields"]
+        self.assertEqual(fields, [
+            story_points_field,
+            "parent",
+            sprint_field,
+            epic_field,
+            team_field,
+        ])
 
     def test_excluded_capacity_source_requires_sprint_ids(self):
         with jira_server.app.test_client() as client:

@@ -6711,9 +6711,11 @@ button.toggle.initiative-toggle.active {
   min-width: 0;
 }
 .epm-project-board-title-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
   align-items: center;
-  gap: 0.75rem;
+  column-gap: 0.75rem;
+  row-gap: 0.35rem;
   min-width: 0;
 }
 .epm-project-board-home-icon {
@@ -6780,6 +6782,16 @@ button.toggle.initiative-toggle.active {
   text-transform: uppercase;
   white-space: nowrap;
 }
+.epm-project-board-title-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: min(46rem, 58vw);
+  justify-self: end;
+}
 .epm-project-board-meta {
   display: flex;
   align-items: center;
@@ -6789,6 +6801,7 @@ button.toggle.initiative-toggle.active {
   min-width: 0;
   max-width: 100%;
   margin-top: 0.25rem;
+  padding-left: 2.15rem;
 }
 .epm-project-board-target-date,
 .epm-project-board-owner {
@@ -6842,6 +6855,7 @@ button.toggle.initiative-toggle.active {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 10rem;
 }
 .epm-project-board-name {
   margin: 0;
@@ -6884,7 +6898,6 @@ button.toggle.initiative-toggle.active {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 0 1 auto;
-  margin-left: auto;
 }
 .epm-project-board-status-pill.task-status {
   font-size: 0.58rem;
@@ -7038,8 +7051,18 @@ button.toggle.initiative-toggle.active {
   }
   .epm-project-board-title-row {
     align-items: center;
-    flex-wrap: wrap;
     gap: 0.45rem;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .epm-project-board-title-meta {
+    grid-column: 2;
+    justify-self: start;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  .epm-project-board-meta {
+    padding-left: 1.85rem;
   }
   .epm-project-board-toggle {
     height: 1.62rem;

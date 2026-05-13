@@ -31,8 +31,14 @@ async function loadHeaderFixture(page) {
                                     <h3 class="epm-project-board-name">
                                         <a class="epm-project-board-name-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-324">AI for RFP creation</a>
                                     </h3>
-                                    <span class="status-pill task-status epm-project-board-status-pill on-track">On track</span>
-                                    <span class="epm-project-board-label-pill">RnD_Project_RFP_AI</span>
+                                    <div class="epm-project-board-title-meta" aria-label="Project status and owner">
+                                        <span class="status-pill task-status epm-project-board-status-pill on-track">On track</span>
+                                        <span class="epm-project-board-owner" title="Owner: Ada Lovelace">
+                                            <span class="epm-project-board-owner-avatar" aria-hidden="true">AL</span>
+                                            <span class="epm-project-board-owner-name">Ada Lovelace</span>
+                                        </span>
+                                        <span class="epm-project-board-label-pill">RnD_Project_RFP_AI</span>
+                                    </div>
                                 </div>
                                 <div class="epm-project-board-meta" aria-label="Project metadata">
                                     <span class="epm-project-board-target-date" title="Target date: Apr-Jun">
@@ -42,10 +48,6 @@ async function loadHeaderFixture(page) {
                                             </svg>
                                         </span>
                                         Apr-Jun
-                                    </span>
-                                    <span class="epm-project-board-owner" title="Owner: Ada Lovelace">
-                                        <span class="epm-project-board-owner-avatar" aria-hidden="true">AL</span>
-                                        <span class="epm-project-board-owner-name">Ada Lovelace</span>
                                     </span>
                                 </div>
                             </div>
@@ -86,8 +88,14 @@ async function loadHeaderFixture(page) {
                                     <h3 class="epm-project-board-name">
                                         <a class="epm-project-board-name-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-325">Data Partnership: Support Revenue Share Fee Model</a>
                                     </h3>
-                                    <span class="status-pill task-status epm-project-board-status-pill on-track">On track</span>
-                                    <span class="epm-project-board-label-pill">rnd_project_bsw_enriched_deals_revenue_share_fee_model_long_label</span>
+                                    <div class="epm-project-board-title-meta" aria-label="Project status and owner">
+                                        <span class="status-pill task-status epm-project-board-status-pill on-track">On track</span>
+                                        <span class="epm-project-board-owner" title="Owner: Grace Hopper">
+                                            <span class="epm-project-board-owner-avatar" aria-hidden="true">GH</span>
+                                            <span class="epm-project-board-owner-name">Grace Hopper</span>
+                                        </span>
+                                        <span class="epm-project-board-label-pill">rnd_project_bsw_enriched_deals_revenue_share_fee_model_long_label</span>
+                                    </div>
                                 </div>
                                 <div class="epm-project-board-meta" aria-label="Project metadata">
                                     <span class="epm-project-board-target-date" title="Target date: April">
@@ -97,10 +105,6 @@ async function loadHeaderFixture(page) {
                                             </svg>
                                         </span>
                                         April
-                                    </span>
-                                    <span class="epm-project-board-owner" title="Owner: Grace Hopper">
-                                        <span class="epm-project-board-owner-avatar" aria-hidden="true">GH</span>
-                                        <span class="epm-project-board-owner-name">Grace Hopper</span>
                                     </span>
                                 </div>
                             </div>
@@ -143,8 +147,14 @@ async function loadHeaderFixture(page) {
                                     <h3 class="epm-project-board-name">
                                         <a class="epm-project-board-name-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-326">Dynamic Floor Harness With Pricing Analysis Rollout Controls</a>
                                     </h3>
-                                    <span class="status-pill task-status epm-project-board-status-pill on-track">On track</span>
-                                    <span class="epm-project-board-label-pill">rnd_project_dynamic_floor_harness</span>
+                                    <div class="epm-project-board-title-meta" aria-label="Project status and owner">
+                                        <span class="status-pill task-status epm-project-board-status-pill on-track">On track</span>
+                                        <span class="epm-project-board-owner" title="Owner: Katherine Johnson">
+                                            <span class="epm-project-board-owner-avatar" aria-hidden="true">KJ</span>
+                                            <span class="epm-project-board-owner-name">Katherine Johnson</span>
+                                        </span>
+                                        <span class="epm-project-board-label-pill">rnd_project_dynamic_floor_harness</span>
+                                    </div>
                                 </div>
                                 <div class="epm-project-board-meta" aria-label="Project metadata">
                                     <span class="epm-project-board-target-date" title="Target date: Apr-Jun">
@@ -154,10 +164,6 @@ async function loadHeaderFixture(page) {
                                             </svg>
                                         </span>
                                         Apr-Jun
-                                    </span>
-                                    <span class="epm-project-board-owner" title="Owner: Katherine Johnson">
-                                        <span class="epm-project-board-owner-avatar" aria-hidden="true">KJ</span>
-                                        <span class="epm-project-board-owner-name">Katherine Johnson</span>
                                     </span>
                                 </div>
                             </div>
@@ -209,6 +215,7 @@ for (const viewport of [
         const toggle = board.locator('.epm-project-board-toggle');
         const chevron = board.locator('.epm-project-board-chevron');
         const meta = board.locator('.epm-project-board-meta');
+        const titleMeta = board.locator('.epm-project-board-title-meta');
         const homeIcon = board.locator('.epm-project-board-home-icon');
         const title = board.locator('.epm-project-board-name');
         const nameLink = board.locator('.epm-project-board-name-link');
@@ -250,6 +257,7 @@ for (const viewport of [
         const toggleBox = await toggle.boundingBox();
         const chevronBox = await chevron.boundingBox();
         const metaBox = await meta.boundingBox();
+        const titleMetaBox = await titleMeta.boundingBox();
         const homeIconBox = await homeIcon.boundingBox();
         const titleBox = await title.boundingBox();
         const statusBox = await statusPill.boundingBox();
@@ -271,6 +279,7 @@ for (const viewport of [
         expect(toggleBox).toBeTruthy();
         expect(chevronBox).toBeTruthy();
         expect(metaBox).toBeTruthy();
+        expect(titleMetaBox).toBeTruthy();
         expect(homeIconBox).toBeTruthy();
         expect(titleBox).toBeTruthy();
         expect(statusBox).toBeTruthy();
@@ -290,11 +299,18 @@ for (const viewport of [
         expect(boxesOverlap(toggleBox, metaBox)).toBe(false);
         expect(boxesOverlap(titleBox, metaBox)).toBe(false);
         expect(homeIconBox.x + homeIconBox.width).toBeLessThanOrEqual(titleBox.x);
-        expect(Math.abs((statusBox.y + statusBox.height / 2) - (titleBox.y + titleBox.height / 2))).toBeLessThanOrEqual(6);
+        expect(boxesOverlap(statusBox, ownerBox)).toBe(false);
+        expect(Math.abs((ownerBox.y + ownerBox.height / 2) - (statusBox.y + statusBox.height / 2))).toBeLessThanOrEqual(6);
         if (viewport.width >= 900) {
+            expect(Math.abs((statusBox.y + statusBox.height / 2) - (titleBox.y + titleBox.height / 2))).toBeLessThanOrEqual(6);
             expect(statusBox.x).toBeGreaterThan(titleBox.x + titleBox.width);
+            expect(ownerBox.x).toBeGreaterThan(statusBox.x + statusBox.width);
+            expect(labelBox.x).toBeGreaterThan(ownerBox.x + ownerBox.width);
             expect(labelBox.x).toBeGreaterThan(titleBox.x + titleBox.width);
         } else {
+            expect(titleMetaBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 0.5);
+            expect(boxesOverlap(statusBox, titleBox)).toBe(false);
+            expect(boxesOverlap(ownerBox, titleBox)).toBe(false);
             expect(boxesOverlap(labelBox, titleBox)).toBe(false);
         }
         expect(metaBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 0.5);

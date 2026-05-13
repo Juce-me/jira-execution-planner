@@ -635,13 +635,20 @@ test('EPM portfolio project header separates collapse control from metadata', ()
 
     assert.ok(headerSource.includes('className={`epm-project-board-header ${collapsed ? \'is-collapsed\' : \'\'}`}'), 'Expected project header wrapper');
     assert.ok(headerSource.includes('className="epm-project-board-meta"'), 'Expected project metadata wrapper outside the toggle');
+    assert.ok(headerSource.includes('className="epm-project-board-title-meta"'), 'Expected right-side table-style metadata wrapper');
     assert.ok(headerSource.includes('className="epm-project-board-name-link"'), 'Expected project name to own the Home link');
     assert.ok(headerSource.includes('className="epm-project-board-home-icon"'), 'Expected project header to show the Home project icon');
     assert.ok(headerSource.includes('className="epm-project-board-label-pill"'), 'Expected project label to stay outside the update and rollup toggle');
     assert.ok(headerSource.includes('Project status: ${projectStatus}'), 'Expected project status to be labeled as project-level metadata');
     assert.ok(headerSource.includes('renderProjectTargetDate(project)'), 'Expected project metadata to include target date support');
     assert.ok(headerSource.includes('renderProjectOwner(project)'), 'Expected project metadata to include owner support');
-    assert.ok(headerSource.indexOf('Project status: ${projectStatus}') < headerSource.indexOf('className="epm-project-board-label-pill"'), 'Expected project status to sit inline before the right-side Jira label');
+    const titleMetaSource = getSnippetBetween(
+        headerSource,
+        'className="epm-project-board-title-meta"',
+        'className="epm-project-board-meta"'
+    );
+    assert.ok(titleMetaSource.indexOf('Project status: ${projectStatus}') < titleMetaSource.indexOf('{projectOwner}'), 'Expected owner to sit inline after the project status');
+    assert.ok(titleMetaSource.indexOf('{projectOwner}') < titleMetaSource.indexOf('className="epm-project-board-label-pill"'), 'Expected Jira label to stay after the right-side owner column');
     assert.ok(!headerSource.includes('className="epm-project-board-toggle"'), 'Project header must not contain the Jira rollup disclosure');
     assert.ok(toggleSource.includes('className="epm-project-board-rollup-control"'), 'Expected a dedicated rollup control row');
     assert.ok(toggleSource.includes('className="epm-project-board-toggle"'), 'Expected a dedicated project board toggle button');

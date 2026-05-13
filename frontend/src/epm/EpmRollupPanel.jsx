@@ -190,6 +190,7 @@ export function EpmRollupPanel({
         const projectName = getEpmProjectDisplayName(project);
         const projectTargetDate = renderProjectTargetDate(project);
         const projectOwner = renderProjectOwner(project);
+        const hasTitleMeta = projectStatus || projectOwner || project?.label;
         return (
             <>
                 <div
@@ -212,22 +213,26 @@ export function EpmRollupPanel({
                                     projectName
                                 )}
                             </h3>
-                            {projectStatus && (
-                                <StatusPill
-                                    className={getIssueStatusClassName(projectStatus, 'epm-project-board-status-pill')}
-                                    label={projectStatus}
-                                    title={`Project status: ${projectStatus}`}
-                                    aria-label={`Project status: ${projectStatus}`}
-                                />
-                            )}
-                            {project?.label && (
-                                <StatusPill className="epm-project-board-label-pill" label={project.label} />
+                            {hasTitleMeta && (
+                                <div className="epm-project-board-title-meta" aria-label="Project status and owner">
+                                    {projectStatus && (
+                                        <StatusPill
+                                            className={getIssueStatusClassName(projectStatus, 'epm-project-board-status-pill')}
+                                            label={projectStatus}
+                                            title={`Project status: ${projectStatus}`}
+                                            aria-label={`Project status: ${projectStatus}`}
+                                        />
+                                    )}
+                                    {projectOwner}
+                                    {project?.label && (
+                                        <StatusPill className="epm-project-board-label-pill" label={project.label} />
+                                    )}
+                                </div>
                             )}
                         </div>
-                        {(projectTargetDate || projectOwner) && (
+                        {projectTargetDate && (
                             <div className="epm-project-board-meta" aria-label="Project metadata">
                                 {projectTargetDate}
-                                {projectOwner}
                             </div>
                         )}
                     </div>

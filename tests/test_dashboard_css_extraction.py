@@ -157,7 +157,8 @@ class TestDashboardCssFileContract(unittest.TestCase):
         self.assertIn('.epm-project-board-target-date', css)
         self.assertIn('.epm-project-board-owner-avatar', css)
         self.assertIn('.epm-project-board-status-pill.task-status', css)
-        self.assertIn('margin-left: auto;', _css_block(css, '.epm-project-board-label-pill'))
+        self.assertIn('.epm-project-board-title-meta', css)
+        self.assertIn('justify-self: end;', _css_block(css, '.epm-project-board-title-meta'))
         self.assertNotIn('background-image:', update_block)
         self.assertNotIn('rgba(190, 128, 71', update_block)
 

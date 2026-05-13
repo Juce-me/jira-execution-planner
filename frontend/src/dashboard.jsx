@@ -12122,6 +12122,21 @@ import {
 
                         {canRenderStatsPanel && (
                             <>
+                                <SegmentedControl
+                                    className="eng-mode-control stats-view-toggle"
+                                    ariaLabel="Statistics view"
+                                    value={statsView}
+                                    onChange={setStatsView}
+                                    options={[
+                                        { value: 'teams', label: 'Teams' },
+                                        { value: 'priority', label: 'Priority' },
+                                        { value: 'burnout', label: 'Burndown' },
+                                        { value: 'cohort', label: 'Lead Times' },
+                                        { value: 'excludedCapacity', label: 'Excluded Capacity' },
+                                        { value: 'monoCrossShare', label: 'Mono vs Cross' }
+                                    ]}
+                                />
+
                                 {statsView !== 'cohort' && statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && (
                                 <div className="stats-summary">
                                     <div
@@ -12176,45 +12191,6 @@ import {
                                     </div>
                                 </div>
                                 )}
-
-                                <div className="stats-view-toggle">
-                                    <button
-                                        className={`stats-toggle ${statsView === 'teams' ? 'active' : ''}`}
-                                        onClick={() => setStatsView('teams')}
-                                    >
-                                        Teams
-                                    </button>
-                                    <button
-                                        className={`stats-toggle ${statsView === 'priority' ? 'active' : ''}`}
-                                        onClick={() => setStatsView('priority')}
-                                    >
-                                        Priority
-                                    </button>
-                                    <button
-                                        className={`stats-toggle ${statsView === 'burnout' ? 'active' : ''}`}
-                                        onClick={() => setStatsView('burnout')}
-                                    >
-                                        Burndown
-                                    </button>
-                                    <button
-                                        className={`stats-toggle ${statsView === 'cohort' ? 'active' : ''}`}
-                                        onClick={() => setStatsView('cohort')}
-                                    >
-                                        Lead Times
-                                    </button>
-                                    <button
-                                        className={`stats-toggle ${statsView === 'excludedCapacity' ? 'active' : ''}`}
-                                        onClick={() => setStatsView('excludedCapacity')}
-                                    >
-                                        Excluded Capacity
-                                    </button>
-                                    <button
-                                        className={`stats-toggle ${statsView === 'monoCrossShare' ? 'active' : ''}`}
-                                        onClick={() => setStatsView('monoCrossShare')}
-                                    >
-                                        Mono vs Cross
-                                    </button>
-                                </div>
 
                                 <div className={`stats-view ${statsView === 'teams' ? 'open' : ''}`}>
                                     <div className="stats-bars" style={{ '--stats-bar-columns': statsBarColumns }}>

@@ -645,6 +645,50 @@ test('EPM all-project board can collapse and expand all visible projects', async
     await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(3);
     await expect(page.locator('.epm-project-board:not(.is-collapsed) .epic-header')).toHaveCount(0);
 
+    const project2Board = page.locator('.epm-project-board', {
+        has: page.locator('.epm-project-board-name', { hasText: 'Active Project 2' }),
+    });
+    await expect(project2Board).toHaveClass(/is-collapsed/);
+    await page.evaluate(() => {
+        window.__epmProjectScrollCalls = [];
+        const originalScrollIntoView = Element.prototype.scrollIntoView;
+        Element.prototype.scrollIntoView = function scrollIntoViewRecorder(options) {
+            window.__epmProjectScrollCalls.push({
+                className: this.getAttribute('class') || String(this.className || ''),
+                text: String(this.textContent || '').slice(0, 120),
+                behavior: options?.behavior,
+                block: options?.block,
+                inline: options?.inline,
+            });
+            if (typeof originalScrollIntoView === 'function') {
+                const nextOptions = options && typeof options === 'object'
+                    ? { ...options, behavior: 'auto' }
+                    : options;
+                originalScrollIntoView.call(this, nextOptions);
+            }
+        };
+    });
+    await project2Board.evaluate((node) => {
+        window.scrollTo(0, document.body.scrollHeight);
+        node.querySelector('.epm-project-board-toggle')?.dispatchEvent(new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+        }));
+    });
+    await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(2);
+    await expect.poll(() => page.evaluate(() => (
+        window.__epmProjectScrollCalls || []
+    ).some(call => (
+        call.className.includes('epm-project-board') &&
+        call.text.includes('Active Project 2') &&
+        call.behavior === 'smooth' &&
+        call.block === 'start' &&
+        call.inline === 'nearest'
+    )))).toBe(true);
+
+    await collapseAllButton.click();
+    await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(3);
+
     await expandAllButton.click();
     await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(0);
     await expect(page.locator('.epm-project-board:not(.is-collapsed) .epic-header')).toHaveCount(3);

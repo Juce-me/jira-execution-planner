@@ -178,6 +178,9 @@ class TestEpmHomeApi(unittest.TestCase):
                 'url': 'https://home.atlassian.com/projects/tsq-1',
                 'stateValue': 'PAUSED',
                 'stateLabel': 'Paused',
+                'iconEmoji': '🚀',
+                'targetDate': {'startDate': '2026-04-01', 'endDate': '2026-06-30'},
+                'owner': {'accountId': 'owner-1', 'name': 'Ada Lovelace'},
             },
             [{'creationDate': '2026-04-12T10:00:00.000Z', 'summary': 'Awaiting budget approval'}],
             {},
@@ -187,6 +190,12 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual(project['latestUpdateDate'], '2026-04-12')
         self.assertEqual(project['latestUpdateSnippet'], 'Awaiting budget approval')
         self.assertEqual(project['latestUpdateAuthor'], '')
+        self.assertEqual(project['iconEmoji'], '🚀')
+        self.assertEqual(project['targetDate'], '2026-04-01')
+        self.assertEqual(project['targetDateStart'], '2026-04-01')
+        self.assertEqual(project['targetDateEnd'], '2026-06-30')
+        self.assertEqual(project['ownerAccountId'], 'owner-1')
+        self.assertEqual(project['ownerName'], 'Ada Lovelace')
 
     def test_build_home_project_record_keeps_string_home_tags_from_fetcher(self):
         project = build_home_project_record(
@@ -773,6 +782,7 @@ class TestEpmHomeApi(unittest.TestCase):
 
         query = client.execute.call_args.args[0]
         self.assertIn('state { label value }', query)
+        self.assertIn('owner { id accountId name }', query)
         self.assertIn('tags @optIn(to: "Townsquare")', query)
         self.assertIn('updates(first: 5)', query)
         self.assertIn('creator { accountId name }', query)

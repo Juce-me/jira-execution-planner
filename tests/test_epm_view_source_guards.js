@@ -625,16 +625,40 @@ test('EPM portfolio project header separates collapse control from metadata', ()
     const headerSource = getSnippetBetween(
         epmRollupPanelSource,
         'const renderPortfolioHeader = (project) => {',
+        'const renderProjectRollupToggle = (project, collapsed) => ('
+    );
+    const toggleSource = getSnippetBetween(
+        epmRollupPanelSource,
+        'const renderProjectRollupToggle = (project, collapsed) => (',
         'const buildDuplicateClusters = () => {'
     );
-    const toggleStart = headerSource.indexOf('className="epm-project-board-toggle"');
-    const toggleEnd = headerSource.indexOf('</button>', toggleStart);
-    assert.notStrictEqual(toggleStart, -1, 'Expected a dedicated project board toggle button');
-    assert.notStrictEqual(toggleEnd, -1, 'Expected project board toggle button to close');
-    const toggleSource = headerSource.slice(toggleStart, toggleEnd);
 
     assert.ok(headerSource.includes('className={`epm-project-board-header ${collapsed ? \'is-collapsed\' : \'\'}`}'), 'Expected project header wrapper');
     assert.ok(headerSource.includes('className="epm-project-board-meta"'), 'Expected project metadata wrapper outside the toggle');
+    assert.ok(headerSource.includes('className="epm-project-board-title-meta"'), 'Expected right-side table-style metadata wrapper');
+    assert.ok(headerSource.includes('className="epm-project-board-name-link"'), 'Expected project name to own the Home link');
+    assert.ok(headerSource.includes('className="epm-project-board-home-icon"'), 'Expected project header to show the Home project icon');
+    assert.ok(headerSource.includes('className="epm-project-board-label-pill"'), 'Expected project label to stay outside the update and rollup toggle');
+    assert.ok(headerSource.includes('Project status: ${projectStatus}'), 'Expected project status to be labeled as project-level metadata');
+    assert.ok(headerSource.includes('renderProjectTargetDate(project)'), 'Expected project metadata to include target date support');
+    assert.ok(headerSource.includes('renderProjectOwner(project)'), 'Expected project metadata to include owner support');
+    const titleMetaSource = getSnippetBetween(
+        headerSource,
+        'className="epm-project-board-title-meta"',
+        'className="epm-project-board-meta"'
+    );
+    assert.ok(titleMetaSource.indexOf('Project status: ${projectStatus}') < titleMetaSource.indexOf('{projectOwner}'), 'Expected owner to sit inline after the project status');
+    assert.ok(titleMetaSource.indexOf('{projectOwner}') < titleMetaSource.indexOf('className="epm-project-board-label-pill"'), 'Expected Jira label to stay after the right-side owner column');
+    assert.ok(!headerSource.includes('className="epm-project-board-toggle"'), 'Project header must not contain the Jira rollup disclosure');
+    assert.ok(toggleSource.includes('className="epm-project-board-rollup-control"'), 'Expected a dedicated rollup control row');
+    assert.ok(toggleSource.includes('className="epm-project-board-toggle"'), 'Expected a dedicated project board toggle button');
+    assert.ok(toggleSource.includes('epm-project-board-toggle-label">Jira rollup'), 'Expected toggle label to clarify the controlled Jira rollup');
+    assert.ok(toggleSource.includes("aria-expanded={!collapsed}"), 'Expected rollup disclosure to expose expanded state');
+    assert.ok(toggleSource.includes('onClick={(event) => toggleCollapsed(project, event)}'), 'Expected single-project rollup clicks to pass the clicked control for scroll targeting');
+    assert.ok(epmRollupPanelSource.includes("event?.currentTarget?.closest?.('.epm-project-board')"), 'Expected single-project rollup clicks to resolve the project board as the scroll target');
+    assert.ok(epmRollupPanelSource.includes("projectBoard.scrollIntoView({"), 'Expected single-project rollup clicks to scroll the project board into view');
+    assert.ok(epmRollupPanelSource.includes("block: 'start'"), 'Expected project board scroll to align to the top of the project');
+    assert.ok(dashboardCssSource.includes("scroll-margin-top: calc(var(--compact-header-offset, 0px) + 0.75rem);"), 'Expected project board scroll target to account for sticky EPM controls');
     assert.ok(!toggleSource.includes('epm-project-board-link'), 'Project Home link must not be nested inside the toggle button');
     assert.ok(!toggleSource.includes('epm-project-board-update'), 'Project update text must not be nested inside the toggle button');
     assert.ok(!toggleSource.includes('<a'), 'Project toggle button must not contain nested anchors');
@@ -646,7 +670,7 @@ test('EPM portfolio update line renders below the project header with relative d
     const headerSource = getSnippetBetween(
         epmRollupPanelSource,
         'const renderPortfolioHeader = (project) => {',
-        'const buildDuplicateClusters = () => {'
+        'const renderProjectRollupToggle = (project, collapsed) => ('
     );
     const headerCloseIndex = headerSource.indexOf('</div>');
     const updateIndex = headerSource.indexOf('renderProjectUpdate(updateLine)');
@@ -663,8 +687,10 @@ test('EPM portfolio update line renders below the project header with relative d
 });
 
 test('EPM portfolio update line preserves formatted Home update HTML safely', () => {
-    assert.ok(epmRollupPanelSource.includes('className="epm-project-board-update-row"'), 'Expected update row wrapper to separate bubble from date');
+    assert.ok(epmRollupPanelSource.includes('className="epm-project-board-update-row"'), 'Expected project update row to remain fully readable in collapsed project rows');
+    assert.ok(!epmRollupPanelSource.includes("epm-project-board-update-row ${collapsed ? 'is-collapsed' : ''}"), 'Collapsed project rows must not truncate the project update');
     assert.ok(epmRollupPanelSource.includes('updateLine.messageHtml'), 'Expected update renderer to branch on formatted Home update HTML');
+    assert.ok(!epmRollupPanelSource.includes('!collapsed && updateLine.messageHtml'), 'Formatted Home update HTML should remain visible in collapsed project rows');
     assert.ok(epmRollupPanelSource.includes('dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }}'), 'Expected formatted update HTML to be injected from sanitized server output');
     const updateRendererSource = getSnippetBetween(
         epmRollupPanelSource,
@@ -696,16 +722,16 @@ test('EPM project hover states document and enforce accessible contrast', () => 
         'Expected CSS to document the EPM hover contrast principle'
     );
     assert.ok(
-        dashboardCssSource.includes('--epm-project-radius: 8px;'),
-        'Expected EPM project rectangles to share one radius token'
-    );
-    assert.ok(
-        countOccurrences(dashboardCssSource, 'border-radius: var(--epm-project-radius);') >= 3,
-        'Expected EPM project rectangular surfaces to reuse the shared radius token'
+        !dashboardCssSource.includes('--epm-project-radius:'),
+        'Expected EPM project reading layout to remove the old boxed-surface radius token'
     );
     assert.ok(
         !dashboardCssSource.includes('border-radius: 18px 18px 18px 5px;'),
         'Expected update bubble to avoid bespoke large/tail rounding'
+    );
+    assert.ok(
+        !dashboardCssSource.includes('.epm-project-board-toggle:hover .epm-project-board-name'),
+        'Expected icon-only toggle hover not to depend on the project title being inside the button'
     );
     assert.ok(
         dashboardCssSource.includes('.epm-project-board-toggle:hover {'),
@@ -720,8 +746,16 @@ test('EPM project hover states document and enforce accessible contrast', () => 
         'Expected EPM project toggle hover to reset the global button hover transform'
     );
     assert.ok(
-        dashboardCssSource.includes('box-shadow: 0 2px 8px rgba(7, 71, 166, 0.14);'),
+        dashboardCssSource.includes('box-shadow: 0 2px 8px rgba(7, 71, 166, 0.12);'),
         'Expected EPM project toggle hover to use a visible but low-contrast-safe affordance'
+    );
+    assert.ok(
+        dashboardCssSource.includes('.epm-project-board-body::before'),
+        'Expected expanded project rail to live in the body away from the disclosure button'
+    );
+    assert.ok(
+        !dashboardCssSource.includes('.epm-project-board::before'),
+        'Expected project rail not to collide with the disclosure button at board level'
     );
 });
 

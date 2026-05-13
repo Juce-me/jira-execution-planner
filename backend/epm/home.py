@@ -194,6 +194,7 @@ query GoalProjects($goalId: ID!, $first: Int!, $after: String) {
         node {
           id key name url
           state { label value }
+          owner { id accountId name }
           tags @optIn(to: "Townsquare") {
             edges { node { id name url } }
           }
@@ -212,6 +213,7 @@ query ProjectDetails($projectId: String!) {
   projects_byId(projectId: $projectId) {
     id key name url
     state { label value }
+    owner { id accountId name }
   }
 }
 """
@@ -1099,12 +1101,24 @@ def build_home_project_record(project, updates, linkage, home_tags=None, tags_un
     state_value = project.get("stateValue") or project.get("status") or ""
     state_label = project.get("stateLabel", "")
     tab_bucket = bucket_epm_state(state_value) or bucket_epm_state(state_label)
+    owner = _extract_project_owner(project)
+    icon = _extract_project_icon(project)
+    target_date = _extract_project_target_date(project)
     return {
         "homeProjectId": project["id"],
         "name": project.get("name", ""),
         "homeUrl": project.get("url", ""),
         "stateValue": state_value,
         "stateLabel": state_label,
+        "iconEmoji": icon["emoji"],
+        "iconUrl": icon["url"],
+        "targetDate": target_date["value"],
+        "targetDateLabel": target_date["label"],
+        "targetDateStart": target_date["start"],
+        "targetDateEnd": target_date["end"],
+        "ownerAccountId": owner["accountId"],
+        "ownerName": owner["name"],
+        "ownerAvatarUrl": owner["avatarUrl"],
         "tabBucket": tab_bucket,
         "latestUpdateDate": latest["date"],
         "latestUpdateSnippet": latest["snippet"],
@@ -1126,7 +1140,60 @@ def _shape_project_detail(project_id: str, payload: dict) -> dict:
         "url": payload.get("url", ""),
         "stateValue": extract_project_status(payload),
         "stateLabel": state.get("label", "") if isinstance(state, dict) else "",
+        "icon": payload.get("icon"),
+        "iconEmoji": payload.get("iconEmoji") or payload.get("emoji"),
+        "iconUrl": payload.get("iconUrl"),
+        "targetDate": payload.get("targetDate") or payload.get("dueDate"),
+        "targetDateLabel": payload.get("targetDateLabel"),
+        "owner": payload.get("owner") or {},
     }
+
+
+def _first_project_text(*values) -> str:
+    for value in values:
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                return text
+    return ""
+
+
+def _extract_project_owner(project: dict) -> dict:
+    owner = project.get("owner") if isinstance(project, dict) else {}
+    owner = owner if isinstance(owner, dict) else {}
+    return {
+        "accountId": _first_project_text(owner.get("accountId"), owner.get("id"), project.get("ownerAccountId")),
+        "name": _first_project_text(owner.get("name"), owner.get("displayName"), project.get("ownerName")),
+        "avatarUrl": _first_project_text(owner.get("avatarUrl"), owner.get("picture"), project.get("ownerAvatarUrl")),
+    }
+
+
+def _extract_project_icon(project: dict) -> dict:
+    icon = project.get("icon") if isinstance(project, dict) else {}
+    icon = icon if isinstance(icon, dict) else {}
+    return {
+        "emoji": _first_project_text(project.get("iconEmoji"), project.get("emoji"), icon.get("emoji"), icon.get("text")),
+        "url": _first_project_text(project.get("iconUrl"), icon.get("url")),
+    }
+
+
+def _extract_project_target_date(project: dict) -> dict:
+    target = project.get("targetDate") if isinstance(project, dict) else None
+    if isinstance(target, dict):
+        start = _first_project_text(target.get("startDate"), target.get("start"))
+        end = _first_project_text(target.get("endDate"), target.get("end"), target.get("date"), target.get("value"))
+        label = _first_project_text(
+            project.get("targetDateLabel"),
+            target.get("label"),
+            target.get("text"),
+            target.get("display"),
+            target.get("displayValue"),
+        )
+        value = _first_project_text(target.get("value"), target.get("date"), start, end)
+        return {"label": label, "value": value, "start": start, "end": end}
+    value = _first_project_text(target, project.get("dueDate"))
+    label = _first_project_text(project.get("targetDateLabel"), value)
+    return {"label": label, "value": value, "start": "", "end": ""}
 
 
 def build_home_graphql_client(credential: HomeCredential | None = None) -> HomeGraphQLClient:

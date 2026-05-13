@@ -55,6 +55,18 @@ class TestDashboardCssExtraction(unittest.TestCase):
         finally:
             resp.close()
 
+    def test_dashboard_js_source_map_asset_served_as_valid_json(self):
+        resp = self.client.get('/frontend/dist/dashboard.js.map')
+        try:
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.mimetype, 'application/json')
+            source_map = resp.get_json()
+            self.assertEqual(source_map.get('version'), 3)
+            self.assertIsInstance(source_map.get('sources'), list)
+            self.assertGreater(len(source_map.get('sources')), 0)
+        finally:
+            resp.close()
+
 
 class TestDashboardCssFileContract(unittest.TestCase):
     def test_dashboard_css_source_exists_under_frontend_src_styles(self):
@@ -121,16 +133,32 @@ class TestDashboardCssFileContract(unittest.TestCase):
         select_block = _css_block(css, 'select')
         self.assertIn('border-radius: 10px;', select_block)
 
-    def test_epm_project_board_timeline_and_update_bubble_contract(self):
+    def test_epm_project_board_surface_and_update_reading_contract(self):
         css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'dist' / 'dashboard.css'
         css = css_path.read_text(encoding='utf-8')
-        self.assertIn('.epm-project-board::before', css)
-        self.assertIn('.epm-project-board.is-collapsed::before', css)
-        self.assertNotIn('.epm-project-board-body::before', css)
+        self.assertNotIn('.epm-project-board::before', css)
+        self.assertIn('.epm-project-board-body::before', css)
+        board_block = _css_block(css, '.epm-project-board')
+        self.assertIn('border: 1px solid var(--epm-project-border);', board_block)
+        self.assertIn('border-radius: 8px;', board_block)
+        self.assertIn('background: var(--epm-project-surface);', board_block)
         update_block = _css_block(css, '.epm-project-board-update')
-        self.assertIn('min-width: min(18rem, calc(100vw - 7rem));', update_block)
-        self.assertIn('background-color: var(--bg-secondary);', update_block)
-        self.assertIn('border: 1px solid var(--border);', update_block)
+        self.assertIn('max-width: 72ch;', update_block)
+        self.assertIn('font-size: 0.9rem;', update_block)
+        self.assertIn('background: #fbfcfe;', update_block)
+        self.assertIn('border: 1px solid #e5ebf3;', update_block)
+        self.assertIn('border-radius: 8px;', update_block)
+        self.assertIn('box-shadow: none;', update_block)
+        self.assertNotIn('.epm-project-board-update-row.is-collapsed', css)
+        self.assertNotIn('.epm-project-board-link', css)
+        self.assertIn('.epm-project-board-rollup-control', css)
+        self.assertIn('.epm-project-board-name-link', css)
+        self.assertIn('.epm-project-board-home-icon', css)
+        self.assertIn('.epm-project-board-target-date', css)
+        self.assertIn('.epm-project-board-owner-avatar', css)
+        self.assertIn('.epm-project-board-status-pill.task-status', css)
+        self.assertIn('.epm-project-board-title-meta', css)
+        self.assertIn('justify-self: end;', _css_block(css, '.epm-project-board-title-meta'))
         self.assertNotIn('background-image:', update_block)
         self.assertNotIn('rgba(190, 128, 71', update_block)
 

@@ -6498,7 +6498,10 @@ def serve_dashboard_file():
 def serve_frontend_dist(filename):
     """Serve the bundled frontend assets."""
     dist_dir = os.path.join(os.path.dirname(__file__), 'frontend', 'dist')
-    return send_from_directory(dist_dir, filename)
+    response = send_from_directory(dist_dir, filename)
+    if filename.endswith('.map'):
+        response.mimetype = 'application/json'
+    return response
 
 
 PROJECTS_CACHE = {'data': None, 'timestamp': 0}

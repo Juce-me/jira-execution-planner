@@ -6732,39 +6732,29 @@ button.toggle.initiative-toggle.active {
   --epm-project-accent-soft: rgba(7, 71, 166, 0.32);
   --epm-project-accent-fade: rgba(7, 71, 166, 0.08);
   --epm-project-hover-surface: rgba(7, 71, 166, 0.12);
+  --epm-project-surface: #ffffff;
+  --epm-project-surface-soft: #f7f9fc;
+  --epm-project-border: #dfe5ee;
   --epm-project-message-bg: #fff3e4;
   --epm-project-message-text: #514338;
-  --epm-project-radius: 8px;
 }
 .epm-portfolio-board {
   display: flex;
   flex-direction: column;
-  gap: 1.4rem;
+  gap: 0.75rem;
 }
 .epm-project-board {
   display: flex;
   flex-direction: column;
   gap: 0;
   position: relative;
-}
-.epm-project-board::before {
-  content: "";
-  position: absolute;
-  left: 6px;
-  top: 18px;
-  bottom: 8px;
-  width: 2px;
-  border-radius: 999px;
-  background:
-    linear-gradient(
-      to bottom,
-      var(--epm-project-accent) 0%,
-      var(--epm-project-accent) 78%,
-      var(--epm-project-accent-soft) 92%,
-      var(--epm-project-accent-fade) 100%);
-}
-.epm-project-board.is-collapsed::before {
-  display: none;
+  min-width: 0;
+  padding: 0.75rem 0.8rem 0.85rem;
+  border: 1px solid var(--epm-project-border);
+  border-radius: 8px;
+  background: var(--epm-project-surface);
+  box-shadow: 0 8px 24px rgba(9, 30, 66, 0.06);
+  scroll-margin-top: calc(var(--compact-header-offset, 0px) + 0.75rem);
 }
 .epm-project-collapse-all-button {
   color: var(--epm-project-accent);
@@ -6777,52 +6767,66 @@ button.toggle.initiative-toggle.active {
   color: var(--epm-project-accent);
 }
 .epm-project-board-header {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 10px;
+  display: block;
   width: 100%;
-  margin: 0 0 4px;
+  margin: 0;
   min-width: 0;
 }
-.epm-project-board-toggle {
-  display: grid;
-  grid-template-columns: 14px 18px minmax(0, auto);
-  align-items: center;
-  column-gap: 10px;
+.epm-project-board-title-block {
   min-width: 0;
-  max-width: 100%;
-  padding: 0;
-  background: transparent;
-  border: 0;
+}
+.epm-project-board-title-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
+  align-items: center;
+  column-gap: 0.75rem;
+  row-gap: 0.35rem;
+  min-width: 0;
+}
+.epm-project-board-home-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  flex: 0 0 auto;
+  font-size: 1rem;
+  line-height: 1;
+}
+.epm-project-board-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+  min-width: 0;
+  height: 1.75rem;
+  padding: 0 0.6rem 0 0.38rem;
+  background: var(--epm-project-surface-soft);
+  border: 1px solid #dbe4f0;
   cursor: pointer;
-  text-align: left;
-  color: inherit;
-  font: inherit;
-  border-radius: var(--epm-project-radius);
+  color: var(--epm-project-accent);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8);
   transition:
     background-color 0.14s ease,
+    border-color 0.14s ease,
     box-shadow 0.14s ease,
     color 0.14s ease;
 }
 .epm-project-board-toggle:hover {
   background: var(--epm-project-hover-surface);
+  border-color: rgba(7, 71, 166, 0.36);
   color: var(--text-primary);
   transform: none;
-  box-shadow: 0 2px 8px rgba(7, 71, 166, 0.14);
-}
-.epm-project-board-toggle:hover .epm-project-board-name,
-.epm-project-board-toggle:focus-visible .epm-project-board-name {
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  box-shadow: 0 2px 8px rgba(7, 71, 166, 0.12);
 }
 .epm-project-board-toggle:focus-visible {
   outline: 2px solid var(--epm-project-accent);
   outline-offset: 2px;
-  border-radius: var(--epm-project-radius);
+  border-radius: 8px;
   background: var(--epm-project-hover-surface);
   transform: none;
-  box-shadow: 0 2px 8px rgba(7, 71, 166, 0.14);
+  box-shadow: 0 2px 8px rgba(7, 71, 166, 0.12);
 }
 .epm-project-board-chevron {
   display: inline-flex;
@@ -6835,33 +6839,116 @@ button.toggle.initiative-toggle.active {
 .epm-project-board.is-collapsed .epm-project-board-chevron {
   transform: rotate(0deg);
 }
-.epm-project-board-icon {
-  display: inline-flex;
-  justify-content: center;
+.epm-project-board-toggle-label {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.epm-project-board-title-meta {
+  display: flex;
   align-items: center;
-  color: var(--epm-project-accent);
+  justify-content: flex-end;
+  gap: 0.55rem;
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: min(46rem, 58vw);
+  justify-self: end;
 }
 .epm-project-board-meta {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex: 1 1 360px;
+  justify-content: flex-start;
+  gap: 0.4rem;
+  flex-wrap: wrap;
   min-width: 0;
   max-width: 100%;
+  margin-top: 0.25rem;
+  padding-left: 2.15rem;
 }
-.epm-project-board-name {
+.epm-project-board-target-date,
+.epm-project-board-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
   font-family: "IBM Plex Mono", monospace;
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--epm-project-accent);
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+}
+.epm-project-board-target-date {
   font-weight: 600;
-  white-space: nowrap;
+}
+.epm-project-board-target-date-icon {
+  display: inline-flex;
+  width: 0.9rem;
+  height: 0.9rem;
+  color: currentColor;
+}
+.epm-project-board-target-date-icon svg {
+  width: 100%;
+  height: 100%;
+}
+.epm-project-board-owner-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.28rem;
+  height: 1.28rem;
+  border-radius: 999px;
+  background: #2f2f2f;
+  color: #fff;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-size: 0.55rem;
+  font-weight: 700;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.epm-project-board-owner-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.epm-project-board-owner-name {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 10rem;
+}
+.epm-project-board-name {
+  margin: 0;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-primary);
+  font-weight: 650;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
   min-width: 0;
-  max-width: min(36rem, 100%);
+}
+.epm-project-board-name-link {
+  color: inherit;
+  text-decoration: none;
+}
+.epm-project-board-name-link:hover {
+  color: var(--epm-project-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 .epm-project-board-label-pill {
   font-family: "IBM Plex Mono", monospace;
@@ -6872,77 +6959,82 @@ button.toggle.initiative-toggle.active {
   color: var(--epm-project-accent);
   border-radius: 999px;
   white-space: nowrap;
-  max-width: min(18rem, 40%);
+  max-width: min(22rem, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 0 1 auto;
 }
-.epm-project-board-status-pill {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 0.6rem;
-  padding: 0.1rem 0.42rem;
-  border: 1px solid rgba(22, 101, 52, 0.24);
-  background: rgba(22, 163, 74, 0.1);
-  color: #166534;
-  border-radius: 999px;
+.epm-project-board-status-pill.task-status {
+  font-size: 0.58rem;
+  padding: 0.18rem 0.48rem;
+  border-radius: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-weight: 700;
   white-space: nowrap;
   flex: 0 0 auto;
 }
-.epm-project-board-link {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 0.6rem;
-  color: var(--epm-project-accent);
-  text-decoration: none;
-  white-space: nowrap;
-  flex: 0 0 auto;
+.epm-project-board-status-pill.task-status.on-track {
+  background: #52c41a;
+  color: white;
 }
-.epm-project-board-link:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
+.epm-project-board-status-pill.task-status.at-risk {
+  background: #fa8c16;
+  color: white;
+}
+.epm-project-board-status-pill.task-status.off-track {
+  background: #ff4d4f;
+  color: white;
+}
+.epm-project-board-status-pill.task-status.pending {
+  background: #597ef7;
+  color: white;
+}
+.epm-project-board-rollup-control {
+  display: flex;
+  align-items: center;
+  margin: 0.8rem 0 0 0;
+  padding-top: 0.72rem;
+  border-top: 1px solid var(--epm-project-border);
 }
 .epm-project-board-update-row {
   display: block;
-  width: fit-content;
-  max-width: min(48rem, calc(100% - 42px));
-  margin: 8px 0 10px 42px;
+  max-width: 72ch;
+  margin: 0.65rem 0 0 0;
 }
 .epm-project-board-update {
-  position: relative;
-  min-width: min(18rem, calc(100vw - 7rem));
+  max-width: 72ch;
   font-family:
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  font-size: 0.72rem;
+  font-size: 0.9rem;
+  line-height: 1.42;
   color: var(--text-primary);
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
   display: block;
-  width: auto;
-  max-width: 100%;
   margin: 0;
-  padding: 0.5rem 0.68rem 0.44rem;
+  padding: 0.58rem 0.7rem;
   text-align: left;
-  line-height: 1.35;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--epm-project-radius);
-  box-shadow: 0 4px 12px var(--shadow);
+  background: #fbfcfe;
+  border: 1px solid #e5ebf3;
+  border-radius: 8px;
+  box-shadow: none;
 }
 .epm-project-board-update-meta {
-  position: absolute;
-  top: -0.38rem;
-  left: 0.75rem;
-  z-index: 1;
+  position: static;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  max-width: calc(100% - 1.5rem);
-  background: var(--bg-primary);
-  white-space: nowrap;
-  line-height: 1;
-  padding: 0 0.3rem;
+  gap: 0.35rem;
+  max-width: 100%;
+  background: transparent;
+  white-space: normal;
+  line-height: 1.2;
+  padding: 0;
+  margin-bottom: 0.18rem;
 }
 .epm-project-board-update-date,
 .epm-project-board-update-author {
@@ -6958,6 +7050,11 @@ button.toggle.initiative-toggle.active {
   flex: 0 0 auto;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+.epm-project-board-update-date + .epm-project-board-update-author::before {
+  content: "\b7";
+  margin-right: 0.35rem;
+  color: var(--text-secondary);
 }
 .epm-project-board-update-copy {
   min-width: 0;
@@ -6991,11 +7088,61 @@ button.toggle.initiative-toggle.active {
 }
 .epm-project-board-body {
   position: relative;
-  padding-left: 28px;
-  padding-bottom: 10px;
+  margin: 0.62rem 0 0 0.9rem;
+  padding: 0 0 0.1rem 1.3rem;
+}
+.epm-project-board-body::before {
+  content: "";
+  position: absolute;
+  left: 0.58rem;
+  top: 0.1rem;
+  bottom: 0.45rem;
+  width: 2px;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      to bottom,
+      var(--epm-project-accent) 0%,
+      var(--epm-project-accent) 72%,
+      var(--epm-project-accent-soft) 92%,
+      var(--epm-project-accent-fade) 100%);
 }
 .epm-project-board.is-collapsed .epm-project-board-body {
   display: none;
+}
+@media (max-width: 640px) {
+  .epm-project-board {
+    padding: 0.68rem;
+  }
+  .epm-project-board-title-row {
+    align-items: center;
+    gap: 0.45rem;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .epm-project-board-title-meta {
+    grid-column: 2;
+    justify-self: start;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  .epm-project-board-meta {
+    padding-left: 1.85rem;
+  }
+  .epm-project-board-toggle {
+    height: 1.62rem;
+    padding-right: 0.5rem;
+  }
+  .epm-project-board-toggle-label {
+    font-size: 0.52rem;
+  }
+  .epm-project-board-update-row {
+    max-width: 100%;
+  }
+  .epm-project-board-body {
+    margin-left: 0.8rem;
+    padding-left: 1.18rem;
+  }
 }
 .epm-duplicates-callout {
   border: 1px solid #f4c98a;

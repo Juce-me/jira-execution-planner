@@ -22,6 +22,14 @@ function countOccurrences(source, needle) {
     return (source.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
 }
 
+function getSnippetBetween(source, startMarker, endMarker) {
+    const start = source.indexOf(startMarker);
+    assert.notStrictEqual(start, -1, `Expected start marker ${startMarker}`);
+    const end = source.indexOf(endMarker, start);
+    assert.notStrictEqual(end, -1, `Expected end marker ${endMarker}`);
+    return source.slice(start, end);
+}
+
 test('dashboard source includes the EPM shell project picker and ENG gating hooks', () => {
     assert.ok(fs.existsSync(epmControlsPath), 'Expected EPM controls component');
     assert.ok(fs.existsSync(epmViewPath), 'Expected EPM view component');
@@ -50,6 +58,23 @@ test('dashboard source includes the EPM shell project picker and ENG gating hook
     assert.ok(dashboardSource.includes("selectedView === 'eng' && showPlanning"), 'Expected ENG-only planning gating in dashboard.jsx');
     assert.ok(dashboardSource.includes("selectedView === 'eng' && showStats"), 'Expected ENG-only stats gating in dashboard.jsx');
     assert.ok(dashboardSource.includes("selectedView === 'eng' && showScenario"), 'Expected ENG-only scenario gating in dashboard.jsx');
+});
+
+test('compact EPM sticky controls keep project picker but omit settings and state tabs', () => {
+    const compactEpmControls = getSnippetBetween(
+        dashboardSource,
+        "{shouldUseEpmSprint(epmTab) && renderSprintControl('compact')}",
+        '<div className="compact-sticky-header-search">'
+    );
+
+    assert.ok(epmControlsSource.includes('showStateControl = true'), 'Expected EpmControls to support hiding state tabs by surface');
+    assert.ok(epmControlsSource.includes('{showStateControl && renderEpmTabs()}'), 'Expected EpmControls to hide EPM state tabs when requested');
+    assert.ok(
+        compactEpmControls.includes("renderEpmControls('compact', { showProjectPicker: true, showStateControl: false })"),
+        'Expected compact EPM sticky controls to render the Project picker and hide state tabs'
+    );
+    assert.ok(compactEpmControls.includes("renderEpmProjectCollapseAllButton('compact')"), 'Expected compact EPM sticky controls to keep the collapse-all action');
+    assert.ok(!compactEpmControls.includes('Open EPM settings'), 'Expected compact EPM sticky controls to omit the settings gear');
 });
 
 test('dashboard source wires EPM rollup loading and metadata-only rendering', () => {

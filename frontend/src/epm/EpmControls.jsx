@@ -21,6 +21,7 @@ export function EpmControls({
     setEpmTab,
     surface = 'main',
     showProjectPicker = true,
+    showStateControl = true,
     epmProjectsLoading,
     visibleEpmProjects,
     selectedEpmProject,
@@ -230,7 +231,7 @@ export function EpmControls({
         <>
             {renderEpmSubGoalPicker()}
             {renderEpmProjectPicker()}
-            {renderEpmTabs()}
+            {showStateControl && renderEpmTabs()}
         </>
     );
 }

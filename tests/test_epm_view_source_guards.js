@@ -244,7 +244,7 @@ test('dashboard source renders mutually exclusive view controls and delegates EP
     );
     const subGoalIndex = epmControlsReturn.indexOf('{renderEpmSubGoalPicker()}');
     const projectIndex = epmControlsReturn.indexOf('{renderEpmProjectPicker()}');
-    const stateModeIndex = epmControlsReturn.indexOf('{renderEpmTabs()}');
+    const stateModeIndex = epmControlsReturn.indexOf('{showStateControl && renderEpmTabs()}');
     assert.ok(subGoalIndex !== -1 && projectIndex !== -1 && stateModeIndex !== -1, 'Expected EPM sub-goal, project, and state-mode controls');
     assert.ok(subGoalIndex < projectIndex && projectIndex < stateModeIndex, 'Expected EPM controls order to be sub-goals, projects, then view modes after Sprint');
 });
@@ -336,47 +336,59 @@ test('dashboard source keeps the ENG/EPM switch in the main header only', () => 
     );
 });
 
-test('dashboard source omits view and project selectors from compact sticky controls', () => {
+test('dashboard source omits view selector and state tabs from compact sticky controls', () => {
     const compactControlsSource = getSnippetBetween(
         dashboardSource,
         'className="compact-sticky-header-controls"',
         'className="compact-sticky-header-search"'
     );
     assert.ok(!compactControlsSource.includes('renderViewSwitch()'), 'Did not expect ENG/EPM switch in compact sticky controls');
-    assert.ok(!compactControlsSource.includes('renderEpmProjectPicker()'), 'Did not expect Project selector in compact sticky controls');
-    assert.ok(!compactControlsSource.includes('showProjectPicker={true}'), 'Did not expect Project selector in compact sticky controls');
-    assert.ok(compactControlsSource.includes("renderEpmControls('compact', false)"), 'Expected compact EPM controls to disable the Project selector');
+    assert.ok(
+        compactControlsSource.includes("renderEpmControls('compact', { showProjectPicker: true, showStateControl: false })"),
+        'Expected compact EPM controls to keep Project selector and hide state tabs'
+    );
     assert.ok(
         compactControlsSource.includes("shouldUseEpmSprint(epmTab) && renderSprintControl('compact')"),
         'Expected compact EPM Active controls to keep the sprint selector'
     );
 });
 
-test('dashboard source exposes EPM settings access in both header contexts', () => {
+test('dashboard source keeps EPM settings access in the main header only', () => {
     assert.ok(dashboardSource.includes('openEpmSettingsTab'), 'Expected openEpmSettingsTab in dashboard.jsx');
-    assert.ok(
-        countOccurrences(dashboardSource, 'Open EPM settings') >= 2,
-        'Expected Open EPM settings controls in both full and compact headers'
+    assert.strictEqual(
+        countOccurrences(dashboardSource, 'title="Open EPM settings"'),
+        1,
+        'Expected Open EPM settings control only in the main header'
     );
-    assert.ok(
-        countOccurrences(dashboardSource, '{canEditEpmConfiguration && (') >= 2,
-        'Expected EPM settings controls to render for users with EPM configuration access'
+    const compactControlsSource = getSnippetBetween(
+        dashboardSource,
+        'className="compact-sticky-header-controls"',
+        'className="compact-sticky-header-search"'
     );
+    assert.ok(!compactControlsSource.includes('Open EPM settings'), 'Did not expect settings gear in compact sticky controls');
 });
 
-test('dashboard places compact EPM collapse-all control before settings gears', () => {
+test('dashboard uses a project-stack icon for the EPM collapse-all control', () => {
     assert.ok(dashboardSource.includes('renderEpmProjectCollapseAllButton'), 'Expected shared EPM collapse-all header control');
     assert.ok(dashboardSource.includes('className="group-gear-button epm-project-collapse-all-button"'), 'Expected compact icon-sized collapse-all button');
     assert.ok(dashboardSource.includes('aria-label={epmProjectCollapseAllLabel}'), 'Expected collapse-all button to use the current action label');
+    assert.ok(dashboardSource.includes('className="epm-project-collapse-all-icon"'), 'Expected a dedicated EPM collapse-all icon');
+    assert.ok(dashboardSource.includes('className="epm-project-collapse-all-stack"'), 'Expected collapse-all icon to show project board stack');
+    assert.ok(dashboardSource.includes('className="epm-project-collapse-all-arrows"'), 'Expected collapse-all icon to show collapse/expand direction');
+    assert.ok(dashboardCssSource.includes('.epm-project-collapse-all-button .epm-project-collapse-all-icon'), 'Expected collapse-all icon sizing override');
+    assert.ok(!dashboardSource.includes('<path d="M5 12h14"'), 'Did not expect the old divider-only collapse glyph');
 
     const firstSettingsIndex = dashboardSource.indexOf('title="Open EPM settings"');
-    const secondSettingsIndex = dashboardSource.indexOf('title="Open EPM settings"', firstSettingsIndex + 1);
-    assert.ok(firstSettingsIndex > 0 && secondSettingsIndex > firstSettingsIndex, 'Expected full and compact EPM settings gears');
-
     const firstCollapseIndex = dashboardSource.lastIndexOf("renderEpmProjectCollapseAllButton('main')", firstSettingsIndex);
-    const secondCollapseIndex = dashboardSource.lastIndexOf("renderEpmProjectCollapseAllButton('compact')", secondSettingsIndex);
     assert.ok(firstCollapseIndex > 0 && firstCollapseIndex < firstSettingsIndex, 'Expected main collapse-all control immediately before the EPM settings gear');
-    assert.ok(secondCollapseIndex > firstSettingsIndex && secondCollapseIndex < secondSettingsIndex, 'Expected compact collapse-all control immediately before the EPM settings gear');
+
+    const compactControlsSource = getSnippetBetween(
+        dashboardSource,
+        'className="compact-sticky-header-controls"',
+        'className="compact-sticky-header-search"'
+    );
+    assert.ok(compactControlsSource.includes("renderEpmProjectCollapseAllButton('compact')"), 'Expected compact collapse-all control');
+    assert.ok(!compactControlsSource.includes('title="Open EPM settings"'), 'Did not expect compact collapse-all control to sit beside a settings gear');
 });
 
 test('epm helper file exists without ambiguous Active-only helper copy', () => {

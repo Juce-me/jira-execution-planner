@@ -95,8 +95,10 @@ export const fetchBacklogEpics = (backendUrl, { project, teamIds = [] } = {}) =>
     });
 };
 
-export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], teamIds = [], signal } = {}) =>
-    fetch(`${backendUrl}/api/stats/excluded-capacity-source`, {
+export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], teamIds = [], refresh = false, signal } = {}) => {
+    const body = { sprintIds, teamIds };
+    if (refresh) body.refresh = true;
+    return fetch(`${backendUrl}/api/stats/excluded-capacity-source`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -104,8 +106,9 @@ export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], t
         },
         cache: 'no-cache',
         signal,
-        body: JSON.stringify({ sprintIds, teamIds })
+        body: JSON.stringify(body)
     });
+};
 
 export const fetchDependencies = (backendUrl, keys, { signal } = {}) =>
     fetch(`${backendUrl}/api/dependencies`, {

@@ -194,6 +194,68 @@ export function mergeExcludedCapacityStatsSourceChunks(chunks, options = {}) {
     };
 }
 
+function buildSprintSourceFailureChunk(sprintId, error) {
+    const message = String(error?.message || error || 'failed to load').trim();
+    return {
+        issues: [],
+        meta: {
+            warnings: [`Sprint ${sprintId} excluded capacity source failed: ${message}`],
+            queryPages: 0
+        }
+    };
+}
+
+export async function loadExcludedCapacityStatsSourceChunks(sprintIds, fetchSprintChunk, options = {}) {
+    const ids = (sprintIds || []).map(normalizeId).filter(Boolean);
+    const requestedConcurrency = Number(options.maxConcurrent || 3);
+    const maxConcurrent = Math.max(1, Math.min(
+        ids.length || 1,
+        Number.isFinite(requestedConcurrency) ? Math.floor(requestedConcurrency) : 3
+    ));
+    const chunks = new Array(ids.length);
+    const errors = [];
+    let nextIndex = 0;
+    let loadedSprintCount = 0;
+    const isCancelled = typeof options.isCancelled === 'function' ? options.isCancelled : () => false;
+
+    const emitProgress = () => {
+        if (isCancelled() || typeof options.onProgress !== 'function') return;
+        options.onProgress(chunks.filter(Boolean), {
+            loadedSprintCount,
+            totalSprintCount: ids.length,
+            errors: errors.slice()
+        });
+    };
+
+    const loadNext = async () => {
+        while (!isCancelled()) {
+            const index = nextIndex;
+            nextIndex += 1;
+            if (index >= ids.length) return;
+            const sprintId = ids[index];
+            try {
+                chunks[index] = await fetchSprintChunk(sprintId, index) || { issues: [], meta: { warnings: [] } };
+            } catch (err) {
+                if (err?.name === 'AbortError') throw err;
+                const failureChunk = buildSprintSourceFailureChunk(sprintId, err);
+                chunks[index] = failureChunk;
+                errors.push({
+                    sprintId,
+                    message: failureChunk.meta.warnings[0]
+                });
+            }
+            loadedSprintCount += 1;
+            emitProgress();
+        }
+    };
+
+    await Promise.all(Array.from({ length: maxConcurrent }, loadNext));
+    return {
+        chunks: chunks.filter(Boolean),
+        errors
+    };
+}
+
 export function buildExcludedEpicCatalog(tasks, options = {}) {
     const configured = (options.excludedEpicKeys || []).map(normalizeKey).filter(key => key && key !== 'NO_EPIC');
     if (!configured.length) return [];

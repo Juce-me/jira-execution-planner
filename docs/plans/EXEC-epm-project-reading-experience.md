@@ -140,7 +140,7 @@ const titleStyle = await page.locator('.epm-project-board-name').first().evaluat
     };
 });
 expect(titleStyle.textTransform).toBe('none');
-expect(titleStyle.letterSpacing).toBe('0px');
+expect(['0px', 'normal']).toContain(titleStyle.letterSpacing);
 expect(titleStyle.fontFamily).not.toContain('IBM Plex Mono');
 expect(titleStyle.whiteSpace).not.toBe('nowrap');
 ```

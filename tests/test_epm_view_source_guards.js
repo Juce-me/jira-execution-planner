@@ -696,16 +696,16 @@ test('EPM project hover states document and enforce accessible contrast', () => 
         'Expected CSS to document the EPM hover contrast principle'
     );
     assert.ok(
-        dashboardCssSource.includes('--epm-project-radius: 8px;'),
-        'Expected EPM project rectangles to share one radius token'
-    );
-    assert.ok(
-        countOccurrences(dashboardCssSource, 'border-radius: var(--epm-project-radius);') >= 3,
-        'Expected EPM project rectangular surfaces to reuse the shared radius token'
+        !dashboardCssSource.includes('--epm-project-radius:'),
+        'Expected EPM project reading layout to remove the old boxed-surface radius token'
     );
     assert.ok(
         !dashboardCssSource.includes('border-radius: 18px 18px 18px 5px;'),
         'Expected update bubble to avoid bespoke large/tail rounding'
+    );
+    assert.ok(
+        !dashboardCssSource.includes('.epm-project-board-toggle:hover .epm-project-board-name'),
+        'Expected icon-only toggle hover not to depend on the project title being inside the button'
     );
     assert.ok(
         dashboardCssSource.includes('.epm-project-board-toggle:hover {'),

@@ -42,13 +42,6 @@ export function EpmRollupPanel({
         }
     };
 
-    const renderProjectIcon = () => (
-        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-            <rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" fill="none"/>
-            <path d="M3 9h18" stroke="currentColor" strokeWidth="1.6"/>
-        </svg>
-    );
-
     const renderChevron = () => (
         <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
             <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
@@ -59,11 +52,11 @@ export function EpmRollupPanel({
         if (!updateLine?.text) return null;
         return (
             <div className="epm-project-board-update-row" title={updateLine.title || undefined}>
-                <div className="epm-project-board-update">
+                <article className="epm-project-board-update" aria-label="Latest Home update">
                     {(updateLine.relativeDate || updateLine.author) && (
                         <div className="epm-project-board-update-meta">
                             {updateLine.relativeDate && <span className="epm-project-board-update-date">{updateLine.relativeDate}</span>}
-                            {updateLine.author && <span className="epm-project-board-update-author">{`${updateLine.relativeDate ? '· ' : ''}${updateLine.author}`}</span>}
+                            {updateLine.author && <span className="epm-project-board-update-author">{updateLine.author}</span>}
                         </div>
                     )}
                     {updateLine.messageHtml ? (
@@ -71,7 +64,7 @@ export function EpmRollupPanel({
                     ) : (
                         <span className="epm-project-board-update-copy">{updateLine.message || updateLine.text}</span>
                     )}
-                </div>
+                </article>
             </div>
         );
     };
@@ -90,28 +83,30 @@ export function EpmRollupPanel({
                         className="epm-project-board-toggle"
                         onClick={() => toggleCollapsed(project)}
                         aria-expanded={!collapsed}
+                        aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${getEpmProjectDisplayName(project)}`}
                     >
                         <span className="epm-project-board-chevron">{renderChevron()}</span>
-                        <span className="epm-project-board-icon">{renderProjectIcon()}</span>
-                        <span className="epm-project-board-name">{getEpmProjectDisplayName(project)}</span>
                     </button>
-                    <div className="epm-project-board-meta">
-                        {projectStatus && (
-                            <StatusPill className="epm-project-board-status-pill" label={projectStatus} />
-                        )}
-                        {project?.label && (
-                            <StatusPill className="epm-project-board-label-pill" label={project.label} />
-                        )}
-                        {project?.homeUrl && (
-                            <a
-                                className="epm-project-board-link"
-                                href={project.homeUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                Home ↗
-                            </a>
-                        )}
+                    <div className="epm-project-board-title-block">
+                        <h3 className="epm-project-board-name">{getEpmProjectDisplayName(project)}</h3>
+                        <div className="epm-project-board-meta" aria-label="Project metadata">
+                            {projectStatus && (
+                                <StatusPill className="epm-project-board-status-pill" label={projectStatus} />
+                            )}
+                            {project?.label && (
+                                <StatusPill className="epm-project-board-label-pill" label={project.label} />
+                            )}
+                            {project?.homeUrl && (
+                                <a
+                                    className="epm-project-board-link"
+                                    href={project.homeUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    Home
+                                </a>
+                            )}
+                        </div>
                     </div>
                 </div>
                 {renderProjectUpdate(updateLine)}

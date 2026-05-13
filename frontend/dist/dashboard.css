@@ -6667,7 +6667,6 @@ button.toggle.initiative-toggle.active {
   --epm-project-hover-surface: rgba(7, 71, 166, 0.12);
   --epm-project-message-bg: #fff3e4;
   --epm-project-message-text: #514338;
-  --epm-project-radius: 8px;
 }
 .epm-portfolio-board {
   display: flex;
@@ -6683,8 +6682,8 @@ button.toggle.initiative-toggle.active {
 .epm-project-board::before {
   content: "";
   position: absolute;
-  left: 6px;
-  top: 18px;
+  left: 0.78rem;
+  top: 0.8rem;
   bottom: 8px;
   width: 2px;
   border-radius: 999px;
@@ -6710,29 +6709,29 @@ button.toggle.initiative-toggle.active {
   color: var(--epm-project-accent);
 }
 .epm-project-board-header {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 10px;
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr);
+  align-items: start;
+  column-gap: 0.65rem;
   width: 100%;
-  margin: 0 0 4px;
+  margin: 0;
+  min-width: 0;
+}
+.epm-project-board-title-block {
   min-width: 0;
 }
 .epm-project-board-toggle {
-  display: grid;
-  grid-template-columns: 14px 18px minmax(0, auto);
+  display: inline-flex;
   align-items: center;
-  column-gap: 10px;
-  min-width: 0;
-  max-width: 100%;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
   padding: 0;
   background: transparent;
   border: 0;
   cursor: pointer;
-  text-align: left;
-  color: inherit;
-  font: inherit;
-  border-radius: var(--epm-project-radius);
+  color: var(--epm-project-accent);
+  border-radius: 6px;
   transition:
     background-color 0.14s ease,
     box-shadow 0.14s ease,
@@ -6744,15 +6743,10 @@ button.toggle.initiative-toggle.active {
   transform: none;
   box-shadow: 0 2px 8px rgba(7, 71, 166, 0.14);
 }
-.epm-project-board-toggle:hover .epm-project-board-name,
-.epm-project-board-toggle:focus-visible .epm-project-board-name {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
 .epm-project-board-toggle:focus-visible {
   outline: 2px solid var(--epm-project-accent);
   outline-offset: 2px;
-  border-radius: var(--epm-project-radius);
+  border-radius: 6px;
   background: var(--epm-project-hover-surface);
   transform: none;
   box-shadow: 0 2px 8px rgba(7, 71, 166, 0.14);
@@ -6768,33 +6762,33 @@ button.toggle.initiative-toggle.active {
 .epm-project-board.is-collapsed .epm-project-board-chevron {
   transform: rotate(0deg);
 }
-.epm-project-board-icon {
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  color: var(--epm-project-accent);
-}
 .epm-project-board-meta {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex: 1 1 360px;
+  justify-content: flex-start;
+  gap: 0.4rem;
+  flex-wrap: wrap;
   min-width: 0;
   max-width: 100%;
+  margin-top: 0.25rem;
 }
 .epm-project-board-name {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--epm-project-accent);
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  margin: 0;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-primary);
+  font-weight: 650;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
   min-width: 0;
-  max-width: min(36rem, 100%);
 }
 .epm-project-board-label-pill {
   font-family: "IBM Plex Mono", monospace;
@@ -6805,7 +6799,7 @@ button.toggle.initiative-toggle.active {
   color: var(--epm-project-accent);
   border-radius: 999px;
   white-space: nowrap;
-  max-width: min(18rem, 40%);
+  max-width: min(22rem, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 0 1 auto;
@@ -6825,57 +6819,53 @@ button.toggle.initiative-toggle.active {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.6rem;
   color: var(--epm-project-accent);
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: rgba(7, 71, 166, 0.35);
+  text-underline-offset: 2px;
   white-space: nowrap;
   flex: 0 0 auto;
 }
 .epm-project-board-link:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration-color: var(--epm-project-accent);
 }
 .epm-project-board-update-row {
   display: block;
-  width: fit-content;
-  max-width: min(48rem, calc(100% - 42px));
-  margin: 8px 0 10px 42px;
+  max-width: 72ch;
+  margin: 0.45rem 0 0.75rem 2.25rem;
 }
 .epm-project-board-update {
-  position: relative;
-  min-width: min(18rem, calc(100vw - 7rem));
+  max-width: 72ch;
   font-family:
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  font-size: 0.72rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
   color: var(--text-primary);
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
   display: block;
-  width: auto;
-  max-width: 100%;
   margin: 0;
-  padding: 0.5rem 0.68rem 0.44rem;
+  padding: 0;
   text-align: left;
-  line-height: 1.35;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--epm-project-radius);
-  box-shadow: 0 4px 12px var(--shadow);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 .epm-project-board-update-meta {
-  position: absolute;
-  top: -0.38rem;
-  left: 0.75rem;
-  z-index: 1;
+  position: static;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  max-width: calc(100% - 1.5rem);
-  background: var(--bg-primary);
-  white-space: nowrap;
-  line-height: 1;
-  padding: 0 0.3rem;
+  gap: 0.35rem;
+  max-width: 100%;
+  background: transparent;
+  white-space: normal;
+  line-height: 1.2;
+  padding: 0;
+  margin-bottom: 0.18rem;
 }
 .epm-project-board-update-date,
 .epm-project-board-update-author {
@@ -6891,6 +6881,11 @@ button.toggle.initiative-toggle.active {
   flex: 0 0 auto;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+.epm-project-board-update-date + .epm-project-board-update-author::before {
+  content: "\b7";
+  margin-right: 0.35rem;
+  color: var(--text-secondary);
 }
 .epm-project-board-update-copy {
   min-width: 0;
@@ -6929,6 +6924,12 @@ button.toggle.initiative-toggle.active {
 }
 .epm-project-board.is-collapsed .epm-project-board-body {
   display: none;
+}
+@media (max-width: 640px) {
+  .epm-project-board-update-row {
+    max-width: calc(100% - 2.15rem);
+    margin-left: 2.15rem;
+  }
 }
 .epm-duplicates-callout {
   border: 1px solid #f4c98a;

@@ -39,11 +39,29 @@ class OAuthSettingsRouteTests(unittest.TestCase):
              patch.object(jira_server, "get_effective_capacity_project", return_value="CAP"), \
              patch.object(jira_server, "resolve_groups_config_path", return_value="team-groups.json"), \
              patch.object(jira_server, "get_selected_projects", return_value=[]), \
-             patch.object(jira_server, "get_epm_config", return_value={"version": 2}):
+             patch.object(jira_server, "get_epm_config", return_value={"version": 2}), \
+             patch.object(jira_server, "load_dashboard_config", return_value={}):
             response = self.client.get("/api/config")
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["jiraUrl"], "https://oauth-site.atlassian.net")
+        self.assertEqual(response.get_json()["authMode"], "atlassian_oauth")
+
+    def test_config_reports_basic_auth_mode(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
+             patch.object(jira_server, "JIRA_URL", "https://basic-site.atlassian.net"), \
+             patch.object(jira_server, "JIRA_EMAIL", "basic@example.com"), \
+             patch.object(jira_server, "JIRA_TOKEN", "api-token"), \
+             patch.object(jira_server, "get_board_config", return_value={}), \
+             patch.object(jira_server, "get_effective_capacity_project", return_value=""), \
+             patch.object(jira_server, "resolve_groups_config_path", return_value="team-groups.json"), \
+             patch.object(jira_server, "get_selected_projects", return_value=[]), \
+             patch.object(jira_server, "get_epm_config", return_value={"version": 2}), \
+             patch.object(jira_server, "load_dashboard_config", return_value={}):
+            response = self.client.get("/api/config")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["authMode"], "basic")
 
     def test_config_reports_authenticated_oauth_settings_access_before_db_roles(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -53,7 +71,8 @@ class OAuthSettingsRouteTests(unittest.TestCase):
              patch.object(jira_server, "get_effective_capacity_project", return_value="CAP"), \
              patch.object(jira_server, "resolve_groups_config_path", return_value="team-groups.json"), \
              patch.object(jira_server, "get_selected_projects", return_value=[]), \
-             patch.object(jira_server, "get_epm_config", return_value={"version": 2}):
+             patch.object(jira_server, "get_epm_config", return_value={"version": 2}), \
+             patch.object(jira_server, "load_dashboard_config", return_value={}):
             response = self.client.get("/api/config")
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
@@ -94,7 +113,8 @@ class OAuthSettingsRouteTests(unittest.TestCase):
              patch.object(jira_server, "get_effective_capacity_project", return_value="CAP"), \
              patch.object(jira_server, "resolve_groups_config_path", return_value="team-groups.json"), \
              patch.object(jira_server, "get_selected_projects", return_value=[]), \
-             patch.object(jira_server, "get_epm_config", return_value={"version": 2}):
+             patch.object(jira_server, "get_epm_config", return_value={"version": 2}), \
+             patch.object(jira_server, "load_dashboard_config", return_value={}):
             response = self.client.get("/api/config")
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))

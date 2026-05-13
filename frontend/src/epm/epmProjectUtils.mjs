@@ -436,6 +436,26 @@ export function normalizeEpmScopeSubGoalKeys(scope) {
     return normalized;
 }
 
+export function getNextEpmSubGoalSelection(savedSubGoalKeys, selectedSubGoalKeys, clickedSubGoalKey) {
+    const savedKeys = normalizeEpmScopeSubGoalKeys({ subGoalKeys: savedSubGoalKeys });
+    const selectedKeys = normalizeEpmScopeSubGoalKeys({ subGoalKeys: selectedSubGoalKeys })
+        .filter(key => savedKeys.includes(key));
+    const clickedKey = normalizeEpmSettingsKeyPart(clickedSubGoalKey);
+    if (!clickedKey || !savedKeys.includes(clickedKey)) {
+        return selectedKeys;
+    }
+
+    const nextSet = new Set(selectedKeys.length ? selectedKeys : savedKeys);
+    if (nextSet.has(clickedKey)) {
+        nextSet.delete(clickedKey);
+    } else {
+        nextSet.add(clickedKey);
+    }
+
+    const nextKeys = savedKeys.filter(savedKey => nextSet.has(savedKey));
+    return nextKeys.length === savedKeys.length ? [] : nextKeys;
+}
+
 export function getEpmSubGoalDisplayParts(goal, fallbackKey = '') {
     const key = normalizeEpmSettingsKeyPart(goal?.key || fallbackKey);
     const rawName = String(goal?.name || '').trim();

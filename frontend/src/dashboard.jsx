@@ -324,11 +324,12 @@ import {
             const [selectedView, setSelectedView] = useState(savedInitialViewRef.current === 'epm' ? 'eng' : savedInitialViewRef.current);
             const [homeTokenConnection, setHomeTokenConnection] = useState({ connected: false });
             const [homeTokenConnectionLoaded, setHomeTokenConnectionLoaded] = useState(false);
+            const [authMode, setAuthMode] = useState('');
             const hasActiveHomeTokenConnection = React.useMemo(
                 () => isActiveHomeTokenConnection(homeTokenConnection),
                 [homeTokenConnection]
             );
-            const showEpmNavigation = hasActiveHomeTokenConnection;
+            const showEpmNavigation = authMode === 'basic' || hasActiveHomeTokenConnection;
             const [sprintName, setSprintName] = useState('Sprint');
             const [statusFilter, setStatusFilter] = useState(savedPrefsRef.current.statusFilter ?? null); // null = show all, 'in-progress', 'todo-accepted', 'done', 'high-priority'
             const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
@@ -793,7 +794,7 @@ import {
             }, [refreshHomeTokenConnectionStatus]);
             useEffect(() => {
                 if (!homeTokenConnectionLoaded) return;
-                if (hasActiveHomeTokenConnection) {
+                if (showEpmNavigation) {
                     if (!restoredInitialEpmViewRef.current && savedInitialViewRef.current === 'epm') {
                         restoredInitialEpmViewRef.current = true;
                         setSelectedView('epm');
@@ -803,7 +804,7 @@ import {
                 if (selectedView === 'epm') {
                     setSelectedView('eng');
                 }
-            }, [homeTokenConnectionLoaded, hasActiveHomeTokenConnection, selectedView]);
+            }, [homeTokenConnectionLoaded, showEpmNavigation, selectedView]);
             const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);
             const loadEpmScopeMeta = () => fetchEpmScope(BACKEND_URL);
             const loadEpmGoals = (rootGoalKey = '') => fetchEpmGoals(BACKEND_URL, rootGoalKey);
@@ -3008,6 +3009,7 @@ import {
                     // Re-fetch config to update capacityEnabled and other derived state
                     try {
                         const cfg = await fetchAppConfig(BACKEND_URL);
+                        setAuthMode(cfg.authMode || '');
                         setCapacityEnabled(Boolean(cfg.capacityProject));
                         setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
                         setUserCanEditSettings(cfg.userCanEditSettings === true);
@@ -5044,6 +5046,7 @@ import {
                     const config = await fetchAppConfig(BACKEND_URL);
                     clearServerConnectionError();
                     setJiraUrl(config.jiraUrl || '');
+                    setAuthMode(config.authMode || '');
                     setCapacityEnabled(Boolean(config.capacityProject));
                     setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
                     setSettingsAdminOnly(Boolean(config.settingsAdminOnly));

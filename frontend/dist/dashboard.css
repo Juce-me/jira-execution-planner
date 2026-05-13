@@ -3600,6 +3600,51 @@ button.toggle.initiative-toggle.active {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.875rem;
 }
+.server-unavailable-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: #fff2e8;
+  border: 1px solid #ffbb96;
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+  margin: 1rem 0 1.5rem;
+  color: var(--text-primary);
+  font-family: "IBM Plex Mono", monospace;
+}
+.server-unavailable-title {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.server-unavailable-banner p {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.server-unavailable-banner button {
+  flex: 0 0 auto;
+  margin: 0;
+  border-color: #ff9c6e;
+  background: #ffffff;
+  color: var(--accent);
+}
+.server-unavailable-banner button:hover {
+  background: #fff7f0;
+}
+@media (max-width: 760px) {
+  .server-unavailable-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .server-unavailable-banner button {
+    width: 100%;
+  }
+}
 .stats {
   display: grid;
   grid-template-columns: repeat(6, 1fr);

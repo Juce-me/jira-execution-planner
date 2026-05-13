@@ -78,6 +78,7 @@ export function useEngSprintData({
     setReadyToCloseTechTasks,
     setReadyToCloseProductEpicsInScope,
     setReadyToCloseTechEpicsInScope,
+    onServerConnectionFailure,
 }) {
     const fetchTasks = async (project, options = {}) => {
         const useLoading = options.useLoading !== false;
@@ -155,11 +156,14 @@ export function useEngSprintData({
             if (err.name === 'AbortError') {
                 return [];
             }
+            const handledServerConnection = onServerConnectionFailure?.(err) === true;
             if (setErrors) {
-                setError(taskLoadErrorMessage(err, backendUrl));
+                setError(handledServerConnection ? '' : taskLoadErrorMessage(err, backendUrl));
             }
             redirectToAuthRecovery(err);
-            console.error('Full error details:', err);
+            if (!handledServerConnection) {
+                console.error('Full error details:', err);
+            }
             return [];
         } finally {
             cleanupSprintFetch(controller);

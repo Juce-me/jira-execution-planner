@@ -46,6 +46,7 @@ export function useEpmViewData({
     epmProjectSearch,
     searchQuery,
     onHomeTokenRequired,
+    onServerConnectionFailure,
 }) {
     const [epmTab, setEpmTab] = useState(initialEpmTab ?? 'active');
     const [epmProjects, setEpmProjects] = useState([]);
@@ -113,9 +114,12 @@ export function useEpmViewData({
             if (epmProjectsRequestIdRef.current !== requestId) {
                 return [];
             }
-            console.error('Failed to fetch EPM projects:', err);
             if (isHomeTokenRequiredError(err)) {
                 onHomeTokenRequired?.(err);
+            }
+            const handledServerConnection = onServerConnectionFailure?.(err) === true;
+            if (!handledServerConnection) {
+                console.error('Failed to fetch EPM projects:', err);
             }
             if (!background) {
                 setEpmProjects([]);
@@ -130,7 +134,7 @@ export function useEpmViewData({
                 setEpmProjectsLoading(false);
             }
         }
-    }, [backendUrl, epmTab, onHomeTokenRequired, runtimeEpmSubGoalKeys]);
+    }, [backendUrl, epmTab, onHomeTokenRequired, onServerConnectionFailure, runtimeEpmSubGoalKeys]);
 
     const refreshEpmRollup = React.useCallback(async (projectOverride = selectedEpmProject, projectIdOverride = epmSelectedProjectId) => {
         epmRollupRequestIdRef.current += 1;
@@ -197,9 +201,12 @@ export function useEpmViewData({
                 if (epmRollupRequestIdRef.current !== requestId) {
                     return;
                 }
-                console.error('Failed to fetch EPM all-projects rollup:', err);
                 if (isHomeTokenRequiredError(err)) {
                     onHomeTokenRequired?.(err);
+                }
+                const handledServerConnection = onServerConnectionFailure?.(err) === true;
+                if (!handledServerConnection) {
+                    console.error('Failed to fetch EPM all-projects rollup:', err);
                 }
                 setEpmRollupBoards(null);
                 setEpmDuplicates({});
@@ -250,9 +257,12 @@ export function useEpmViewData({
             if (epmRollupRequestIdRef.current !== requestId) {
                 return;
             }
-            console.error('Failed to fetch EPM rollup:', err);
             if (isHomeTokenRequiredError(err)) {
                 onHomeTokenRequired?.(err);
+            }
+            const handledServerConnection = onServerConnectionFailure?.(err) === true;
+            if (!handledServerConnection) {
+                console.error('Failed to fetch EPM rollup:', err);
             }
             setEpmRollupTree(null);
         } finally {
@@ -260,7 +270,7 @@ export function useEpmViewData({
                 setEpmRollupLoading(false);
             }
         }
-    }, [backendUrl, epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, onHomeTokenRequired, runtimeEpmSubGoalKeys, selectedEpmProject, selectedSprint, selectedView]);
+    }, [backendUrl, epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, onHomeTokenRequired, onServerConnectionFailure, runtimeEpmSubGoalKeys, selectedEpmProject, selectedSprint, selectedView]);
 
     const loadArchivedEpmProjectRollup = React.useCallback(async (project) => {
         if (epmTab !== 'archived') return;
@@ -294,9 +304,12 @@ export function useEpmViewData({
                 : prev);
         } catch (err) {
             if (epmRollupRequestIdRef.current === requestId) {
-                console.error('Failed to fetch archived EPM project rollup:', err);
                 if (isHomeTokenRequiredError(err)) {
                     onHomeTokenRequired?.(err);
+                }
+                const handledServerConnection = onServerConnectionFailure?.(err) === true;
+                if (!handledServerConnection) {
+                    console.error('Failed to fetch archived EPM project rollup:', err);
                 }
             }
         } finally {
@@ -308,7 +321,7 @@ export function useEpmViewData({
                 });
             }
         }
-    }, [backendUrl, epmProjectRollupLoadingIds, epmRollupBoards, epmTab, onHomeTokenRequired, runtimeEpmSubGoalKeys, selectedSprint]);
+    }, [backendUrl, epmProjectRollupLoadingIds, epmRollupBoards, epmTab, onHomeTokenRequired, onServerConnectionFailure, runtimeEpmSubGoalKeys, selectedSprint]);
 
     const refreshEpmView = React.useCallback(async () => {
         if (!epmConfigLoaded) {

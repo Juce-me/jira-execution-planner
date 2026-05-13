@@ -649,7 +649,7 @@ test('EPM portfolio update line renders below the project header with relative d
         'const buildDuplicateClusters = () => {'
     );
     const headerCloseIndex = headerSource.indexOf('</div>');
-    const updateIndex = headerSource.indexOf('renderProjectUpdate(updateLine)');
+    const updateIndex = headerSource.indexOf('renderProjectUpdate(updateLine, collapsed)');
     assert.ok(epmRollupPanelSource.includes('className="epm-project-board-update"'), 'Expected visible project board update line');
     assert.ok(updateIndex > headerCloseIndex, 'Project update line must render after the header wrapper');
 
@@ -663,12 +663,13 @@ test('EPM portfolio update line renders below the project header with relative d
 });
 
 test('EPM portfolio update line preserves formatted Home update HTML safely', () => {
-    assert.ok(epmRollupPanelSource.includes('className="epm-project-board-update-row"'), 'Expected update row wrapper to separate bubble from date');
+    assert.ok(epmRollupPanelSource.includes("className={`epm-project-board-update-row ${collapsed ? 'is-collapsed' : ''}`}"), 'Expected collapsed update row to use a compact preview class');
     assert.ok(epmRollupPanelSource.includes('updateLine.messageHtml'), 'Expected update renderer to branch on formatted Home update HTML');
+    assert.ok(epmRollupPanelSource.includes('!collapsed && updateLine.messageHtml'), 'Expected formatted Home update HTML only in expanded project rows');
     assert.ok(epmRollupPanelSource.includes('dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }}'), 'Expected formatted update HTML to be injected from sanitized server output');
     const updateRendererSource = getSnippetBetween(
         epmRollupPanelSource,
-        'const renderProjectUpdate = (updateLine) => {',
+        'const renderProjectUpdate = (updateLine, collapsed = false) => {',
         'const renderPortfolioHeader = (project) => {'
     );
     assert.ok(updateRendererSource.includes('epm-project-board-update-date'), 'Expected relative date label in the update bubble');
@@ -720,8 +721,16 @@ test('EPM project hover states document and enforce accessible contrast', () => 
         'Expected EPM project toggle hover to reset the global button hover transform'
     );
     assert.ok(
-        dashboardCssSource.includes('box-shadow: 0 2px 8px rgba(7, 71, 166, 0.14);'),
+        dashboardCssSource.includes('box-shadow: 0 2px 8px rgba(7, 71, 166, 0.12);'),
         'Expected EPM project toggle hover to use a visible but low-contrast-safe affordance'
+    );
+    assert.ok(
+        dashboardCssSource.includes('.epm-project-board-body::before'),
+        'Expected expanded project rail to live in the body away from the disclosure button'
+    );
+    assert.ok(
+        !dashboardCssSource.includes('.epm-project-board::before'),
+        'Expected project rail not to collide with the disclosure button at board level'
     );
 });
 

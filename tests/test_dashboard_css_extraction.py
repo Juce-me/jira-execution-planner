@@ -133,18 +133,24 @@ class TestDashboardCssFileContract(unittest.TestCase):
         select_block = _css_block(css, 'select')
         self.assertIn('border-radius: 10px;', select_block)
 
-    def test_epm_project_board_timeline_and_update_reading_contract(self):
+    def test_epm_project_board_surface_and_update_reading_contract(self):
         css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'dist' / 'dashboard.css'
         css = css_path.read_text(encoding='utf-8')
-        self.assertIn('.epm-project-board::before', css)
-        self.assertIn('.epm-project-board.is-collapsed::before', css)
-        self.assertNotIn('.epm-project-board-body::before', css)
+        self.assertNotIn('.epm-project-board::before', css)
+        self.assertIn('.epm-project-board-body::before', css)
+        board_block = _css_block(css, '.epm-project-board')
+        self.assertIn('border: 1px solid var(--epm-project-border);', board_block)
+        self.assertIn('border-radius: 8px;', board_block)
+        self.assertIn('background: var(--epm-project-surface);', board_block)
         update_block = _css_block(css, '.epm-project-board-update')
         self.assertIn('max-width: 72ch;', update_block)
         self.assertIn('font-size: 0.9rem;', update_block)
-        self.assertIn('background: transparent;', update_block)
-        self.assertIn('border: 0;', update_block)
+        self.assertIn('background: #fbfcfe;', update_block)
+        self.assertIn('border: 1px solid #e5ebf3;', update_block)
+        self.assertIn('border-radius: 7px;', update_block)
         self.assertIn('box-shadow: none;', update_block)
+        self.assertIn('.epm-project-board-update-row.is-collapsed', css)
+        self.assertIn('text-overflow: ellipsis;', css)
         self.assertNotIn('background-image:', update_block)
         self.assertNotIn('rgba(190, 128, 71', update_block)
 

@@ -27,8 +27,8 @@ async function loadHeaderFixture(page) {
                         <div class="epm-project-board-header">
                             <button type="button" class="epm-project-board-toggle" aria-expanded="true" aria-label="Collapse AI for RFP creation">
                                 <span class="epm-project-board-chevron">
-                                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
-                                        <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+                                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                                        <path d="M5.5 3.75L9.75 8l-4.25 4.25" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
                                     </svg>
                                 </span>
                             </button>
@@ -63,8 +63,8 @@ async function loadHeaderFixture(page) {
                         <div class="epm-project-board-header">
                             <button type="button" class="epm-project-board-toggle" aria-expanded="true" aria-label="Collapse Data Partnership: Support Revenue Share Fee Model">
                                 <span class="epm-project-board-chevron">
-                                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
-                                        <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+                                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                                        <path d="M5.5 3.75L9.75 8l-4.25 4.25" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
                                     </svg>
                                 </span>
                             </button>
@@ -97,12 +97,12 @@ async function loadHeaderFixture(page) {
                             </div>
                         </div>
                     </section>
-                    <section class="epm-project-board">
+                    <section class="epm-project-board is-collapsed">
                         <div class="epm-project-board-header">
-                            <button type="button" class="epm-project-board-toggle" aria-expanded="true" aria-label="Collapse Dynamic Floor Harness With Pricing Analysis Rollout Controls">
+                            <button type="button" class="epm-project-board-toggle" aria-expanded="false" aria-label="Expand Dynamic Floor Harness With Pricing Analysis Rollout Controls">
                                 <span class="epm-project-board-chevron">
-                                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
-                                        <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+                                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                                        <path d="M5.5 3.75L9.75 8l-4.25 4.25" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
                                     </svg>
                                 </span>
                             </button>
@@ -115,15 +115,13 @@ async function loadHeaderFixture(page) {
                                 </div>
                             </div>
                         </div>
-                        <div class="epm-project-board-update-row">
+                        <div class="epm-project-board-update-row is-collapsed">
                             <article class="epm-project-board-update" aria-label="Latest Home update">
                                 <div class="epm-project-board-update-meta">
                                     <span class="epm-project-board-update-date">today</span>
                                     <span class="epm-project-board-update-author">Katherine Johnson</span>
                                 </div>
-                                <div class="epm-project-board-update-copy">
-                                    <p>Rollout beyond <strong>5% traffic</strong> is gated on coefficient work and clearer separation of profitable pairs.</p>
-                                </div>
+                                <span class="epm-project-board-update-copy">Rollout beyond 5% traffic is gated on coefficient work and clearer separation of profitable pairs.</span>
                             </article>
                         </div>
                         <div class="epm-project-board-body">
@@ -160,9 +158,15 @@ for (const viewport of [
         const updateMeta = board.locator('.epm-project-board-update-meta').first();
         const updateDate = board.locator('.epm-project-board-update-date').first();
         const updateAuthor = board.locator('.epm-project-board-update-author').first();
+        const collapsedBoard = page.locator('.epm-project-board.is-collapsed');
+        const collapsedUpdate = collapsedBoard.locator('.epm-project-board-update');
+        const collapsedCopy = collapsedBoard.locator('.epm-project-board-update-copy');
+        const collapsedBody = collapsedBoard.locator('.epm-project-board-body');
 
         await expect(header).toBeVisible();
         await expect(page.locator('.epm-project-board')).toHaveCount(3);
+        await expect(collapsedBoard).toHaveCount(1);
+        await expect(collapsedBoard.locator('.epm-project-board-toggle')).toHaveAttribute('aria-expanded', 'false');
         await expect(toggle.locator('a')).toHaveCount(0);
         await expect(toggle.locator('.epm-project-board-update')).toHaveCount(0);
         await expect(toggle.locator('.epm-project-board-name')).toHaveCount(0);
@@ -178,6 +182,8 @@ for (const viewport of [
         const updateMetaBox = await updateMeta.boundingBox();
         const updateDateBox = await updateDate.boundingBox();
         const updateAuthorBox = await updateAuthor.boundingBox();
+        const collapsedBoardBox = await collapsedBoard.boundingBox();
+        const collapsedUpdateBox = await collapsedUpdate.boundingBox();
 
         expect(headerBox).toBeTruthy();
         expect(bodyBox).toBeTruthy();
@@ -189,6 +195,8 @@ for (const viewport of [
         expect(updateMetaBox).toBeTruthy();
         expect(updateDateBox).toBeTruthy();
         expect(updateAuthorBox).toBeTruthy();
+        expect(collapsedBoardBox).toBeTruthy();
+        expect(collapsedUpdateBox).toBeTruthy();
 
         expect(boxesOverlap(toggleBox, metaBox)).toBe(false);
         expect(boxesOverlap(titleBox, metaBox)).toBe(false);
@@ -199,6 +207,7 @@ for (const viewport of [
         await expect(update.locator('em')).toHaveText('deals AI');
         await expect(update.locator('a')).toHaveAttribute('href', 'https://example.test/client-testing');
         await expect(page.locator('.epm-project-board-update-copy li')).toHaveCount(2);
+        await expect(collapsedUpdate.locator('li')).toHaveCount(0);
 
         const titleStyle = await title.evaluate((node) => {
             const style = window.getComputedStyle(node);
@@ -217,6 +226,9 @@ for (const viewport of [
         const updateStyle = await update.evaluate((node) => {
             const style = window.getComputedStyle(node);
             return {
+                backgroundColor: style.backgroundColor,
+                borderColor: style.borderColor,
+                borderRadius: style.borderRadius,
                 boxShadow: style.boxShadow,
                 borderTopStyle: style.borderTopStyle,
                 color: style.color,
@@ -226,7 +238,10 @@ for (const viewport of [
             };
         });
         expect(updateStyle.boxShadow).toBe('none');
-        expect(updateStyle.borderTopStyle).toBe('none');
+        expect(updateStyle.borderTopStyle).toBe('solid');
+        expect(updateStyle.backgroundColor).toBe('rgb(251, 252, 254)');
+        expect(updateStyle.borderColor).not.toBe('rgba(0, 0, 0, 0)');
+        expect(updateStyle.borderRadius).toBe('7px');
         expect(updateStyle.color).not.toBe('rgb(255, 255, 255)');
         expect(updateStyle.maxWidthValue).not.toBe('none');
         expect(Number.isFinite(updateStyle.maxWidthPx)).toBe(true);
@@ -251,7 +266,19 @@ for (const viewport of [
 
         const boardBox = await board.boundingBox();
         expect(boardBox).toBeTruthy();
-        const railStyle = await board.evaluate((node) => {
+        const boardStyle = await board.evaluate((node) => {
+            const style = window.getComputedStyle(node);
+            return {
+                backgroundColor: style.backgroundColor,
+                borderColor: style.borderColor,
+                borderRadius: style.borderRadius,
+            };
+        });
+        expect(boardStyle.backgroundColor).toBe('rgb(255, 255, 255)');
+        expect(boardStyle.borderColor).not.toBe('rgba(0, 0, 0, 0)');
+        expect(boardStyle.borderRadius).toBe('8px');
+
+        const railStyle = await body.evaluate((node) => {
             const style = window.getComputedStyle(node, '::before');
             return {
                 content: style.content,
@@ -260,13 +287,30 @@ for (const viewport of [
                 width: Number.parseFloat(style.width),
             };
         });
-        const railCenterX = boardBox.x + railStyle.left + (railStyle.width / 2);
+        const railCenterX = bodyBox.x + railStyle.left + (railStyle.width / 2);
         const toggleCenterX = toggleBox.x + (toggleBox.width / 2);
-        const railStartY = boardBox.y + railStyle.top;
-        const toggleCenterY = toggleBox.y + (toggleBox.height / 2);
+        const railStartY = bodyBox.y + railStyle.top;
         expect(railStyle.content).not.toBe('none');
-        expect(Math.abs(railCenterX - toggleCenterX)).toBeLessThanOrEqual(2);
-        expect(Math.abs(railStartY - toggleCenterY)).toBeLessThanOrEqual(4);
+        expect(Math.abs(railCenterX - toggleCenterX)).toBeGreaterThanOrEqual(8);
+        expect(railStartY).toBeGreaterThan(toggleBox.y + toggleBox.height + 8);
+
+        const collapsedBodyDisplay = await collapsedBody.evaluate((node) => (
+            window.getComputedStyle(node).display
+        ));
+        const collapsedCopyStyle = await collapsedCopy.evaluate((node) => {
+            const style = window.getComputedStyle(node);
+            return {
+                overflow: style.overflow,
+                textOverflow: style.textOverflow,
+                whiteSpace: style.whiteSpace,
+            };
+        });
+        expect(collapsedBodyDisplay).toBe('none');
+        expect(collapsedCopyStyle.overflow).toBe('hidden');
+        expect(collapsedCopyStyle.textOverflow).toBe('ellipsis');
+        expect(collapsedCopyStyle.whiteSpace).toBe('nowrap');
+        expect(collapsedUpdateBox.height).toBeLessThan(44);
+        expect(collapsedBoardBox.height).toBeLessThan(boardBox.height);
 
         await toggle.hover();
         await page.waitForTimeout(180);

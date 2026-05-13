@@ -43,15 +43,15 @@ export function EpmRollupPanel({
     };
 
     const renderChevron = () => (
-        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
-            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+            <path d="M5.5 3.75L9.75 8l-4.25 4.25" stroke="currentColor" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
     );
 
-    const renderProjectUpdate = (updateLine) => {
+    const renderProjectUpdate = (updateLine, collapsed = false) => {
         if (!updateLine?.text) return null;
         return (
-            <div className="epm-project-board-update-row" title={updateLine.title || undefined}>
+            <div className={`epm-project-board-update-row ${collapsed ? 'is-collapsed' : ''}`} title={updateLine.title || undefined}>
                 <article className="epm-project-board-update" aria-label="Latest Home update">
                     {(updateLine.relativeDate || updateLine.author) && (
                         <div className="epm-project-board-update-meta">
@@ -59,7 +59,7 @@ export function EpmRollupPanel({
                             {updateLine.author && <span className="epm-project-board-update-author">{updateLine.author}</span>}
                         </div>
                     )}
-                    {updateLine.messageHtml ? (
+                    {!collapsed && updateLine.messageHtml ? (
                         <div className="epm-project-board-update-copy" dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }} />
                     ) : (
                         <span className="epm-project-board-update-copy">{updateLine.message || updateLine.text}</span>
@@ -109,7 +109,7 @@ export function EpmRollupPanel({
                         </div>
                     </div>
                 </div>
-                {renderProjectUpdate(updateLine)}
+                {renderProjectUpdate(updateLine, collapsed)}
             </>
         );
     };

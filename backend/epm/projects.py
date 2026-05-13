@@ -250,6 +250,7 @@ def build_custom_project_payload(row):
         'latestUpdateSnippet': '',
         'latestUpdateHtml': '',
         'latestUpdateAuthor': '',
+        'latestUpdateUrl': '',
         'name': name,
         'label': label,
         'customName': name,

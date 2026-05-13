@@ -401,6 +401,7 @@ export function buildEpmProjectUpdateLine(project, now = new Date()) {
     const snippet = String(project?.latestUpdateSnippet || '').trim();
     const messageHtml = String(project?.latestUpdateHtml || '').trim();
     const author = String(project?.latestUpdateAuthor || '').trim();
+    const updateUrl = String(project?.latestUpdateUrl || '').trim();
     const status = getEpmProjectStatusText(project);
     const message = snippet || (status ? `Status is ${status}.` : 'No Home status update.');
     const line = {
@@ -414,6 +415,9 @@ export function buildEpmProjectUpdateLine(project, now = new Date()) {
     }
     if (messageHtml) {
         line.messageHtml = messageHtml;
+    }
+    if (updateUrl) {
+        line.url = updateUrl;
     }
     return line;
 }

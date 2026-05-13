@@ -79,6 +79,19 @@ class TestEpmHomeApi(unittest.TestCase):
         ])
         self.assertEqual(latest['author'], 'Ada Lovelace')
 
+    def test_extract_latest_update_includes_specific_update_url(self):
+        latest = extract_latest_update([
+            {
+                'creationDate': '2026-04-09T12:00:00.000Z',
+                'summary': 'Latest update',
+                'url': 'https://home.atlassian.com/o/example/s/example/project/PROJ/updates/update-1',
+            },
+        ])
+        self.assertEqual(
+            latest['url'],
+            'https://home.atlassian.com/o/example/s/example/project/PROJ/updates/update-1',
+        )
+
     def test_extract_latest_update_preserves_adf_formatting_as_safe_html(self):
         latest = extract_latest_update([
             {

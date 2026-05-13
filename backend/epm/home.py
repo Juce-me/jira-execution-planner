@@ -895,6 +895,7 @@ def extract_latest_update(updates):
         "snippet": snippet,
         "html": html,
         "author": str(creator.get("name") or "").strip(),
+        "url": str(latest.get("url") or "").strip(),
     }
 
 
@@ -1124,6 +1125,7 @@ def build_home_project_record(project, updates, linkage, home_tags=None, tags_un
         "latestUpdateSnippet": latest["snippet"],
         "latestUpdateHtml": latest.get("html", ""),
         "latestUpdateAuthor": latest.get("author", ""),
+        "latestUpdateUrl": latest.get("url", ""),
         "homeTags": normalize_project_tag_names(home_tags or []),
         "homeTagsUnavailable": bool(tags_unavailable),
         "resolvedLinkage": {"labels": resolved_labels, "epicKeys": resolved_epics},

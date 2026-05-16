@@ -22,6 +22,9 @@ These rules override everything else in this file when in conflict:
 3. **Never fabricate.** Not file paths, not commit hashes, not API names, not test results, not library functions. If you don't know, read the file, run the command, or say "I don't know, let me check."
 4. **Stop when confused.** If the task has two plausible interpretations, ask. Do not pick silently and proceed.
 5. **Touch only what you must.** Every changed line must trace directly to the user's request. No drive-by refactors, reformatting, or "while I was in there" cleanups.
+6. **Do not discard prior architecture constraints.** Carry forward existing architectural decisions unless the user explicitly changes them.
+7. **If context becomes uncertain, stop and state uncertainty.** Do not keep implementing on a shaky or guessed understanding.
+8. **Do not simplify implementation for brevity.** Solve the actual requirement even when the correct implementation is longer than a short answer.
 
 ---
 

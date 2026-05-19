@@ -27,9 +27,9 @@ All routes must fall into exactly one policy class:
 | `public_page` | Browser entry or static asset with no app data. | `/`, `/jira-dashboard.html`, `/frontend/dist/*`, `/favicon.ico`, `/epm-burst.svg` | No auth, security headers, no secrets. |
 | `auth_flow` | Login, OAuth callback, auth status, CSRF token, logout, reconnect pages. | `/login`, `/api/auth/*`, `/auth/*` | Existing auth-flow rules; unsafe methods require CSRF where applicable. |
 | `authenticated_read` | Read app data using Basic mode locally or OAuth DB context. | ENG reads, EPM reads, Jira catalogs, stats reads. | Basic mode only on loopback/local profile; OAuth mode requires current auth context when route touches Jira/Home/user data. |
-| `user_write` | Mutates current user's private state. | `/api/me/views`, `/api/me/connections/home-token` | Authenticated user plus token-bound CSRF. |
+| `user_write` | Reads or mutates current user's private state. | `/api/me/views`, `/api/me/connections/home-token` | Authenticated user; unsafe methods require token-bound CSRF. |
 | `shared_admin_write` | Mutates shared workspace/app configuration. | `/api/projects/selected`, `/api/board-config`, field mappings, EPM config. | Tool admin plus token-bound CSRF in OAuth/DB mode; Basic mode local-only. |
-| `tool_admin` | Operator/admin inspection or user/service credential administration. | `/api/admin/*` | DB auth, active tool admin, token-bound CSRF for unsafe methods. |
+| `tool_admin` | Operator/admin inspection or user/service credential administration. | `/api/admin/*` | DB auth, active tool admin; unsafe methods require token-bound CSRF. |
 | `dev_local` | Diagnostic/probe endpoint that must not be reachable in project-grade/network mode. | `/api/debug-fields`, `/api/tasks-fields`, `/api/auth/dev/home-graphql-oauth-probe` | `APP_ENVIRONMENT_KEY in {local, dev}` plus explicit allow flag plus loopback request. |
 | `legacy_basic_local` | Existing compatibility route allowed only for local Basic mode during migration. | `/api/scenario/overrides` POST until DB drafts replace it. | Basic mode, loopback request, no OAuth DB write bypass. |
 
@@ -83,7 +83,22 @@ git status --short --branch
 
 Expected: branch is not `main`; any unrelated local changes are documented before edits.
 
-- [ ] **Step 2: List and open gated docs**
+- [ ] **Step 2: Ensure a usable Python runner exists**
+
+Run:
+
+```bash
+if [ -x .venv/bin/python ]; then
+  .venv/bin/python --version
+else
+  python3 -m pip install --user -r requirements.txt
+  python3 --version
+fi
+```
+
+Expected: a Python interpreter with repo dependencies is available before route-map or test commands run. If `.venv/bin/python` is missing, use `python3` for the Task 0 route-map command and create `.venv` in Task 6.
+
+- [ ] **Step 3: List and open gated docs**
 
 Run:
 
@@ -94,7 +109,7 @@ sed -n '1,220p' docs/plans/GATE-05-home-write-capability.md
 
 Expected: `docs/plans/GATE-05-home-write-capability.md` is the only gate.
 
-- [ ] **Step 3: Check Home write probe inputs without printing values**
+- [ ] **Step 4: Check Home write probe inputs without printing values**
 
 Run:
 
@@ -110,17 +125,19 @@ done
 
 Expected: if any value is missing, do not run the Home write probe. Update the gate checked date and keep `Last result` as `FAIL insufficient_home_write_probe_input`.
 
-- [ ] **Step 4: Record the current route map**
+- [ ] **Step 5: Record the current route map**
 
 Run:
 
 ```bash
-.venv/bin/python -c $'import jira_server\nfor rule in sorted(jira_server.app.url_map.iter_rules(), key=lambda r: r.rule):\n    methods=",".join(sorted(m for m in rule.methods if m not in {"HEAD","OPTIONS"}))\n    print(f"{methods:20} {rule.rule:55} {rule.endpoint}")'
+PYTHON_BIN=.venv/bin/python
+if [ ! -x "$PYTHON_BIN" ]; then PYTHON_BIN=python3; fi
+"$PYTHON_BIN" -c $'import jira_server\nfor rule in sorted(jira_server.app.url_map.iter_rules(), key=lambda r: r.rule):\n    methods=",".join(sorted(m for m in rule.methods if m not in {"HEAD","OPTIONS"}))\n    print(f"{methods:20} {rule.rule:55} {rule.endpoint}")'
 ```
 
 Expected: route map output is reviewed before changing policy.
 
-- [ ] **Step 5: Commit preflight gate update if it changed**
+- [ ] **Step 6: Commit preflight gate update if it changed**
 
 Run:
 
@@ -178,6 +195,33 @@ class EndpointPolicyInventoryTests(unittest.TestCase):
 
         missing = sorted(route for route in routes_requiring_samples() if route not in ROUTE_SAMPLES)
         self.assertEqual(missing, [])
+
+    def test_policy_covers_existing_oauth_ready_routes_before_wrapper_removal(self):
+        from backend.security.policy import classify_rule
+
+        missing = []
+        for path in sorted(jira_server.OAUTH_READY_API_PATHS):
+            rules = [rule for rule in jira_server.app.url_map.iter_rules() if rule.rule == path]
+            if not rules:
+                missing.append({"path": path, "reason": "no flask rule"})
+                continue
+            for rule in rules:
+                methods = sorted(method for method in rule.methods if method not in IGNORED_METHODS)
+                if not classify_rule(rule.rule, methods, rule.endpoint):
+                    missing.append({"path": path, "methods": methods, "reason": "no policy"})
+
+        self.assertEqual(missing, [])
+
+    def test_policy_marks_existing_shared_config_writes_admin_only(self):
+        from backend.security.policy import classify_rule
+
+        wrong = []
+        for path in sorted(jira_server.OAUTH_SHARED_CONFIG_WRITE_PATHS):
+            policy = classify_rule(path, ["POST"])
+            if not policy or policy.policy_class != "shared_admin_write":
+                wrong.append({"path": path, "policy": getattr(policy, "policy_class", None)})
+
+        self.assertEqual(wrong, [])
 ```
 
 Create `tests/endpoint_security_samples.py`:
@@ -306,15 +350,24 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("jira-boards", "/api/boards", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("jira-sprints", "/api/sprints", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("jira-issue-types", "/api/issue-types", PUBLIC_METHODS, "authenticated_read"),
-    EndpointPolicy("shared-selected-projects", "/api/projects/selected", frozenset({"GET", "POST"}), "shared_admin_write"),
-    EndpointPolicy("shared-board-config", "/api/board-config", frozenset({"GET", "POST"}), "shared_admin_write"),
-    EndpointPolicy("shared-capacity-config", "/api/capacity/config", frozenset({"GET", "POST"}), "shared_admin_write"),
-    EndpointPolicy("shared-field-config", "/api/sprint-field/config", frozenset({"GET", "POST"}), "shared_admin_write"),
-    EndpointPolicy("shared-story-points-config", "/api/story-points-field/config", frozenset({"GET", "POST"}), "shared_admin_write"),
-    EndpointPolicy("shared-parent-name-config", "/api/parent-name-field/config", frozenset({"GET", "POST"}), "shared_admin_write"),
-    EndpointPolicy("shared-team-field-config", "/api/team-field/config", frozenset({"GET", "POST"}), "shared_admin_write"),
-    EndpointPolicy("shared-priority-weights", "/api/stats/priority-weights-config", frozenset({"GET", "POST"}), "shared_admin_write"),
-    EndpointPolicy("shared-issue-types-config", "/api/issue-types/config", frozenset({"GET", "POST"}), "shared_admin_write"),
+    EndpointPolicy("selected-projects-read", "/api/projects/selected", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("selected-projects-write", "/api/projects/selected", frozenset({"POST"}), "shared_admin_write"),
+    EndpointPolicy("board-config-read", "/api/board-config", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("board-config-write", "/api/board-config", frozenset({"POST"}), "shared_admin_write"),
+    EndpointPolicy("capacity-config-read", "/api/capacity/config", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("capacity-config-write", "/api/capacity/config", frozenset({"POST"}), "shared_admin_write"),
+    EndpointPolicy("sprint-field-config-read", "/api/sprint-field/config", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("sprint-field-config-write", "/api/sprint-field/config", frozenset({"POST"}), "shared_admin_write"),
+    EndpointPolicy("story-points-config-read", "/api/story-points-field/config", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("story-points-config-write", "/api/story-points-field/config", frozenset({"POST"}), "shared_admin_write"),
+    EndpointPolicy("parent-name-config-read", "/api/parent-name-field/config", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("parent-name-config-write", "/api/parent-name-field/config", frozenset({"POST"}), "shared_admin_write"),
+    EndpointPolicy("team-field-config-read", "/api/team-field/config", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("team-field-config-write", "/api/team-field/config", frozenset({"POST"}), "shared_admin_write"),
+    EndpointPolicy("priority-weights-read", "/api/stats/priority-weights-config", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("priority-weights-write", "/api/stats/priority-weights-config", frozenset({"POST"}), "shared_admin_write"),
+    EndpointPolicy("issue-types-config-read", "/api/issue-types/config", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("issue-types-config-write", "/api/issue-types/config", frozenset({"POST"}), "shared_admin_write"),
     EndpointPolicy("epm-config-read", "/api/epm/config", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("epm-config-write", "/api/epm/config", frozenset({"POST"}), "shared_admin_write"),
     EndpointPolicy("epm-scope", "/api/epm/scope", PUBLIC_METHODS, "authenticated_read"),
@@ -352,6 +405,36 @@ def classify_rule(rule: str, methods: list[str] | tuple[str, ...], endpoint: str
 
 def routes_requiring_samples():
     return sorted(policy.path for policy in ENDPOINT_POLICIES if "<" in policy.path)
+
+
+def oauth_ready_api_paths():
+    return {
+        policy.path
+        for policy in ENDPOINT_POLICIES
+        if policy.path.startswith("/api/")
+        and policy.policy_class not in {"dev_local"}
+        and policy.match == "exact"
+    }
+
+
+def shared_config_write_paths():
+    return {
+        policy.path
+        for policy in ENDPOINT_POLICIES
+        if policy.policy_class == "shared_admin_write" and "POST" in policy.methods
+    }
+
+
+def is_oauth_ready_api_path(path: str) -> bool:
+    if path.startswith("/api/auth/") and not path.startswith("/api/auth/dev/"):
+        return True
+    if path.startswith("/api/admin/"):
+        return True
+    return any(
+        policy.policy_class not in {"dev_local", "legacy_basic_local"}
+        and policy.matches(path, ["GET", "POST", "PATCH", "DELETE"])
+        for policy in ENDPOINT_POLICIES
+    )
 ```
 
 - [ ] **Step 3: Run the inventory test**
@@ -369,7 +452,7 @@ Expected: PASS. If it fails because a route is unclassified or matches twice, fi
 Run:
 
 ```bash
-git add backend/security/__init__.py backend/security/policy.py tests/test_endpoint_policy_inventory.py tests/endpoint_security_samples.py
+git add backend/security/__init__.py backend/security/policy.py tests/test_endpoint_policy_inventory.py
 git commit -m "security: add endpoint policy inventory"
 ```
 
@@ -420,11 +503,12 @@ Create `backend/security/guards.py` with a `register_security_guards(flask_app)`
 
 - classify the incoming request using `backend.security.policy`;
 - reject unclassified `/api/*` routes before route code;
+- reject unclassified non-API routes with `404 route_not_found`, except Flask's built-in static handler when explicitly ignored by tests;
 - keep `public_page` readable;
 - keep auth-flow routes under existing auth behavior;
 - require current auth context for OAuth authenticated app data;
 - reject unsafe OAuth requests missing `X-Requested-With`;
-- require token-bound CSRF for `user_write`, `shared_admin_write`, and `tool_admin`;
+- require token-bound CSRF for unsafe methods on `user_write`, `shared_admin_write`, and `tool_admin`;
 - require admin for `shared_admin_write` and `tool_admin`;
 - reject `dev_local` unless `APP_ENVIRONMENT_KEY` is `local` or `dev`, `ALLOW_DEV_DIAGNOSTIC_ENDPOINTS=true`, and `request.remote_addr` is loopback;
 - reject `legacy_basic_local` in OAuth/DB mode.
@@ -435,16 +519,27 @@ Modify `backend/app.py` so `create_app()` calls:
 
 ```python
 from backend.security.guards import register_security_guards
-from backend.security.headers import register_security_headers
 
 register_security_guards(flask_app)
-register_security_headers(flask_app)
 register_blueprints(flask_app)
 ```
 
 - [ ] **Step 5: Keep compatibility wrappers temporarily**
 
-Modify `jira_server.py` so `is_oauth_ready_api_path()` and `OAUTH_SHARED_CONFIG_WRITE_PATHS` read from the new policy registry until all call sites move. Do not keep two independent allowlists.
+Before changing `jira_server.py`, run the parity tests from Task 1:
+
+```bash
+.venv/bin/python -m unittest tests.test_endpoint_policy_inventory
+```
+
+Expected: PASS, including coverage for every path in the existing `OAUTH_READY_API_PATHS` and every path in `OAUTH_SHARED_CONFIG_WRITE_PATHS`.
+
+Then modify `jira_server.py` so:
+
+- `is_oauth_ready_api_path(path)` delegates to `backend.security.policy.is_oauth_ready_api_path(path)`;
+- `OAUTH_READY_API_PATHS` remains exported for existing tests/callers, but is now a computed compatibility value from `oauth_ready_api_paths()`;
+- `OAUTH_SHARED_CONFIG_WRITE_PATHS` remains exported for existing tests/callers, but is now a computed compatibility value from `shared_config_write_paths()`;
+- no independent handwritten allowlist remains in `jira_server.py`.
 
 - [ ] **Step 6: Run focused guard tests**
 
@@ -469,8 +564,12 @@ git commit -m "security: enforce central endpoint guards"
 
 **Files:**
 - Create: `backend/security/headers.py`
+- Modify: `backend/app.py`
 - Modify: `jira_server.py`
 - Modify: `backend/routes/auth_routes.py`
+- Modify: `.env.example`
+- Modify: `INSTALL.md`
+- Modify: `README.md`
 - Test: `tests/test_network_bind_guards.py`
 - Test: `tests/test_security_headers.py`
 
@@ -530,18 +629,42 @@ class SecurityHeaderTests(unittest.TestCase):
         self.assertEqual(response.headers.get("Cache-Control"), "no-store")
 ```
 
-- [ ] **Step 3: Implement secure defaults**
+- [ ] **Step 3: Run the new tests and verify the red state**
 
-Add `default_bind_host()` and `validate_network_bind(host)` in `jira_server.py`:
+Run:
 
-- default host is `127.0.0.1`;
-- `0.0.0.0`, `::`, or non-loopback bind requires `ALLOW_NETWORK_BIND=true`;
-- Basic mode cannot bind to network unless `ALLOW_BASIC_AUTH_ON_NETWORK=true` and `APP_ENVIRONMENT_KEY=local`;
-- OAuth network bind requires `SESSION_COOKIE_SECURE=true`, non-empty `APP_ALLOWED_ORIGINS` without `*`, and non-empty `FLASK_SECRET_KEY`.
+```bash
+.venv/bin/python -m unittest tests.test_network_bind_guards tests.test_security_headers
+```
+
+Expected: FAIL before implementation with `AttributeError` for `default_bind_host`/`validate_network_bind` or missing `backend.security.headers`. Do not change the tests to skip the failure.
+
+- [ ] **Step 4: Implement secure defaults**
+
+Add these exact function contracts in `jira_server.py`:
+
+```python
+def default_bind_host():
+    """Return the default Flask bind host for local execution."""
+    return os.getenv("APP_BIND_HOST", "127.0.0.1").strip() or "127.0.0.1"
+
+
+def validate_network_bind(host):
+    """Validate and return the requested bind host, or raise AuthError with a stable code."""
+```
+
+Required behavior:
+
+- loopback hosts `127.0.0.1`, `localhost`, and `::1` are allowed without extra flags;
+- wildcard or non-loopback hosts such as `0.0.0.0`, `::`, or LAN addresses require `ALLOW_NETWORK_BIND=true`;
+- `ALLOW_NETWORK_BIND` is the global network-exposure gate;
+- in Basic mode, `ALLOW_NETWORK_BIND=true` is still not enough: the bind also requires `ALLOW_BASIC_AUTH_ON_NETWORK=true` and `APP_ENVIRONMENT_KEY=local`, otherwise raise `AuthError("basic_network_bind_not_allowed", ...)`;
+- in OAuth mode, network bind requires `SESSION_COOKIE_SECURE=true`, non-empty `APP_ALLOWED_ORIGINS` without `*`, and non-empty `FLASK_SECRET_KEY`, otherwise raise `AuthError("secure_cookie_required", ...)` for the secure-cookie case or a specific `AuthError` code for the missing origin/secret case;
+- missing `ALLOW_NETWORK_BIND=true` raises `AuthError("network_bind_not_allowed", ...)`.
 
 Update `app.run(host=...)` to use `APP_BIND_HOST` or `default_bind_host()`.
 
-- [ ] **Step 4: Add response security headers**
+- [ ] **Step 5: Add response security headers**
 
 Create `backend/security/headers.py` and register after-request headers:
 
@@ -552,11 +675,25 @@ Create `backend/security/headers.py` and register after-request headers:
 - `Cache-Control: no-store` for `/api/*`;
 - no HSTS unless `SESSION_COOKIE_SECURE=true`.
 
-- [ ] **Step 5: Gate dev diagnostics**
+Modify `backend/app.py` so `create_app()` imports and calls `register_security_headers(flask_app)` after `register_security_guards(flask_app)` and before `register_blueprints(flask_app)`.
 
-Modify `/api/auth/dev/home-graphql-oauth-probe`, `/api/debug-fields`, and `/api/tasks-fields` so they return `404` unless `ALLOW_DEV_DIAGNOSTIC_ENDPOINTS=true` and the request is loopback.
+- [ ] **Step 6: Gate dev diagnostics in the files that currently own each route**
 
-- [ ] **Step 6: Run focused tests**
+- In `backend/routes/auth_routes.py`, extend the existing `/api/auth/dev/home-graphql-oauth-probe` guard. It already checks `APP_ENVIRONMENT_KEY`; do not duplicate the route in `jira_server.py`. Add the explicit `ALLOW_DEV_DIAGNOSTIC_ENDPOINTS=true` and loopback checks there.
+- In `jira_server.py`, gate the existing root `/api/debug-fields` and `/api/tasks-fields` routes until Task 5 moves them into `backend/routes/dev_routes.py`.
+- All three routes return `404` when disabled, not `403`, so scanners do not learn that a dev probe exists.
+
+- [ ] **Step 7: Document the new bind and diagnostic flags**
+
+Update `.env.example`, `INSTALL.md`, and `README.md` with these exact operator-facing rules:
+
+- default local bind host is `127.0.0.1`;
+- set `APP_BIND_HOST=0.0.0.0` only when intentionally exposing the app;
+- network bind also requires `ALLOW_NETWORK_BIND=true`;
+- Basic auth network bind also requires `ALLOW_BASIC_AUTH_ON_NETWORK=true` and remains local-profile only;
+- dev diagnostics require `ALLOW_DEV_DIAGNOSTIC_ENDPOINTS=true` and loopback access.
+
+- [ ] **Step 8: Run focused tests**
 
 Run:
 
@@ -566,12 +703,12 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit network and header hardening**
+- [ ] **Step 9: Commit network and header hardening**
 
 Run:
 
 ```bash
-git add backend/security/headers.py jira_server.py backend/routes/auth_routes.py tests/test_network_bind_guards.py tests/test_security_headers.py
+git add backend/security/headers.py backend/app.py jira_server.py backend/routes/auth_routes.py .env.example INSTALL.md README.md tests/test_network_bind_guards.py tests/test_security_headers.py
 git commit -m "security: close network and diagnostic defaults"
 ```
 
@@ -586,6 +723,7 @@ git commit -m "security: close network and diagnostic defaults"
 - Modify: `backend/app.py`
 - Modify: `jira_server.py`
 - Modify: `tests/test_backend_route_source_guards.py`
+- Test: `tests/test_route_move_preservation.py`
 
 - [ ] **Step 1: Add source guards for remaining root API routes**
 
@@ -603,38 +741,105 @@ ROOT_ROUTE_GROUPS = {
 
 For each group, fail if `jira_server.py` contains `@app.route('<route>'` after the corresponding `backend/routes/<group>_routes.py` exists.
 
-- [ ] **Step 2: Move one route group at a time**
+- [ ] **Step 2: Add route-map preservation tests**
+
+Create `tests/test_route_move_preservation.py`:
+
+```python
+import unittest
+
+import jira_server
+
+
+IGNORED_METHODS = {"HEAD", "OPTIONS"}
+EXPECTED_MOVED_ROUTE_METHODS = {
+    "/api/scenario": {"GET", "POST"},
+    "/api/scenario/overrides": {"GET", "POST"},
+    "/api/stats": {"GET"},
+    "/api/stats/burnout": {"GET", "POST"},
+    "/api/stats/epic-cohort": {"POST"},
+    "/api/stats/excluded-capacity-source": {"POST"},
+    "/api/capacity": {"GET"},
+    "/api/planned-capacity": {"GET"},
+    "/api/export-excel": {"POST"},
+    "/api/debug-fields": {"GET"},
+    "/api/tasks-fields": {"GET"},
+}
+
+
+class RouteMovePreservationTests(unittest.TestCase):
+    def test_moved_route_urls_and_methods_stay_registered(self):
+        actual = {}
+        for rule in jira_server.app.url_map.iter_rules():
+            methods = {method for method in rule.methods if method not in IGNORED_METHODS}
+            actual.setdefault(rule.rule, set()).update(methods)
+
+        missing = {}
+        wrong_methods = {}
+        for route, expected_methods in EXPECTED_MOVED_ROUTE_METHODS.items():
+            if route not in actual:
+                missing[route] = sorted(expected_methods)
+            elif actual[route] != expected_methods:
+                wrong_methods[route] = {"expected": sorted(expected_methods), "actual": sorted(actual[route])}
+
+        self.assertEqual(missing, {})
+        self.assertEqual(wrong_methods, {})
+```
+
+- [ ] **Step 3: Verify the existing route helper before using it**
+
+Run:
+
+```bash
+sed -n '1,120p' backend/routes/__init__.py
+.venv/bin/python -m unittest tests.test_backend_route_source_guards
+```
+
+Expected: `backend.routes.get_jira_server()` and `bind_server_globals()` already exist. Do not create a second helper. If this check fails in a future checkout, add the helper to `backend/routes/__init__.py` before moving routes.
+
+- [ ] **Step 4: Capture the pre-move behavioral baseline**
+
+Run:
+
+```bash
+.venv/bin/python -m unittest tests.test_route_move_preservation tests.test_oauth_stats_routes tests.test_scenario_issue_dates tests.test_scenario_single_team_filter tests.test_burnout_stats_api tests.test_excluded_capacity_stats_api tests.test_epic_cohort_api tests.test_oauth_settings_routes tests.test_oauth_route_guards
+```
+
+Expected: PASS before moving any route group. This is the behavior-preservation baseline; do not weaken tests to make the refactor easier.
+
+- [ ] **Step 5: Move one route group at a time**
 
 For each new blueprint module:
 
 1. copy the route functions from `jira_server.py`;
 2. keep imports narrow;
-3. call shared helpers through `backend.routes.get_jira_server()` only when a helper still lives in `jira_server.py`;
+3. call shared helpers through the existing `backend.routes.get_jira_server()` only when a helper still lives in `jira_server.py`;
 4. register the blueprint in `backend/app.py`;
 5. remove the root `@app.route` decorators for that group from `jira_server.py`;
-6. run the focused tests named below before moving the next group.
+6. run the focused tests named below before moving the next group;
+7. verify `tests.test_route_move_preservation` after every group so URL/method shape does not drift.
 
-- [ ] **Step 3: Verify each route group after moving**
+- [ ] **Step 6: Verify each route group after moving**
 
 Run after Scenario routes:
 
 ```bash
-.venv/bin/python -m unittest tests.test_oauth_stats_routes tests.test_scenario_issue_dates tests.test_scenario_single_team_filter tests.test_backend_route_source_guards
+.venv/bin/python -m unittest tests.test_route_move_preservation tests.test_oauth_stats_routes tests.test_scenario_issue_dates tests.test_scenario_single_team_filter tests.test_backend_route_source_guards
 ```
 
 Run after stats routes:
 
 ```bash
-.venv/bin/python -m unittest tests.test_oauth_stats_routes tests.test_burnout_stats_api tests.test_excluded_capacity_stats_api tests.test_epic_cohort_api tests.test_backend_route_source_guards
+.venv/bin/python -m unittest tests.test_route_move_preservation tests.test_oauth_stats_routes tests.test_burnout_stats_api tests.test_excluded_capacity_stats_api tests.test_epic_cohort_api tests.test_backend_route_source_guards
 ```
 
 Run after capacity/export/dev routes:
 
 ```bash
-.venv/bin/python -m unittest tests.test_oauth_settings_routes tests.test_oauth_route_guards tests.test_endpoint_security_matrix tests.test_backend_route_source_guards
+.venv/bin/python -m unittest tests.test_route_move_preservation tests.test_oauth_settings_routes tests.test_oauth_route_guards tests.test_endpoint_security_matrix tests.test_backend_route_source_guards
 ```
 
-- [ ] **Step 4: Commit each group separately**
+- [ ] **Step 7: Commit each group separately**
 
 Use these commit messages:
 
@@ -677,7 +882,7 @@ class ProjectPackagingTests(unittest.TestCase):
 
     def test_install_script_uses_requirements_file(self):
         source = (ROOT / "install.sh").read_text(encoding="utf8")
-        self.assertIn("python -m pip install -r requirements.txt", source)
+        self.assertIn(".venv/bin/python -m pip install -r requirements.txt", source)
         self.assertNotIn("pip3 install --user flask flask-cors requests", source)
 
     def test_makefile_exposes_standard_targets(self):
@@ -727,7 +932,7 @@ test:
 	.venv/bin/python -m unittest discover -s tests
 
 test-security:
-	.venv/bin/python -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards
+	.venv/bin/python -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
 
 run:
 	.venv/bin/python jira_server.py
@@ -772,6 +977,8 @@ Update `.github/workflows/verify-frontend-build.yml` so it runs:
   run: python -m pip install -r requirements.txt
 - name: Backend tests
   run: python -m unittest discover -s tests
+- name: Endpoint security tests
+  run: python -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
 - name: Frontend tests
   run: node --test tests/test_*.js
 ```
@@ -797,9 +1004,9 @@ Create `docs/security/endpoints.md` with:
 - a table generated from `ENDPOINT_POLICIES`;
 - exact steps for adding a new endpoint: add route, add policy entry, add matrix test, run `make test-security`.
 
-- [ ] **Step 4: Update plan index**
+- [ ] **Step 4: Verify the plan index**
 
-Add this plan to `docs/plans/README.md` under a new `Project Grade Security Hardening` section. State that it must run before exposing the app outside loopback or cutting a release intended for other users.
+Verify `docs/plans/README.md` already has a `Project Grade Security Hardening` section pointing to `EXEC-project-grade-security-hardening.md`. If it is missing in the execution checkout, add it. The release zip still excludes `docs/plans/`; this index is for repository operators, not runtime users.
 
 - [ ] **Step 5: Run CI-equivalent checks locally**
 
@@ -866,7 +1073,23 @@ curl http://127.0.0.1:5050/api/test
 
 Expected: route returns a stable JSON response, not an HTML traceback. Stop the server after verification.
 
-- [ ] **Step 4: Review git history and status**
+- [ ] **Step 4: Run explicit security acceptance mapping**
+
+Run:
+
+```bash
+.venv/bin/python -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_backend_route_source_guards tests.test_route_move_preservation
+```
+
+Expected:
+
+- `tests.test_endpoint_policy_inventory` verifies every Flask route has exactly one policy and new routes fail without one.
+- `tests.test_endpoint_security_matrix` verifies anonymous OAuth-mode requests cannot read app data and dev diagnostics stay closed unless explicitly enabled.
+- `tests.test_network_bind_guards` verifies loopback defaults and network-bind safety.
+- `tests.test_security_headers` verifies the response header baseline.
+- `tests.test_backend_route_source_guards` and `tests.test_route_move_preservation` verify route extraction did not reintroduce root route ownership or URL/method drift.
+
+- [ ] **Step 5: Review git history and status**
 
 Run:
 
@@ -877,7 +1100,7 @@ git status --short --branch
 
 Expected: commits are atomic and the tree has no accidental local artifacts staged.
 
-- [ ] **Step 5: Write handoff summary**
+- [ ] **Step 6: Write handoff summary**
 
 Include:
 

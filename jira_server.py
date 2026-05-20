@@ -4467,7 +4467,6 @@ def collect_dependencies(keys, context=None):
     return dependencies
 
 
-@app.route('/api/scenario', methods=['GET', 'POST'])
 def scenario_planner():
     """Scenario planner endpoint."""
     auth_context = current_request_auth_context()
@@ -4928,7 +4927,6 @@ def scenario_planner():
         return jsonify({'error': 'Failed to compute scenario', 'message': str(e)}), 500
 
 
-@app.route('/api/scenario/overrides', methods=['GET'])
 def get_scenario_overrides():
     """Return overrides for a given scope_key, or empty overrides."""
     scope_key = request.args.get('scope_key', '').strip()
@@ -4962,7 +4960,6 @@ def get_scenario_overrides():
     return jsonify({'overrides': entry.get('overrides', {})})
 
 
-@app.route('/api/scenario/overrides', methods=['POST'])
 def post_scenario_overrides():
     """Upsert overrides for a scope_key."""
     body = request.get_json(force=True, silent=True) or {}
@@ -6242,7 +6239,6 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
     return result, None
 
 
-@app.route('/api/stats/excluded-capacity-source', methods=['POST'])
 def get_excluded_capacity_stats_source():
     payload = request.get_json(silent=True) or {}
     raw_sprint_ids = payload.get('sprintIds') if isinstance(payload, dict) else []
@@ -6294,7 +6290,6 @@ def get_excluded_capacity_stats_source():
         }), 500
 
 
-@app.route('/api/stats', methods=['GET'])
 def get_completed_sprint_stats():
     """Fetch cached delivery stats for a completed sprint."""
     sprint_name = request.args.get('sprint', '').strip()
@@ -6356,7 +6351,6 @@ def get_completed_sprint_stats():
         return jsonify(payload), status
 
 
-@app.route('/api/stats/burnout', methods=['GET', 'POST'])
 def get_burnout_stats():
     """Fetch sprint burnout events from Jira changelog on demand."""
     payload = request.get_json(silent=True) if request.method == 'POST' else None
@@ -6418,7 +6412,6 @@ def get_burnout_stats():
         return jsonify(payload), status
 
 
-@app.route('/api/stats/epic-cohort', methods=['POST'])
 def get_epic_cohort_stats():
     payload = request.get_json(silent=True) or {}
     start_quarter = str(payload.get('startQuarter') or '').strip()
@@ -6563,7 +6556,6 @@ ISSUE_TYPES_CACHE = {'data': None, 'timestamp': 0}
 ISSUE_TYPES_CACHE_TTL = 60 * 60  # 1 hour
 
 
-@app.route('/api/capacity', methods=['GET'])
 def get_capacity():
     """Get estimated team capacity for a sprint."""
     sprint_name = request.args.get('sprint', '').strip()
@@ -6591,7 +6583,6 @@ def get_capacity():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/planned-capacity', methods=['GET'])
 def get_planned_capacity():
     """Alias endpoint for planned capacity."""
     return get_capacity()
@@ -6606,7 +6597,6 @@ def health_check():
     })
 
 
-@app.route('/api/test', methods=['GET'])
 def test_connection():
     """Test Jira connection with simple query"""
     try:
@@ -6649,22 +6639,11 @@ def test_connection():
         }), 500
 
 
-@app.route('/api/debug-fields', methods=['GET'])
 def debug_fields():
     """Debug endpoint to see all fields of a single task"""
     if not dev_diagnostics_allowed():
         return jsonify({'error': 'not_found'}), 404
     try:
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
         # Get one issue with ALL fields
         payload = {
             'jql': build_base_jql() or 'ORDER BY created DESC',
@@ -6711,22 +6690,11 @@ def debug_fields():
         }), 500
 
 
-@app.route('/api/tasks-fields', methods=['GET'])
 def get_tasks_fields():
     """Return all available fields and values for issues matching JQL_QUERY."""
     if not dev_diagnostics_allowed():
         return jsonify({'error': 'not_found'}), 404
     try:
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
         limit = request.args.get('limit', '5')
         try:
             limit_value = max(1, min(int(limit), 50))
@@ -6764,7 +6732,6 @@ def get_tasks_fields():
         }), 500
 
 
-@app.route('/api/export-excel', methods=['POST'])
 def export_excel():
     """Export selected tasks to Excel file"""
     try:

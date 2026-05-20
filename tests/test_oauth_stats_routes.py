@@ -151,7 +151,7 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["data"], {"quarters": []})
         mock_fetch.assert_called_once()
 
-    def test_scenario_overrides_routes_are_oauth_ready(self):
+    def test_scenario_overrides_get_is_oauth_ready_and_post_is_legacy_basic_local(self):
         overrides_payload = {"scenarios": {"2026Q2": {"overrides": {"PROD-1": {"start": "2026-04-01"}}}}}
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "load_scenario_overrides", return_value=overrides_payload), \
@@ -165,8 +165,9 @@ class OAuthStatsRouteTests(unittest.TestCase):
 
         self.assertEqual(get_response.status_code, 200, get_response.get_data(as_text=True))
         self.assertEqual(get_response.get_json()["overrides"], {"PROD-1": {"start": "2026-04-01"}})
-        self.assertEqual(post_response.status_code, 200, post_response.get_data(as_text=True))
-        mock_save.assert_called_once()
+        self.assertEqual(post_response.status_code, 501, post_response.get_data(as_text=True))
+        self.assertEqual(post_response.get_json()["error"], "route_not_oauth_ready")
+        mock_save.assert_not_called()
 
     def test_scenario_draft_routes_are_oauth_ready_before_unsafe_header_guard(self):
         self.assertTrue(jira_server.is_oauth_ready_api_path("/api/scenario/drafts"))
@@ -179,6 +180,7 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "csrf_required")
 
     def test_epm_home_routes_are_oauth_ready_with_service_home_credentials(self):
+        csrf = self.client.get("/api/auth/csrf").get_json()["csrfToken"]
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "fetch_home_site_cloud_id", return_value="cloud-123"), \
              patch.object(jira_server, "fetch_epm_goal_catalog", return_value=[]), \
@@ -198,7 +200,7 @@ class OAuthStatsRouteTests(unittest.TestCase):
                 self.client.get("/api/epm/projects"),
                 self.client.post(
                     "/api/epm/projects/configuration",
-                    headers={"X-Requested-With": "jira-execution-planner"},
+                    headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf},
                     json={},
                 ),
                 self.client.post(

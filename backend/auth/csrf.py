@@ -32,6 +32,15 @@ def issue_csrf_token(flask_session, session_data: dict) -> str:
     return token
 
 
+def bind_csrf_token(flask_session, token: str, session_data: dict) -> None:
+    session_id = flask_session.get('atlassian_oauth_session_id') or ''
+    token_hash = _token_hash(token, _binding(session_id, session_data))
+    hashes = list(flask_session.get(CSRF_SESSION_KEY) or [])
+    if token_hash not in hashes:
+        hashes.append(token_hash)
+    flask_session[CSRF_SESSION_KEY] = hashes[-MAX_CSRF_TOKENS:]
+
+
 def validate_csrf_token(flask_session, session_data: dict, token: str | None) -> bool:
     if not token:
         return False

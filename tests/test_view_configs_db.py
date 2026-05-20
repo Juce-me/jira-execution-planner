@@ -82,7 +82,7 @@ class ViewConfigMigrationTests(unittest.TestCase):
             finally:
                 engine.dispose()
 
-            command.downgrade(config, '-1')
+            command.downgrade(config, '20260511_0002')
             engine = create_engine(database_url, future=True)
             try:
                 tables = set(inspect(engine).get_table_names())

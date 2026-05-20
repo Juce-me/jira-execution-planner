@@ -32,12 +32,14 @@ def register_blueprints(flask_app):
     from backend.routes.eng_routes import bp as eng_bp
     from backend.routes.epm_routes import bp as epm_bp
     from backend.routes.settings_routes import bp as settings_bp
+    from backend.routes.scenario_draft_routes import bp as scenario_draft_bp
     from backend.routes.user_connection_routes import bp as user_connection_bp
     from backend.routes.views_routes import bp as views_bp
 
     flask_app.register_blueprint(auth_bp)
     flask_app.register_blueprint(user_connection_bp)
     flask_app.register_blueprint(views_bp)
+    flask_app.register_blueprint(scenario_draft_bp)
     flask_app.register_blueprint(admin_bp)
     flask_app.register_blueprint(epm_bp)
     flask_app.register_blueprint(eng_bp)

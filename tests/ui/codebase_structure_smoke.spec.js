@@ -1,12 +1,16 @@
 const fs = require('node:fs');
+const path = require('node:path');
+const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const screenshotDir = '/tmp/codebase-structure-qa';
+const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
 const groupTeamIds = ['team-alpha', 'team-beta'];
+let dashboardJs;
 
 const epmConfig = {
     version: 2,
@@ -22,6 +26,15 @@ const epmConfig = {
 
 test.beforeAll(() => {
     fs.mkdirSync(screenshotDir, { recursive: true });
+    const result = esbuild.buildSync({
+        entryPoints: [path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx')],
+        bundle: true,
+        write: false,
+        format: 'iife',
+        loader: { '.css': 'empty' },
+        define: { 'process.env.NODE_ENV': '"test"' },
+    });
+    dashboardJs = result.outputFiles[0].text;
 });
 
 function epmProject(tab, index = 1) {
@@ -86,6 +99,9 @@ const productTasks = Array.from({ length: 12 }, (_, index) => makeEngTask('produ
 const techTasks = Array.from({ length: 12 }, (_, index) => makeEngTask('tech', index + 1));
 const productEpic = makeEpic('product');
 const techEpic = makeEpic('tech');
+const scenarioTeams = Array.from({ length: 14 }, (_, index) => (
+    index === 0 ? 'Alpha Team' : index === 1 ? 'Beta Team' : `Scenario Team ${index + 1}`
+));
 
 function makeEpmStory(tab, index, epicKey, projectIndex = 1) {
     const suffix = projectIndex === 1 ? '' : `-${projectIndex}`;
@@ -152,10 +168,10 @@ function scenarioPayload() {
             bottleneck_lanes: [],
         },
         dependencies: [],
-        capacity_by_team: {
-            'Alpha Team': { size: 3, devLead: 'Alpha Lead' },
-            'Beta Team': { size: 2, devLead: 'Beta Lead' },
-        },
+        capacity_by_team: Object.fromEntries(scenarioTeams.map((team, index) => [
+            team,
+            { size: 2 + (index % 3), devLead: `${team} Lead` },
+        ])),
         issues: [
             {
                 key: 'PROD-1',
@@ -179,6 +195,17 @@ function scenarioPayload() {
                 start: '2026-04-08',
                 end: '2026-04-11',
             },
+            ...scenarioTeams.slice(2).map((team, index) => ({
+                key: `SCEN-${index + 1}`,
+                summary: `Build scenario smoke lane ${index + 1}`,
+                epicKey: 'PROD-EPIC',
+                epicSummary: 'Product delivery epic',
+                team,
+                assignee: `${team} Owner`,
+                sp: 1,
+                start: '2026-04-08',
+                end: '2026-04-11',
+            })),
         ],
     };
 }
@@ -208,6 +235,29 @@ async function waitForCallCount(calls, predicate, expected, timeout = 7000) {
         () => calls.filter(predicate).length,
         { timeout }
     ).toBe(expected);
+}
+
+async function waitForVisualSettled(page) {
+    await page.evaluate(async () => {
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        const waitForAnimations = async () => {
+            const animations = document.getAnimations({ subtree: true });
+            if (animations.length === 0) return;
+            await Promise.race([
+                Promise.all(animations.map(animation => animation.finished.catch(() => undefined))),
+                new Promise(resolve => window.setTimeout(resolve, 1200)),
+            ]);
+        };
+        await waitForAnimations();
+        await new Promise(requestAnimationFrame);
+        await waitForAnimations();
+    });
+}
+
+async function captureSmokeScreenshot(page, name) {
+    await waitForVisualSettled(page);
+    await page.screenshot({ path: `${screenshotDir}/${name}.png`, fullPage: true });
 }
 
 async function expectJiraExportMenu(page) {
@@ -303,11 +353,18 @@ async function expectContainerSticky(page, selector, containerSelector) {
         };
     }, containerSelector);
     expect(setup.position).toBe('sticky');
-    await locator.evaluate((element, scrollerSelector) => {
+    const scrollState = await locator.evaluate((element, scrollerSelector) => {
         const scroller = element.closest(scrollerSelector) || document.querySelector(scrollerSelector);
         scroller.scrollTop = 160;
+        return {
+            scrollTop: scroller.scrollTop,
+            scrollHeight: scroller.scrollHeight,
+            clientHeight: scroller.clientHeight,
+        };
     }, containerSelector);
-    await page.waitForTimeout(180);
+    expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight);
+    expect(scrollState.scrollTop).toBeGreaterThan(0);
+    await waitForVisualSettled(page);
     const result = await locator.evaluate((element, scrollerSelector) => {
         const scroller = element.closest(scrollerSelector) || document.querySelector(scrollerSelector);
         const rect = element.getBoundingClientRect();
@@ -334,6 +391,11 @@ async function expectArchivedMetadataOnlyStickyContract(page) {
 
 async function installApiMocks(page, calls, options = {}) {
     await installDashboardShell(page);
+    await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: dashboardJs,
+    }));
     const configGate = options.delayConfig ? createDeferred() : null;
     const epmProjectCount = options.epmProjectCount || 1;
     const unexpectedCalls = [];
@@ -421,7 +483,13 @@ async function installApiMocks(page, calls, options = {}) {
         if (url.pathname === '/api/capacity') return json({ enabled: false, capacity: [], teams: [], totalCapacity: 0 });
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
         if (url.pathname === '/api/scenario') return json(scenarioPayload());
-        if (url.pathname === '/api/scenario/overrides') return json({ overrides: {} });
+        if (url.pathname === '/api/scenario/drafts') {
+            return json({
+                activeDraft: null,
+                versions: [],
+                storage: 'db',
+            });
+        }
         if (url.pathname === '/api/epm/projects') {
             const tab = url.searchParams.get('tab') || 'active';
             return json({
@@ -496,7 +564,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await expect(page.locator('.epic-header').first()).toBeVisible();
     await expect(page.locator('.task-list > .epic-block').first().locator('.epic-status-pill')).toHaveText('In Progress');
     await expectJiraExportMenu(page);
-    await page.screenshot({ path: `${screenshotDir}/catch-up.png`, fullPage: true });
+    await captureSmokeScreenshot(page, 'catch-up');
     await expectWindowSticky(page, '.epic-header');
 
     const startupCounts = summarizeCalls(calls);
@@ -544,8 +612,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     const stickyEngModes = page.locator('.compact-sticky-header .eng-mode-control');
     await stickyEngModes.getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await page.waitForTimeout(700);
-    await page.screenshot({ path: `${screenshotDir}/planning.png`, fullPage: true });
+    await captureSmokeScreenshot(page, 'planning');
     await expectWindowSticky(page, '.planning-panel.open');
     await expectPlanningAboveEpic(page);
 
@@ -554,8 +621,45 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await page.getByRole('button', { name: 'Run Scenario' }).click();
     await expect(page.locator('.scenario-axis')).toBeVisible();
     await expectJiraExportMenu(page);
-    await page.screenshot({ path: `${screenshotDir}/scenario.png`, fullPage: true });
+    await captureSmokeScreenshot(page, 'scenario');
     await expectContainerSticky(page, '.scenario-axis', '.scenario-timeline');
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('team dropdown restores scoped team selection after page refresh', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls);
+    await page.addInitScript(({ prefs, teamSelection }) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+        window.localStorage.setItem('jira_dashboard_team_selection_state_v1', JSON.stringify(teamSelection));
+    }, {
+        prefs: {
+            selectedView: 'eng',
+            selectedSprint: selectedSprintId,
+            activeGroupId: 'grp-default',
+            selectedTeams: ['all'],
+            showPlanning: false,
+            showScenario: false,
+        },
+        teamSelection: {
+            [`team-selection::${selectedSprintId}::grp-default`]: {
+                selectedTeams: ['team-alpha'],
+                selectedTeamId: 'team-alpha',
+            },
+        },
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
+    await expect(page.locator('.team-dropdown-toggle', { hasText: 'Alpha Team' }).first()).toBeVisible();
+    await expect.poll(() => page.evaluate(() => {
+        const raw = window.localStorage.getItem('jira_dashboard_team_selection_state_v1');
+        const stored = JSON.parse(raw || '{}');
+        return stored['team-selection::34625::grp-default']?.selectedTeams || [];
+    })).toEqual(['team-alpha']);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator('.team-dropdown-toggle', { hasText: 'Alpha Team' }).first()).toBeVisible();
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 

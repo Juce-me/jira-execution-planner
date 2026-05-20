@@ -66,15 +66,25 @@ Examples:
 
 Dependency neighbors are also included as context items so cross-epic relationships stay visible even when the main focus is narrower.
 
-## Overrides
+## Drafts And Overrides
 
-Scenario drafts are persisted in `scenario-overrides.json`.
+Scenario Planner saves manual planning experiments as draft history. In DB-backed mode, each scope has one active draft and an immutable version list. A save creates a new `versionNumber` and advances `draftRevision`; rollback creates another version from an older snapshot instead of mutating prior history.
 
-API behavior:
-- `GET /api/scenario/overrides?scope_key=<sprint_id>:<group_id>` returns saved overrides for the scope
-- `POST /api/scenario/overrides` saves overrides for that scope
+API behavior in DB-backed mode:
+- `GET /api/scenario/drafts?scope_key=<sprint_id>:<group_id>` returns the active draft, version list, and `storage: "db"`
+- `POST /api/scenario/drafts` saves a draft for that scope; updates must send the current `baseDraftRevision`
+- `GET /api/scenario/drafts/<draftId>/versions/<versionNumber>` returns one historical version
+- `POST /api/scenario/drafts/<draftId>/rollback` creates a new active version from `targetVersionNumber` and requires `baseDraftRevision`
+- conflict responses return `conflict.receivedBaseDraftRevision`, `conflict.currentDraftRevision`, `conflict.currentVersionNumber`, the current active draft, and the version list
 
-This allows users to preserve manual planning experiments without changing Jira itself.
+Legacy alias behavior:
+- `GET /api/scenario/overrides?scope_key=<sprint_id>:<group_id>` remains a read alias; in DB-backed mode it reads the active DB draft and includes `activeDraft`, `versions`, and `storage: "db"`
+- `POST /api/scenario/overrides` remains the JSON fallback save endpoint only when DB-backed storage is disabled
+- in DB-backed mode, `POST /api/scenario/overrides` does not write; callers must use `POST /api/scenario/drafts`
+
+When DB-backed storage is disabled, the legacy JSON fallback still persists overrides in `scenario-overrides.json`.
+
+This allows users to preserve manual planning experiments without changing Jira itself. Scenario drafts are local planner state only: they do not write to Jira, do not write to Home/Townsquare, and do not own group membership.
 
 ## Technical Rules
 
@@ -213,10 +223,13 @@ Focus mode changes visibility and highlighting, but it does not change the under
 ### Test Coverage
 
 Key regression coverage lives in:
+- `tests/test_scenario_drafts_db.py`
+- `tests/test_scenario_draft_routes.py`
+- `tests/test_scenario_draft_security_source_guards.py`
 - `tests/test_scheduler_product_33712_active_sprint.py`
 - `tests/test_date_parsing.py`
 
-These tests cover active-sprint anchoring, dependency ordering, valid scheduled dates, and timezone-safe parsing.
+These tests cover DB draft migrations and persistence, draft route auth and legacy alias behavior, source guards against Jira/Home write paths, active-sprint anchoring, dependency ordering, valid scheduled dates, and timezone-safe parsing.
 
 ### Common Pitfalls
 

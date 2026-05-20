@@ -106,7 +106,7 @@ import SettingsModal from './settings/SettingsModal.jsx';
 import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';
 import JiraFieldSettings from './settings/JiraFieldSettings.jsx';
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
-import { fetchHomeTokenConnection } from './api/authApi.js';
+import { fetchCsrfToken, fetchHomeTokenConnection } from './api/authApi.js';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     filterEpmSettingsProjectsForView,
@@ -122,7 +122,7 @@ import {
     sortEpmSettingsProjects
 } from './epm/epmProjectUtils.mjs';
 import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
-import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
+import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, resolveTeamSelectionHydrationState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
 import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 import {
     collectJiraExportKeysFromEpmRollupBoards,
@@ -325,6 +325,10 @@ import {
             const [homeTokenConnection, setHomeTokenConnection] = useState({ connected: false });
             const [homeTokenConnectionLoaded, setHomeTokenConnectionLoaded] = useState(false);
             const [authMode, setAuthMode] = useState('');
+            const [scenarioCurrentUserIdentity, setScenarioCurrentUserIdentity] = useState({
+                userId: '',
+                displayName: ''
+            });
             const hasActiveHomeTokenConnection = React.useMemo(
                 () => isActiveHomeTokenConnection(homeTokenConnection),
                 [homeTokenConnection]
@@ -662,7 +666,50 @@ import {
             const scenarioFocusRestoreRef = useRef(null);
             const scenarioSkipAutoCollapseRef = useRef(false);
             const scenarioTeamCollapseInitRef = useRef(false);
+            const scenarioHistoryButtonRef = useRef(null);
+            const scenarioHistoryPanelRef = useRef(null);
+            const scenarioHistoryTitleRef = useRef(null);
             const [scenarioOverrides, setScenarioOverrides] = useState({});
+            const scenarioActiveDraftIdRef = useRef('');
+            const scenarioScopeKeyRef = useRef('');
+            const [scenarioDraftMeta, setScenarioDraftMeta] = useState({
+                activeDraft: null,
+                versions: [],
+                loadedVersionNumber: null,
+                baseDraftRevision: null,
+                savedOverrides: {},
+                scopePayload: {},
+                scopeKey: '',
+                dirtyState: 'clean',
+                pendingScopeChange: null,
+                historyOpen: false,
+                loadingHistory: false,
+                loadingVersionNumber: null,
+                loadingActiveDraft: false,
+                saving: false,
+                rollingBackVersionNumber: null,
+                reloadingFromJira: false,
+                pendingHistoryAction: null,
+                pendingActiveDraftReload: false,
+                pendingReloadFromJira: false,
+                writebackPreviewing: false,
+                writebackChecking: false,
+                writebackPreview: null,
+                writebackBlocked: null,
+                staleDraft: null,
+                conflict: null,
+                message: '',
+                error: ''
+            });
+            const [scenarioDraftEvents, setScenarioDraftEvents] = useState([]);
+            const [scenarioDraftPresence, setScenarioDraftPresence] = useState([]);
+            const [scenarioDraftLocks, setScenarioDraftLocks] = useState([]);
+            const [scenarioDraftRealtimeStatus, setScenarioDraftRealtimeStatus] = useState({
+                mode: 'idle',
+                paused: false,
+                message: ''
+            });
+            const [scenarioDraftLastEventNumber, setScenarioDraftLastEventNumber] = useState(0);
             const [scenarioEditMode, setScenarioEditMode] = useState(false);
 
             const scenarioUndoStackRef = useRef(createUndoStack());
@@ -670,6 +717,11 @@ import {
             const [scenarioDragState, setScenarioDragState] = useState(null);
             const scenarioDragStateRef = useRef(null);
             const scenarioDragFrameRef = useRef(null);
+            const scenarioDragLockRefreshRef = useRef(null);
+            const scenarioRealtimeCsrfRef = useRef('');
+            const scenarioHistoryRefreshControllerRef = useRef(null);
+            const scenarioHistoryActionControllerRef = useRef(null);
+            const scenarioViewRangeRef = useRef({ start: null, end: null });
             const scenarioWasDraggedRef = useRef(false);
             const scenarioEdgeUpdatePendingRef = useRef(false);
             const scenarioEdgeFrameRef = useRef(null);
@@ -5339,6 +5391,347 @@ import {
             };
 
 
+            const normalizeScenarioDraftOverrides = (overrides) => {
+                const normalized = {};
+                Object.entries(overrides || {}).forEach(([issueKey, value]) => {
+                    const key = String(issueKey || '').trim();
+                    if (!key || !value || typeof value !== 'object') return;
+                    const start = typeof value.start === 'string' ? value.start : '';
+                    const end = typeof value.end === 'string' ? value.end : '';
+                    if (!start && !end) return;
+                    normalized[key] = { start, end };
+                });
+                return normalized;
+            };
+
+            const scenarioDraftOverridesSignature = (overrides) => {
+                const normalized = normalizeScenarioDraftOverrides(overrides);
+                return Object.keys(normalized)
+                    .sort()
+                    .map(key => `${key}:${normalized[key].start || ''}:${normalized[key].end || ''}`)
+                    .join('|');
+            };
+
+            const fetchScenarioCsrfToken = () =>
+                fetchCsrfToken(BACKEND_URL).then(({ csrfToken }) => csrfToken || '');
+
+            const fetchScenarioDraft = async (scopeKey, signal) => {
+                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts?scope_key=${encodeURIComponent(scopeKey)}`, {
+                    cache: 'no-cache',
+                    signal
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || errorData.error || `Scenario draft error ${response.status}`);
+                }
+                return response.json();
+            };
+
+            const fetchScenarioRealtimeCsrfToken = async (forceRefresh = false) => {
+                if (!forceRefresh && scenarioRealtimeCsrfRef.current) {
+                    return scenarioRealtimeCsrfRef.current;
+                }
+                const token = await fetchScenarioCsrfToken();
+                scenarioRealtimeCsrfRef.current = token;
+                return token;
+            };
+
+            const pauseScenarioRealtime = (message) => {
+                setScenarioDraftRealtimeStatus({
+                    mode: 'paused',
+                    paused: true,
+                    message: message || 'Realtime paused; keep editing local-only until the session is refreshed.'
+                });
+            };
+
+            const postScenarioRealtimeJson = async (draftId, path, payload) => {
+                const postWithToken = async (csrfToken) => {
+                    const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}${path}`, {
+                        method: 'POST',
+                        cache: 'no-cache',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'jira-execution-planner',
+                            'X-CSRF-Token': csrfToken
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        const error = new Error(errorData.message || errorData.error || `Scenario realtime error ${response.status}`);
+                        error.payload = errorData;
+                        error.status = response.status;
+                        throw error;
+                    }
+                    return response.json();
+                };
+                try {
+                    return await postWithToken(await fetchScenarioRealtimeCsrfToken(false));
+                } catch (err) {
+                    if (err.status === 403 && err.payload?.error === 'csrf_required') {
+                        try {
+                            return await postWithToken(await fetchScenarioRealtimeCsrfToken(true));
+                        } catch (retryErr) {
+                            pauseScenarioRealtime('Realtime paused; session security expired. Keep editing local-only, then refresh or sign in again.');
+                            throw retryErr;
+                        }
+                    }
+                    throw err;
+                }
+            };
+
+            const mergeScenarioDraftPresence = (presence) => {
+                if (!presence) return;
+                const key = String(presence.userId || presence.presenceId || presence.displayName || '').trim();
+                if (!key) return;
+                setScenarioDraftPresence(prev => {
+                    const next = prev.filter(item => String(item.userId || item.presenceId || item.displayName || '') !== key);
+                    return [...next, presence];
+                });
+            };
+
+            const mergeScenarioDraftLock = (lock) => {
+                if (!lock) return;
+                const resourceType = String(lock.resourceType || '').trim();
+                const resourceId = String(lock.resourceId || '').trim();
+                if (!resourceType || !resourceId) return;
+                setScenarioDraftLocks(prev => {
+                    const next = prev.filter(item => (
+                        String(item.resourceType || '') !== resourceType
+                        || String(item.resourceId || '') !== resourceId
+                    ));
+                    return [...next, lock];
+                });
+            };
+
+            const learnScenarioCurrentUserFromPresence = (presence) => {
+                if (!presence) return;
+                setScenarioCurrentUserIdentity(prev => ({
+                    userId: String(presence.userId || prev.userId || '').trim(),
+                    displayName: String(presence.displayName || prev.displayName || '').trim()
+                }));
+            };
+
+            const learnScenarioCurrentUserFromLock = (lock) => {
+                if (!lock) return;
+                setScenarioCurrentUserIdentity(prev => ({
+                    userId: String(lock.holderUserId || prev.userId || '').trim(),
+                    displayName: String(lock.holderDisplayName || prev.displayName || '').trim()
+                }));
+            };
+
+            const SCENARIO_PRESENCE_TTL_MS = 30000;
+
+            const isTimestampExpired = (value) => {
+                if (!value) return false;
+                const timestamp = Date.parse(value);
+                return Number.isFinite(timestamp) && timestamp <= Date.now();
+            };
+
+            const isScenarioPresenceExpired = (presence) => {
+                if (presence?.expiresAt) return isTimestampExpired(presence.expiresAt);
+                if (!presence?.lastSeenAt) return false;
+                const lastSeenAt = Date.parse(presence.lastSeenAt);
+                return Number.isFinite(lastSeenAt) && lastSeenAt + SCENARIO_PRESENCE_TTL_MS <= Date.now();
+            };
+
+            const isScenarioLockExpired = (lock) => isTimestampExpired(lock?.expiresAt);
+
+            const removeScenarioDraftLock = (resourceType, resourceId) => {
+                const type = String(resourceType || '').trim();
+                const id = String(resourceId || '').trim();
+                if (!type || !id) return;
+                setScenarioDraftLocks(prev => prev.filter(item => (
+                    String(item.resourceType || '') !== type
+                    || String(item.resourceId || '') !== id
+                )));
+            };
+
+            const applyScenarioDraftEvent = (event) => {
+                if (!event) return;
+                const eventNumber = Number(event.eventNumber || 0);
+                if (eventNumber > 0) {
+                    setScenarioDraftLastEventNumber(prev => Math.max(prev, eventNumber));
+                }
+                setScenarioDraftEvents(prev => {
+                    if (eventNumber && prev.some(item => Number(item.eventNumber || 0) === eventNumber)) {
+                        return prev;
+                    }
+                    return [...prev, event].slice(-100);
+                });
+                const payload = event.payload || {};
+                if (event.eventType === 'presence.updated') {
+                    if (isScenarioPresenceExpired(payload.presence)) return;
+                    mergeScenarioDraftPresence(payload.presence);
+                    return;
+                }
+                if (event.eventType === 'lock.acquired' || event.eventType === 'lock.refreshed') {
+                    if (isScenarioLockExpired(payload.lock)) {
+                        removeScenarioDraftLock(payload.lock?.resourceType, payload.lock?.resourceId);
+                        return;
+                    }
+                    mergeScenarioDraftLock(payload.lock);
+                    return;
+                }
+                if (event.eventType === 'lock.released') {
+                    removeScenarioDraftLock(payload.resourceType, payload.resourceId);
+                    return;
+                }
+                const remoteDraftRevision = Number(event.draftRevision || payload.activeDraft?.draftRevision || 0);
+                setScenarioDraftMeta(prev => {
+                    const localBaseDraftRevision = Number(prev.baseDraftRevision || 0);
+                    if (!remoteDraftRevision || remoteDraftRevision <= localBaseDraftRevision) {
+                        return prev;
+                    }
+                    const nextVersions = Array.isArray(payload.versions) && payload.versions.length
+                        ? payload.versions
+                        : prev.versions;
+                    return {
+                        ...prev,
+                        versions: nextVersions,
+                        staleDraft: {
+                            draftRevision: remoteDraftRevision,
+                            eventNumber,
+                            activeDraft: payload.activeDraft || null,
+                            updatedBy: payload.activeDraft?.updatedBy || event.createdBy || ''
+                        },
+                        dirtyState: prev.dirtyState === 'clean' ? 'stale_remote' : prev.dirtyState,
+                        message: '',
+                        error: ''
+                    };
+                });
+            };
+
+            const pollScenarioDraftEvents = async (draftId, sinceEventNumber, signal) => {
+                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/events?since=${encodeURIComponent(sinceEventNumber || 0)}`, {
+                    cache: 'no-cache',
+                    signal
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || errorData.error || `Scenario draft events error ${response.status}`);
+                }
+                const data = await response.json();
+                return {
+                    events: Array.isArray(data.events) ? data.events : [],
+                    nextSince: Number(data.nextSince || 0)
+                };
+            };
+
+            const saveScenarioDraftVersion = async (scopeKey, name, baseDraftRevision, scope, overrides) => {
+                const payload = {
+                    scope_key: scopeKey,
+                    name,
+                    baseDraftRevision,
+                    scope,
+                    scenarioOverrides: normalizeScenarioDraftOverrides(overrides),
+                    overrides: normalizeScenarioDraftOverrides(overrides)
+                };
+                const postScenarioDraft = async (csrfToken) => {
+                    const response = await fetch(`${BACKEND_URL}/api/scenario/drafts`, {
+                        method: 'POST',
+                        cache: 'no-cache',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'jira-execution-planner',
+                            'X-CSRF-Token': csrfToken
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        const error = new Error(errorData.message || errorData.error || `Scenario draft save error ${response.status}`);
+                        error.payload = errorData;
+                        error.status = response.status;
+                        throw error;
+                    }
+                    return response.json();
+                };
+                const csrfToken = await fetchScenarioCsrfToken();
+                try {
+                    return await postScenarioDraft(csrfToken);
+                } catch (err) {
+                    if (err.status === 403 && err.payload?.error === 'csrf_required') {
+                        const freshCsrfToken = await fetchScenarioCsrfToken();
+                        try {
+                            return await postScenarioDraft(freshCsrfToken);
+                        } catch (csrfRetry) {
+                            csrfRetry.message = 'Session security check expired. Try saving again.';
+                            throw csrfRetry;
+                        }
+                    }
+                    throw err;
+                }
+            };
+
+            const fetchScenarioDraftVersion = async (draftId, versionNumber, signal) => {
+                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/versions/${encodeURIComponent(versionNumber)}`, {
+                    cache: 'no-cache',
+                    signal
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || errorData.error || `Scenario draft version error ${response.status}`);
+                }
+                return response.json();
+            };
+
+            const rollbackScenarioDraft = async (draftId, targetVersionNumber, baseDraftRevision, signal) => {
+                const csrfToken = await fetchScenarioCsrfToken();
+                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/rollback`, {
+                    method: 'POST',
+                    cache: 'no-cache',
+                    signal,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'jira-execution-planner',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({
+                        targetVersionNumber,
+                        baseDraftRevision
+                    })
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    const error = new Error(errorData.message || errorData.error || `Scenario draft rollback error ${response.status}`);
+                    error.payload = errorData;
+                    throw error;
+                }
+                return response.json();
+            };
+
+            const reloadScenarioDraftFromJira = async (draftId, baseDraftRevision, signal) => {
+                const csrfToken = await fetchScenarioCsrfToken();
+                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/reload-from-jira`, {
+                    method: 'POST',
+                    cache: 'no-cache',
+                    signal,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'jira-execution-planner',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({
+                        baseDraftRevision
+                    })
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    const error = new Error(errorData.message || errorData.error || `Scenario draft reload error ${response.status}`);
+                    error.payload = errorData;
+                    throw error;
+                }
+                return response.json();
+            };
+
+            const buildScenarioDraftScope = () => ({
+                groupId: activeGroupId || '',
+                groupName: activeGroup?.name || '',
+                sprintId: selectedSprint ? String(selectedSprint) : '',
+                sprintName: selectedSprintInfo?.name || ''
+            });
+
             const buildScenarioPayload = () => {
                 const isActiveSprint = selectedSprintState === 'active';
                 const anchorDate = isActiveSprint
@@ -5357,6 +5750,20 @@ import {
                 };
             };
 
+            const scenarioDraftIdleActionState = () => ({
+                loadingVersionNumber: null,
+                loadingActiveDraft: false,
+                rollingBackVersionNumber: null,
+                reloadingFromJira: false,
+                pendingHistoryAction: null,
+                pendingActiveDraftReload: false,
+                pendingReloadFromJira: false,
+                writebackPreviewing: false,
+                writebackChecking: false,
+                writebackPreview: null,
+                writebackBlocked: null
+            });
+
             const runScenario = async () => {
                 if (!selectedSprint) {
                     setScenarioError('Select a sprint to build a scenario.');
@@ -5364,6 +5771,15 @@ import {
                 }
                 if (isCompletedSprintSelected) {
                     setScenarioError('Scenario planner is disabled for completed sprints.');
+                    return;
+                }
+                if (scenarioHasUnsavedChanges) {
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        pendingScopeChange: { scopeKey: scenarioScopeKey },
+                        error: ''
+                    }));
+                    setScenarioError('Save or discard scenario draft changes before reloading scenario data.');
                     return;
                 }
                 setScenarioLoading(true);
@@ -5384,19 +5800,105 @@ import {
                         throw new Error(errorData.error || `Scenario error ${response.status}`);
                     }
                     const data = await response.json();
+                    const scopePayload = buildScenarioDraftScope();
+                    setScenarioOverrides({});
+                    setScenarioDraftEvents([]);
+                    setScenarioDraftPresence([]);
+                    setScenarioDraftLocks([]);
+                    setScenarioDraftLastEventNumber(0);
+                    setScenarioDraftRealtimeStatus({ mode: 'idle', paused: false, message: '' });
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        activeDraft: null,
+                        versions: [],
+                        loadedVersionNumber: null,
+                        baseDraftRevision: null,
+                        savedOverrides: {},
+                        scopePayload,
+                        scopeKey: scenarioScopeKey,
+                        dirtyState: 'clean',
+                        pendingScopeChange: null,
+                        loadingHistory: Boolean(scenarioScopeKey),
+                        ...scenarioDraftIdleActionState(),
+                        staleDraft: null,
+                        conflict: null,
+                        message: '',
+                        error: ''
+                    }));
                     setScenarioData(data);
                     // Reset scroll so stale content height doesn't leave empty space
                     if (scenarioTimelineRef.current) {
                         scenarioTimelineRef.current.scrollTop = 0;
                     }
-                    // Load saved overrides for this scope
+                    // Load the active draft for this scope unless the user has dirty edits from another scope.
                     if (scenarioScopeKey) {
                         try {
-                            const ovRes = await fetch(`${BACKEND_URL}/api/scenario/overrides?scope_key=${encodeURIComponent(scenarioScopeKey)}`);
-                            if (ovRes.ok) {
-                                setScenarioOverrides((await ovRes.json()).overrides || {});
+                            const draftData = await fetchScenarioDraft(scenarioScopeKey, controller.signal);
+                            const activeDraft = draftData.activeDraft || null;
+                            const versions = Array.isArray(draftData.versions) ? draftData.versions : [];
+                            if (activeDraft) {
+                                const overrides = normalizeScenarioDraftOverrides(activeDraft.overrides || {});
+                                setScenarioOverrides(overrides);
+                                setScenarioDraftMeta(prev => ({
+                                    ...prev,
+                                    activeDraft,
+                                    versions,
+                                    loadedVersionNumber: activeDraft.versionNumber || null,
+                                    baseDraftRevision: activeDraft.draftRevision || null,
+                                    savedOverrides: overrides,
+                                    scopePayload: activeDraft.scopePayload || scopePayload,
+                                    scopeKey: scenarioScopeKey,
+                                    dirtyState: 'clean',
+                                    pendingScopeChange: null,
+                                    loadingHistory: false,
+                                    ...scenarioDraftIdleActionState(),
+                                    staleDraft: null,
+                                    conflict: null,
+                                    message: '',
+                                    error: ''
+                                }));
+                            } else {
+                                setScenarioOverrides({});
+                                setScenarioDraftMeta(prev => ({
+                                    ...prev,
+                                    activeDraft: null,
+                                    versions,
+                                    loadedVersionNumber: null,
+                                    baseDraftRevision: null,
+                                    savedOverrides: {},
+                                    scopePayload,
+                                    scopeKey: scenarioScopeKey,
+                                    dirtyState: 'clean',
+                                    pendingScopeChange: null,
+                                    loadingHistory: false,
+                                    ...scenarioDraftIdleActionState(),
+                                    staleDraft: null,
+                                    conflict: null,
+                                    message: '',
+                                    error: ''
+                                }));
                             }
-                        } catch (_) { /* ignore override load failure */ }
+                        } catch (err) {
+                            if (err.name === 'AbortError') throw err;
+                            setScenarioOverrides({});
+                            setScenarioDraftMeta(prev => ({
+                                ...prev,
+                                activeDraft: null,
+                                versions: [],
+                                loadedVersionNumber: null,
+                                baseDraftRevision: null,
+                                savedOverrides: {},
+                                scopePayload,
+                                scopeKey: scenarioScopeKey,
+                                dirtyState: 'clean',
+                                pendingScopeChange: null,
+                                loadingHistory: false,
+                                ...scenarioDraftIdleActionState(),
+                                staleDraft: null,
+                                conflict: null,
+                                error: err.message || 'Failed to load scenario draft.'
+                            }));
+                        }
                     }
                 } catch (err) {
                     if (err.name === 'AbortError') {
@@ -5421,6 +5923,56 @@ import {
                     }
                     return !prev;
                 });
+            };
+
+            const acquireScenarioIssueLock = async (issueKey) => {
+                if (!scenarioActiveDraftReady || scenarioDraftRealtimeStatus.paused || !issueKey) return;
+                try {
+                    const data = await postScenarioRealtimeJson(scenarioActiveDraftId, '/locks', {
+                        action: 'acquire',
+                        resourceType: 'issue',
+                        resourceId: issueKey
+                    });
+                    learnScenarioCurrentUserFromLock(data.lock);
+                    mergeScenarioDraftLock(data.lock);
+                } catch (err) {
+                    if (err.status === 409 && err.payload?.activeLock) {
+                        mergeScenarioDraftLock(err.payload.activeLock);
+                    }
+                }
+            };
+
+            const refreshScenarioIssueLock = async (issueKey) => {
+                if (!scenarioActiveDraftReady || scenarioDraftRealtimeStatus.paused || !issueKey) return;
+                try {
+                    const data = await postScenarioRealtimeJson(scenarioActiveDraftId, '/locks', {
+                        action: 'refresh',
+                        resourceType: 'issue',
+                        resourceId: issueKey
+                    });
+                    learnScenarioCurrentUserFromLock(data.lock);
+                    mergeScenarioDraftLock(data.lock);
+                } catch (err) {
+                    if (err.status === 409 && err.payload?.activeLock) {
+                        mergeScenarioDraftLock(err.payload.activeLock);
+                    }
+                }
+            };
+
+            const releaseScenarioIssueLock = async (issueKey) => {
+                if (!scenarioActiveDraftReady || !issueKey) return;
+                try {
+                    const data = await postScenarioRealtimeJson(scenarioActiveDraftId, '/locks', {
+                        action: 'release',
+                        resourceType: 'issue',
+                        resourceId: issueKey
+                    });
+                    if (data.lock?.released) {
+                        removeScenarioDraftLock('issue', issueKey);
+                    }
+                } catch (err) {
+                    // Advisory locks must not block local editing.
+                }
             };
 
             const handleScenarioBarMouseDown = (event, issue) => {
@@ -5461,6 +6013,13 @@ import {
                 scenarioDragStateRef.current = dragState;
                 scenarioWasDraggedRef.current = false;
                 setScenarioDragState(dragState);
+                acquireScenarioIssueLock(issue.key);
+                if (scenarioDragLockRefreshRef.current) {
+                    window.clearInterval(scenarioDragLockRefreshRef.current);
+                }
+                scenarioDragLockRefreshRef.current = window.setInterval(() => {
+                    refreshScenarioIssueLock(issue.key);
+                }, 4000);
             };
 
             useEffect(() => {
@@ -5817,15 +6376,11 @@ import {
                     .map(team => String(team?.id || '').trim())
                     .filter(id => id && id !== 'all');
                 const storedState = loadTeamSelectionState(window.localStorage, teamSelectionScopeKey);
-                // savedPrefsRef is a ref — always reflects the most-recently-persisted value,
-                // free from stale closure issues. If the user's last saved selection was
-                // 'all', honour it instead of letting a stale scope-store specific-team
-                // entry override it (the reported refresh bug).
-                const latestSavedTeams = normalizeSelectedTeams(
-                    savedPrefsRef.current.selectedTeams ?? savedPrefsRef.current.selectedTeam ?? 'all'
-                );
-                const savedIsAll = latestSavedTeams.includes('all');
-                const baseState = (storedState && !savedIsAll) ? storedState : { selectedTeams: latestSavedTeams };
+                const baseState = resolveTeamSelectionHydrationState({
+                    storedState,
+                    savedPrefsSelectedTeams: savedPrefsRef.current.selectedTeams,
+                    savedPrefsSelectedTeam: savedPrefsRef.current.selectedTeam
+                });
                 const reconciled = reconcileTeamSelectionState(baseState, {
                     validTeamIds: new Set(validTeamIds)
                 });
@@ -6737,6 +7292,210 @@ import {
                 const groupId = activeGroupId || 'default';
                 return sprintId && groupId ? `${sprintId}:${groupId}` : '';
             }, [selectedSprint, activeGroupId]);
+            const scenarioOverridesSignature = React.useMemo(
+                () => scenarioDraftOverridesSignature(scenarioOverrides),
+                [scenarioOverrides]
+            );
+            const savedScenarioOverridesSignature = React.useMemo(
+                () => scenarioDraftOverridesSignature(scenarioDraftMeta.savedOverrides),
+                [scenarioDraftMeta.savedOverrides]
+            );
+            useEffect(() => {
+                const dirtyState = scenarioOverridesSignature === savedScenarioOverridesSignature ? 'clean' : 'dirty';
+                setScenarioDraftMeta(prev => (
+                    prev.dirtyState === dirtyState ? prev : { ...prev, dirtyState }
+                ));
+            }, [scenarioOverridesSignature, savedScenarioOverridesSignature]);
+            const scenarioHasUnsavedChanges = scenarioOverridesSignature !== savedScenarioOverridesSignature;
+            const scenarioHasStoredDraftScope = Boolean(
+                scenarioDraftMeta.scopeKey
+                && scenarioDraftMeta.scopePayload
+                && Object.keys(scenarioDraftMeta.scopePayload).length > 0
+            );
+            const scenarioCanSaveDraft = scenarioHasUnsavedChanges
+                && !scenarioDraftMeta.loadingHistory
+                && !scenarioDraftMeta.saving
+                && scenarioDraftMeta.dirtyState !== 'conflict_remote'
+                && !scenarioDraftMeta.conflict
+                && Boolean((scenarioData && scenarioScopeKey) || scenarioHasStoredDraftScope);
+            const scenarioActiveDraftId = scenarioDraftMeta.activeDraft?.draftId || '';
+            scenarioActiveDraftIdRef.current = scenarioActiveDraftId;
+            scenarioScopeKeyRef.current = scenarioScopeKey;
+            const isScenarioScopeDraftCurrent = React.useCallback((expectedScopeKey, expectedDraftId = '') => {
+                if (scenarioScopeKeyRef.current !== expectedScopeKey) return false;
+                if (expectedDraftId && scenarioActiveDraftIdRef.current !== expectedDraftId) return false;
+                return true;
+            }, []);
+            const scenarioActiveDraftReady = Boolean(
+                showScenario
+                && scenarioData
+                && scenarioActiveDraftId
+                && scenarioDraftMeta.scopeKey === scenarioScopeKey
+            );
+            const scenarioCurrentUserIdentifiers = React.useMemo(() => {
+                return new Set([
+                    scenarioCurrentUserIdentity.userId,
+                    scenarioCurrentUserIdentity.displayName
+                ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+            }, [scenarioCurrentUserIdentity]);
+            const isScenarioCurrentUser = React.useCallback((values) => {
+                if (!scenarioCurrentUserIdentifiers.size) return false;
+                return values
+                    .map(value => String(value || '').trim().toLowerCase())
+                    .filter(Boolean)
+                    .some(value => scenarioCurrentUserIdentifiers.has(value));
+            }, [scenarioCurrentUserIdentifiers]);
+            const scenarioRemoteEditors = React.useMemo(() => {
+                return (scenarioDraftPresence || [])
+                    .filter(item => !isScenarioPresenceExpired(item))
+                    .filter(item => {
+                        const displayName = String(item?.displayName || '').trim();
+                        return displayName && !isScenarioCurrentUser([item?.userId, item?.displayName]);
+                    })
+                    .map(item => ({
+                        ...item,
+                        displayName: String(item.displayName || '').trim()
+                    }));
+            }, [scenarioDraftPresence, isScenarioCurrentUser]);
+            const scenarioIssueLockWarnings = React.useMemo(() => {
+                return (scenarioDraftLocks || [])
+                    .filter(lock => String(lock?.resourceType || '') === 'issue' && lock?.resourceId)
+                    .filter(lock => !isScenarioLockExpired(lock))
+                    .filter(lock => !isScenarioCurrentUser([lock?.holderUserId, lock?.holderDisplayName]))
+                    .map(lock => ({
+                        issueKey: String(lock.resourceId || '').trim(),
+                        holderDisplayName: String(lock.holderDisplayName || 'Another editor').trim() || 'Another editor'
+                    }));
+            }, [scenarioDraftLocks, isScenarioCurrentUser]);
+
+            React.useEffect(() => {
+                if (scenarioHistoryRefreshControllerRef.current) {
+                    scenarioHistoryRefreshControllerRef.current.abort();
+                    scenarioHistoryRefreshControllerRef.current = null;
+                }
+                if (scenarioHistoryActionControllerRef.current) {
+                    scenarioHistoryActionControllerRef.current.abort();
+                    scenarioHistoryActionControllerRef.current = null;
+                }
+            }, [scenarioActiveDraftId, scenarioScopeKey]);
+
+            React.useEffect(() => {
+                if (!scenarioActiveDraftReady) return undefined;
+                let cancelled = false;
+                const controllers = new Set();
+                const expectedDraftId = scenarioActiveDraftId;
+                const expectedScopeKey = scenarioScopeKey;
+                const poll = async () => {
+                    const controller = new AbortController();
+                    controllers.add(controller);
+                    try {
+                        const data = await pollScenarioDraftEvents(expectedDraftId, scenarioDraftLastEventNumber, controller.signal);
+                        const stillCurrent = !cancelled
+                            && scenarioActiveDraftIdRef.current === expectedDraftId
+                            && scenarioScopeKeyRef.current === expectedScopeKey;
+                        if (!stillCurrent) {
+                            return;
+                        }
+                        data.events.forEach(applyScenarioDraftEvent);
+                        if (data.nextSince > 0) {
+                            setScenarioDraftLastEventNumber(prev => Math.max(prev, data.nextSince));
+                        }
+                        setScenarioDraftRealtimeStatus(prev => (
+                            prev.paused ? prev : { mode: 'polling', paused: false, message: '' }
+                        ));
+                    } catch (err) {
+                        if (!cancelled && err.name !== 'AbortError') {
+                            setScenarioDraftRealtimeStatus(prev => (
+                                prev.paused ? prev : { mode: 'polling', paused: false, message: 'Realtime polling will retry.' }
+                            ));
+                        }
+                    } finally {
+                        controllers.delete(controller);
+                    }
+                };
+                poll();
+                const intervalId = window.setInterval(poll, 5000);
+                return () => {
+                    cancelled = true;
+                    window.clearInterval(intervalId);
+                    controllers.forEach(controller => {
+                        try {
+                            controller.abort();
+                        } catch (err) {
+                            // ignore abort errors
+                        }
+                    });
+                    controllers.clear();
+                };
+            }, [scenarioActiveDraftReady, scenarioActiveDraftId, scenarioScopeKey, scenarioDraftLastEventNumber]);
+
+            React.useEffect(() => {
+                if (!scenarioActiveDraftReady) return undefined;
+                if (scenarioDraftRealtimeStatus.paused) return undefined;
+                let cancelled = false;
+                const heartbeat = async () => {
+                    try {
+                        await postScenarioRealtimeJson(scenarioActiveDraftId, '/presence', {
+                            mode: scenarioEditMode ? 'editing' : 'viewing',
+                            cursorPayload: {}
+                        }).then(data => learnScenarioCurrentUserFromPresence(data.presence));
+                    } catch (err) {
+                        if (!cancelled && !(err.status === 403 && err.payload?.error === 'csrf_required')) {
+                            pauseScenarioRealtime('Realtime paused; keep editing local-only until the connection recovers.');
+                        }
+                    }
+                };
+                heartbeat();
+                const intervalId = window.setInterval(heartbeat, 25000);
+                return () => {
+                    cancelled = true;
+                    window.clearInterval(intervalId);
+                };
+            }, [scenarioActiveDraftReady, scenarioActiveDraftId, scenarioDraftRealtimeStatus.paused, scenarioEditMode]);
+
+            React.useEffect(() => {
+                if (!scenarioActiveDraftReady) return undefined;
+                const sseEnabled = window.SCENARIO_DRAFT_SSE_ENABLED === true;
+                if (!sseEnabled || typeof window.EventSource !== 'function') return undefined;
+                const source = new window.EventSource(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(scenarioActiveDraftId)}/events/stream?since=${encodeURIComponent(scenarioDraftLastEventNumber || 0)}`);
+                const expectedDraftId = scenarioActiveDraftId;
+                const handleStreamMessage = (message) => {
+                    if (scenarioActiveDraftIdRef.current !== expectedDraftId) return;
+                    try {
+                        applyScenarioDraftEvent(JSON.parse(message.data));
+                    } catch (err) {
+                        // Malformed stream events are ignored; polling remains the fallback.
+                    }
+                };
+                source.onmessage = handleStreamMessage;
+                [
+                    'draft.saved',
+                    'draft.rolled_back',
+                    'presence.updated',
+                    'lock.acquired',
+                    'lock.refreshed',
+                    'lock.released'
+                ].forEach(eventType => {
+                    source.addEventListener(eventType, handleStreamMessage);
+                });
+                source.onerror = () => {
+                    setScenarioDraftRealtimeStatus(prev => (
+                        prev.paused ? prev : { mode: 'polling', paused: false, message: 'Realtime stream disconnected; polling will continue.' }
+                    ));
+                    try {
+                        source.close();
+                    } catch (err) {
+                        // ignore close errors
+                    }
+                };
+                return () => {
+                    try {
+                        source.close();
+                    } catch (err) {
+                        // ignore close errors
+                    }
+                };
+            }, [scenarioActiveDraftReady, scenarioActiveDraftId, scenarioDraftLastEventNumber]);
             const scenarioSprintBounds = React.useMemo(() => {
                 const b = scenarioData?.sprintBoundaries;
                 if (!b) return [];
@@ -6839,6 +7598,7 @@ import {
             }, [scenarioDeadline, scenarioEffectiveIssues]);
             const scenarioViewStart = scenarioRangeOverride?.start || scenarioBaseStart;
             const scenarioViewEnd = scenarioRangeOverride?.end || scenarioBaseEnd;
+            scenarioViewRangeRef.current = { start: scenarioViewStart, end: scenarioViewEnd };
             const scenarioFocusEpicKey = scenarioEpicFocus?.key || null;
             const scenarioFocusIssueKeys = React.useMemo(() => {
                 const keys = new Set();
@@ -6989,8 +7749,9 @@ import {
             // --- Drag effect, undo/redo, save/discard (placed after scenarioViewStart/End & scenarioIssueByKey) ---
 
             // Drag mousemove/mouseup effect
+            const scenarioDraggingIssueKey = scenarioDragState?.issueKey || '';
             React.useEffect(() => {
-                if (!scenarioDragState) return;
+                if (!scenarioDraggingIssueKey) return;
                 const handleMouseMove = (e) => {
                     const ds = scenarioDragStateRef.current;
                     if (!ds) return;
@@ -6999,9 +7760,11 @@ import {
                     scenarioDragFrameRef.current = requestAnimationFrame(() => {
                         scenarioDragFrameRef.current = null;
                         const ds2 = scenarioDragStateRef.current;
-                        if (!ds2 || !scenarioViewStart || !scenarioViewEnd) return;
+                        const viewStart = scenarioViewRangeRef.current.start;
+                        const viewEnd = scenarioViewRangeRef.current.end;
+                        if (!ds2 || !viewStart || !viewEnd) return;
                         const rawPx = e.clientX - ds2.trackLeft - ds2.offsetX;
-                        const newStart = pxToDate(rawPx, ds2.trackWidth, scenarioViewStart, scenarioViewEnd);
+                        const newStart = pxToDate(rawPx, ds2.trackWidth, viewStart, viewEnd);
                         const newEnd = new Date(newStart.getTime() + ds2.durationMs);
                         const updated = { ...ds2, currentStart: newStart, currentEnd: newEnd };
                         scenarioDragStateRef.current = updated;
@@ -7012,6 +7775,10 @@ import {
                     if (scenarioDragFrameRef.current) {
                         cancelAnimationFrame(scenarioDragFrameRef.current);
                         scenarioDragFrameRef.current = null;
+                    }
+                    if (scenarioDragLockRefreshRef.current) {
+                        window.clearInterval(scenarioDragLockRefreshRef.current);
+                        scenarioDragLockRefreshRef.current = null;
                     }
                     const ds = scenarioDragStateRef.current;
                     if (ds && scenarioWasDraggedRef.current) {
@@ -7030,16 +7797,27 @@ import {
                             [ds.issueKey]: { start: newStartISO, end: newEndISO }
                         }));
                     }
+                    if (ds?.issueKey) {
+                        releaseScenarioIssueLock(ds.issueKey);
+                    }
                     scenarioDragStateRef.current = null;
                     setScenarioDragState(null);
                 };
                 window.addEventListener('mousemove', handleMouseMove);
                 window.addEventListener('mouseup', handleMouseUp);
                 return () => {
+                    const ds = scenarioDragStateRef.current;
+                    if (scenarioDragLockRefreshRef.current) {
+                        window.clearInterval(scenarioDragLockRefreshRef.current);
+                        scenarioDragLockRefreshRef.current = null;
+                    }
+                    if (ds?.issueKey) {
+                        releaseScenarioIssueLock(ds.issueKey);
+                    }
                     window.removeEventListener('mousemove', handleMouseMove);
                     window.removeEventListener('mouseup', handleMouseUp);
                 };
-            }, [scenarioDragState, scenarioViewStart, scenarioViewEnd]);
+            }, [scenarioDraggingIssueKey]);
 
             const scenarioUndo = () => {
                 const cmd = scenarioUndoStackRef.current.undo();
@@ -7090,31 +7868,589 @@ import {
             const scenarioOverrideCount = Object.keys(scenarioOverrides).length;
 
             const saveScenarioDraft = async () => {
-                if (!scenarioScopeKey || scenarioOverrideCount === 0) return;
+                const saveScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                if (!saveScopeKey || !scenarioCanSaveDraft) return;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    saving: true,
+                    conflict: null,
+                    message: '',
+                    error: ''
+                }));
                 try {
-                    const res = await fetch(`${BACKEND_URL}/api/scenario/overrides`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'jira-execution-planner'
-                        },
-                        body: JSON.stringify({
-                            scope_key: scenarioScopeKey,
-                            name: `Draft ${new Date().toISOString().slice(0, 10)}`,
-                            overrides: scenarioOverrides,
-                        }),
+                    const saved = await saveScenarioDraftVersion(
+                        saveScopeKey,
+                        `Draft ${new Date().toISOString().slice(0, 10)}`,
+                        scenarioDraftMeta.baseDraftRevision,
+                        saveScopeKey === scenarioScopeKey ? buildScenarioDraftScope() : (scenarioDraftMeta.scopePayload || {}),
+                        scenarioOverrides,
+                    );
+                    const activeDraft = saved.activeDraft || null;
+                    const versions = Array.isArray(saved.versions) ? saved.versions : [];
+                    const savedOverrides = normalizeScenarioDraftOverrides(activeDraft?.overrides || scenarioOverrides);
+                    scenarioUndoStackRef.current.clear();
+                    setScenarioUndoVersion(0);
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        activeDraft,
+                        versions,
+                        loadedVersionNumber: activeDraft?.versionNumber || null,
+                        baseDraftRevision: activeDraft?.draftRevision || null,
+                        savedOverrides,
+                        scopeKey: saveScopeKey,
+                        dirtyState: 'clean',
+                        pendingScopeChange: null,
+                        saving: false,
+                        staleDraft: null,
+                        conflict: null,
+                        message: 'Scenario draft saved.',
+                        error: ''
+                    }));
+                } catch (err) {
+                    const conflict = err.payload?.error === 'scenario_draft_conflict' && err.payload?.conflict
+                        ? {
+                            ...err.payload.conflict,
+                            activeDraft: err.payload.activeDraft || null,
+                            versions: Array.isArray(err.payload.versions) ? err.payload.versions : []
+                        }
+                        : null;
+                    setScenarioDraftMeta(prev => {
+                        if (conflict) {
+                            return {
+                                ...prev,
+                                versions: conflict.versions.length > 0 ? conflict.versions : prev.versions,
+                                saving: false,
+                                dirtyState: 'conflict_remote',
+                                conflict,
+                                error: ''
+                            };
+                        }
+                        return {
+                            ...prev,
+                            saving: false,
+                            error: err.message || 'Failed to save scenario draft.'
+                        };
                     });
-                    if (res.ok) {
-                        scenarioUndoStackRef.current.clear();
-                        setScenarioUndoVersion(0);
-                    }
-                } catch (_) { /* ignore save failure */ }
+                }
             };
 
             const discardScenarioOverrides = () => {
-                setScenarioOverrides({});
+                if (!scenarioHasUnsavedChanges) return;
+                setScenarioOverrides(normalizeScenarioDraftOverrides(scenarioDraftMeta.savedOverrides));
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    dirtyState: 'clean',
+                        pendingScopeChange: null,
+                        staleDraft: null,
+                        conflict: null,
+                        message: '',
+                        error: ''
+                }));
                 scenarioUndoStackRef.current.clear();
                 setScenarioUndoVersion(0);
+            };
+
+            const openScenarioDraftHistory = async () => {
+                const historyScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                const historyDraftId = scenarioDraftMeta.activeDraft?.draftId || '';
+                if (scenarioHistoryRefreshControllerRef.current) {
+                    scenarioHistoryRefreshControllerRef.current.abort();
+                }
+                const controller = new AbortController();
+                scenarioHistoryRefreshControllerRef.current = controller;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    historyOpen: true,
+                    pendingHistoryAction: null,
+                    loadingHistory: Boolean(historyScopeKey),
+                    error: ''
+                }));
+                if (!historyScopeKey) return;
+                try {
+                    const draftData = await fetchScenarioDraft(historyScopeKey, controller.signal);
+                    if (
+                        scenarioHistoryRefreshControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(historyScopeKey, historyDraftId)
+                    ) {
+                        return;
+                    }
+                    const activeDraft = draftData.activeDraft || null;
+                    const versions = Array.isArray(draftData.versions) ? draftData.versions : [];
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        activeDraft: activeDraft || prev.activeDraft,
+                        versions,
+                        loadingHistory: false,
+                        staleDraft: prev.staleDraft
+                            ? {
+                                ...prev.staleDraft,
+                                activeDraft: activeDraft || prev.staleDraft.activeDraft || null,
+                                draftRevision: activeDraft?.draftRevision || prev.staleDraft.draftRevision
+                            }
+                            : prev.staleDraft,
+                        error: ''
+                    }));
+                } catch (err) {
+                    if (
+                        err.name === 'AbortError'
+                        || scenarioHistoryRefreshControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(historyScopeKey, historyDraftId)
+                    ) {
+                        return;
+                    }
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        loadingHistory: false,
+                        error: err.message || 'Failed to refresh scenario draft history.'
+                    }));
+                } finally {
+                    if (scenarioHistoryRefreshControllerRef.current === controller) {
+                        scenarioHistoryRefreshControllerRef.current = null;
+                    }
+                }
+            };
+
+            const closeScenarioDraftHistory = () => {
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    historyOpen: false,
+                    pendingHistoryAction: null
+                }));
+                if (scenarioHistoryButtonRef.current && typeof scenarioHistoryButtonRef.current.focus === 'function') {
+                    scenarioHistoryButtonRef.current.focus();
+                }
+            };
+
+            const requestReloadActiveDraft = () => {
+                if (scenarioHasUnsavedChanges) {
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        pendingActiveDraftReload: true,
+                        error: ''
+                    }));
+                    return;
+                }
+                runReloadActiveDraft();
+            };
+
+            const cancelReloadActiveDraft = () => {
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    pendingActiveDraftReload: false
+                }));
+            };
+
+            const runReloadActiveDraft = async () => {
+                const scopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                const expectedDraftId = scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.staleDraft?.activeDraft?.draftId || '';
+                if (!scopeKey) return;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    loadingActiveDraft: true,
+                    pendingActiveDraftReload: false,
+                    message: '',
+                    error: ''
+                }));
+                try {
+                    const draftData = await fetchScenarioDraft(scopeKey);
+                    if (!isScenarioScopeDraftCurrent(scopeKey, expectedDraftId)) {
+                        return;
+                    }
+                    const activeDraft = draftData.activeDraft || null;
+                    const versions = Array.isArray(draftData.versions) ? draftData.versions : [];
+                    if (!activeDraft) {
+                        setScenarioDraftMeta(prev => ({
+                            ...prev,
+                            versions,
+                            loadingActiveDraft: false,
+                            staleDraft: null,
+                            message: 'No active scenario draft was found for this scope.',
+                            error: ''
+                        }));
+                        return;
+                    }
+                    const overrides = normalizeScenarioDraftOverrides(activeDraft.overrides || {});
+                    setScenarioOverrides(overrides);
+                    scenarioUndoStackRef.current.clear();
+                    setScenarioUndoVersion(0);
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        activeDraft,
+                        versions,
+                        loadedVersionNumber: activeDraft.versionNumber || null,
+                        baseDraftRevision: activeDraft.draftRevision || null,
+                        savedOverrides: overrides,
+                        scopePayload: activeDraft.scopePayload || prev.scopePayload || {},
+                        scopeKey,
+                        dirtyState: 'clean',
+                        pendingScopeChange: null,
+                        loadingHistory: false,
+                        loadingActiveDraft: false,
+                        staleDraft: null,
+                        conflict: null,
+                        writebackPreview: null,
+                        writebackBlocked: null,
+                        message: `Reloaded active draft revision ${activeDraft.draftRevision || 'unknown'}.`,
+                        error: ''
+                    }));
+                } catch (err) {
+                    if (err.name === 'AbortError' || !isScenarioScopeDraftCurrent(scopeKey, expectedDraftId)) {
+                        return;
+                    }
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        loadingActiveDraft: false,
+                        error: err.message || 'Failed to reload active scenario draft.'
+                    }));
+                }
+            };
+
+            React.useEffect(() => {
+                if (!scenarioDraftMeta.historyOpen) return undefined;
+                const frame = requestAnimationFrame(() => {
+                    scenarioHistoryTitleRef.current?.focus();
+                });
+                return () => cancelAnimationFrame(frame);
+            }, [scenarioDraftMeta.historyOpen]);
+
+            React.useEffect(() => {
+                if (!scenarioDraftMeta.historyOpen) return undefined;
+                const handleKeyDown = (event) => {
+                    if (event.key !== 'Escape') return;
+                    const panel = scenarioHistoryPanelRef.current;
+                    if (!panel || !panel.contains(document.activeElement)) return;
+                    event.preventDefault();
+                    closeScenarioDraftHistory();
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [scenarioDraftMeta.historyOpen]);
+
+            const requestScenarioHistoryAction = (type, versionNumber) => {
+                const action = { type, versionNumber };
+                if (scenarioHasUnsavedChanges) {
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        pendingHistoryAction: action,
+                        error: ''
+                    }));
+                    return;
+                }
+                runScenarioHistoryAction(action);
+            };
+
+            const cancelScenarioHistoryAction = () => {
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    pendingHistoryAction: null
+                }));
+            };
+
+            const requestScenarioReloadFromJira = () => {
+                if (scenarioHasUnsavedChanges) {
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        pendingReloadFromJira: true,
+                        error: ''
+                    }));
+                    return;
+                }
+                runScenarioReloadFromJira();
+            };
+
+            const cancelScenarioReloadFromJira = () => {
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    pendingReloadFromJira: false
+                }));
+            };
+
+            const runScenarioReloadFromJira = async () => {
+                const draftId = scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.conflict?.activeDraft?.draftId;
+                if (!draftId || !scenarioDraftMeta.baseDraftRevision) return;
+                const expectedScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                if (scenarioHistoryActionControllerRef.current) {
+                    scenarioHistoryActionControllerRef.current.abort();
+                }
+                const controller = new AbortController();
+                scenarioHistoryActionControllerRef.current = controller;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    pendingReloadFromJira: false,
+                    reloadingFromJira: true,
+                    error: '',
+                    message: ''
+                }));
+                try {
+                    const reloaded = await reloadScenarioDraftFromJira(
+                        draftId,
+                        scenarioDraftMeta.baseDraftRevision,
+                        controller.signal
+                    );
+                    if (
+                        scenarioHistoryActionControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(expectedScopeKey, draftId)
+                    ) {
+                        return;
+                    }
+                    const activeDraft = reloaded.activeDraft || null;
+                    const versions = Array.isArray(reloaded.versions) ? reloaded.versions : [];
+                    const savedOverrides = normalizeScenarioDraftOverrides(activeDraft?.overrides || {});
+                    setScenarioOverrides(savedOverrides);
+                    scenarioUndoStackRef.current.clear();
+                    setScenarioUndoVersion(0);
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        activeDraft,
+                        versions,
+                        loadedVersionNumber: activeDraft?.versionNumber || null,
+                        baseDraftRevision: activeDraft?.draftRevision || null,
+                        savedOverrides,
+                        dirtyState: 'clean',
+                        reloadingFromJira: false,
+                        staleDraft: null,
+                        conflict: null,
+                        writebackPreview: null,
+                        writebackBlocked: null,
+                        message: `Reloaded from Jira into version ${activeDraft?.versionNumber || 'unknown'}.`,
+                        error: ''
+                    }));
+                } catch (err) {
+                    if (
+                        err.name === 'AbortError'
+                        || scenarioHistoryActionControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(expectedScopeKey, draftId)
+                    ) {
+                        return;
+                    }
+                    const conflict = err.payload?.error === 'scenario_draft_conflict' && err.payload?.conflict
+                        ? {
+                            ...err.payload.conflict,
+                            activeDraft: err.payload.activeDraft || null,
+                            versions: Array.isArray(err.payload.versions) ? err.payload.versions : []
+                        }
+                        : null;
+                    setScenarioDraftMeta(prev => {
+                        if (conflict) {
+                            return {
+                                ...prev,
+                                versions: conflict.versions.length > 0 ? conflict.versions : prev.versions,
+                                dirtyState: 'conflict_remote',
+                                reloadingFromJira: false,
+                                conflict,
+                                message: '',
+                                error: ''
+                            };
+                        }
+                        return {
+                            ...prev,
+                            reloadingFromJira: false,
+                            error: err.message || 'Failed to reload scenario draft from Jira.'
+                        };
+                    });
+                } finally {
+                    if (scenarioHistoryActionControllerRef.current === controller) {
+                        scenarioHistoryActionControllerRef.current = null;
+                    }
+                }
+            };
+
+            const previewScenarioDraftWriteback = async () => {
+                const draftId = scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.conflict?.activeDraft?.draftId;
+                if (!draftId) return;
+                const expectedScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    writebackPreviewing: true,
+                    writebackPreview: null,
+                    writebackBlocked: null,
+                    error: '',
+                    message: ''
+                }));
+                try {
+                    const preview = await postScenarioRealtimeJson(draftId, '/writeback/preview', {});
+                    if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
+                        return;
+                    }
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        writebackPreviewing: false,
+                        writebackPreview: preview,
+                        writebackBlocked: null,
+                        error: '',
+                        message: ''
+                    }));
+                } catch (err) {
+                    if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
+                        return;
+                    }
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        writebackPreviewing: false,
+                        error: err.message || 'Failed to preview Jira write-back.'
+                    }));
+                }
+            };
+
+            const checkScenarioDraftWritebackGate = async () => {
+                const draftId = scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.conflict?.activeDraft?.draftId;
+                if (!draftId) return;
+                const expectedScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    writebackChecking: true,
+                    writebackBlocked: null,
+                    error: '',
+                    message: ''
+                }));
+                try {
+                    await postScenarioRealtimeJson(draftId, '/writeback', {});
+                    if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
+                        return;
+                    }
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        writebackChecking: false,
+                        writebackBlocked: null,
+                        message: 'Jira write-back gate unexpectedly allowed the request.',
+                        error: ''
+                    }));
+                } catch (err) {
+                    if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
+                        return;
+                    }
+                    const blocked = err.payload?.error === 'jira_writeback_gate_blocked'
+                        ? err.payload
+                        : null;
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        writebackChecking: false,
+                        writebackBlocked: blocked,
+                        error: blocked ? '' : (err.message || 'Failed to check Jira write-back gate.')
+                    }));
+                }
+            };
+
+            const runScenarioHistoryAction = async (action) => {
+                const draftId = scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.conflict?.activeDraft?.draftId;
+                if (!draftId || !action?.versionNumber) return;
+                const expectedScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                if (scenarioHistoryActionControllerRef.current) {
+                    scenarioHistoryActionControllerRef.current.abort();
+                }
+                const controller = new AbortController();
+                scenarioHistoryActionControllerRef.current = controller;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    pendingHistoryAction: null,
+                    loadingVersionNumber: action.type === 'reload' ? action.versionNumber : null,
+                    rollingBackVersionNumber: action.type === 'rollback' ? action.versionNumber : null,
+                    error: '',
+                    message: ''
+                }));
+                try {
+                    const snapshot = await fetchScenarioDraftVersion(draftId, action.versionNumber, controller.signal);
+                    if (
+                        scenarioHistoryActionControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(expectedScopeKey, draftId)
+                    ) {
+                        return;
+                    }
+                    const overrides = normalizeScenarioDraftOverrides(snapshot.overrides || {});
+                    if (action.type === 'reload') {
+                        setScenarioOverrides(overrides);
+                        scenarioUndoStackRef.current.clear();
+                        setScenarioUndoVersion(0);
+                        setScenarioDraftMeta(prev => ({
+                            ...prev,
+                            loadedVersionNumber: snapshot.versionNumber || action.versionNumber,
+                            dirtyState: 'dirty_local',
+                            loadingVersionNumber: null,
+                            rollingBackVersionNumber: null,
+                            pendingHistoryAction: null,
+                            conflict: null,
+                            message: `Reloaded version ${snapshot.versionNumber || action.versionNumber} locally. Save Draft to make it current.`,
+                            error: ''
+                        }));
+                        return;
+                    }
+
+                    const rolledBack = await rollbackScenarioDraft(
+                        draftId,
+                        snapshot.versionNumber || action.versionNumber,
+                        scenarioDraftMeta.baseDraftRevision,
+                        controller.signal
+                    );
+                    if (
+                        scenarioHistoryActionControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(expectedScopeKey, draftId)
+                    ) {
+                        return;
+                    }
+                    const activeDraft = rolledBack.activeDraft || null;
+                    const versions = Array.isArray(rolledBack.versions) ? rolledBack.versions : [];
+                    const savedOverrides = normalizeScenarioDraftOverrides(activeDraft?.overrides || overrides);
+                    setScenarioOverrides(savedOverrides);
+                    scenarioUndoStackRef.current.clear();
+                    setScenarioUndoVersion(0);
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        activeDraft,
+                        versions,
+                        loadedVersionNumber: activeDraft?.versionNumber || snapshot.versionNumber || action.versionNumber,
+                        baseDraftRevision: activeDraft?.draftRevision || null,
+                        savedOverrides,
+                        dirtyState: 'clean',
+                        loadingVersionNumber: null,
+                            rollingBackVersionNumber: null,
+                            pendingHistoryAction: null,
+                            staleDraft: null,
+                            conflict: null,
+                            message: `Rolled back to version ${snapshot.versionNumber || action.versionNumber}.`,
+                            error: ''
+                    }));
+                } catch (err) {
+                    if (
+                        err.name === 'AbortError'
+                        || scenarioHistoryActionControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(expectedScopeKey, draftId)
+                    ) {
+                        return;
+                    }
+                    const conflict = err.payload?.error === 'scenario_draft_conflict' && err.payload?.conflict
+                        ? {
+                            ...err.payload.conflict,
+                            activeDraft: err.payload.activeDraft || null,
+                            versions: Array.isArray(err.payload.versions) ? err.payload.versions : []
+                        }
+                        : null;
+                    setScenarioDraftMeta(prev => {
+                        if (conflict) {
+                            return {
+                                ...prev,
+                                versions: conflict.versions.length > 0 ? conflict.versions : prev.versions,
+                                dirtyState: 'conflict_remote',
+                                loadingVersionNumber: null,
+                                rollingBackVersionNumber: null,
+                                pendingHistoryAction: null,
+                                conflict,
+                                message: '',
+                                error: ''
+                            };
+                        }
+                        return {
+                            ...prev,
+                            loadingVersionNumber: null,
+                            rollingBackVersionNumber: null,
+                            pendingHistoryAction: null,
+                            error: err.message || 'Failed to load scenario draft history.'
+                        };
+                    });
+                } finally {
+                    if (scenarioHistoryActionControllerRef.current === controller) {
+                        scenarioHistoryActionControllerRef.current = null;
+                    }
+                }
             };
 
             const scenarioLaneForIssue = (issue) => {
@@ -13633,6 +14969,17 @@ import {
                                             >
                                                 {scenarioEditMode ? 'Exit Edit' : 'Edit'}
                                             </button>
+                                            {scenarioData && !scenarioEditMode && (
+                                                <button
+                                                    type="button"
+                                                    ref={scenarioHistoryButtonRef}
+                                                    className="scenario-toggle"
+                                                    onClick={openScenarioDraftHistory}
+                                                    disabled={scenarioDraftMeta.loadingHistory}
+                                                >
+                                                    History
+                                                </button>
+                                            )}
                                             <button
                                                 className={`scenario-toggle ${scenarioShowConflictsOnly ? 'active' : ''}`}
                                                 onClick={() => setScenarioShowConflictsOnly(prev => !prev)}
@@ -13667,15 +15014,24 @@ import {
                                                     <button
                                                         className="scenario-edit-toggle"
                                                         onClick={saveScenarioDraft}
-                                                        disabled={scenarioOverrideCount === 0 || !scenarioScopeKey}
+                                                        disabled={!scenarioCanSaveDraft}
                                                         title="Save draft overrides to server"
                                                     >
-                                                        Save Draft
+                                                        {scenarioDraftMeta.saving ? 'Saving...' : 'Save Draft'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        ref={scenarioHistoryButtonRef}
+                                                        className="scenario-edit-toggle"
+                                                        onClick={openScenarioDraftHistory}
+                                                        disabled={scenarioDraftMeta.loadingHistory}
+                                                    >
+                                                        History
                                                     </button>
                                                     <button
                                                         className="scenario-edit-toggle"
                                                         onClick={discardScenarioOverrides}
-                                                        disabled={scenarioOverrideCount === 0}
+                                                        disabled={!scenarioHasUnsavedChanges}
                                                         title="Discard all overrides"
                                                     >
                                                         Discard
@@ -13688,7 +15044,277 @@ import {
                                         </div>
                                     </div>
 
-                                    {scenarioError && <div className="scenario-error">{scenarioError}</div>}
+                                    {scenarioRemoteEditors.length > 0 && (
+                                        <div className="scenario-draft-history-note" role="status" aria-live="polite">
+                                            Editing now: {scenarioRemoteEditors.map(item => item.displayName).join(', ')}
+                                        </div>
+                                    )}
+                                    {scenarioDraftRealtimeStatus.paused && (
+                                        <div className="scenario-draft-history-note" role="status" aria-live="polite">
+                                            Realtime paused: {scenarioDraftRealtimeStatus.message || 'keep editing local-only'}
+                                        </div>
+                                    )}
+                                    {scenarioError && <div className="scenario-error" role="alert">{scenarioError}</div>}
+                                    {scenarioDraftMeta.error && (
+                                        <div className="scenario-error" role="alert">{scenarioDraftMeta.error}</div>
+                                    )}
+                                    {scenarioDraftMeta.message && (
+                                        <div className="scenario-draft-history-note" aria-live="polite">{scenarioDraftMeta.message}</div>
+                                    )}
+                                    {scenarioIssueLockWarnings.map(lock => (
+                                        <div key={`${lock.issueKey}-${lock.holderDisplayName}`} className="scenario-error" role="alert">
+                                            {lock.holderDisplayName} is editing {lock.issueKey}. Advisory lock only; local edits stay available.
+                                        </div>
+                                    ))}
+                                    {scenarioDraftMeta.staleDraft && (
+                                        <div className="scenario-error" role="alert">
+                                            <span>
+                                                Newer draft available at revision {scenarioDraftMeta.staleDraft.draftRevision || 'unknown'}
+                                                {scenarioDraftMeta.staleDraft.updatedBy ? ` by ${scenarioDraftMeta.staleDraft.updatedBy}` : ''}. Local edits were not changed.
+                                            </span>
+                                            <button
+                                                type="button"
+                                                className="scenario-link"
+                                                onClick={openScenarioDraftHistory}
+                                            >
+                                                Review history
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="scenario-link"
+                                                onClick={requestReloadActiveDraft}
+                                                disabled={scenarioDraftMeta.loadingActiveDraft}
+                                            >
+                                                {scenarioDraftMeta.loadingActiveDraft ? 'Reloading active draft...' : 'Reload active draft'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="scenario-link"
+                                                onClick={() => setScenarioDraftMeta(prev => ({
+                                                    ...prev,
+                                                    dirtyState: scenarioHasUnsavedChanges ? 'dirty' : 'clean',
+                                                    staleDraft: null,
+                                                    message: '',
+                                                    error: ''
+                                                }))}
+                                            >
+                                                Keep editing locally
+                                            </button>
+                                            {scenarioDraftMeta.pendingActiveDraftReload && (
+                                                <div className="scenario-draft-history-confirmation">
+                                                    Reload active draft and replace local edits?
+                                                    <button
+                                                        type="button"
+                                                        className="scenario-link"
+                                                        onClick={runReloadActiveDraft}
+                                                    >
+                                                        Confirm reload active draft
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="scenario-link"
+                                                        onClick={cancelReloadActiveDraft}
+                                                    >
+                                                        Cancel active draft reload
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {scenarioDraftMeta.conflict && (
+                                        <div className="scenario-error" role="alert">
+                                            <span>
+                                                Scenario draft conflict. Current draft revision {scenarioDraftMeta.conflict.currentDraftRevision || 'unknown'}, version {scenarioDraftMeta.conflict.currentVersionNumber || 'unknown'}
+                                                {scenarioDraftMeta.conflict.activeDraft?.updatedBy ? ` by ${scenarioDraftMeta.conflict.activeDraft.updatedBy}` : ''}
+                                                {scenarioDraftMeta.conflict.activeDraft?.updatedAt ? ` at ${scenarioDraftMeta.conflict.activeDraft.updatedAt}` : ''}.
+                                            </span>
+                                            <button
+                                                type="button"
+                                                className="scenario-link"
+                                                onClick={() => setScenarioDraftMeta(prev => ({
+                                                    ...prev,
+                                                    dirtyState: 'dirty_local',
+                                                    conflict: null,
+                                                    error: '',
+                                                    message: ''
+                                                }))}
+                                            >
+                                                Keep Editing
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="scenario-link"
+                                                onClick={openScenarioDraftHistory}
+                                            >
+                                                Review history
+                                            </button>
+                                        </div>
+                                    )}
+                                    {scenarioDraftMeta.historyOpen && (
+                                        <section
+                                            ref={scenarioHistoryPanelRef}
+                                            className="scenario-draft-history-panel"
+                                            role="dialog"
+                                            aria-modal="false"
+                                            aria-labelledby="scenario-draft-history-title"
+                                        >
+                                            <div
+                                                id="scenario-draft-history-title"
+                                                ref={scenarioHistoryTitleRef}
+                                                className="scenario-draft-history-title"
+                                                tabIndex={-1}
+                                            >
+                                                Scenario draft history
+                                            </div>
+                                            {scenarioDraftMeta.versions.length === 0 ? (
+                                                <div className="scenario-draft-history-note">No draft versions yet.</div>
+                                            ) : (
+                                                <div className="scenario-draft-history-list">
+                                                    {scenarioDraftMeta.versions.map(version => {
+                                                        const versionNumber = Number(version.versionNumber || 0);
+                                                        const overrideCount = Number.isFinite(Number(version.overrideCount))
+                                                            ? Number(version.overrideCount)
+                                                            : Object.keys(version.overrides || {}).length;
+                                                        const isCurrent = versionNumber === Number(scenarioDraftMeta.conflict?.currentVersionNumber || scenarioDraftMeta.activeDraft?.versionNumber || 0);
+                                                        const isLoaded = versionNumber === Number(scenarioDraftMeta.loadedVersionNumber || 0);
+                                                        const pendingAction = scenarioDraftMeta.pendingHistoryAction?.versionNumber === versionNumber
+                                                            ? scenarioDraftMeta.pendingHistoryAction
+                                                            : null;
+                                                        const actor = version.createdBy || version.updatedBy || 'Unknown actor';
+                                                        const timestamp = version.createdAt || version.updatedAt || 'Unknown time';
+                                                        return (
+                                                            <div key={version.versionId || versionNumber} className="scenario-draft-history-row">
+                                                                <div className="scenario-draft-history-main">
+                                                                    <strong>Version {versionNumber}</strong>
+                                                                    <span>{actor}</span>
+                                                                    <span>{timestamp}</span>
+                                                                    <span>{overrideCount} override{overrideCount === 1 ? '' : 's'}</span>
+                                                                    {isCurrent && <span>Current</span>}
+                                                                    {!isCurrent && isLoaded && <span>Loaded</span>}
+                                                                </div>
+                                                                <div className="scenario-draft-history-actions">
+                                                                    <button
+                                                                        type="button"
+                                                                        className="scenario-link"
+                                                                        onClick={() => requestScenarioHistoryAction('reload', versionNumber)}
+                                                                        disabled={scenarioDraftMeta.loadingVersionNumber === versionNumber || scenarioDraftMeta.rollingBackVersionNumber === versionNumber}
+                                                                        aria-label={`Reload version ${versionNumber}`}
+                                                                    >
+                                                                        Reload Version
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="scenario-link"
+                                                                        onClick={() => requestScenarioHistoryAction('rollback', versionNumber)}
+                                                                        disabled={scenarioDraftMeta.loadingVersionNumber === versionNumber || scenarioDraftMeta.rollingBackVersionNumber === versionNumber}
+                                                                        aria-label={`Rollback to version ${versionNumber}`}
+                                                                    >
+                                                                        Rollback to Version
+                                                                    </button>
+                                                                </div>
+                                                                {pendingAction && (
+                                                                    <div className="scenario-draft-history-confirmation">
+                                                                        {pendingAction.type === 'reload'
+                                                                            ? `Reload version ${versionNumber} and replace local edits?`
+                                                                            : `Rollback to version ${versionNumber} and replace local edits?`}
+                                                                        <button
+                                                                            type="button"
+                                                                            className="scenario-link"
+                                                                            onClick={() => runScenarioHistoryAction(pendingAction)}
+                                                                        >
+                                                                            {pendingAction.type === 'reload' ? 'Reload Version' : 'Rollback to Version'}
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            className="scenario-link"
+                                                                            onClick={cancelScenarioHistoryAction}
+                                                                        >
+                                                                            Cancel
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                            <div className="scenario-draft-history-actions">
+                                                <button
+                                                    type="button"
+                                                    className="scenario-link"
+                                                    onClick={requestScenarioReloadFromJira}
+                                                    disabled={!scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.reloadingFromJira}
+                                                >
+                                                    {scenarioDraftMeta.reloadingFromJira ? 'Reloading from Jira...' : 'Reload from Jira'}
+                                                </button>
+                                            </div>
+                                            {scenarioDraftMeta.pendingReloadFromJira && (
+                                                <div className="scenario-draft-history-confirmation">
+                                                    Reload from Jira and replace local edits?
+                                                    <button
+                                                        type="button"
+                                                        className="scenario-link"
+                                                        onClick={runScenarioReloadFromJira}
+                                                    >
+                                                        Confirm reload from Jira
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="scenario-link"
+                                                        onClick={cancelScenarioReloadFromJira}
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            )}
+                                            <div className="scenario-draft-history-note">
+                                                Jira write-back is gated. Preview is dry-run only; mutation remains disabled.
+                                            </div>
+                                            <div className="scenario-draft-history-actions">
+                                                <button
+                                                    type="button"
+                                                    className="scenario-link"
+                                                    onClick={previewScenarioDraftWriteback}
+                                                    disabled={!scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.writebackPreviewing}
+                                                >
+                                                    {scenarioDraftMeta.writebackPreviewing ? 'Previewing Jira write-back...' : 'Preview Jira write-back'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="scenario-link"
+                                                    onClick={checkScenarioDraftWritebackGate}
+                                                    disabled={!scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.writebackChecking}
+                                                >
+                                                    {scenarioDraftMeta.writebackChecking ? 'Checking write-back gate...' : 'Check write-back gate'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="scenario-link"
+                                                    disabled
+                                                    title="Real Jira write-back requires a separate future execution plan."
+                                                >
+                                                    Write Back to Jira
+                                                </button>
+                                            </div>
+                                            {scenarioDraftMeta.writebackPreview && (
+                                                <div className="scenario-draft-history-note" role="status" aria-live="polite">
+                                                    Jira write-back preview is dry-run only. {Array.isArray(scenarioDraftMeta.writebackPreview.changes) ? scenarioDraftMeta.writebackPreview.changes.length : 0} changes would be prepared.
+                                                </div>
+                                            )}
+                                            {scenarioDraftMeta.writebackBlocked && (
+                                                <div className="scenario-error" role="alert">
+                                                    {scenarioDraftMeta.writebackBlocked.message || 'Jira write-back is blocked by the migration gate.'}
+                                                </div>
+                                            )}
+                                            <button
+                                                type="button"
+                                                className="scenario-link"
+                                                onClick={closeScenarioDraftHistory}
+                                            >
+                                                Close
+                                            </button>
+                                        </section>
+                                    )}
                                     {scenarioLoading && <div className="scenario-loading">Computing scenario timeline...</div>}
 
                                     {scenarioData && (

@@ -117,6 +117,38 @@ function summarizeEffortSplitRow(row) {
     };
 }
 
+export function summarizeEffortTypeSplitTotals(rows) {
+    const totals = (rows || []).reduce((acc, row) => {
+        const excludedCapacityPoints = Number(row?.excludedCapacityPoints || 0);
+        const techPoints = Number(row?.techPoints || 0);
+        const productPoints = Number(row?.productPoints || 0);
+        const rowTotal = Number(row?.totalPoints || 0) || excludedCapacityPoints + techPoints + productPoints;
+        acc.totalPoints += rowTotal;
+        acc.excludedCapacityPoints += excludedCapacityPoints;
+        acc.techPoints += techPoints;
+        acc.productPoints += productPoints;
+        return acc;
+    }, {
+        totalPoints: 0,
+        excludedCapacityPoints: 0,
+        techPoints: 0,
+        productPoints: 0
+    });
+    const totalPoints = roundMetric(totals.totalPoints);
+    const excludedCapacityPoints = roundMetric(totals.excludedCapacityPoints);
+    const techPoints = roundMetric(totals.techPoints);
+    const productPoints = roundMetric(totals.productPoints);
+    return {
+        totalPoints,
+        excludedCapacityPoints,
+        techPoints,
+        productPoints,
+        excludedCapacityPercent: totalPoints > 0 ? roundMetric(excludedCapacityPoints / totalPoints) : 0,
+        techPercent: totalPoints > 0 ? roundMetric(techPoints / totalPoints) : 0,
+        productPercent: totalPoints > 0 ? roundMetric(productPoints / totalPoints) : 0
+    };
+}
+
 function normalizeFilterKeys(options) {
     if (Array.isArray(options?.excludedEpicKeyFilters)) {
         const filters = options.excludedEpicKeyFilters.map(normalizeKey).filter(Boolean);

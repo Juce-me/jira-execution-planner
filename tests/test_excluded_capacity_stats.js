@@ -188,6 +188,24 @@ test('buildEffortTypeSplitRows falls back to key prefix and keeps scoped empty t
     );
 });
 
+test('summarizeEffortTypeSplitTotals aggregates type shares for summary cards', async () => {
+    const { summarizeEffortTypeSplitTotals } = await loadModule();
+    const totals = summarizeEffortTypeSplitTotals([
+        { totalPoints: 10, excludedCapacityPoints: 3, techPoints: 5, productPoints: 2 },
+        { totalPoints: 30, excludedCapacityPoints: 5, techPoints: 10, productPoints: 15 }
+    ]);
+
+    assert.deepEqual(totals, {
+        totalPoints: 40,
+        excludedCapacityPoints: 8,
+        techPoints: 15,
+        productPoints: 17,
+        excludedCapacityPercent: 0.2,
+        techPercent: 0.375,
+        productPercent: 0.425
+    });
+});
+
 test('buildExcludedEpicCatalog returns configured epics with summaries when known and key fallback otherwise', async () => {
     const { buildExcludedEpicCatalog, pickAutoSelectedExcludedEpics } = await loadModule();
     const tasks = [

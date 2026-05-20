@@ -45,7 +45,8 @@ import {
     getSprintQuarterLabel,
     loadExcludedCapacityStatsSourceChunks,
     mergeExcludedCapacityStatsSourceChunks,
-    pickAutoSelectedExcludedEpics
+    pickAutoSelectedExcludedEpics,
+    summarizeEffortTypeSplitTotals
 } from './stats/excludedCapacityStats.js';
 import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';
 import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';
@@ -7250,17 +7251,7 @@ import {
                 excludedCapacityTeams
             ]);
             const excludedCapacityIsolatedSeries = statsView === 'monoCrossShare' ? excludedCapacityModeTeamLineSeries.series : excludedCapacityLineSeries.series;
-            const excludedCapacityTotals = React.useMemo(() => {
-                const totals = excludedCapacityRows.reduce((acc, row) => {
-                    acc.totalPoints += row.totalPoints || 0;
-                    acc.excludedPoints += row.excludedPoints || 0;
-                    return acc;
-                }, { totalPoints: 0, excludedPoints: 0 });
-                return {
-                    ...totals,
-                    percent: totals.totalPoints > 0 ? totals.excludedPoints / totals.totalPoints : 0
-                };
-            }, [excludedCapacityRows]);
+            const effortSplitTotals = React.useMemo(() => summarizeEffortTypeSplitTotals(effortSplitRows), [effortSplitRows]);
             const excludedCapacityWarnings = React.useMemo(() => {
                 const warnings = excludedCapacityData?.meta?.warnings;
                 return Array.isArray(warnings) ? warnings : [];
@@ -14592,18 +14583,23 @@ import {
                                         </div>
                                         <div className="stats-card">
                                             <h4>Excluded SP</h4>
-                                            <div className="stat-value">{formatExcludedPoints(excludedCapacityTotals.excludedPoints)}</div>
-                                            <div className="stats-note">Out of {formatExcludedPoints(excludedCapacityTotals.totalPoints)} scoped SP</div>
+                                            <div className="stat-value">{formatExcludedPoints(effortSplitTotals.excludedCapacityPoints)}</div>
+                                            <div className="stats-note">Out of {formatExcludedPoints(effortSplitTotals.totalPoints)} scoped SP</div>
                                         </div>
                                         <div className="stats-card">
                                             <h4>Excluded Share</h4>
-                                            <div className="stat-value">{formatPercent(excludedCapacityTotals.percent)}</div>
+                                            <div className="stat-value">{formatPercent(effortSplitTotals.excludedCapacityPercent)}</div>
                                             <div className="stats-note">Approximate, story-point based</div>
                                         </div>
                                         <div className="stats-card">
-                                            <h4>Source</h4>
-                                            <div className="stat-value">Planning config</div>
-                                            <div className="stats-note">Excluded epic keys from team group settings</div>
+                                            <h4>Product Share</h4>
+                                            <div className="stat-value">{formatPercent(effortSplitTotals.productPercent)}</div>
+                                            <div className="stats-note">Approximate, story-point based</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Tech Share</h4>
+                                            <div className="stat-value">{formatPercent(effortSplitTotals.techPercent)}</div>
+                                            <div className="stats-note">Approximate, story-point based</div>
                                         </div>
                                     </div>
 

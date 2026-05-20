@@ -95,10 +95,88 @@ function makeEpic(project) {
     };
 }
 
+function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName, points, projectKey }) {
+    return {
+        id: key,
+        key,
+        fields: {
+            summary: `${key} excluded capacity source story`,
+            status: { name: 'To Do' },
+            priority: { name: 'Major' },
+            issuetype: { name: 'Story' },
+            assignee: { displayName: `${teamName} Owner` },
+            customfield_10004: points,
+            epicKey,
+            epicSummary,
+            parentSummary: epicSummary,
+            projectKey,
+            teamId,
+            teamName,
+            customfield_10101: [{ id: selectedSprintId, name: selectedSprintName }],
+        },
+    };
+}
+
 const productTasks = Array.from({ length: 12 }, (_, index) => makeEngTask('product', index + 1));
 const techTasks = Array.from({ length: 12 }, (_, index) => makeEngTask('tech', index + 1));
 const productEpic = makeEpic('product');
 const techEpic = makeEpic('tech');
+const excludedCapacitySourceIssues = [
+    makeExcludedCapacityIssue({
+        key: 'BAU-1',
+        epicKey: 'BAU-EPIC',
+        epicSummary: 'BAU Intake',
+        teamId: 'team-alpha',
+        teamName: 'Alpha Team',
+        points: 2,
+        projectKey: 'PROD',
+    }),
+    makeExcludedCapacityIssue({
+        key: 'TECH-SHARE-1',
+        epicKey: 'TECH-EPIC',
+        epicSummary: 'Tech delivery epic',
+        teamId: 'team-alpha',
+        teamName: 'Alpha Team',
+        points: 3,
+        projectKey: 'TECH',
+    }),
+    makeExcludedCapacityIssue({
+        key: 'PROD-SHARE-1',
+        epicKey: 'PROD-EPIC',
+        epicSummary: 'Product delivery epic',
+        teamId: 'team-alpha',
+        teamName: 'Alpha Team',
+        points: 5,
+        projectKey: 'PROD',
+    }),
+    makeExcludedCapacityIssue({
+        key: 'BAU-2',
+        epicKey: 'BAU-EPIC',
+        epicSummary: 'BAU Intake',
+        teamId: 'team-beta',
+        teamName: 'Beta Team',
+        points: 1,
+        projectKey: 'PROD',
+    }),
+    makeExcludedCapacityIssue({
+        key: 'TECH-SHARE-2',
+        epicKey: 'TECH-EPIC',
+        epicSummary: 'Tech delivery epic',
+        teamId: 'team-beta',
+        teamName: 'Beta Team',
+        points: 1,
+        projectKey: 'TECH',
+    }),
+    makeExcludedCapacityIssue({
+        key: 'PROD-SHARE-2',
+        epicKey: 'PROD-EPIC',
+        epicSummary: 'Product delivery epic',
+        teamId: 'team-beta',
+        teamName: 'Beta Team',
+        points: 8,
+        projectKey: 'PROD',
+    }),
+];
 const scenarioTeams = Array.from({ length: 14 }, (_, index) => (
     index === 0 ? 'Alpha Team' : index === 1 ? 'Beta Team' : `Scenario Team ${index + 1}`
 ));
@@ -480,6 +558,7 @@ async function installApiMocks(page, calls, options = {}) {
                     name: 'Default',
                     teamIds: groupTeamIds,
                     teamLabels: { 'team-alpha': 'alpha_label', 'team-beta': 'beta_label' },
+                    excludedCapacityEpics: options.excludedCapacityEpics || [],
                 }],
                 defaultGroupId: 'grp-default',
                 source: 'test',
@@ -511,6 +590,19 @@ async function installApiMocks(page, calls, options = {}) {
         if (url.pathname === '/api/capacity') return json({ enabled: false, capacity: [], teams: [], totalCapacity: 0 });
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
         if (url.pathname === '/api/scenario') return json(scenarioPayload());
+        if (url.pathname === '/api/stats/excluded-capacity-source') {
+            return json({
+                data: {
+                    issues: excludedCapacitySourceIssues,
+                    meta: {
+                        warnings: [],
+                        queryPages: 1,
+                        loadedSprintCount: 1,
+                        totalSprintCount: 1,
+                    },
+                },
+            });
+        }
         if (url.pathname === '/api/scenario/drafts') {
             return json({
                 activeDraft: null,
@@ -656,6 +748,39 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await expectJiraExportMenu(page);
     await captureSmokeScreenshot(page, 'scenario');
     await expectContainerSticky(page, '.scenario-axis', '.scenario-timeline');
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('Excluded Capacity summary shows product and tech shares instead of source copy', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, { excludedCapacityEpics: ['BAU-EPIC'] });
+    await page.setViewportSize({ width: 1280, height: 760 });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+        activeGroupId: 'grp-default',
+        selectedTeams: ['all'],
+        showStats: true,
+        statsView: 'excludedCapacity',
+        excludedCapacityStartSprintId: String(selectedSprintId),
+        excludedCapacityEndSprintId: String(selectedSprintId),
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
+
+    const summary = page.locator('.stats-view.open .excluded-capacity-summary');
+    await expect(summary).toBeVisible();
+    await expect(summary.locator('.stats-card', { hasText: 'Excluded Share' })).toContainText('15.00%');
+    await expect(summary.locator('.stats-card', { hasText: 'Product Share' })).toContainText('65.00%');
+    await expect(summary.locator('.stats-card', { hasText: 'Tech Share' })).toContainText('20.00%');
+    await expect(summary.getByText('Source')).toHaveCount(0);
+    await expect(summary.getByText('Planning config')).toHaveCount(0);
+    await expect(summary.getByText('Excluded epic keys from team group settings')).toHaveCount(0);
+    await captureSmokeScreenshot(page, 'excluded-capacity-share-summary');
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 

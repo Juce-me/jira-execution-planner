@@ -85,6 +85,34 @@ test('effort split chart uses selected sprint range source data and visible scop
     );
 });
 
+test('excluded-capacity summary shows effort share cards instead of source copy', () => {
+    const excludedSummaryBlock = dashboardSource.match(/className="stats-summary excluded-capacity-summary"[\s\S]*?\n\s*\{excludedCapacityLoading/)?.[0] || '';
+    assert.ok(
+        dashboardSource.includes('summarizeEffortTypeSplitTotals'),
+        'Expected dashboard to use shared effort split totals for summary cards'
+    );
+    assert.ok(
+        excludedSummaryBlock.includes('<h4>Product Share</h4>'),
+        'Expected visible Product Share card'
+    );
+    assert.ok(
+        excludedSummaryBlock.includes('<h4>Tech Share</h4>'),
+        'Expected visible Tech Share card'
+    );
+    assert.ok(
+        !excludedSummaryBlock.includes('<h4>Source</h4>'),
+        'Excluded Capacity summary should not render the old Source card'
+    );
+    assert.ok(
+        !excludedSummaryBlock.includes('Planning config'),
+        'Excluded Capacity summary should not show implementation source copy'
+    );
+    assert.ok(
+        !excludedSummaryBlock.includes('Excluded epic keys from team group settings'),
+        'Excluded Capacity summary should not expose team-group config internals'
+    );
+});
+
 test('effort split legend is the bucket control surface', () => {
     assert.ok(
         !dashboardSource.includes('effort-type-split-actions'),

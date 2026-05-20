@@ -1,5 +1,7 @@
 # Scenario Planner Quarter Drafts 02 Frontend History
 
+> **Status:** Done. Executed in `993e885` (`Add scenario draft history persistence`, 2026-05-20). Kept for audit context only; do not execute as an active plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add Scenario Planner UI for DB-backed draft history: load the active draft for the current sprint/team/group scope, save a new version, reload old snapshots, rollback the active draft, and handle concurrent-save conflicts without losing local edits.
@@ -12,7 +14,7 @@
 
 ## Prerequisite
 
-Execute `EXEC-scenario-planner-quarter-drafts-01-persistence-api.md` first. This slice assumes:
+This completed slice assumed `DONE-scenario-planner-quarter-drafts-01-persistence-api.md` had executed first:
 
 - `GET /api/scenario/drafts?scope_key=<scope>` returns `activeDraft`, `versions`, and `storage`;
 - `POST /api/scenario/drafts` saves with `baseDraftRevision`;

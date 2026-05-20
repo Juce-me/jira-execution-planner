@@ -6,8 +6,10 @@ const BUCKETS = [
     { key: 'product', label: 'Product' }
 ];
 const READOUT_EDGE_GUTTER = 12;
-const READOUT_HORIZONTAL_INSET = 150;
-const READOUT_VERTICAL_INSET = 44;
+const READOUT_POINTER_GAP = 12;
+const READOUT_WIDTH = 260;
+const READOUT_VERTICAL_INSET = 56;
+const FULL_SEGMENT_LABEL_MIN_WIDTH = 10.5;
 
 function clampNumber(value, min, max) {
     return Math.min(Math.max(value, min), max);
@@ -19,22 +21,32 @@ function clampReadoutPoint(x, y) {
     }
     const viewportWidth = Number(window.innerWidth) || 0;
     const viewportHeight = Number(window.innerHeight) || 0;
-    const useWideInset = viewportWidth > READOUT_HORIZONTAL_INSET * 2;
-    const minX = useWideInset ? READOUT_HORIZONTAL_INSET : READOUT_EDGE_GUTTER;
-    const maxX = useWideInset
-        ? viewportWidth - READOUT_HORIZONTAL_INSET
-        : Math.max(minX, viewportWidth - READOUT_EDGE_GUTTER);
+    const readoutWidth = Math.min(READOUT_WIDTH, Math.max(0, viewportWidth - (READOUT_EDGE_GUTTER * 2)));
+    const anchorOnLeft = x >= readoutWidth + READOUT_POINTER_GAP + READOUT_EDGE_GUTTER;
+    const minX = anchorOnLeft
+        ? readoutWidth + READOUT_POINTER_GAP + READOUT_EDGE_GUTTER
+        : READOUT_EDGE_GUTTER;
+    const maxX = anchorOnLeft
+        ? Math.max(minX, viewportWidth - READOUT_EDGE_GUTTER)
+        : Math.max(minX, viewportWidth - readoutWidth - READOUT_POINTER_GAP - READOUT_EDGE_GUTTER);
     const minY = READOUT_VERTICAL_INSET;
     const maxY = Math.max(minY, viewportHeight - READOUT_EDGE_GUTTER);
     return {
         x: clampNumber(x, minX, maxX),
-        y: clampNumber(y, minY, maxY)
+        y: clampNumber(y, minY, maxY),
+        side: anchorOnLeft ? 'left' : 'right'
     };
 }
 
 function formatSegmentValue(segment, metric, formatExcludedPoints, formatPercent) {
     if (metric === 'storyPoints') return `${formatExcludedPoints(segment?.points || 0)} SP`;
     return formatPercent(segment?.percent || 0);
+}
+
+function formatCompactSegmentValue(segment, metric, formatExcludedPoints) {
+    if (metric === 'storyPoints') return `${formatExcludedPoints(segment?.points || 0)} SP`;
+    const percentValue = Number(segment?.percent || 0) * 100;
+    return `${Math.round(percentValue)}%`;
 }
 
 function formatSummaryValue(segment, formatExcludedPoints, formatPercent) {
@@ -120,6 +132,8 @@ export default function EffortTypeSplitChart({
                                         const segment = row.segments?.[bucket.key] || { points: 0, percent: 0 };
                                         const width = denominator > 0 ? (segment.points / denominator) * 100 : 0;
                                         const valueText = formatSegmentValue(segment, metric, formatExcludedPoints, formatPercent);
+                                        const compactValueText = formatCompactSegmentValue(segment, metric, formatExcludedPoints);
+                                        const labelText = width >= FULL_SEGMENT_LABEL_MIN_WIDTH ? valueText : compactValueText;
                                         const readout = { teamName: row.teamName, label: bucket.label, valueText };
                                         return (
                                             <button
@@ -136,7 +150,7 @@ export default function EffortTypeSplitChart({
                                                 onClick={(event) => setHovered(readoutFromElement(event, readout))}
                                                 aria-label={`${row.teamName} ${bucket.label}: ${valueText}`}
                                             >
-                                                {width >= 12 && <span>{valueText}</span>}
+                                                {width > 0 && <span>{labelText}</span>}
                                             </button>
                                         );
                                     })}
@@ -148,7 +162,7 @@ export default function EffortTypeSplitChart({
             )}
             {hovered && (
                 <div
-                    className="effort-type-split-readout"
+                    className={`effort-type-split-readout is-${hovered.side || 'left'}`}
                     style={{ left: `${hovered.x}px`, top: `${hovered.y}px` }}
                 >
                     <strong>{hovered.teamName}</strong>

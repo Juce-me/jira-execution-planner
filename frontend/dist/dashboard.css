@@ -5486,10 +5486,10 @@ button.toggle.initiative-toggle.active {
 }
 .effort-type-split-readout {
   position: fixed;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  width: fit-content;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.15rem;
+  width: min(260px, calc(100vw - 24px));
   max-width: min(260px, calc(100vw - 24px));
   padding: 0.35rem 0.55rem;
   border: 1px solid var(--border);
@@ -5500,8 +5500,20 @@ button.toggle.initiative-toggle.active {
   overflow-wrap: anywhere;
   box-shadow: 0 6px 18px var(--shadow);
   pointer-events: none;
-  transform: translate(-50%, calc(-100% - 10px));
   z-index: calc(var(--sticky-control-overlay-z) + 5);
+}
+.effort-type-split-readout.is-left {
+  transform: translate(calc(-100% - 12px), -50%);
+}
+.effort-type-split-readout.is-right {
+  transform: translate(12px, -50%);
+}
+.effort-type-split-readout strong,
+.effort-type-split-readout span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .effort-type-split-readout strong {
   color: var(--text-primary);

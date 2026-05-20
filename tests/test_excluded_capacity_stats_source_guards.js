@@ -173,13 +173,27 @@ test('effort split readout clamps away from viewport edges', () => {
         'Expected horizontal clamp to use viewport width'
     );
     assert.ok(
-        effortSplitChartSource.includes('READOUT_HORIZONTAL_INSET'),
-        'Expected readout to reserve horizontal inset for tooltip width'
+        effortSplitChartSource.includes('READOUT_WIDTH'),
+        'Expected readout positioning to reserve explicit tooltip width'
+    );
+    assert.ok(
+        effortSplitChartSource.includes("side: anchorOnLeft ? 'left' : 'right'"),
+        'Expected readout to choose a side instead of centering at the edge'
     );
     assert.match(
         cssSource,
-        /\.effort-type-split-readout\s*\{[\s\S]*max-width:\s*min\(260px, calc\(100vw - 24px\)\)/,
-        'Expected readout width to fit within the viewport'
+        /\.effort-type-split-readout\s*\{[\s\S]*width:\s*min\(260px, calc\(100vw - 24px\)\)/,
+        'Expected readout to use a stable readable width'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-readout\.is-left\s*\{[\s\S]*translate\(calc\(-100% - 12px\), -50%\)/,
+        'Expected right-edge readouts to open to the left of the pointer'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-readout span\s*\{[\s\S]*white-space:\s*nowrap/,
+        'Expected readout values to avoid one-character wrapping'
     );
 });
 
@@ -203,6 +217,29 @@ test('effort split chart exposes keyboard and screen-reader values', () => {
     assert.ok(
         cssSource.includes('.effort-type-split-summary'),
         'Expected dedicated visually hidden summary styles'
+    );
+});
+
+test('effort split segment labels fall back to compact integer percentages', () => {
+    assert.ok(
+        effortSplitChartSource.includes('const FULL_SEGMENT_LABEL_MIN_WIDTH = 10.5;'),
+        'Expected full Effort Split labels to start at the 10.5% fit threshold'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('formatCompactSegmentValue'),
+        'Expected a compact label formatter for narrow segments'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('Math.round(percentValue)'),
+        'Expected narrow percent labels to use integer percentages'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('width >= FULL_SEGMENT_LABEL_MIN_WIDTH ? valueText : compactValueText'),
+        'Expected narrow nonzero segments to render compact labels instead of hiding'
+    );
+    assert.ok(
+        !effortSplitChartSource.includes('width >= 12 && <span>{valueText}</span>'),
+        'Effort Split labels should not disappear below the old 12% threshold'
     );
 });
 

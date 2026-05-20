@@ -5516,8 +5516,9 @@ button.toggle.initiative-toggle.active {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0.15rem;
-  width: min(260px, calc(100vw - 24px));
-  max-width: min(260px, calc(100vw - 24px));
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(220px, calc(100vw - 24px));
   padding: 0.35rem 0.55rem;
   border: 1px solid var(--border);
   border-radius: 6px;

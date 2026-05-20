@@ -448,12 +448,14 @@ async function expectEffortSplitReadoutTracksPointer(page) {
             top: rect.top,
             bottom: rect.bottom,
             centerY: rect.top + rect.height / 2,
+            width: rect.width,
             viewportHeight: window.innerHeight,
             distanceFromPointer: Math.abs((rect.top + rect.height / 2) - anchor.y),
         };
     }, pointer);
     expect(layout.top).toBeGreaterThanOrEqual(0);
     expect(layout.bottom).toBeLessThanOrEqual(layout.viewportHeight);
+    expect(layout.width).toBeLessThanOrEqual(220);
     expect(layout.distanceFromPointer).toBeLessThanOrEqual(60);
 }
 

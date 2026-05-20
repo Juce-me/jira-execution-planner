@@ -8,7 +8,7 @@ const BUCKETS = [
 ];
 const READOUT_EDGE_GUTTER = 12;
 const READOUT_POINTER_GAP = 12;
-const READOUT_WIDTH = 260;
+const READOUT_MAX_WIDTH = 220;
 const READOUT_HEIGHT = 72;
 const READOUT_VERTICAL_INSET = 56;
 const FULL_SEGMENT_LABEL_MIN_WIDTH = 10.5;
@@ -23,7 +23,7 @@ function clampReadoutPoint(x, y) {
     }
     const viewportWidth = Number(window.innerWidth) || 0;
     const viewportHeight = Number(window.innerHeight) || 0;
-    const readoutWidth = Math.min(READOUT_WIDTH, Math.max(0, viewportWidth - (READOUT_EDGE_GUTTER * 2)));
+    const readoutWidth = Math.min(READOUT_MAX_WIDTH, Math.max(0, viewportWidth - (READOUT_EDGE_GUTTER * 2)));
     const readoutHeight = Math.min(READOUT_HEIGHT, Math.max(0, viewportHeight - (READOUT_EDGE_GUTTER * 2)));
     const anchorOnLeft = x > viewportWidth - readoutWidth - READOUT_POINTER_GAP - READOUT_EDGE_GUTTER
         && x >= readoutWidth + READOUT_POINTER_GAP + READOUT_EDGE_GUTTER;

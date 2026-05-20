@@ -209,8 +209,8 @@ test('effort split readout clamps away from viewport edges', () => {
         'Expected horizontal clamp to use viewport width'
     );
     assert.ok(
-        effortSplitChartSource.includes('READOUT_WIDTH'),
-        'Expected readout positioning to reserve explicit tooltip width'
+        effortSplitChartSource.includes('READOUT_MAX_WIDTH'),
+        'Expected readout positioning to reserve explicit maximum tooltip width'
     );
     assert.ok(
         effortSplitChartSource.includes('READOUT_HEIGHT'),
@@ -222,8 +222,13 @@ test('effort split readout clamps away from viewport edges', () => {
     );
     assert.match(
         cssSource,
-        /\.effort-type-split-readout\s*\{[\s\S]*width:\s*min\(260px, calc\(100vw - 24px\)\)/,
-        'Expected readout to use a stable readable width'
+        /\.effort-type-split-readout\s*\{[\s\S]*width:\s*max-content/,
+        'Expected readout to size to its content instead of reserving a wide fixed box'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-readout\s*\{[\s\S]*max-width:\s*min\(220px, calc\(100vw - 24px\)\)/,
+        'Expected readout to keep a narrow maximum width'
     );
     assert.match(
         cssSource,

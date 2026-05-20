@@ -397,6 +397,34 @@ async function expectTeamDropdownAboveStatsPanel(page) {
         });
     });
     expect(layerState.every(point => point.topIsPanel), JSON.stringify(layerState, null, 2)).toBe(true);
+    const overlapState = await panel.evaluate((panelNode) => {
+        const statsPanel = document.querySelector('.stats-panel.open');
+        const panelRect = panelNode.getBoundingClientRect();
+        const statsRect = statsPanel?.getBoundingClientRect();
+        if (!statsRect) return [{ skipped: true, reason: 'stats panel missing' }];
+        const top = Math.max(panelRect.top, statsRect.top + 8);
+        const bottom = Math.min(panelRect.bottom, statsRect.bottom - 8);
+        if (bottom <= top) return [{ skipped: true, reason: 'no overlap' }];
+        const y = top + ((bottom - top) / 2);
+        const points = [
+            { x: panelRect.left + panelRect.width / 2, y },
+            { x: panelRect.left + 24, y },
+            { x: panelRect.right - 24, y },
+        ];
+        return points.map((point) => {
+            const topNode = document.elementFromPoint(point.x, point.y);
+            return {
+                point,
+                topClass: topNode?.className || '',
+                topText: topNode?.textContent || '',
+                topIsPanel: Boolean(topNode?.closest?.('.team-dropdown-panel')),
+            };
+        });
+    });
+    expect(
+        overlapState.every(point => point.skipped || point.topIsPanel),
+        JSON.stringify(overlapState, null, 2)
+    ).toBe(true);
     await page.mouse.click(8, 8);
 }
 
@@ -780,6 +808,7 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
     await expect(summary.getByText('Source')).toHaveCount(0);
     await expect(summary.getByText('Planning config')).toHaveCount(0);
     await expect(summary.getByText('Excluded epic keys from team group settings')).toHaveCount(0);
+    await expectTeamDropdownAboveStatsPanel(page);
     await captureSmokeScreenshot(page, 'excluded-capacity-share-summary');
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });

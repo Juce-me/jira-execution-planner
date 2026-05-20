@@ -274,8 +274,23 @@ test('effort split segment labels fall back to compact integer percentages', () 
 test('shared team dropdown panels layer above open stats panels', () => {
     assert.match(
         cssSource,
-        /\.team-dropdown-panel\s*\{[\s\S]*z-index:\s*calc\(var\(--sticky-planning-z\) \+ 10\)/,
+        /\.view-selector:has\(\.sprint-dropdown-panel\),\s*[\s\S]*\.view-selector:has\(\.team-dropdown-panel\)\s*\{[\s\S]*z-index:\s*calc\(var\(--sticky-control-overlay-z\) \+ 2\)/,
+        'Expected main controls to elevate only while a dropdown is open'
+    );
+    assert.match(
+        cssSource,
+        /\.compact-sticky-header:has\(\.sprint-dropdown-panel\),\s*[\s\S]*\.compact-sticky-header:has\(\.team-dropdown-panel\)\s*\{[\s\S]*z-index:\s*calc\(var\(--sticky-control-overlay-z\) \+ 2\)/,
+        'Expected compact controls to elevate only while a dropdown is open'
+    );
+    assert.match(
+        cssSource,
+        /\.team-dropdown-panel\s*\{[\s\S]*z-index:\s*calc\(var\(--sticky-control-overlay-z\) \+ 3\)/,
         'Expected team dropdown panel to layer above the open Statistics panel'
+    );
+    assert.match(
+        cssSource,
+        /\.group-dropdown-panel\s*\{[\s\S]*z-index:\s*calc\(var\(--sticky-control-overlay-z\) \+ 3\)/,
+        'Expected group dropdown panel to use the shared control overlay layer'
     );
     assert.match(
         cssSource,

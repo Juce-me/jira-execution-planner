@@ -8,6 +8,7 @@ const dashboardSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', '
 const cssSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'styles', 'dashboard.css'), 'utf8');
 const lineChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'ExcludedCapacityLineChart.jsx'), 'utf8');
 const effortSplitChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'EffortTypeSplitChart.jsx'), 'utf8');
+const hoverBubblePositionSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'ui', 'hoverBubblePosition.js'), 'utf8');
 
 test('dashboard wires excluded-capacity analytics into the existing Statistics view', () => {
     assert.ok(
@@ -205,8 +206,9 @@ test('effort split readout clamps away from viewport edges', () => {
         'Expected Effort Split readout portal to use document.body'
     );
     assert.ok(
-        effortSplitChartSource.includes('window.innerWidth'),
-        'Expected horizontal clamp to use viewport width'
+        effortSplitChartSource.includes('resolveFloatingHoverPosition') &&
+            hoverBubblePositionSource.includes('function normalizeBoundary'),
+        'Expected readout clamp to use the shared hover positioning helper'
     );
     assert.ok(
         effortSplitChartSource.includes('READOUT_MAX_WIDTH'),
@@ -217,8 +219,8 @@ test('effort split readout clamps away from viewport edges', () => {
         'Expected readout positioning to reserve explicit tooltip height'
     );
     assert.ok(
-        effortSplitChartSource.includes("side: anchorOnLeft ? 'left' : 'right'"),
-        'Expected readout to choose a side instead of centering at the edge'
+        effortSplitChartSource.includes('verticalInset: READOUT_VERTICAL_INSET'),
+        'Expected readout to preserve the vertical inset through shared positioning'
     );
     assert.match(
         cssSource,
@@ -521,8 +523,13 @@ test('excluded-capacity line chart uses a readable custom hover readout', () => 
         'Expected line chart readout to reserve measured bubble bounds'
     );
     assert.ok(
-        lineChartSource.includes("side: anchorOnLeft ? 'left' : 'right'"),
-        'Expected line chart readout to flip beside the pointer at edges'
+        lineChartSource.includes('resolveFloatingHoverPosition') &&
+            hoverBubblePositionSource.includes("side = rightSpace >= effectiveWidth || rightSpace >= leftSpace ? 'right' : 'left'"),
+        'Expected line chart readout to use shared bounded hover positioning'
+    );
+    assert.ok(
+        lineChartSource.includes("closest?.('.excluded-capacity-line-chart')"),
+        'Expected line chart readout to clamp against the chart boundary, not only the viewport'
     );
     assert.ok(
         !lineChartSource.includes('<title>{tooltip}</title>'),
@@ -537,6 +544,11 @@ test('excluded-capacity line chart uses a readable custom hover readout', () => 
         cssSource,
         /\.excluded-capacity-line-hover-bubble\.is-left\s*\{[\s\S]*translate\(calc\(-100% - 12px\), -50%\)/,
         'Expected line chart readout to stay readable when it opens left of the pointer'
+    );
+    assert.match(
+        cssSource,
+        /\.excluded-capacity-line-hover-bubble\s*\{[\s\S]*z-index:\s*calc\(var\(--sticky-control-overlay-z\) \+ 4\)/,
+        'Expected line chart readout to layer above chart and sticky controls'
     );
     assert.match(
         cssSource,

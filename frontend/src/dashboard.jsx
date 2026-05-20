@@ -48,6 +48,23 @@ import {
     pickAutoSelectedExcludedEpics,
     summarizeEffortTypeSplitTotals
 } from './stats/excludedCapacityStats.js';
+import { PRIORITY_AXIS } from './stats/statsConstants.js';
+import { DEFAULT_PRIORITY_WEIGHT_ROWS, buildPriorityWeightMap, clonePriorityWeightRows } from './stats/priorityWeights.js';
+import { buildBurnoutChartModel } from './stats/burnoutChartUtils.js';
+import {
+    buildLocalStatsFromTasks,
+    buildRadarPoints,
+    computePriorityWeighted,
+    computeRate,
+    formatPercent,
+    getPriorityLabel,
+    getRateClass,
+    resolveTeamColor,
+} from './stats/statsUtils.js';
+import StatsDeliverySummary from './stats/StatsDeliverySummary.jsx';
+import StatsPriorityView from './stats/StatsPriorityView.jsx';
+import StatsTeamsView from './stats/StatsTeamsView.jsx';
+import BurnoutChart from './stats/BurnoutChart.jsx';
 import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';
 import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
@@ -208,22 +225,6 @@ import {
         }
 
         const UI_PREFS_KEY = 'jira_dashboard_ui_prefs_v1';
-        const DEFAULT_PRIORITY_WEIGHT_ROWS = Object.freeze([
-            { priority: 'Blocker', weight: '0.4' },
-            { priority: 'Critical', weight: '0.3' },
-            { priority: 'Major', weight: '0.2' },
-            { priority: 'Minor', weight: '0.06' },
-            { priority: 'Low', weight: '0.03' },
-            { priority: 'Trivial', weight: '0.01' }
-        ]);
-
-        function clonePriorityWeightRows(rows) {
-            const source = Array.isArray(rows) && rows.length ? rows : DEFAULT_PRIORITY_WEIGHT_ROWS;
-            return source.map((row) => ({
-                priority: String(row.priority || '').trim(),
-                weight: String(row.weight ?? '').trim()
-            }));
-        }
 
         function loadUiPrefs() {
             try {
@@ -1755,10 +1756,10 @@ import {
                 const normalized = String(value || '').trim().toUpperCase();
                 return normalized || 'NO_EPIC';
             };
-            const isBurnoutClosedStatus = (status) => {
-                const normalized = normalizeStatus(status);
+            const isBurnoutClosedStatus = React.useCallback((status) => {
+                const normalized = (status || '').toLowerCase().replace(/\s+/g, ' ').trim();
                 return normalized === 'done' || normalized === 'killed' || normalized === 'incomplete';
-            };
+            }, []);
 
 
             const normalizeGroupsConfig = (config) => {
@@ -5293,44 +5294,7 @@ import {
                 }
             };
 
-            const priorityAxis = ['Blocker', 'Critical', 'Major', 'Minor', 'Low', 'Trivial'];
-            const priorityLabelByKey = {
-                blocker: 'Blocker',
-                critical: 'Critical',
-                major: 'Major',
-                minor: 'Minor',
-                low: 'Low',
-                trivial: 'Trivial'
-            };
-            const radarPalette = [
-                '#2563eb',
-                '#0ea5e9',
-                '#14b8a6',
-                '#10b981',
-                '#22c55e',
-                '#84cc16',
-                '#eab308',
-                '#f59e0b',
-                '#f97316',
-                '#a855f7',
-                '#6366f1',
-                '#64748b'
-            ];
-
-            const hashTeamId = (value) => {
-                const str = String(value || '');
-                let hash = 5381;
-                for (let i = 0; i < str.length; i += 1) {
-                    hash = ((hash << 5) + hash) + str.charCodeAt(i);
-                }
-                return Math.abs(hash);
-            };
-
-            const resolveTeamColor = (teamId) => {
-                if (!radarPalette.length) return '#94a3b8';
-                const index = hashTeamId(teamId) % radarPalette.length;
-                return radarPalette[index];
-            };
+            const priorityAxis = PRIORITY_AXIS;
 
             const getTeamInfo = getTaskTeamInfo;
 
@@ -6103,66 +6067,10 @@ import {
             ]);
 
 
-            const formatPercent = (value) => `${(value * 100).toFixed(2)}%`;
-
-            const priorityAliases = {
-                highest: 'blocker',
-                high: 'major',
-                medium: 'minor',
-                lowest: 'trivial'
-            };
-
-            const effectivePriorityWeightMap = React.useMemo(() => {
-                const map = {};
-                (effectivePriorityWeightsRows || []).forEach((row) => {
-                    const key = String(row?.priority || '').toLowerCase().trim();
-                    const numeric = Number(row?.weight);
-                    if (!key || Number.isNaN(numeric) || !Number.isFinite(numeric) || numeric < 0) return;
-                    map[key] = numeric;
-                });
-                if (Object.keys(map).length === 0) {
-                    clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS).forEach((row) => {
-                        map[String(row.priority || '').toLowerCase()] = Number(row.weight);
-                    });
-                }
-                return map;
-            }, [effectivePriorityWeightsRows]);
-
-            const normalizePriority = (name) => {
-                const key = String(name || '').toLowerCase().trim();
-                return priorityAliases[key] || key;
-            };
-
-            const getPriorityLabel = (name) => {
-                const key = normalizePriority(name);
-                return priorityLabelByKey[key] || name;
-            };
-
-            const computePriorityWeighted = (priorities) => {
-                const totals = { done: 0, incomplete: 0, killed: 0 };
-                Object.entries(priorities || {}).forEach(([priorityName, counts]) => {
-                    const normalized = normalizePriority(priorityName);
-                    const weight = effectivePriorityWeightMap[normalized] || 0;
-                    totals.done += weight * (counts.done || 0);
-                    totals.incomplete += weight * (counts.incomplete || 0);
-                    totals.killed += weight * (counts.killed || 0);
-                });
-                return totals;
-            };
-
-            const computeRate = (metrics) => {
-                const done = metrics.done || 0;
-                const incomplete = metrics.incomplete || 0;
-                const denom = done + incomplete;
-                return denom > 0 ? done / denom : 0;
-            };
-
-            const getRateClass = (rate) => {
-                if (rate >= 1) return 'good';
-                if (rate >= 0.6 && rate < 0.8) return 'warn';
-                if (rate < 0.6) return 'bad';
-                return '';
-            };
+            const effectivePriorityWeightMap = React.useMemo(
+                () => buildPriorityWeightMap(effectivePriorityWeightsRows),
+                [effectivePriorityWeightsRows]
+            );
 
             const normalizeCapacityKey = (name) => {
                 if (!name) return '';
@@ -6185,123 +6093,6 @@ import {
                     .replace(/^(product|tech)\s*-\s*/i, '')
                     .replace(/\s+/g, ' ')
                     .trim();
-            };
-
-            const buildRadarPoints = ({ values, radius, center, maxValue, axes }) => {
-                const count = axes.length;
-                return axes.map((axis, index) => {
-                    const value = Math.max(0, values[axis] || 0);
-                    const ratio = maxValue > 0 ? value / maxValue : 0;
-                    const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
-                    const r = ratio * radius;
-                    const x = center + r * Math.cos(angle);
-                    const y = center + r * Math.sin(angle);
-                    return `${x.toFixed(2)},${y.toFixed(2)}`;
-                }).join(' ');
-            };
-
-            const buildLocalStatsFromTasks = (taskList, excludedSet) => {
-                const teams = {};
-                const projectsSummary = {
-                    product: { done: 0, incomplete: 0, killed: 0, priorities: {} },
-                    tech: { done: 0, incomplete: 0, killed: 0, priorities: {} }
-                };
-                const totals = { done: 0, incomplete: 0, killed: 0 };
-                const storyPointsTotals = { total: 0, done: 0, incomplete: 0, killed: 0 };
-
-                const bumpPriority = (target, priorityName, bucket) => {
-                    if (!target.priorities) target.priorities = {};
-                    if (!target.priorities[priorityName]) {
-                        target.priorities[priorityName] = { done: 0, incomplete: 0, killed: 0 };
-                    }
-                    target.priorities[priorityName][bucket] += 1;
-                };
-
-                const bumpPriorityPoints = (target, priorityName, points) => {
-                    if (!target.priorityPoints) target.priorityPoints = {};
-                    if (!target.priorityPoints[priorityName]) {
-                        target.priorityPoints[priorityName] = 0;
-                    }
-                    target.priorityPoints[priorityName] += points;
-                };
-
-                (taskList || []).forEach(task => {
-                    const epicKey = task.fields?.epicKey || 'NO_EPIC';
-                    if (excludedSet?.has(epicKey)) {
-                        return;
-                    }
-                    const status = normalizeStatus(task.fields?.status?.name);
-                    const isKilled = status === 'killed';
-                    const isDone = status === 'done';
-                    const priorityName = task.fields?.priority?.name || 'Unspecified';
-                    const pointsRaw = task.fields?.customfield_10004;
-                    const pointsValue = Number(pointsRaw);
-                    const storyPoints = Number.isFinite(pointsValue) ? pointsValue : 0;
-                    storyPointsTotals.total += storyPoints;
-                    const teamInfo = getTeamInfo(task);
-                    const teamKey = teamInfo.id || teamInfo.name || 'unknown';
-                    const projectBucket = techProjectKeys.has(task.fields?.projectKey || String(task.key || '').split('-')[0]) ? 'tech' : 'product';
-
-                    if (!teams[teamKey]) {
-                        teams[teamKey] = {
-                            id: teamInfo.id || teamKey,
-                            name: teamInfo.name || teamKey,
-                            done: 0,
-                            incomplete: 0,
-                            killed: 0,
-                            priorities: {},
-                            priorityPoints: {},
-                            projects: {
-                                product: { done: 0, incomplete: 0, killed: 0, priorities: {} },
-                                tech: { done: 0, incomplete: 0, killed: 0, priorities: {} }
-                            }
-                        };
-                    }
-
-                    const teamEntry = teams[teamKey];
-                    if (isKilled) {
-                        teamEntry.killed += 1;
-                        teamEntry.projects[projectBucket].killed += 1;
-                        projectsSummary[projectBucket].killed += 1;
-                        totals.killed += 1;
-                        storyPointsTotals.killed += storyPoints;
-                        bumpPriority(teamEntry, priorityName, 'killed');
-                        bumpPriority(teamEntry.projects[projectBucket], priorityName, 'killed');
-                        bumpPriority(projectsSummary[projectBucket], priorityName, 'killed');
-                        return;
-                    }
-
-                    bumpPriorityPoints(teamEntry, priorityName, storyPoints);
-                    if (isDone) {
-                        teamEntry.done += 1;
-                        teamEntry.projects[projectBucket].done += 1;
-                        projectsSummary[projectBucket].done += 1;
-                        totals.done += 1;
-                        storyPointsTotals.done += storyPoints;
-                        bumpPriority(teamEntry, priorityName, 'done');
-                        bumpPriority(teamEntry.projects[projectBucket], priorityName, 'done');
-                        bumpPriority(projectsSummary[projectBucket], priorityName, 'done');
-                        return;
-                    }
-
-                    teamEntry.incomplete += 1;
-                    teamEntry.projects[projectBucket].incomplete += 1;
-                    projectsSummary[projectBucket].incomplete += 1;
-                    totals.incomplete += 1;
-                    storyPointsTotals.incomplete += storyPoints;
-                    bumpPriority(teamEntry, priorityName, 'incomplete');
-                    bumpPriority(teamEntry.projects[projectBucket], priorityName, 'incomplete');
-                    bumpPriority(projectsSummary[projectBucket], priorityName, 'incomplete');
-                });
-
-                const sortedTeams = Object.values(teams).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-                return {
-                    sprint: selectedSprintInfo?.name || '',
-                    totals,
-                    storyPoints: storyPointsTotals,
-                    projects: projectsSummary,
-                    teams: sortedTeams
-                };
             };
 
 	            const tasks = React.useMemo(
@@ -6493,7 +6284,13 @@ import {
                     perfCountersRef.current.statsBuild = (perfCountersRef.current.statsBuild || 0) + 1;
                     performance.mark('localStatsBuild:start');
                 }
-                const result = buildLocalStatsFromTasks(statsTaskList, new Set());
+                const result = buildLocalStatsFromTasks(statsTaskList, {
+                    excludedSet: new Set(),
+                    normalizeStatus,
+                    getTeamInfo,
+                    techProjectKeys,
+                    sprintName: selectedSprintInfo?.name || ''
+                });
                 if (perfEnabled) {
                     performance.mark('localStatsBuild:end');
                     performance.measure('localStatsBuild', 'localStatsBuild:start', 'localStatsBuild:end');
@@ -6502,7 +6299,7 @@ import {
                     performance.clearMeasures('localStatsBuild');
                 }
                 return result;
-            }, [statsTaskList, selectedSprintInfo?.name, showStats, perfEnabled]);
+            }, [statsTaskList, selectedSprintInfo?.name, showStats, perfEnabled, techProjectKeys]);
 
             const effectiveStatsData = localStatsData;
             const burnoutTaskTeamByIssueKey = React.useMemo(() => {
@@ -10020,9 +9817,9 @@ import {
                 const scoped = getTeamScopedMetrics(team);
                 const scopedProduct = getTeamScopedMetrics(team, 'product');
                 const scopedTech = getTeamScopedMetrics(team, 'tech');
-                const weighted = computePriorityWeighted(scoped.priorities);
-                const weightedProduct = computePriorityWeighted(scopedProduct.priorities);
-                const weightedTech = computePriorityWeighted(scopedTech.priorities);
+                const weighted = computePriorityWeighted(scoped.priorities, effectivePriorityWeightMap);
+                const weightedProduct = computePriorityWeighted(scopedProduct.priorities, effectivePriorityWeightMap);
+                const weightedTech = computePriorityWeighted(scopedTech.priorities, effectivePriorityWeightMap);
                 const straightRate = computeRate(scoped);
                 const weightedRate = computeRate(weighted);
                 return {
@@ -10088,399 +9885,26 @@ import {
                 return [{ value: 'all', label: 'All Assignees', events: 0 }, ...rows];
             }, [burnoutData]);
 
-            const burnoutChartModel = React.useMemo(() => {
-                const parseDate = (value) => {
-                    if (!value) return null;
-                    return new Date(`${value}T00:00:00`);
-                };
-                const toDateKey = (value) => {
-                    const year = value.getFullYear();
-                    const month = String(value.getMonth() + 1).padStart(2, '0');
-                    const day = String(value.getDate()).padStart(2, '0');
-                    return `${year}-${month}-${day}`;
-                };
-
-                const rangeStart = parseDate(burnoutData?.range?.startDate);
-                const rangeEnd = parseDate(burnoutData?.range?.endDate);
-                if (!rangeStart || !rangeEnd || Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime()) || rangeStart > rangeEnd) {
-                    return null;
-                }
-                const metricIsStoryPoints = burndownMetric === 'storyPoints';
-                const metricPrecision = metricIsStoryPoints ? 1 : 0;
-                const normalizeMetric = (value) => {
-                    const numeric = Number(value) || 0;
-                    if (!metricIsStoryPoints) return Math.max(0, Math.round(numeric));
-                    return Math.max(0, Math.round(numeric * 10) / 10);
-                };
-
-                const issueMeta = Array.isArray(burnoutData?.issuesMeta) ? burnoutData.issuesMeta : [];
-                const allEvents = Array.isArray(burnoutData?.events) ? burnoutData.events : [];
-                const normalizeTeamCandidate = (teamValue) => {
-                    const idRaw = teamValue?.id;
-                    const id = idRaw === undefined || idRaw === null || idRaw === '' ? null : String(idRaw);
-                    const nameRaw = String(teamValue?.name || '').trim();
-                    const hasRealName = nameRaw && nameRaw.toLowerCase() !== 'unknown team';
-                    if (!id && !hasRealName) return null;
-                    return {
-                        id,
-                        name: hasRealName ? nameRaw : 'Unknown Team'
-                    };
-                };
-                const asAssigneeKey = (value) => value?.id || value?.name || 'unassigned';
-                const isAssigneeMatch = (assignee) => {
-                    if (burnoutAssigneeFilter === 'all') return true;
-                    return asAssigneeKey(assignee || {}) === burnoutAssigneeFilter;
-                };
-
-                const filteredIssues = issueMeta.filter((issue) => isAssigneeMatch(issue?.assignee));
-                const issueKeySet = new Set(filteredIssues.map((issue) => String(issue?.issueKey || '').trim()).filter(Boolean));
-
-                const closureByIssue = new Map();
-                allEvents.forEach((event) => {
-                    const issueKey = String(event?.issueKey || '').trim();
-                    if (!issueKey || !issueKeySet.has(issueKey)) return;
-                    const eventDate = parseDate(event?.date);
-                    if (!eventDate || Number.isNaN(eventDate.getTime())) return;
-                    if (eventDate < rangeStart || (eventDate > rangeEnd && !isCompletedSprintSelected)) return;
-                    const dateKey = toDateKey(eventDate);
-                    const fallbackTeam = burnoutTaskTeamByIssueKey.get(issueKey.toUpperCase());
-                    const resolvedTeam = normalizeTeamCandidate({
-                        id: event?.teamId,
-                        name: event?.teamName
-                    }) || normalizeTeamCandidate(fallbackTeam) || { id: null, name: 'Unknown Team' };
-                    const existing = closureByIssue.get(issueKey);
-                    if (!existing || dateKey < existing.date) {
-                        closureByIssue.set(issueKey, {
-                            date: dateKey,
-                            team: resolvedTeam,
-                            assigneeName: event?.assigneeName || 'Unassigned',
-                            bucket: String(event?.bucket || '').toLowerCase()
-                        });
-                    }
-                });
-                const closureDateKeys = Array.from(closureByIssue.values())
-                    .map((item) => String(item?.date || '').trim())
-                    .filter(Boolean)
-                    .sort();
-                const lastClosureDateKey = closureDateKeys.length ? closureDateKeys[closureDateKeys.length - 1] : null;
-                let chartEndDateKey = toDateKey(rangeEnd);
-                if (isCompletedSprintSelected && lastClosureDateKey) {
-                    chartEndDateKey = lastClosureDateKey;
-                }
-                const chartEndDate = parseDate(chartEndDateKey) || rangeEnd;
-                const fullRangeEnd = chartEndDate > rangeEnd ? chartEndDate : rangeEnd;
-
-                const dayRows = [];
-                const dayDeltaByTeam = {};
-                const dayDetails = {};
-                let cursor = new Date(rangeStart.getTime());
-                while (cursor <= fullRangeEnd) {
-                    const key = toDateKey(cursor);
-                    dayRows.push(key);
-                    dayDeltaByTeam[key] = {};
-                    dayDetails[key] = { added: [], closed: [] };
-                    cursor.setDate(cursor.getDate() + 1);
-                }
-
-                const teamByKey = new Map();
-                const resolveTeamDescriptor = (teamValue) => {
-                    const id = teamValue?.id || null;
-                    const name = teamValue?.name || 'Unknown Team';
-                    const key = id || `name:${name}`;
-                    if (!teamByKey.has(key)) {
-                        teamByKey.set(key, {
-                            key,
-                            id,
-                            name,
-                            color: resolveTeamColor(key)
-                        });
-                    }
-                    return teamByKey.get(key);
-                };
-
-                const baselineByTeam = {};
-                const issueSnapshots = [];
-                const bumpDelta = (dateKey, teamKey, value) => {
-                    if (!dayDeltaByTeam[dateKey]) return;
-                    dayDeltaByTeam[dateKey][teamKey] = (dayDeltaByTeam[dateKey][teamKey] || 0) + value;
-                };
-
-                let additions = 0;
-                let closures = 0;
-                const closureBuckets = { done: 0, killed: 0, incomplete: 0 };
-
-                filteredIssues.forEach((issue) => {
-                    const issueKey = String(issue?.issueKey || '').trim();
-                    if (!issueKey) return;
-                    const issueKeyUpper = issueKey.toUpperCase();
-                    const createdDate = parseDate(issue?.createdDate);
-                    if (createdDate && createdDate > rangeEnd) return;
-
-                    const fallbackIssueTeam = burnoutTaskTeamByIssueKey.get(issueKey.toUpperCase());
-                    const startTeamSource = normalizeTeamCandidate(issue?.teamAtStart)
-                        || normalizeTeamCandidate(issue?.teamAtCreated)
-                        || normalizeTeamCandidate(fallbackIssueTeam)
-                        || { id: null, name: 'Unknown Team' };
-                    const createdTeamSource = normalizeTeamCandidate(issue?.teamAtCreated)
-                        || normalizeTeamCandidate(issue?.teamAtStart)
-                        || normalizeTeamCandidate(fallbackIssueTeam)
-                        || { id: null, name: 'Unknown Team' };
-                    const startTeam = resolveTeamDescriptor(startTeamSource);
-                    const createdTeam = resolveTeamDescriptor(createdTeamSource);
-                    const closure = closureByIssue.get(issueKey);
-                    const currentStatus = burnoutTaskStatusByIssueKey.get(issueKeyUpper) || '';
-                    const wasClosedBeforeSprintStart = isBurnoutClosedStatus(currentStatus) && !closure;
-                    if (wasClosedBeforeSprintStart) return;
-                    const issueMetricValue = metricIsStoryPoints
-                        ? Math.max(0, Number(burnoutIssueWeightByKey.get(issueKeyUpper) || 0))
-                        : 1;
-
-                    const createdDateKey = createdDate ? toDateKey(createdDate) : null;
-                    const openTeam = (createdDateKey && createdDate > rangeStart) ? createdTeam : startTeam;
-                    issueSnapshots.push({
-                        issueKey,
-                        openTeamKey: openTeam.key,
-                        openTeamName: openTeam.name,
-                        createdDateKey: createdDateKey || toDateKey(rangeStart),
-                        closureDateKey: closure?.date || null
-                    });
-                    if (createdDateKey && createdDate > rangeStart && dayDeltaByTeam[createdDateKey]) {
-                        bumpDelta(createdDateKey, createdTeam.key, issueMetricValue);
-                        additions += issueMetricValue;
-                        dayDetails[createdDateKey].added.push({
-                            issueKey,
-                            teamName: createdTeam.name,
-                            assigneeName: issue?.assignee?.name || 'Unassigned',
-                            metricValue: issueMetricValue
-                        });
-                    } else {
-                        baselineByTeam[startTeam.key] = (baselineByTeam[startTeam.key] || 0) + issueMetricValue;
-                    }
-
-                    if (closure && dayDeltaByTeam[closure.date]) {
-                        const closureTeam = resolveTeamDescriptor(closure.team);
-                        bumpDelta(closure.date, closureTeam.key, -issueMetricValue);
-                        closures += issueMetricValue;
-                        if (closure.bucket in closureBuckets) {
-                            closureBuckets[closure.bucket] += 1;
-                        }
-                        dayDetails[closure.date].closed.push({
-                            issueKey,
-                            teamName: closureTeam.name,
-                            assigneeName: closure.assigneeName || 'Unassigned',
-                            status: closure.bucket || 'closed',
-                            metricValue: issueMetricValue
-                        });
-                    }
-                });
-
-                const orderedTeams = Array.from(teamByKey.values())
-                    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-
-                let runningByTeam = {};
-                orderedTeams.forEach((team) => {
-                    runningByTeam[team.key] = baselineByTeam[team.key] || 0;
-                });
-
-                const timeline = [];
-                let maxTotal = 0;
-                dayRows.forEach((dateKey) => {
-                    const dayDelta = dayDeltaByTeam[dateKey] || {};
-                    Object.entries(dayDelta).forEach(([teamKey, delta]) => {
-                    const next = (runningByTeam[teamKey] || 0) + delta;
-                    runningByTeam[teamKey] = normalizeMetric(next);
-                });
-                let total = 0;
-                const countsByTeam = {};
-                orderedTeams.forEach((team) => {
-                    const count = normalizeMetric(runningByTeam[team.key] || 0);
-                    countsByTeam[team.key] = count;
-                    total += count;
-                });
-                maxTotal = Math.max(maxTotal, normalizeMetric(total));
-                timeline.push({
-                    date: dateKey,
-                    total: normalizeMetric(total),
-                    countsByTeam,
-                    details: dayDetails[dateKey]
-                });
-                });
-
-                if (!timeline.length) return null;
-                const fullTimeline = timeline;
-                const shouldTrimCompletedRange = Boolean(isCompletedSprintSelected && chartEndDateKey);
-                const chartTimeline = shouldTrimCompletedRange
-                    ? fullTimeline.filter((row) => row.date <= chartEndDateKey)
-                    : fullTimeline;
-                const timelineForChart = chartTimeline.length ? chartTimeline : fullTimeline;
-                const maxTotalForChart = timelineForChart.reduce((acc, row) => Math.max(acc, row.total || 0), 0);
-                const activeTeamKeys = new Set();
-                orderedTeams.forEach((team) => {
-                    const hasAnyValue = timelineForChart.some((row) => (row.countsByTeam?.[team.key] || 0) > 0);
-                    if (hasAnyValue) {
-                        activeTeamKeys.add(team.key);
-                    }
-                });
-                const visibleTeams = orderedTeams.filter((team) => activeTeamKeys.has(team.key));
-                const teamNameByKey = {};
-                visibleTeams.forEach((team) => {
-                    teamNameByKey[team.key] = team.name;
-                });
-                const width = Math.max(760, timelineForChart.length * 9);
-                const height = 260;
-                const padding = { left: 46, right: 14, top: 12, bottom: 30 };
-                const plotWidth = Math.max(1, width - padding.left - padding.right);
-                const plotHeight = Math.max(1, height - padding.top - padding.bottom);
-                const axisMax = Math.max(1, maxTotalForChart || maxTotal);
-                const toX = (index) => {
-                    if (timelineForChart.length <= 1) return padding.left + plotWidth / 2;
-                    return padding.left + (plotWidth * index) / (timelineForChart.length - 1);
-                };
-                const toY = (value) => {
-                    const safe = Math.max(0, Number(value) || 0);
-                    return height - padding.bottom - (safe / axisMax) * plotHeight;
-                };
-
-                const rows = timelineForChart.map((row, index) => {
-                    const x = toX(index);
-                    let running = 0;
-                    const stacks = {};
-                    visibleTeams.forEach((team) => {
-                        const value = row.countsByTeam[team.key] || 0;
-                        const bottom = running;
-                        const top = bottom + value;
-                        stacks[team.key] = {
-                            value,
-                            bottom,
-                            top,
-                            yTop: toY(top),
-                            yBottom: toY(bottom)
-                        };
-                        running = top;
-                    });
-                    return { ...row, x, stacks };
-                });
-
-                const buildAreaPath = (teamKey) => {
-                    if (!rows.length) return '';
-                    const top = rows.map((row, idx) => `${idx === 0 ? 'M' : 'L'}${row.x.toFixed(2)},${row.stacks[teamKey].yTop.toFixed(2)}`).join(' ');
-                    const bottom = [...rows].reverse().map((row) => `L${row.x.toFixed(2)},${row.stacks[teamKey].yBottom.toFixed(2)}`).join(' ');
-                    return `${top} ${bottom} Z`;
-                };
-                const buildLinePath = (teamKey) => {
-                    if (!rows.length) return '';
-                    return rows.map((row, idx) => `${idx === 0 ? 'M' : 'L'}${row.x.toFixed(2)},${row.stacks[teamKey].yTop.toFixed(2)}`).join(' ');
-                };
-                const buildLinePathSegment = (teamKey, startIndex, endIndex) => {
-                    if (!rows.length) return '';
-                    const start = Math.max(0, Number(startIndex) || 0);
-                    const end = Math.min(rows.length - 1, Number(endIndex) || 0);
-                    if (end <= start) return '';
-                    return rows
-                        .slice(start, end + 1)
-                        .map((row, idx) => `${idx === 0 ? 'M' : 'L'}${row.x.toFixed(2)},${row.stacks[teamKey].yTop.toFixed(2)}`)
-                        .join(' ');
-                };
-
-                const xStep = rows.length > 1 ? (plotWidth / (rows.length - 1)) : plotWidth;
-
-                const yTickValues = [];
-                [1, 0.75, 0.5, 0.25, 0].forEach((ratio) => {
-                    const value = normalizeMetric(axisMax * ratio);
-                    if (!yTickValues.includes(value)) {
-                        yTickValues.push(value);
-                    }
-                });
-                if (!yTickValues.includes(axisMax)) {
-                    yTickValues.unshift(axisMax);
-                }
-                if (!yTickValues.includes(0)) {
-                    yTickValues.push(0);
-                }
-                const yTicks = yTickValues.map((value) => ({
-                    value,
-                    y: toY(value)
-                }));
-
-                const startTotal = orderedTeams.reduce((acc, team) => acc + (baselineByTeam[team.key] || 0), 0);
-                const sprintEndKey = toDateKey(rangeEnd);
-                const sprintEndRow = fullTimeline.find((row) => row.date === sprintEndKey);
-                const remainingTotal = (sprintEndRow?.total ?? fullTimeline[fullTimeline.length - 1]?.total) || 0;
-                const now = new Date();
-                const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                const todayDateKey = toDateKey(todayDate);
-                const todayIndex = rows.findIndex((row) => row.date === todayDateKey);
-                const todayX = todayIndex >= 0 ? rows[todayIndex].x : null;
-                const weeklyMarkers = rows
-                    .map((row, index) => ({ row, index }))
-                    .filter(({ index }) => index > 0 && index % 7 === 0)
-                    .map(({ row }) => ({ key: row.date, x: row.x }));
-                const futureOverlay = (todayX !== null && todayIndex < rows.length - 1)
-                    ? { x: todayX, width: Math.max(0, (width - padding.right) - todayX) }
-                    : null;
-                const teamColors = {};
-                visibleTeams.forEach((team) => {
-                    teamColors[team.name] = team.color;
-                });
-
-                return {
-                    width,
-                    height,
-                    padding,
-                    rows,
-                    teams: visibleTeams,
-                    areas: visibleTeams.map((team) => {
-                        const lastPositiveIndex = rows.reduce((last, row, index) => {
-                            return (row.stacks?.[team.key]?.value || 0) > 0 ? index : last;
-                        }, -1);
-                        const safeEndIndex = Math.max(0, lastPositiveIndex);
-                        const fullLine = lastPositiveIndex >= 0
-                            ? buildLinePathSegment(team.key, 0, safeEndIndex)
-                            : '';
-                        const pastEndIndex = todayIndex >= 0
-                            ? Math.min(todayIndex, safeEndIndex)
-                            : safeEndIndex;
-                        const futureStartIndex = todayIndex >= 0
-                            ? Math.max(todayIndex, 0)
-                            : safeEndIndex;
-                        const linePast = lastPositiveIndex >= 0
-                            ? buildLinePathSegment(team.key, 0, pastEndIndex)
-                            : '';
-                        const lineFuture = (lastPositiveIndex >= 0 && todayIndex >= 0 && futureStartIndex <= safeEndIndex)
-                            ? buildLinePathSegment(team.key, futureStartIndex, safeEndIndex)
-                            : '';
-                        return {
-                            team,
-                            areaPath: buildAreaPath(team.key),
-                            linePath: fullLine,
-                            linePastPath: linePast || fullLine,
-                            lineFuturePath: lineFuture,
-                            lineEndIndex: lastPositiveIndex
-                        };
-                    }),
-                    xStep,
-                    yTicks,
-                    weeklyMarkers,
-                    todayDateKey,
-                    todayX,
-                    futureOverlay,
-                    teamColors,
-                    teamNameByKey,
-                    issueSnapshots,
-                    metric: {
-                        key: burndownMetric,
-                        isStoryPoints: metricIsStoryPoints,
-                        precision: metricPrecision
-                    },
-                    summary: {
-                        start: normalizeMetric(startTotal),
-                        added: normalizeMetric(additions),
-                        closed: normalizeMetric(closures),
-                        remaining: normalizeMetric(remainingTotal),
-                        closureBuckets
-                    }
-                };
-            }, [burnoutData, burnoutAssigneeFilter, burnoutTaskTeamByIssueKey, burnoutTaskStatusByIssueKey, burnoutIssueWeightByKey, isCompletedSprintSelected, burndownMetric]);
+            const burnoutChartModel = React.useMemo(() => buildBurnoutChartModel({
+                burnoutData,
+                assigneeFilter: burnoutAssigneeFilter,
+                taskTeamByIssueKey: burnoutTaskTeamByIssueKey,
+                taskStatusByIssueKey: burnoutTaskStatusByIssueKey,
+                issueWeightByKey: burnoutIssueWeightByKey,
+                isCompletedSprintSelected,
+                metric: burndownMetric,
+                resolveTeamColor,
+                isClosedStatus: isBurnoutClosedStatus
+            }), [
+                burnoutData,
+                burnoutAssigneeFilter,
+                burnoutTaskTeamByIssueKey,
+                burnoutTaskStatusByIssueKey,
+                burnoutIssueWeightByKey,
+                isCompletedSprintSelected,
+                burndownMetric,
+                isBurnoutClosedStatus
+            ]);
 
             const burnoutTotals = burnoutChartModel?.summary || {
                 start: 0,
@@ -13666,788 +13090,62 @@ import {
                                 />
 
                                 {statsView !== 'cohort' && statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && (
-                                <div className="stats-summary">
-                                    <div
-                                        className={`stats-card selectable ${statsGraphMode === 'absolute' ? 'active' : ''}`}
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={() => setStatsGraphMode('absolute')}
-                                        onKeyDown={(event) => {
-                                            if (event.key === 'Enter' || event.key === ' ') {
-                                                event.preventDefault();
-                                                setStatsGraphMode('absolute');
-                                            }
-                                        }}
-                                        aria-pressed={statsGraphMode === 'absolute'}
-                                    >
-                                        <h4>Delivery Rate</h4>
-                                        <div className="stat-value">
-                                            {formatPercent(computeRate(statsTotals.straight))}
-                                        </div>
-                                        <div className="stats-note">Absolute rate</div>
-                                    </div>
-                                    <div
-                                        className={`stats-card selectable ${statsGraphMode === 'weighted' ? 'active' : ''}`}
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={() => setStatsGraphMode('weighted')}
-                                        onKeyDown={(event) => {
-                                            if (event.key === 'Enter' || event.key === ' ') {
-                                                event.preventDefault();
-                                                setStatsGraphMode('weighted');
-                                            }
-                                        }}
-                                        aria-pressed={statsGraphMode === 'weighted'}
-                                    >
-                                        <h4>Weighted Rate</h4>
-                                        <div className="stat-value">
-                                            {formatPercent(computeRate(statsTotals.weighted))}
-                                        </div>
-                                        <div className="stats-note">Priority-weighted</div>
-                                    </div>
-                                    <div className="stats-card">
-                                        <h4>Totals</h4>
-                                        <div className="stat-value">{statsTotals.straight.done + statsTotals.straight.incomplete + statsTotals.straight.killed}</div>
-                                        <div className="stats-note">
-                                            {statsTotals.straight.done} done · {statsTotals.straight.incomplete} incomplete · {statsTotals.straight.killed} killed
-                                        </div>
-                                    </div>
-                                    <div className="stats-card">
-                                        <h4>Source</h4>
-                                        <div className="stat-value">Sprint tasks</div>
-                                        <div className="stats-note">Derived from the loaded sprint list</div>
-                                    </div>
-                                </div>
+                                    <StatsDeliverySummary
+                                        statsGraphMode={statsGraphMode}
+                                        setStatsGraphMode={setStatsGraphMode}
+                                        statsTotals={statsTotals}
+                                        computeRate={computeRate}
+                                        formatPercent={formatPercent}
+                                    />
                                 )}
 
-                                <div className={`stats-view ${statsView === 'teams' ? 'open' : ''}`}>
-                                    <div className="stats-bars" style={{ '--stats-bar-columns': statsBarColumns }}>
-                                        {statsTeamRows.map(team => {
-                                            const graphRate = statsGraphMode === 'weighted' ? team.weightedRate : team.straightRate;
-                                            return (
-                                                <div key={team.id} className="stats-bar">
-                                                    <div className="stats-bar-value">{formatPercent(graphRate)}</div>
-                                                    <div className="stats-bar-track">
-                                                        <div
-                                                            className={`stats-bar-fill ${getRateClass(graphRate)}`}
-                                                            style={{ height: `${Math.min(100, graphRate * 100)}%` }}
-                                                        />
-                                                    </div>
-                                                    <div className="stats-bar-label">{team.name}</div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                    <table className="stats-table">
-                                        <thead>
-                                            <tr className="stats-group-row">
-                                                <th className="dimension"></th>
-                                                <th className="stats-col total" colSpan="4">Total</th>
-                                                <th className="stats-col product" colSpan="4">Product</th>
-                                                <th className="stats-col tech" colSpan="4">Tech</th>
-                                            </tr>
-                                            <tr>
-                                                <th className="dimension">Team</th>
-                                                <th className="metric stats-col total">Done</th>
-                                                <th className="metric stats-col total">Incomplete</th>
-                                                <th className="metric stats-col total">Absolute</th>
-                                                <th className="metric stats-col total">Weighted</th>
-                                                <th className="metric stats-col product">Done</th>
-                                                <th className="metric stats-col product">Incomplete</th>
-                                                <th className="metric stats-col product">Absolute</th>
-                                                <th className="metric stats-col product">Weighted</th>
-                                                <th className="metric stats-col tech">Done</th>
-                                                <th className="metric stats-col tech">Incomplete</th>
-                                                <th className="metric stats-col tech">Absolute</th>
-                                                <th className="metric stats-col tech">Weighted</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {statsTeamRows.map(team => {
-                                                const totalDoneLink = buildStatLink(team.straight.done, {
-                                                    teamId: team.id,
-                                                    projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'],
-                                                    statuses: ['Done'],
-                                                    issueType: 'Story'
-                                                });
-                                                const totalIncompleteLink = buildStatLink(team.straight.incomplete, {
-                                                    teamId: team.id,
-                                                    projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'],
-                                                    excludeStatuses: ['Done', 'Killed'],
-                                                    issueType: 'Story'
-                                                });
-                                                const productDoneLink = buildStatLink(team.product.done, {
-                                                    teamId: team.id,
-                                                    projectName: 'PRODUCT ROADMAPS',
-                                                    statuses: ['Done'],
-                                                    issueType: 'Story'
-                                                });
-                                                const productIncompleteLink = buildStatLink(team.product.incomplete, {
-                                                    teamId: team.id,
-                                                    projectName: 'PRODUCT ROADMAPS',
-                                                    excludeStatuses: ['Done', 'Killed'],
-                                                    issueType: 'Story'
-                                                });
-                                                const techDoneLink = buildStatLink(team.tech.done, {
-                                                    teamId: team.id,
-                                                    projectName: 'TECHNICAL ROADMAP',
-                                                    statuses: ['Done'],
-                                                    issueType: 'Story'
-                                                });
-                                                const techIncompleteLink = buildStatLink(team.tech.incomplete, {
-                                                    teamId: team.id,
-                                                    projectName: 'TECHNICAL ROADMAP',
-                                                    excludeStatuses: ['Done', 'Killed'],
-                                                    issueType: 'Story'
-                                                });
+                                <StatsTeamsView
+                                    open={statsView === 'teams'}
+                                    statsTeamRows={statsTeamRows}
+                                    statsBarColumns={statsBarColumns}
+                                    statsGraphMode={statsGraphMode}
+                                    buildStatLink={buildStatLink}
+                                    computeRate={computeRate}
+                                    formatPercent={formatPercent}
+                                    getRateClass={getRateClass}
+                                />
 
-                                                return (
-                                                <tr key={team.id}>
-                                                    <td className="dimension">{team.name}</td>
-                                                    <td className="metric stats-col total">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.straight.done}</span>
-                                                            {totalDoneLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={totalDoneLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View done stories for this team in Jira"
-                                                                    aria-label="Open done stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col total">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.straight.incomplete}</span>
-                                                            {totalIncompleteLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={totalIncompleteLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View incomplete stories for this team in Jira"
-                                                                    aria-label="Open incomplete stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col total">{formatPercent(team.straightRate)}</td>
-                                                    <td className="metric stats-col total">{formatPercent(team.weightedRate)}</td>
-                                                    <td className="metric stats-col product">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.product.done}</span>
-                                                            {productDoneLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={productDoneLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View done product stories for this team in Jira"
-                                                                    aria-label="Open done product stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col product">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.product.incomplete}</span>
-                                                            {productIncompleteLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={productIncompleteLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View incomplete product stories for this team in Jira"
-                                                                    aria-label="Open incomplete product stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col product">{formatPercent(computeRate(team.product))}</td>
-                                                    <td className="metric stats-col product">{formatPercent(computeRate(team.weightedProduct))}</td>
-                                                    <td className="metric stats-col tech">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.tech.done}</span>
-                                                            {techDoneLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={techDoneLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View done tech stories for this team in Jira"
-                                                                    aria-label="Open done tech stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col tech">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.tech.incomplete}</span>
-                                                            {techIncompleteLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={techIncompleteLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View incomplete tech stories for this team in Jira"
-                                                                    aria-label="Open incomplete tech stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col tech">{formatPercent(computeRate(team.tech))}</td>
-                                                    <td className="metric stats-col tech">{formatPercent(computeRate(team.weightedTech))}</td>
-                                                </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                <StatsPriorityView
+                                    open={statsView === 'priority'}
+                                    priorityAxis={priorityAxis}
+                                    priorityHoverIndex={priorityHoverIndex}
+                                    setPriorityHoverIndex={setPriorityHoverIndex}
+                                    priorityRadar={priorityRadar}
+                                    priorityRows={priorityRows}
+                                    buildRadarPoints={buildRadarPoints}
+                                    buildPriorityStatLink={buildPriorityStatLink}
+                                    formatPercent={formatPercent}
+                                    resolveTeamColor={resolveTeamColor}
+                                />
 
-                                <div className={`stats-view ${statsView === 'priority' ? 'open' : ''}`}>
-                                    {priorityRadar.series.length > 0 && (
-                                        <>
-                                            <svg className="priority-radar" viewBox="0 0 360 360" role="img" aria-label="Priority distribution radar chart">
-                                                <g transform="translate(180 180)">
-                                                    {[0.25, 0.5, 0.75, 1].map((ratio, index) => (
-                                                        <polygon
-                                                            key={`grid-${index}`}
-                                                            points={buildRadarPoints({
-                                                                values: Object.fromEntries(priorityAxis.map(axis => [axis, ratio * priorityRadar.maxValue])),
-                                                                radius: 120,
-                                                                center: 0,
-                                                                maxValue: priorityRadar.maxValue,
-                                                                axes: priorityAxis
-                                                            })}
-                                                            fill="none"
-                                                            stroke="#d9d9d9"
-                                                            strokeWidth="1"
-                                                        />
-                                                    ))}
-                                                    {priorityAxis.map((axis, index) => {
-                                                        const angle = (Math.PI * 2 * index) / priorityAxis.length - Math.PI / 2;
-                                                        const x = Math.cos(angle) * 120;
-                                                        const y = Math.sin(angle) * 120;
-                                                        return (
-                                                            <line
-                                                                key={`axis-${axis}`}
-                                                                x1="0"
-                                                                y1="0"
-                                                                x2={x}
-                                                                y2={y}
-                                                                stroke="#d9d9d9"
-                                                                strokeWidth="1"
-                                                            />
-                                                        );
-                                                    })}
-                                                    {priorityRadar.series.map((series, idx) => {
-                                                        const color = resolveTeamColor(series.id);
-                                                        const isActive = priorityHoverIndex === null || priorityHoverIndex === idx;
-                                                        return (
-                                                            <polygon
-                                                                key={series.id}
-                                                                points={buildRadarPoints({
-                                                                    values: series.pointsByPriority,
-                                                                    radius: 120,
-                                                                    center: 0,
-                                                                    maxValue: priorityRadar.maxValue,
-                                                                    axes: priorityAxis
-                                                                })}
-                                                                fill={color}
-                                                                fillOpacity={isActive ? '0.18' : '0.04'}
-                                                                stroke={color}
-                                                                strokeWidth={isActive ? '2.5' : '1.2'}
-                                                                style={{ transition: 'all 0.2s ease', cursor: 'pointer' }}
-                                                                onMouseEnter={() => setPriorityHoverIndex(idx)}
-                                                                onMouseLeave={() => setPriorityHoverIndex(null)}
-                                                            />
-                                                        );
-                                                    })}
-                                                    {[0.25, 0.5, 0.75, 1].map((ratio, index) => (
-                                                        <text
-                                                            key={`value-${index}`}
-                                                            x="0"
-                                                            y={-(120 * ratio) - 6}
-                                                            textAnchor="middle"
-                                                            dominantBaseline="middle"
-                                                            fontSize="8"
-                                                            fill="#8c8c8c"
-                                                            fontFamily="IBM Plex Mono, monospace"
-                                                        >
-                                                            {(priorityRadar.maxValue * ratio).toFixed(1)}
-                                                        </text>
-                                                    ))}
-                                                    {priorityAxis.map((axis, index) => {
-                                                        const angle = (Math.PI * 2 * index) / priorityAxis.length - Math.PI / 2;
-                                                        const x = Math.cos(angle) * 150;
-                                                        const y = Math.sin(angle) * 150;
-                                                        return (
-                                                            <text
-                                                                key={`label-${axis}`}
-                                                                x={x}
-                                                                y={y}
-                                                                textAnchor="middle"
-                                                                dominantBaseline="middle"
-                                                                fontSize="8"
-                                                                fill="#555"
-                                                                fontFamily="IBM Plex Mono, monospace"
-                                                            >
-                                                                {axis}
-                                                            </text>
-                                                        );
-                                                    })}
-                                                </g>
-                                            </svg>
-                                            <div className="priority-legend">
-                                                {priorityRadar.series.map((series, idx) => {
-                                                    const color = resolveTeamColor(series.id);
-                                                    const isActive = priorityHoverIndex === null || priorityHoverIndex === idx;
-                                                    return (
-                                                        <span
-                                                            key={series.id}
-                                                            style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)' }}
-                                                            onMouseEnter={() => setPriorityHoverIndex(idx)}
-                                                            onMouseLeave={() => setPriorityHoverIndex(null)}
-                                                        >
-                                                            <i style={{ background: color, opacity: isActive ? 0.95 : 0.45 }} />
-                                                            {series.name}
-                                                        </span>
-                                                    );
-                                                })}
-                                            </div>
-                                            <div className="priority-axis-note">Axis values show story points.</div>
-                                        </>
-                                    )}
-                                    <table className="stats-table">
-                                        <thead>
-                                            <tr>
-                                                <th className="dimension">Priority</th>
-                                                <th className="metric">Story Points</th>
-                                                <th className="metric">Done</th>
-                                                <th className="metric">Incomplete</th>
-                                                <th className="metric">Rate</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {priorityRows.map(row => {
-                                                const pointsLink = buildPriorityStatLink(row.points, {
-                                                    priorityName: row.name
-                                                });
-                                                const doneLink = buildPriorityStatLink(row.done, {
-                                                    priorityName: row.name,
-                                                    statuses: ['Done']
-                                                });
-                                                const incompleteLink = buildPriorityStatLink(row.incomplete, {
-                                                    priorityName: row.name,
-                                                    excludeStatuses: ['Done', 'Killed']
-                                                });
-
-                                                return (
-                                                    <tr key={row.name}>
-                                                        <td className="dimension">{row.name}</td>
-                                                        <td className="metric">
-                                                            <div className="postponed-cell">
-                                                                <span>{row.points.toFixed(1)}</span>
-                                                                {pointsLink && (
-                                                                    <a
-                                                                        className="stats-link"
-                                                                        href={pointsLink}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        title="View stories for this priority in Jira"
-                                                                        aria-label="Open stories in Jira"
-                                                                    >
-                                                                        ↗
-                                                                    </a>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                        <td className="metric">
-                                                            <div className="postponed-cell">
-                                                                <span>{row.done}</span>
-                                                                {doneLink && (
-                                                                    <a
-                                                                        className="stats-link"
-                                                                        href={doneLink}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        title="View done stories for this priority in Jira"
-                                                                        aria-label="Open done stories in Jira"
-                                                                    >
-                                                                        ↗
-                                                                    </a>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                        <td className="metric">
-                                                            <div className="postponed-cell">
-                                                                <span>{row.incomplete}</span>
-                                                                {incompleteLink && (
-                                                                    <a
-                                                                        className="stats-link"
-                                                                        href={incompleteLink}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        title="View incomplete stories for this priority in Jira"
-                                                                        aria-label="Open incomplete stories in Jira"
-                                                                    >
-                                                                        ↗
-                                                                    </a>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                        <td className="metric">{formatPercent(row.rate)}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                                <div className={`stats-view ${statsView === 'burnout' ? 'open' : ''}`}>
-                                    <div className="stats-controls">
-                                        <div className="stats-control-group">
-                                            <label>Assignee</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={burnoutAssigneeFilter}
-                                                onChange={(event) => setBurnoutAssigneeFilter(event.target.value)}
-                                            >
-                                                {burnoutAssigneeOptions.map((item) => (
-                                                    <option key={item.value} value={item.value}>
-                                                        {item.events > 0 && item.value !== 'all'
-                                                            ? `${item.label} (${item.events})`
-                                                            : item.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="stats-control-group">
-                                            <label>Metric</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={burndownMetric}
-                                                onChange={(event) => setBurndownMetric(event.target.value)}
-                                            >
-                                                <option value="storyPoints">Story Points</option>
-                                                <option value="issueCount">Issue Count</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div className="stats-summary burnout-summary">
-                                        <div className="stats-card">
-                                            <h4>Start</h4>
-                                            <div className="stat-value">{formatBurndownValue(burnoutTotals.start)}</div>
-                                            <div className="stats-note">
-                                                {burndownMetricIsStoryPoints ? 'Story points at sprint start' : 'Issues at sprint start'}
-                                            </div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Added</h4>
-                                            <div className="stat-value">{formatBurndownValue(burnoutTotals.added)}</div>
-                                            <div className="stats-note">
-                                                {burndownMetricIsStoryPoints ? 'Story points added after sprint start' : 'Issues added after sprint start'}
-                                            </div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Closed</h4>
-                                            <div className="stat-value">{formatBurndownValue(burnoutTotals.closed)}</div>
-                                            <div className="stats-note">
-                                                {burnoutTotals.closureBuckets.done} done · {burnoutTotals.closureBuckets.killed} killed · {burnoutTotals.closureBuckets.incomplete} incomplete
-                                            </div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Remaining</h4>
-                                            <div className="stat-value">{formatBurndownValue(burnoutTotals.remaining)}</div>
-                                            <div className="stats-note">
-                                                {burndownMetricIsStoryPoints ? 'Open story points at sprint end' : 'Open issues at sprint end'}
-                                            </div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Timezone</h4>
-                                            <div className="stat-value">UTC+2</div>
-                                        </div>
-                                    </div>
-                                    {burnoutTaskFilter && (
-                                        <div className="stats-note">
-                                            Task list filter: {burnoutTaskFilter.teamName} open on {burnoutTaskFilter.dateKey} ({burnoutTaskFilter.issueKeys.length})
-                                            <button
-                                                type="button"
-                                                className="stats-toggle"
-                                                style={{ marginLeft: '0.6rem' }}
-                                                onClick={() => setBurnoutTaskFilter(null)}
-                                            >
-                                                Clear
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {burnoutLoading && (
-                                        <div className="stats-note">Loading burndown history…</div>
-                                    )}
-                                    {!burnoutLoading && burnoutError && (
-                                        <div className="stats-note" style={{ color: '#cf1322' }}>{burnoutError}</div>
-                                    )}
-                                    {!burnoutLoading && !burnoutError && !burnoutChartModel && (
-                                        <div className="stats-note">No burndown timeline data found for the selected sprint and filters.</div>
-                                    )}
-                                    {!burnoutLoading && !burnoutError && burnoutChartModel && (
-                                        <>
-                                            <div className="burnout-chart-wrap">
-                                            <div
-                                                className="burnout-chart"
-                                                ref={burnoutChartRef}
-                                                onMouseLeave={() => {
-                                                    setBurnoutHoverPoint(null);
-                                                    setBurnoutHoverTeamKey(null);
-                                                }}
-                                                role="img"
-                                                aria-label="Daily burndown stacked area chart by team"
-                                            >
-                                                <svg
-                                                    className="burnout-area-chart"
-                                                    viewBox={`0 0 ${burnoutChartModel.width} ${burnoutChartModel.height}`}
-                                                    preserveAspectRatio="none"
-                                                >
-                                                    {burnoutChartModel.yTicks.map((tick) => (
-                                                        <line
-                                                            key={`grid-${tick.value}`}
-                                                            className="burnout-grid-line"
-                                                            x1={burnoutChartModel.padding.left}
-                                                            x2={burnoutChartModel.width - burnoutChartModel.padding.right}
-                                                            y1={tick.y}
-                                                            y2={tick.y}
-                                                        />
-                                                    ))}
-                                                    {burnoutChartModel.weeklyMarkers.map((marker) => (
-                                                        <line
-                                                            key={`week-${marker.key}`}
-                                                            className="burnout-weekly-line"
-                                                            x1={marker.x}
-                                                            x2={marker.x}
-                                                            y1={burnoutChartModel.padding.top}
-                                                            y2={burnoutChartModel.height - burnoutChartModel.padding.bottom}
-                                                        />
-                                                    ))}
-                                                    {burnoutChartModel.futureOverlay && (
-                                                        <rect
-                                                            className="burnout-future-overlay"
-                                                            x={burnoutChartModel.futureOverlay.x}
-                                                            y={burnoutChartModel.padding.top}
-                                                            width={burnoutChartModel.futureOverlay.width}
-                                                            height={burnoutChartModel.height - burnoutChartModel.padding.top - burnoutChartModel.padding.bottom}
-                                                        />
-                                                    )}
-                                                    {burnoutChartModel.areas.map((area) => (
-                                                        <g key={`team-area-${area.team.key}`}>
-                                                            <path
-                                                                className={`burnout-area-team ${
-                                                                    burnoutHoverTeamKey && burnoutHoverTeamKey !== area.team.key ? 'dimmed' : 'active'
-                                                                }`}
-                                                                d={area.areaPath}
-                                                                onMouseEnter={() => setBurnoutHoverTeamKey(area.team.key)}
-                                                                onMouseMove={() => setBurnoutHoverTeamKey(area.team.key)}
-                                                                style={{
-                                                                    fill: area.team.color,
-                                                                    stroke: area.team.color
-                                                                }}
-                                                            />
-                                                            <path
-                                                                className={`burnout-team-line ${
-                                                                    burnoutHoverTeamKey && burnoutHoverTeamKey !== area.team.key ? 'dimmed' : 'active'
-                                                                }`}
-                                                                d={area.linePastPath || area.linePath}
-                                                                onMouseEnter={() => setBurnoutHoverTeamKey(area.team.key)}
-                                                                onMouseMove={() => setBurnoutHoverTeamKey(area.team.key)}
-                                                                style={{
-                                                                    stroke: area.team.color
-                                                                }}
-                                                            />
-                                                            {area.lineFuturePath && (
-                                                                <path
-                                                                    className={`burnout-team-line burnout-team-line-future ${
-                                                                        burnoutHoverTeamKey && burnoutHoverTeamKey !== area.team.key ? 'dimmed' : 'active'
-                                                                    }`}
-                                                                    d={area.lineFuturePath}
-                                                                    onMouseEnter={() => setBurnoutHoverTeamKey(area.team.key)}
-                                                                    onMouseMove={() => setBurnoutHoverTeamKey(area.team.key)}
-                                                                    style={{
-                                                                        stroke: area.team.color
-                                                                    }}
-                                                                />
-                                                            )}
-                                                        </g>
-                                                    ))}
-                                                    {burnoutHoverPoint && (
-                                                        <rect
-                                                            className="burnout-hover-band active"
-                                                            x={Math.max(
-                                                                burnoutChartModel.padding.left,
-                                                                (burnoutHoverPoint.row?.x || burnoutChartModel.padding.left) - (burnoutChartModel.xStep / 2)
-                                                            )}
-                                                            y={burnoutChartModel.padding.top}
-                                                            width={Math.max(8, burnoutChartModel.xStep)}
-                                                            height={burnoutChartModel.height - burnoutChartModel.padding.top - burnoutChartModel.padding.bottom}
-                                                        />
-                                                    )}
-                                                    <rect
-                                                        className="burnout-hover-capture"
-                                                        x={burnoutChartModel.padding.left}
-                                                        y={burnoutChartModel.padding.top}
-                                                        width={burnoutChartModel.width - burnoutChartModel.padding.left - burnoutChartModel.padding.right}
-                                                        height={burnoutChartModel.height - burnoutChartModel.padding.top - burnoutChartModel.padding.bottom}
-                                                        onMouseMove={(event) => {
-                                                            const point = resolveBurnoutPointer(event);
-                                                            if (!point) return;
-                                                            setBurnoutHoverTeamKey(point.hoveredTeamKey);
-                                                            setBurnoutHoverPoint({
-                                                                key: point.row.date,
-                                                                date: point.row.date,
-                                                                row: point.row,
-                                                                x: point.row.x,
-                                                                bubbleX: point.bubbleX
-                                                            });
-                                                        }}
-                                                        onClick={(event) => {
-                                                            const point = resolveBurnoutPointer(event);
-                                                            if (!point) return;
-                                                            const nextFilter = buildBurnoutTaskFilter(point.row.date, point.hoveredTeamKey);
-                                                            if (!nextFilter) return;
-                                                            setBurnoutTaskFilter((prev) => {
-                                                                if (!prev) return nextFilter;
-                                                                if (prev.dateKey === nextFilter.dateKey && prev.teamKey === nextFilter.teamKey) {
-                                                                    return null;
-                                                                }
-                                                                return nextFilter;
-                                                            });
-                                                        }}
-                                                    />
-                                                    {burnoutChartModel.todayX !== null && (
-                                                        <>
-                                                            <line
-                                                                className="burnout-today-line"
-                                                                x1={burnoutChartModel.todayX}
-                                                                x2={burnoutChartModel.todayX}
-                                                                y1={burnoutChartModel.padding.top}
-                                                                y2={burnoutChartModel.height - burnoutChartModel.padding.bottom}
-                                                            />
-                                                            <text
-                                                                className="burnout-today-label"
-                                                                x={burnoutChartModel.todayX + 4}
-                                                                y={burnoutChartModel.padding.top + 11}
-                                                            >
-                                                                Today
-                                                            </text>
-                                                        </>
-                                                    )}
-                                                    {burnoutHoverPoint && (
-                                                        <line
-                                                            className="burnout-hover-line"
-                                                            x1={burnoutHoverPoint.x}
-                                                            x2={burnoutHoverPoint.x}
-                                                            y1={burnoutChartModel.padding.top}
-                                                            y2={burnoutChartModel.height - burnoutChartModel.padding.bottom}
-                                                        />
-                                                    )}
-                                                    {burnoutChartModel.yTicks.map((tick) => (
-                                                        <text
-                                                            key={`label-${tick.value}`}
-                                                            className="burnout-y-axis-label"
-                                                            x={burnoutChartModel.padding.left - 8}
-                                                            y={tick.y + 3}
-                                                            textAnchor="end"
-                                                        >
-                                                            {formatBurndownValue(tick.value)}
-                                                        </text>
-                                                    ))}
-                                                </svg>
-                                            </div>
-                                            {burnoutHoverPoint && (
-                                                <div
-                                                    className="burnout-hover-bubble"
-                                                    style={{
-                                                        left: `${burnoutHoverPoint.bubbleX || 180}px`
-                                                    }}
-                                                >
-                                                    <div className="burnout-hover-title">{burnoutHoverPoint.date}</div>
-                                                    <div className="burnout-hover-row">Total: <strong>{formatBurndownValue(burnoutHoverPoint.row?.total || 0)}</strong></div>
-                                                    <div className="burnout-hover-row">
-                                                        Added: <strong>{formatBurndownValue(
-                                                            burndownMetricIsStoryPoints
-                                                                ? (burnoutHoverPoint.row?.details?.added || []).reduce((sum, event) => sum + Number(event?.metricValue || 0), 0)
-                                                                : (burnoutHoverPoint.row?.details?.added || []).length
-                                                        )}</strong> ·
-                                                        Closed: <strong>{formatBurndownValue(
-                                                            burndownMetricIsStoryPoints
-                                                                ? (burnoutHoverPoint.row?.details?.closed || []).reduce((sum, event) => sum + Number(event?.metricValue || 0), 0)
-                                                                : (burnoutHoverPoint.row?.details?.closed || []).length
-                                                        )}</strong>
-                                                    </div>
-                                                    {(burnoutHoverPoint.row?.details?.closed || []).slice(0, 5).map((event, index) => (
-                                                        <div
-                                                            key={`${event.issueKey}-${index}`}
-                                                            className="burnout-hover-row muted"
-                                                            style={{ color: burnoutChartModel.teamColors?.[event.teamName] || '#6b7280', opacity: 1 }}
-                                                        >
-                                                            <strong style={{ color: burnoutChartModel.teamColors?.[event.teamName] || '#374151' }}>
-                                                                {event.issueKey || 'Story'}
-                                                            </strong> · {String(event.status || 'closed').toUpperCase()} · {event.teamName} · {event.assigneeName}
-                                                        </div>
-                                                    ))}
-                                                    {(burnoutHoverPoint.row?.details?.closed || []).length > 5 && (
-                                                        <div className="burnout-hover-row muted">
-                                                            +{(burnoutHoverPoint.row?.details?.closed || []).length - 5} more closed stories
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                            </div>
-                                            <div className="burnout-axis">
-                                                {burnoutChartModel.rows.map((row, index) => {
-                                                    const date = new Date(`${row.date}T00:00:00`);
-                                                    if (Number.isNaN(date.getTime())) return null;
-                                                    const shouldShow = index === 0 || index === burnoutChartModel.rows.length - 1 || index % 7 === 0 || row.date === burnoutChartModel.todayDateKey;
-                                                    if (!shouldShow) return null;
-                                                    return (
-                                                        <span key={row.date} className={row.date === burnoutChartModel.todayDateKey ? 'today' : ''}>
-                                                            {date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
-                                                        </span>
-                                                    );
-                                                })}
-                                            </div>
-                                            <div className="burnout-legend">
-                                                {burnoutChartModel.teams.map((team) => (
-                                                    <span
-                                                        key={team.key}
-                                                        className={burnoutHoverTeamKey && burnoutHoverTeamKey !== team.key ? 'dimmed' : 'active'}
-                                                        onMouseEnter={() => setBurnoutHoverTeamKey(team.key)}
-                                                        onMouseLeave={() => setBurnoutHoverTeamKey(null)}
-                                                    >
-                                                        <i className="burnout-color" style={{ background: team.color }} />
-                                                        {team.name}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-
+                                <BurnoutChart
+                                    open={statsView === 'burnout'}
+                                    burnoutAssigneeFilter={burnoutAssigneeFilter}
+                                    setBurnoutAssigneeFilter={setBurnoutAssigneeFilter}
+                                    burnoutAssigneeOptions={burnoutAssigneeOptions}
+                                    burndownMetric={burndownMetric}
+                                    setBurndownMetric={setBurndownMetric}
+                                    burndownMetricIsStoryPoints={burndownMetricIsStoryPoints}
+                                    burnoutTotals={burnoutTotals}
+                                    burnoutLoading={burnoutLoading}
+                                    burnoutError={burnoutError}
+                                    burnoutChartModel={burnoutChartModel}
+                                    burnoutChartRef={burnoutChartRef}
+                                    burnoutHoverPoint={burnoutHoverPoint}
+                                    setBurnoutHoverPoint={setBurnoutHoverPoint}
+                                    burnoutHoverTeamKey={burnoutHoverTeamKey}
+                                    setBurnoutHoverTeamKey={setBurnoutHoverTeamKey}
+                                    burnoutTaskFilter={burnoutTaskFilter}
+                                    setBurnoutTaskFilter={setBurnoutTaskFilter}
+                                    formatBurndownValue={formatBurndownValue}
+                                    resolveBurnoutPointer={resolveBurnoutPointer}
+                                    buildBurnoutTaskFilter={buildBurnoutTaskFilter}
+                                />
                                 <div className={`stats-view ${statsView === 'excludedCapacity' ? 'open' : ''}`}>
                                     <div className="stats-controls excluded-capacity-controls excluded-capacity-filter-controls">
                                         <div className="stats-control-group excluded-capacity-epic-filter" ref={excludedCapacityEpicDropdownRef}>

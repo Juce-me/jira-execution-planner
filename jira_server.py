@@ -6919,12 +6919,6 @@ def export_excel():
         }), 500
 
 
-@app.route('/')
-def index():
-    """Serve the dashboard HTML."""
-    return send_file('jira-dashboard.html')
-
-
 if __name__ == '__main__':
     args = parse_args()
 

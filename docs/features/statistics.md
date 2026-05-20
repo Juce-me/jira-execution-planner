@@ -51,11 +51,11 @@ Main parts:
 Shows story-point-based Excluded Capacity analytics for the selected ENG scope.
 
 Main parts:
-- **Effort Split**: top selected sprint horizontal bars by team, split into Excluded Capacity, Tech, and Product story points
+- **Effort Split**: selected sprint-range horizontal bars by team, split into Excluded Capacity, Tech, and Product story points
 - Excluded Capacity trend: selected sprint-range line chart by team or group
 - Excluded Epics filter: controls which configured excluded epics count as Excluded Capacity
 
-The Effort Split chart shows the top ENG sprint selector value inside the chart section. The Excluded Capacity trend uses the Start Sprint and End Sprint controls inside the Statistics panel.
+The Effort Split chart and Excluded Capacity trend both use the Start Sprint and End Sprint controls inside the Statistics panel.
 
 ## Lead Time Definition
 
@@ -82,5 +82,5 @@ Important behavior:
 - Teams and Priority derive from the already loaded sprint task data
 - Burnout uses a separate on-demand API call
 - Lead Times uses a separate on-demand cohort API call
-- Excluded Capacity uses cached progressive stats-source requests; Effort Split follows the top selected sprint, while the trend follows the Start Sprint / End Sprint range
+- Excluded Capacity uses cached progressive stats-source requests for the Start Sprint / End Sprint range
 - changing UI-only controls such as row selection or view grouping does not refetch the lead-time dataset

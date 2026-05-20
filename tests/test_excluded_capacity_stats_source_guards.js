@@ -58,26 +58,80 @@ test('effort split chart uses explicit Excluded Capacity naming', () => {
     );
 });
 
-test('effort split chart uses selected sprint source data and visible scope text', () => {
+test('effort split chart uses selected sprint range source data and visible scope text', () => {
     assert.ok(
         dashboardSource.includes('buildEffortTypeSplitRows'),
         'Expected dashboard to derive effort split rows with the pure helper'
     );
     assert.ok(
-        dashboardSource.includes('excludedCapacitySelectedSprintForSplit'),
-        'Expected Effort Split to use the top selected sprint'
+        dashboardSource.includes('buildEffortTypeSplitRows(excludedCapacityIssues, excludedCapacitySprintRange'),
+        'Expected Effort Split to use the Start Sprint / End Sprint range'
     );
     assert.ok(
-        dashboardSource.includes('excludedCapacitySourceSprintIds'),
-        'Expected stats source fetches to include the selected sprint plus the trend range'
+        !dashboardSource.includes('excludedCapacitySelectedSprintForSplit'),
+        'Effort Split should not use the top selected sprint independently from the range controls'
+    );
+    assert.ok(
+        !dashboardSource.includes('excludedCapacitySourceSprintIds'),
+        'Stats source fetches should follow the selected range, not a separate Effort Split sprint union'
     );
     assert.ok(
         dashboardSource.includes('effortSplitSprintLabel'),
-        'Expected Effort Split to render visible selected-sprint scope text'
+        'Expected Effort Split to render visible selected-range scope text'
     );
     assert.ok(
         dashboardSource.includes('<EffortTypeSplitChart'),
         'Expected dashboard to render the Effort Split chart'
+    );
+});
+
+test('effort split legend is the bucket control surface', () => {
+    assert.ok(
+        !dashboardSource.includes('effort-type-split-actions'),
+        'Effort Split should not render duplicate bucket buttons above the legend'
+    );
+    assert.ok(
+        dashboardSource.includes('onToggleBucket={toggleEffortSplitBucket}'),
+        'Expected dashboard to pass bucket toggles to the chart legend'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('aria-pressed={isActive}'),
+        'Expected legend buttons to expose selected bucket state'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('onClick={() => onToggleBucket?.(bucket.key)}'),
+        'Expected legend buttons to control bucket visibility'
+    );
+    assert.ok(
+        cssSource.includes('text-transform: uppercase'),
+        'Expected Effort Split legend labels to render uppercase'
+    );
+});
+
+test('effort split chart uses matching color tokens and pointer readouts', () => {
+    assert.match(
+        cssSource,
+        /\.effort-type-split-legend-item\.excludedCapacity\s*\{[\s\S]*--effort-color:\s*#d89b2b/,
+        'Expected excluded-capacity legend chip to use the same color token as the bar'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-segment\.excludedCapacity\s*\{[\s\S]*background:\s*var\(--effort-color\)/,
+        'Expected excluded-capacity segment to use the shared color token'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-track\s*\{[\s\S]*background:\s*transparent/,
+        'Expected Effort Split track to avoid the old outlined underfill background'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('onMouseMove={(event) => setHovered(readoutFromPointer(event, readout))}'),
+        'Expected mouse readouts to follow the hovered segment'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-readout\s*\{[\s\S]*position:\s*fixed/,
+        'Expected Effort Split readout to float near the hovered segment'
     );
 });
 
@@ -91,16 +145,29 @@ test('effort split chart exposes keyboard and screen-reader values', () => {
         'Expected effort split segments to be keyboard focusable'
     );
     assert.ok(
-        effortSplitChartSource.includes('onFocus={() => setHovered'),
+        effortSplitChartSource.includes('onFocus={(event) => setHovered(readoutFromElement(event, readout))}'),
         'Expected effort split readouts to appear on keyboard focus'
     );
     assert.ok(
-        effortSplitChartSource.includes('onClick={() => setHovered'),
+        effortSplitChartSource.includes('onClick={(event) => setHovered(readoutFromElement(event, readout))}'),
         'Expected effort split readouts to be available to click/touch users'
     );
     assert.ok(
         cssSource.includes('.effort-type-split-summary'),
         'Expected dedicated visually hidden summary styles'
+    );
+});
+
+test('shared team dropdown panels layer above open stats panels', () => {
+    assert.match(
+        cssSource,
+        /\.team-dropdown-panel\s*\{[\s\S]*z-index:\s*calc\(var\(--sticky-planning-z\) \+ 10\)/,
+        'Expected team dropdown panel to layer above the open Statistics panel'
+    );
+    assert.match(
+        cssSource,
+        /\.stats-panel\.open\s*\{[\s\S]*z-index:\s*var\(--sticky-stats-z\)/,
+        'Expected open Statistics panel to use an explicit sticky-layer token'
     );
 });
 

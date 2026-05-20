@@ -378,8 +378,11 @@ export function buildExcludedCapacityTimeSeries(tasks, sprints, options = {}) {
     return rows;
 }
 
-export function buildEffortTypeSplitRows(tasks, selectedSprint, options = {}) {
-    if (!selectedSprint) return [];
+export function buildEffortTypeSplitRows(tasks, selectedSprints, options = {}) {
+    const sprintList = Array.isArray(selectedSprints)
+        ? selectedSprints.filter(Boolean)
+        : (selectedSprints ? [selectedSprints] : []);
+    if (!sprintList.length) return [];
     const excludedKeys = new Set((options.excludedEpicKeys || []).map(normalizeKey).filter(Boolean));
     const filterSet = normalizeFilterKeys(options);
     const excludedScope = filterSet ? filterSet : excludedKeys;
@@ -399,7 +402,7 @@ export function buildEffortTypeSplitRows(tasks, selectedSprint, options = {}) {
     }]));
 
     (tasks || []).forEach(task => {
-        if (!taskMatchesSprint(task, selectedSprint)) return;
+        if (!sprintList.some(sprint => taskMatchesSprint(task, sprint))) return;
         const team = teamFor(task);
         const row = rowsByTeam.get(team.id) || {
             teamId: team.id,

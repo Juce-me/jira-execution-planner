@@ -294,6 +294,34 @@ async function expectJiraExportMenu(page) {
     await expect(menu).toHaveCount(0);
 }
 
+async function expectTeamDropdownAboveStatsPanel(page) {
+    const control = page.locator('.view-selector .team-dropdown').first();
+    const toggle = control.locator('.team-dropdown-toggle');
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+    const panel = control.locator('.team-dropdown-panel');
+    await expect(panel).toBeVisible();
+    const layerState = await panel.evaluate((panelNode) => {
+        const rect = panelNode.getBoundingClientRect();
+        const points = [
+            { x: rect.left + rect.width / 2, y: rect.top + 18 },
+            { x: rect.left + 24, y: rect.top + 36 },
+            { x: rect.right - 24, y: rect.top + 36 },
+        ];
+        return points.map((point) => {
+            const topNode = document.elementFromPoint(point.x, point.y);
+            return {
+                point,
+                topClass: topNode?.className || '',
+                topText: topNode?.textContent || '',
+                topIsPanel: Boolean(topNode?.closest?.('.team-dropdown-panel')),
+            };
+        });
+    });
+    expect(layerState.every(point => point.topIsPanel), JSON.stringify(layerState, null, 2)).toBe(true);
+    await page.mouse.click(8, 8);
+}
+
 async function expectWindowSticky(page, selector) {
     const locator = page.locator(selector).first();
     await expect(locator).toBeVisible();
@@ -564,6 +592,11 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await expect(page.locator('.epic-header').first()).toBeVisible();
     await expect(page.locator('.task-list > .epic-block').first().locator('.epic-status-pill')).toHaveText('In Progress');
     await expectJiraExportMenu(page);
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Statistics' }).click();
+    await expect(page.locator('.stats-panel.open')).toBeVisible();
+    await expectTeamDropdownAboveStatsPanel(page);
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+    await expect(page.locator('.epic-header').first()).toBeVisible();
     await captureSmokeScreenshot(page, 'catch-up');
     await expectWindowSticky(page, '.epic-header');
 

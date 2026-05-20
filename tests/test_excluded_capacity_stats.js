@@ -124,6 +124,38 @@ test('buildEffortTypeSplitRows splits selected-sprint effort by excluded capacit
     );
 });
 
+test('buildEffortTypeSplitRows aggregates the selected sprint range', async () => {
+    const { buildEffortTypeSplitRows } = await loadModule();
+    const sprintRange = [
+        { id: 101, name: 'S1', startDate: '2026-04-01' },
+        { id: 102, name: 'S2', startDate: '2026-04-15' }
+    ];
+    const tasks = [
+        story({ key: 'PROD-1', epicKey: 'BAU-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 3, projectKey: 'PROD' }),
+        story({ key: 'TECH-2', epicKey: 'TECH-EPIC', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 102, sprintName: 'S2', points: 5, projectKey: 'TECH' }),
+        story({ key: 'PROD-3', epicKey: 'PROD-EPIC', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 103, sprintName: 'S3', points: 8, projectKey: 'PROD' })
+    ];
+
+    const rows = buildEffortTypeSplitRows(tasks, sprintRange, {
+        excludedEpicKeys: ['BAU-1'],
+        techProjectKeys: ['TECH'],
+        teams: [{ id: 'team-alpha', name: 'Alpha' }]
+    });
+
+    assert.deepEqual(
+        rows.map(row => ({
+            teamId: row.teamId,
+            total: row.totalPoints,
+            excluded: row.excludedCapacityPoints,
+            tech: row.techPoints,
+            product: row.productPoints
+        })),
+        [
+            { teamId: 'team-alpha', total: 8, excluded: 3, tech: 5, product: 0 }
+        ]
+    );
+});
+
 test('buildEffortTypeSplitRows falls back to key prefix and keeps scoped empty teams', async () => {
     const { buildEffortTypeSplitRows } = await loadModule();
     const selectedSprint = { id: 101, name: 'S1', startDate: '2026-04-01' };

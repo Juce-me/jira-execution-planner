@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-> **Gate status:** Blocked. Checked on 2026-05-19. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+> **Gate status:** Blocked. Checked on 2026-05-20. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,7 +15,7 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-05-19 |
+| Checked on | 2026-05-20 |
 | Last result | FAIL insufficient_home_write_probe_input |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
@@ -127,6 +127,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-05-20: Startup sweep reviewed the gate while executing the Effort Split statistics plan. `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` are not present in the local environment, and the plan adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-05-19: Startup sweep ran the documented write probe without the required disposable-project inputs; result was `FAIL insufficient_home_write_probe_input`. No real Home write probe pass is recorded in the repo. Keep blocked.
 - 2026-05-19: Startup sweep reviewed the gate while planning project-grade endpoint hardening. `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` are not present in the local environment, and the plan adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-05-18: Startup sweep reviewed the gate while improving the DB-backed Scenario draft-history plans. Required `HOME_WRITE_PROBE_*` disposable-project inputs are not present in the local environment, and the plan adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.

@@ -85,6 +85,7 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
         self.assertEqual(payload["issues"][0]["fields"]["epicKey"], "BAU-1")
         self.assertEqual(payload["issues"][0]["fields"]["epicSummary"], "BAU Workstream")
         self.assertEqual(payload["issues"][0]["fields"]["teamId"], "team-alpha")
+        self.assertEqual(payload["issues"][0]["fields"]["projectKey"], "SYN")
         self.assertNotIn("dependencies", payload)
         self.assertEqual(mock_search.call_count, 2)
 
@@ -254,6 +255,7 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
         self.assertEqual(fields, [
             story_points_field,
             "parent",
+            "project",
             sprint_field,
             epic_field,
             team_field,

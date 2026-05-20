@@ -7,6 +7,7 @@ const repoRoot = path.join(__dirname, '..');
 const dashboardSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx'), 'utf8');
 const cssSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'styles', 'dashboard.css'), 'utf8');
 const lineChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'ExcludedCapacityLineChart.jsx'), 'utf8');
+const effortSplitChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'EffortTypeSplitChart.jsx'), 'utf8');
 
 test('dashboard wires excluded-capacity analytics into the existing Statistics view', () => {
     assert.ok(
@@ -32,6 +33,287 @@ test('excluded-capacity analytics has dedicated chart styling', () => {
     assert.ok(cssSource.includes('.excluded-capacity-line-legend'), 'Expected line chart legend CSS for click-to-isolate');
     assert.ok(cssSource.includes('.excluded-capacity-epic-panel'), 'Expected multi-select excluded epic panel CSS');
     assert.ok(cssSource.includes('.epic-mode-bars'), 'Expected mono/cross epic mode chart CSS');
+});
+
+test('effort split chart uses explicit Excluded Capacity naming', () => {
+    assert.ok(
+        dashboardSource.includes("import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';"),
+        'Expected dashboard to import the effort split chart'
+    );
+    assert.ok(
+        dashboardSource.includes('Effort Split'),
+        'Expected short chart title'
+    );
+    assert.ok(
+        dashboardSource.includes('Excluded Capacity'),
+        'Expected metric naming to remain Excluded Capacity'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('effort-type-split-chart'),
+        'Expected dedicated effort split chart markup'
+    );
+    assert.ok(
+        cssSource.includes('.effort-type-split-chart'),
+        'Expected dedicated effort split chart styles'
+    );
+});
+
+test('effort split chart uses selected sprint range source data and visible scope text', () => {
+    assert.ok(
+        dashboardSource.includes('buildEffortTypeSplitRows'),
+        'Expected dashboard to derive effort split rows with the pure helper'
+    );
+    assert.ok(
+        dashboardSource.includes('buildEffortTypeSplitRows(excludedCapacityIssues, excludedCapacitySprintRange'),
+        'Expected Effort Split to use the Start Sprint / End Sprint range'
+    );
+    assert.ok(
+        !dashboardSource.includes('excludedCapacitySelectedSprintForSplit'),
+        'Effort Split should not use the top selected sprint independently from the range controls'
+    );
+    assert.ok(
+        !dashboardSource.includes('excludedCapacitySourceSprintIds'),
+        'Stats source fetches should follow the selected range, not a separate Effort Split sprint union'
+    );
+    assert.ok(
+        dashboardSource.includes('effortSplitSprintLabel'),
+        'Expected Effort Split to render visible selected-range scope text'
+    );
+    assert.ok(
+        dashboardSource.includes('<EffortTypeSplitChart'),
+        'Expected dashboard to render the Effort Split chart'
+    );
+});
+
+test('excluded-capacity summary shows effort share cards instead of source copy', () => {
+    const excludedSummaryBlock = dashboardSource.match(/className="stats-summary excluded-capacity-summary"[\s\S]*?\n\s*\{excludedCapacityLoading/)?.[0] || '';
+    assert.ok(
+        dashboardSource.includes('summarizeEffortTypeSplitTotals'),
+        'Expected dashboard to use shared effort split totals for summary cards'
+    );
+    assert.ok(
+        excludedSummaryBlock.includes('<h4>Product Share</h4>'),
+        'Expected visible Product Share card'
+    );
+    assert.ok(
+        excludedSummaryBlock.includes('<h4>Tech Share</h4>'),
+        'Expected visible Tech Share card'
+    );
+    assert.ok(
+        !excludedSummaryBlock.includes('<h4>Source</h4>'),
+        'Excluded Capacity summary should not render the old Source card'
+    );
+    assert.ok(
+        !excludedSummaryBlock.includes('Planning config'),
+        'Excluded Capacity summary should not show implementation source copy'
+    );
+    assert.ok(
+        !excludedSummaryBlock.includes('Excluded epic keys from team group settings'),
+        'Excluded Capacity summary should not expose team-group config internals'
+    );
+});
+
+test('effort split legend is the bucket control surface', () => {
+    assert.ok(
+        !dashboardSource.includes('effort-type-split-actions'),
+        'Effort Split should not render duplicate bucket buttons above the legend'
+    );
+    assert.ok(
+        dashboardSource.includes('onToggleBucket={toggleEffortSplitBucket}'),
+        'Expected dashboard to pass bucket toggles to the chart legend'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('aria-pressed={isActive}'),
+        'Expected legend buttons to expose selected bucket state'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('onClick={() => onToggleBucket?.(bucket.key)}'),
+        'Expected legend buttons to control bucket visibility'
+    );
+    assert.ok(
+        cssSource.includes('text-transform: uppercase'),
+        'Expected Effort Split legend labels to render uppercase'
+    );
+});
+
+test('effort split chart uses matching color tokens and pointer readouts', () => {
+    assert.match(
+        cssSource,
+        /\.effort-type-split-legend-item\.excludedCapacity\s*\{[\s\S]*--effort-color:\s*#d89b2b/,
+        'Expected excluded-capacity legend chip to use the same color token as the bar'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-segment\.excludedCapacity\s*\{[\s\S]*background:\s*var\(--effort-color\)/,
+        'Expected excluded-capacity segment to use the shared color token'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-track\s*\{[\s\S]*background:\s*transparent/,
+        'Expected Effort Split track to avoid the old outlined underfill background'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('onMouseMove={(event) => setHovered(readoutFromPointer(event, readout))}'),
+        'Expected mouse readouts to follow the hovered segment'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-readout\s*\{[\s\S]*position:\s*fixed/,
+        'Expected Effort Split readout to float near the hovered segment'
+    );
+});
+
+test('effort split bar segments reset global button spacing and rounding', () => {
+    assert.match(
+        cssSource,
+        /\.effort-type-split-segment\s*\{[\s\S]*flex:\s*0 0 auto/,
+        'Expected bar segment widths to use the explicit percentage basis'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-segment\s*\{[\s\S]*margin-right:\s*0/,
+        'Expected bar segments to reset the global button margin that shifts zero-width buckets'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-segment\s*\{[\s\S]*border-radius:\s*0/,
+        'Expected only the track, not every segment, to create the rounded bar shape'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-segment:hover\s*\{[\s\S]*transform:\s*none/,
+        'Expected segment hover to avoid the global button lift'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-legend-item\s*\{[\s\S]*margin-right:\s*0/,
+        'Expected legend buttons to reset the global button margin'
+    );
+});
+
+test('effort split readout clamps away from viewport edges', () => {
+    assert.ok(
+        effortSplitChartSource.includes('function clampReadoutPoint'),
+        'Expected readout coordinates to be clamped before rendering'
+    );
+    assert.ok(
+        effortSplitChartSource.includes("import { createPortal } from 'react-dom';"),
+        'Expected Effort Split readout to render outside transformed stats containers'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('createPortal(') && effortSplitChartSource.includes('document.body'),
+        'Expected Effort Split readout portal to use document.body'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('window.innerWidth'),
+        'Expected horizontal clamp to use viewport width'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('READOUT_MAX_WIDTH'),
+        'Expected readout positioning to reserve explicit maximum tooltip width'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('READOUT_HEIGHT'),
+        'Expected readout positioning to reserve explicit tooltip height'
+    );
+    assert.ok(
+        effortSplitChartSource.includes("side: anchorOnLeft ? 'left' : 'right'"),
+        'Expected readout to choose a side instead of centering at the edge'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-readout\s*\{[\s\S]*width:\s*max-content/,
+        'Expected readout to size to its content instead of reserving a wide fixed box'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-readout\s*\{[\s\S]*max-width:\s*min\(220px, calc\(100vw - 24px\)\)/,
+        'Expected readout to keep a narrow maximum width'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-readout\.is-left\s*\{[\s\S]*translate\(calc\(-100% - 12px\), -50%\)/,
+        'Expected right-edge readouts to open to the left of the pointer'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-readout span\s*\{[\s\S]*white-space:\s*nowrap/,
+        'Expected readout values to avoid one-character wrapping'
+    );
+});
+
+test('effort split chart exposes keyboard and screen-reader values', () => {
+    assert.ok(
+        effortSplitChartSource.includes('className="effort-type-split-summary"'),
+        'Expected an accessible effort split data summary'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('tabIndex={0}'),
+        'Expected effort split segments to be keyboard focusable'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('onFocus={(event) => setHovered(readoutFromElement(event, readout))}'),
+        'Expected effort split readouts to appear on keyboard focus'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('onClick={(event) => setHovered(readoutFromElement(event, readout))}'),
+        'Expected effort split readouts to be available to click/touch users'
+    );
+    assert.ok(
+        cssSource.includes('.effort-type-split-summary'),
+        'Expected dedicated visually hidden summary styles'
+    );
+});
+
+test('effort split segment labels fall back to compact integer percentages', () => {
+    assert.ok(
+        effortSplitChartSource.includes('const FULL_SEGMENT_LABEL_MIN_WIDTH = 10.5;'),
+        'Expected full Effort Split labels to start at the 10.5% fit threshold'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('formatCompactSegmentValue'),
+        'Expected a compact label formatter for narrow segments'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('Math.round(percentValue)'),
+        'Expected narrow percent labels to use integer percentages'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('width >= FULL_SEGMENT_LABEL_MIN_WIDTH ? valueText : compactValueText'),
+        'Expected narrow nonzero segments to render compact labels instead of hiding'
+    );
+    assert.ok(
+        !effortSplitChartSource.includes('width >= 12 && <span>{valueText}</span>'),
+        'Effort Split labels should not disappear below the old 12% threshold'
+    );
+});
+
+test('shared team dropdown panels layer above open stats panels', () => {
+    assert.match(
+        cssSource,
+        /\.view-selector:has\(\.sprint-dropdown-panel\),\s*[\s\S]*\.view-selector:has\(\.team-dropdown-panel\)\s*\{[\s\S]*z-index:\s*calc\(var\(--sticky-control-overlay-z\) \+ 2\)/,
+        'Expected main controls to elevate only while a dropdown is open'
+    );
+    assert.match(
+        cssSource,
+        /\.compact-sticky-header:has\(\.sprint-dropdown-panel\),\s*[\s\S]*\.compact-sticky-header:has\(\.team-dropdown-panel\)\s*\{[\s\S]*z-index:\s*calc\(var\(--sticky-control-overlay-z\) \+ 2\)/,
+        'Expected compact controls to elevate only while a dropdown is open'
+    );
+    assert.match(
+        cssSource,
+        /\.team-dropdown-panel\s*\{[\s\S]*z-index:\s*calc\(var\(--sticky-control-overlay-z\) \+ 3\)/,
+        'Expected team dropdown panel to layer above the open Statistics panel'
+    );
+    assert.match(
+        cssSource,
+        /\.group-dropdown-panel\s*\{[\s\S]*z-index:\s*calc\(var\(--sticky-control-overlay-z\) \+ 3\)/,
+        'Expected group dropdown panel to use the shared control overlay layer'
+    );
+    assert.match(
+        cssSource,
+        /\.stats-panel\.open\s*\{[\s\S]*z-index:\s*var\(--sticky-stats-z\)/,
+        'Expected open Statistics panel to use an explicit sticky-layer token'
+    );
 });
 
 test('excluded-capacity epic menu wraps long labels without horizontal scroll', () => {
@@ -231,6 +513,18 @@ test('excluded-capacity line chart uses a readable custom hover readout', () => 
         'Expected line chart to track hover point state'
     );
     assert.ok(
+        lineChartSource.includes('event.clientX') && lineChartSource.includes('event.clientY'),
+        'Expected line chart readout to follow pointer coordinates'
+    );
+    assert.ok(
+        lineChartSource.includes('HOVER_BUBBLE_WIDTH') && lineChartSource.includes('HOVER_BUBBLE_HEIGHT'),
+        'Expected line chart readout to reserve measured bubble bounds'
+    );
+    assert.ok(
+        lineChartSource.includes("side: anchorOnLeft ? 'left' : 'right'"),
+        'Expected line chart readout to flip beside the pointer at edges'
+    );
+    assert.ok(
         !lineChartSource.includes('<title>{tooltip}</title>'),
         'Line chart points should not rely on native SVG title tooltips'
     );
@@ -238,6 +532,11 @@ test('excluded-capacity line chart uses a readable custom hover readout', () => 
         cssSource,
         /\.excluded-capacity-line-hover-bubble\s*\{[\s\S]*background:\s*rgba\(255,\s*255,\s*255/,
         'Expected custom hover bubble to use a readable light background'
+    );
+    assert.match(
+        cssSource,
+        /\.excluded-capacity-line-hover-bubble\.is-left\s*\{[\s\S]*translate\(calc\(-100% - 12px\), -50%\)/,
+        'Expected line chart readout to stay readable when it opens left of the pointer'
     );
     assert.match(
         cssSource,

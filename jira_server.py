@@ -6187,7 +6187,7 @@ def _excluded_capacity_server_timing_header(timings_ms):
 
 def _build_excluded_capacity_stats_source_fields(story_points_field, sprint_field_id, epic_link_field_id, team_field_id):
     fields = []
-    for field_id in (story_points_field, 'parent', sprint_field_id, epic_link_field_id, team_field_id):
+    for field_id in (story_points_field, 'parent', 'project', sprint_field_id, epic_link_field_id, team_field_id):
         if field_id and field_id not in fields:
             fields.append(field_id)
     return fields

@@ -36,6 +36,7 @@ import {
     buildEpicTeamCrossShareLineSeries,
     buildEpicTeamModeOverall,
     buildEpicTeamModeSprintRows,
+    buildEffortTypeSplitRows,
     buildExcludedCapacityLineSeries,
     buildExcludedCapacityTimeSeries,
     buildExcludedEpicCatalog,
@@ -44,9 +45,11 @@ import {
     getSprintQuarterLabel,
     loadExcludedCapacityStatsSourceChunks,
     mergeExcludedCapacityStatsSourceChunks,
-    pickAutoSelectedExcludedEpics
+    pickAutoSelectedExcludedEpics,
+    summarizeEffortTypeSplitTotals
 } from './stats/excludedCapacityStats.js';
 import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';
+import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
@@ -623,6 +626,11 @@ import {
             const [excludedCapacityMetric, setExcludedCapacityMetric] = useState(
                 savedPrefsRef.current.excludedCapacityMetric === 'storyPoints' ? 'storyPoints' : 'percent'
             );
+            const [effortSplitVisibleBuckets, setEffortSplitVisibleBuckets] = useState({
+                excludedCapacity: true,
+                tech: true,
+                product: true
+            });
             const [excludedCapacityIsolatedTeam, setExcludedCapacityIsolatedTeam] = useState(null);
             const [excludedCapacityEpicDropdownOpen, setExcludedCapacityEpicDropdownOpen] = useState(false);
             const [excludedCapacityRefreshNonce, setExcludedCapacityRefreshNonce] = useState(0);
@@ -6944,6 +6952,16 @@ import {
                 () => excludedCapacitySprintIds.join(','),
                 [excludedCapacitySprintIds]
             );
+            const effortSplitSprintLabel = React.useMemo(() => {
+                if (!excludedCapacitySprintRange.length) return 'No sprint range selected';
+                const first = excludedCapacitySprintRange[0];
+                const last = excludedCapacitySprintRange[excludedCapacitySprintRange.length - 1];
+                const firstLabel = first?.name || first?.id || 'Start sprint';
+                const lastLabel = last?.name || last?.id || 'End sprint';
+                return String(first?.id) === String(last?.id)
+                    ? String(firstLabel)
+                    : `${firstLabel} - ${lastLabel}`;
+            }, [excludedCapacitySprintRange]);
             const excludedCapacityEpicOptions = React.useMemo(() => {
                 return Array.from(excludedEpicSet)
                     .filter(key => key && key !== 'NO_EPIC')
@@ -7158,6 +7176,21 @@ import {
             const excludedCapacityActiveFilters = excludedCapacityEffectiveFilters.length
                 ? excludedCapacityEffectiveFilters
                 : excludedCapacityEpicOptions;
+            const effortSplitRows = React.useMemo(() => {
+                return buildEffortTypeSplitRows(excludedCapacityIssues, excludedCapacitySprintRange, {
+                    excludedEpicKeys: excludedCapacityEpicOptions,
+                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
+                    teams: excludedCapacityTeams,
+                    techProjectKeys: Array.from(techProjectKeys)
+                });
+            }, [
+                excludedCapacityIssues,
+                excludedCapacitySprintRange,
+                excludedCapacityEpicOptions,
+                excludedCapacityActiveFilters,
+                excludedCapacityTeams,
+                techProjectKeys
+            ]);
             const excludedCapacityRows = React.useMemo(() => {
                 return buildExcludedCapacityTimeSeries(excludedCapacityIssues, excludedCapacitySprintRange, {
                     excludedEpicKeys: excludedCapacityEpicOptions,
@@ -7218,17 +7251,7 @@ import {
                 excludedCapacityTeams
             ]);
             const excludedCapacityIsolatedSeries = statsView === 'monoCrossShare' ? excludedCapacityModeTeamLineSeries.series : excludedCapacityLineSeries.series;
-            const excludedCapacityTotals = React.useMemo(() => {
-                const totals = excludedCapacityRows.reduce((acc, row) => {
-                    acc.totalPoints += row.totalPoints || 0;
-                    acc.excludedPoints += row.excludedPoints || 0;
-                    return acc;
-                }, { totalPoints: 0, excludedPoints: 0 });
-                return {
-                    ...totals,
-                    percent: totals.totalPoints > 0 ? totals.excludedPoints / totals.totalPoints : 0
-                };
-            }, [excludedCapacityRows]);
+            const effortSplitTotals = React.useMemo(() => summarizeEffortTypeSplitTotals(effortSplitRows), [effortSplitRows]);
             const excludedCapacityWarnings = React.useMemo(() => {
                 const warnings = excludedCapacityData?.meta?.warnings;
                 return Array.isArray(warnings) ? warnings : [];
@@ -7265,6 +7288,12 @@ import {
             };
             const selectAllExcludedCapacityEpics = () => {
                 setExcludedCapacitySelectedEpicKeys(excludedCapacityEpicOptions.slice());
+            };
+            const toggleEffortSplitBucket = (bucketKey) => {
+                setEffortSplitVisibleBuckets(prev => ({
+                    ...prev,
+                    [bucketKey]: prev[bucketKey] === false
+                }));
             };
             const selectAutoExcludedCapacityEpics = () => {
                 setExcludedCapacitySelectedEpicKeys(excludedCapacityAutoEpicKeys.slice());
@@ -14554,18 +14583,23 @@ import {
                                         </div>
                                         <div className="stats-card">
                                             <h4>Excluded SP</h4>
-                                            <div className="stat-value">{formatExcludedPoints(excludedCapacityTotals.excludedPoints)}</div>
-                                            <div className="stats-note">Out of {formatExcludedPoints(excludedCapacityTotals.totalPoints)} scoped SP</div>
+                                            <div className="stat-value">{formatExcludedPoints(effortSplitTotals.excludedCapacityPoints)}</div>
+                                            <div className="stats-note">Out of {formatExcludedPoints(effortSplitTotals.totalPoints)} scoped SP</div>
                                         </div>
                                         <div className="stats-card">
                                             <h4>Excluded Share</h4>
-                                            <div className="stat-value">{formatPercent(excludedCapacityTotals.percent)}</div>
+                                            <div className="stat-value">{formatPercent(effortSplitTotals.excludedCapacityPercent)}</div>
                                             <div className="stats-note">Approximate, story-point based</div>
                                         </div>
                                         <div className="stats-card">
-                                            <h4>Source</h4>
-                                            <div className="stat-value">Planning config</div>
-                                            <div className="stats-note">Excluded epic keys from team group settings</div>
+                                            <h4>Product Share</h4>
+                                            <div className="stat-value">{formatPercent(effortSplitTotals.productPercent)}</div>
+                                            <div className="stats-note">Approximate, story-point based</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Tech Share</h4>
+                                            <div className="stat-value">{formatPercent(effortSplitTotals.techPercent)}</div>
+                                            <div className="stats-note">Approximate, story-point based</div>
                                         </div>
                                     </div>
 
@@ -14589,6 +14623,23 @@ import {
                                     )}
                                     {!excludedCapacityError && excludedCapacityRows.length > 0 && (
                                         <div className="excluded-capacity-panel">
+                                            <div className="cohort-section cohort-section-fullbleed">
+                                                <div className="cohort-section-title">Effort Split</div>
+                                                <div className="cohort-section-subtitle">
+                                                    Selected sprint-range story points by Excluded Capacity, Tech, and Product.
+                                                </div>
+                                                <div className="cohort-section-subtitle">
+                                                    Sprint range: {effortSplitSprintLabel}
+                                                </div>
+                                                <EffortTypeSplitChart
+                                                    rows={effortSplitRows}
+                                                    metric={excludedCapacityMetric}
+                                                    visibleBuckets={effortSplitVisibleBuckets}
+                                                    onToggleBucket={toggleEffortSplitBucket}
+                                                    formatExcludedPoints={formatExcludedPoints}
+                                                    formatPercent={formatPercent}
+                                                />
+                                            </div>
                                             <div className="cohort-section cohort-section-fullbleed">
                                                 <div className="cohort-section-title">Excluded Capacity by Team and Sprint</div>
                                                 <ExcludedCapacityLineChart

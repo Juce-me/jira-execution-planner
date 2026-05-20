@@ -1,5 +1,7 @@
 # Statistics Module Extraction Implementation Plan
 
+> **Status:** Done. Executed in PR #37 / `4d3c478`. Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extract the remaining legacy Statistics Teams, Priority, and Burndown code from `frontend/src/dashboard.jsx` into focused modules under the existing `frontend/src/stats/` package without changing UI behavior.
@@ -107,7 +109,7 @@ Do not modify:
 
 ## Preflight
 
-- [ ] **Step 1: Confirm branch and dirty files**
+- [x] **Step 1: Confirm branch and dirty files**
 
 Run:
 
@@ -124,7 +126,7 @@ Expected:
 - The branch is not behind its upstream. If it is behind, stop and sync before editing.
 - Any unrelated dirty files are identified and left unstaged.
 
-- [ ] **Step 2: Read relevant postmortems**
+- [x] **Step 2: Read relevant postmortems**
 
 Run:
 
@@ -140,7 +142,7 @@ Carry these prevention checks into execution:
 - Verify committed `frontend/dist/dashboard.js` and `.map`, not only freshly bundled source.
 - Do not move chart hover/readout code into transformed or scrollable containers without edge-position Playwright checks.
 
-- [ ] **Step 3: Confirm current stats module baseline**
+- [x] **Step 3: Confirm current stats module baseline**
 
 Run:
 
@@ -155,7 +157,7 @@ Expected:
 - Existing stats modules are under `frontend/src/stats/`.
 - The legacy Teams, Priority, and Burndown code is still in `dashboard.jsx`.
 
-- [ ] **Step 4: Run baseline verification**
+- [x] **Step 4: Run baseline verification**
 
 Run:
 
@@ -177,7 +179,7 @@ Expected:
 
 - Create: `tests/test_stats_module_extraction_source_guards.js`
 
-- [ ] **Step 1: Add the failing source guard test**
+- [x] **Step 1: Add the failing source guard test**
 
 Create `tests/test_stats_module_extraction_source_guards.js` with:
 
@@ -316,7 +318,7 @@ test('existing excluded capacity stats extraction remains intact', () => {
 });
 ```
 
-- [ ] **Step 2: Run the new guard and confirm it fails**
+- [x] **Step 2: Run the new guard and confirm it fails**
 
 Run:
 
@@ -328,7 +330,7 @@ Expected:
 
 - FAIL because the new modules do not exist yet and implementation bodies still live in `dashboard.jsx`.
 
-- [ ] **Step 3: Commit only if this task is intentionally split**
+- [x] **Step 3: Commit only if this task is intentionally split**
 
 Usually do not commit this failing test alone unless the execution lead wants a red-green commit history. If committing it separately, the commit message is:
 
@@ -350,7 +352,7 @@ git commit -m "test: guard statistics module extraction"
 - Modify: `frontend/dist/dashboard.js`
 - Modify: `frontend/dist/dashboard.js.map`
 
-- [ ] **Step 1: Locate current definitions**
+- [x] **Step 1: Locate current definitions**
 
 Run:
 
@@ -367,7 +369,7 @@ Expected symbols:
 - `priorityAliases`
 - `radarPalette`
 
-- [ ] **Step 2: Create `statsConstants.js`**
+- [x] **Step 2: Create `statsConstants.js`**
 
 Move the current constant values exactly, with uppercase exported names:
 
@@ -406,7 +408,7 @@ export const RADAR_PALETTE = [
 ];
 ```
 
-- [ ] **Step 3: Create `priorityWeights.js`**
+- [x] **Step 3: Create `priorityWeights.js`**
 
 Move `DEFAULT_PRIORITY_WEIGHT_ROWS` and `clonePriorityWeightRows`, and extract the current `effectivePriorityWeightMap` body into a pure builder:
 
@@ -445,7 +447,7 @@ export function buildPriorityWeightMap(rows) {
 }
 ```
 
-- [ ] **Step 4: Import constants and helpers in `dashboard.jsx`**
+- [x] **Step 4: Import constants and helpers in `dashboard.jsx`**
 
 Add imports near existing stats imports:
 
@@ -474,7 +476,7 @@ const effectivePriorityWeightMap = React.useMemo(
 );
 ```
 
-- [ ] **Step 5: Add focused tests**
+- [x] **Step 5: Add focused tests**
 
 Create `tests/test_stats_utils.js` if it does not exist, then add:
 
@@ -500,7 +502,7 @@ test('priority weight helpers normalize rows and fall back to defaults', async (
 });
 ```
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -544,7 +546,7 @@ git commit -m "refactor: extract statistics constants"
 - Modify: `frontend/dist/dashboard.js`
 - Modify: `frontend/dist/dashboard.js.map`
 
-- [ ] **Step 1: Locate current utility bodies**
+- [x] **Step 1: Locate current utility bodies**
 
 Run:
 
@@ -552,7 +554,7 @@ Run:
 rg -n "formatPercent|normalizePriority|getPriorityLabel|computePriorityWeighted|computeRate|getRateClass|hashTeamId|resolveTeamColor|buildRadarPoints|buildLocalStatsFromTasks" frontend/src/dashboard.jsx
 ```
 
-- [ ] **Step 2: Create `statsUtils.js`**
+- [x] **Step 2: Create `statsUtils.js`**
 
 Move these functions into `frontend/src/stats/statsUtils.js`:
 
@@ -646,7 +648,7 @@ export function buildLocalStatsFromTasks(taskList, {
 
 Use the existing body from `dashboard.jsx`; do not change bucketing behavior.
 
-- [ ] **Step 3: Import utilities in `dashboard.jsx`**
+- [x] **Step 3: Import utilities in `dashboard.jsx`**
 
 Add:
 
@@ -693,7 +695,7 @@ Update the `localStatsData` memo dependency array so it includes the project map
 
 Do not add `normalizeStatus` to the dependency list unless it is made stable first; in current `dashboard.jsx` it is recreated on each render even though the logic is constant. `getTeamInfo` is an imported helper alias. `techProjectKeys` must be included because Settings can change product/tech project mapping.
 
-- [ ] **Step 4: Add focused utility tests**
+- [x] **Step 4: Add focused utility tests**
 
 Append to `tests/test_stats_utils.js`:
 
@@ -806,7 +808,7 @@ test('buildLocalStatsFromTasks preserves sprint team project buckets and edge ca
 });
 ```
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -849,7 +851,7 @@ git commit -m "refactor: extract statistics utilities"
 - Modify: `frontend/dist/dashboard.js`
 - Modify: `frontend/dist/dashboard.js.map`
 
-- [ ] **Step 1: Locate the current memo body**
+- [x] **Step 1: Locate the current memo body**
 
 Run:
 
@@ -857,7 +859,7 @@ Run:
 rg -n "const burnoutChartModel = React.useMemo|const burnoutTotals|burndownMetricIsStoryPoints" frontend/src/dashboard.jsx
 ```
 
-- [ ] **Step 2: Create `buildBurnoutChartModel`**
+- [x] **Step 2: Create `buildBurnoutChartModel`**
 
 Create `frontend/src/stats/burnoutChartUtils.js` with this public signature:
 
@@ -923,7 +925,7 @@ The extracted model must still return:
 - `metric`
 - `summary`
 
-- [ ] **Step 3: Replace the memo body in `dashboard.jsx`**
+- [x] **Step 3: Replace the memo body in `dashboard.jsx`**
 
 Import:
 
@@ -956,7 +958,7 @@ const burnoutChartModel = React.useMemo(() => buildBurnoutChartModel({
 ]);
 ```
 
-- [ ] **Step 4: Add chart model tests**
+- [x] **Step 4: Add chart model tests**
 
 Create `tests/test_burnout_chart_utils.js` with:
 
@@ -1044,7 +1046,7 @@ test('buildBurnoutChartModel filters assignees and closed-before-start stories',
 });
 ```
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -1088,7 +1090,7 @@ git commit -m "refactor: extract burndown chart model"
 - Modify: `frontend/dist/dashboard.js`
 - Modify: `frontend/dist/dashboard.js.map`
 
-- [ ] **Step 1: Locate current JSX blocks**
+- [x] **Step 1: Locate current JSX blocks**
 
 Run:
 
@@ -1096,7 +1098,7 @@ Run:
 rg -n "stats-summary|statsView === 'teams'|stats-bars|statsTeamRows.map" frontend/src/dashboard.jsx
 ```
 
-- [ ] **Step 2: Create `StatsDeliverySummary.jsx`**
+- [x] **Step 2: Create `StatsDeliverySummary.jsx`**
 
 Component contract:
 
@@ -1118,7 +1120,7 @@ export default React.memo(StatsDeliverySummary);
 
 Keep the current keyboard behavior for selectable cards.
 
-- [ ] **Step 3: Create `StatsTeamsView.jsx`**
+- [x] **Step 3: Create `StatsTeamsView.jsx`**
 
 Component contract:
 
@@ -1143,7 +1145,7 @@ export default React.memo(StatsTeamsView);
 
 Keep Jira link labels, `stats-link` anchors, table column labels, and bar class names unchanged.
 
-- [ ] **Step 4: Replace dashboard JSX**
+- [x] **Step 4: Replace dashboard JSX**
 
 Import:
 
@@ -1183,7 +1185,7 @@ Replace the Teams block with:
 
 Preserve the wrapper class behavior: the rendered root must still include `stats-view open` only when the Teams tab is active.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -1225,7 +1227,7 @@ git commit -m "refactor: extract statistics teams view"
 - Modify: `frontend/dist/dashboard.js`
 - Modify: `frontend/dist/dashboard.js.map`
 
-- [ ] **Step 1: Locate current Priority JSX**
+- [x] **Step 1: Locate current Priority JSX**
 
 Run:
 
@@ -1233,7 +1235,7 @@ Run:
 rg -n "statsView === 'priority'|priorityRadar|priorityRows|buildRadarPoints|priorityHoverIndex" frontend/src/dashboard.jsx
 ```
 
-- [ ] **Step 2: Create `StatsPriorityView.jsx`**
+- [x] **Step 2: Create `StatsPriorityView.jsx`**
 
 Component contract:
 
@@ -1265,7 +1267,7 @@ Keep these behaviors unchanged:
 - Jira links still use `buildPriorityStatLink`
 - table and SVG classes remain unchanged
 
-- [ ] **Step 3: Replace dashboard JSX**
+- [x] **Step 3: Replace dashboard JSX**
 
 Import:
 
@@ -1290,7 +1292,7 @@ Replace the inline Priority block with:
 />
 ```
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -1331,7 +1333,7 @@ git commit -m "refactor: extract statistics priority view"
 - Modify: `frontend/dist/dashboard.js`
 - Modify: `frontend/dist/dashboard.js.map`
 
-- [ ] **Step 1: Locate current Burndown JSX and supporting callbacks**
+- [x] **Step 1: Locate current Burndown JSX and supporting callbacks**
 
 Run:
 
@@ -1339,7 +1341,7 @@ Run:
 rg -n "statsView === 'burnout'|burnoutAssigneeOptions|burnoutHoverPoint|setBurnoutHoverPoint|setBurnoutHoverTeamKey|burnoutTaskFilter|formatBurndownValue|resolveBurnoutPointer|buildBurnoutTaskFilter" frontend/src/dashboard.jsx
 ```
 
-- [ ] **Step 2: Create `BurnoutChart.jsx`**
+- [x] **Step 2: Create `BurnoutChart.jsx`**
 
 Component contract:
 
@@ -1389,7 +1391,7 @@ Keep in `dashboard.jsx`:
 - `resolveBurnoutPointer`
 - `buildBurnoutTaskFilter`
 
-- [ ] **Step 3: Replace dashboard JSX**
+- [x] **Step 3: Replace dashboard JSX**
 
 Import:
 
@@ -1425,7 +1427,7 @@ Replace the inline Burndown block with:
 />
 ```
 
-- [ ] **Step 4: Verify source guards pass**
+- [x] **Step 4: Verify source guards pass**
 
 Run:
 
@@ -1455,7 +1457,7 @@ git commit -m "refactor: extract statistics burndown view"
 
 - Modify: `tests/ui/codebase_structure_smoke.spec.js`
 
-- [ ] **Step 1: Keep the existing helper usable with committed dist**
+- [x] **Step 1: Keep the existing helper usable with committed dist**
 
 In `tests/ui/codebase_structure_smoke.spec.js`, update `installApiMocks(page, calls, options = {})` so the existing source-bundled override is optional.
 
@@ -1485,7 +1487,7 @@ if (!options.useCommittedDist) {
 
 This keeps existing tests unchanged while allowing the new Statistics smoke test to exercise committed `frontend/dist/dashboard.js`.
 
-- [ ] **Step 2: Capture request headers and POST bodies in the UI helper**
+- [x] **Step 2: Capture request headers and POST bodies in the UI helper**
 
 In the `calls.push(...)` block inside `installApiMocks`, include headers and parsed JSON body:
 
@@ -1511,7 +1513,7 @@ calls.push({
 
 Keep existing `callsFor`, `waitForCallCount`, and startup-count assertions working against the existing fields.
 
-- [ ] **Step 3: Mock Burndown and Lead Times statistics endpoints**
+- [x] **Step 3: Mock Burndown and Lead Times statistics endpoints**
 
 Add route branches before the unexpected-call branch:
 
@@ -1559,7 +1561,7 @@ if (url.pathname === '/api/stats/epic-cohort') {
 }
 ```
 
-- [ ] **Step 4: Add the focused Statistics subview test**
+- [x] **Step 4: Add the focused Statistics subview test**
 
 Append a test to `tests/ui/codebase_structure_smoke.spec.js`:
 
@@ -1632,7 +1634,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
 
 If the exact visible text differs after running the test, update the assertion to another stable existing selector or label from the rendered view; do not weaken the test to only assert `.stats-view.open`.
 
-- [ ] **Step 5: Run focused UI verification**
+- [x] **Step 5: Run focused UI verification**
 
 Run:
 
@@ -1663,7 +1665,7 @@ git commit -m "test: cover extracted statistics subviews"
 
 - Modify only if verification exposes a regression in files already touched by this plan.
 
-- [ ] **Step 1: Run focused frontend regression checks**
+- [x] **Step 1: Run focused frontend regression checks**
 
 Run:
 
@@ -1676,7 +1678,7 @@ Expected:
 
 - All pass.
 
-- [ ] **Step 2: Run full backend/unit regression**
+- [x] **Step 2: Run full backend/unit regression**
 
 Run:
 
@@ -1688,7 +1690,7 @@ Expected:
 
 - All pass.
 
-- [ ] **Step 3: Run focused and broad UI smoke coverage**
+- [x] **Step 3: Run focused and broad UI smoke coverage**
 
 Run:
 
@@ -1703,7 +1705,7 @@ Expected:
 - The focused Statistics test proves Teams, Priority, Burndown, Lead Times, Excluded Capacity, and Mono vs Cross render.
 - The broad smoke file still covers Catch Up, Planning, Scenario, EPM, sticky/layout, and team dropdown regressions.
 
-- [ ] **Step 4: Verify committed dist output is synchronized**
+- [x] **Step 4: Verify committed dist output is synchronized**
 
 Run after the final source/dist commit:
 
@@ -1716,7 +1718,7 @@ Expected:
 
 - No diff. This mirrors `.github/workflows/verify-frontend-build.yml`, which fails if `npm run build` changes committed output.
 
-- [ ] **Step 5: Review generated output and commit final guard updates**
+- [x] **Step 5: Review generated output and commit final guard updates**
 
 Run:
 
@@ -1746,11 +1748,11 @@ git commit -m "test: verify statistics extraction"
 - Modify: `docs/plans/EXEC-statistics-module-extraction.md`
 - Modify: `docs/plans/README.md`
 
-- [ ] **Step 1: Close out only after the implementation is accepted or merged**
+- [x] **Step 1: Close out only after the implementation is accepted or merged**
 
 Do not run this task before the implementation branch is accepted or merged.
 
-- [ ] **Step 2: Add the status note and rename the plan**
+- [x] **Step 2: Add the status note and rename the plan**
 
 Add a top note to this plan:
 
@@ -1764,11 +1766,11 @@ Then rename:
 git mv docs/plans/EXEC-statistics-module-extraction.md docs/plans/DONE-statistics-module-extraction.md
 ```
 
-- [ ] **Step 3: Update `docs/plans/README.md`**
+- [x] **Step 3: Update `docs/plans/README.md`**
 
 Move the Frontend Structure entry from `EXEC-statistics-module-extraction.md` to `DONE-statistics-module-extraction.md` and change its description from expected output to completed output.
 
-- [ ] **Step 4: Commit closeout docs**
+- [x] **Step 4: Commit closeout docs**
 
 Run:
 

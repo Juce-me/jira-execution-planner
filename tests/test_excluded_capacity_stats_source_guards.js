@@ -197,12 +197,24 @@ test('effort split readout clamps away from viewport edges', () => {
         'Expected readout coordinates to be clamped before rendering'
     );
     assert.ok(
+        effortSplitChartSource.includes("import { createPortal } from 'react-dom';"),
+        'Expected Effort Split readout to render outside transformed stats containers'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('createPortal(') && effortSplitChartSource.includes('document.body'),
+        'Expected Effort Split readout portal to use document.body'
+    );
+    assert.ok(
         effortSplitChartSource.includes('window.innerWidth'),
         'Expected horizontal clamp to use viewport width'
     );
     assert.ok(
         effortSplitChartSource.includes('READOUT_WIDTH'),
         'Expected readout positioning to reserve explicit tooltip width'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('READOUT_HEIGHT'),
+        'Expected readout positioning to reserve explicit tooltip height'
     );
     assert.ok(
         effortSplitChartSource.includes("side: anchorOnLeft ? 'left' : 'right'"),
@@ -496,6 +508,18 @@ test('excluded-capacity line chart uses a readable custom hover readout', () => 
         'Expected line chart to track hover point state'
     );
     assert.ok(
+        lineChartSource.includes('event.clientX') && lineChartSource.includes('event.clientY'),
+        'Expected line chart readout to follow pointer coordinates'
+    );
+    assert.ok(
+        lineChartSource.includes('HOVER_BUBBLE_WIDTH') && lineChartSource.includes('HOVER_BUBBLE_HEIGHT'),
+        'Expected line chart readout to reserve measured bubble bounds'
+    );
+    assert.ok(
+        lineChartSource.includes("side: anchorOnLeft ? 'left' : 'right'"),
+        'Expected line chart readout to flip beside the pointer at edges'
+    );
+    assert.ok(
         !lineChartSource.includes('<title>{tooltip}</title>'),
         'Line chart points should not rely on native SVG title tooltips'
     );
@@ -503,6 +527,11 @@ test('excluded-capacity line chart uses a readable custom hover readout', () => 
         cssSource,
         /\.excluded-capacity-line-hover-bubble\s*\{[\s\S]*background:\s*rgba\(255,\s*255,\s*255/,
         'Expected custom hover bubble to use a readable light background'
+    );
+    assert.match(
+        cssSource,
+        /\.excluded-capacity-line-hover-bubble\.is-left\s*\{[\s\S]*translate\(calc\(-100% - 12px\), -50%\)/,
+        'Expected line chart readout to stay readable when it opens left of the pointer'
     );
     assert.match(
         cssSource,

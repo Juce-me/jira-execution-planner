@@ -428,6 +428,62 @@ async function expectTeamDropdownAboveStatsPanel(page) {
     await page.mouse.click(8, 8);
 }
 
+async function expectEffortSplitReadoutTracksPointer(page) {
+    const segment = page.locator('.effort-type-split-row', { hasText: 'Alpha Team' })
+        .locator('.effort-type-split-segment.product')
+        .first();
+    await expect(segment).toBeVisible();
+    const segmentBox = await segment.boundingBox();
+    expect(segmentBox).not.toBeNull();
+    const pointer = {
+        x: segmentBox.x + segmentBox.width * 0.75,
+        y: segmentBox.y + segmentBox.height / 2,
+    };
+    await page.mouse.move(pointer.x, pointer.y);
+    const readout = page.locator('.effort-type-split-readout');
+    await expect(readout).toBeVisible();
+    const layout = await readout.evaluate((node, anchor) => {
+        const rect = node.getBoundingClientRect();
+        return {
+            top: rect.top,
+            bottom: rect.bottom,
+            centerY: rect.top + rect.height / 2,
+            viewportHeight: window.innerHeight,
+            distanceFromPointer: Math.abs((rect.top + rect.height / 2) - anchor.y),
+        };
+    }, pointer);
+    expect(layout.top).toBeGreaterThanOrEqual(0);
+    expect(layout.bottom).toBeLessThanOrEqual(layout.viewportHeight);
+    expect(layout.distanceFromPointer).toBeLessThanOrEqual(60);
+}
+
+async function expectLineChartReadoutStaysInsideStatsPanel(page) {
+    const capture = page.locator('.excluded-capacity-line-hover-capture').first();
+    await expect(capture).toBeVisible();
+    await capture.scrollIntoViewIfNeeded();
+    const captureBox = await capture.boundingBox();
+    expect(captureBox).not.toBeNull();
+    await page.mouse.move(captureBox.x + captureBox.width - 4, captureBox.y + captureBox.height / 2);
+    const bubble = page.locator('.excluded-capacity-line-hover-bubble');
+    await expect(bubble).toBeVisible();
+    const layout = await bubble.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        const panelRect = document.querySelector('.stats-panel.open')?.getBoundingClientRect();
+        return {
+            left: rect.left,
+            right: rect.right,
+            width: rect.width,
+            panelLeft: panelRect?.left,
+            panelRight: panelRect?.right,
+            text: node.textContent || '',
+        };
+    });
+    expect(layout.width).toBeGreaterThanOrEqual(200);
+    expect(layout.left).toBeGreaterThanOrEqual(layout.panelLeft);
+    expect(layout.right).toBeLessThanOrEqual(layout.panelRight);
+    expect(layout.text).toContain('Team');
+}
+
 async function expectWindowSticky(page, selector) {
     const locator = page.locator(selector).first();
     await expect(locator).toBeVisible();
@@ -809,6 +865,8 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
     await expect(summary.getByText('Planning config')).toHaveCount(0);
     await expect(summary.getByText('Excluded epic keys from team group settings')).toHaveCount(0);
     await expectTeamDropdownAboveStatsPanel(page);
+    await expectEffortSplitReadoutTracksPointer(page);
+    await expectLineChartReadoutStaysInsideStatsPanel(page);
     await captureSmokeScreenshot(page, 'excluded-capacity-share-summary');
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });

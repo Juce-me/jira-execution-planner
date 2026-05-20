@@ -5975,9 +5975,29 @@
         }
 
         .excluded-capacity-line-hover-bubble {
+            position: fixed;
             bottom: auto;
-            transform: translate(-50%, -50%);
+            width: min(260px, calc(100vw - 24px));
+            min-width: 0;
+            max-width: min(260px, calc(100vw - 24px));
+            transform: translate(12px, -50%);
             background: rgba(255, 255, 255, 0.97);
+        }
+
+        .excluded-capacity-line-hover-bubble.is-left {
+            transform: translate(calc(-100% - 12px), -50%);
+        }
+
+        .excluded-capacity-line-hover-bubble.is-right {
+            transform: translate(12px, -50%);
+        }
+
+        .excluded-capacity-line-hover-bubble .burnout-hover-title,
+        .excluded-capacity-line-hover-bubble .burnout-hover-row span {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .excluded-capacity-line-hover-bubble .burnout-hover-row {

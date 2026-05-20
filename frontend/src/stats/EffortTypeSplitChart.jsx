@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 
 const BUCKETS = [
     { key: 'excludedCapacity', label: 'Excluded Capacity' },
@@ -8,6 +9,7 @@ const BUCKETS = [
 const READOUT_EDGE_GUTTER = 12;
 const READOUT_POINTER_GAP = 12;
 const READOUT_WIDTH = 260;
+const READOUT_HEIGHT = 72;
 const READOUT_VERTICAL_INSET = 56;
 const FULL_SEGMENT_LABEL_MIN_WIDTH = 10.5;
 
@@ -22,15 +24,17 @@ function clampReadoutPoint(x, y) {
     const viewportWidth = Number(window.innerWidth) || 0;
     const viewportHeight = Number(window.innerHeight) || 0;
     const readoutWidth = Math.min(READOUT_WIDTH, Math.max(0, viewportWidth - (READOUT_EDGE_GUTTER * 2)));
-    const anchorOnLeft = x >= readoutWidth + READOUT_POINTER_GAP + READOUT_EDGE_GUTTER;
+    const readoutHeight = Math.min(READOUT_HEIGHT, Math.max(0, viewportHeight - (READOUT_EDGE_GUTTER * 2)));
+    const anchorOnLeft = x > viewportWidth - readoutWidth - READOUT_POINTER_GAP - READOUT_EDGE_GUTTER
+        && x >= readoutWidth + READOUT_POINTER_GAP + READOUT_EDGE_GUTTER;
     const minX = anchorOnLeft
         ? readoutWidth + READOUT_POINTER_GAP + READOUT_EDGE_GUTTER
         : READOUT_EDGE_GUTTER;
     const maxX = anchorOnLeft
         ? Math.max(minX, viewportWidth - READOUT_EDGE_GUTTER)
         : Math.max(minX, viewportWidth - readoutWidth - READOUT_POINTER_GAP - READOUT_EDGE_GUTTER);
-    const minY = READOUT_VERTICAL_INSET;
-    const maxY = Math.max(minY, viewportHeight - READOUT_EDGE_GUTTER);
+    const minY = Math.max(READOUT_VERTICAL_INSET, (readoutHeight / 2) + READOUT_EDGE_GUTTER);
+    const maxY = Math.max(minY, viewportHeight - (readoutHeight / 2) - READOUT_EDGE_GUTTER);
     return {
         x: clampNumber(x, minX, maxX),
         y: clampNumber(y, minY, maxY),
@@ -81,6 +85,15 @@ export default function EffortTypeSplitChart({
     const activeBuckets = BUCKETS.filter(bucket => visibleBuckets?.[bucket.key] !== false);
     const rowList = Array.isArray(rows) ? rows : [];
     const [hovered, setHovered] = React.useState(null);
+    const readout = hovered ? (
+        <div
+            className={`effort-type-split-readout is-${hovered.side || 'right'}`}
+            style={{ left: `${hovered.x}px`, top: `${hovered.y}px` }}
+        >
+            <strong>{hovered.teamName}</strong>
+            <span>{hovered.label}: {hovered.valueText}</span>
+        </div>
+    ) : null;
 
     return (
         <div className="effort-type-split-chart" role="group" aria-label="Effort split by type across teams">
@@ -160,15 +173,9 @@ export default function EffortTypeSplitChart({
                     })}
                 </div>
             )}
-            {hovered && (
-                <div
-                    className={`effort-type-split-readout is-${hovered.side || 'left'}`}
-                    style={{ left: `${hovered.x}px`, top: `${hovered.y}px` }}
-                >
-                    <strong>{hovered.teamName}</strong>
-                    <span>{hovered.label}: {hovered.valueText}</span>
-                </div>
-            )}
+            {readout && typeof document !== 'undefined' && document.body
+                ? createPortal(readout, document.body)
+                : readout}
         </div>
     );
 }

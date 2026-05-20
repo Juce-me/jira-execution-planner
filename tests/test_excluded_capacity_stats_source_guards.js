@@ -135,6 +135,54 @@ test('effort split chart uses matching color tokens and pointer readouts', () =>
     );
 });
 
+test('effort split bar segments reset global button spacing and rounding', () => {
+    assert.match(
+        cssSource,
+        /\.effort-type-split-segment\s*\{[\s\S]*flex:\s*0 0 auto/,
+        'Expected bar segment widths to use the explicit percentage basis'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-segment\s*\{[\s\S]*margin-right:\s*0/,
+        'Expected bar segments to reset the global button margin that shifts zero-width buckets'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-segment\s*\{[\s\S]*border-radius:\s*0/,
+        'Expected only the track, not every segment, to create the rounded bar shape'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-segment:hover\s*\{[\s\S]*transform:\s*none/,
+        'Expected segment hover to avoid the global button lift'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-legend-item\s*\{[\s\S]*margin-right:\s*0/,
+        'Expected legend buttons to reset the global button margin'
+    );
+});
+
+test('effort split readout clamps away from viewport edges', () => {
+    assert.ok(
+        effortSplitChartSource.includes('function clampReadoutPoint'),
+        'Expected readout coordinates to be clamped before rendering'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('window.innerWidth'),
+        'Expected horizontal clamp to use viewport width'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('READOUT_HORIZONTAL_INSET'),
+        'Expected readout to reserve horizontal inset for tooltip width'
+    );
+    assert.match(
+        cssSource,
+        /\.effort-type-split-readout\s*\{[\s\S]*max-width:\s*min\(260px, calc\(100vw - 24px\)\)/,
+        'Expected readout width to fit within the viewport'
+    );
+});
+
 test('effort split chart exposes keyboard and screen-reader values', () => {
     assert.ok(
         effortSplitChartSource.includes('className="effort-type-split-summary"'),

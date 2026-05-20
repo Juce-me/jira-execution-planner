@@ -5,6 +5,32 @@ const BUCKETS = [
     { key: 'tech', label: 'Tech' },
     { key: 'product', label: 'Product' }
 ];
+const READOUT_EDGE_GUTTER = 12;
+const READOUT_HORIZONTAL_INSET = 150;
+const READOUT_VERTICAL_INSET = 44;
+
+function clampNumber(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+}
+
+function clampReadoutPoint(x, y) {
+    if (typeof window === 'undefined') {
+        return { x, y };
+    }
+    const viewportWidth = Number(window.innerWidth) || 0;
+    const viewportHeight = Number(window.innerHeight) || 0;
+    const useWideInset = viewportWidth > READOUT_HORIZONTAL_INSET * 2;
+    const minX = useWideInset ? READOUT_HORIZONTAL_INSET : READOUT_EDGE_GUTTER;
+    const maxX = useWideInset
+        ? viewportWidth - READOUT_HORIZONTAL_INSET
+        : Math.max(minX, viewportWidth - READOUT_EDGE_GUTTER);
+    const minY = READOUT_VERTICAL_INSET;
+    const maxY = Math.max(minY, viewportHeight - READOUT_EDGE_GUTTER);
+    return {
+        x: clampNumber(x, minX, maxX),
+        y: clampNumber(y, minY, maxY)
+    };
+}
 
 function formatSegmentValue(segment, metric, formatExcludedPoints, formatPercent) {
     if (metric === 'storyPoints') return `${formatExcludedPoints(segment?.points || 0)} SP`;
@@ -16,19 +42,19 @@ function formatSummaryValue(segment, formatExcludedPoints, formatPercent) {
 }
 
 function readoutFromPointer(event, readout) {
+    const point = clampReadoutPoint(event.clientX, event.clientY);
     return {
         ...readout,
-        x: event.clientX,
-        y: event.clientY
+        ...point
     };
 }
 
 function readoutFromElement(event, readout) {
     const rect = event.currentTarget.getBoundingClientRect();
+    const point = clampReadoutPoint(rect.left + (rect.width / 2), rect.top);
     return {
         ...readout,
-        x: rect.left + (rect.width / 2),
-        y: rect.top
+        ...point
     };
 }
 

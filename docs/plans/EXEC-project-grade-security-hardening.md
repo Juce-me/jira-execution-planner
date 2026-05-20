@@ -12,7 +12,7 @@
 
 ## Current Findings
 
-- The live Flask URL map has 68 non-static routes, including public pages, auth callbacks, admin routes, EPM/ENG/settings blueprints, and legacy root routes for scenario, stats, capacity, export, debug, and static files.
+- The live Flask URL map includes public pages, auth callbacks, admin routes, EPM/ENG/settings/scenario-draft blueprints, legacy root routes for scenario, stats, capacity, export, debug, and static files, plus a duplicate root `/` registration that must be removed or explicitly delegated.
 - `jira_server.py` still owns `OAUTH_READY_API_PATHS`, unsafe OAuth header checks, shared-config admin checks, and several root API routes.
 - OAuth mode blocks routes not listed by `is_oauth_ready_api_path()`, but that allowlist is not tied to the real Flask URL map. A new route can be added without a test forcing a security classification.
 - The local dev runner calls `app.run(host='0.0.0.0', ...)`, which exposes the app on the network by default even when running in Basic/local mode.
@@ -26,14 +26,28 @@ All routes must fall into exactly one policy class:
 | --- | --- | --- | --- |
 | `public_page` | Browser entry or static asset with no app data. | `/`, `/jira-dashboard.html`, `/frontend/dist/*`, `/favicon.ico`, `/epm-burst.svg` | No auth, security headers, no secrets. |
 | `auth_flow` | Login, OAuth callback, auth status, CSRF token, logout, reconnect pages. | `/login`, `/api/auth/*`, `/auth/*` | Existing auth-flow rules; unsafe methods require CSRF where applicable. |
-| `authenticated_read` | Read app data using Basic mode locally or OAuth DB context. | ENG reads, EPM reads, Jira catalogs, stats reads. | Basic mode only on loopback/local profile; OAuth mode requires current auth context when route touches Jira/Home/user data. |
+| `authenticated_read` | Read app data using Basic mode locally or a real authenticated OAuth browser session. | ENG reads, EPM reads, Jira catalogs, stats reads. | Basic mode only on loopback/local profile; OAuth mode requires a real active browser session, not a fallback empty `RequestAuthContext`. |
 | `user_write` | Reads or mutates current user's private state. | `/api/me/views`, `/api/me/connections/home-token` | Authenticated user; unsafe methods require token-bound CSRF. |
+| `workspace_write` | Mutates collaborative workspace state that is not admin-only. | Scenario draft save, rollback, presence, locks, reload, writeback preview/blocker. | Authenticated user in the resolved workspace; unsafe methods require `X-Requested-With` and token-bound CSRF; object ids must belong to the current workspace. |
 | `shared_admin_write` | Mutates shared workspace/app configuration. | `/api/projects/selected`, `/api/board-config`, field mappings, EPM config. | Tool admin plus token-bound CSRF in OAuth/DB mode; Basic mode local-only. |
 | `tool_admin` | Operator/admin inspection or user/service credential administration. | `/api/admin/*` | DB auth, active tool admin; unsafe methods require token-bound CSRF. |
 | `dev_local` | Diagnostic/probe endpoint that must not be reachable in project-grade/network mode. | `/api/debug-fields`, `/api/tasks-fields`, `/api/auth/dev/home-graphql-oauth-probe` | `APP_ENVIRONMENT_KEY in {local, dev}` plus explicit allow flag plus loopback request. |
 | `legacy_basic_local` | Existing compatibility route allowed only for local Basic mode during migration. | `/api/scenario/overrides` POST until DB drafts replace it. | Basic mode, loopback request, no OAuth DB write bypass. |
 
 Default rule: if a route has no policy, return `404 route_not_found` or `501 route_not_oauth_ready` before route code runs. Do not add public API routes by default.
+
+Central request classification must use Flask's resolved `request.url_rule.rule`, `request.method`, and `request.endpoint`. Compatibility helpers that receive concrete paths, such as `is_oauth_ready_api_path("/api/epm/projects/home-1/issues")`, must use a separate concrete-path matcher compiled from the policy registry. Do not reuse Flask rule-string matching against raw request paths.
+
+Expected shared error bodies:
+
+| Case | Status | Body requirements |
+| --- | --- | --- |
+| Missing OAuth browser session | `401` | `{"error": "auth_required", "loginUrl": "/login?reason=session_expired"}` |
+| Missing OAuth scope | `401` | `{"error": "auth_required", "loginUrl": "/login?reason=missing_scope"}` |
+| Missing `X-Requested-With` or CSRF | `403` | `{"error": "csrf_required", "message": "...CSRF..."}` |
+| Non-admin shared/admin write | `403` | `{"error": "admin_required", "recoveryUrl": "/auth/admin-required"}` |
+| Unclassified OAuth API | `501` | `{"error": "route_not_oauth_ready"}` |
+| Disabled dev-local endpoint | `404` | `{"error": "not_found"}` |
 
 ## Target File Map
 
@@ -45,13 +59,13 @@ Default rule: if a route has no policy, return `404 route_not_found` or `501 rou
 - Modify `jira_server.py`: keep compatibility wrappers, remove duplicated route guard lists, default bind host to `127.0.0.1`, and reject network bind unless explicitly allowed.
 - Modify `backend/routes/auth_routes.py`: require local/dev allow flag and loopback for `/api/auth/dev/home-graphql-oauth-probe`.
 - Modify `backend/routes/settings_routes.py`, `backend/routes/epm_routes.py`, `backend/routes/eng_routes.py`: remove duplicate guard helpers only after shared guard coverage exists.
-- Create `backend/routes/scenario_routes.py`, `backend/routes/stats_routes.py`, `backend/routes/capacity_routes.py`, `backend/routes/export_routes.py`, `backend/routes/dev_routes.py`: move remaining root API routes out of `jira_server.py` without behavior changes.
+- Create `backend/routes/scenario_routes.py`, `backend/routes/stats_routes.py`, `backend/routes/capacity_routes.py`, `backend/routes/export_routes.py`, `backend/routes/diagnostic_routes.py`, `backend/routes/dev_routes.py`: move remaining root API routes out of `jira_server.py` without behavior changes.
 - Create `tests/test_endpoint_policy_inventory.py`: every Flask route has exactly one policy.
 - Create `tests/test_endpoint_security_matrix.py`: sampled unauth/auth/non-admin/admin behavior for each policy class.
 - Create `tests/test_network_bind_guards.py`: loopback default and unsafe network bind rejection.
 - Create `tests/test_security_headers.py`: response header and CORS safety checks.
 - Create `tests/test_project_packaging.py`: package metadata, console entrypoint, and install script consistency.
-- Modify `tests/test_oauth_route_guards.py`, `tests/test_backend_route_source_guards.py`, `tests/test_pre_db_admin_gates.py`: align existing guard tests with the central policy registry.
+- Modify `tests/test_oauth_route_guards.py`, `tests/test_backend_route_source_guards.py`, `tests/test_pre_db_admin_gates.py`, `tests/test_oauth_jira_client_source_guard.py`: align existing guard tests with the central policy registry.
 - Modify `.env.example`, `INSTALL.md`, `README.md`, `AGENTS.md`: document security profile, bind host, endpoint policy, and packaging commands.
 - Create `docs/security/endpoints.md`: generated or manually maintained endpoint policy table.
 - Create `pyproject.toml`: Python project metadata and optional console script.
@@ -91,12 +105,13 @@ Run:
 if [ -x .venv/bin/python ]; then
   .venv/bin/python --version
 else
-  python3 -m pip install --user -r requirements.txt
-  python3 --version
+  python3 -m venv .venv
+  .venv/bin/python -m pip install -r requirements.txt
+  .venv/bin/python --version
 fi
 ```
 
-Expected: a Python interpreter with repo dependencies is available before route-map or test commands run. If `.venv/bin/python` is missing, use `python3` for the Task 0 route-map command and create `.venv` in Task 6.
+Expected: a project-local Python interpreter with repo dependencies is available before route-map or test commands run. Do not install dependencies into the global user site.
 
 - [ ] **Step 3: List and open gated docs**
 
@@ -170,18 +185,51 @@ IGNORED_METHODS = {"HEAD", "OPTIONS"}
 
 
 class EndpointPolicyInventoryTests(unittest.TestCase):
-    def test_every_non_static_route_has_security_policy(self):
-        from backend.security.policy import classify_rule
+    def route_methods(self, rule):
+        return sorted(method for method in rule.methods if method not in IGNORED_METHODS)
 
+    def test_every_non_static_route_method_has_exactly_one_security_policy(self):
+        from backend.security.policy import matching_policies
+
+        ambiguous = []
         missing = []
         for rule in jira_server.app.url_map.iter_rules():
             if rule.endpoint in IGNORED_ENDPOINTS:
                 continue
-            methods = sorted(method for method in rule.methods if method not in IGNORED_METHODS)
-            if not classify_rule(rule.rule, methods, rule.endpoint):
-                missing.append({"rule": rule.rule, "methods": methods, "endpoint": rule.endpoint})
+            for method in self.route_methods(rule):
+                matches = matching_policies(rule.rule, [method], rule.endpoint)
+                if not matches:
+                    missing.append({"rule": rule.rule, "method": method, "endpoint": rule.endpoint})
+                elif len(matches) > 1:
+                    ambiguous.append({
+                        "rule": rule.rule,
+                        "method": method,
+                        "endpoint": rule.endpoint,
+                        "policies": [policy.name for policy in matches],
+                    })
 
         self.assertEqual(missing, [])
+        self.assertEqual(ambiguous, [])
+
+    def test_no_duplicate_route_method_registrations(self):
+        seen = {}
+        duplicates = []
+        for rule in jira_server.app.url_map.iter_rules():
+            if rule.endpoint in IGNORED_ENDPOINTS:
+                continue
+            for method in self.route_methods(rule):
+                key = (rule.rule, method)
+                if key in seen:
+                    duplicates.append({
+                        "rule": rule.rule,
+                        "method": method,
+                        "firstEndpoint": seen[key],
+                        "secondEndpoint": rule.endpoint,
+                    })
+                else:
+                    seen[key] = rule.endpoint
+
+        self.assertEqual(duplicates, [])
 
     def test_policy_names_are_unique(self):
         from backend.security.policy import ENDPOINT_POLICIES
@@ -195,6 +243,21 @@ class EndpointPolicyInventoryTests(unittest.TestCase):
 
         missing = sorted(route for route in routes_requiring_samples() if route not in ROUTE_SAMPLES)
         self.assertEqual(missing, [])
+
+    def test_dynamic_path_compatibility_samples_are_oauth_ready(self):
+        from backend.security.policy import is_oauth_ready_api_path
+        from tests.endpoint_security_samples import ROUTE_SAMPLES
+
+        wrong = []
+        for rule, sample in sorted(ROUTE_SAMPLES.items()):
+            if not sample.startswith("/api/"):
+                continue
+            if sample.startswith("/api/auth/dev/"):
+                continue
+            if not is_oauth_ready_api_path(sample):
+                wrong.append({"rule": rule, "sample": sample})
+
+        self.assertEqual(wrong, [])
 
     def test_policy_covers_existing_oauth_ready_routes_before_wrapper_removal(self):
         from backend.security.policy import classify_rule
@@ -235,6 +298,15 @@ ROUTE_SAMPLES = {
     "/api/epm/projects/<home_project_id>/issues": "/api/epm/projects/home-project-1/issues",
     "/api/epm/projects/<project_id>/rollup": "/api/epm/projects/home-project-1/rollup",
     "/api/me/views/<view_id>": "/api/me/views/view-1",
+    "/api/scenario/drafts/<draft_id>/events": "/api/scenario/drafts/draft-1/events",
+    "/api/scenario/drafts/<draft_id>/events/stream": "/api/scenario/drafts/draft-1/events/stream",
+    "/api/scenario/drafts/<draft_id>/locks": "/api/scenario/drafts/draft-1/locks",
+    "/api/scenario/drafts/<draft_id>/presence": "/api/scenario/drafts/draft-1/presence",
+    "/api/scenario/drafts/<draft_id>/reload-from-jira": "/api/scenario/drafts/draft-1/reload-from-jira",
+    "/api/scenario/drafts/<draft_id>/rollback": "/api/scenario/drafts/draft-1/rollback",
+    "/api/scenario/drafts/<draft_id>/versions/<int:version_number>": "/api/scenario/drafts/draft-1/versions/1",
+    "/api/scenario/drafts/<draft_id>/writeback": "/api/scenario/drafts/draft-1/writeback",
+    "/api/scenario/drafts/<draft_id>/writeback/preview": "/api/scenario/drafts/draft-1/writeback/preview",
     "/frontend/dist/<path:filename>": "/frontend/dist/dashboard.js",
     "/static/<path:filename>": "/static/missing.txt",
 }
@@ -266,6 +338,7 @@ Expected: commit contains tests only.
 **Files:**
 - Create: `backend/security/__init__.py`
 - Create: `backend/security/policy.py`
+- Modify: `jira_server.py`
 - Test: `tests/test_endpoint_policy_inventory.py`
 
 - [ ] **Step 1: Add the security package marker**
@@ -280,16 +353,34 @@ Create `backend/security/__init__.py`:
 
 Create `backend/security/policy.py` with the concrete policy entries for current routes. The registry may use exact, prefix, or Flask dynamic-pattern matches, but it must classify every route in the current URL map and no route may match two policies.
 
-Use these policy classes exactly: `public_page`, `auth_flow`, `authenticated_read`, `user_write`, `shared_admin_write`, `tool_admin`, `dev_local`, `legacy_basic_local`.
+Use these policy classes exactly: `public_page`, `auth_flow`, `authenticated_read`, `user_write`, `workspace_write`, `shared_admin_write`, `tool_admin`, `dev_local`, `legacy_basic_local`.
 
 Required initial entries:
 
 ```python
+import re
 from dataclasses import dataclass
 
 
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 PUBLIC_METHODS = frozenset({"GET"})
+
+
+def _dynamic_rule_regex(rule: str) -> re.Pattern:
+    parts = []
+    index = 0
+    for match in re.finditer(r"<(?:(int|path|string):)?([^>]+)>", rule):
+        parts.append(re.escape(rule[index:match.start()]))
+        converter = match.group(1) or "string"
+        if converter == "int":
+            parts.append(r"\d+")
+        elif converter == "path":
+            parts.append(r".+")
+        else:
+            parts.append(r"[^/]+")
+        index = match.end()
+    parts.append(re.escape(rule[index:]))
+    return re.compile("^" + "".join(parts) + "$")
 
 
 @dataclass(frozen=True)
@@ -301,7 +392,7 @@ class EndpointPolicy:
     match: str = "exact"
     exclude_paths: tuple[str, ...] = ()
 
-    def matches(self, rule: str, methods: list[str] | tuple[str, ...], endpoint: str = "") -> bool:
+    def matches_rule(self, rule: str, method: str, endpoint: str = "") -> bool:
         if any(rule == excluded or rule.startswith(excluded) for excluded in self.exclude_paths):
             return False
         if self.match == "exact" and rule != self.path:
@@ -310,7 +401,20 @@ class EndpointPolicy:
             return False
         if self.match == "dynamic" and rule != self.path:
             return False
-        return bool(set(methods).intersection(self.methods))
+        return method in self.methods
+
+    def matches_path(self, path: str, method: str) -> bool:
+        if any(path == excluded or path.startswith(excluded) for excluded in self.exclude_paths):
+            return False
+        if method not in self.methods:
+            return False
+        if self.match == "exact":
+            return path == self.path
+        if self.match == "prefix":
+            return path.startswith(self.path)
+        if self.match == "dynamic":
+            return bool(_dynamic_rule_regex(self.path).match(path))
+        return False
 
 
 ENDPOINT_POLICIES = (
@@ -379,6 +483,18 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("epm-projects-preview", "/api/epm/projects/preview", frozenset({"POST"}), "authenticated_read"),
     EndpointPolicy("epm-projects-rollup-all", "/api/epm/projects/rollup/all", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("scenario-main", "/api/scenario", frozenset({"GET", "POST"}), "authenticated_read"),
+    EndpointPolicy("scenario-drafts-root-read", "/api/scenario/drafts", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("scenario-drafts-root-write", "/api/scenario/drafts", frozenset({"POST"}), "workspace_write"),
+    EndpointPolicy("scenario-draft-version", "/api/scenario/drafts/<draft_id>/versions/<int:version_number>", PUBLIC_METHODS, "authenticated_read", "dynamic"),
+    EndpointPolicy("scenario-draft-events", "/api/scenario/drafts/<draft_id>/events", PUBLIC_METHODS, "authenticated_read", "dynamic"),
+    EndpointPolicy("scenario-draft-events-stream", "/api/scenario/drafts/<draft_id>/events/stream", PUBLIC_METHODS, "authenticated_read", "dynamic"),
+    EndpointPolicy("scenario-draft-presence-read", "/api/scenario/drafts/<draft_id>/presence", PUBLIC_METHODS, "authenticated_read", "dynamic"),
+    EndpointPolicy("scenario-draft-presence-write", "/api/scenario/drafts/<draft_id>/presence", frozenset({"POST"}), "workspace_write", "dynamic"),
+    EndpointPolicy("scenario-draft-locks", "/api/scenario/drafts/<draft_id>/locks", frozenset({"POST"}), "workspace_write", "dynamic"),
+    EndpointPolicy("scenario-draft-reload", "/api/scenario/drafts/<draft_id>/reload-from-jira", frozenset({"POST"}), "workspace_write", "dynamic"),
+    EndpointPolicy("scenario-draft-rollback", "/api/scenario/drafts/<draft_id>/rollback", frozenset({"POST"}), "workspace_write", "dynamic"),
+    EndpointPolicy("scenario-draft-writeback-preview", "/api/scenario/drafts/<draft_id>/writeback/preview", frozenset({"POST"}), "workspace_write", "dynamic"),
+    EndpointPolicy("scenario-draft-writeback-blocked", "/api/scenario/drafts/<draft_id>/writeback", frozenset({"POST"}), "workspace_write", "dynamic"),
     EndpointPolicy("scenario-overrides-read", "/api/scenario/overrides", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("scenario-overrides-legacy-write", "/api/scenario/overrides", frozenset({"POST"}), "legacy_basic_local"),
     EndpointPolicy("stats-read", "/api/stats", PUBLIC_METHODS, "authenticated_read"),
@@ -395,11 +511,29 @@ ENDPOINT_POLICIES = (
 
 
 def matching_policies(rule: str, methods: list[str] | tuple[str, ...], endpoint: str = ""):
-    return [policy for policy in ENDPOINT_POLICIES if policy.matches(rule, methods, endpoint)]
+    matches = []
+    seen = set()
+    for method in methods:
+        for policy in ENDPOINT_POLICIES:
+            if policy.name in seen:
+                continue
+            if policy.matches_rule(rule, method, endpoint):
+                matches.append(policy)
+                seen.add(policy.name)
+    return matches
 
 
 def classify_rule(rule: str, methods: list[str] | tuple[str, ...], endpoint: str = ""):
     policies = matching_policies(rule, methods, endpoint)
+    return policies[0] if len(policies) == 1 else None
+
+
+def matching_path_policies(path: str, method: str):
+    return [policy for policy in ENDPOINT_POLICIES if policy.matches_path(path, method)]
+
+
+def classify_request_rule(rule: str, method: str, endpoint: str = ""):
+    policies = matching_policies(rule, [method], endpoint)
     return policies[0] if len(policies) == 1 else None
 
 
@@ -430,14 +564,20 @@ def is_oauth_ready_api_path(path: str) -> bool:
         return True
     if path.startswith("/api/admin/"):
         return True
-    return any(
-        policy.policy_class not in {"dev_local", "legacy_basic_local"}
-        and policy.matches(path, ["GET", "POST", "PATCH", "DELETE"])
-        for policy in ENDPOINT_POLICIES
-    )
+    for method in ("GET", "POST", "PATCH", "DELETE"):
+        if any(
+            policy.policy_class not in {"dev_local", "legacy_basic_local"}
+            for policy in matching_path_policies(path, method)
+        ):
+            return True
+    return False
 ```
 
-- [ ] **Step 3: Run the inventory test**
+- [ ] **Step 3: Remove the duplicate root route registration**
+
+Modify `jira_server.py` so only one `@app.route('/', methods=['GET'])` registration remains. Delete the later duplicate `@app.route('/') def index(): ...` wrapper or convert it into an undecorated helper only if a caller still uses it.
+
+- [ ] **Step 4: Run the inventory test**
 
 Run:
 
@@ -447,12 +587,12 @@ Run:
 
 Expected: PASS. If it fails because a route is unclassified or matches twice, fix `ENDPOINT_POLICIES` before continuing.
 
-- [ ] **Step 4: Commit the registry**
+- [ ] **Step 5: Commit the registry**
 
 Run:
 
 ```bash
-git add backend/security/__init__.py backend/security/policy.py tests/test_endpoint_policy_inventory.py
+git add backend/security/__init__.py backend/security/policy.py jira_server.py tests/test_endpoint_policy_inventory.py
 git commit -m "security: add endpoint policy inventory"
 ```
 
@@ -464,14 +604,19 @@ git commit -m "security: add endpoint policy inventory"
 - Modify: `jira_server.py`
 - Test: `tests/test_endpoint_security_matrix.py`
 - Test: `tests/test_oauth_route_guards.py`
+- Modify/Test: `tests/test_pre_db_admin_gates.py`
+- Modify/Test: `tests/test_backend_route_source_guards.py`
 
 - [ ] **Step 1: Write matrix tests for unauthenticated and unsafe requests**
 
 Create `tests/test_endpoint_security_matrix.py` with tests that:
 
 - run OAuth mode with no browser session;
-- assert `authenticated_read`, `user_write`, `shared_admin_write`, and `tool_admin` samples do not return data to an anonymous user;
-- assert unsafe requests require `X-Requested-With: jira-execution-planner` and token-bound `X-CSRF-Token` before route code runs;
+- assert `authenticated_read`, `user_write`, `workspace_write`, `shared_admin_write`, and `tool_admin` samples do not return data to an anonymous user;
+- assert `/api/config`, `/api/projects/selected`, `/api/board-config`, and `/api/epm/config` return `401 auth_required` with `loginUrl` when OAuth mode has no real browser session;
+- assert dynamic concrete paths such as `/api/epm/projects/home-project-1/issues` and `/api/scenario/drafts/draft-1/rollback` are classified correctly;
+- assert unsafe requests require `X-Requested-With: jira-execution-planner`, and token-bound `X-CSRF-Token` where the policy class writes user, workspace, shared, or admin state, before route code runs;
+- assert exact error bodies for `auth_required`, `csrf_required`, `admin_required`, `route_not_oauth_ready`, and disabled dev-local `not_found`;
 - assert `public_page` samples stay readable.
 
 Minimum required sample list:
@@ -479,8 +624,21 @@ Minimum required sample list:
 ```python
 SECURITY_SAMPLES = {
     "public_page": [("GET", "/health"), ("GET", "/jira-dashboard.html")],
-    "authenticated_read": [("GET", "/api/tasks"), ("GET", "/api/epm/projects"), ("GET", "/api/stats")],
+    "authenticated_read": [
+        ("GET", "/api/config"),
+        ("GET", "/api/projects/selected"),
+        ("GET", "/api/tasks"),
+        ("GET", "/api/epm/projects"),
+        ("GET", "/api/epm/projects/home-project-1/issues"),
+        ("GET", "/api/stats"),
+        ("GET", "/api/scenario/drafts"),
+    ],
     "user_write": [("POST", "/api/me/views"), ("POST", "/api/export-excel")],
+    "workspace_write": [
+        ("POST", "/api/scenario/drafts"),
+        ("POST", "/api/scenario/drafts/draft-1/rollback"),
+        ("POST", "/api/scenario/drafts/draft-1/writeback"),
+    ],
     "shared_admin_write": [("POST", "/api/board-config"), ("POST", "/api/epm/config")],
     "tool_admin": [("GET", "/api/admin/users"), ("POST", "/api/admin/users/user-1/status")],
     "dev_local": [("GET", "/api/debug-fields"), ("GET", "/api/tasks-fields")],
@@ -501,17 +659,21 @@ Expected: FAIL until `backend/security/guards.py` is registered.
 
 Create `backend/security/guards.py` with a `register_security_guards(flask_app)` function. It must:
 
-- classify the incoming request using `backend.security.policy`;
+- avoid module-level imports of `jira_server`; use `backend.routes.get_jira_server()` or lazy imports inside functions so app construction cannot circular-import partially initialized globals;
+- classify the incoming request using `request.url_rule.rule`, `request.method`, and `request.endpoint` through `backend.security.policy.classify_request_rule`;
 - reject unclassified `/api/*` routes before route code;
 - reject unclassified non-API routes with `404 route_not_found`, except Flask's built-in static handler when explicitly ignored by tests;
 - keep `public_page` readable;
 - keep auth-flow routes under existing auth behavior;
-- require current auth context for OAuth authenticated app data;
+- require a real authenticated OAuth browser session for `authenticated_read`, `user_write`, `workspace_write`, `shared_admin_write`, and `tool_admin`; do not accept the fallback empty OAuth `RequestAuthContext` produced when no session exists;
+- preserve the existing missing-scope recovery contract: stale OAuth scopes return `401 auth_required` with `loginUrl: /login?reason=missing_scope`;
 - reject unsafe OAuth requests missing `X-Requested-With`;
-- require token-bound CSRF for unsafe methods on `user_write`, `shared_admin_write`, and `tool_admin`;
+- require token-bound CSRF for unsafe methods on `user_write`, `workspace_write`, `shared_admin_write`, and `tool_admin`;
 - require admin for `shared_admin_write` and `tool_admin`;
 - reject `dev_local` unless `APP_ENVIRONMENT_KEY` is `local` or `dev`, `ALLOW_DEV_DIAGNOSTIC_ENDPOINTS=true`, and `request.remote_addr` is loopback;
 - reject `legacy_basic_local` in OAuth/DB mode.
+
+Update `tests/test_pre_db_admin_gates.py` in the same task so successful shared-config write tests fetch `/api/auth/csrf` and send both `X-Requested-With` and `X-CSRF-Token`; keep negative cases for missing/invalid CSRF.
 
 - [ ] **Step 4: Register guards before blueprints**
 
@@ -539,7 +701,10 @@ Then modify `jira_server.py` so:
 - `is_oauth_ready_api_path(path)` delegates to `backend.security.policy.is_oauth_ready_api_path(path)`;
 - `OAUTH_READY_API_PATHS` remains exported for existing tests/callers, but is now a computed compatibility value from `oauth_ready_api_paths()`;
 - `OAUTH_SHARED_CONFIG_WRITE_PATHS` remains exported for existing tests/callers, but is now a computed compatibility value from `shared_config_write_paths()`;
-- no independent handwritten allowlist remains in `jira_server.py`.
+- no independent handwritten allowlist remains in `jira_server.py`;
+- old app-level guards at `require_oauth_unsafe_method_header`, `require_db_admin_csrf_token`, `reject_unmigrated_oauth_routes`, `reject_stale_oauth_scope_api_sessions`, and `require_oauth_shared_config_admin` are removed or reduced to one-line delegates to the central guard.
+
+Extend source-guard tests so they fail if `jira_server.py` still contains independent `@app.before_request` auth/CSRF guard implementations after `backend/security/guards.py` exists.
 
 - [ ] **Step 6: Run focused guard tests**
 
@@ -556,7 +721,7 @@ Expected: PASS.
 Run:
 
 ```bash
-git add backend/security/guards.py backend/app.py jira_server.py tests/test_endpoint_security_matrix.py tests/test_oauth_route_guards.py
+git add backend/security/guards.py backend/app.py jira_server.py tests/test_endpoint_security_matrix.py tests/test_oauth_route_guards.py tests/test_pre_db_admin_gates.py tests/test_backend_route_source_guards.py
 git commit -m "security: enforce central endpoint guards"
 ```
 
@@ -570,6 +735,7 @@ git commit -m "security: enforce central endpoint guards"
 - Modify: `.env.example`
 - Modify: `INSTALL.md`
 - Modify: `README.md`
+- Modify only if self-hosting/removing external fonts: `jira-dashboard.html`
 - Test: `tests/test_network_bind_guards.py`
 - Test: `tests/test_security_headers.py`
 
@@ -579,6 +745,7 @@ Create `tests/test_network_bind_guards.py`:
 
 ```python
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import jira_server
@@ -601,6 +768,40 @@ class NetworkBindGuardTests(unittest.TestCase):
             with self.assertRaises(jira_server.AuthError) as raised:
                 jira_server.validate_network_bind("0.0.0.0")
         self.assertEqual(raised.exception.code, "secure_cookie_required")
+
+    def test_oauth_local_token_store_cannot_bind_to_network(self):
+        env = {
+            "ALLOW_NETWORK_BIND": "true",
+            "APP_ENVIRONMENT_KEY": "local",
+            "APP_ALLOWED_ORIGINS": "https://planner.example.test",
+            "FLASK_SECRET_KEY": "secret",
+            "OAUTH_LOCAL_TOKEN_STORE_ALLOWED": "true",
+            "SESSION_COOKIE_SECURE": "true",
+        }
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.dict("os.environ", env, clear=False):
+            with self.assertRaises(jira_server.AuthError) as raised:
+                jira_server.validate_network_bind("0.0.0.0")
+        self.assertEqual(raised.exception.code, "local_token_store_network_bind_not_allowed")
+
+    def test_main_validates_bind_host_before_app_run(self):
+        args = SimpleNamespace(
+            jira_url=None,
+            jira_email=None,
+            jira_token=None,
+            jira_query=None,
+            server_port=None,
+        )
+        with patch.object(jira_server, "parse_args", return_value=args), \
+             patch.object(jira_server, "validate_startup_auth_config"), \
+             patch.object(jira_server, "default_bind_host", return_value="127.0.0.1"), \
+             patch.object(jira_server, "validate_network_bind", return_value="127.0.0.1") as validate_bind, \
+             patch.object(jira_server.app, "run") as run:
+            jira_server.main()
+
+        validate_bind.assert_called_once_with("127.0.0.1")
+        run.assert_called_once()
+        self.assertEqual(run.call_args.kwargs.get("host"), "127.0.0.1")
 ```
 
 - [ ] **Step 2: Add response header tests**
@@ -627,6 +828,15 @@ class SecurityHeaderTests(unittest.TestCase):
     def test_api_response_has_no_store_cache_header(self):
         response = self.client.get("/api/auth/status")
         self.assertEqual(response.headers.get("Cache-Control"), "no-store")
+
+    def test_credentialed_cors_allows_configured_origin(self):
+        response = self.client.get("/api/auth/status", headers={"Origin": "http://localhost:5050"})
+        self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "http://localhost:5050")
+        self.assertEqual(response.headers.get("Access-Control-Allow-Credentials"), "true")
+
+    def test_credentialed_cors_rejects_unconfigured_origin(self):
+        response = self.client.get("/api/auth/status", headers={"Origin": "https://evil.example.test"})
+        self.assertNotEqual(response.headers.get("Access-Control-Allow-Origin"), "https://evil.example.test")
 ```
 
 - [ ] **Step 3: Run the new tests and verify the red state**
@@ -660,9 +870,10 @@ Required behavior:
 - `ALLOW_NETWORK_BIND` is the global network-exposure gate;
 - in Basic mode, `ALLOW_NETWORK_BIND=true` is still not enough: the bind also requires `ALLOW_BASIC_AUTH_ON_NETWORK=true` and `APP_ENVIRONMENT_KEY=local`, otherwise raise `AuthError("basic_network_bind_not_allowed", ...)`;
 - in OAuth mode, network bind requires `SESSION_COOKIE_SECURE=true`, non-empty `APP_ALLOWED_ORIGINS` without `*`, and non-empty `FLASK_SECRET_KEY`, otherwise raise `AuthError("secure_cookie_required", ...)` for the secure-cookie case or a specific `AuthError` code for the missing origin/secret case;
+- if `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`, all non-loopback binds are rejected with `AuthError("local_token_store_network_bind_not_allowed", ...)` even when the other OAuth network-bind flags are present;
 - missing `ALLOW_NETWORK_BIND=true` raises `AuthError("network_bind_not_allowed", ...)`.
 
-Update `app.run(host=...)` to use `APP_BIND_HOST` or `default_bind_host()`.
+Update `app.run(host=...)` to call `validate_network_bind(default_bind_host())` inside `main()` before `app.run`; tests must patch `app.run` and prove `main()` passes the validated host to Flask.
 
 - [ ] **Step 5: Add response security headers**
 
@@ -671,7 +882,7 @@ Create `backend/security/headers.py` and register after-request headers:
 - `X-Content-Type-Options: nosniff`;
 - `Referrer-Policy: same-origin`;
 - `X-Frame-Options: SAMEORIGIN`;
-- `Content-Security-Policy` allowing self, current inline styles/scripts only as required by the existing single-page app;
+- `Content-Security-Policy` allowing self, current inline styles/scripts only as required by the existing single-page app, and either explicitly allowing the current Google Fonts stylesheet/font origins from `jira-dashboard.html` or removing/self-hosting that font dependency in the same task;
 - `Cache-Control: no-store` for `/api/*`;
 - no HSTS unless `SESSION_COOKIE_SECURE=true`.
 
@@ -708,7 +919,7 @@ Expected: PASS.
 Run:
 
 ```bash
-git add backend/security/headers.py backend/app.py jira_server.py backend/routes/auth_routes.py .env.example INSTALL.md README.md tests/test_network_bind_guards.py tests/test_security_headers.py
+git add backend/security/headers.py backend/app.py jira_server.py backend/routes/auth_routes.py .env.example INSTALL.md README.md jira-dashboard.html tests/test_network_bind_guards.py tests/test_security_headers.py
 git commit -m "security: close network and diagnostic defaults"
 ```
 
@@ -719,6 +930,7 @@ git commit -m "security: close network and diagnostic defaults"
 - Create: `backend/routes/stats_routes.py`
 - Create: `backend/routes/capacity_routes.py`
 - Create: `backend/routes/export_routes.py`
+- Create: `backend/routes/diagnostic_routes.py`
 - Create: `backend/routes/dev_routes.py`
 - Modify: `backend/app.py`
 - Modify: `jira_server.py`
@@ -735,6 +947,7 @@ ROOT_ROUTE_GROUPS = {
     "stats": ("/api/stats", "/api/stats/burnout", "/api/stats/epic-cohort", "/api/stats/excluded-capacity-source"),
     "capacity": ("/api/capacity", "/api/planned-capacity"),
     "export": ("/api/export-excel",),
+    "diagnostic": ("/api/test",),
     "dev": ("/api/debug-fields", "/api/tasks-fields"),
 }
 ```
@@ -762,6 +975,7 @@ EXPECTED_MOVED_ROUTE_METHODS = {
     "/api/capacity": {"GET"},
     "/api/planned-capacity": {"GET"},
     "/api/export-excel": {"POST"},
+    "/api/test": {"GET"},
     "/api/debug-fields": {"GET"},
     "/api/tasks-fields": {"GET"},
 }
@@ -813,11 +1027,15 @@ For each new blueprint module:
 
 1. copy the route functions from `jira_server.py`;
 2. keep imports narrow;
-3. call shared helpers through the existing `backend.routes.get_jira_server()` only when a helper still lives in `jira_server.py`;
+3. avoid module-level `jira_server` imports; call shared helpers through the existing `backend.routes.get_jira_server()` or `bind_server_globals()` lazy sync pattern only when a helper still lives in `jira_server.py`;
 4. register the blueprint in `backend/app.py`;
 5. remove the root `@app.route` decorators for that group from `jira_server.py`;
 6. run the focused tests named below before moving the next group;
 7. verify `tests.test_route_move_preservation` after every group so URL/method shape does not drift.
+
+Scenario move requirement: preserve `jira_server.scenario_planner` as an undecorated compatibility callable or extract the planner computation into a shared service before removing the root route decorator, because `backend/routes/scenario_draft_routes.py` calls it for reload-from-Jira.
+
+Dev move requirement: remove unused manual Basic `Authorization` header construction from the debug/tasks-fields handlers during the move, and update `tests/test_oauth_jira_client_source_guard.py` so `backend/routes/dev_routes.py` cannot reintroduce service-credential or Basic-auth bypasses.
 
 - [ ] **Step 6: Verify each route group after moving**
 
@@ -825,6 +1043,12 @@ Run after Scenario routes:
 
 ```bash
 .venv/bin/python -m unittest tests.test_route_move_preservation tests.test_oauth_stats_routes tests.test_scenario_issue_dates tests.test_scenario_single_team_filter tests.test_backend_route_source_guards
+```
+
+Also run after Scenario routes:
+
+```bash
+.venv/bin/python -m unittest tests.test_scenario_draft_routes
 ```
 
 Run after stats routes:
@@ -836,7 +1060,7 @@ Run after stats routes:
 Run after capacity/export/dev routes:
 
 ```bash
-.venv/bin/python -m unittest tests.test_route_move_preservation tests.test_oauth_settings_routes tests.test_oauth_route_guards tests.test_endpoint_security_matrix tests.test_backend_route_source_guards
+.venv/bin/python -m unittest tests.test_route_move_preservation tests.test_oauth_settings_routes tests.test_oauth_route_guards tests.test_endpoint_security_matrix tests.test_backend_route_source_guards tests.test_oauth_jira_client_source_guard
 ```
 
 - [ ] **Step 7: Commit each group separately**
@@ -846,7 +1070,7 @@ Use these commit messages:
 ```bash
 git commit -m "refactor: move scenario API routes into blueprint"
 git commit -m "refactor: move stats API routes into blueprint"
-git commit -m "refactor: move capacity and export routes into blueprints"
+git commit -m "refactor: move capacity, export, and diagnostics into blueprints"
 git commit -m "refactor: move dev diagnostics into guarded blueprint"
 ```
 
@@ -877,12 +1101,13 @@ class ProjectPackagingTests(unittest.TestCase):
     def test_pyproject_declares_runtime_package_and_python_version(self):
         source = (ROOT / "pyproject.toml").read_text(encoding="utf8")
         self.assertIn('name = "jira-execution-planner"', source)
-        self.assertIn('requires-python = ">=3.11"', source)
+        self.assertIn('requires-python = ">=3.9"', source)
         self.assertIn('jira-execution-planner = "jira_server:main"', source)
 
     def test_install_script_uses_requirements_file(self):
         source = (ROOT / "install.sh").read_text(encoding="utf8")
         self.assertIn(".venv/bin/python -m pip install -r requirements.txt", source)
+        self.assertIn(".venv/bin/python -m pip install -e .", source)
         self.assertNotIn("pip3 install --user flask flask-cors requests", source)
 
     def test_makefile_exposes_standard_targets(self):
@@ -900,7 +1125,7 @@ Refactor the bottom of `jira_server.py` so the current `if __name__ == '__main__
 Create a minimal project metadata file with:
 
 - project name `jira-execution-planner`;
-- `requires-python = ">=3.11"`;
+- `requires-python = ">=3.9"` to preserve the existing Python 3.9 runtime guard and LibreSSL/urllib3 pin expectations;
 - console script `jira-execution-planner = "jira_server:main"`;
 - packages including `backend` and `planning`.
 
@@ -910,6 +1135,7 @@ Update `install.sh` so it:
 
 - creates `.venv` when missing;
 - installs `requirements.txt` through `.venv/bin/python -m pip install -r requirements.txt`;
+- installs the project itself through `.venv/bin/python -m pip install -e .` so the `jira-execution-planner` console script exists after `./install.sh`;
 - prints the DB/OAuth migration reminder from `INSTALL.md`;
 - never hardcodes a partial dependency list.
 
@@ -923,6 +1149,7 @@ Create `Makefile` with:
 install:
 	python3 -m venv .venv
 	.venv/bin/python -m pip install -r requirements.txt
+	.venv/bin/python -m pip install -e .
 	npm ci
 
 build:
@@ -948,6 +1175,14 @@ Run:
 
 Expected: PASS.
 
+Also run:
+
+```bash
+.venv/bin/jira-execution-planner --help
+```
+
+Expected: command exists and prints the CLI help without importing missing runtime dependencies.
+
 - [ ] **Step 7: Commit project shape changes**
 
 Run:
@@ -964,26 +1199,33 @@ git commit -m "build: add project-grade packaging commands"
 - Modify: `.github/workflows/release-latest.yml`
 - Create: `docs/security/endpoints.md`
 - Modify: `docs/plans/README.md`
+- Modify if release-facing test instructions change: `README.md`, `INSTALL.md`
 
 - [ ] **Step 1: Extend CI verification**
 
 Update `.github/workflows/verify-frontend-build.yml` so it runs:
 
 ```yaml
-- uses: actions/setup-python@v5
-  with:
-    python-version: "3.11"
-- name: Install backend
-  run: python -m pip install -r requirements.txt
-- name: Backend tests
-  run: python -m unittest discover -s tests
-- name: Endpoint security tests
-  run: python -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
-- name: Frontend tests
-  run: node --test tests/test_*.js
+strategy:
+  matrix:
+    python-version: ["3.9", "3.11"]
+steps:
+  - uses: actions/setup-python@v5
+    with:
+      python-version: ${{ matrix.python-version }}
+  - name: Install backend
+    run: python -m pip install -r requirements.txt
+  - name: Backend tests
+    run: python -m unittest discover -s tests
+  - name: Endpoint security tests
+    run: python -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
+  - name: Frontend tests
+    run: node --test tests/test_*.js
 ```
 
 Keep the existing `npm ci`, `npm run build`, and dist diff check.
+
+The workflow may run the frontend build once or per matrix entry, but at least one job must run backend/security tests on Python 3.9 and one on Python 3.11.
 
 - [ ] **Step 2: Harden release packaging**
 
@@ -994,7 +1236,16 @@ Update `.github/workflows/release-latest.yml` so the zip includes only:
 - `requirements.txt`, `install.sh`, `pyproject.toml`, `.env.example`, `INSTALL.md`, `README.md`, `LICENSE`;
 - `backend/db/alembic.ini` and migration files.
 
-Exclude `.git`, `.github`, `node_modules`, tests, docs/plans, postmortems, caches, `.env*`, token stores, local config JSON, and generated Python caches.
+Exclude `.git`, `.github`, `node_modules`, tests, docs/plans, postmortems, caches, real secret env files such as `.env` and `.env.local`, token stores, local config JSON, and generated Python caches. Preserve `.env.example` in the release zip.
+
+Before the release zip is created, the release workflow must also install Python dependencies and run:
+
+```bash
+python -m unittest discover -s tests
+python -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
+```
+
+Do not publish `latest` from a job that has only built frontend assets. If the release zip excludes `tests/`, update release-facing sections of `INSTALL.md` and `README.md` so they do not instruct prebuilt-zip users to run omitted test modules.
 
 - [ ] **Step 3: Document endpoint policy**
 
@@ -1027,7 +1278,7 @@ Expected: all commands PASS and `frontend/dist` is unchanged unless frontend sou
 Run:
 
 ```bash
-git add .github/workflows/verify-frontend-build.yml .github/workflows/release-latest.yml docs/security/endpoints.md docs/plans/README.md
+git add .github/workflows/verify-frontend-build.yml .github/workflows/release-latest.yml docs/security/endpoints.md docs/plans/README.md README.md INSTALL.md
 git commit -m "ci: enforce security and packaging gates"
 ```
 
@@ -1078,7 +1329,7 @@ Expected: route returns a stable JSON response, not an HTML traceback. Stop the 
 Run:
 
 ```bash
-.venv/bin/python -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_backend_route_source_guards tests.test_route_move_preservation
+.venv/bin/python -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_pre_db_admin_gates tests.test_backend_route_source_guards tests.test_route_move_preservation tests.test_oauth_jira_client_source_guard
 ```
 
 Expected:
@@ -1087,6 +1338,7 @@ Expected:
 - `tests.test_endpoint_security_matrix` verifies anonymous OAuth-mode requests cannot read app data and dev diagnostics stay closed unless explicitly enabled.
 - `tests.test_network_bind_guards` verifies loopback defaults and network-bind safety.
 - `tests.test_security_headers` verifies the response header baseline.
+- `tests.test_oauth_route_guards` and `tests.test_pre_db_admin_gates` verify central OAuth readiness, missing-scope recovery, admin, and CSRF behavior.
 - `tests.test_backend_route_source_guards` and `tests.test_route_move_preservation` verify route extraction did not reintroduce root route ownership or URL/method drift.
 
 - [ ] **Step 5: Review git history and status**
@@ -1116,9 +1368,11 @@ Include:
 
 - Every Flask route is covered by exactly one endpoint policy.
 - New routes fail tests until they receive an explicit security policy and matrix coverage.
-- No app-data API returns Jira/Home/user/config data to an anonymous OAuth-mode request.
+- No app-data API returns Jira/Home/user/config data to an anonymous OAuth-mode request; fallback empty OAuth `RequestAuthContext` objects do not count as authenticated sessions.
 - Unsafe OAuth/DB requests require both `X-Requested-With: jira-execution-planner` and token-bound CSRF when they write user, shared, or admin state.
 - Shared configuration writes require tool admin in OAuth/DB mode.
+- Existing app-level route guards in `jira_server.py` are removed or thin delegates to the central guard; no second handwritten OAuth allowlist or shared-config write list remains.
+- Dynamic routes, including EPM project issue/rollup routes and Scenario Draft collaboration routes, work through both Flask rule classification and concrete-path compatibility checks.
 - `/api/debug-fields`, `/api/tasks-fields`, and `/api/auth/dev/home-graphql-oauth-probe` are unreachable unless explicitly enabled for local loopback development.
 - Basic mode and local token stores cannot be exposed on `0.0.0.0` by accident.
 - Flask defaults to loopback binding.

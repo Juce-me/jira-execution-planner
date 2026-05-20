@@ -48,6 +48,8 @@ import {
     pickAutoSelectedExcludedEpics,
     summarizeEffortTypeSplitTotals
 } from './stats/excludedCapacityStats.js';
+import { PRIORITY_AXIS, PRIORITY_LABEL_BY_KEY, PRIORITY_ALIASES, RADAR_PALETTE } from './stats/statsConstants.js';
+import { DEFAULT_PRIORITY_WEIGHT_ROWS, buildPriorityWeightMap, clonePriorityWeightRows } from './stats/priorityWeights.js';
 import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';
 import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
@@ -208,22 +210,6 @@ import {
         }
 
         const UI_PREFS_KEY = 'jira_dashboard_ui_prefs_v1';
-        const DEFAULT_PRIORITY_WEIGHT_ROWS = Object.freeze([
-            { priority: 'Blocker', weight: '0.4' },
-            { priority: 'Critical', weight: '0.3' },
-            { priority: 'Major', weight: '0.2' },
-            { priority: 'Minor', weight: '0.06' },
-            { priority: 'Low', weight: '0.03' },
-            { priority: 'Trivial', weight: '0.01' }
-        ]);
-
-        function clonePriorityWeightRows(rows) {
-            const source = Array.isArray(rows) && rows.length ? rows : DEFAULT_PRIORITY_WEIGHT_ROWS;
-            return source.map((row) => ({
-                priority: String(row.priority || '').trim(),
-                weight: String(row.weight ?? '').trim()
-            }));
-        }
 
         function loadUiPrefs() {
             try {
@@ -5293,29 +5279,9 @@ import {
                 }
             };
 
-            const priorityAxis = ['Blocker', 'Critical', 'Major', 'Minor', 'Low', 'Trivial'];
-            const priorityLabelByKey = {
-                blocker: 'Blocker',
-                critical: 'Critical',
-                major: 'Major',
-                minor: 'Minor',
-                low: 'Low',
-                trivial: 'Trivial'
-            };
-            const radarPalette = [
-                '#2563eb',
-                '#0ea5e9',
-                '#14b8a6',
-                '#10b981',
-                '#22c55e',
-                '#84cc16',
-                '#eab308',
-                '#f59e0b',
-                '#f97316',
-                '#a855f7',
-                '#6366f1',
-                '#64748b'
-            ];
+            const priorityAxis = PRIORITY_AXIS;
+            const priorityLabelByKey = PRIORITY_LABEL_BY_KEY;
+            const radarPalette = RADAR_PALETTE;
 
             const hashTeamId = (value) => {
                 const str = String(value || '');
@@ -6105,28 +6071,12 @@ import {
 
             const formatPercent = (value) => `${(value * 100).toFixed(2)}%`;
 
-            const priorityAliases = {
-                highest: 'blocker',
-                high: 'major',
-                medium: 'minor',
-                lowest: 'trivial'
-            };
+            const priorityAliases = PRIORITY_ALIASES;
 
-            const effectivePriorityWeightMap = React.useMemo(() => {
-                const map = {};
-                (effectivePriorityWeightsRows || []).forEach((row) => {
-                    const key = String(row?.priority || '').toLowerCase().trim();
-                    const numeric = Number(row?.weight);
-                    if (!key || Number.isNaN(numeric) || !Number.isFinite(numeric) || numeric < 0) return;
-                    map[key] = numeric;
-                });
-                if (Object.keys(map).length === 0) {
-                    clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS).forEach((row) => {
-                        map[String(row.priority || '').toLowerCase()] = Number(row.weight);
-                    });
-                }
-                return map;
-            }, [effectivePriorityWeightsRows]);
+            const effectivePriorityWeightMap = React.useMemo(
+                () => buildPriorityWeightMap(effectivePriorityWeightsRows),
+                [effectivePriorityWeightsRows]
+            );
 
             const normalizePriority = (name) => {
                 const key = String(name || '').toLowerCase().trim();

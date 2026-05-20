@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
+import { resolveFloatingHoverPosition } from '../ui/hoverBubblePosition.js';
 
 const CHART_WIDTH = 760;
 const CHART_HEIGHT = 240;
@@ -30,29 +31,16 @@ function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
 
-function clampHoverBubblePoint(x, y) {
-    if (typeof window === 'undefined') {
-        return { x, y, side: 'right' };
-    }
-    const viewportWidth = Number(window.innerWidth) || 0;
-    const viewportHeight = Number(window.innerHeight) || 0;
-    const bubbleWidth = Math.min(HOVER_BUBBLE_WIDTH, Math.max(0, viewportWidth - (HOVER_EDGE_GUTTER * 2)));
-    const bubbleHeight = Math.min(HOVER_BUBBLE_HEIGHT, Math.max(0, viewportHeight - (HOVER_EDGE_GUTTER * 2)));
-    const anchorOnLeft = x > viewportWidth - bubbleWidth - HOVER_POINTER_GAP - HOVER_EDGE_GUTTER
-        && x >= bubbleWidth + HOVER_POINTER_GAP + HOVER_EDGE_GUTTER;
-    const minX = anchorOnLeft
-        ? bubbleWidth + HOVER_POINTER_GAP + HOVER_EDGE_GUTTER
-        : HOVER_EDGE_GUTTER;
-    const maxX = anchorOnLeft
-        ? Math.max(minX, viewportWidth - HOVER_EDGE_GUTTER)
-        : Math.max(minX, viewportWidth - bubbleWidth - HOVER_POINTER_GAP - HOVER_EDGE_GUTTER);
-    const minY = (bubbleHeight / 2) + HOVER_EDGE_GUTTER;
-    const maxY = Math.max(minY, viewportHeight - (bubbleHeight / 2) - HOVER_EDGE_GUTTER);
-    return {
-        x: clamp(x, minX, maxX),
-        y: clamp(y, minY, maxY),
-        side: anchorOnLeft ? 'left' : 'right'
-    };
+function clampHoverBubblePoint(x, y, boundaryRect = null) {
+    return resolveFloatingHoverPosition({
+        x,
+        y,
+        boundaryRect,
+        bubbleWidth: HOVER_BUBBLE_WIDTH,
+        bubbleHeight: HOVER_BUBBLE_HEIGHT,
+        edgeGutter: HOVER_EDGE_GUTTER,
+        pointerGap: HOVER_POINTER_GAP
+    });
 }
 
 function ExcludedCapacityLineChart({
@@ -136,7 +124,8 @@ function ExcludedCapacityLineChart({
         if (!rect || rect.width <= 0 || rect.height <= 0) return null;
         const localX = ((event.clientX - rect.left) / rect.width) * CHART_WIDTH;
         const localY = ((event.clientY - rect.top) / rect.height) * CHART_HEIGHT;
-        const bubblePoint = clampHoverBubblePoint(event.clientX, event.clientY);
+        const boundaryRect = svg?.closest?.('.excluded-capacity-line-chart')?.getBoundingClientRect?.();
+        const bubblePoint = clampHoverBubblePoint(event.clientX, event.clientY, boundaryRect);
         if (
             localX < PADDING_LEFT ||
             localX > CHART_WIDTH - PADDING_RIGHT ||

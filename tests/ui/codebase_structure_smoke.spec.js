@@ -482,18 +482,26 @@ async function expectLineChartReadoutStaysInsideStatsPanel(page) {
     const layout = await bubble.evaluate((node) => {
         const rect = node.getBoundingClientRect();
         const panelRect = document.querySelector('.stats-panel.open')?.getBoundingClientRect();
+        const chartRect = document.querySelector('.stats-view.open .excluded-capacity-line-chart')?.getBoundingClientRect();
+        const zIndex = Number.parseInt(getComputedStyle(node).zIndex || '0', 10);
         return {
             left: rect.left,
             right: rect.right,
             width: rect.width,
             panelLeft: panelRect?.left,
             panelRight: panelRect?.right,
+            chartLeft: chartRect?.left,
+            chartRight: chartRect?.right,
+            zIndex,
             text: node.textContent || '',
         };
     });
     expect(layout.width).toBeGreaterThanOrEqual(200);
     expect(layout.left).toBeGreaterThanOrEqual(layout.panelLeft);
     expect(layout.right).toBeLessThanOrEqual(layout.panelRight);
+    expect(layout.left).toBeGreaterThanOrEqual(layout.chartLeft);
+    expect(layout.right).toBeLessThanOrEqual(layout.chartRight);
+    expect(layout.zIndex).toBeGreaterThan(80);
     expect(layout.text).toContain('Team');
 }
 
@@ -1023,7 +1031,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
 test('Excluded Capacity summary shows product and tech shares instead of source copy', async ({ page }) => {
     const calls = [];
     const apiMocks = await installApiMocks(page, calls, { excludedCapacityEpics: ['BAU-EPIC'] });
-    await page.setViewportSize({ width: 1280, height: 760 });
+    await page.setViewportSize({ width: 2048, height: 760 });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {

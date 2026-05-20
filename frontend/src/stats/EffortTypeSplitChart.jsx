@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
+import { resolveFloatingHoverPosition } from '../ui/hoverBubblePosition.js';
 
 const BUCKETS = [
     { key: 'excludedCapacity', label: 'Excluded Capacity' },
@@ -13,33 +14,16 @@ const READOUT_HEIGHT = 72;
 const READOUT_VERTICAL_INSET = 56;
 const FULL_SEGMENT_LABEL_MIN_WIDTH = 10.5;
 
-function clampNumber(value, min, max) {
-    return Math.min(Math.max(value, min), max);
-}
-
 function clampReadoutPoint(x, y) {
-    if (typeof window === 'undefined') {
-        return { x, y };
-    }
-    const viewportWidth = Number(window.innerWidth) || 0;
-    const viewportHeight = Number(window.innerHeight) || 0;
-    const readoutWidth = Math.min(READOUT_MAX_WIDTH, Math.max(0, viewportWidth - (READOUT_EDGE_GUTTER * 2)));
-    const readoutHeight = Math.min(READOUT_HEIGHT, Math.max(0, viewportHeight - (READOUT_EDGE_GUTTER * 2)));
-    const anchorOnLeft = x > viewportWidth - readoutWidth - READOUT_POINTER_GAP - READOUT_EDGE_GUTTER
-        && x >= readoutWidth + READOUT_POINTER_GAP + READOUT_EDGE_GUTTER;
-    const minX = anchorOnLeft
-        ? readoutWidth + READOUT_POINTER_GAP + READOUT_EDGE_GUTTER
-        : READOUT_EDGE_GUTTER;
-    const maxX = anchorOnLeft
-        ? Math.max(minX, viewportWidth - READOUT_EDGE_GUTTER)
-        : Math.max(minX, viewportWidth - readoutWidth - READOUT_POINTER_GAP - READOUT_EDGE_GUTTER);
-    const minY = Math.max(READOUT_VERTICAL_INSET, (readoutHeight / 2) + READOUT_EDGE_GUTTER);
-    const maxY = Math.max(minY, viewportHeight - (readoutHeight / 2) - READOUT_EDGE_GUTTER);
-    return {
-        x: clampNumber(x, minX, maxX),
-        y: clampNumber(y, minY, maxY),
-        side: anchorOnLeft ? 'left' : 'right'
-    };
+    return resolveFloatingHoverPosition({
+        x,
+        y,
+        bubbleWidth: READOUT_MAX_WIDTH,
+        bubbleHeight: READOUT_HEIGHT,
+        edgeGutter: READOUT_EDGE_GUTTER,
+        pointerGap: READOUT_POINTER_GAP,
+        verticalInset: READOUT_VERTICAL_INSET
+    });
 }
 
 function formatSegmentValue(segment, metric, formatExcludedPoints, formatPercent) {

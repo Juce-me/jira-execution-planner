@@ -5977,6 +5977,7 @@
         .excluded-capacity-line-hover-bubble {
             position: fixed;
             bottom: auto;
+            z-index: calc(var(--sticky-control-overlay-z) + 4);
             width: min(260px, calc(100vw - 24px));
             min-width: 0;
             max-width: min(260px, calc(100vw - 24px));

@@ -256,16 +256,16 @@ class UserViewConfigRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
 
-    def test_normal_user_can_save_epm_config_without_admin_role(self):
+    def test_normal_user_cannot_save_shared_epm_config_without_admin_role(self):
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             response = self.client.post(
                 '/api/epm/config',
                 json={'version': 2, 'tab': 'active', 'projects': {}},
-                headers={'X-Requested-With': 'jira-execution-planner'},
+                headers=self._csrf_headers(),
             )
 
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['version'], 2)
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'admin_required')
 
     def test_normal_user_config_reports_epm_edit_permission_without_admin_role(self):
         with self._env_patch(), \
@@ -279,7 +279,7 @@ class UserViewConfigRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = response.get_json()
         self.assertFalse(body['userCanEditSettings'])
-        self.assertTrue(body['userCanEditEpmConfig'])
+        self.assertFalse(body['userCanEditEpmConfig'])
 
     def test_default_route_returns_resolved_default_view(self):
         create_response = self._post_view({

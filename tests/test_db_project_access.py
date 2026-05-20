@@ -5,6 +5,7 @@ from backend.auth.context import ProjectAccessSnapshot, RequestAuthContext
 from backend.auth.project_access import project_access_denied_response, upsert_project_access_snapshot
 from backend.db import models
 import jira_server
+from tests.oauth_test_helpers import install_oauth_session
 
 
 def auth_context(*, project_access):
@@ -28,6 +29,11 @@ class TestProjectAccess(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         self.client = jira_server.app.test_client()
+        install_oauth_session(self.client)
+
+    def tearDown(self):
+        jira_server.OAUTH_TOKEN_STORE.clear()
+        jira_server.OAUTH_REFRESH_LOCKS.clear()
 
     def _allowed_response(self, project_type):
         other_type = 'tech' if project_type == 'product' else 'product'

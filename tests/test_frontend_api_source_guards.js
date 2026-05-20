@@ -394,20 +394,31 @@ test('settings API wrappers preserve save body shapes and no-cache reads', async
         assert.equal(calls[1].options.cache, 'no-cache');
         assertJsonHeader(calls[1].options);
 
-        assert.equal(calls[2].url, 'http://backend/api/groups-config');
-        assert.equal(calls[2].options.method, 'POST');
-        assert.equal(calls[2].options.body, JSON.stringify(groupsPayload));
-        assertJsonHeader(calls[2].options);
-
-        assert.equal(calls[3].url, 'http://backend/api/stats/priority-weights-config');
+        assert.equal(calls[2].url, 'http://backend/api/auth/csrf');
+        assert.equal(calls[3].url, 'http://backend/api/groups-config');
         assert.equal(calls[3].options.method, 'POST');
-        assert.equal(calls[3].options.body, JSON.stringify({ weights }));
+        assert.equal(calls[3].options.body, JSON.stringify(groupsPayload));
+        assert.equal(new Headers(calls[3].options.headers).get('X-CSRF-Token'), 'csrf-token-2');
         assertJsonHeader(calls[3].options);
 
-        assert.equal(calls[4].url, 'http://backend/api/projects/selected');
-        assert.equal(calls[4].options.method, 'POST');
-        assert.equal(calls[4].options.body, JSON.stringify({ selected }));
-        assertJsonHeader(calls[4].options);
+        assert.equal(calls[4].url, 'http://backend/api/auth/csrf');
+        assert.equal(calls[5].url, 'http://backend/api/stats/priority-weights-config');
+        assert.equal(calls[5].options.method, 'POST');
+        assert.equal(calls[5].options.body, JSON.stringify({ weights }));
+        assert.equal(new Headers(calls[5].options.headers).get('X-CSRF-Token'), 'csrf-token-4');
+        assertJsonHeader(calls[5].options);
+
+        assert.equal(calls[6].url, 'http://backend/api/auth/csrf');
+        assert.equal(calls[7].url, 'http://backend/api/projects/selected');
+        assert.equal(calls[7].options.method, 'POST');
+        assert.equal(calls[7].options.body, JSON.stringify({ selected }));
+        assert.equal(new Headers(calls[7].options.headers).get('X-CSRF-Token'), 'csrf-token-6');
+        assertJsonHeader(calls[7].options);
+    }, (url, _options, index) => {
+        if (String(url).endsWith('/api/auth/csrf')) {
+            return jsonResponse({ csrfToken: `csrf-token-${index}` });
+        }
+        return jsonResponse({ ok: true });
     });
 });
 
@@ -467,6 +478,7 @@ test('Jira catalog API wrappers preserve query params, cache flags, and abort si
         'fetchAllTeams',
         'searchProjects',
         'fetchFields',
+        'saveTeamCatalog',
     ], { getJson });
     const signal = new AbortController().signal;
 
@@ -478,6 +490,11 @@ test('Jira catalog API wrappers preserve query params, cache flags, and abort si
         await jiraCatalogApi.searchProjects('http://backend', { query: 'ABC Project', signal });
         await jiraCatalogApi.fetchAllTeams('http://backend', { sprint: '42' });
         await jiraCatalogApi.fetchFields('http://backend', { projectKey: 'ABC DEF' });
+        await jiraCatalogApi.saveTeamCatalog('http://backend', {
+            catalog: { teams: [] },
+            meta: { updatedAt: 'now' },
+            merge: true,
+        });
 
         assert.deepEqual(labelsPayload, { ok: true });
         const labelsUrl = new URL(calls[0].url);
@@ -508,6 +525,22 @@ test('Jira catalog API wrappers preserve query params, cache flags, and abort si
         assert.equal(calls[3].options.method, 'GET');
         assert.equal(calls[3].options.cache, 'no-cache');
         assertJsonHeader(calls[3].options);
+
+        assert.equal(calls[4].url, 'http://backend/api/auth/csrf');
+        assert.equal(calls[5].url, 'http://backend/api/team-catalog');
+        assert.equal(calls[5].options.method, 'POST');
+        assert.equal(calls[5].options.body, JSON.stringify({
+            catalog: { teams: [] },
+            meta: { updatedAt: 'now' },
+            merge: true,
+        }));
+        assert.equal(new Headers(calls[5].options.headers).get('X-CSRF-Token'), 'csrf-token-4');
+        assertJsonHeader(calls[5].options);
+    }, (url, _options, index) => {
+        if (String(url).endsWith('/api/auth/csrf')) {
+            return jsonResponse({ csrfToken: `csrf-token-${index}` });
+        }
+        return jsonResponse({ ok: true });
     });
 });
 

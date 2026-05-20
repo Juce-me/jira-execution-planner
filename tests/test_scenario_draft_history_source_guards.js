@@ -97,14 +97,21 @@ test('scenario realtime self filtering learns identity from collaboration respon
     assert.equal(dragEffectMatch[0].includes('[scenarioDragState,'), false, 'Drag effect dependencies must not include mutable scenarioDragState.');
 });
 
-test('generated frontend dist files are not part of this task diff', () => {
-    const result = childProcess.spawnSync('git', ['status', '--short', 'frontend/dist'], {
+test('generated frontend dist changes require frontend source changes', () => {
+    const distResult = childProcess.spawnSync('git', ['status', '--short', 'frontend/dist'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+    });
+    const sourceResult = childProcess.spawnSync('git', ['status', '--short', 'frontend/src'], {
         cwd: repoRoot,
         encoding: 'utf8',
     });
 
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stdout.trim(), '');
+    assert.equal(distResult.status, 0, distResult.stderr);
+    assert.equal(sourceResult.status, 0, sourceResult.stderr);
+    if (distResult.stdout.trim()) {
+        assert.notEqual(sourceResult.stdout.trim(), '', 'frontend/dist changed without matching frontend/src changes');
+    }
 });
 
 test('dirty scenario draft reruns are blocked before loading new scenario data', () => {

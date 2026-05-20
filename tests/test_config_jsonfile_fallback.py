@@ -50,6 +50,8 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
+        jira_server.OAUTH_TOKEN_STORE.clear()
+        jira_server.OAUTH_REFRESH_LOCKS.clear()
         self._tmpdir.cleanup()
 
     def _seed_user(self):
@@ -117,6 +119,23 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         }
 
     def _route_payloads(self, *, backend):
+        if backend == 'db':
+            session_id = 'config-fallback-session'
+            with self.client.session_transaction() as flask_session:
+                flask_session['atlassian_oauth_session_id'] = session_id
+                flask_session['db_oauth_session'] = {'db_auth_connection_id': self.connection_id}
+            jira_server.OAUTH_TOKEN_STORE[session_id] = {
+                'access_token': 'access-123',
+                'refresh_token': 'refresh-123',
+                'expires_at': 9999999999,
+                'scope': FULL_SCOPE,
+                'cloudid': 'cloud-1',
+                'site_url': 'https://example.atlassian.net',
+                'account_id': 'account-1',
+                'account_status': 'active',
+                'db_auth_connection_id': self.connection_id,
+                'db_token_version': '1',
+            }
         patches = [
             patch.dict(os.environ, {
                 'CONFIG_STORAGE_BACKEND': backend,

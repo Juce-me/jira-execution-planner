@@ -1,5 +1,7 @@
 # Project Grade Security Hardening Implementation Plan
 
+> **Execution status:** Implemented and locally verified on 2026-05-20 in branch `feature/project-grade-security-hardening` through commit `37f4aa5`. Kept as `EXEC-*` pending review/acceptance or merge.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Refactor the app into a project-grade local/web app whose HTTP surface is default-deny, documented, test-covered, and closed to unauthenticated network users.

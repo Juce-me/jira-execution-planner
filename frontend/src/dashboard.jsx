@@ -48,8 +48,18 @@ import {
     pickAutoSelectedExcludedEpics,
     summarizeEffortTypeSplitTotals
 } from './stats/excludedCapacityStats.js';
-import { PRIORITY_AXIS, PRIORITY_LABEL_BY_KEY, PRIORITY_ALIASES, RADAR_PALETTE } from './stats/statsConstants.js';
+import { PRIORITY_AXIS } from './stats/statsConstants.js';
 import { DEFAULT_PRIORITY_WEIGHT_ROWS, buildPriorityWeightMap, clonePriorityWeightRows } from './stats/priorityWeights.js';
+import {
+    buildLocalStatsFromTasks,
+    buildRadarPoints,
+    computePriorityWeighted,
+    computeRate,
+    formatPercent,
+    getPriorityLabel,
+    getRateClass,
+    resolveTeamColor,
+} from './stats/statsUtils.js';
 import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';
 import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
@@ -5280,23 +5290,6 @@ import {
             };
 
             const priorityAxis = PRIORITY_AXIS;
-            const priorityLabelByKey = PRIORITY_LABEL_BY_KEY;
-            const radarPalette = RADAR_PALETTE;
-
-            const hashTeamId = (value) => {
-                const str = String(value || '');
-                let hash = 5381;
-                for (let i = 0; i < str.length; i += 1) {
-                    hash = ((hash << 5) + hash) + str.charCodeAt(i);
-                }
-                return Math.abs(hash);
-            };
-
-            const resolveTeamColor = (teamId) => {
-                if (!radarPalette.length) return '#94a3b8';
-                const index = hashTeamId(teamId) % radarPalette.length;
-                return radarPalette[index];
-            };
 
             const getTeamInfo = getTaskTeamInfo;
 
@@ -6069,50 +6062,10 @@ import {
             ]);
 
 
-            const formatPercent = (value) => `${(value * 100).toFixed(2)}%`;
-
-            const priorityAliases = PRIORITY_ALIASES;
-
             const effectivePriorityWeightMap = React.useMemo(
                 () => buildPriorityWeightMap(effectivePriorityWeightsRows),
                 [effectivePriorityWeightsRows]
             );
-
-            const normalizePriority = (name) => {
-                const key = String(name || '').toLowerCase().trim();
-                return priorityAliases[key] || key;
-            };
-
-            const getPriorityLabel = (name) => {
-                const key = normalizePriority(name);
-                return priorityLabelByKey[key] || name;
-            };
-
-            const computePriorityWeighted = (priorities) => {
-                const totals = { done: 0, incomplete: 0, killed: 0 };
-                Object.entries(priorities || {}).forEach(([priorityName, counts]) => {
-                    const normalized = normalizePriority(priorityName);
-                    const weight = effectivePriorityWeightMap[normalized] || 0;
-                    totals.done += weight * (counts.done || 0);
-                    totals.incomplete += weight * (counts.incomplete || 0);
-                    totals.killed += weight * (counts.killed || 0);
-                });
-                return totals;
-            };
-
-            const computeRate = (metrics) => {
-                const done = metrics.done || 0;
-                const incomplete = metrics.incomplete || 0;
-                const denom = done + incomplete;
-                return denom > 0 ? done / denom : 0;
-            };
-
-            const getRateClass = (rate) => {
-                if (rate >= 1) return 'good';
-                if (rate >= 0.6 && rate < 0.8) return 'warn';
-                if (rate < 0.6) return 'bad';
-                return '';
-            };
 
             const normalizeCapacityKey = (name) => {
                 if (!name) return '';
@@ -6135,123 +6088,6 @@ import {
                     .replace(/^(product|tech)\s*-\s*/i, '')
                     .replace(/\s+/g, ' ')
                     .trim();
-            };
-
-            const buildRadarPoints = ({ values, radius, center, maxValue, axes }) => {
-                const count = axes.length;
-                return axes.map((axis, index) => {
-                    const value = Math.max(0, values[axis] || 0);
-                    const ratio = maxValue > 0 ? value / maxValue : 0;
-                    const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
-                    const r = ratio * radius;
-                    const x = center + r * Math.cos(angle);
-                    const y = center + r * Math.sin(angle);
-                    return `${x.toFixed(2)},${y.toFixed(2)}`;
-                }).join(' ');
-            };
-
-            const buildLocalStatsFromTasks = (taskList, excludedSet) => {
-                const teams = {};
-                const projectsSummary = {
-                    product: { done: 0, incomplete: 0, killed: 0, priorities: {} },
-                    tech: { done: 0, incomplete: 0, killed: 0, priorities: {} }
-                };
-                const totals = { done: 0, incomplete: 0, killed: 0 };
-                const storyPointsTotals = { total: 0, done: 0, incomplete: 0, killed: 0 };
-
-                const bumpPriority = (target, priorityName, bucket) => {
-                    if (!target.priorities) target.priorities = {};
-                    if (!target.priorities[priorityName]) {
-                        target.priorities[priorityName] = { done: 0, incomplete: 0, killed: 0 };
-                    }
-                    target.priorities[priorityName][bucket] += 1;
-                };
-
-                const bumpPriorityPoints = (target, priorityName, points) => {
-                    if (!target.priorityPoints) target.priorityPoints = {};
-                    if (!target.priorityPoints[priorityName]) {
-                        target.priorityPoints[priorityName] = 0;
-                    }
-                    target.priorityPoints[priorityName] += points;
-                };
-
-                (taskList || []).forEach(task => {
-                    const epicKey = task.fields?.epicKey || 'NO_EPIC';
-                    if (excludedSet?.has(epicKey)) {
-                        return;
-                    }
-                    const status = normalizeStatus(task.fields?.status?.name);
-                    const isKilled = status === 'killed';
-                    const isDone = status === 'done';
-                    const priorityName = task.fields?.priority?.name || 'Unspecified';
-                    const pointsRaw = task.fields?.customfield_10004;
-                    const pointsValue = Number(pointsRaw);
-                    const storyPoints = Number.isFinite(pointsValue) ? pointsValue : 0;
-                    storyPointsTotals.total += storyPoints;
-                    const teamInfo = getTeamInfo(task);
-                    const teamKey = teamInfo.id || teamInfo.name || 'unknown';
-                    const projectBucket = techProjectKeys.has(task.fields?.projectKey || String(task.key || '').split('-')[0]) ? 'tech' : 'product';
-
-                    if (!teams[teamKey]) {
-                        teams[teamKey] = {
-                            id: teamInfo.id || teamKey,
-                            name: teamInfo.name || teamKey,
-                            done: 0,
-                            incomplete: 0,
-                            killed: 0,
-                            priorities: {},
-                            priorityPoints: {},
-                            projects: {
-                                product: { done: 0, incomplete: 0, killed: 0, priorities: {} },
-                                tech: { done: 0, incomplete: 0, killed: 0, priorities: {} }
-                            }
-                        };
-                    }
-
-                    const teamEntry = teams[teamKey];
-                    if (isKilled) {
-                        teamEntry.killed += 1;
-                        teamEntry.projects[projectBucket].killed += 1;
-                        projectsSummary[projectBucket].killed += 1;
-                        totals.killed += 1;
-                        storyPointsTotals.killed += storyPoints;
-                        bumpPriority(teamEntry, priorityName, 'killed');
-                        bumpPriority(teamEntry.projects[projectBucket], priorityName, 'killed');
-                        bumpPriority(projectsSummary[projectBucket], priorityName, 'killed');
-                        return;
-                    }
-
-                    bumpPriorityPoints(teamEntry, priorityName, storyPoints);
-                    if (isDone) {
-                        teamEntry.done += 1;
-                        teamEntry.projects[projectBucket].done += 1;
-                        projectsSummary[projectBucket].done += 1;
-                        totals.done += 1;
-                        storyPointsTotals.done += storyPoints;
-                        bumpPriority(teamEntry, priorityName, 'done');
-                        bumpPriority(teamEntry.projects[projectBucket], priorityName, 'done');
-                        bumpPriority(projectsSummary[projectBucket], priorityName, 'done');
-                        return;
-                    }
-
-                    teamEntry.incomplete += 1;
-                    teamEntry.projects[projectBucket].incomplete += 1;
-                    projectsSummary[projectBucket].incomplete += 1;
-                    totals.incomplete += 1;
-                    storyPointsTotals.incomplete += storyPoints;
-                    bumpPriority(teamEntry, priorityName, 'incomplete');
-                    bumpPriority(teamEntry.projects[projectBucket], priorityName, 'incomplete');
-                    bumpPriority(projectsSummary[projectBucket], priorityName, 'incomplete');
-                });
-
-                const sortedTeams = Object.values(teams).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-                return {
-                    sprint: selectedSprintInfo?.name || '',
-                    totals,
-                    storyPoints: storyPointsTotals,
-                    projects: projectsSummary,
-                    teams: sortedTeams
-                };
             };
 
 	            const tasks = React.useMemo(
@@ -6443,7 +6279,13 @@ import {
                     perfCountersRef.current.statsBuild = (perfCountersRef.current.statsBuild || 0) + 1;
                     performance.mark('localStatsBuild:start');
                 }
-                const result = buildLocalStatsFromTasks(statsTaskList, new Set());
+                const result = buildLocalStatsFromTasks(statsTaskList, {
+                    excludedSet: new Set(),
+                    normalizeStatus,
+                    getTeamInfo,
+                    techProjectKeys,
+                    sprintName: selectedSprintInfo?.name || ''
+                });
                 if (perfEnabled) {
                     performance.mark('localStatsBuild:end');
                     performance.measure('localStatsBuild', 'localStatsBuild:start', 'localStatsBuild:end');
@@ -6452,7 +6294,7 @@ import {
                     performance.clearMeasures('localStatsBuild');
                 }
                 return result;
-            }, [statsTaskList, selectedSprintInfo?.name, showStats, perfEnabled]);
+            }, [statsTaskList, selectedSprintInfo?.name, showStats, perfEnabled, techProjectKeys]);
 
             const effectiveStatsData = localStatsData;
             const burnoutTaskTeamByIssueKey = React.useMemo(() => {
@@ -9970,9 +9812,9 @@ import {
                 const scoped = getTeamScopedMetrics(team);
                 const scopedProduct = getTeamScopedMetrics(team, 'product');
                 const scopedTech = getTeamScopedMetrics(team, 'tech');
-                const weighted = computePriorityWeighted(scoped.priorities);
-                const weightedProduct = computePriorityWeighted(scopedProduct.priorities);
-                const weightedTech = computePriorityWeighted(scopedTech.priorities);
+                const weighted = computePriorityWeighted(scoped.priorities, effectivePriorityWeightMap);
+                const weightedProduct = computePriorityWeighted(scopedProduct.priorities, effectivePriorityWeightMap);
+                const weightedTech = computePriorityWeighted(scopedTech.priorities, effectivePriorityWeightMap);
                 const straightRate = computeRate(scoped);
                 const weightedRate = computeRate(weighted);
                 return {

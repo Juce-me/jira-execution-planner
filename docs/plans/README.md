@@ -63,6 +63,12 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Expected output: central endpoint policy registry, default-deny route guards, local-only dev diagnostics, loopback-safe startup defaults, security headers, project packaging metadata, CI backend/security checks, and a hardened release zip.
    - This plan does not authorize Home/Townsquare writes or Jira write-back. `GATE-05-home-write-capability.md` remains blocked unless its documented probe records `PASS home_project_update_supported`.
 
+## Frontend Structure
+
+1. `EXEC-statistics-module-extraction.md`
+   - Supersedes the stale root-level `statistics_module_extraction_plan.md` from `origin/plan/statistics-module-extraction`.
+   - Expected output: remaining legacy Statistics Teams, Priority, and Burndown utilities/components extracted from `frontend/src/dashboard.jsx` into the existing `frontend/src/stats/` package, with source guards, focused Node tests, full unit verification, Playwright smoke coverage, and regenerated frontend dist output.
+
 ## Expectations
 
 - Before executing any `EXEC-*` plan, run the preflight commands named in that plan.

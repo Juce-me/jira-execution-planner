@@ -11,6 +11,7 @@ Postmortems serve to:
 - Build institutional knowledge
 - Improve development practices
 - Capture misses and near-misses while they are fresh
+- Guide agents to review relevant postmortems before touching related code
 
 ## Postmortem List
 
@@ -123,12 +124,16 @@ Across all postmortems, key actions needed:
 
 When creating a new postmortem:
 
-1. **Name it sequentially**: `MRTXXX-short-title.md` (oldest first, then increment)
-2. **Use the template** above
-3. **Be blameless**: Focus on systems, not people
-4. **Be specific**: Include code snippets, data, screenshots
-5. **Be actionable**: List concrete action items
-6. **Update this README**: Add entry to the table
+1. **Review related postmortems first**: Apply relevant lessons before touching related code
+2. **Follow local instructions**: Use [postmortem/AGENTS.md](./AGENTS.md) for directory-specific agent guidance
+3. **Name it sequentially**: `MRTXXX-short-title.md` (oldest first, then increment)
+4. **Use the template** above
+5. **Be blameless**: Focus on systems, not people
+6. **Be specific**: Include code snippets, data, screenshots
+7. **Be verified**: Include how the fix or conclusion was validated
+8. **Be actionable**: List concrete action items
+9. **Update this README**: Add entry to the table whenever adding or renaming a postmortem
+10. **Keep docs aligned**: Update `README.md`, `AGENTS.md`, and `postmortem/README.md` together when workflow or structure changes
 
 ## Related Documentation
 

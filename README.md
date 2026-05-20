@@ -40,6 +40,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 
 - Scenario Planner technical rules are included in [Scenario Planner](docs/features/scenario-planner.md)
 - Local install, DB mode, migrations, and Home token setup are covered in [INSTALL.md](INSTALL.md)
+- Agent work artifact rules are defined in [docs/agents.md](docs/agents.md)
 
 ## 📋 Files
 
@@ -47,6 +48,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - `jira-dashboard.html` - Frontend dashboard page
 - `frontend/` - Frontend source (`src/`) and compiled bundle (`dist/`)
 - `docs/features/` - User-facing feature guides for alerts, statistics, and scenario planning
+- `docs/agents.md` - Rules for agent-created work artifacts
 - `.env.example` - Template for environment variables
 - `INSTALL.md` - Local install, PostgreSQL, DB migration, and Home token setup flow
 - `.gitignore` - Git ignore file (keeps secrets safe)
@@ -362,7 +364,9 @@ jira-dashboard/
 ├── frontend/               # Frontend source + compiled bundle
 │   ├── src/                # JSX source (dashboard.jsx + scenario/)
 │   └── dist/               # Compiled JS + CSS output (committed)
-├── docs/features/          # User-facing feature guides
+├── docs/                   # Documentation
+│   ├── agents.md           # Agent work artifact rules
+│   └── features/           # User-facing feature guides
 ├── planning/               # Scenario planner core logic
 ├── tests/                  # Unit tests
 ├── postmortem/             # Postmortems and incident learnings
@@ -397,7 +401,9 @@ The dashboard uses a few different cache layers to keep Jira traffic reasonable:
 ## 📚 Documentation & Postmortems
 
 - Keep `README.md`, `AGENTS.md`, and `postmortem/README.md` aligned with structural or workflow changes.
+- Agent-created work artifacts live under `docs/agents/` and follow [docs/agents.md](docs/agents.md).
 - Postmortems live in `postmortem/` and follow `MRTXXX-short-title.md` naming in creation order (oldest first).
+- Postmortem-specific agent instructions live in [postmortem/AGENTS.md](postmortem/AGENTS.md).
 - Capture misses and fixes in postmortems and update the index when adding one.
 
 ## 🤝 Contributing

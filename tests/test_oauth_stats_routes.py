@@ -1,4 +1,5 @@
 import base64
+import os
 import unittest
 from unittest.mock import patch
 
@@ -21,6 +22,12 @@ class OAuthStatsRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
+        self._env_patcher = patch.dict(os.environ, {
+            "CONFIG_STORAGE_BACKEND": "",
+            "DATABASE_URL": "",
+            "TEST_DATABASE_URL": "",
+        }, clear=False)
+        self._env_patcher.start()
         self.client = jira_server.app.test_client()
         install_oauth_session(self.client)
 
@@ -29,6 +36,7 @@ class OAuthStatsRouteTests(unittest.TestCase):
         jira_server.OAUTH_REFRESH_LOCKS.clear()
         jira_server.SCENARIO_CACHE.clear()
         jira_server.EPIC_COHORT_CACHE.clear()
+        self._env_patcher.stop()
 
     def test_sprints_route_is_oauth_ready(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -160,6 +168,16 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(post_response.status_code, 200, post_response.get_data(as_text=True))
         mock_save.assert_called_once()
 
+    def test_scenario_draft_routes_are_oauth_ready_before_unsafe_header_guard(self):
+        self.assertTrue(jira_server.is_oauth_ready_api_path("/api/scenario/drafts"))
+        self.assertTrue(jira_server.is_oauth_ready_api_path("/api/scenario/drafts/draft-1/rollback"))
+        self.assertTrue(jira_server.is_oauth_ready_api_path("/api/scenario/drafts/draft-1/versions/1"))
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            response = self.client.post("/api/scenario/drafts/draft-1/rollback", json={})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["error"], "csrf_required")
+
     def test_epm_home_routes_are_oauth_ready_with_service_home_credentials(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "fetch_home_site_cloud_id", return_value="cloud-123"), \
@@ -225,7 +243,16 @@ class BasicStatsRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
+        self._env_patcher = patch.dict(os.environ, {
+            "CONFIG_STORAGE_BACKEND": "",
+            "DATABASE_URL": "",
+            "TEST_DATABASE_URL": "",
+        }, clear=False)
+        self._env_patcher.start()
         self.client = jira_server.app.test_client()
+
+    def tearDown(self):
+        self._env_patcher.stop()
 
     def test_sprints_basic_uses_jira_url_basic_auth_without_csrf_header(self):
         calls = []

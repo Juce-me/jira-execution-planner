@@ -53,7 +53,7 @@ from backend.config.repository import (
     json_repository as build_json_config_repository,
     validate_config_storage_startup,
 )
-from backend.db.engine import database_storage_enabled, session_scope, validate_startup_database_config
+from backend.db.engine import DatabaseConfigurationError, database_storage_enabled, session_scope, validate_startup_database_config
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
     AUTH_MODE_BASIC,
@@ -381,6 +381,8 @@ def is_oauth_ready_api_path(path):
         return True
     if path.startswith('/api/me/connections/'):
         return True
+    if path == '/api/scenario/drafts' or path.startswith('/api/scenario/drafts/'):
+        return True
     if path.startswith('/api/epm/projects/') and (path.endswith('/issues') or path.endswith('/rollup')):
         return True
     return False
@@ -546,6 +548,15 @@ def db_oauth_browser_session_data():
     if payload:
         session['db_oauth_session'] = payload
     return payload
+
+
+def strict_db_oauth_browser_session_data():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH or not database_storage_enabled():
+        return {}
+    stored = session.get('db_oauth_session')
+    if isinstance(stored, dict):
+        return _db_oauth_browser_session_payload(stored)
+    return {}
 
 
 def _cleanup_expired_oauth_sessions(now=None):
@@ -744,6 +755,29 @@ def oauth_auth_required_payload():
         'message': 'Your Jira sign-in expired. Sign in again to continue.',
         'loginUrl': '/login?reason=session_expired',
     }, 401
+
+
+def csrf_session_data_for_request():
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
+        context = scenario_draft_request_auth_context()
+        return {
+            'db_auth_connection_id': context.auth_connection_id,
+            'db_token_version': context.token_version,
+            'account_id': context.atlassian_account_id,
+        }
+    return oauth_session_data()
+
+
+def scenario_draft_request_auth_context():
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
+        db_session_data = strict_db_oauth_browser_session_data()
+        if not db_session_data:
+            raise AuthError('auth_required', 'Atlassian authentication is required.')
+        return resolve_db_request_auth_context(
+            db_session_data,
+            required_scopes=ATLASSIAN_SCOPES,
+        )
+    return current_request_auth_context()
 
 
 def current_jira_auth_context(context=None):
@@ -974,6 +1008,12 @@ def reject_stale_oauth_scope_api_sessions():
     if not request.path.startswith('/api/') or request.path.startswith('/api/auth/'):
         return None
     if not is_oauth_ready_api_path(request.path):
+        return None
+    if database_storage_enabled() and (
+        request.path == '/api/scenario/overrides'
+        or request.path == '/api/scenario/drafts'
+        or request.path.startswith('/api/scenario/drafts/')
+    ):
         return None
     data = oauth_session_data()
     if data.get('access_token') and data.get('cloudid') and missing_oauth_scopes(data, ATLASSIAN_SCOPES):
@@ -4985,6 +5025,29 @@ def get_scenario_overrides():
     scope_key = request.args.get('scope_key', '').strip()
     if not scope_key:
         return jsonify({'overrides': {}})
+    if database_storage_enabled():
+        try:
+            from backend.scenario_drafts import get_active_draft
+
+            response = get_active_draft(
+                scenario_draft_request_auth_context(),
+                scope_key,
+                legacy_loader=load_scenario_overrides,
+            )
+            active = response.get('activeDraft') or {}
+            return jsonify({
+                'overrides': active.get('overrides', {}),
+                'activeDraft': response.get('activeDraft'),
+                'versions': response.get('versions', []),
+                'storage': 'db',
+            })
+        except AuthError as error:
+            return auth_error_response(error, 401)
+        except DatabaseConfigurationError:
+            return jsonify({
+                'error': 'config_storage_unavailable',
+                'message': 'Scenario drafts require database-backed configuration storage.',
+            }), 503
     data = load_scenario_overrides()
     entry = data.get('scenarios', {}).get(scope_key, {})
     return jsonify({'overrides': entry.get('overrides', {})})
@@ -4995,6 +5058,51 @@ def post_scenario_overrides():
     """Upsert overrides for a scope_key."""
     body = request.get_json(force=True, silent=True) or {}
     scope_key = (body.get('scope_key') or '').strip()
+    if database_storage_enabled():
+        if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+            try:
+                data = csrf_session_data_for_request()
+            except AuthError as error:
+                return auth_error_response(error, 401)
+            except DatabaseConfigurationError:
+                return jsonify({
+                    'error': 'config_storage_unavailable',
+                    'message': 'Scenario drafts require database-backed configuration storage.',
+                }), 503
+            if not validate_csrf_token(session, data, request.headers.get('X-CSRF-Token')):
+                return jsonify({
+                    'error': 'csrf_required',
+                    'message': 'A valid CSRF token is required for this request.',
+                }), 403
+        if not scope_key:
+            return jsonify({'error': 'scope_key is required'}), 400
+        try:
+            from backend.scenario_drafts import get_active_draft
+
+            response = get_active_draft(
+                scenario_draft_request_auth_context(),
+                scope_key,
+            )
+        except AuthError as error:
+            return auth_error_response(error, 401)
+        except DatabaseConfigurationError:
+            return jsonify({
+                'error': 'config_storage_unavailable',
+                'message': 'Scenario drafts require database-backed configuration storage.',
+            }), 503
+        if body.get('baseDraftRevision') is None:
+            return jsonify({
+                'error': 'scenario_draft_revision_required',
+                'message': 'Scenario draft writes require baseDraftRevision. Use POST /api/scenario/drafts.',
+                'activeDraft': response.get('activeDraft'),
+                'versions': response.get('versions', []),
+                'storage': 'db',
+            }), 409
+        return jsonify({
+            'error': 'scenario_draft_api_required',
+            'message': 'Use POST /api/scenario/drafts to save database-backed scenario drafts.',
+            'storage': 'db',
+        }), 409
     if not scope_key:
         return jsonify({'error': 'scope_key is required'}), 400
     overrides = body.get('overrides', {})

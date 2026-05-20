@@ -77,11 +77,13 @@ If you want the fastest setup with no frontend build step:
 1. Download the latest release asset (e.g. `jira-execution-planner-latest.zip`) from GitHub Releases.
 2. Unzip it anywhere.
 3. Configure `.env` from `.env.example`.
-4. Install backend deps: `python3 -m pip install --user -r requirements.txt`
-5. Start the backend: `python3 jira_server.py`
+4. Install backend deps: `chmod +x install.sh && ./install.sh`
+5. Start the backend: `.venv/bin/python jira_server.py`
 6. Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`).
 
 The server binds to `127.0.0.1` by default. Use `APP_BIND_HOST=0.0.0.0` only for intentional network exposure, with `ALLOW_NETWORK_BIND=true`; Basic auth network exposure also requires `ALLOW_BASIC_AUTH_ON_NETWORK=true` and `APP_ENVIRONMENT_KEY=local`. Dev diagnostics require `ALLOW_DEV_DIAGNOSTIC_ENDPOINTS=true` and loopback access.
+
+Prebuilt release zips omit source tests and development plans. Use a source checkout when you need to run the unit test suite.
 
 The UI shows a “New Version Available” badge when a newer release is detected. Release zips include `release-info.json` so update checks work without git. Download the latest zip and replace your folder to update.
 

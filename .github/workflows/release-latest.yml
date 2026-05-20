@@ -17,11 +17,29 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
       - name: Install + build frontend
         run: |
           npm ci
           npm run build
+
+      - name: Install backend
+        run: python -m pip install -r requirements.txt
+
+      - name: Backend tests
+        env:
+          JIRA_AUTH_MODE: basic
+          CONFIG_STORAGE_BACKEND: jsonfile
+        run: python -m unittest discover -s tests
+
+      - name: Endpoint security tests
+        env:
+          JIRA_AUTH_MODE: basic
+          CONFIG_STORAGE_BACKEND: jsonfile
+        run: python -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
 
       - name: Ensure dist committed (defensive)
         run: |
@@ -37,13 +55,15 @@ jobs:
 
       - name: Create release zip
         run: |
-          zip -r jira-execution-planner-latest.zip . \
-            -x ".git/*" \
-            -x "**/.git/**" \
-            -x "**/node_modules/**" \
-            -x "**/__pycache__/**" \
-            -x ".env" \
-            -x "**/.env"
+          mkdir -p release-root
+          cp -R backend planning frontend release-root/
+          rm -rf release-root/frontend/src
+          find release-root/frontend -mindepth 1 -maxdepth 1 ! -name dist -exec rm -rf {} +
+          cp jira_server.py jira-dashboard.html favicon.ico epm-burst.svg requirements.txt install.sh pyproject.toml .env.example INSTALL.md README.md LICENSE release-info.json release-root/
+          find release-root -name "__pycache__" -type d -prune -exec rm -rf {} +
+          find release-root -name "*.pyc" -delete
+          cd release-root
+          zip -r ../jira-execution-planner-latest.zip .
 
       - name: Update 'latest' release
         uses: ncipollo/release-action@v1

@@ -115,11 +115,13 @@ If you used a named PostgreSQL user, export that URL instead:
 export DATABASE_URL=postgresql+psycopg://jep:<password>@localhost:5432/jep_local
 ```
 
-Quick DB verification:
+Quick DB verification for source checkouts:
 
 ```bash
 .venv/bin/python -m unittest tests.test_db_session tests.test_db_migrations
 ```
+
+Prebuilt release zips omit the test suite; skip this check there and use the source checkout when you need to run tests.
 
 ## 5. Start The App
 

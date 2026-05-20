@@ -995,11 +995,13 @@ import {
                 setGroupDraftError('');
                 try {
                     const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraft);
+                    const { csrfToken } = await fetchCsrfToken(BACKEND_URL);
                     const response = await fetch(`${BACKEND_URL}/api/epm/config`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'X-Requested-With': 'jira-execution-planner'
+                            'X-Requested-With': 'jira-execution-planner',
+                            'X-CSRF-Token': csrfToken || ''
                         },
                         body: JSON.stringify(normalizedDraft)
                     });

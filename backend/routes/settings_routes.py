@@ -257,6 +257,7 @@ def get_config():
     view_payload = (view_config or {}).get('view') or {}
     board_cfg = get_board_config()
     epm_config = normalize_epm_config(view_payload.get('epm') or {}) if view_config else get_epm_config()
+    can_edit_shared_configuration = (not SETTINGS_ADMIN_ONLY) or bool(auth_context.is_admin)
     payload = {
         'jiraUrl': auth_context.site_url,
         'authMode': auth_context.auth_mode,
@@ -265,9 +266,9 @@ def get_config():
         'boardName': board_cfg.get('boardName', ''),
         'boardConfigSource': board_cfg.get('source', 'default'),
         'settingsAdminOnly': bool(SETTINGS_ADMIN_ONLY),
-        'userCanEditSettings': (not SETTINGS_ADMIN_ONLY) or bool(auth_context.is_admin),
+        'userCanEditSettings': can_edit_shared_configuration,
         'userCanEditViewConfig': True,
-        'userCanEditEpmConfig': True,
+        'userCanEditEpmConfig': can_edit_shared_configuration,
         'groupsConfigPath': resolve_groups_config_path(),
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),
         'projectsConfigured': bool(get_selected_projects()),

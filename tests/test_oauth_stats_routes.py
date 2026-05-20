@@ -180,7 +180,6 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "csrf_required")
 
     def test_epm_home_routes_are_oauth_ready_with_service_home_credentials(self):
-        csrf = self.client.get("/api/auth/csrf").get_json()["csrfToken"]
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "fetch_home_site_cloud_id", return_value="cloud-123"), \
              patch.object(jira_server, "fetch_epm_goal_catalog", return_value=[]), \
@@ -194,6 +193,7 @@ class OAuthStatsRouteTests(unittest.TestCase):
              patch.object(jira_server, "build_base_jql", return_value="project = ABC"), \
              patch.object(jira_server, "fetch_issues_by_jql", return_value=[]), \
              patch.object(jira_server, "build_per_project_rollup", return_value=({"project": {}}, 200, {})):
+            csrf = self.client.get("/api/auth/csrf").get_json()["csrfToken"]
             responses = [
                 self.client.get("/api/epm/scope"),
                 self.client.get("/api/epm/goals"),

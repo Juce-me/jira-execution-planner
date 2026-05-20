@@ -127,6 +127,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-05-20: Startup sweep reviewed the gate while executing the project-grade security hardening plan. `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` are not present in the local environment, and the plan adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-05-20: Startup sweep reviewed the gate while executing the Effort Split statistics plan. `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` are not present in the local environment, and the plan adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-05-19: Startup sweep ran the documented write probe without the required disposable-project inputs; result was `FAIL insufficient_home_write_probe_input`. No real Home write probe pass is recorded in the repo. Keep blocked.
 - 2026-05-19: Startup sweep reviewed the gate while planning project-grade endpoint hardening. `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` are not present in the local environment, and the plan adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.

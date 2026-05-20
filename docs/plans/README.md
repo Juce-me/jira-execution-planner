@@ -56,6 +56,13 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Future Jira publish/write-back must use only the signed-in user's OAuth Jira REST context; do not use Jira/Home API tokens, Basic credentials, service integrations, Home/Townsquare APIs, or local token-store helpers.
    - Scenario group scope is a shared environment-scoped PM/EPM-managed configuration reference; drafts may reference groups but must not create private group definitions or own group membership.
 
+## Project Grade Security Hardening
+
+1. `EXEC-project-grade-security-hardening.md`
+   - Run before exposing the app outside loopback or cutting a release intended for other users.
+   - Expected output: central endpoint policy registry, default-deny route guards, local-only dev diagnostics, loopback-safe startup defaults, security headers, project packaging metadata, CI backend/security checks, and a hardened release zip.
+   - This plan does not authorize Home/Townsquare writes or Jira write-back. `GATE-05-home-write-capability.md` remains blocked unless its documented probe records `PASS home_project_update_supported`.
+
 ## Expectations
 
 - Before executing any `EXEC-*` plan, run the preflight commands named in that plan.

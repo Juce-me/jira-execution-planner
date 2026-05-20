@@ -1,5 +1,7 @@
 # Codebase Structure Optimization Execution Plan
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 Date: 2026-05-01
 Plan branch: `docs/codebase-structure-optimization-plan`
 

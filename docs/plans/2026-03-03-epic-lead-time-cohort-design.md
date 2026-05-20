@@ -1,5 +1,7 @@
 # Epic Lead Time Cohort Chart — Design (v3)
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 ## Overview
 A full-screen analytics panel (like Scenario/Statistics) showing epic lead-time throughput in a cohort grid:
 - Rows: cohort by epic creation period (quarter or month)

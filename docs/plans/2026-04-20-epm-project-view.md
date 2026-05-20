@@ -1,5 +1,7 @@
 # EPM Project View Implementation Plan
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a first-class `EPM` dashboard mode that discovers projects from Jira Home, augments Jira linkage in JEP settings, and renders project-scoped Jira work across `Active`, `Backlog`, and `Archived` tabs without changing the current `ENG` flow.

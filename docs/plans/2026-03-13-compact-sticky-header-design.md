@@ -1,5 +1,7 @@
 # Compact Sticky Header Design
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 ## Overview
 Add a compact sticky header that replaces the main dashboard header controls once the main `<header>` scrolls offscreen.
 

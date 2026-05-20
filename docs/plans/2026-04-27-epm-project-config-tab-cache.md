@@ -1,5 +1,7 @@
 # EPM Project Configuration Tab and Cache Implementation Plan
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move EPM project mapping into a dedicated Projects sub-tab that opens only after the draft sub-goal and label prefix are set, preserves the saved sub-goal, and auto-loads cached Jira Home projects as configuration inputs for EPM rollups.

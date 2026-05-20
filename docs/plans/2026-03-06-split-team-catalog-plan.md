@@ -1,5 +1,7 @@
 # Split teamCatalog Implementation Plan
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Separate the teamCatalog cache from the groups configuration into its own file and API endpoints.

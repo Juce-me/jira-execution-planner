@@ -1,5 +1,7 @@
 # EPM Goals 2 and 3 Portfolio Active Sprint Implementation Plan
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make EPM land on all visible Atlassian Home Projects by default and make the already-visible Active sprint selector drive an ENG-like Epic/Story/dependency rollup for every visible Project.

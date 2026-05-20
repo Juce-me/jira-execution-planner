@@ -1757,7 +1757,7 @@ Do not run this task before the implementation branch is accepted or merged.
 Add a top note to this plan:
 
 ```md
-> **Status:** Done. Executed in `<commit-or-PR>`. Kept for audit context only.
+> **Status:** Done. Executed in PR #37 / `4d3c478`. Kept for audit context only.
 ```
 
 Then rename:

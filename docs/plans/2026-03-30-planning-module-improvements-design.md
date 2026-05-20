@@ -1,5 +1,7 @@
 # Planning Module Improvements Design
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 ## Overview
 Tighten the Planning panel so it preserves user selections per sprint and group, adds the missing bulk actions, fixes dropdown layering above sticky UI, and reduces the amount of screen space the sticky panel consumes.
 

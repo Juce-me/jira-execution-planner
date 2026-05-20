@@ -15,6 +15,7 @@ From the repo root:
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
+python -m pip install -e .
 ```
 
 ## 2. PostgreSQL
@@ -124,6 +125,12 @@ Quick DB verification:
 
 ```bash
 .venv/bin/python jira_server.py
+```
+
+After `./install.sh` or `python -m pip install -e .`, the equivalent console command is:
+
+```bash
+.venv/bin/jira-execution-planner
 ```
 
 By default the Flask server binds to `127.0.0.1`. Set `APP_BIND_HOST=0.0.0.0` only when intentionally exposing the app, and also set `ALLOW_NETWORK_BIND=true`. Basic auth network exposure additionally requires `ALLOW_BASIC_AUTH_ON_NETWORK=true` and remains local-profile only with `APP_ENVIRONMENT_KEY=local`.

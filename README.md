@@ -109,11 +109,14 @@ chmod +x install.sh
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
+python -m pip install -e .
 ```
 
-**Option C - Using python3 directly (if pip3 not available):**
+**Option C - Standard local targets:**
 ```bash
-python3 -m pip install --user -r requirements.txt
+make install
+make test
+make run
 ```
 
 ### Step 3: Configure credentials (and optional server settings)

@@ -1,25 +1,24 @@
 #!/bin/bash
+set -euo pipefail
 
-echo "🔧 Installing Python dependencies for Jira Dashboard..."
+echo "Installing Python dependencies for Jira Execution Planner..."
 echo ""
 
-# Try to install pip if not available
-if ! command -v pip3 &> /dev/null
-then
-    echo "pip3 not found, trying python3 -m pip..."
-    python3 -m pip install --user flask flask-cors requests python-dotenv openpyxl "urllib3<2"
-else
-    pip3 install --user flask flask-cors requests python-dotenv openpyxl "urllib3<2"
+if [ ! -d .venv ]; then
+    python3 -m venv .venv
 fi
 
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -e .
+
 echo ""
-echo "✅ Installation complete!"
+echo "Installation complete."
 echo ""
 echo "Next steps:"
 echo "1. Copy .env.example to .env:"
 echo "   cp .env.example .env"
 echo ""
-echo "2. Edit .env and add your credentials"
+echo "2. Configure .env, then follow INSTALL.md for DB/OAuth migrations when using DB mode."
 echo ""
 echo "3. Run the server:"
-echo "   python3 jira_server.py"
+echo "   .venv/bin/python jira_server.py"

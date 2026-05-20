@@ -119,6 +119,7 @@ function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName
 
 const productTasks = Array.from({ length: 12 }, (_, index) => makeEngTask('product', index + 1));
 const techTasks = Array.from({ length: 12 }, (_, index) => makeEngTask('tech', index + 1));
+const expectedStatsIssueKeys = [...productTasks, ...techTasks].map(task => task.key).sort();
 const productEpic = makeEpic('product');
 const techEpic = makeEpic('tech');
 const excludedCapacitySourceIssues = [
@@ -306,6 +307,16 @@ function createDeferred() {
 
 function callsFor(calls, pathname, method = 'GET') {
     return calls.filter(call => call.method === method && call.pathname === pathname);
+}
+
+function requestBody(request) {
+    const postData = request.postData();
+    if (!postData) return null;
+    try {
+        return JSON.parse(postData);
+    } catch (err) {
+        return postData;
+    }
 }
 
 async function waitForCallCount(calls, predicate, expected, timeout = 7000) {
@@ -583,11 +594,13 @@ async function expectArchivedMetadataOnlyStickyContract(page) {
 
 async function installApiMocks(page, calls, options = {}) {
     await installDashboardShell(page);
-    await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
-        status: 200,
-        contentType: 'application/javascript',
-        body: dashboardJs,
-    }));
+    if (!options.useCommittedDist) {
+        await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
+            status: 200,
+            contentType: 'application/javascript',
+            body: dashboardJs,
+        }));
+    }
     const configGate = options.delayConfig ? createDeferred() : null;
     const epmProjectCount = options.epmProjectCount || 1;
     const unexpectedCalls = [];
@@ -603,6 +616,8 @@ async function installApiMocks(page, calls, options = {}) {
             pathname: url.pathname,
             search: url.search,
             params: Object.fromEntries(url.searchParams.entries()),
+            headers: request.headers(),
+            body: requestBody(request),
         });
         const json = (body, headers = {}) => route.fulfill({
             status: 200,
@@ -653,6 +668,95 @@ async function installApiMocks(page, calls, options = {}) {
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
         if (url.pathname === '/api/board-config') return json({ boardId: '5494', boardName: 'Synthetic Board', source: 'test' });
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
+        if (url.pathname === '/api/stats/burnout') {
+            return json({
+                data: {
+                    range: { startDate: '2026-04-01', endDate: '2026-04-15' },
+                    issuesMeta: [
+                        {
+                            issueKey: 'PROD-1',
+                            createdDate: '2026-03-27',
+                            teamAtStart: { id: 'team-beta', name: 'Beta Team' },
+                            teamAtCreated: { id: 'team-beta', name: 'Beta Team' },
+                            assignee: { id: 'beta-owner', name: 'Beta Team Owner' },
+                        },
+                        {
+                            issueKey: 'PROD-2',
+                            createdDate: '2026-04-03',
+                            teamAtStart: { id: 'team-alpha', name: 'Alpha Team' },
+                            teamAtCreated: { id: 'team-alpha', name: 'Alpha Team' },
+                            assignee: { id: 'alpha-owner', name: 'Alpha Team Owner' },
+                        },
+                        {
+                            issueKey: 'TECH-1',
+                            createdDate: '2026-03-28',
+                            teamAtStart: { id: 'team-beta', name: 'Beta Team' },
+                            teamAtCreated: { id: 'team-beta', name: 'Beta Team' },
+                            assignee: { id: 'beta-owner', name: 'Beta Team Owner' },
+                        },
+                        {
+                            issueKey: 'TECH-2',
+                            createdDate: '2026-04-04',
+                            teamAtStart: { id: 'team-alpha', name: 'Alpha Team' },
+                            teamAtCreated: { id: 'team-alpha', name: 'Alpha Team' },
+                            assignee: { id: 'alpha-owner', name: 'Alpha Team Owner' },
+                        },
+                    ],
+                    events: [
+                        {
+                            issueKey: 'PROD-1',
+                            date: '2026-04-07',
+                            bucket: 'done',
+                            teamId: 'team-beta',
+                            teamName: 'Beta Team',
+                            assigneeName: 'Beta Team Owner',
+                        },
+                        {
+                            issueKey: 'TECH-1',
+                            date: '2026-04-09',
+                            bucket: 'incomplete',
+                            teamId: 'team-beta',
+                            teamName: 'Beta Team',
+                            assigneeName: 'Beta Team Owner',
+                        },
+                    ],
+                    assignees: [
+                        { id: 'alpha-owner', name: 'Alpha Team Owner', events: 1 },
+                        { id: 'beta-owner', name: 'Beta Team Owner', events: 2 },
+                    ],
+                },
+            });
+        }
+        if (url.pathname === '/api/stats/epic-cohort') {
+            return json({
+                data: {
+                    range: { startDate: '2026-01-01', endDate: '2026-06-30' },
+                    issues: [
+                        {
+                            key: 'PROD-EPIC',
+                            summary: 'Product delivery epic',
+                            projectKey: 'PROD',
+                            status: 'done',
+                            createdDate: '2026-01-10',
+                            terminalDate: '2026-04-10',
+                            leadTimeDays: 90,
+                            assignee: { id: 'alpha-lead', name: 'Alpha Lead' },
+                        },
+                        {
+                            key: 'TECH-EPIC',
+                            summary: 'Tech delivery epic',
+                            projectKey: 'TECH',
+                            status: 'open',
+                            createdDate: '2026-02-12',
+                            terminalDate: null,
+                            leadTimeDays: null,
+                            assignee: { id: 'beta-lead', name: 'Beta Lead' },
+                        },
+                    ],
+                    meta: { warnings: [] },
+                },
+            });
+        }
         if (url.pathname === '/api/capacity/config') return json({ project: '', fieldId: '', fieldName: '' });
         if (url.pathname.endsWith('/config') && url.pathname.includes('-field')) return json({ fieldId: '', fieldName: '' });
         if (url.pathname === '/api/issue-types/config') return json({ issueTypes: ['Epic'] });
@@ -834,6 +938,85 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await expectJiraExportMenu(page);
     await captureSmokeScreenshot(page, 'scenario');
     await expectContainerSticky(page, '.scenario-axis', '.scenario-timeline');
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('Statistics subviews render extracted panels and preserve stats API ownership', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, {
+        excludedCapacityEpics: ['BAU-EPIC'],
+        useCommittedDist: true,
+    });
+    await page.setViewportSize({ width: 1280, height: 760 });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+        activeGroupId: 'grp-default',
+        selectedTeams: ['all'],
+        showPlanning: false,
+        showScenario: false,
+        showStats: true,
+        statsView: 'teams',
+        cohortStartQuarter: '2026Q2',
+        excludedCapacityStartSprintId: String(selectedSprintId),
+        excludedCapacityEndSprintId: String(selectedSprintId),
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
+    const statsPanel = page.locator('.stats-panel.open');
+    const statsTabs = statsPanel.locator('.stats-view-toggle');
+    await expect(statsPanel).toBeVisible();
+    await expect(statsTabs.getByRole('radio', { name: 'Teams' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.stats-view.open .stats-bars')).toBeVisible();
+    await expect(page.locator('.stats-view.open .stats-table')).toContainText('Alpha Team');
+    await captureSmokeScreenshot(page, 'statistics-teams');
+
+    await statsTabs.getByRole('radio', { name: 'Priority' }).click();
+    await expect(page.locator('.stats-view.open .priority-radar')).toBeVisible();
+    await expect(page.locator('.stats-view.open .priority-legend')).toContainText('Alpha Team');
+    await expect(page.locator('.stats-view.open .stats-table')).toContainText('Major');
+    await captureSmokeScreenshot(page, 'statistics-priority');
+
+    await statsTabs.getByRole('radio', { name: 'Burndown' }).click();
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/burnout', 1);
+    await expect(page.locator('.stats-view.open .burnout-summary')).toContainText('Remaining');
+    await expect(page.locator('.stats-view.open .burnout-chart')).toBeVisible();
+    await expect(page.locator('.stats-view.open .burnout-legend')).toContainText('Alpha Team');
+    const burnoutCall = callsFor(calls, '/api/stats/burnout', 'POST')[0];
+    expect(burnoutCall.headers['x-requested-with']).toBe('jira-execution-planner');
+    expect(burnoutCall.body).toMatchObject({
+        sprint: selectedSprintName,
+        teamIds: groupTeamIds,
+        includePostSprintClosures: false,
+    });
+    expect([...burnoutCall.body.issueKeys].sort()).toEqual(expectedStatsIssueKeys);
+    await captureSmokeScreenshot(page, 'statistics-burndown');
+
+    await statsTabs.getByRole('radio', { name: 'Lead Times' }).click();
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', 1);
+    await expect(page.locator('.stats-view.open .cohort-summary')).toContainText('Epics Overview');
+    await expect(page.locator('.stats-view.open')).toContainText('Cohort Heatmap');
+    const cohortCall = callsFor(calls, '/api/stats/epic-cohort', 'POST')[0];
+    expect(cohortCall.headers['x-requested-with']).toBe('jira-execution-planner');
+    expect(cohortCall.body).toMatchObject({
+        startQuarter: '2026Q2',
+        teamIds: groupTeamIds,
+        components: [],
+        refresh: false,
+    });
+
+    await statsTabs.getByRole('radio', { name: 'Excluded Capacity' }).click();
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
+    await expect(page.locator('.stats-view.open .effort-type-split-chart')).toBeVisible();
+
+    await statsTabs.getByRole('radio', { name: 'Mono vs Cross' }).click();
+    await expect(page.locator('.stats-view.open')).toContainText('Team Cross Share');
+    await expect(page.locator('.stats-view.open .excluded-capacity-line-chart')).toBeVisible();
+
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 

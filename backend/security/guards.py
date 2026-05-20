@@ -198,6 +198,9 @@ def register_security_guards(flask_app):
         if policy_class == "public_page":
             return None
         if policy_class == "auth_flow":
+            if _is_oauth_mode(server) and request.path.startswith("/api/auth/") and request.method in UNSAFE_METHODS:
+                if request.headers.get("X-Requested-With") != "jira-execution-planner":
+                    return _csrf_required("Unsafe OAuth requests require X-Requested-With: jira-execution-planner")
             return None
         if policy_class == "dev_local":
             return _require_dev_local(server)

@@ -871,6 +871,68 @@ def validate_startup_auth_config():
         raise AuthError('config_storage_invalid', str(error))
 
 
+def _env_flag(name):
+    return os.getenv(name, '').strip().lower() in {'1', 'true', 'yes'}
+
+
+def default_bind_host():
+    """Return the default Flask bind host for local execution."""
+    return os.getenv('APP_BIND_HOST', '127.0.0.1').strip() or '127.0.0.1'
+
+
+def validate_network_bind(host):
+    """Validate and return the requested bind host, or raise AuthError with a stable code."""
+    bind_host = (host or '').strip() or '127.0.0.1'
+    if bind_host in {'127.0.0.1', 'localhost', '::1'}:
+        return bind_host
+
+    if not _env_flag('ALLOW_NETWORK_BIND'):
+        raise AuthError(
+            'network_bind_not_allowed',
+            'Network bind requires ALLOW_NETWORK_BIND=true.',
+        )
+
+    if JIRA_AUTH_MODE == AUTH_MODE_BASIC:
+        if not _env_flag('ALLOW_BASIC_AUTH_ON_NETWORK') or (os.getenv('APP_ENVIRONMENT_KEY', APP_ENVIRONMENT_KEY).strip().lower() != 'local'):
+            raise AuthError(
+                'basic_network_bind_not_allowed',
+                'Basic auth network bind requires ALLOW_BASIC_AUTH_ON_NETWORK=true and APP_ENVIRONMENT_KEY=local.',
+            )
+        return bind_host
+
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+        if not _env_flag('SESSION_COOKIE_SECURE'):
+            raise AuthError(
+                'secure_cookie_required',
+                'OAuth network bind requires SESSION_COOKIE_SECURE=true.',
+            )
+        allowed_origins = [origin.strip() for origin in os.getenv('APP_ALLOWED_ORIGINS', '').split(',') if origin.strip()]
+        if not allowed_origins or '*' in allowed_origins:
+            raise AuthError(
+                'allowed_origins_required',
+                'OAuth network bind requires explicit APP_ALLOWED_ORIGINS without *.',
+            )
+        if not os.getenv('FLASK_SECRET_KEY', '').strip():
+            raise AuthError(
+                'flask_secret_required',
+                'OAuth network bind requires FLASK_SECRET_KEY.',
+            )
+        if _env_flag('OAUTH_LOCAL_TOKEN_STORE_ALLOWED'):
+            raise AuthError(
+                'local_token_store_network_bind_not_allowed',
+                'Local OAuth token storage cannot be used with network bind.',
+            )
+    return bind_host
+
+
+def dev_diagnostics_allowed():
+    return (
+        os.getenv('APP_ENVIRONMENT_KEY', APP_ENVIRONMENT_KEY).strip().lower() in {'local', 'dev'}
+        and _env_flag('ALLOW_DEV_DIAGNOSTIC_ENDPOINTS')
+        and (request.remote_addr or '').strip().lower() in {'127.0.0.1', '::1', 'localhost'}
+    )
+
+
 @app.before_request
 def redirect_unauthenticated_oauth_dashboard_entry():
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
@@ -6590,6 +6652,8 @@ def test_connection():
 @app.route('/api/debug-fields', methods=['GET'])
 def debug_fields():
     """Debug endpoint to see all fields of a single task"""
+    if not dev_diagnostics_allowed():
+        return jsonify({'error': 'not_found'}), 404
     try:
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
         auth_bytes = auth_string.encode('ascii')
@@ -6650,6 +6714,8 @@ def debug_fields():
 @app.route('/api/tasks-fields', methods=['GET'])
 def get_tasks_fields():
     """Return all available fields and values for issues matching JQL_QUERY."""
+    if not dev_diagnostics_allowed():
+        return jsonify({'error': 'not_found'}), 404
     try:
         auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
         auth_bytes = auth_string.encode('ascii')
@@ -6766,7 +6832,9 @@ def export_excel():
         }), 500
 
 
-if __name__ == '__main__':
+def main():
+    global JIRA_URL, JIRA_EMAIL, JIRA_TOKEN, JQL_QUERY, SERVER_PORT
+
     args = parse_args()
 
     # Apply CLI overrides while keeping env defaults as fallbacks
@@ -6788,7 +6856,13 @@ if __name__ == '__main__':
     except AuthError as error:
         log_error(str(error))
         log_info('Please copy .env.example to .env and configure either basic auth or Atlassian OAuth')
-        exit(1)
+        return 1
+
+    try:
+        bind_host = validate_network_bind(default_bind_host())
+    except AuthError as error:
+        log_error(str(error))
+        return 1
 
     # Only print on first startup, not on reload
     if not DEBUG_MODE or os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
@@ -6796,7 +6870,8 @@ if __name__ == '__main__':
         today = date.today()
         current_quarter = f"{today.year}Q{(today.month - 1) // 3 + 1}"
 
-        log_info(f'Jira Proxy Server starting on http://localhost:{SERVER_PORT}')
+        display_host = 'localhost' if bind_host in {'127.0.0.1', '::1'} else bind_host
+        log_info(f'Jira Proxy Server starting on http://{display_host}:{SERVER_PORT}')
         log_info(f'   Jira: {JIRA_URL}')
         log_info(f'   Auth mode: {JIRA_AUTH_MODE}')
         if JIRA_AUTH_MODE == AUTH_MODE_BASIC:
@@ -6814,4 +6889,9 @@ if __name__ == '__main__':
         log_info(f'   • http://localhost:{SERVER_PORT}/api/groups-config')
         log_info()
 
-    app.run(host='0.0.0.0', port=SERVER_PORT, debug=DEBUG_MODE)
+    app.run(host=bind_host, port=SERVER_PORT, debug=DEBUG_MODE)
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

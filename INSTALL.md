@@ -126,6 +126,10 @@ Quick DB verification:
 .venv/bin/python jira_server.py
 ```
 
+By default the Flask server binds to `127.0.0.1`. Set `APP_BIND_HOST=0.0.0.0` only when intentionally exposing the app, and also set `ALLOW_NETWORK_BIND=true`. Basic auth network exposure additionally requires `ALLOW_BASIC_AUTH_ON_NETWORK=true` and remains local-profile only with `APP_ENVIRONMENT_KEY=local`.
+
+Developer diagnostics such as field probes require `ALLOW_DEV_DIAGNOSTIC_ENDPOINTS=true` and loopback access. They return `404` when disabled.
+
 Open:
 
 ```text

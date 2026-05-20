@@ -23,8 +23,10 @@ def create_app(import_name='jira_server'):
     )
     CORS(flask_app, origins=_allowed_cors_origins(), supports_credentials=True)
     from backend.security.guards import register_security_guards
+    from backend.security.headers import register_security_headers
 
     register_security_guards(flask_app)
+    register_security_headers(flask_app)
     register_blueprints(flask_app)
     return flask_app
 

@@ -1,5 +1,7 @@
 """Authentication route blueprint."""
 
+import os
+
 from flask import Blueprint, jsonify, redirect, request, session
 
 from backend.auth.csrf import bind_csrf_token, issue_csrf_token
@@ -470,6 +472,10 @@ def api_auth_refresh():
 @bp.route('/api/auth/dev/home-graphql-oauth-probe', methods=['GET'])
 def api_dev_home_graphql_oauth_probe():
     if APP_ENVIRONMENT_KEY.strip().lower() not in {'local', 'dev'}:
+        return jsonify({'error': 'not_found'}), 404
+    if os.getenv('ALLOW_DEV_DIAGNOSTIC_ENDPOINTS', '').strip().lower() not in {'1', 'true', 'yes'}:
+        return jsonify({'error': 'not_found'}), 404
+    if (request.remote_addr or '').strip().lower() not in {'127.0.0.1', '::1', 'localhost'}:
         return jsonify({'error': 'not_found'}), 404
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return jsonify({'error': 'oauth_required'}), 400

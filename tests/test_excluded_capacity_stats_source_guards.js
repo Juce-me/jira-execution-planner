@@ -7,6 +7,7 @@ const repoRoot = path.join(__dirname, '..');
 const dashboardSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx'), 'utf8');
 const cssSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'styles', 'dashboard.css'), 'utf8');
 const lineChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'ExcludedCapacityLineChart.jsx'), 'utf8');
+const effortSplitChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'EffortTypeSplitChart.jsx'), 'utf8');
 
 test('dashboard wires excluded-capacity analytics into the existing Statistics view', () => {
     assert.ok(
@@ -32,6 +33,75 @@ test('excluded-capacity analytics has dedicated chart styling', () => {
     assert.ok(cssSource.includes('.excluded-capacity-line-legend'), 'Expected line chart legend CSS for click-to-isolate');
     assert.ok(cssSource.includes('.excluded-capacity-epic-panel'), 'Expected multi-select excluded epic panel CSS');
     assert.ok(cssSource.includes('.epic-mode-bars'), 'Expected mono/cross epic mode chart CSS');
+});
+
+test('effort split chart uses explicit Excluded Capacity naming', () => {
+    assert.ok(
+        dashboardSource.includes("import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';"),
+        'Expected dashboard to import the effort split chart'
+    );
+    assert.ok(
+        dashboardSource.includes('Effort Split'),
+        'Expected short chart title'
+    );
+    assert.ok(
+        dashboardSource.includes('Excluded Capacity'),
+        'Expected metric naming to remain Excluded Capacity'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('effort-type-split-chart'),
+        'Expected dedicated effort split chart markup'
+    );
+    assert.ok(
+        cssSource.includes('.effort-type-split-chart'),
+        'Expected dedicated effort split chart styles'
+    );
+});
+
+test('effort split chart uses selected sprint source data and visible scope text', () => {
+    assert.ok(
+        dashboardSource.includes('buildEffortTypeSplitRows'),
+        'Expected dashboard to derive effort split rows with the pure helper'
+    );
+    assert.ok(
+        dashboardSource.includes('excludedCapacitySelectedSprintForSplit'),
+        'Expected Effort Split to use the top selected sprint'
+    );
+    assert.ok(
+        dashboardSource.includes('excludedCapacitySourceSprintIds'),
+        'Expected stats source fetches to include the selected sprint plus the trend range'
+    );
+    assert.ok(
+        dashboardSource.includes('effortSplitSprintLabel'),
+        'Expected Effort Split to render visible selected-sprint scope text'
+    );
+    assert.ok(
+        dashboardSource.includes('<EffortTypeSplitChart'),
+        'Expected dashboard to render the Effort Split chart'
+    );
+});
+
+test('effort split chart exposes keyboard and screen-reader values', () => {
+    assert.ok(
+        effortSplitChartSource.includes('className="effort-type-split-summary"'),
+        'Expected an accessible effort split data summary'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('tabIndex={0}'),
+        'Expected effort split segments to be keyboard focusable'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('onFocus={() => setHovered'),
+        'Expected effort split readouts to appear on keyboard focus'
+    );
+    assert.ok(
+        effortSplitChartSource.includes('onClick={() => setHovered'),
+        'Expected effort split readouts to be available to click/touch users'
+    );
+    assert.ok(
+        cssSource.includes('.effort-type-split-summary'),
+        'Expected dedicated visually hidden summary styles'
+    );
 });
 
 test('excluded-capacity epic menu wraps long labels without horizontal scroll', () => {

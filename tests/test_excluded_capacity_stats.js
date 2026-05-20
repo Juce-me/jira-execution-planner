@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 
 const loadModule = () => import('../frontend/src/stats/excludedCapacityStats.js');
 
-function story({ key, epicKey, epicSummary, teamId, teamName, sprintId, sprintName, points }) {
+function story({ key, epicKey, epicSummary, teamId, teamName, sprintId, sprintName, points, projectKey }) {
+    const resolvedProjectKey = projectKey || String(key || '').split('-')[0] || '';
     return {
         key,
         fields: {
@@ -12,7 +13,8 @@ function story({ key, epicKey, epicSummary, teamId, teamName, sprintId, sprintNa
             teamId,
             teamName,
             customfield_10004: points,
-            customfield_10101: [{ id: sprintId, name: sprintName }]
+            customfield_10101: [{ id: sprintId, name: sprintName }],
+            projectKey: resolvedProjectKey
         }
     };
 }
@@ -81,6 +83,78 @@ test('buildExcludedCapacityTimeSeries respects multi-key filter without changing
 function roundMetric(value) {
     return Math.round(value * 1000) / 1000;
 }
+
+test('buildEffortTypeSplitRows splits selected-sprint effort by excluded capacity, tech, and product', async () => {
+    const { buildEffortTypeSplitRows } = await loadModule();
+    const selectedSprint = { id: 101, name: 'S1', startDate: '2026-04-01' };
+    const tasks = [
+        story({ key: 'PROD-1', epicKey: 'BAU-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 3, projectKey: 'PROD' }),
+        story({ key: 'TECH-2', epicKey: 'TECH-EPIC', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 5, projectKey: 'TECH' }),
+        story({ key: 'PROD-3', epicKey: 'PROD-EPIC', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 2, projectKey: 'PROD' }),
+        story({ key: 'TECH-4', epicKey: 'BAU-2', teamId: 'team-beta', teamName: 'Beta', sprintId: 101, sprintName: 'S1', points: 4, projectKey: 'TECH' }),
+        story({ key: 'PROD-5', epicKey: 'PROD-EPIC', teamId: 'team-beta', teamName: 'Beta', sprintId: 101, sprintName: 'S1', points: 6, projectKey: 'PROD' }),
+        story({ key: 'TECH-6', epicKey: 'TECH-EPIC', teamId: 'team-beta', teamName: 'Beta', sprintId: 102, sprintName: 'S2', points: 8, projectKey: 'TECH' })
+    ];
+
+    const rows = buildEffortTypeSplitRows(tasks, selectedSprint, {
+        excludedEpicKeys: ['BAU-1', 'BAU-2'],
+        excludedEpicKeyFilters: ['BAU-1'],
+        techProjectKeys: ['TECH'],
+        teams: [
+            { id: 'team-alpha', name: 'Alpha' },
+            { id: 'team-beta', name: 'Beta' }
+        ]
+    });
+
+    assert.deepEqual(
+        rows.map(row => ({
+            teamId: row.teamId,
+            total: row.totalPoints,
+            excluded: row.excludedCapacityPoints,
+            tech: row.techPoints,
+            product: row.productPoints,
+            excludedPercent: row.segments.excludedCapacity.percent,
+            techPercent: row.segments.tech.percent,
+            productPercent: row.segments.product.percent
+        })),
+        [
+            { teamId: 'team-alpha', total: 10, excluded: 3, tech: 5, product: 2, excludedPercent: 0.3, techPercent: 0.5, productPercent: 0.2 },
+            { teamId: 'team-beta', total: 10, excluded: 0, tech: 4, product: 6, excludedPercent: 0, techPercent: 0.4, productPercent: 0.6 }
+        ]
+    );
+});
+
+test('buildEffortTypeSplitRows falls back to key prefix and keeps scoped empty teams', async () => {
+    const { buildEffortTypeSplitRows } = await loadModule();
+    const selectedSprint = { id: 101, name: 'S1', startDate: '2026-04-01' };
+    const tasks = [
+        story({ key: 'TECH-1', epicKey: 'TECH-EPIC', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 5, projectKey: '' }),
+        story({ key: 'PROD-2', epicKey: 'BAU-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 3, projectKey: '' })
+    ];
+
+    const rows = buildEffortTypeSplitRows(tasks, selectedSprint, {
+        excludedEpicKeys: ['BAU-1'],
+        techProjectKeys: ['TECH'],
+        teams: [
+            { id: 'team-alpha', name: 'Alpha' },
+            { id: 'team-beta', name: 'Beta' }
+        ]
+    });
+
+    assert.deepEqual(
+        rows.map(row => ({
+            teamId: row.teamId,
+            total: row.totalPoints,
+            excluded: row.excludedCapacityPoints,
+            tech: row.techPoints,
+            product: row.productPoints
+        })),
+        [
+            { teamId: 'team-alpha', total: 8, excluded: 3, tech: 5, product: 0 },
+            { teamId: 'team-beta', total: 0, excluded: 0, tech: 0, product: 0 }
+        ]
+    );
+});
 
 test('buildExcludedEpicCatalog returns configured epics with summaries when known and key fallback otherwise', async () => {
     const { buildExcludedEpicCatalog, pickAutoSelectedExcludedEpics } = await loadModule();

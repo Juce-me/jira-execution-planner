@@ -31,6 +31,13 @@ function epicSummaryFor(task) {
     return String(summary || '').trim();
 }
 
+function projectKeyFor(task) {
+    const fields = task?.fields || {};
+    const direct = fields.projectKey || task?.projectKey || fields.project?.key || task?.project?.key || '';
+    const fallback = String(task?.key || '').split('-')[0] || '';
+    return normalizeKey(direct || fallback);
+}
+
 function collectSprintTokens(value, tokens) {
     if (value === null || value === undefined) return;
     if (Array.isArray(value)) {
@@ -79,6 +86,35 @@ function taskMatchesSprint(task, sprint) {
 
 function roundMetric(value) {
     return Math.round((Number(value) || 0) * 1000) / 1000;
+}
+
+const EFFORT_TYPE_BUCKETS = ['excludedCapacity', 'tech', 'product'];
+
+function emptyEffortSegments() {
+    return {
+        excludedCapacity: { key: 'excludedCapacity', label: 'Excluded Capacity', points: 0, percent: 0 },
+        tech: { key: 'tech', label: 'Tech', points: 0, percent: 0 },
+        product: { key: 'product', label: 'Product', points: 0, percent: 0 }
+    };
+}
+
+function summarizeEffortSplitRow(row) {
+    const totalPoints = row.excludedCapacityPoints + row.techPoints + row.productPoints;
+    const segments = emptyEffortSegments();
+    segments.excludedCapacity.points = roundMetric(row.excludedCapacityPoints);
+    segments.tech.points = roundMetric(row.techPoints);
+    segments.product.points = roundMetric(row.productPoints);
+    EFFORT_TYPE_BUCKETS.forEach((bucket) => {
+        segments[bucket].percent = totalPoints > 0 ? roundMetric(segments[bucket].points / totalPoints) : 0;
+    });
+    return {
+        ...row,
+        excludedCapacityPoints: segments.excludedCapacity.points,
+        techPoints: segments.tech.points,
+        productPoints: segments.product.points,
+        totalPoints: roundMetric(totalPoints),
+        segments
+    };
 }
 
 function normalizeFilterKeys(options) {
@@ -340,6 +376,56 @@ export function buildExcludedCapacityTimeSeries(tasks, sprints, options = {}) {
         });
     });
     return rows;
+}
+
+export function buildEffortTypeSplitRows(tasks, selectedSprint, options = {}) {
+    if (!selectedSprint) return [];
+    const excludedKeys = new Set((options.excludedEpicKeys || []).map(normalizeKey).filter(Boolean));
+    const filterSet = normalizeFilterKeys(options);
+    const excludedScope = filterSet ? filterSet : excludedKeys;
+    const techProjectKeys = new Set((options.techProjectKeys || []).map(normalizeKey).filter(Boolean));
+    const explicitTeams = (options.teams || [])
+        .map(team => ({
+            id: normalizeId(team?.id || team?.name || 'unknown') || 'unknown',
+            name: String(team?.name || team?.id || 'Unknown Team').trim() || 'Unknown Team'
+        }))
+        .filter(team => team.id);
+    const rowsByTeam = new Map(explicitTeams.map(team => [team.id, {
+        teamId: team.id,
+        teamName: team.name,
+        excludedCapacityPoints: 0,
+        techPoints: 0,
+        productPoints: 0
+    }]));
+
+    (tasks || []).forEach(task => {
+        if (!taskMatchesSprint(task, selectedSprint)) return;
+        const team = teamFor(task);
+        const row = rowsByTeam.get(team.id) || {
+            teamId: team.id,
+            teamName: team.name,
+            excludedCapacityPoints: 0,
+            techPoints: 0,
+            productPoints: 0
+        };
+        if (row.teamName === row.teamId && team.name && team.name !== team.id) {
+            row.teamName = team.name;
+        }
+        const points = storyPointsFor(task);
+        const epicKey = epicKeyFor(task);
+        if (excludedScope.has(epicKey)) {
+            row.excludedCapacityPoints += points;
+        } else if (techProjectKeys.has(projectKeyFor(task))) {
+            row.techPoints += points;
+        } else {
+            row.productPoints += points;
+        }
+        rowsByTeam.set(team.id, row);
+    });
+
+    return Array.from(rowsByTeam.values())
+        .map(summarizeEffortSplitRow)
+        .sort((a, b) => a.teamName.localeCompare(b.teamName));
 }
 
 export function buildExcludedCapacityLineSeries(tasks, sprints, options = {}) {

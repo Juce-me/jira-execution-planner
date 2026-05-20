@@ -79,6 +79,23 @@ export function saveTeamSelectionState(storage, scopeKey, state) {
     return scopeMap[scopeKey];
 }
 
+export function resolveTeamSelectionHydrationState({
+    storedState,
+    savedPrefsSelectedTeams,
+    savedPrefsSelectedTeam
+} = {}) {
+    const selectedTeams = normalizeStoredTeamSelection(
+        storedState || {
+            selectedTeams: savedPrefsSelectedTeams,
+            selectedTeamId: savedPrefsSelectedTeam
+        }
+    );
+    return {
+        selectedTeams,
+        selectedTeamId: selectedTeams[0] || 'all'
+    };
+}
+
 export function reconcileTeamSelectionState(storedState, {
     validTeamIds = new Set()
 } = {}) {

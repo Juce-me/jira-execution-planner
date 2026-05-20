@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import (
@@ -31,6 +33,47 @@ def _uuid() -> str:
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def scenario_source_hash(source: dict) -> str:
+    canonical = _canonical_scenario_source(source or {})
+    payload = json.dumps(canonical, sort_keys=True, separators=(',', ':'))
+    return f"sha256:{hashlib.sha256(payload.encode('utf-8')).hexdigest()}"
+
+
+def _canonical_scenario_source(source: dict) -> dict:
+    canonical = {}
+    for key in ['config', 'filters', 'issues', 'dependencies', 'sprintBoundaries', 'sprint_boundaries']:
+        if key in source:
+            canonical[key] = _canonical_scenario_value(key, source[key])
+    return canonical
+
+
+def _canonical_scenario_value(key: str, value: Any) -> Any:
+    if key == 'issues' and isinstance(value, list):
+        return sorted(
+            (_canonical_scenario_value('', item) for item in value),
+            key=lambda item: str(item.get('key') or '') if isinstance(item, dict) else '',
+        )
+    if key == 'dependencies' and isinstance(value, list):
+        return sorted(
+            (_canonical_scenario_value('', item) for item in value),
+            key=lambda item: (
+                str(item.get('from') or '') if isinstance(item, dict) else '',
+                str(item.get('to') or '') if isinstance(item, dict) else '',
+                str(item.get('type') or '') if isinstance(item, dict) else '',
+            ),
+        )
+    if isinstance(value, dict):
+        omitted_keys = {'auth', 'session', 'user'}
+        return {
+            item_key: _canonical_scenario_value(item_key, value[item_key])
+            for item_key in sorted(value)
+            if item_key not in omitted_keys
+        }
+    if isinstance(value, list):
+        return [_canonical_scenario_value('', item) for item in value]
+    return value
 
 
 class Base(DeclarativeBase):
@@ -146,6 +189,114 @@ class ViewConfigVersion(Base):
     created_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     change_note: Mapped[Optional[str]] = mapped_column(String(255))
+
+
+class ScenarioDraft(Base):
+    __tablename__ = 'scenario_drafts'
+    __table_args__ = (
+        Index(
+            'uq_scenario_drafts_active_scope',
+            'workspace_id',
+            'scope_key',
+            unique=True,
+            sqlite_where=text('archived_at IS NULL'),
+            postgresql_where=text('archived_at IS NULL'),
+        ),
+        Index('ix_scenario_drafts_workspace_updated', 'workspace_id', 'updated_at'),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    scope_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    scenario_source_hash: Mapped[Optional[str]] = mapped_column(String(128))
+    overrides: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    draft_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    updated_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class ScenarioDraftVersion(Base):
+    __tablename__ = 'scenario_draft_versions'
+    __table_args__ = (
+        UniqueConstraint('scenario_draft_id', 'version_number', name='uq_scenario_draft_versions_number'),
+        CheckConstraint(
+            "source in ('user', 'legacy_json', 'rollback', 'reload_from_jira')",
+            name='ck_scenario_draft_versions_source',
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    scenario_draft_id: Mapped[str] = mapped_column(ForeignKey('scenario_drafts.id', ondelete='CASCADE'), nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    draft_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    scenario_source_hash: Mapped[Optional[str]] = mapped_column(String(128))
+    overrides: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    change_note: Mapped[Optional[str]] = mapped_column(String(255))
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class ScenarioDraftEvent(Base):
+    __tablename__ = 'scenario_draft_events'
+    __table_args__ = (
+        UniqueConstraint('scenario_draft_id', 'event_number', name='uq_scenario_draft_events_number'),
+        Index('ix_scenario_draft_events_draft_created', 'scenario_draft_id', 'created_at'),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    scenario_draft_id: Mapped[str] = mapped_column(ForeignKey('scenario_drafts.id', ondelete='CASCADE'), nullable=False)
+    event_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    draft_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class ScenarioDraftPresence(Base):
+    __tablename__ = 'scenario_draft_presence'
+    __table_args__ = (
+        UniqueConstraint('scenario_draft_id', 'user_id', name='uq_scenario_draft_presence_user'),
+        Index('ix_scenario_draft_presence_seen', 'scenario_draft_id', 'last_seen_at'),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    scenario_draft_id: Mapped[str] = mapped_column(ForeignKey('scenario_drafts.id', ondelete='CASCADE'), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    display_name: Mapped[Optional[str]] = mapped_column(String(255))
+    cursor_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class ScenarioDraftLock(Base):
+    __tablename__ = 'scenario_draft_locks'
+    __table_args__ = (
+        UniqueConstraint(
+            'scenario_draft_id',
+            'resource_type',
+            'resource_id',
+            name='uq_scenario_draft_locks_resource',
+        ),
+        Index('ix_scenario_draft_locks_expires', 'scenario_draft_id', 'expires_at'),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    scenario_draft_id: Mapped[str] = mapped_column(ForeignKey('scenario_drafts.id', ondelete='CASCADE'), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    holder_user_id: Mapped[str] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    holder_display_name: Mapped[Optional[str]] = mapped_column(String(255))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
 
 class AuthConnection(Base):

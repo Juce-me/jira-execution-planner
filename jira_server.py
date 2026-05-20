@@ -81,6 +81,11 @@ from backend.app import app
 from backend import config_store as _config_store
 from backend import jira_client as _jira_client
 from backend.epm import projects as epm_projects
+from backend.security.policy import (
+    is_oauth_ready_api_path as policy_is_oauth_ready_api_path,
+    oauth_ready_api_paths,
+    shared_config_write_paths,
+)
 
 # Reuse a single HTTP session to avoid reconnect overhead on repeated calls
 HTTP_SESSION = Session()
@@ -310,82 +315,12 @@ configure_logging()
 
 UNSAFE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
 OAUTH_DASHBOARD_ENTRY_PATHS = {'/', '/jira-dashboard.html'}
-OAUTH_READY_API_PATHS = {
-    '/api/test',
-    '/api/tasks',
-    '/api/tasks-with-team-name',
-    '/api/missing-info',
-    '/api/dependencies',
-    '/api/issues/lookup',
-    '/api/teams',
-    '/api/teams/resolve',
-    '/api/teams/all',
-    '/api/backlog-epics',
-    '/api/config',
-    '/api/version',
-    '/api/groups-config',
-    '/api/team-catalog',
-    '/api/projects',
-    '/api/components',
-    '/api/epics/search',
-    '/api/jira/labels',
-    '/api/projects/selected',
-    '/api/capacity/config',
-    '/api/board-config',
-    '/api/sprint-field/config',
-    '/api/story-points-field/config',
-    '/api/parent-name-field/config',
-    '/api/team-field/config',
-    '/api/stats/priority-weights-config',
-    '/api/issue-types',
-    '/api/issue-types/config',
-    '/api/fields',
-    '/api/boards',
-    '/api/epm/config',
-    '/api/epm/scope',
-    '/api/epm/goals',
-    '/api/epm/projects',
-    '/api/epm/projects/configuration',
-    '/api/epm/projects/preview',
-    '/api/epm/projects/rollup/all',
-    '/api/sprints',
-    '/api/capacity',
-    '/api/planned-capacity',
-    '/api/scenario',
-    '/api/scenario/overrides',
-    '/api/stats',
-    '/api/stats/burnout',
-    '/api/stats/epic-cohort',
-    '/api/stats/excluded-capacity-source',
-}
-
-OAUTH_SHARED_CONFIG_WRITE_PATHS = {
-    '/api/projects/selected',
-    '/api/board-config',
-    '/api/capacity/config',
-    '/api/sprint-field/config',
-    '/api/story-points-field/config',
-    '/api/parent-name-field/config',
-    '/api/team-field/config',
-    '/api/stats/priority-weights-config',
-    '/api/issue-types/config',
-}
+OAUTH_READY_API_PATHS = oauth_ready_api_paths()
+OAUTH_SHARED_CONFIG_WRITE_PATHS = shared_config_write_paths()
 
 
 def is_oauth_ready_api_path(path):
-    if path.startswith('/api/auth/') or path in OAUTH_READY_API_PATHS:
-        return True
-    if path.startswith('/api/admin/'):
-        return True
-    if path == '/api/me/views' or path.startswith('/api/me/views/'):
-        return True
-    if path.startswith('/api/me/connections/'):
-        return True
-    if path == '/api/scenario/drafts' or path.startswith('/api/scenario/drafts/'):
-        return True
-    if path.startswith('/api/epm/projects/') and (path.endswith('/issues') or path.endswith('/rollup')):
-        return True
-    return False
+    return policy_is_oauth_ready_api_path(path)
 
 
 def bootstrap_tool_admin_account_ids():
@@ -937,41 +872,6 @@ def validate_startup_auth_config():
 
 
 @app.before_request
-def require_oauth_unsafe_method_header():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return None
-    if request.method not in UNSAFE_METHODS:
-        return None
-    if request.path.startswith('/api/') and not is_oauth_ready_api_path(request.path):
-        return None
-    if request.headers.get('X-Requested-With') == 'jira-execution-planner':
-        return None
-    return jsonify({
-        'error': 'csrf_required',
-        'message': 'Unsafe OAuth requests require X-Requested-With: jira-execution-planner',
-    }), 403
-
-
-@app.before_request
-def require_db_admin_csrf_token():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return None
-    if not database_storage_enabled():
-        return None
-    if request.method not in UNSAFE_METHODS:
-        return None
-    if not request.path.startswith('/api/admin/'):
-        return None
-    data = oauth_session_data()
-    if validate_csrf_token(session, data, request.headers.get('X-CSRF-Token')):
-        return None
-    return jsonify({
-        'error': 'csrf_required',
-        'message': 'A valid CSRF token is required for this request.',
-    }), 403
-
-
-@app.before_request
 def redirect_unauthenticated_oauth_dashboard_entry():
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return None
@@ -987,59 +887,6 @@ def redirect_unauthenticated_oauth_dashboard_entry():
     if data.get('access_token') and data.get('cloudid'):
         return None
     return redirect('/login?reason=session_expired' if session.get('atlassian_oauth_session_id') else '/login')
-
-
-@app.before_request
-def reject_unmigrated_oauth_routes():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return None
-    if request.path.startswith('/api/') and not is_oauth_ready_api_path(request.path):
-        return jsonify({
-            'error': 'route_not_oauth_ready',
-            'message': 'This API route has not been migrated to Atlassian OAuth yet',
-        }), 501
-    return None
-
-
-@app.before_request
-def reject_stale_oauth_scope_api_sessions():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return None
-    if not request.path.startswith('/api/') or request.path.startswith('/api/auth/'):
-        return None
-    if not is_oauth_ready_api_path(request.path):
-        return None
-    if database_storage_enabled() and (
-        request.path == '/api/scenario/overrides'
-        or request.path == '/api/scenario/drafts'
-        or request.path.startswith('/api/scenario/drafts/')
-    ):
-        return None
-    data = oauth_session_data()
-    if data.get('access_token') and data.get('cloudid') and missing_oauth_scopes(data, ATLASSIAN_SCOPES):
-        return jsonify({
-            'error': 'auth_required',
-            'loginUrl': '/login?reason=missing_scope',
-        }), 401
-    return None
-
-
-@app.before_request
-def require_oauth_shared_config_admin():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return None
-    if request.method not in UNSAFE_METHODS:
-        return None
-    if request.path not in OAUTH_SHARED_CONFIG_WRITE_PATHS:
-        return None
-    data = oauth_session_data()
-    if not data.get('access_token') or not data.get('cloudid'):
-        payload, status = oauth_auth_required_payload()
-        return jsonify(payload), status
-    if current_request_auth_context().is_admin:
-        return None
-    payload, status = admin_required_payload()
-    return jsonify(payload), status
 
 
 def utc_now_iso(timespec=None):

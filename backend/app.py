@@ -22,6 +22,9 @@ def create_app(import_name='jira_server'):
         SESSION_COOKIE_SECURE=os.getenv('SESSION_COOKIE_SECURE', '').strip().lower() in {'1', 'true', 'yes'},
     )
     CORS(flask_app, origins=_allowed_cors_origins(), supports_credentials=True)
+    from backend.security.guards import register_security_guards
+
+    register_security_guards(flask_app)
     register_blueprints(flask_app)
     return flask_app
 

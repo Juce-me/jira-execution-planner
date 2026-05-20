@@ -167,8 +167,22 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             workspace = models.Workspace(environment_key='local', name='Only', jira_site_url='https://example.atlassian.net', jira_cloud_id='cloud-1', created_by='test')
             user = models.User(external_provider='atlassian', external_subject='account-only', account_type='user', status='active', created_by='test')
             session.add_all([workspace, user])
+            session.flush()
+            connection = models.AuthConnection(
+                user_id=user.id,
+                workspace_id=workspace.id,
+                provider='atlassian_oauth',
+                site_url=workspace.jira_site_url,
+                cloud_id=workspace.jira_cloud_id,
+                scopes=FULL_SCOPE.split(),
+                status='active',
+                token_version=1,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+            session.add(connection)
             session.commit()
-            self.context = self._context(workspace.id, user.id, 'connection-only')
+            self.context = self._context(workspace.id, user.id, connection.id)
+        self._install_session('session-only', 'account-only', self.context.auth_connection_id)
 
         legacy = {'version': 1, 'scenarios': {'scope-legacy': {'name': 'Legacy', 'overrides': {'ENG-1': {'start': '2026-05-18'}}}}}
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
@@ -916,25 +930,22 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json(), {'overrides': {'ENG-1': {'end': '2026-05-20'}}})
 
-    def test_legacy_post_rejects_no_revision_in_db_mode(self):
+    def test_legacy_post_is_not_oauth_ready_in_db_mode_without_revision(self):
         save_draft(self.context, 'scope-legacy-post', 'Legacy POST', {'ENG-1': {'start': '2026-05-18'}})
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), self._route_patch():
             response = self.client.post('/api/scenario/overrides', json={'scope_key': 'scope-legacy-post', 'overrides': {}}, headers=self._csrf_headers())
 
-        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'scenario_draft_revision_required')
-        self.assertEqual(response.get_json()['activeDraft']['draftRevision'], 1)
-        self.assertEqual(response.get_json()['storage'], 'db')
+        self.assertEqual(response.status_code, 501, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'route_not_oauth_ready')
 
-    def test_legacy_post_rejects_base_revision_in_db_mode(self):
+    def test_legacy_post_is_not_oauth_ready_in_db_mode_with_base_revision(self):
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), self._route_patch():
             response = self.client.post('/api/scenario/overrides', json={'scope_key': 'scope-legacy-base', 'overrides': {}, 'baseDraftRevision': 1}, headers=self._csrf_headers())
 
-        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'scenario_draft_api_required')
-        self.assertEqual(response.get_json()['storage'], 'db')
+        self.assertEqual(response.status_code, 501, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'route_not_oauth_ready')
 
-    def test_legacy_post_no_scope_requires_csrf_before_scope_validation_in_db_mode(self):
+    def test_legacy_post_no_scope_is_not_oauth_ready_in_db_mode(self):
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), self._route_patch():
             response = self.client.post(
                 '/api/scenario/overrides',
@@ -942,8 +953,8 @@ class ScenarioDraftRouteTests(unittest.TestCase):
                 headers={'X-Requested-With': 'jira-execution-planner'},
             )
 
-        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'csrf_required')
+        self.assertEqual(response.status_code, 501, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'route_not_oauth_ready')
 
     def test_legacy_post_rejection_does_not_import_legacy_json_or_create_draft(self):
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
@@ -956,8 +967,8 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             draft_count = session.query(models.ScenarioDraft).filter_by(scope_key='scope-no-import').count()
             version_count = session.query(models.ScenarioDraftVersion).count()
 
-        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'scenario_draft_revision_required')
+        self.assertEqual(response.status_code, 501, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'route_not_oauth_ready')
         self.assertEqual(draft_count, 0)
         self.assertEqual(version_count, 0)
 
@@ -971,8 +982,8 @@ class ScenarioDraftRouteTests(unittest.TestCase):
                 headers=self._csrf_headers(),
             )
 
-        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'scenario_draft_revision_required')
+        self.assertEqual(response.status_code, 501, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'route_not_oauth_ready')
 
     def test_legacy_post_unmocked_rejection_csrf_does_not_use_local_oauth_token_store(self):
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
@@ -983,8 +994,8 @@ class ScenarioDraftRouteTests(unittest.TestCase):
                 headers=self._csrf_headers(),
             )
 
-        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'scenario_draft_revision_required')
+        self.assertEqual(response.status_code, 501, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'route_not_oauth_ready')
 
     def test_legacy_post_basic_mode_writes_json_without_csrf(self):
         with tempfile.TemporaryDirectory() as tmpdir:

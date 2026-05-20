@@ -51,6 +51,8 @@ def _require_token_bound_csrf():
         return None
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return None
+    if getattr(g, 'security_csrf_validated', False):
+        return None
     if request.headers.get('X-Requested-With') != 'jira-execution-planner':
         return jsonify({
             'error': 'csrf_required',

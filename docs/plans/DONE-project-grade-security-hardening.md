@@ -1,6 +1,6 @@
 # Project Grade Security Hardening Implementation Plan
 
-> **Execution status:** Implemented and locally verified on 2026-05-20 in branch `feature/project-grade-security-hardening` through commit `37f4aa5`. Kept as `EXEC-*` pending review/acceptance or merge.
+> **Status:** Done. Executed in branch `feature/project-grade-security-hardening` through commit `47b2bce` and merged to `main` in PR #39 (`892339e`). Kept for audit context only.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -1259,7 +1259,7 @@ Create `docs/security/endpoints.md` with:
 
 - [ ] **Step 4: Verify the plan index**
 
-Verify `docs/plans/README.md` already has a `Project Grade Security Hardening` section pointing to `EXEC-project-grade-security-hardening.md`. If it is missing in the execution checkout, add it. The release zip still excludes `docs/plans/`; this index is for repository operators, not runtime users.
+Verify `docs/plans/README.md` already has a `Project Grade Security Hardening` section pointing to `DONE-project-grade-security-hardening.md`. If it is missing in the execution checkout, add it. The release zip still excludes `docs/plans/`; this index is for repository operators, not runtime users.
 
 - [ ] **Step 5: Run CI-equivalent checks locally**
 

@@ -1,5 +1,11 @@
 # docs/plans/AGENTS.md
 
+| Field | Value |
+| --- | --- |
+| Date | 2026-05-20 |
+| Version | 2026.05.20.1 |
+| Status | Active |
+
 Plan-specific instructions for this repository.
 
 ## Plan Naming

@@ -1,5 +1,7 @@
 # Scenario Planner Quarter Drafts 01 Persistence/API
 
+> **Status:** Done. Executed in `993e885` (`Add scenario draft history persistence`, 2026-05-20). Kept for audit context only; do not execute as an active plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move Scenario Planner saved overrides from `scenario-overrides.json` to DB-backed active drafts with append-only version history and optimistic concurrency.

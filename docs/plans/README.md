@@ -40,19 +40,19 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 7. `FUTURE-db-additional-features.md`
    - Execute only after the DB auth and user-configuration phases are complete and explicitly reopened.
 
-## Current Scenario Planner Workflow
+## Completed Scenario Planner Workflow
 
-1. `EXEC-scenario-planner-quarter-drafts-00-overview.md`
-   - Start here for the DB-backed Scenario draft-history split and the canonical `/api/scenario/drafts` contract.
+1. `DONE-scenario-planner-quarter-drafts-00-overview.md`
+   - Completed DB-backed Scenario draft-history split and canonical `/api/scenario/drafts` contract. Use for audit context only.
 
-2. `EXEC-scenario-planner-quarter-drafts-01-persistence-api.md`
-   - Expected output: one shared active Scenario draft per workspace plus sprint/team/group scope, append-only version history, rollback, and legacy `/api/scenario/overrides` compatibility.
+2. `DONE-scenario-planner-quarter-drafts-01-persistence-api.md`
+   - Output: one shared active Scenario draft per workspace plus sprint/team/group scope, append-only version history, rollback, and legacy `/api/scenario/overrides` compatibility.
 
-3. `EXEC-scenario-planner-quarter-drafts-02-frontend-history.md`
-   - Expected output: Scenario UI loads active drafts, saves new versions, reloads snapshots, rolls back before write-back, and handles stale saves without losing local edits.
+3. `DONE-scenario-planner-quarter-drafts-02-frontend-history.md`
+   - Output: Scenario UI loads active drafts, saves new versions, reloads snapshots, rolls back before write-back, and handles stale saves without losing local edits.
 
-4. `EXEC-scenario-planner-quarter-drafts-03-collaboration-writeback-gate.md`
-   - Expected output: real-time awareness through SSE/polling, advisory presence/locks, multi-user conflict recovery, and a Jira write-back route that remains blocked. Real Jira mutation requires a separate future `EXEC-*` plan after this workflow is accepted.
+4. `DONE-scenario-planner-quarter-drafts-03-collaboration-writeback-gate.md`
+   - Output: real-time awareness through SSE/polling, advisory presence/locks, multi-user conflict recovery, and a Jira write-back route that remains blocked. Real Jira mutation still requires a separate future `EXEC-*` plan.
    - Future Jira publish/write-back must use only the signed-in user's OAuth Jira REST context; do not use Jira/Home API tokens, Basic credentials, service integrations, Home/Townsquare APIs, or local token-store helpers.
    - Scenario group scope is a shared environment-scoped PM/EPM-managed configuration reference; drafts may reference groups but must not create private group definitions or own group membership.
 

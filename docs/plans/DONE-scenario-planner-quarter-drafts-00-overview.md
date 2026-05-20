@@ -1,5 +1,7 @@
 # Scenario Planner Quarter Drafts Overview
 
+> **Status:** Done. Executed in `993e885` (`Add scenario draft history persistence`, 2026-05-20). Kept for audit context only; do not execute as an active plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement these plans task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add DB-backed, versioned Scenario Planner drafts for a quarter scope, with one shared active draft per sprint plus team/group scope, reload/rollback history, and guarded multi-user editing before any Jira write-back.
@@ -54,11 +56,11 @@ The plans in this split do not implement Jira publishing. Slice 03 may add block
 
 Run these in order:
 
-1. `EXEC-scenario-planner-quarter-drafts-01-persistence-api.md`
+1. `DONE-scenario-planner-quarter-drafts-01-persistence-api.md`
    - Adds DB models, migration, service/repository code, new draft routes, legacy `/api/scenario/overrides` read/fallback behavior, and backend tests.
-2. `EXEC-scenario-planner-quarter-drafts-02-frontend-history.md`
+2. `DONE-scenario-planner-quarter-drafts-02-frontend-history.md`
    - Wires the existing Scenario Planner edit buffer to active draft metadata, history, reload, rollback, conflict handling, and visual verification.
-3. `EXEC-scenario-planner-quarter-drafts-03-collaboration-writeback-gate.md`
+3. `DONE-scenario-planner-quarter-drafts-03-collaboration-writeback-gate.md`
    - Adds polling-first events, optional-gated SSE, advisory presence/locks, multi-user conflict recovery, and an explicit Jira write-back gate.
 
 Do not implement Jira write-back in any of these three plans. Slice 03 keeps any write-back route blocked with `403 jira_writeback_gate_blocked`; passing slice 03 tests only permits writing a separate future `EXEC-*` plan for real Jira mutation. Do not add Home/Townsquare writes; `GATE-05-home-write-capability.md` remains blocked.

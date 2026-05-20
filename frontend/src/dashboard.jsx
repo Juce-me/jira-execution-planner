@@ -61,6 +61,8 @@ import {
     getRateClass,
     resolveTeamColor,
 } from './stats/statsUtils.js';
+import StatsDeliverySummary from './stats/StatsDeliverySummary.jsx';
+import StatsTeamsView from './stats/StatsTeamsView.jsx';
 import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';
 import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
@@ -13086,258 +13088,25 @@ import {
                                 />
 
                                 {statsView !== 'cohort' && statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && (
-                                <div className="stats-summary">
-                                    <div
-                                        className={`stats-card selectable ${statsGraphMode === 'absolute' ? 'active' : ''}`}
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={() => setStatsGraphMode('absolute')}
-                                        onKeyDown={(event) => {
-                                            if (event.key === 'Enter' || event.key === ' ') {
-                                                event.preventDefault();
-                                                setStatsGraphMode('absolute');
-                                            }
-                                        }}
-                                        aria-pressed={statsGraphMode === 'absolute'}
-                                    >
-                                        <h4>Delivery Rate</h4>
-                                        <div className="stat-value">
-                                            {formatPercent(computeRate(statsTotals.straight))}
-                                        </div>
-                                        <div className="stats-note">Absolute rate</div>
-                                    </div>
-                                    <div
-                                        className={`stats-card selectable ${statsGraphMode === 'weighted' ? 'active' : ''}`}
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={() => setStatsGraphMode('weighted')}
-                                        onKeyDown={(event) => {
-                                            if (event.key === 'Enter' || event.key === ' ') {
-                                                event.preventDefault();
-                                                setStatsGraphMode('weighted');
-                                            }
-                                        }}
-                                        aria-pressed={statsGraphMode === 'weighted'}
-                                    >
-                                        <h4>Weighted Rate</h4>
-                                        <div className="stat-value">
-                                            {formatPercent(computeRate(statsTotals.weighted))}
-                                        </div>
-                                        <div className="stats-note">Priority-weighted</div>
-                                    </div>
-                                    <div className="stats-card">
-                                        <h4>Totals</h4>
-                                        <div className="stat-value">{statsTotals.straight.done + statsTotals.straight.incomplete + statsTotals.straight.killed}</div>
-                                        <div className="stats-note">
-                                            {statsTotals.straight.done} done · {statsTotals.straight.incomplete} incomplete · {statsTotals.straight.killed} killed
-                                        </div>
-                                    </div>
-                                    <div className="stats-card">
-                                        <h4>Source</h4>
-                                        <div className="stat-value">Sprint tasks</div>
-                                        <div className="stats-note">Derived from the loaded sprint list</div>
-                                    </div>
-                                </div>
+                                    <StatsDeliverySummary
+                                        statsGraphMode={statsGraphMode}
+                                        setStatsGraphMode={setStatsGraphMode}
+                                        statsTotals={statsTotals}
+                                        computeRate={computeRate}
+                                        formatPercent={formatPercent}
+                                    />
                                 )}
 
-                                <div className={`stats-view ${statsView === 'teams' ? 'open' : ''}`}>
-                                    <div className="stats-bars" style={{ '--stats-bar-columns': statsBarColumns }}>
-                                        {statsTeamRows.map(team => {
-                                            const graphRate = statsGraphMode === 'weighted' ? team.weightedRate : team.straightRate;
-                                            return (
-                                                <div key={team.id} className="stats-bar">
-                                                    <div className="stats-bar-value">{formatPercent(graphRate)}</div>
-                                                    <div className="stats-bar-track">
-                                                        <div
-                                                            className={`stats-bar-fill ${getRateClass(graphRate)}`}
-                                                            style={{ height: `${Math.min(100, graphRate * 100)}%` }}
-                                                        />
-                                                    </div>
-                                                    <div className="stats-bar-label">{team.name}</div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                    <table className="stats-table">
-                                        <thead>
-                                            <tr className="stats-group-row">
-                                                <th className="dimension"></th>
-                                                <th className="stats-col total" colSpan="4">Total</th>
-                                                <th className="stats-col product" colSpan="4">Product</th>
-                                                <th className="stats-col tech" colSpan="4">Tech</th>
-                                            </tr>
-                                            <tr>
-                                                <th className="dimension">Team</th>
-                                                <th className="metric stats-col total">Done</th>
-                                                <th className="metric stats-col total">Incomplete</th>
-                                                <th className="metric stats-col total">Absolute</th>
-                                                <th className="metric stats-col total">Weighted</th>
-                                                <th className="metric stats-col product">Done</th>
-                                                <th className="metric stats-col product">Incomplete</th>
-                                                <th className="metric stats-col product">Absolute</th>
-                                                <th className="metric stats-col product">Weighted</th>
-                                                <th className="metric stats-col tech">Done</th>
-                                                <th className="metric stats-col tech">Incomplete</th>
-                                                <th className="metric stats-col tech">Absolute</th>
-                                                <th className="metric stats-col tech">Weighted</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {statsTeamRows.map(team => {
-                                                const totalDoneLink = buildStatLink(team.straight.done, {
-                                                    teamId: team.id,
-                                                    projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'],
-                                                    statuses: ['Done'],
-                                                    issueType: 'Story'
-                                                });
-                                                const totalIncompleteLink = buildStatLink(team.straight.incomplete, {
-                                                    teamId: team.id,
-                                                    projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'],
-                                                    excludeStatuses: ['Done', 'Killed'],
-                                                    issueType: 'Story'
-                                                });
-                                                const productDoneLink = buildStatLink(team.product.done, {
-                                                    teamId: team.id,
-                                                    projectName: 'PRODUCT ROADMAPS',
-                                                    statuses: ['Done'],
-                                                    issueType: 'Story'
-                                                });
-                                                const productIncompleteLink = buildStatLink(team.product.incomplete, {
-                                                    teamId: team.id,
-                                                    projectName: 'PRODUCT ROADMAPS',
-                                                    excludeStatuses: ['Done', 'Killed'],
-                                                    issueType: 'Story'
-                                                });
-                                                const techDoneLink = buildStatLink(team.tech.done, {
-                                                    teamId: team.id,
-                                                    projectName: 'TECHNICAL ROADMAP',
-                                                    statuses: ['Done'],
-                                                    issueType: 'Story'
-                                                });
-                                                const techIncompleteLink = buildStatLink(team.tech.incomplete, {
-                                                    teamId: team.id,
-                                                    projectName: 'TECHNICAL ROADMAP',
-                                                    excludeStatuses: ['Done', 'Killed'],
-                                                    issueType: 'Story'
-                                                });
-
-                                                return (
-                                                <tr key={team.id}>
-                                                    <td className="dimension">{team.name}</td>
-                                                    <td className="metric stats-col total">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.straight.done}</span>
-                                                            {totalDoneLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={totalDoneLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View done stories for this team in Jira"
-                                                                    aria-label="Open done stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col total">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.straight.incomplete}</span>
-                                                            {totalIncompleteLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={totalIncompleteLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View incomplete stories for this team in Jira"
-                                                                    aria-label="Open incomplete stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col total">{formatPercent(team.straightRate)}</td>
-                                                    <td className="metric stats-col total">{formatPercent(team.weightedRate)}</td>
-                                                    <td className="metric stats-col product">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.product.done}</span>
-                                                            {productDoneLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={productDoneLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View done product stories for this team in Jira"
-                                                                    aria-label="Open done product stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col product">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.product.incomplete}</span>
-                                                            {productIncompleteLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={productIncompleteLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View incomplete product stories for this team in Jira"
-                                                                    aria-label="Open incomplete product stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col product">{formatPercent(computeRate(team.product))}</td>
-                                                    <td className="metric stats-col product">{formatPercent(computeRate(team.weightedProduct))}</td>
-                                                    <td className="metric stats-col tech">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.tech.done}</span>
-                                                            {techDoneLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={techDoneLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View done tech stories for this team in Jira"
-                                                                    aria-label="Open done tech stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col tech">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.tech.incomplete}</span>
-                                                            {techIncompleteLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={techIncompleteLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View incomplete tech stories for this team in Jira"
-                                                                    aria-label="Open incomplete tech stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col tech">{formatPercent(computeRate(team.tech))}</td>
-                                                    <td className="metric stats-col tech">{formatPercent(computeRate(team.weightedTech))}</td>
-                                                </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                <StatsTeamsView
+                                    open={statsView === 'teams'}
+                                    statsTeamRows={statsTeamRows}
+                                    statsBarColumns={statsBarColumns}
+                                    statsGraphMode={statsGraphMode}
+                                    buildStatLink={buildStatLink}
+                                    computeRate={computeRate}
+                                    formatPercent={formatPercent}
+                                    getRateClass={getRateClass}
+                                />
 
                                 <div className={`stats-view ${statsView === 'priority' ? 'open' : ''}`}>
                                     {priorityRadar.series.length > 0 && (

@@ -811,7 +811,8 @@ test('EPM rollup helper dedupes by issue key before rendering', () => {
 test('EPM project helper uses strict backlog and archived lifecycle buckets', () => {
     assert.ok(helperSource.includes("normalizedTab === 'active'"), 'Expected active tab to own custom all project visibility');
     assert.ok(helperSource.includes("ACTIVE_EPM_PROJECT_STATES = new Set(['pending', 'on track', 'at risk', 'off track'])"), 'Expected active tab to include pending and active Home states');
-    assert.ok(helperSource.includes("BACKLOG_EPM_PROJECT_STATES = new Set(['paused', 'todo', 'to do'])"), 'Expected backlog tab to be limited to paused or todo states');
+    assert.ok(helperSource.includes("BACKLOG_EPM_PROJECT_STATES = new Set(['paused', 'todo', 'to do'])"), 'Expected backlog lifecycle bucket to keep paused and todo states explicit');
+    assert.ok(helperSource.includes("normalizedTab === 'backlog'") && helperSource.includes("isPendingEpmProject(project)"), 'Expected backlog tab to also include pending Home projects');
     assert.ok(helperSource.includes("ARCHIVED_EPM_PROJECT_STATES"), 'Expected archived tab to be limited to archived/completed states');
     assert.ok(helperSource.includes('filterEpmRollupBoardsForSearch'), 'Expected EPM board search helper');
 });

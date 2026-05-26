@@ -344,6 +344,7 @@ def filter_epm_projects_for_tab(projects, tab):
     for project in projects or []:
         tab_bucket = normalize_epm_text((project or {}).get('tabBucket')).lower()
         state_value = normalize_epm_text((project or {}).get('stateValue') or (project or {}).get('stateLabel'))
+        is_pending_state = epm_home.is_pending_epm_state(state_value)
         state_bucket = epm_home.bucket_epm_state(state_value) if state_value else ''
         if state_bucket:
             tab_bucket = state_bucket
@@ -353,6 +354,8 @@ def filter_epm_projects_for_tab(projects, tab):
             tab_bucket = ''
         if normalized_tab == 'active':
             matches_tab = tab_bucket == 'active' or tab_bucket == 'all'
+        elif normalized_tab == 'backlog' and is_pending_state:
+            matches_tab = True
         else:
             matches_tab = tab_bucket == normalized_tab
         if matches_tab:

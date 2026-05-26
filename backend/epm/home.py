@@ -34,7 +34,8 @@ HOME_MAX_PROJECTS_PER_GOAL = 500
 _CLOUD_ID_CACHE: dict[str, str] = {}
 _GOAL_BY_KEY_CACHE: dict[str, dict] = {}
 
-ACTIVE_EPM_STATES = {"PENDING", "ON_TRACK", "AT_RISK", "OFF_TRACK"}
+PENDING_EPM_STATES = {"PENDING"}
+ACTIVE_EPM_STATES = PENDING_EPM_STATES | {"ON_TRACK", "AT_RISK", "OFF_TRACK"}
 BACKLOG_EPM_STATES = {"PAUSED", "TODO", "TO_DO"}
 ARCHIVED_EPM_STATES = {"COMPLETED", "CANCELLED", "ARCHIVED", "DONE", "RELEASE", "RELEASED"}
 
@@ -864,8 +865,17 @@ def extract_project_status(project_data: dict) -> str:
     return "UNKNOWN"
 
 
-def bucket_epm_state(state_value):
+def _normalize_epm_state_value(state_value):
     normalized = re.sub(r"[^A-Z0-9]+", "_", str(state_value or "").strip().upper()).strip("_")
+    return normalized
+
+
+def is_pending_epm_state(state_value):
+    return _normalize_epm_state_value(state_value) in PENDING_EPM_STATES
+
+
+def bucket_epm_state(state_value):
+    normalized = _normalize_epm_state_value(state_value)
     if normalized in ACTIVE_EPM_STATES:
         return "active"
     if normalized in BACKLOG_EPM_STATES:

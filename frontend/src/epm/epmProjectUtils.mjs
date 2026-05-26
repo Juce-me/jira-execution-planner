@@ -17,6 +17,10 @@ const BACKLOG_EPM_PROJECT_STATES = new Set(['paused', 'todo', 'to do']);
 const ARCHIVED_EPM_PROJECT_STATES = new Set(['completed', 'cancelled', 'archived', 'done', 'release', 'released']);
 export const EPM_PROJECT_UPDATE_STALE_DAYS = 14;
 
+function isPendingEpmProject(project) {
+    return normalizeEpmSettingsStatus(project?.stateValue || project?.stateLabel || '') === 'pending';
+}
+
 function getEpmProjectLifecycleBucket(project) {
     const tabBucket = String(project?.tabBucket || '').trim().toLowerCase();
     const status = normalizeEpmSettingsStatus(project?.stateValue || project?.stateLabel || '');
@@ -34,6 +38,9 @@ export function filterEpmProjectsForTab(projects, tab) {
             const tabBucket = getEpmProjectLifecycleBucket(project);
             if (normalizedTab === 'active') {
                 return tabBucket === 'active' || tabBucket === 'all';
+            }
+            if (normalizedTab === 'backlog' && isPendingEpmProject(project)) {
+                return true;
             }
             return tabBucket === normalizedTab;
         })

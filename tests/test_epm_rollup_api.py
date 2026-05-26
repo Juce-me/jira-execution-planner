@@ -325,7 +325,7 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertTrue(metadata_rollup['metadataOnly'])
         self.assertFalse(metadata_rollup['emptyRollup'])
 
-    def test_all_projects_backlog_only_includes_paused_or_todo_projects(self):
+    def test_all_projects_backlog_includes_pending_paused_or_todo_projects(self):
         projects = [
             {
                 'id': 'active-one',
@@ -394,8 +394,8 @@ class TestEpmRollupApi(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         payload = response.get_json()
-        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['paused-one', 'todo-one'])
-        self.assertEqual(set(call.args[0] for call in mock_rollup.call_args_list), {'paused-one', 'todo-one'})
+        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['pending-one', 'paused-one', 'todo-one'])
+        self.assertEqual(set(call.args[0] for call in mock_rollup.call_args_list), {'pending-one', 'paused-one', 'todo-one'})
 
     def test_all_projects_active_includes_pending_and_active_lifecycle_projects(self):
         projects = [

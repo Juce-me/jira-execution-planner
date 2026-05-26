@@ -10,11 +10,11 @@ class TestOauthRouteGuards(unittest.TestCase):
         jira_server.app.secret_key = 'test-secret'
         self.client = jira_server.app.test_client()
 
-    def test_oauth_mode_blocks_unmigrated_api_route(self):
+    def test_oauth_mode_hides_disabled_dev_local_api_route(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             response = self.client.get('/api/debug-fields')
-        self.assertEqual(response.status_code, 501)
-        self.assertEqual(response.get_json()['error'], 'route_not_oauth_ready')
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.get_json()['error'], 'not_found')
 
     def test_oauth_mode_blocks_unmigrated_unsafe_api_route_before_csrf(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
@@ -28,7 +28,8 @@ class TestOauthRouteGuards(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_basic_mode_does_not_apply_oauth_route_guard(self):
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(jira_server, 'load_dashboard_config', return_value={}):
             response = self.client.get('/api/config')
         self.assertNotEqual(response.status_code, 501)
 

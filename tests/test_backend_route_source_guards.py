@@ -13,6 +13,15 @@ JIRA_SERVER_PATH = REPO_ROOT / "jira_server.py"
 BACKEND_EPM_ROUTES_PATH = REPO_ROOT / "backend" / "routes" / "epm_routes.py"
 BACKEND_ENG_ROUTES_PATH = REPO_ROOT / "backend" / "routes" / "eng_routes.py"
 BACKEND_SETTINGS_ROUTES_PATH = REPO_ROOT / "backend" / "routes" / "settings_routes.py"
+BACKEND_ROUTE_GROUPS = {
+    "scenario": (REPO_ROOT / "backend" / "routes" / "scenario_routes.py", ("/api/scenario", "/api/scenario/overrides")),
+    "stats": (REPO_ROOT / "backend" / "routes" / "stats_routes.py", ("/api/stats", "/api/stats/burnout", "/api/stats/epic-cohort", "/api/stats/excluded-capacity-source")),
+    "capacity": (REPO_ROOT / "backend" / "routes" / "capacity_routes.py", ("/api/capacity", "/api/planned-capacity")),
+    "export": (REPO_ROOT / "backend" / "routes" / "export_routes.py", ("/api/export-excel",)),
+    "diagnostic": (REPO_ROOT / "backend" / "routes" / "diagnostic_routes.py", ("/api/test",)),
+    "dev": (REPO_ROOT / "backend" / "routes" / "dev_routes.py", ("/api/debug-fields", "/api/tasks-fields")),
+}
+BACKEND_SECURITY_GUARDS_PATH = REPO_ROOT / "backend" / "security" / "guards.py"
 BACKEND_EPM_PATH = REPO_ROOT / "backend" / "epm"
 APP_ROUTE_EPM_PATTERN = re.compile(
     r"@app\.(?:route|get|post|put|patch|delete)\(\s*['\"]\/api\/epm(?:\/|['\"])",
@@ -129,6 +138,54 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
             [],
             "jira_server.py must not retain root @app.route decorators for settings/config/catalog routes after backend/routes/settings_routes.py exists",
         )
+
+    def test_jira_server_drops_moved_root_api_route_decorators_after_blueprints_exist(self):
+        source = JIRA_SERVER_PATH.read_text(encoding="utf8")
+
+        failures = {}
+        for group_name, (module_path, route_paths) in BACKEND_ROUTE_GROUPS.items():
+            if not module_path.exists():
+                continue
+            matches = app_route_pattern(route_paths).findall(source)
+            if matches:
+                failures[group_name] = matches
+
+        self.assertEqual(failures, {})
+
+    def test_central_security_guard_owns_oauth_and_csrf_policy(self):
+        if not BACKEND_SECURITY_GUARDS_PATH.exists():
+            return
+
+        source = JIRA_SERVER_PATH.read_text(encoding="utf8")
+        forbidden = [
+            "def require_oauth_unsafe_method_header",
+            "def require_db_admin_csrf_token",
+            "def reject_unmigrated_oauth_routes",
+            "def reject_stale_oauth_scope_api_sessions",
+            "def require_oauth_shared_config_admin",
+            "OAUTH_READY_API_PATHS = {",
+            "OAUTH_SHARED_CONFIG_WRITE_PATHS = {",
+        ]
+
+        present = [pattern for pattern in forbidden if pattern in source]
+        self.assertEqual(
+            present,
+            [],
+            "jira_server.py must delegate OAuth readiness, CSRF, and admin write policy to backend/security/guards.py",
+        )
+
+    def test_only_dashboard_entry_redirect_remains_as_jira_server_before_request(self):
+        if not BACKEND_SECURITY_GUARDS_PATH.exists():
+            return
+
+        source = JIRA_SERVER_PATH.read_text(encoding="utf8")
+        before_request_functions = re.findall(
+            r"@app\.before_request\s+def\s+([A-Za-z0-9_]+)\(",
+            source,
+            flags=re.MULTILINE,
+        )
+
+        self.assertEqual(before_request_functions, ["redirect_unauthenticated_oauth_dashboard_entry"])
 
     def test_root_epm_helpers_do_not_return_after_backend_epm_package_exists(self):
         if not BACKEND_EPM_PATH.exists():

@@ -1,8 +1,10 @@
 """Authentication route blueprint."""
 
+import os
+
 from flask import Blueprint, jsonify, redirect, request, session
 
-from backend.auth.csrf import issue_csrf_token
+from backend.auth.csrf import bind_csrf_token, issue_csrf_token
 from backend.auth.jira_auth import ensure_oauth_token, missing_oauth_scopes
 from backend.epm import home as epm_home
 
@@ -335,7 +337,18 @@ def api_auth_csrf():
         current_request_auth_context()
     except AuthError as error:
         return auth_error_response(error, 401)
-    return jsonify({'csrfToken': issue_csrf_token(session, data)})
+    token = issue_csrf_token(session, data)
+    if database_storage_enabled() and db_oauth_browser_session_data():
+        try:
+            bind_csrf_token(session, token, csrf_session_data_for_request())
+        except AuthError as error:
+            return auth_error_response(error, 401)
+        except DatabaseConfigurationError:
+            return jsonify({
+                'error': 'config_storage_unavailable',
+                'message': 'Database-backed authentication is unavailable.',
+            }), 503
+    return jsonify({'csrfToken': token})
 
 
 @bp.route('/api/auth/atlassian/login', methods=['GET'])
@@ -459,6 +472,10 @@ def api_auth_refresh():
 @bp.route('/api/auth/dev/home-graphql-oauth-probe', methods=['GET'])
 def api_dev_home_graphql_oauth_probe():
     if APP_ENVIRONMENT_KEY.strip().lower() not in {'local', 'dev'}:
+        return jsonify({'error': 'not_found'}), 404
+    if os.getenv('ALLOW_DEV_DIAGNOSTIC_ENDPOINTS', '').strip().lower() not in {'1', 'true', 'yes'}:
+        return jsonify({'error': 'not_found'}), 404
+    if (request.remote_addr or '').strip().lower() not in {'127.0.0.1', '::1', 'localhost'}:
         return jsonify({'error': 'not_found'}), 404
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return jsonify({'error': 'oauth_required'}), 400

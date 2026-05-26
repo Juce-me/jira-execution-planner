@@ -40,6 +40,36 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 7. `FUTURE-db-additional-features.md`
    - Execute only after the DB auth and user-configuration phases are complete and explicitly reopened.
 
+## Completed Scenario Planner Workflow
+
+1. `DONE-scenario-planner-quarter-drafts-00-overview.md`
+   - Completed DB-backed Scenario draft-history split and canonical `/api/scenario/drafts` contract. Use for audit context only.
+
+2. `DONE-scenario-planner-quarter-drafts-01-persistence-api.md`
+   - Output: one shared active Scenario draft per workspace plus sprint/team/group scope, append-only version history, rollback, and legacy `/api/scenario/overrides` compatibility.
+
+3. `DONE-scenario-planner-quarter-drafts-02-frontend-history.md`
+   - Output: Scenario UI loads active drafts, saves new versions, reloads snapshots, rolls back before write-back, and handles stale saves without losing local edits.
+
+4. `DONE-scenario-planner-quarter-drafts-03-collaboration-writeback-gate.md`
+   - Output: real-time awareness through SSE/polling, advisory presence/locks, multi-user conflict recovery, and a Jira write-back route that remains blocked. Real Jira mutation still requires a separate future `EXEC-*` plan.
+   - Future Jira publish/write-back must use only the signed-in user's OAuth Jira REST context; do not use Jira/Home API tokens, Basic credentials, service integrations, Home/Townsquare APIs, or local token-store helpers.
+   - Scenario group scope is a shared environment-scoped PM/EPM-managed configuration reference; drafts may reference groups but must not create private group definitions or own group membership.
+
+## Project Grade Security Hardening
+
+1. `DONE-project-grade-security-hardening.md`
+   - Completed project-grade hardening plan. Use for audit and release evidence; do not execute as active work.
+   - Output: central endpoint policy registry, default-deny route guards, local-only dev diagnostics, loopback-safe startup defaults, security headers, project packaging metadata, CI backend/security checks, and a hardened release zip.
+   - This plan does not authorize Home/Townsquare writes or Jira write-back. `GATE-05-home-write-capability.md` remains blocked unless its documented probe records `PASS home_project_update_supported`.
+
+## Completed Frontend Structure
+
+1. `DONE-statistics-module-extraction.md`
+   - Completed Statistics module extraction. Use for audit and prerequisite evidence; do not execute as active work.
+   - Supersedes the stale root-level `statistics_module_extraction_plan.md` from `origin/plan/statistics-module-extraction`.
+   - Output: remaining legacy Statistics Teams, Priority, and Burndown utilities/components extracted from `frontend/src/dashboard.jsx` into the existing `frontend/src/stats/` package, with source guards, focused Node tests, full unit verification, Playwright smoke coverage, regenerated frontend dist output, and shared bounded hover positioning for stats chart readouts.
+
 ## Expectations
 
 - Before executing any `EXEC-*` plan, run the preflight commands named in that plan.

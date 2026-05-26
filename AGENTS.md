@@ -1,15 +1,21 @@
 # AGENTS.md
 
+Template version: 2026-05-19
+
 Drop-in operating instructions for coding agents. Read this file before every task.
 
 **Working code only. Finish the job. Plausibility is not correctness.**
 
-This file follows the [AGENTS.md](https://agents.md) open standard (Linux Foundation / Agentic AI Foundation). Claude Code, Codex, Cursor, Windsurf, Copilot, Aider, Devin, Amp read it natively. For tools that look elsewhere, symlink:
+This file follows the [AGENTS.md](https://agents.md) open standard (Linux Foundation / Agentic AI Foundation). Claude Code, Codex, Cursor, Windsurf, Copilot, Aider, Devin, Amp read it natively. For tools that look elsewhere, symlink at the project root:
 
 ```bash
 ln -s AGENTS.md CLAUDE.md
 ln -s AGENTS.md GEMINI.md
 ```
+
+For any directory-specific `AGENTS.md`, create the same colocated `CLAUDE.md` and `GEMINI.md` symlinks from that subfolder.
+
+When the agent runtime supports Superpowers, install or enable it for the project on first start and invoke `using-superpowers` before ordinary task handling. If Superpowers is unavailable, say so explicitly and continue with this file as the fallback.
 
 ---
 
@@ -33,9 +39,13 @@ These rules override everything else in this file when in conflict:
 **Goal: understand the problem and the codebase before producing a diff.**
 
 - State your plan in one or two sentences before editing. For anything non-trivial, produce a numbered list of steps with a verification check for each.
+- Do not create persistent agent plan files unless explicitly needed; when needed, use `docs/agents/` per `docs/agents.md`, not `docs/superpowers/`.
+- If Superpowers is active, use the relevant Superpowers skills for planning and execution. Use `writing-plans` for implementation plans, then `subagent-driven-development` when available or `executing-plans` for plan execution.
 - Read the files you will touch. Read the files that call the files you will touch. Claude Code: use subagents for exploration so the main context stays clean.
 - Match existing patterns in the codebase. If the project uses pattern X, use pattern X, even if you'd do it differently in a greenfield repo.
+- Do not discard prior architecture constraints. Treat existing boundaries, public contracts, migration paths, and explicit decisions as requirements unless the user changes them.
 - Surface assumptions out loud: "I'm assuming you want X, Y, Z. If that's wrong, say so." Do not bury assumptions inside the implementation.
+- If context becomes uncertain, stop and state uncertainty. Say what is unknown, stale, or conflicting, then ask or verify before proceeding.
 - If two approaches exist, present both with tradeoffs. Do not pick one silently. Exception: trivial tasks (typo, rename, log line) where the diff fits in one sentence.
 
 ---
@@ -46,8 +56,10 @@ These rules override everything else in this file when in conflict:
 
 - No features beyond what was asked.
 - No abstractions for single-use code. No configurability, flexibility, or hooks that were not requested.
+- Reuse existing design elements. If a style, component, token, or pattern for what you need already exists in the project, use it. When changing reusable UI, docs, prompts, or workflow behavior, update the shared component, token, template, or instruction instead of creating a one-off local variant.
 - No error handling for impossible scenarios. Handle the failures that can actually happen.
 - If the solution runs 200 lines and could be 50, rewrite it before showing it.
+- Do not simplify implementation for brevity. Prefer the shortest correct implementation, but never remove required behavior, architectural constraints, or edge-case handling just to shorten code or explanation.
 - If you find yourself adding "for future extensibility", stop. Future extensibility is a future decision.
 - Bias toward deleting code over adding code. Shipping less is almost always better.
 
@@ -64,6 +76,8 @@ The test: would a senior engineer reading the diff call this overcomplicated? If
 - Do not delete pre-existing dead code unless asked. If you notice it, mention it in the summary.
 - Do clean up orphans created by your own changes (unused imports, variables, functions your edit made obsolete).
 - Match the project's existing style exactly: indentation, quotes, naming, file layout.
+- Put reusable project rules at the highest applicable level. Use subfolder `AGENTS.md` files only for stricter local instructions, and keep `CLAUDE.md` and `GEMINI.md` symlinked to the local `AGENTS.md`.
+- Place new files in the appropriate top-level subfolder (e.g., `assets/` for static assets, `scripts/` for tooling and automation, `src/` for sources, `tests/` for tests, `docs/` for documentation) instead of the project root. If the project has an established layout, follow it; otherwise use these defaults. Create a folder only when adding its first real file. Do not commit empty placeholders, `.keep` files, or scaffold directories.
 
 The test: every changed line traces directly to the user's request. If a line fails that test, revert it.
 
@@ -86,6 +100,7 @@ For every task:
 2. Write the verification (test, script, benchmark, screenshot diff) where practical.
 3. Run the verification. Read the output. Do not claim success without checking.
 4. If the verification fails, fix the cause, not the test.
+5. Before ending execution from a plan or docs artifact, update the artifact, implementation plan, README, and affected docs to match the result.
 
 ---
 
@@ -95,6 +110,7 @@ For every task:
 - Never report "done" based on a plausible-looking diff alone. Plausibility is not correctness.
 - When debugging, address root causes, not symptoms. Suppressing the error is not fixing the error.
 - For UI changes, verify visually: screenshot before, screenshot after, describe the diff.
+- For Python work, always use a project-local virtual environment. Prefer an existing `.venv`; create `.venv` if missing before installing dependencies or running Python tools. Do not install packages into system Python.
 - Use CLI tools (gh, aws, gcloud, kubectl) when they exist. They are more context-efficient than reading docs or hitting APIs unauthenticated.
 - When reading logs, errors, or stack traces, read the whole thing. Half-read traces produce wrong fixes.
 
@@ -102,6 +118,7 @@ For every task:
 
 ## 6. Session hygiene
 
+- At the start of a new session in any project using this file, check `https://raw.githubusercontent.com/Juce-me/init_agents_md/main/AGENTS.md` for a newer template version without asking first. If the remote `Template version` is newer than the local one, ask before updating and preserve project-specific sections 10 and 11. If either version is missing, compare contents and ask before applying any update.
 - Context is the constraint. Long sessions with accumulated failed attempts perform worse than fresh sessions with a better prompt.
 - After two failed corrections on the same issue, stop. Summarize what you learned and ask the user to reset the session with a sharper prompt.
 - Use subagents (Claude Code: "use subagents to investigate X") for exploration tasks that would otherwise pollute the main context with dozens of file reads.
@@ -112,7 +129,12 @@ For every task:
 ## 7. Communication style
 
 - Direct, not diplomatic. "This won't scale because X" beats "That's an interesting approach, but have you considered...".
+- Use English as the default language unless the user explicitly asks for another language.
 - Concise by default. Two or three short paragraphs unless the user asks for depth. No padding, no restating the question, no ceremonial closings.
+- For technical judgment calls, lead with the actual assessment: "Honest take: X" or equivalent. Then give the few concrete reasons that matter.
+- Separate what existing tools or platform features already solve from what custom code still buys. Do not recommend building something whose value has mostly disappeared.
+- Prefer structural critique over surface tweaks. If the wrong boundary is tool-vs-agent, CLI-vs-MCP, client-vs-server, or build-vs-buy, say that before polishing the current plan.
+- When there are two viable paths, name them, explain when each is right, and recommend one. Make the tradeoff explicit instead of hiding it in a neutral pros/cons list.
 - When a question has a clear answer, give it. When it does not, say so and give your best read on the tradeoffs.
 - Celebrate only what matters: shipping, solving genuinely hard problems, metrics that moved. Not feature ideas, not scope creep, not "wouldn't it be cool if".
 - No excessive bullet points, no unprompted headers, no emoji. Prose is usually clearer than structure for short answers.
@@ -144,6 +166,13 @@ After every session where the agent did something wrong:
 2. If lacking: add the rule under "Project Learnings" below, written as concretely as possible ("Always use X for Y" not "be careful with Y").
 3. If ignored: the rule may be too long, too vague, or buried. Tighten it or move it up.
 4. Every few weeks, prune. For each line, ask: "Would removing this cause the agent to make a mistake?" If no, delete. Bloated AGENTS.md files get ignored wholesale.
+
+For significant misses, regressions, or repeated mistakes:
+
+- Review existing postmortems before touching related code.
+- Follow `postmortem/AGENTS.md` when creating or updating postmortems.
+- Follow `docs/agents.md` when creating or updating agent work artifacts such as feature plans, prompt notes, bugfix investigations, or execution summaries.
+- Keep `README.md`, `AGENTS.md`, and `postmortem/README.md` aligned when workflow or structure changes.
 
 Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Under 300 is a good ceiling. Over 500 and you are fighting your own config.
 
@@ -177,7 +206,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Frontend source: `frontend/src/`, `jira-dashboard.html`
 - Generated frontend output: `frontend/dist/`
 - Tests: `tests/`, `tests/ui/`
-- Docs: `docs/features/`, `postmortem/`
+- Docs: `docs/features/`, `docs/agents.md`, `postmortem/`
 
 ### Conventions
 - Python: 4-space indentation, `snake_case` functions, `CapWords` classes
@@ -186,6 +215,9 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - No formatter or linter is enforced; match existing style in touched files
 - Tests use `unittest` in `tests/test_*.py` with `test_*` methods
 - Do not hand-edit `frontend/dist/`; rebuild it from `frontend/src/` with `npm run build`
+- Reusable rules and design guidance belong at the highest applicable `AGENTS.md`; subfolder `AGENTS.md` files are for local constraints only.
+- Keep `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` aligned at the root and in subfolders; `CLAUDE.md` and `GEMINI.md` should point to the local `AGENTS.md`.
+- Agent work artifacts under `docs/agents/` use `YYYY-MM-DD-status-summary.md` per `docs/agents.md`.
 - Keep `AGENTS.md`, `README.md`, and other contributor docs aligned when workflow or structure changes
 
 ### Repo-specific constraints
@@ -251,6 +283,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Treat Atlassian account ids only as stable identity keys for tool-local admin roles; never imply Atlassian tenant/admin status grants tool admin access.
 - Redact OAuth callback query strings from logs; never log authorization code or state values.
 - Store implementation plans in `docs/plans/` only.
+- For any plan review, creation, or execution under `docs/plans/`, read `docs/plans/AGENTS.md` first and follow its plan review prompt, naming, and gate rules.
 - Before creating or executing any Home/Townsquare auth migration plan, read `docs/plans/AGENTS.md` and run or document the Home GraphQL OAuth probe gate; do not mark Home/Townsquare-backed routes OAuth-ready unless it passes with a real local user 3LO session.
 - After DB auth exists, Home/Townsquare 3LO plans must use DB `auth_connections`/encrypted `auth_tokens` and must not resolve route tokens through local OAuth token-store helpers.
 - When an auth plan names a security gate, include the concrete implementation task and verification before the dependent handoff.
@@ -272,6 +305,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Dashboard config save endpoints must reject implicit empty overwrites of existing selected projects or groups; clearing shared JSON state needs an explicit action.
 - DB/OAuth EPM must not require Jira/Home Basic credential environment variables; Home/Townsquare EPM reads use the current user's connected `atlassian_user_api_token`.
 - DB/OAuth EPM routes use user OAuth for Jira REST and the current user's Home token only for Home/Townsquare metadata; worker-thread Jira searches must carry the captured request auth context.
+- Scenario Planner Jira publish/write-back plans must use only the signed-in user's OAuth Jira REST context; never use Jira/Home API tokens, Basic credentials, service integrations, Home/Townsquare APIs, or local token-store helpers for publishing.
+- Treat Scenario Planner group scope as a shared environment-scoped PM/EPM-managed configuration reference; drafts may reference groups but must not create private group definitions or own group membership.
 - In DB/OAuth mode, hide the EPM tab until the current user has connected a Home/Townsquare token in Settings; once visible, the EPM tab must expose an accessible EPM settings gear.
 - At the start of auth/DB/Home/EPM plan work, scan `docs/plans/GATE-*.md` and update each gate's `Checked on` and `Last result`; never mark a gate passed without its documented `PASS` output.
 - For OAuth Jira worker-thread fixes, verify a no-request-context test that reaches the real Jira auth wrapper; route mocks alone are not sufficient.
@@ -279,10 +314,13 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Before executing a plan task, verify every named file in that task's file map exists unless the plan explicitly marks it `Create`.
 - In mono vs cross UI, label denominator story points as Total SP, not Shared SP.
 - Chart legends must use native button controls, not span role=button handlers.
+- Chart hover readouts inside transformed or scrollable panels must be pointer-positioned with width/height edge bounds and covered by Playwright edge assertions before commit.
+- Chart hover readouts should size to content with a narrow max width; do not reserve a wide fixed box for short labels.
 - Excluded Capacity and Mono vs Cross stats must use cached progressive stats-source requests and must not load or render ENG alerts, filters, or task lists for those tabs.
 - In Mono vs Cross stats, Team Cross Share must render a per-sprint per-team graph of cross SP divided by total team story points; do not replace it with aggregate bars or text chips.
 - In dashboard filters, reuse existing dropdown classes such as `team-dropdown-*` or `sprint-dropdown-*`; do not create bespoke hover, caret, radius, or action styles for one-off dropdowns.
 - For EPM project board visual changes, preserve clear per-project boundaries and verify collapsed and expanded states with screenshots before committing.
+- When frontend source changes, run `npm run build` and commit generated `frontend/dist` output if `.github/workflows/verify-frontend-build.yml` requires a clean post-build diff; do not hand-edit dist.
 
 ---
 
@@ -294,6 +332,7 @@ This boilerplate synthesizes:
 - Boris Cherny's public Claude Code workflow (reactive pruning, keep it ~100 lines, only rules that fix real mistakes).
 - Anthropic's official Claude Code best practices (explore-plan-code-commit, verification loops, context as the scarce resource).
 - Community anti-sycophancy patterns (explicit banned phrases, direct-not-diplomatic).
+- Project postmortem practice: blameless incident records, explicit verification, prevention actions, and an indexed learning history.
 - The AGENTS.md open standard (cross-tool portability via symlinks).
 
-Read once. Edit sections 10 and 11 for your project. Prune the rest over time. This file gets better the more you use it.
+Read once. Fill section 10 with verified project facts. Add to section 11 only when a concrete correction should apply to future sessions. Prune the rest over time. This file gets better the more you use it.

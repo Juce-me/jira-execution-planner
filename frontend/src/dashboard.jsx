@@ -36,6 +36,7 @@ import {
     buildEpicTeamCrossShareLineSeries,
     buildEpicTeamModeOverall,
     buildEpicTeamModeSprintRows,
+    buildEffortTypeSplitRows,
     buildExcludedCapacityLineSeries,
     buildExcludedCapacityTimeSeries,
     buildExcludedEpicCatalog,
@@ -44,9 +45,28 @@ import {
     getSprintQuarterLabel,
     loadExcludedCapacityStatsSourceChunks,
     mergeExcludedCapacityStatsSourceChunks,
-    pickAutoSelectedExcludedEpics
+    pickAutoSelectedExcludedEpics,
+    summarizeEffortTypeSplitTotals
 } from './stats/excludedCapacityStats.js';
+import { PRIORITY_AXIS } from './stats/statsConstants.js';
+import { DEFAULT_PRIORITY_WEIGHT_ROWS, buildPriorityWeightMap, clonePriorityWeightRows } from './stats/priorityWeights.js';
+import { buildBurnoutChartModel } from './stats/burnoutChartUtils.js';
+import {
+    buildLocalStatsFromTasks,
+    buildRadarPoints,
+    computePriorityWeighted,
+    computeRate,
+    formatPercent,
+    getPriorityLabel,
+    getRateClass,
+    resolveTeamColor,
+} from './stats/statsUtils.js';
+import StatsDeliverySummary from './stats/StatsDeliverySummary.jsx';
+import StatsPriorityView from './stats/StatsPriorityView.jsx';
+import StatsTeamsView from './stats/StatsTeamsView.jsx';
+import BurnoutChart from './stats/BurnoutChart.jsx';
 import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';
+import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
@@ -106,7 +126,7 @@ import SettingsModal from './settings/SettingsModal.jsx';
 import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';
 import JiraFieldSettings from './settings/JiraFieldSettings.jsx';
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
-import { fetchHomeTokenConnection } from './api/authApi.js';
+import { fetchCsrfToken, fetchHomeTokenConnection } from './api/authApi.js';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     filterEpmSettingsProjectsForView,
@@ -122,7 +142,7 @@ import {
     sortEpmSettingsProjects
 } from './epm/epmProjectUtils.mjs';
 import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
-import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
+import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, resolveTeamSelectionHydrationState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
 import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 import {
     collectJiraExportKeysFromEpmRollupBoards,
@@ -205,22 +225,6 @@ import {
         }
 
         const UI_PREFS_KEY = 'jira_dashboard_ui_prefs_v1';
-        const DEFAULT_PRIORITY_WEIGHT_ROWS = Object.freeze([
-            { priority: 'Blocker', weight: '0.4' },
-            { priority: 'Critical', weight: '0.3' },
-            { priority: 'Major', weight: '0.2' },
-            { priority: 'Minor', weight: '0.06' },
-            { priority: 'Low', weight: '0.03' },
-            { priority: 'Trivial', weight: '0.01' }
-        ]);
-
-        function clonePriorityWeightRows(rows) {
-            const source = Array.isArray(rows) && rows.length ? rows : DEFAULT_PRIORITY_WEIGHT_ROWS;
-            return source.map((row) => ({
-                priority: String(row.priority || '').trim(),
-                weight: String(row.weight ?? '').trim()
-            }));
-        }
 
         function loadUiPrefs() {
             try {
@@ -325,6 +329,10 @@ import {
             const [homeTokenConnection, setHomeTokenConnection] = useState({ connected: false });
             const [homeTokenConnectionLoaded, setHomeTokenConnectionLoaded] = useState(false);
             const [authMode, setAuthMode] = useState('');
+            const [scenarioCurrentUserIdentity, setScenarioCurrentUserIdentity] = useState({
+                userId: '',
+                displayName: ''
+            });
             const hasActiveHomeTokenConnection = React.useMemo(
                 () => isActiveHomeTokenConnection(homeTokenConnection),
                 [homeTokenConnection]
@@ -619,6 +627,11 @@ import {
             const [excludedCapacityMetric, setExcludedCapacityMetric] = useState(
                 savedPrefsRef.current.excludedCapacityMetric === 'storyPoints' ? 'storyPoints' : 'percent'
             );
+            const [effortSplitVisibleBuckets, setEffortSplitVisibleBuckets] = useState({
+                excludedCapacity: true,
+                tech: true,
+                product: true
+            });
             const [excludedCapacityIsolatedTeam, setExcludedCapacityIsolatedTeam] = useState(null);
             const [excludedCapacityEpicDropdownOpen, setExcludedCapacityEpicDropdownOpen] = useState(false);
             const [excludedCapacityRefreshNonce, setExcludedCapacityRefreshNonce] = useState(0);
@@ -662,7 +675,50 @@ import {
             const scenarioFocusRestoreRef = useRef(null);
             const scenarioSkipAutoCollapseRef = useRef(false);
             const scenarioTeamCollapseInitRef = useRef(false);
+            const scenarioHistoryButtonRef = useRef(null);
+            const scenarioHistoryPanelRef = useRef(null);
+            const scenarioHistoryTitleRef = useRef(null);
             const [scenarioOverrides, setScenarioOverrides] = useState({});
+            const scenarioActiveDraftIdRef = useRef('');
+            const scenarioScopeKeyRef = useRef('');
+            const [scenarioDraftMeta, setScenarioDraftMeta] = useState({
+                activeDraft: null,
+                versions: [],
+                loadedVersionNumber: null,
+                baseDraftRevision: null,
+                savedOverrides: {},
+                scopePayload: {},
+                scopeKey: '',
+                dirtyState: 'clean',
+                pendingScopeChange: null,
+                historyOpen: false,
+                loadingHistory: false,
+                loadingVersionNumber: null,
+                loadingActiveDraft: false,
+                saving: false,
+                rollingBackVersionNumber: null,
+                reloadingFromJira: false,
+                pendingHistoryAction: null,
+                pendingActiveDraftReload: false,
+                pendingReloadFromJira: false,
+                writebackPreviewing: false,
+                writebackChecking: false,
+                writebackPreview: null,
+                writebackBlocked: null,
+                staleDraft: null,
+                conflict: null,
+                message: '',
+                error: ''
+            });
+            const [scenarioDraftEvents, setScenarioDraftEvents] = useState([]);
+            const [scenarioDraftPresence, setScenarioDraftPresence] = useState([]);
+            const [scenarioDraftLocks, setScenarioDraftLocks] = useState([]);
+            const [scenarioDraftRealtimeStatus, setScenarioDraftRealtimeStatus] = useState({
+                mode: 'idle',
+                paused: false,
+                message: ''
+            });
+            const [scenarioDraftLastEventNumber, setScenarioDraftLastEventNumber] = useState(0);
             const [scenarioEditMode, setScenarioEditMode] = useState(false);
 
             const scenarioUndoStackRef = useRef(createUndoStack());
@@ -670,6 +726,11 @@ import {
             const [scenarioDragState, setScenarioDragState] = useState(null);
             const scenarioDragStateRef = useRef(null);
             const scenarioDragFrameRef = useRef(null);
+            const scenarioDragLockRefreshRef = useRef(null);
+            const scenarioRealtimeCsrfRef = useRef('');
+            const scenarioHistoryRefreshControllerRef = useRef(null);
+            const scenarioHistoryActionControllerRef = useRef(null);
+            const scenarioViewRangeRef = useRef({ start: null, end: null });
             const scenarioWasDraggedRef = useRef(false);
             const scenarioEdgeUpdatePendingRef = useRef(false);
             const scenarioEdgeFrameRef = useRef(null);
@@ -934,11 +995,13 @@ import {
                 setGroupDraftError('');
                 try {
                     const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraft);
+                    const { csrfToken } = await fetchCsrfToken(BACKEND_URL);
                     const response = await fetch(`${BACKEND_URL}/api/epm/config`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'X-Requested-With': 'jira-execution-planner'
+                            'X-Requested-With': 'jira-execution-planner',
+                            'X-CSRF-Token': csrfToken || ''
                         },
                         body: JSON.stringify(normalizedDraft)
                     });
@@ -1695,10 +1758,10 @@ import {
                 const normalized = String(value || '').trim().toUpperCase();
                 return normalized || 'NO_EPIC';
             };
-            const isBurnoutClosedStatus = (status) => {
-                const normalized = normalizeStatus(status);
+            const isBurnoutClosedStatus = React.useCallback((status) => {
+                const normalized = (status || '').toLowerCase().replace(/\s+/g, ' ').trim();
                 return normalized === 'done' || normalized === 'killed' || normalized === 'incomplete';
-            };
+            }, []);
 
 
             const normalizeGroupsConfig = (config) => {
@@ -5233,44 +5296,7 @@ import {
                 }
             };
 
-            const priorityAxis = ['Blocker', 'Critical', 'Major', 'Minor', 'Low', 'Trivial'];
-            const priorityLabelByKey = {
-                blocker: 'Blocker',
-                critical: 'Critical',
-                major: 'Major',
-                minor: 'Minor',
-                low: 'Low',
-                trivial: 'Trivial'
-            };
-            const radarPalette = [
-                '#2563eb',
-                '#0ea5e9',
-                '#14b8a6',
-                '#10b981',
-                '#22c55e',
-                '#84cc16',
-                '#eab308',
-                '#f59e0b',
-                '#f97316',
-                '#a855f7',
-                '#6366f1',
-                '#64748b'
-            ];
-
-            const hashTeamId = (value) => {
-                const str = String(value || '');
-                let hash = 5381;
-                for (let i = 0; i < str.length; i += 1) {
-                    hash = ((hash << 5) + hash) + str.charCodeAt(i);
-                }
-                return Math.abs(hash);
-            };
-
-            const resolveTeamColor = (teamId) => {
-                if (!radarPalette.length) return '#94a3b8';
-                const index = hashTeamId(teamId) % radarPalette.length;
-                return radarPalette[index];
-            };
+            const priorityAxis = PRIORITY_AXIS;
 
             const getTeamInfo = getTaskTeamInfo;
 
@@ -5339,6 +5365,347 @@ import {
             };
 
 
+            const normalizeScenarioDraftOverrides = (overrides) => {
+                const normalized = {};
+                Object.entries(overrides || {}).forEach(([issueKey, value]) => {
+                    const key = String(issueKey || '').trim();
+                    if (!key || !value || typeof value !== 'object') return;
+                    const start = typeof value.start === 'string' ? value.start : '';
+                    const end = typeof value.end === 'string' ? value.end : '';
+                    if (!start && !end) return;
+                    normalized[key] = { start, end };
+                });
+                return normalized;
+            };
+
+            const scenarioDraftOverridesSignature = (overrides) => {
+                const normalized = normalizeScenarioDraftOverrides(overrides);
+                return Object.keys(normalized)
+                    .sort()
+                    .map(key => `${key}:${normalized[key].start || ''}:${normalized[key].end || ''}`)
+                    .join('|');
+            };
+
+            const fetchScenarioCsrfToken = () =>
+                fetchCsrfToken(BACKEND_URL).then(({ csrfToken }) => csrfToken || '');
+
+            const fetchScenarioDraft = async (scopeKey, signal) => {
+                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts?scope_key=${encodeURIComponent(scopeKey)}`, {
+                    cache: 'no-cache',
+                    signal
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || errorData.error || `Scenario draft error ${response.status}`);
+                }
+                return response.json();
+            };
+
+            const fetchScenarioRealtimeCsrfToken = async (forceRefresh = false) => {
+                if (!forceRefresh && scenarioRealtimeCsrfRef.current) {
+                    return scenarioRealtimeCsrfRef.current;
+                }
+                const token = await fetchScenarioCsrfToken();
+                scenarioRealtimeCsrfRef.current = token;
+                return token;
+            };
+
+            const pauseScenarioRealtime = (message) => {
+                setScenarioDraftRealtimeStatus({
+                    mode: 'paused',
+                    paused: true,
+                    message: message || 'Realtime paused; keep editing local-only until the session is refreshed.'
+                });
+            };
+
+            const postScenarioRealtimeJson = async (draftId, path, payload) => {
+                const postWithToken = async (csrfToken) => {
+                    const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}${path}`, {
+                        method: 'POST',
+                        cache: 'no-cache',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'jira-execution-planner',
+                            'X-CSRF-Token': csrfToken
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        const error = new Error(errorData.message || errorData.error || `Scenario realtime error ${response.status}`);
+                        error.payload = errorData;
+                        error.status = response.status;
+                        throw error;
+                    }
+                    return response.json();
+                };
+                try {
+                    return await postWithToken(await fetchScenarioRealtimeCsrfToken(false));
+                } catch (err) {
+                    if (err.status === 403 && err.payload?.error === 'csrf_required') {
+                        try {
+                            return await postWithToken(await fetchScenarioRealtimeCsrfToken(true));
+                        } catch (retryErr) {
+                            pauseScenarioRealtime('Realtime paused; session security expired. Keep editing local-only, then refresh or sign in again.');
+                            throw retryErr;
+                        }
+                    }
+                    throw err;
+                }
+            };
+
+            const mergeScenarioDraftPresence = (presence) => {
+                if (!presence) return;
+                const key = String(presence.userId || presence.presenceId || presence.displayName || '').trim();
+                if (!key) return;
+                setScenarioDraftPresence(prev => {
+                    const next = prev.filter(item => String(item.userId || item.presenceId || item.displayName || '') !== key);
+                    return [...next, presence];
+                });
+            };
+
+            const mergeScenarioDraftLock = (lock) => {
+                if (!lock) return;
+                const resourceType = String(lock.resourceType || '').trim();
+                const resourceId = String(lock.resourceId || '').trim();
+                if (!resourceType || !resourceId) return;
+                setScenarioDraftLocks(prev => {
+                    const next = prev.filter(item => (
+                        String(item.resourceType || '') !== resourceType
+                        || String(item.resourceId || '') !== resourceId
+                    ));
+                    return [...next, lock];
+                });
+            };
+
+            const learnScenarioCurrentUserFromPresence = (presence) => {
+                if (!presence) return;
+                setScenarioCurrentUserIdentity(prev => ({
+                    userId: String(presence.userId || prev.userId || '').trim(),
+                    displayName: String(presence.displayName || prev.displayName || '').trim()
+                }));
+            };
+
+            const learnScenarioCurrentUserFromLock = (lock) => {
+                if (!lock) return;
+                setScenarioCurrentUserIdentity(prev => ({
+                    userId: String(lock.holderUserId || prev.userId || '').trim(),
+                    displayName: String(lock.holderDisplayName || prev.displayName || '').trim()
+                }));
+            };
+
+            const SCENARIO_PRESENCE_TTL_MS = 30000;
+
+            const isTimestampExpired = (value) => {
+                if (!value) return false;
+                const timestamp = Date.parse(value);
+                return Number.isFinite(timestamp) && timestamp <= Date.now();
+            };
+
+            const isScenarioPresenceExpired = (presence) => {
+                if (presence?.expiresAt) return isTimestampExpired(presence.expiresAt);
+                if (!presence?.lastSeenAt) return false;
+                const lastSeenAt = Date.parse(presence.lastSeenAt);
+                return Number.isFinite(lastSeenAt) && lastSeenAt + SCENARIO_PRESENCE_TTL_MS <= Date.now();
+            };
+
+            const isScenarioLockExpired = (lock) => isTimestampExpired(lock?.expiresAt);
+
+            const removeScenarioDraftLock = (resourceType, resourceId) => {
+                const type = String(resourceType || '').trim();
+                const id = String(resourceId || '').trim();
+                if (!type || !id) return;
+                setScenarioDraftLocks(prev => prev.filter(item => (
+                    String(item.resourceType || '') !== type
+                    || String(item.resourceId || '') !== id
+                )));
+            };
+
+            const applyScenarioDraftEvent = (event) => {
+                if (!event) return;
+                const eventNumber = Number(event.eventNumber || 0);
+                if (eventNumber > 0) {
+                    setScenarioDraftLastEventNumber(prev => Math.max(prev, eventNumber));
+                }
+                setScenarioDraftEvents(prev => {
+                    if (eventNumber && prev.some(item => Number(item.eventNumber || 0) === eventNumber)) {
+                        return prev;
+                    }
+                    return [...prev, event].slice(-100);
+                });
+                const payload = event.payload || {};
+                if (event.eventType === 'presence.updated') {
+                    if (isScenarioPresenceExpired(payload.presence)) return;
+                    mergeScenarioDraftPresence(payload.presence);
+                    return;
+                }
+                if (event.eventType === 'lock.acquired' || event.eventType === 'lock.refreshed') {
+                    if (isScenarioLockExpired(payload.lock)) {
+                        removeScenarioDraftLock(payload.lock?.resourceType, payload.lock?.resourceId);
+                        return;
+                    }
+                    mergeScenarioDraftLock(payload.lock);
+                    return;
+                }
+                if (event.eventType === 'lock.released') {
+                    removeScenarioDraftLock(payload.resourceType, payload.resourceId);
+                    return;
+                }
+                const remoteDraftRevision = Number(event.draftRevision || payload.activeDraft?.draftRevision || 0);
+                setScenarioDraftMeta(prev => {
+                    const localBaseDraftRevision = Number(prev.baseDraftRevision || 0);
+                    if (!remoteDraftRevision || remoteDraftRevision <= localBaseDraftRevision) {
+                        return prev;
+                    }
+                    const nextVersions = Array.isArray(payload.versions) && payload.versions.length
+                        ? payload.versions
+                        : prev.versions;
+                    return {
+                        ...prev,
+                        versions: nextVersions,
+                        staleDraft: {
+                            draftRevision: remoteDraftRevision,
+                            eventNumber,
+                            activeDraft: payload.activeDraft || null,
+                            updatedBy: payload.activeDraft?.updatedBy || event.createdBy || ''
+                        },
+                        dirtyState: prev.dirtyState === 'clean' ? 'stale_remote' : prev.dirtyState,
+                        message: '',
+                        error: ''
+                    };
+                });
+            };
+
+            const pollScenarioDraftEvents = async (draftId, sinceEventNumber, signal) => {
+                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/events?since=${encodeURIComponent(sinceEventNumber || 0)}`, {
+                    cache: 'no-cache',
+                    signal
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || errorData.error || `Scenario draft events error ${response.status}`);
+                }
+                const data = await response.json();
+                return {
+                    events: Array.isArray(data.events) ? data.events : [],
+                    nextSince: Number(data.nextSince || 0)
+                };
+            };
+
+            const saveScenarioDraftVersion = async (scopeKey, name, baseDraftRevision, scope, overrides) => {
+                const payload = {
+                    scope_key: scopeKey,
+                    name,
+                    baseDraftRevision,
+                    scope,
+                    scenarioOverrides: normalizeScenarioDraftOverrides(overrides),
+                    overrides: normalizeScenarioDraftOverrides(overrides)
+                };
+                const postScenarioDraft = async (csrfToken) => {
+                    const response = await fetch(`${BACKEND_URL}/api/scenario/drafts`, {
+                        method: 'POST',
+                        cache: 'no-cache',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'jira-execution-planner',
+                            'X-CSRF-Token': csrfToken
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        const error = new Error(errorData.message || errorData.error || `Scenario draft save error ${response.status}`);
+                        error.payload = errorData;
+                        error.status = response.status;
+                        throw error;
+                    }
+                    return response.json();
+                };
+                const csrfToken = await fetchScenarioCsrfToken();
+                try {
+                    return await postScenarioDraft(csrfToken);
+                } catch (err) {
+                    if (err.status === 403 && err.payload?.error === 'csrf_required') {
+                        const freshCsrfToken = await fetchScenarioCsrfToken();
+                        try {
+                            return await postScenarioDraft(freshCsrfToken);
+                        } catch (csrfRetry) {
+                            csrfRetry.message = 'Session security check expired. Try saving again.';
+                            throw csrfRetry;
+                        }
+                    }
+                    throw err;
+                }
+            };
+
+            const fetchScenarioDraftVersion = async (draftId, versionNumber, signal) => {
+                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/versions/${encodeURIComponent(versionNumber)}`, {
+                    cache: 'no-cache',
+                    signal
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || errorData.error || `Scenario draft version error ${response.status}`);
+                }
+                return response.json();
+            };
+
+            const rollbackScenarioDraft = async (draftId, targetVersionNumber, baseDraftRevision, signal) => {
+                const csrfToken = await fetchScenarioCsrfToken();
+                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/rollback`, {
+                    method: 'POST',
+                    cache: 'no-cache',
+                    signal,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'jira-execution-planner',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({
+                        targetVersionNumber,
+                        baseDraftRevision
+                    })
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    const error = new Error(errorData.message || errorData.error || `Scenario draft rollback error ${response.status}`);
+                    error.payload = errorData;
+                    throw error;
+                }
+                return response.json();
+            };
+
+            const reloadScenarioDraftFromJira = async (draftId, baseDraftRevision, signal) => {
+                const csrfToken = await fetchScenarioCsrfToken();
+                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/reload-from-jira`, {
+                    method: 'POST',
+                    cache: 'no-cache',
+                    signal,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'jira-execution-planner',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({
+                        baseDraftRevision
+                    })
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    const error = new Error(errorData.message || errorData.error || `Scenario draft reload error ${response.status}`);
+                    error.payload = errorData;
+                    throw error;
+                }
+                return response.json();
+            };
+
+            const buildScenarioDraftScope = () => ({
+                groupId: activeGroupId || '',
+                groupName: activeGroup?.name || '',
+                sprintId: selectedSprint ? String(selectedSprint) : '',
+                sprintName: selectedSprintInfo?.name || ''
+            });
+
             const buildScenarioPayload = () => {
                 const isActiveSprint = selectedSprintState === 'active';
                 const anchorDate = isActiveSprint
@@ -5357,6 +5724,20 @@ import {
                 };
             };
 
+            const scenarioDraftIdleActionState = () => ({
+                loadingVersionNumber: null,
+                loadingActiveDraft: false,
+                rollingBackVersionNumber: null,
+                reloadingFromJira: false,
+                pendingHistoryAction: null,
+                pendingActiveDraftReload: false,
+                pendingReloadFromJira: false,
+                writebackPreviewing: false,
+                writebackChecking: false,
+                writebackPreview: null,
+                writebackBlocked: null
+            });
+
             const runScenario = async () => {
                 if (!selectedSprint) {
                     setScenarioError('Select a sprint to build a scenario.');
@@ -5364,6 +5745,15 @@ import {
                 }
                 if (isCompletedSprintSelected) {
                     setScenarioError('Scenario planner is disabled for completed sprints.');
+                    return;
+                }
+                if (scenarioHasUnsavedChanges) {
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        pendingScopeChange: { scopeKey: scenarioScopeKey },
+                        error: ''
+                    }));
+                    setScenarioError('Save or discard scenario draft changes before reloading scenario data.');
                     return;
                 }
                 setScenarioLoading(true);
@@ -5384,19 +5774,105 @@ import {
                         throw new Error(errorData.error || `Scenario error ${response.status}`);
                     }
                     const data = await response.json();
+                    const scopePayload = buildScenarioDraftScope();
+                    setScenarioOverrides({});
+                    setScenarioDraftEvents([]);
+                    setScenarioDraftPresence([]);
+                    setScenarioDraftLocks([]);
+                    setScenarioDraftLastEventNumber(0);
+                    setScenarioDraftRealtimeStatus({ mode: 'idle', paused: false, message: '' });
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        activeDraft: null,
+                        versions: [],
+                        loadedVersionNumber: null,
+                        baseDraftRevision: null,
+                        savedOverrides: {},
+                        scopePayload,
+                        scopeKey: scenarioScopeKey,
+                        dirtyState: 'clean',
+                        pendingScopeChange: null,
+                        loadingHistory: Boolean(scenarioScopeKey),
+                        ...scenarioDraftIdleActionState(),
+                        staleDraft: null,
+                        conflict: null,
+                        message: '',
+                        error: ''
+                    }));
                     setScenarioData(data);
                     // Reset scroll so stale content height doesn't leave empty space
                     if (scenarioTimelineRef.current) {
                         scenarioTimelineRef.current.scrollTop = 0;
                     }
-                    // Load saved overrides for this scope
+                    // Load the active draft for this scope unless the user has dirty edits from another scope.
                     if (scenarioScopeKey) {
                         try {
-                            const ovRes = await fetch(`${BACKEND_URL}/api/scenario/overrides?scope_key=${encodeURIComponent(scenarioScopeKey)}`);
-                            if (ovRes.ok) {
-                                setScenarioOverrides((await ovRes.json()).overrides || {});
+                            const draftData = await fetchScenarioDraft(scenarioScopeKey, controller.signal);
+                            const activeDraft = draftData.activeDraft || null;
+                            const versions = Array.isArray(draftData.versions) ? draftData.versions : [];
+                            if (activeDraft) {
+                                const overrides = normalizeScenarioDraftOverrides(activeDraft.overrides || {});
+                                setScenarioOverrides(overrides);
+                                setScenarioDraftMeta(prev => ({
+                                    ...prev,
+                                    activeDraft,
+                                    versions,
+                                    loadedVersionNumber: activeDraft.versionNumber || null,
+                                    baseDraftRevision: activeDraft.draftRevision || null,
+                                    savedOverrides: overrides,
+                                    scopePayload: activeDraft.scopePayload || scopePayload,
+                                    scopeKey: scenarioScopeKey,
+                                    dirtyState: 'clean',
+                                    pendingScopeChange: null,
+                                    loadingHistory: false,
+                                    ...scenarioDraftIdleActionState(),
+                                    staleDraft: null,
+                                    conflict: null,
+                                    message: '',
+                                    error: ''
+                                }));
+                            } else {
+                                setScenarioOverrides({});
+                                setScenarioDraftMeta(prev => ({
+                                    ...prev,
+                                    activeDraft: null,
+                                    versions,
+                                    loadedVersionNumber: null,
+                                    baseDraftRevision: null,
+                                    savedOverrides: {},
+                                    scopePayload,
+                                    scopeKey: scenarioScopeKey,
+                                    dirtyState: 'clean',
+                                    pendingScopeChange: null,
+                                    loadingHistory: false,
+                                    ...scenarioDraftIdleActionState(),
+                                    staleDraft: null,
+                                    conflict: null,
+                                    message: '',
+                                    error: ''
+                                }));
                             }
-                        } catch (_) { /* ignore override load failure */ }
+                        } catch (err) {
+                            if (err.name === 'AbortError') throw err;
+                            setScenarioOverrides({});
+                            setScenarioDraftMeta(prev => ({
+                                ...prev,
+                                activeDraft: null,
+                                versions: [],
+                                loadedVersionNumber: null,
+                                baseDraftRevision: null,
+                                savedOverrides: {},
+                                scopePayload,
+                                scopeKey: scenarioScopeKey,
+                                dirtyState: 'clean',
+                                pendingScopeChange: null,
+                                loadingHistory: false,
+                                ...scenarioDraftIdleActionState(),
+                                staleDraft: null,
+                                conflict: null,
+                                error: err.message || 'Failed to load scenario draft.'
+                            }));
+                        }
                     }
                 } catch (err) {
                     if (err.name === 'AbortError') {
@@ -5421,6 +5897,56 @@ import {
                     }
                     return !prev;
                 });
+            };
+
+            const acquireScenarioIssueLock = async (issueKey) => {
+                if (!scenarioActiveDraftReady || scenarioDraftRealtimeStatus.paused || !issueKey) return;
+                try {
+                    const data = await postScenarioRealtimeJson(scenarioActiveDraftId, '/locks', {
+                        action: 'acquire',
+                        resourceType: 'issue',
+                        resourceId: issueKey
+                    });
+                    learnScenarioCurrentUserFromLock(data.lock);
+                    mergeScenarioDraftLock(data.lock);
+                } catch (err) {
+                    if (err.status === 409 && err.payload?.activeLock) {
+                        mergeScenarioDraftLock(err.payload.activeLock);
+                    }
+                }
+            };
+
+            const refreshScenarioIssueLock = async (issueKey) => {
+                if (!scenarioActiveDraftReady || scenarioDraftRealtimeStatus.paused || !issueKey) return;
+                try {
+                    const data = await postScenarioRealtimeJson(scenarioActiveDraftId, '/locks', {
+                        action: 'refresh',
+                        resourceType: 'issue',
+                        resourceId: issueKey
+                    });
+                    learnScenarioCurrentUserFromLock(data.lock);
+                    mergeScenarioDraftLock(data.lock);
+                } catch (err) {
+                    if (err.status === 409 && err.payload?.activeLock) {
+                        mergeScenarioDraftLock(err.payload.activeLock);
+                    }
+                }
+            };
+
+            const releaseScenarioIssueLock = async (issueKey) => {
+                if (!scenarioActiveDraftReady || !issueKey) return;
+                try {
+                    const data = await postScenarioRealtimeJson(scenarioActiveDraftId, '/locks', {
+                        action: 'release',
+                        resourceType: 'issue',
+                        resourceId: issueKey
+                    });
+                    if (data.lock?.released) {
+                        removeScenarioDraftLock('issue', issueKey);
+                    }
+                } catch (err) {
+                    // Advisory locks must not block local editing.
+                }
             };
 
             const handleScenarioBarMouseDown = (event, issue) => {
@@ -5461,6 +5987,13 @@ import {
                 scenarioDragStateRef.current = dragState;
                 scenarioWasDraggedRef.current = false;
                 setScenarioDragState(dragState);
+                acquireScenarioIssueLock(issue.key);
+                if (scenarioDragLockRefreshRef.current) {
+                    window.clearInterval(scenarioDragLockRefreshRef.current);
+                }
+                scenarioDragLockRefreshRef.current = window.setInterval(() => {
+                    refreshScenarioIssueLock(issue.key);
+                }, 4000);
             };
 
             useEffect(() => {
@@ -5536,66 +6069,10 @@ import {
             ]);
 
 
-            const formatPercent = (value) => `${(value * 100).toFixed(2)}%`;
-
-            const priorityAliases = {
-                highest: 'blocker',
-                high: 'major',
-                medium: 'minor',
-                lowest: 'trivial'
-            };
-
-            const effectivePriorityWeightMap = React.useMemo(() => {
-                const map = {};
-                (effectivePriorityWeightsRows || []).forEach((row) => {
-                    const key = String(row?.priority || '').toLowerCase().trim();
-                    const numeric = Number(row?.weight);
-                    if (!key || Number.isNaN(numeric) || !Number.isFinite(numeric) || numeric < 0) return;
-                    map[key] = numeric;
-                });
-                if (Object.keys(map).length === 0) {
-                    clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS).forEach((row) => {
-                        map[String(row.priority || '').toLowerCase()] = Number(row.weight);
-                    });
-                }
-                return map;
-            }, [effectivePriorityWeightsRows]);
-
-            const normalizePriority = (name) => {
-                const key = String(name || '').toLowerCase().trim();
-                return priorityAliases[key] || key;
-            };
-
-            const getPriorityLabel = (name) => {
-                const key = normalizePriority(name);
-                return priorityLabelByKey[key] || name;
-            };
-
-            const computePriorityWeighted = (priorities) => {
-                const totals = { done: 0, incomplete: 0, killed: 0 };
-                Object.entries(priorities || {}).forEach(([priorityName, counts]) => {
-                    const normalized = normalizePriority(priorityName);
-                    const weight = effectivePriorityWeightMap[normalized] || 0;
-                    totals.done += weight * (counts.done || 0);
-                    totals.incomplete += weight * (counts.incomplete || 0);
-                    totals.killed += weight * (counts.killed || 0);
-                });
-                return totals;
-            };
-
-            const computeRate = (metrics) => {
-                const done = metrics.done || 0;
-                const incomplete = metrics.incomplete || 0;
-                const denom = done + incomplete;
-                return denom > 0 ? done / denom : 0;
-            };
-
-            const getRateClass = (rate) => {
-                if (rate >= 1) return 'good';
-                if (rate >= 0.6 && rate < 0.8) return 'warn';
-                if (rate < 0.6) return 'bad';
-                return '';
-            };
+            const effectivePriorityWeightMap = React.useMemo(
+                () => buildPriorityWeightMap(effectivePriorityWeightsRows),
+                [effectivePriorityWeightsRows]
+            );
 
             const normalizeCapacityKey = (name) => {
                 if (!name) return '';
@@ -5618,123 +6095,6 @@ import {
                     .replace(/^(product|tech)\s*-\s*/i, '')
                     .replace(/\s+/g, ' ')
                     .trim();
-            };
-
-            const buildRadarPoints = ({ values, radius, center, maxValue, axes }) => {
-                const count = axes.length;
-                return axes.map((axis, index) => {
-                    const value = Math.max(0, values[axis] || 0);
-                    const ratio = maxValue > 0 ? value / maxValue : 0;
-                    const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
-                    const r = ratio * radius;
-                    const x = center + r * Math.cos(angle);
-                    const y = center + r * Math.sin(angle);
-                    return `${x.toFixed(2)},${y.toFixed(2)}`;
-                }).join(' ');
-            };
-
-            const buildLocalStatsFromTasks = (taskList, excludedSet) => {
-                const teams = {};
-                const projectsSummary = {
-                    product: { done: 0, incomplete: 0, killed: 0, priorities: {} },
-                    tech: { done: 0, incomplete: 0, killed: 0, priorities: {} }
-                };
-                const totals = { done: 0, incomplete: 0, killed: 0 };
-                const storyPointsTotals = { total: 0, done: 0, incomplete: 0, killed: 0 };
-
-                const bumpPriority = (target, priorityName, bucket) => {
-                    if (!target.priorities) target.priorities = {};
-                    if (!target.priorities[priorityName]) {
-                        target.priorities[priorityName] = { done: 0, incomplete: 0, killed: 0 };
-                    }
-                    target.priorities[priorityName][bucket] += 1;
-                };
-
-                const bumpPriorityPoints = (target, priorityName, points) => {
-                    if (!target.priorityPoints) target.priorityPoints = {};
-                    if (!target.priorityPoints[priorityName]) {
-                        target.priorityPoints[priorityName] = 0;
-                    }
-                    target.priorityPoints[priorityName] += points;
-                };
-
-                (taskList || []).forEach(task => {
-                    const epicKey = task.fields?.epicKey || 'NO_EPIC';
-                    if (excludedSet?.has(epicKey)) {
-                        return;
-                    }
-                    const status = normalizeStatus(task.fields?.status?.name);
-                    const isKilled = status === 'killed';
-                    const isDone = status === 'done';
-                    const priorityName = task.fields?.priority?.name || 'Unspecified';
-                    const pointsRaw = task.fields?.customfield_10004;
-                    const pointsValue = Number(pointsRaw);
-                    const storyPoints = Number.isFinite(pointsValue) ? pointsValue : 0;
-                    storyPointsTotals.total += storyPoints;
-                    const teamInfo = getTeamInfo(task);
-                    const teamKey = teamInfo.id || teamInfo.name || 'unknown';
-                    const projectBucket = techProjectKeys.has(task.fields?.projectKey || String(task.key || '').split('-')[0]) ? 'tech' : 'product';
-
-                    if (!teams[teamKey]) {
-                        teams[teamKey] = {
-                            id: teamInfo.id || teamKey,
-                            name: teamInfo.name || teamKey,
-                            done: 0,
-                            incomplete: 0,
-                            killed: 0,
-                            priorities: {},
-                            priorityPoints: {},
-                            projects: {
-                                product: { done: 0, incomplete: 0, killed: 0, priorities: {} },
-                                tech: { done: 0, incomplete: 0, killed: 0, priorities: {} }
-                            }
-                        };
-                    }
-
-                    const teamEntry = teams[teamKey];
-                    if (isKilled) {
-                        teamEntry.killed += 1;
-                        teamEntry.projects[projectBucket].killed += 1;
-                        projectsSummary[projectBucket].killed += 1;
-                        totals.killed += 1;
-                        storyPointsTotals.killed += storyPoints;
-                        bumpPriority(teamEntry, priorityName, 'killed');
-                        bumpPriority(teamEntry.projects[projectBucket], priorityName, 'killed');
-                        bumpPriority(projectsSummary[projectBucket], priorityName, 'killed');
-                        return;
-                    }
-
-                    bumpPriorityPoints(teamEntry, priorityName, storyPoints);
-                    if (isDone) {
-                        teamEntry.done += 1;
-                        teamEntry.projects[projectBucket].done += 1;
-                        projectsSummary[projectBucket].done += 1;
-                        totals.done += 1;
-                        storyPointsTotals.done += storyPoints;
-                        bumpPriority(teamEntry, priorityName, 'done');
-                        bumpPriority(teamEntry.projects[projectBucket], priorityName, 'done');
-                        bumpPriority(projectsSummary[projectBucket], priorityName, 'done');
-                        return;
-                    }
-
-                    teamEntry.incomplete += 1;
-                    teamEntry.projects[projectBucket].incomplete += 1;
-                    projectsSummary[projectBucket].incomplete += 1;
-                    totals.incomplete += 1;
-                    storyPointsTotals.incomplete += storyPoints;
-                    bumpPriority(teamEntry, priorityName, 'incomplete');
-                    bumpPriority(teamEntry.projects[projectBucket], priorityName, 'incomplete');
-                    bumpPriority(projectsSummary[projectBucket], priorityName, 'incomplete');
-                });
-
-                const sortedTeams = Object.values(teams).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-                return {
-                    sprint: selectedSprintInfo?.name || '',
-                    totals,
-                    storyPoints: storyPointsTotals,
-                    projects: projectsSummary,
-                    teams: sortedTeams
-                };
             };
 
 	            const tasks = React.useMemo(
@@ -5817,15 +6177,11 @@ import {
                     .map(team => String(team?.id || '').trim())
                     .filter(id => id && id !== 'all');
                 const storedState = loadTeamSelectionState(window.localStorage, teamSelectionScopeKey);
-                // savedPrefsRef is a ref — always reflects the most-recently-persisted value,
-                // free from stale closure issues. If the user's last saved selection was
-                // 'all', honour it instead of letting a stale scope-store specific-team
-                // entry override it (the reported refresh bug).
-                const latestSavedTeams = normalizeSelectedTeams(
-                    savedPrefsRef.current.selectedTeams ?? savedPrefsRef.current.selectedTeam ?? 'all'
-                );
-                const savedIsAll = latestSavedTeams.includes('all');
-                const baseState = (storedState && !savedIsAll) ? storedState : { selectedTeams: latestSavedTeams };
+                const baseState = resolveTeamSelectionHydrationState({
+                    storedState,
+                    savedPrefsSelectedTeams: savedPrefsRef.current.selectedTeams,
+                    savedPrefsSelectedTeam: savedPrefsRef.current.selectedTeam
+                });
                 const reconciled = reconcileTeamSelectionState(baseState, {
                     validTeamIds: new Set(validTeamIds)
                 });
@@ -5930,7 +6286,13 @@ import {
                     perfCountersRef.current.statsBuild = (perfCountersRef.current.statsBuild || 0) + 1;
                     performance.mark('localStatsBuild:start');
                 }
-                const result = buildLocalStatsFromTasks(statsTaskList, new Set());
+                const result = buildLocalStatsFromTasks(statsTaskList, {
+                    excludedSet: new Set(),
+                    normalizeStatus,
+                    getTeamInfo,
+                    techProjectKeys,
+                    sprintName: selectedSprintInfo?.name || ''
+                });
                 if (perfEnabled) {
                     performance.mark('localStatsBuild:end');
                     performance.measure('localStatsBuild', 'localStatsBuild:start', 'localStatsBuild:end');
@@ -5939,7 +6301,7 @@ import {
                     performance.clearMeasures('localStatsBuild');
                 }
                 return result;
-            }, [statsTaskList, selectedSprintInfo?.name, showStats, perfEnabled]);
+            }, [statsTaskList, selectedSprintInfo?.name, showStats, perfEnabled, techProjectKeys]);
 
             const effectiveStatsData = localStatsData;
             const burnoutTaskTeamByIssueKey = React.useMemo(() => {
@@ -6389,6 +6751,16 @@ import {
                 () => excludedCapacitySprintIds.join(','),
                 [excludedCapacitySprintIds]
             );
+            const effortSplitSprintLabel = React.useMemo(() => {
+                if (!excludedCapacitySprintRange.length) return 'No sprint range selected';
+                const first = excludedCapacitySprintRange[0];
+                const last = excludedCapacitySprintRange[excludedCapacitySprintRange.length - 1];
+                const firstLabel = first?.name || first?.id || 'Start sprint';
+                const lastLabel = last?.name || last?.id || 'End sprint';
+                return String(first?.id) === String(last?.id)
+                    ? String(firstLabel)
+                    : `${firstLabel} - ${lastLabel}`;
+            }, [excludedCapacitySprintRange]);
             const excludedCapacityEpicOptions = React.useMemo(() => {
                 return Array.from(excludedEpicSet)
                     .filter(key => key && key !== 'NO_EPIC')
@@ -6603,6 +6975,21 @@ import {
             const excludedCapacityActiveFilters = excludedCapacityEffectiveFilters.length
                 ? excludedCapacityEffectiveFilters
                 : excludedCapacityEpicOptions;
+            const effortSplitRows = React.useMemo(() => {
+                return buildEffortTypeSplitRows(excludedCapacityIssues, excludedCapacitySprintRange, {
+                    excludedEpicKeys: excludedCapacityEpicOptions,
+                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
+                    teams: excludedCapacityTeams,
+                    techProjectKeys: Array.from(techProjectKeys)
+                });
+            }, [
+                excludedCapacityIssues,
+                excludedCapacitySprintRange,
+                excludedCapacityEpicOptions,
+                excludedCapacityActiveFilters,
+                excludedCapacityTeams,
+                techProjectKeys
+            ]);
             const excludedCapacityRows = React.useMemo(() => {
                 return buildExcludedCapacityTimeSeries(excludedCapacityIssues, excludedCapacitySprintRange, {
                     excludedEpicKeys: excludedCapacityEpicOptions,
@@ -6663,17 +7050,7 @@ import {
                 excludedCapacityTeams
             ]);
             const excludedCapacityIsolatedSeries = statsView === 'monoCrossShare' ? excludedCapacityModeTeamLineSeries.series : excludedCapacityLineSeries.series;
-            const excludedCapacityTotals = React.useMemo(() => {
-                const totals = excludedCapacityRows.reduce((acc, row) => {
-                    acc.totalPoints += row.totalPoints || 0;
-                    acc.excludedPoints += row.excludedPoints || 0;
-                    return acc;
-                }, { totalPoints: 0, excludedPoints: 0 });
-                return {
-                    ...totals,
-                    percent: totals.totalPoints > 0 ? totals.excludedPoints / totals.totalPoints : 0
-                };
-            }, [excludedCapacityRows]);
+            const effortSplitTotals = React.useMemo(() => summarizeEffortTypeSplitTotals(effortSplitRows), [effortSplitRows]);
             const excludedCapacityWarnings = React.useMemo(() => {
                 const warnings = excludedCapacityData?.meta?.warnings;
                 return Array.isArray(warnings) ? warnings : [];
@@ -6711,6 +7088,12 @@ import {
             const selectAllExcludedCapacityEpics = () => {
                 setExcludedCapacitySelectedEpicKeys(excludedCapacityEpicOptions.slice());
             };
+            const toggleEffortSplitBucket = (bucketKey) => {
+                setEffortSplitVisibleBuckets(prev => ({
+                    ...prev,
+                    [bucketKey]: prev[bucketKey] === false
+                }));
+            };
             const selectAutoExcludedCapacityEpics = () => {
                 setExcludedCapacitySelectedEpicKeys(excludedCapacityAutoEpicKeys.slice());
             };
@@ -6737,6 +7120,210 @@ import {
                 const groupId = activeGroupId || 'default';
                 return sprintId && groupId ? `${sprintId}:${groupId}` : '';
             }, [selectedSprint, activeGroupId]);
+            const scenarioOverridesSignature = React.useMemo(
+                () => scenarioDraftOverridesSignature(scenarioOverrides),
+                [scenarioOverrides]
+            );
+            const savedScenarioOverridesSignature = React.useMemo(
+                () => scenarioDraftOverridesSignature(scenarioDraftMeta.savedOverrides),
+                [scenarioDraftMeta.savedOverrides]
+            );
+            useEffect(() => {
+                const dirtyState = scenarioOverridesSignature === savedScenarioOverridesSignature ? 'clean' : 'dirty';
+                setScenarioDraftMeta(prev => (
+                    prev.dirtyState === dirtyState ? prev : { ...prev, dirtyState }
+                ));
+            }, [scenarioOverridesSignature, savedScenarioOverridesSignature]);
+            const scenarioHasUnsavedChanges = scenarioOverridesSignature !== savedScenarioOverridesSignature;
+            const scenarioHasStoredDraftScope = Boolean(
+                scenarioDraftMeta.scopeKey
+                && scenarioDraftMeta.scopePayload
+                && Object.keys(scenarioDraftMeta.scopePayload).length > 0
+            );
+            const scenarioCanSaveDraft = scenarioHasUnsavedChanges
+                && !scenarioDraftMeta.loadingHistory
+                && !scenarioDraftMeta.saving
+                && scenarioDraftMeta.dirtyState !== 'conflict_remote'
+                && !scenarioDraftMeta.conflict
+                && Boolean((scenarioData && scenarioScopeKey) || scenarioHasStoredDraftScope);
+            const scenarioActiveDraftId = scenarioDraftMeta.activeDraft?.draftId || '';
+            scenarioActiveDraftIdRef.current = scenarioActiveDraftId;
+            scenarioScopeKeyRef.current = scenarioScopeKey;
+            const isScenarioScopeDraftCurrent = React.useCallback((expectedScopeKey, expectedDraftId = '') => {
+                if (scenarioScopeKeyRef.current !== expectedScopeKey) return false;
+                if (expectedDraftId && scenarioActiveDraftIdRef.current !== expectedDraftId) return false;
+                return true;
+            }, []);
+            const scenarioActiveDraftReady = Boolean(
+                showScenario
+                && scenarioData
+                && scenarioActiveDraftId
+                && scenarioDraftMeta.scopeKey === scenarioScopeKey
+            );
+            const scenarioCurrentUserIdentifiers = React.useMemo(() => {
+                return new Set([
+                    scenarioCurrentUserIdentity.userId,
+                    scenarioCurrentUserIdentity.displayName
+                ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+            }, [scenarioCurrentUserIdentity]);
+            const isScenarioCurrentUser = React.useCallback((values) => {
+                if (!scenarioCurrentUserIdentifiers.size) return false;
+                return values
+                    .map(value => String(value || '').trim().toLowerCase())
+                    .filter(Boolean)
+                    .some(value => scenarioCurrentUserIdentifiers.has(value));
+            }, [scenarioCurrentUserIdentifiers]);
+            const scenarioRemoteEditors = React.useMemo(() => {
+                return (scenarioDraftPresence || [])
+                    .filter(item => !isScenarioPresenceExpired(item))
+                    .filter(item => {
+                        const displayName = String(item?.displayName || '').trim();
+                        return displayName && !isScenarioCurrentUser([item?.userId, item?.displayName]);
+                    })
+                    .map(item => ({
+                        ...item,
+                        displayName: String(item.displayName || '').trim()
+                    }));
+            }, [scenarioDraftPresence, isScenarioCurrentUser]);
+            const scenarioIssueLockWarnings = React.useMemo(() => {
+                return (scenarioDraftLocks || [])
+                    .filter(lock => String(lock?.resourceType || '') === 'issue' && lock?.resourceId)
+                    .filter(lock => !isScenarioLockExpired(lock))
+                    .filter(lock => !isScenarioCurrentUser([lock?.holderUserId, lock?.holderDisplayName]))
+                    .map(lock => ({
+                        issueKey: String(lock.resourceId || '').trim(),
+                        holderDisplayName: String(lock.holderDisplayName || 'Another editor').trim() || 'Another editor'
+                    }));
+            }, [scenarioDraftLocks, isScenarioCurrentUser]);
+
+            React.useEffect(() => {
+                if (scenarioHistoryRefreshControllerRef.current) {
+                    scenarioHistoryRefreshControllerRef.current.abort();
+                    scenarioHistoryRefreshControllerRef.current = null;
+                }
+                if (scenarioHistoryActionControllerRef.current) {
+                    scenarioHistoryActionControllerRef.current.abort();
+                    scenarioHistoryActionControllerRef.current = null;
+                }
+            }, [scenarioActiveDraftId, scenarioScopeKey]);
+
+            React.useEffect(() => {
+                if (!scenarioActiveDraftReady) return undefined;
+                let cancelled = false;
+                const controllers = new Set();
+                const expectedDraftId = scenarioActiveDraftId;
+                const expectedScopeKey = scenarioScopeKey;
+                const poll = async () => {
+                    const controller = new AbortController();
+                    controllers.add(controller);
+                    try {
+                        const data = await pollScenarioDraftEvents(expectedDraftId, scenarioDraftLastEventNumber, controller.signal);
+                        const stillCurrent = !cancelled
+                            && scenarioActiveDraftIdRef.current === expectedDraftId
+                            && scenarioScopeKeyRef.current === expectedScopeKey;
+                        if (!stillCurrent) {
+                            return;
+                        }
+                        data.events.forEach(applyScenarioDraftEvent);
+                        if (data.nextSince > 0) {
+                            setScenarioDraftLastEventNumber(prev => Math.max(prev, data.nextSince));
+                        }
+                        setScenarioDraftRealtimeStatus(prev => (
+                            prev.paused ? prev : { mode: 'polling', paused: false, message: '' }
+                        ));
+                    } catch (err) {
+                        if (!cancelled && err.name !== 'AbortError') {
+                            setScenarioDraftRealtimeStatus(prev => (
+                                prev.paused ? prev : { mode: 'polling', paused: false, message: 'Realtime polling will retry.' }
+                            ));
+                        }
+                    } finally {
+                        controllers.delete(controller);
+                    }
+                };
+                poll();
+                const intervalId = window.setInterval(poll, 5000);
+                return () => {
+                    cancelled = true;
+                    window.clearInterval(intervalId);
+                    controllers.forEach(controller => {
+                        try {
+                            controller.abort();
+                        } catch (err) {
+                            // ignore abort errors
+                        }
+                    });
+                    controllers.clear();
+                };
+            }, [scenarioActiveDraftReady, scenarioActiveDraftId, scenarioScopeKey, scenarioDraftLastEventNumber]);
+
+            React.useEffect(() => {
+                if (!scenarioActiveDraftReady) return undefined;
+                if (scenarioDraftRealtimeStatus.paused) return undefined;
+                let cancelled = false;
+                const heartbeat = async () => {
+                    try {
+                        await postScenarioRealtimeJson(scenarioActiveDraftId, '/presence', {
+                            mode: scenarioEditMode ? 'editing' : 'viewing',
+                            cursorPayload: {}
+                        }).then(data => learnScenarioCurrentUserFromPresence(data.presence));
+                    } catch (err) {
+                        if (!cancelled && !(err.status === 403 && err.payload?.error === 'csrf_required')) {
+                            pauseScenarioRealtime('Realtime paused; keep editing local-only until the connection recovers.');
+                        }
+                    }
+                };
+                heartbeat();
+                const intervalId = window.setInterval(heartbeat, 25000);
+                return () => {
+                    cancelled = true;
+                    window.clearInterval(intervalId);
+                };
+            }, [scenarioActiveDraftReady, scenarioActiveDraftId, scenarioDraftRealtimeStatus.paused, scenarioEditMode]);
+
+            React.useEffect(() => {
+                if (!scenarioActiveDraftReady) return undefined;
+                const sseEnabled = window.SCENARIO_DRAFT_SSE_ENABLED === true;
+                if (!sseEnabled || typeof window.EventSource !== 'function') return undefined;
+                const source = new window.EventSource(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(scenarioActiveDraftId)}/events/stream?since=${encodeURIComponent(scenarioDraftLastEventNumber || 0)}`);
+                const expectedDraftId = scenarioActiveDraftId;
+                const handleStreamMessage = (message) => {
+                    if (scenarioActiveDraftIdRef.current !== expectedDraftId) return;
+                    try {
+                        applyScenarioDraftEvent(JSON.parse(message.data));
+                    } catch (err) {
+                        // Malformed stream events are ignored; polling remains the fallback.
+                    }
+                };
+                source.onmessage = handleStreamMessage;
+                [
+                    'draft.saved',
+                    'draft.rolled_back',
+                    'presence.updated',
+                    'lock.acquired',
+                    'lock.refreshed',
+                    'lock.released'
+                ].forEach(eventType => {
+                    source.addEventListener(eventType, handleStreamMessage);
+                });
+                source.onerror = () => {
+                    setScenarioDraftRealtimeStatus(prev => (
+                        prev.paused ? prev : { mode: 'polling', paused: false, message: 'Realtime stream disconnected; polling will continue.' }
+                    ));
+                    try {
+                        source.close();
+                    } catch (err) {
+                        // ignore close errors
+                    }
+                };
+                return () => {
+                    try {
+                        source.close();
+                    } catch (err) {
+                        // ignore close errors
+                    }
+                };
+            }, [scenarioActiveDraftReady, scenarioActiveDraftId, scenarioDraftLastEventNumber]);
             const scenarioSprintBounds = React.useMemo(() => {
                 const b = scenarioData?.sprintBoundaries;
                 if (!b) return [];
@@ -6839,6 +7426,7 @@ import {
             }, [scenarioDeadline, scenarioEffectiveIssues]);
             const scenarioViewStart = scenarioRangeOverride?.start || scenarioBaseStart;
             const scenarioViewEnd = scenarioRangeOverride?.end || scenarioBaseEnd;
+            scenarioViewRangeRef.current = { start: scenarioViewStart, end: scenarioViewEnd };
             const scenarioFocusEpicKey = scenarioEpicFocus?.key || null;
             const scenarioFocusIssueKeys = React.useMemo(() => {
                 const keys = new Set();
@@ -6989,8 +7577,9 @@ import {
             // --- Drag effect, undo/redo, save/discard (placed after scenarioViewStart/End & scenarioIssueByKey) ---
 
             // Drag mousemove/mouseup effect
+            const scenarioDraggingIssueKey = scenarioDragState?.issueKey || '';
             React.useEffect(() => {
-                if (!scenarioDragState) return;
+                if (!scenarioDraggingIssueKey) return;
                 const handleMouseMove = (e) => {
                     const ds = scenarioDragStateRef.current;
                     if (!ds) return;
@@ -6999,9 +7588,11 @@ import {
                     scenarioDragFrameRef.current = requestAnimationFrame(() => {
                         scenarioDragFrameRef.current = null;
                         const ds2 = scenarioDragStateRef.current;
-                        if (!ds2 || !scenarioViewStart || !scenarioViewEnd) return;
+                        const viewStart = scenarioViewRangeRef.current.start;
+                        const viewEnd = scenarioViewRangeRef.current.end;
+                        if (!ds2 || !viewStart || !viewEnd) return;
                         const rawPx = e.clientX - ds2.trackLeft - ds2.offsetX;
-                        const newStart = pxToDate(rawPx, ds2.trackWidth, scenarioViewStart, scenarioViewEnd);
+                        const newStart = pxToDate(rawPx, ds2.trackWidth, viewStart, viewEnd);
                         const newEnd = new Date(newStart.getTime() + ds2.durationMs);
                         const updated = { ...ds2, currentStart: newStart, currentEnd: newEnd };
                         scenarioDragStateRef.current = updated;
@@ -7012,6 +7603,10 @@ import {
                     if (scenarioDragFrameRef.current) {
                         cancelAnimationFrame(scenarioDragFrameRef.current);
                         scenarioDragFrameRef.current = null;
+                    }
+                    if (scenarioDragLockRefreshRef.current) {
+                        window.clearInterval(scenarioDragLockRefreshRef.current);
+                        scenarioDragLockRefreshRef.current = null;
                     }
                     const ds = scenarioDragStateRef.current;
                     if (ds && scenarioWasDraggedRef.current) {
@@ -7030,16 +7625,27 @@ import {
                             [ds.issueKey]: { start: newStartISO, end: newEndISO }
                         }));
                     }
+                    if (ds?.issueKey) {
+                        releaseScenarioIssueLock(ds.issueKey);
+                    }
                     scenarioDragStateRef.current = null;
                     setScenarioDragState(null);
                 };
                 window.addEventListener('mousemove', handleMouseMove);
                 window.addEventListener('mouseup', handleMouseUp);
                 return () => {
+                    const ds = scenarioDragStateRef.current;
+                    if (scenarioDragLockRefreshRef.current) {
+                        window.clearInterval(scenarioDragLockRefreshRef.current);
+                        scenarioDragLockRefreshRef.current = null;
+                    }
+                    if (ds?.issueKey) {
+                        releaseScenarioIssueLock(ds.issueKey);
+                    }
                     window.removeEventListener('mousemove', handleMouseMove);
                     window.removeEventListener('mouseup', handleMouseUp);
                 };
-            }, [scenarioDragState, scenarioViewStart, scenarioViewEnd]);
+            }, [scenarioDraggingIssueKey]);
 
             const scenarioUndo = () => {
                 const cmd = scenarioUndoStackRef.current.undo();
@@ -7090,31 +7696,589 @@ import {
             const scenarioOverrideCount = Object.keys(scenarioOverrides).length;
 
             const saveScenarioDraft = async () => {
-                if (!scenarioScopeKey || scenarioOverrideCount === 0) return;
+                const saveScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                if (!saveScopeKey || !scenarioCanSaveDraft) return;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    saving: true,
+                    conflict: null,
+                    message: '',
+                    error: ''
+                }));
                 try {
-                    const res = await fetch(`${BACKEND_URL}/api/scenario/overrides`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'jira-execution-planner'
-                        },
-                        body: JSON.stringify({
-                            scope_key: scenarioScopeKey,
-                            name: `Draft ${new Date().toISOString().slice(0, 10)}`,
-                            overrides: scenarioOverrides,
-                        }),
+                    const saved = await saveScenarioDraftVersion(
+                        saveScopeKey,
+                        `Draft ${new Date().toISOString().slice(0, 10)}`,
+                        scenarioDraftMeta.baseDraftRevision,
+                        saveScopeKey === scenarioScopeKey ? buildScenarioDraftScope() : (scenarioDraftMeta.scopePayload || {}),
+                        scenarioOverrides,
+                    );
+                    const activeDraft = saved.activeDraft || null;
+                    const versions = Array.isArray(saved.versions) ? saved.versions : [];
+                    const savedOverrides = normalizeScenarioDraftOverrides(activeDraft?.overrides || scenarioOverrides);
+                    scenarioUndoStackRef.current.clear();
+                    setScenarioUndoVersion(0);
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        activeDraft,
+                        versions,
+                        loadedVersionNumber: activeDraft?.versionNumber || null,
+                        baseDraftRevision: activeDraft?.draftRevision || null,
+                        savedOverrides,
+                        scopeKey: saveScopeKey,
+                        dirtyState: 'clean',
+                        pendingScopeChange: null,
+                        saving: false,
+                        staleDraft: null,
+                        conflict: null,
+                        message: 'Scenario draft saved.',
+                        error: ''
+                    }));
+                } catch (err) {
+                    const conflict = err.payload?.error === 'scenario_draft_conflict' && err.payload?.conflict
+                        ? {
+                            ...err.payload.conflict,
+                            activeDraft: err.payload.activeDraft || null,
+                            versions: Array.isArray(err.payload.versions) ? err.payload.versions : []
+                        }
+                        : null;
+                    setScenarioDraftMeta(prev => {
+                        if (conflict) {
+                            return {
+                                ...prev,
+                                versions: conflict.versions.length > 0 ? conflict.versions : prev.versions,
+                                saving: false,
+                                dirtyState: 'conflict_remote',
+                                conflict,
+                                error: ''
+                            };
+                        }
+                        return {
+                            ...prev,
+                            saving: false,
+                            error: err.message || 'Failed to save scenario draft.'
+                        };
                     });
-                    if (res.ok) {
-                        scenarioUndoStackRef.current.clear();
-                        setScenarioUndoVersion(0);
-                    }
-                } catch (_) { /* ignore save failure */ }
+                }
             };
 
             const discardScenarioOverrides = () => {
-                setScenarioOverrides({});
+                if (!scenarioHasUnsavedChanges) return;
+                setScenarioOverrides(normalizeScenarioDraftOverrides(scenarioDraftMeta.savedOverrides));
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    dirtyState: 'clean',
+                        pendingScopeChange: null,
+                        staleDraft: null,
+                        conflict: null,
+                        message: '',
+                        error: ''
+                }));
                 scenarioUndoStackRef.current.clear();
                 setScenarioUndoVersion(0);
+            };
+
+            const openScenarioDraftHistory = async () => {
+                const historyScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                const historyDraftId = scenarioDraftMeta.activeDraft?.draftId || '';
+                if (scenarioHistoryRefreshControllerRef.current) {
+                    scenarioHistoryRefreshControllerRef.current.abort();
+                }
+                const controller = new AbortController();
+                scenarioHistoryRefreshControllerRef.current = controller;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    historyOpen: true,
+                    pendingHistoryAction: null,
+                    loadingHistory: Boolean(historyScopeKey),
+                    error: ''
+                }));
+                if (!historyScopeKey) return;
+                try {
+                    const draftData = await fetchScenarioDraft(historyScopeKey, controller.signal);
+                    if (
+                        scenarioHistoryRefreshControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(historyScopeKey, historyDraftId)
+                    ) {
+                        return;
+                    }
+                    const activeDraft = draftData.activeDraft || null;
+                    const versions = Array.isArray(draftData.versions) ? draftData.versions : [];
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        activeDraft: activeDraft || prev.activeDraft,
+                        versions,
+                        loadingHistory: false,
+                        staleDraft: prev.staleDraft
+                            ? {
+                                ...prev.staleDraft,
+                                activeDraft: activeDraft || prev.staleDraft.activeDraft || null,
+                                draftRevision: activeDraft?.draftRevision || prev.staleDraft.draftRevision
+                            }
+                            : prev.staleDraft,
+                        error: ''
+                    }));
+                } catch (err) {
+                    if (
+                        err.name === 'AbortError'
+                        || scenarioHistoryRefreshControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(historyScopeKey, historyDraftId)
+                    ) {
+                        return;
+                    }
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        loadingHistory: false,
+                        error: err.message || 'Failed to refresh scenario draft history.'
+                    }));
+                } finally {
+                    if (scenarioHistoryRefreshControllerRef.current === controller) {
+                        scenarioHistoryRefreshControllerRef.current = null;
+                    }
+                }
+            };
+
+            const closeScenarioDraftHistory = () => {
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    historyOpen: false,
+                    pendingHistoryAction: null
+                }));
+                if (scenarioHistoryButtonRef.current && typeof scenarioHistoryButtonRef.current.focus === 'function') {
+                    scenarioHistoryButtonRef.current.focus();
+                }
+            };
+
+            const requestReloadActiveDraft = () => {
+                if (scenarioHasUnsavedChanges) {
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        pendingActiveDraftReload: true,
+                        error: ''
+                    }));
+                    return;
+                }
+                runReloadActiveDraft();
+            };
+
+            const cancelReloadActiveDraft = () => {
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    pendingActiveDraftReload: false
+                }));
+            };
+
+            const runReloadActiveDraft = async () => {
+                const scopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                const expectedDraftId = scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.staleDraft?.activeDraft?.draftId || '';
+                if (!scopeKey) return;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    loadingActiveDraft: true,
+                    pendingActiveDraftReload: false,
+                    message: '',
+                    error: ''
+                }));
+                try {
+                    const draftData = await fetchScenarioDraft(scopeKey);
+                    if (!isScenarioScopeDraftCurrent(scopeKey, expectedDraftId)) {
+                        return;
+                    }
+                    const activeDraft = draftData.activeDraft || null;
+                    const versions = Array.isArray(draftData.versions) ? draftData.versions : [];
+                    if (!activeDraft) {
+                        setScenarioDraftMeta(prev => ({
+                            ...prev,
+                            versions,
+                            loadingActiveDraft: false,
+                            staleDraft: null,
+                            message: 'No active scenario draft was found for this scope.',
+                            error: ''
+                        }));
+                        return;
+                    }
+                    const overrides = normalizeScenarioDraftOverrides(activeDraft.overrides || {});
+                    setScenarioOverrides(overrides);
+                    scenarioUndoStackRef.current.clear();
+                    setScenarioUndoVersion(0);
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        activeDraft,
+                        versions,
+                        loadedVersionNumber: activeDraft.versionNumber || null,
+                        baseDraftRevision: activeDraft.draftRevision || null,
+                        savedOverrides: overrides,
+                        scopePayload: activeDraft.scopePayload || prev.scopePayload || {},
+                        scopeKey,
+                        dirtyState: 'clean',
+                        pendingScopeChange: null,
+                        loadingHistory: false,
+                        loadingActiveDraft: false,
+                        staleDraft: null,
+                        conflict: null,
+                        writebackPreview: null,
+                        writebackBlocked: null,
+                        message: `Reloaded active draft revision ${activeDraft.draftRevision || 'unknown'}.`,
+                        error: ''
+                    }));
+                } catch (err) {
+                    if (err.name === 'AbortError' || !isScenarioScopeDraftCurrent(scopeKey, expectedDraftId)) {
+                        return;
+                    }
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        loadingActiveDraft: false,
+                        error: err.message || 'Failed to reload active scenario draft.'
+                    }));
+                }
+            };
+
+            React.useEffect(() => {
+                if (!scenarioDraftMeta.historyOpen) return undefined;
+                const frame = requestAnimationFrame(() => {
+                    scenarioHistoryTitleRef.current?.focus();
+                });
+                return () => cancelAnimationFrame(frame);
+            }, [scenarioDraftMeta.historyOpen]);
+
+            React.useEffect(() => {
+                if (!scenarioDraftMeta.historyOpen) return undefined;
+                const handleKeyDown = (event) => {
+                    if (event.key !== 'Escape') return;
+                    const panel = scenarioHistoryPanelRef.current;
+                    if (!panel || !panel.contains(document.activeElement)) return;
+                    event.preventDefault();
+                    closeScenarioDraftHistory();
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [scenarioDraftMeta.historyOpen]);
+
+            const requestScenarioHistoryAction = (type, versionNumber) => {
+                const action = { type, versionNumber };
+                if (scenarioHasUnsavedChanges) {
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        pendingHistoryAction: action,
+                        error: ''
+                    }));
+                    return;
+                }
+                runScenarioHistoryAction(action);
+            };
+
+            const cancelScenarioHistoryAction = () => {
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    pendingHistoryAction: null
+                }));
+            };
+
+            const requestScenarioReloadFromJira = () => {
+                if (scenarioHasUnsavedChanges) {
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        pendingReloadFromJira: true,
+                        error: ''
+                    }));
+                    return;
+                }
+                runScenarioReloadFromJira();
+            };
+
+            const cancelScenarioReloadFromJira = () => {
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    pendingReloadFromJira: false
+                }));
+            };
+
+            const runScenarioReloadFromJira = async () => {
+                const draftId = scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.conflict?.activeDraft?.draftId;
+                if (!draftId || !scenarioDraftMeta.baseDraftRevision) return;
+                const expectedScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                if (scenarioHistoryActionControllerRef.current) {
+                    scenarioHistoryActionControllerRef.current.abort();
+                }
+                const controller = new AbortController();
+                scenarioHistoryActionControllerRef.current = controller;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    pendingReloadFromJira: false,
+                    reloadingFromJira: true,
+                    error: '',
+                    message: ''
+                }));
+                try {
+                    const reloaded = await reloadScenarioDraftFromJira(
+                        draftId,
+                        scenarioDraftMeta.baseDraftRevision,
+                        controller.signal
+                    );
+                    if (
+                        scenarioHistoryActionControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(expectedScopeKey, draftId)
+                    ) {
+                        return;
+                    }
+                    const activeDraft = reloaded.activeDraft || null;
+                    const versions = Array.isArray(reloaded.versions) ? reloaded.versions : [];
+                    const savedOverrides = normalizeScenarioDraftOverrides(activeDraft?.overrides || {});
+                    setScenarioOverrides(savedOverrides);
+                    scenarioUndoStackRef.current.clear();
+                    setScenarioUndoVersion(0);
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        activeDraft,
+                        versions,
+                        loadedVersionNumber: activeDraft?.versionNumber || null,
+                        baseDraftRevision: activeDraft?.draftRevision || null,
+                        savedOverrides,
+                        dirtyState: 'clean',
+                        reloadingFromJira: false,
+                        staleDraft: null,
+                        conflict: null,
+                        writebackPreview: null,
+                        writebackBlocked: null,
+                        message: `Reloaded from Jira into version ${activeDraft?.versionNumber || 'unknown'}.`,
+                        error: ''
+                    }));
+                } catch (err) {
+                    if (
+                        err.name === 'AbortError'
+                        || scenarioHistoryActionControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(expectedScopeKey, draftId)
+                    ) {
+                        return;
+                    }
+                    const conflict = err.payload?.error === 'scenario_draft_conflict' && err.payload?.conflict
+                        ? {
+                            ...err.payload.conflict,
+                            activeDraft: err.payload.activeDraft || null,
+                            versions: Array.isArray(err.payload.versions) ? err.payload.versions : []
+                        }
+                        : null;
+                    setScenarioDraftMeta(prev => {
+                        if (conflict) {
+                            return {
+                                ...prev,
+                                versions: conflict.versions.length > 0 ? conflict.versions : prev.versions,
+                                dirtyState: 'conflict_remote',
+                                reloadingFromJira: false,
+                                conflict,
+                                message: '',
+                                error: ''
+                            };
+                        }
+                        return {
+                            ...prev,
+                            reloadingFromJira: false,
+                            error: err.message || 'Failed to reload scenario draft from Jira.'
+                        };
+                    });
+                } finally {
+                    if (scenarioHistoryActionControllerRef.current === controller) {
+                        scenarioHistoryActionControllerRef.current = null;
+                    }
+                }
+            };
+
+            const previewScenarioDraftWriteback = async () => {
+                const draftId = scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.conflict?.activeDraft?.draftId;
+                if (!draftId) return;
+                const expectedScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    writebackPreviewing: true,
+                    writebackPreview: null,
+                    writebackBlocked: null,
+                    error: '',
+                    message: ''
+                }));
+                try {
+                    const preview = await postScenarioRealtimeJson(draftId, '/writeback/preview', {});
+                    if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
+                        return;
+                    }
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        writebackPreviewing: false,
+                        writebackPreview: preview,
+                        writebackBlocked: null,
+                        error: '',
+                        message: ''
+                    }));
+                } catch (err) {
+                    if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
+                        return;
+                    }
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        writebackPreviewing: false,
+                        error: err.message || 'Failed to preview Jira write-back.'
+                    }));
+                }
+            };
+
+            const checkScenarioDraftWritebackGate = async () => {
+                const draftId = scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.conflict?.activeDraft?.draftId;
+                if (!draftId) return;
+                const expectedScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    writebackChecking: true,
+                    writebackBlocked: null,
+                    error: '',
+                    message: ''
+                }));
+                try {
+                    await postScenarioRealtimeJson(draftId, '/writeback', {});
+                    if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
+                        return;
+                    }
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        writebackChecking: false,
+                        writebackBlocked: null,
+                        message: 'Jira write-back gate unexpectedly allowed the request.',
+                        error: ''
+                    }));
+                } catch (err) {
+                    if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
+                        return;
+                    }
+                    const blocked = err.payload?.error === 'jira_writeback_gate_blocked'
+                        ? err.payload
+                        : null;
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        writebackChecking: false,
+                        writebackBlocked: blocked,
+                        error: blocked ? '' : (err.message || 'Failed to check Jira write-back gate.')
+                    }));
+                }
+            };
+
+            const runScenarioHistoryAction = async (action) => {
+                const draftId = scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.conflict?.activeDraft?.draftId;
+                if (!draftId || !action?.versionNumber) return;
+                const expectedScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
+                if (scenarioHistoryActionControllerRef.current) {
+                    scenarioHistoryActionControllerRef.current.abort();
+                }
+                const controller = new AbortController();
+                scenarioHistoryActionControllerRef.current = controller;
+                setScenarioDraftMeta(prev => ({
+                    ...prev,
+                    pendingHistoryAction: null,
+                    loadingVersionNumber: action.type === 'reload' ? action.versionNumber : null,
+                    rollingBackVersionNumber: action.type === 'rollback' ? action.versionNumber : null,
+                    error: '',
+                    message: ''
+                }));
+                try {
+                    const snapshot = await fetchScenarioDraftVersion(draftId, action.versionNumber, controller.signal);
+                    if (
+                        scenarioHistoryActionControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(expectedScopeKey, draftId)
+                    ) {
+                        return;
+                    }
+                    const overrides = normalizeScenarioDraftOverrides(snapshot.overrides || {});
+                    if (action.type === 'reload') {
+                        setScenarioOverrides(overrides);
+                        scenarioUndoStackRef.current.clear();
+                        setScenarioUndoVersion(0);
+                        setScenarioDraftMeta(prev => ({
+                            ...prev,
+                            loadedVersionNumber: snapshot.versionNumber || action.versionNumber,
+                            dirtyState: 'dirty_local',
+                            loadingVersionNumber: null,
+                            rollingBackVersionNumber: null,
+                            pendingHistoryAction: null,
+                            conflict: null,
+                            message: `Reloaded version ${snapshot.versionNumber || action.versionNumber} locally. Save Draft to make it current.`,
+                            error: ''
+                        }));
+                        return;
+                    }
+
+                    const rolledBack = await rollbackScenarioDraft(
+                        draftId,
+                        snapshot.versionNumber || action.versionNumber,
+                        scenarioDraftMeta.baseDraftRevision,
+                        controller.signal
+                    );
+                    if (
+                        scenarioHistoryActionControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(expectedScopeKey, draftId)
+                    ) {
+                        return;
+                    }
+                    const activeDraft = rolledBack.activeDraft || null;
+                    const versions = Array.isArray(rolledBack.versions) ? rolledBack.versions : [];
+                    const savedOverrides = normalizeScenarioDraftOverrides(activeDraft?.overrides || overrides);
+                    setScenarioOverrides(savedOverrides);
+                    scenarioUndoStackRef.current.clear();
+                    setScenarioUndoVersion(0);
+                    setScenarioDraftMeta(prev => ({
+                        ...prev,
+                        activeDraft,
+                        versions,
+                        loadedVersionNumber: activeDraft?.versionNumber || snapshot.versionNumber || action.versionNumber,
+                        baseDraftRevision: activeDraft?.draftRevision || null,
+                        savedOverrides,
+                        dirtyState: 'clean',
+                        loadingVersionNumber: null,
+                            rollingBackVersionNumber: null,
+                            pendingHistoryAction: null,
+                            staleDraft: null,
+                            conflict: null,
+                            message: `Rolled back to version ${snapshot.versionNumber || action.versionNumber}.`,
+                            error: ''
+                    }));
+                } catch (err) {
+                    if (
+                        err.name === 'AbortError'
+                        || scenarioHistoryActionControllerRef.current !== controller
+                        || !isScenarioScopeDraftCurrent(expectedScopeKey, draftId)
+                    ) {
+                        return;
+                    }
+                    const conflict = err.payload?.error === 'scenario_draft_conflict' && err.payload?.conflict
+                        ? {
+                            ...err.payload.conflict,
+                            activeDraft: err.payload.activeDraft || null,
+                            versions: Array.isArray(err.payload.versions) ? err.payload.versions : []
+                        }
+                        : null;
+                    setScenarioDraftMeta(prev => {
+                        if (conflict) {
+                            return {
+                                ...prev,
+                                versions: conflict.versions.length > 0 ? conflict.versions : prev.versions,
+                                dirtyState: 'conflict_remote',
+                                loadingVersionNumber: null,
+                                rollingBackVersionNumber: null,
+                                pendingHistoryAction: null,
+                                conflict,
+                                message: '',
+                                error: ''
+                            };
+                        }
+                        return {
+                            ...prev,
+                            loadingVersionNumber: null,
+                            rollingBackVersionNumber: null,
+                            pendingHistoryAction: null,
+                            error: err.message || 'Failed to load scenario draft history.'
+                        };
+                    });
+                } finally {
+                    if (scenarioHistoryActionControllerRef.current === controller) {
+                        scenarioHistoryActionControllerRef.current = null;
+                    }
+                }
             };
 
             const scenarioLaneForIssue = (issue) => {
@@ -8655,9 +9819,9 @@ import {
                 const scoped = getTeamScopedMetrics(team);
                 const scopedProduct = getTeamScopedMetrics(team, 'product');
                 const scopedTech = getTeamScopedMetrics(team, 'tech');
-                const weighted = computePriorityWeighted(scoped.priorities);
-                const weightedProduct = computePriorityWeighted(scopedProduct.priorities);
-                const weightedTech = computePriorityWeighted(scopedTech.priorities);
+                const weighted = computePriorityWeighted(scoped.priorities, effectivePriorityWeightMap);
+                const weightedProduct = computePriorityWeighted(scopedProduct.priorities, effectivePriorityWeightMap);
+                const weightedTech = computePriorityWeighted(scopedTech.priorities, effectivePriorityWeightMap);
                 const straightRate = computeRate(scoped);
                 const weightedRate = computeRate(weighted);
                 return {
@@ -8723,399 +9887,26 @@ import {
                 return [{ value: 'all', label: 'All Assignees', events: 0 }, ...rows];
             }, [burnoutData]);
 
-            const burnoutChartModel = React.useMemo(() => {
-                const parseDate = (value) => {
-                    if (!value) return null;
-                    return new Date(`${value}T00:00:00`);
-                };
-                const toDateKey = (value) => {
-                    const year = value.getFullYear();
-                    const month = String(value.getMonth() + 1).padStart(2, '0');
-                    const day = String(value.getDate()).padStart(2, '0');
-                    return `${year}-${month}-${day}`;
-                };
-
-                const rangeStart = parseDate(burnoutData?.range?.startDate);
-                const rangeEnd = parseDate(burnoutData?.range?.endDate);
-                if (!rangeStart || !rangeEnd || Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime()) || rangeStart > rangeEnd) {
-                    return null;
-                }
-                const metricIsStoryPoints = burndownMetric === 'storyPoints';
-                const metricPrecision = metricIsStoryPoints ? 1 : 0;
-                const normalizeMetric = (value) => {
-                    const numeric = Number(value) || 0;
-                    if (!metricIsStoryPoints) return Math.max(0, Math.round(numeric));
-                    return Math.max(0, Math.round(numeric * 10) / 10);
-                };
-
-                const issueMeta = Array.isArray(burnoutData?.issuesMeta) ? burnoutData.issuesMeta : [];
-                const allEvents = Array.isArray(burnoutData?.events) ? burnoutData.events : [];
-                const normalizeTeamCandidate = (teamValue) => {
-                    const idRaw = teamValue?.id;
-                    const id = idRaw === undefined || idRaw === null || idRaw === '' ? null : String(idRaw);
-                    const nameRaw = String(teamValue?.name || '').trim();
-                    const hasRealName = nameRaw && nameRaw.toLowerCase() !== 'unknown team';
-                    if (!id && !hasRealName) return null;
-                    return {
-                        id,
-                        name: hasRealName ? nameRaw : 'Unknown Team'
-                    };
-                };
-                const asAssigneeKey = (value) => value?.id || value?.name || 'unassigned';
-                const isAssigneeMatch = (assignee) => {
-                    if (burnoutAssigneeFilter === 'all') return true;
-                    return asAssigneeKey(assignee || {}) === burnoutAssigneeFilter;
-                };
-
-                const filteredIssues = issueMeta.filter((issue) => isAssigneeMatch(issue?.assignee));
-                const issueKeySet = new Set(filteredIssues.map((issue) => String(issue?.issueKey || '').trim()).filter(Boolean));
-
-                const closureByIssue = new Map();
-                allEvents.forEach((event) => {
-                    const issueKey = String(event?.issueKey || '').trim();
-                    if (!issueKey || !issueKeySet.has(issueKey)) return;
-                    const eventDate = parseDate(event?.date);
-                    if (!eventDate || Number.isNaN(eventDate.getTime())) return;
-                    if (eventDate < rangeStart || (eventDate > rangeEnd && !isCompletedSprintSelected)) return;
-                    const dateKey = toDateKey(eventDate);
-                    const fallbackTeam = burnoutTaskTeamByIssueKey.get(issueKey.toUpperCase());
-                    const resolvedTeam = normalizeTeamCandidate({
-                        id: event?.teamId,
-                        name: event?.teamName
-                    }) || normalizeTeamCandidate(fallbackTeam) || { id: null, name: 'Unknown Team' };
-                    const existing = closureByIssue.get(issueKey);
-                    if (!existing || dateKey < existing.date) {
-                        closureByIssue.set(issueKey, {
-                            date: dateKey,
-                            team: resolvedTeam,
-                            assigneeName: event?.assigneeName || 'Unassigned',
-                            bucket: String(event?.bucket || '').toLowerCase()
-                        });
-                    }
-                });
-                const closureDateKeys = Array.from(closureByIssue.values())
-                    .map((item) => String(item?.date || '').trim())
-                    .filter(Boolean)
-                    .sort();
-                const lastClosureDateKey = closureDateKeys.length ? closureDateKeys[closureDateKeys.length - 1] : null;
-                let chartEndDateKey = toDateKey(rangeEnd);
-                if (isCompletedSprintSelected && lastClosureDateKey) {
-                    chartEndDateKey = lastClosureDateKey;
-                }
-                const chartEndDate = parseDate(chartEndDateKey) || rangeEnd;
-                const fullRangeEnd = chartEndDate > rangeEnd ? chartEndDate : rangeEnd;
-
-                const dayRows = [];
-                const dayDeltaByTeam = {};
-                const dayDetails = {};
-                let cursor = new Date(rangeStart.getTime());
-                while (cursor <= fullRangeEnd) {
-                    const key = toDateKey(cursor);
-                    dayRows.push(key);
-                    dayDeltaByTeam[key] = {};
-                    dayDetails[key] = { added: [], closed: [] };
-                    cursor.setDate(cursor.getDate() + 1);
-                }
-
-                const teamByKey = new Map();
-                const resolveTeamDescriptor = (teamValue) => {
-                    const id = teamValue?.id || null;
-                    const name = teamValue?.name || 'Unknown Team';
-                    const key = id || `name:${name}`;
-                    if (!teamByKey.has(key)) {
-                        teamByKey.set(key, {
-                            key,
-                            id,
-                            name,
-                            color: resolveTeamColor(key)
-                        });
-                    }
-                    return teamByKey.get(key);
-                };
-
-                const baselineByTeam = {};
-                const issueSnapshots = [];
-                const bumpDelta = (dateKey, teamKey, value) => {
-                    if (!dayDeltaByTeam[dateKey]) return;
-                    dayDeltaByTeam[dateKey][teamKey] = (dayDeltaByTeam[dateKey][teamKey] || 0) + value;
-                };
-
-                let additions = 0;
-                let closures = 0;
-                const closureBuckets = { done: 0, killed: 0, incomplete: 0 };
-
-                filteredIssues.forEach((issue) => {
-                    const issueKey = String(issue?.issueKey || '').trim();
-                    if (!issueKey) return;
-                    const issueKeyUpper = issueKey.toUpperCase();
-                    const createdDate = parseDate(issue?.createdDate);
-                    if (createdDate && createdDate > rangeEnd) return;
-
-                    const fallbackIssueTeam = burnoutTaskTeamByIssueKey.get(issueKey.toUpperCase());
-                    const startTeamSource = normalizeTeamCandidate(issue?.teamAtStart)
-                        || normalizeTeamCandidate(issue?.teamAtCreated)
-                        || normalizeTeamCandidate(fallbackIssueTeam)
-                        || { id: null, name: 'Unknown Team' };
-                    const createdTeamSource = normalizeTeamCandidate(issue?.teamAtCreated)
-                        || normalizeTeamCandidate(issue?.teamAtStart)
-                        || normalizeTeamCandidate(fallbackIssueTeam)
-                        || { id: null, name: 'Unknown Team' };
-                    const startTeam = resolveTeamDescriptor(startTeamSource);
-                    const createdTeam = resolveTeamDescriptor(createdTeamSource);
-                    const closure = closureByIssue.get(issueKey);
-                    const currentStatus = burnoutTaskStatusByIssueKey.get(issueKeyUpper) || '';
-                    const wasClosedBeforeSprintStart = isBurnoutClosedStatus(currentStatus) && !closure;
-                    if (wasClosedBeforeSprintStart) return;
-                    const issueMetricValue = metricIsStoryPoints
-                        ? Math.max(0, Number(burnoutIssueWeightByKey.get(issueKeyUpper) || 0))
-                        : 1;
-
-                    const createdDateKey = createdDate ? toDateKey(createdDate) : null;
-                    const openTeam = (createdDateKey && createdDate > rangeStart) ? createdTeam : startTeam;
-                    issueSnapshots.push({
-                        issueKey,
-                        openTeamKey: openTeam.key,
-                        openTeamName: openTeam.name,
-                        createdDateKey: createdDateKey || toDateKey(rangeStart),
-                        closureDateKey: closure?.date || null
-                    });
-                    if (createdDateKey && createdDate > rangeStart && dayDeltaByTeam[createdDateKey]) {
-                        bumpDelta(createdDateKey, createdTeam.key, issueMetricValue);
-                        additions += issueMetricValue;
-                        dayDetails[createdDateKey].added.push({
-                            issueKey,
-                            teamName: createdTeam.name,
-                            assigneeName: issue?.assignee?.name || 'Unassigned',
-                            metricValue: issueMetricValue
-                        });
-                    } else {
-                        baselineByTeam[startTeam.key] = (baselineByTeam[startTeam.key] || 0) + issueMetricValue;
-                    }
-
-                    if (closure && dayDeltaByTeam[closure.date]) {
-                        const closureTeam = resolveTeamDescriptor(closure.team);
-                        bumpDelta(closure.date, closureTeam.key, -issueMetricValue);
-                        closures += issueMetricValue;
-                        if (closure.bucket in closureBuckets) {
-                            closureBuckets[closure.bucket] += 1;
-                        }
-                        dayDetails[closure.date].closed.push({
-                            issueKey,
-                            teamName: closureTeam.name,
-                            assigneeName: closure.assigneeName || 'Unassigned',
-                            status: closure.bucket || 'closed',
-                            metricValue: issueMetricValue
-                        });
-                    }
-                });
-
-                const orderedTeams = Array.from(teamByKey.values())
-                    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-
-                let runningByTeam = {};
-                orderedTeams.forEach((team) => {
-                    runningByTeam[team.key] = baselineByTeam[team.key] || 0;
-                });
-
-                const timeline = [];
-                let maxTotal = 0;
-                dayRows.forEach((dateKey) => {
-                    const dayDelta = dayDeltaByTeam[dateKey] || {};
-                    Object.entries(dayDelta).forEach(([teamKey, delta]) => {
-                    const next = (runningByTeam[teamKey] || 0) + delta;
-                    runningByTeam[teamKey] = normalizeMetric(next);
-                });
-                let total = 0;
-                const countsByTeam = {};
-                orderedTeams.forEach((team) => {
-                    const count = normalizeMetric(runningByTeam[team.key] || 0);
-                    countsByTeam[team.key] = count;
-                    total += count;
-                });
-                maxTotal = Math.max(maxTotal, normalizeMetric(total));
-                timeline.push({
-                    date: dateKey,
-                    total: normalizeMetric(total),
-                    countsByTeam,
-                    details: dayDetails[dateKey]
-                });
-                });
-
-                if (!timeline.length) return null;
-                const fullTimeline = timeline;
-                const shouldTrimCompletedRange = Boolean(isCompletedSprintSelected && chartEndDateKey);
-                const chartTimeline = shouldTrimCompletedRange
-                    ? fullTimeline.filter((row) => row.date <= chartEndDateKey)
-                    : fullTimeline;
-                const timelineForChart = chartTimeline.length ? chartTimeline : fullTimeline;
-                const maxTotalForChart = timelineForChart.reduce((acc, row) => Math.max(acc, row.total || 0), 0);
-                const activeTeamKeys = new Set();
-                orderedTeams.forEach((team) => {
-                    const hasAnyValue = timelineForChart.some((row) => (row.countsByTeam?.[team.key] || 0) > 0);
-                    if (hasAnyValue) {
-                        activeTeamKeys.add(team.key);
-                    }
-                });
-                const visibleTeams = orderedTeams.filter((team) => activeTeamKeys.has(team.key));
-                const teamNameByKey = {};
-                visibleTeams.forEach((team) => {
-                    teamNameByKey[team.key] = team.name;
-                });
-                const width = Math.max(760, timelineForChart.length * 9);
-                const height = 260;
-                const padding = { left: 46, right: 14, top: 12, bottom: 30 };
-                const plotWidth = Math.max(1, width - padding.left - padding.right);
-                const plotHeight = Math.max(1, height - padding.top - padding.bottom);
-                const axisMax = Math.max(1, maxTotalForChart || maxTotal);
-                const toX = (index) => {
-                    if (timelineForChart.length <= 1) return padding.left + plotWidth / 2;
-                    return padding.left + (plotWidth * index) / (timelineForChart.length - 1);
-                };
-                const toY = (value) => {
-                    const safe = Math.max(0, Number(value) || 0);
-                    return height - padding.bottom - (safe / axisMax) * plotHeight;
-                };
-
-                const rows = timelineForChart.map((row, index) => {
-                    const x = toX(index);
-                    let running = 0;
-                    const stacks = {};
-                    visibleTeams.forEach((team) => {
-                        const value = row.countsByTeam[team.key] || 0;
-                        const bottom = running;
-                        const top = bottom + value;
-                        stacks[team.key] = {
-                            value,
-                            bottom,
-                            top,
-                            yTop: toY(top),
-                            yBottom: toY(bottom)
-                        };
-                        running = top;
-                    });
-                    return { ...row, x, stacks };
-                });
-
-                const buildAreaPath = (teamKey) => {
-                    if (!rows.length) return '';
-                    const top = rows.map((row, idx) => `${idx === 0 ? 'M' : 'L'}${row.x.toFixed(2)},${row.stacks[teamKey].yTop.toFixed(2)}`).join(' ');
-                    const bottom = [...rows].reverse().map((row) => `L${row.x.toFixed(2)},${row.stacks[teamKey].yBottom.toFixed(2)}`).join(' ');
-                    return `${top} ${bottom} Z`;
-                };
-                const buildLinePath = (teamKey) => {
-                    if (!rows.length) return '';
-                    return rows.map((row, idx) => `${idx === 0 ? 'M' : 'L'}${row.x.toFixed(2)},${row.stacks[teamKey].yTop.toFixed(2)}`).join(' ');
-                };
-                const buildLinePathSegment = (teamKey, startIndex, endIndex) => {
-                    if (!rows.length) return '';
-                    const start = Math.max(0, Number(startIndex) || 0);
-                    const end = Math.min(rows.length - 1, Number(endIndex) || 0);
-                    if (end <= start) return '';
-                    return rows
-                        .slice(start, end + 1)
-                        .map((row, idx) => `${idx === 0 ? 'M' : 'L'}${row.x.toFixed(2)},${row.stacks[teamKey].yTop.toFixed(2)}`)
-                        .join(' ');
-                };
-
-                const xStep = rows.length > 1 ? (plotWidth / (rows.length - 1)) : plotWidth;
-
-                const yTickValues = [];
-                [1, 0.75, 0.5, 0.25, 0].forEach((ratio) => {
-                    const value = normalizeMetric(axisMax * ratio);
-                    if (!yTickValues.includes(value)) {
-                        yTickValues.push(value);
-                    }
-                });
-                if (!yTickValues.includes(axisMax)) {
-                    yTickValues.unshift(axisMax);
-                }
-                if (!yTickValues.includes(0)) {
-                    yTickValues.push(0);
-                }
-                const yTicks = yTickValues.map((value) => ({
-                    value,
-                    y: toY(value)
-                }));
-
-                const startTotal = orderedTeams.reduce((acc, team) => acc + (baselineByTeam[team.key] || 0), 0);
-                const sprintEndKey = toDateKey(rangeEnd);
-                const sprintEndRow = fullTimeline.find((row) => row.date === sprintEndKey);
-                const remainingTotal = (sprintEndRow?.total ?? fullTimeline[fullTimeline.length - 1]?.total) || 0;
-                const now = new Date();
-                const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                const todayDateKey = toDateKey(todayDate);
-                const todayIndex = rows.findIndex((row) => row.date === todayDateKey);
-                const todayX = todayIndex >= 0 ? rows[todayIndex].x : null;
-                const weeklyMarkers = rows
-                    .map((row, index) => ({ row, index }))
-                    .filter(({ index }) => index > 0 && index % 7 === 0)
-                    .map(({ row }) => ({ key: row.date, x: row.x }));
-                const futureOverlay = (todayX !== null && todayIndex < rows.length - 1)
-                    ? { x: todayX, width: Math.max(0, (width - padding.right) - todayX) }
-                    : null;
-                const teamColors = {};
-                visibleTeams.forEach((team) => {
-                    teamColors[team.name] = team.color;
-                });
-
-                return {
-                    width,
-                    height,
-                    padding,
-                    rows,
-                    teams: visibleTeams,
-                    areas: visibleTeams.map((team) => {
-                        const lastPositiveIndex = rows.reduce((last, row, index) => {
-                            return (row.stacks?.[team.key]?.value || 0) > 0 ? index : last;
-                        }, -1);
-                        const safeEndIndex = Math.max(0, lastPositiveIndex);
-                        const fullLine = lastPositiveIndex >= 0
-                            ? buildLinePathSegment(team.key, 0, safeEndIndex)
-                            : '';
-                        const pastEndIndex = todayIndex >= 0
-                            ? Math.min(todayIndex, safeEndIndex)
-                            : safeEndIndex;
-                        const futureStartIndex = todayIndex >= 0
-                            ? Math.max(todayIndex, 0)
-                            : safeEndIndex;
-                        const linePast = lastPositiveIndex >= 0
-                            ? buildLinePathSegment(team.key, 0, pastEndIndex)
-                            : '';
-                        const lineFuture = (lastPositiveIndex >= 0 && todayIndex >= 0 && futureStartIndex <= safeEndIndex)
-                            ? buildLinePathSegment(team.key, futureStartIndex, safeEndIndex)
-                            : '';
-                        return {
-                            team,
-                            areaPath: buildAreaPath(team.key),
-                            linePath: fullLine,
-                            linePastPath: linePast || fullLine,
-                            lineFuturePath: lineFuture,
-                            lineEndIndex: lastPositiveIndex
-                        };
-                    }),
-                    xStep,
-                    yTicks,
-                    weeklyMarkers,
-                    todayDateKey,
-                    todayX,
-                    futureOverlay,
-                    teamColors,
-                    teamNameByKey,
-                    issueSnapshots,
-                    metric: {
-                        key: burndownMetric,
-                        isStoryPoints: metricIsStoryPoints,
-                        precision: metricPrecision
-                    },
-                    summary: {
-                        start: normalizeMetric(startTotal),
-                        added: normalizeMetric(additions),
-                        closed: normalizeMetric(closures),
-                        remaining: normalizeMetric(remainingTotal),
-                        closureBuckets
-                    }
-                };
-            }, [burnoutData, burnoutAssigneeFilter, burnoutTaskTeamByIssueKey, burnoutTaskStatusByIssueKey, burnoutIssueWeightByKey, isCompletedSprintSelected, burndownMetric]);
+            const burnoutChartModel = React.useMemo(() => buildBurnoutChartModel({
+                burnoutData,
+                assigneeFilter: burnoutAssigneeFilter,
+                taskTeamByIssueKey: burnoutTaskTeamByIssueKey,
+                taskStatusByIssueKey: burnoutTaskStatusByIssueKey,
+                issueWeightByKey: burnoutIssueWeightByKey,
+                isCompletedSprintSelected,
+                metric: burndownMetric,
+                resolveTeamColor,
+                isClosedStatus: isBurnoutClosedStatus
+            }), [
+                burnoutData,
+                burnoutAssigneeFilter,
+                burnoutTaskTeamByIssueKey,
+                burnoutTaskStatusByIssueKey,
+                burnoutIssueWeightByKey,
+                isCompletedSprintSelected,
+                burndownMetric,
+                isBurnoutClosedStatus
+            ]);
 
             const burnoutTotals = burnoutChartModel?.summary || {
                 start: 0,
@@ -12301,788 +13092,62 @@ import {
                                 />
 
                                 {statsView !== 'cohort' && statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && (
-                                <div className="stats-summary">
-                                    <div
-                                        className={`stats-card selectable ${statsGraphMode === 'absolute' ? 'active' : ''}`}
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={() => setStatsGraphMode('absolute')}
-                                        onKeyDown={(event) => {
-                                            if (event.key === 'Enter' || event.key === ' ') {
-                                                event.preventDefault();
-                                                setStatsGraphMode('absolute');
-                                            }
-                                        }}
-                                        aria-pressed={statsGraphMode === 'absolute'}
-                                    >
-                                        <h4>Delivery Rate</h4>
-                                        <div className="stat-value">
-                                            {formatPercent(computeRate(statsTotals.straight))}
-                                        </div>
-                                        <div className="stats-note">Absolute rate</div>
-                                    </div>
-                                    <div
-                                        className={`stats-card selectable ${statsGraphMode === 'weighted' ? 'active' : ''}`}
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={() => setStatsGraphMode('weighted')}
-                                        onKeyDown={(event) => {
-                                            if (event.key === 'Enter' || event.key === ' ') {
-                                                event.preventDefault();
-                                                setStatsGraphMode('weighted');
-                                            }
-                                        }}
-                                        aria-pressed={statsGraphMode === 'weighted'}
-                                    >
-                                        <h4>Weighted Rate</h4>
-                                        <div className="stat-value">
-                                            {formatPercent(computeRate(statsTotals.weighted))}
-                                        </div>
-                                        <div className="stats-note">Priority-weighted</div>
-                                    </div>
-                                    <div className="stats-card">
-                                        <h4>Totals</h4>
-                                        <div className="stat-value">{statsTotals.straight.done + statsTotals.straight.incomplete + statsTotals.straight.killed}</div>
-                                        <div className="stats-note">
-                                            {statsTotals.straight.done} done · {statsTotals.straight.incomplete} incomplete · {statsTotals.straight.killed} killed
-                                        </div>
-                                    </div>
-                                    <div className="stats-card">
-                                        <h4>Source</h4>
-                                        <div className="stat-value">Sprint tasks</div>
-                                        <div className="stats-note">Derived from the loaded sprint list</div>
-                                    </div>
-                                </div>
+                                    <StatsDeliverySummary
+                                        statsGraphMode={statsGraphMode}
+                                        setStatsGraphMode={setStatsGraphMode}
+                                        statsTotals={statsTotals}
+                                        computeRate={computeRate}
+                                        formatPercent={formatPercent}
+                                    />
                                 )}
 
-                                <div className={`stats-view ${statsView === 'teams' ? 'open' : ''}`}>
-                                    <div className="stats-bars" style={{ '--stats-bar-columns': statsBarColumns }}>
-                                        {statsTeamRows.map(team => {
-                                            const graphRate = statsGraphMode === 'weighted' ? team.weightedRate : team.straightRate;
-                                            return (
-                                                <div key={team.id} className="stats-bar">
-                                                    <div className="stats-bar-value">{formatPercent(graphRate)}</div>
-                                                    <div className="stats-bar-track">
-                                                        <div
-                                                            className={`stats-bar-fill ${getRateClass(graphRate)}`}
-                                                            style={{ height: `${Math.min(100, graphRate * 100)}%` }}
-                                                        />
-                                                    </div>
-                                                    <div className="stats-bar-label">{team.name}</div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                    <table className="stats-table">
-                                        <thead>
-                                            <tr className="stats-group-row">
-                                                <th className="dimension"></th>
-                                                <th className="stats-col total" colSpan="4">Total</th>
-                                                <th className="stats-col product" colSpan="4">Product</th>
-                                                <th className="stats-col tech" colSpan="4">Tech</th>
-                                            </tr>
-                                            <tr>
-                                                <th className="dimension">Team</th>
-                                                <th className="metric stats-col total">Done</th>
-                                                <th className="metric stats-col total">Incomplete</th>
-                                                <th className="metric stats-col total">Absolute</th>
-                                                <th className="metric stats-col total">Weighted</th>
-                                                <th className="metric stats-col product">Done</th>
-                                                <th className="metric stats-col product">Incomplete</th>
-                                                <th className="metric stats-col product">Absolute</th>
-                                                <th className="metric stats-col product">Weighted</th>
-                                                <th className="metric stats-col tech">Done</th>
-                                                <th className="metric stats-col tech">Incomplete</th>
-                                                <th className="metric stats-col tech">Absolute</th>
-                                                <th className="metric stats-col tech">Weighted</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {statsTeamRows.map(team => {
-                                                const totalDoneLink = buildStatLink(team.straight.done, {
-                                                    teamId: team.id,
-                                                    projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'],
-                                                    statuses: ['Done'],
-                                                    issueType: 'Story'
-                                                });
-                                                const totalIncompleteLink = buildStatLink(team.straight.incomplete, {
-                                                    teamId: team.id,
-                                                    projectNames: ['PRODUCT ROADMAPS', 'TECHNICAL ROADMAP'],
-                                                    excludeStatuses: ['Done', 'Killed'],
-                                                    issueType: 'Story'
-                                                });
-                                                const productDoneLink = buildStatLink(team.product.done, {
-                                                    teamId: team.id,
-                                                    projectName: 'PRODUCT ROADMAPS',
-                                                    statuses: ['Done'],
-                                                    issueType: 'Story'
-                                                });
-                                                const productIncompleteLink = buildStatLink(team.product.incomplete, {
-                                                    teamId: team.id,
-                                                    projectName: 'PRODUCT ROADMAPS',
-                                                    excludeStatuses: ['Done', 'Killed'],
-                                                    issueType: 'Story'
-                                                });
-                                                const techDoneLink = buildStatLink(team.tech.done, {
-                                                    teamId: team.id,
-                                                    projectName: 'TECHNICAL ROADMAP',
-                                                    statuses: ['Done'],
-                                                    issueType: 'Story'
-                                                });
-                                                const techIncompleteLink = buildStatLink(team.tech.incomplete, {
-                                                    teamId: team.id,
-                                                    projectName: 'TECHNICAL ROADMAP',
-                                                    excludeStatuses: ['Done', 'Killed'],
-                                                    issueType: 'Story'
-                                                });
+                                <StatsTeamsView
+                                    open={statsView === 'teams'}
+                                    statsTeamRows={statsTeamRows}
+                                    statsBarColumns={statsBarColumns}
+                                    statsGraphMode={statsGraphMode}
+                                    buildStatLink={buildStatLink}
+                                    computeRate={computeRate}
+                                    formatPercent={formatPercent}
+                                    getRateClass={getRateClass}
+                                />
 
-                                                return (
-                                                <tr key={team.id}>
-                                                    <td className="dimension">{team.name}</td>
-                                                    <td className="metric stats-col total">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.straight.done}</span>
-                                                            {totalDoneLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={totalDoneLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View done stories for this team in Jira"
-                                                                    aria-label="Open done stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col total">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.straight.incomplete}</span>
-                                                            {totalIncompleteLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={totalIncompleteLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View incomplete stories for this team in Jira"
-                                                                    aria-label="Open incomplete stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col total">{formatPercent(team.straightRate)}</td>
-                                                    <td className="metric stats-col total">{formatPercent(team.weightedRate)}</td>
-                                                    <td className="metric stats-col product">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.product.done}</span>
-                                                            {productDoneLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={productDoneLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View done product stories for this team in Jira"
-                                                                    aria-label="Open done product stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col product">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.product.incomplete}</span>
-                                                            {productIncompleteLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={productIncompleteLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View incomplete product stories for this team in Jira"
-                                                                    aria-label="Open incomplete product stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col product">{formatPercent(computeRate(team.product))}</td>
-                                                    <td className="metric stats-col product">{formatPercent(computeRate(team.weightedProduct))}</td>
-                                                    <td className="metric stats-col tech">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.tech.done}</span>
-                                                            {techDoneLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={techDoneLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View done tech stories for this team in Jira"
-                                                                    aria-label="Open done tech stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col tech">
-                                                        <div className="postponed-cell">
-                                                            <span>{team.tech.incomplete}</span>
-                                                            {techIncompleteLink && (
-                                                                <a
-                                                                    className="stats-link"
-                                                                    href={techIncompleteLink}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    title="View incomplete tech stories for this team in Jira"
-                                                                    aria-label="Open incomplete tech stories in Jira"
-                                                                >
-                                                                    ↗
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="metric stats-col tech">{formatPercent(computeRate(team.tech))}</td>
-                                                    <td className="metric stats-col tech">{formatPercent(computeRate(team.weightedTech))}</td>
-                                                </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                <StatsPriorityView
+                                    open={statsView === 'priority'}
+                                    priorityAxis={priorityAxis}
+                                    priorityHoverIndex={priorityHoverIndex}
+                                    setPriorityHoverIndex={setPriorityHoverIndex}
+                                    priorityRadar={priorityRadar}
+                                    priorityRows={priorityRows}
+                                    buildRadarPoints={buildRadarPoints}
+                                    buildPriorityStatLink={buildPriorityStatLink}
+                                    formatPercent={formatPercent}
+                                    resolveTeamColor={resolveTeamColor}
+                                />
 
-                                <div className={`stats-view ${statsView === 'priority' ? 'open' : ''}`}>
-                                    {priorityRadar.series.length > 0 && (
-                                        <>
-                                            <svg className="priority-radar" viewBox="0 0 360 360" role="img" aria-label="Priority distribution radar chart">
-                                                <g transform="translate(180 180)">
-                                                    {[0.25, 0.5, 0.75, 1].map((ratio, index) => (
-                                                        <polygon
-                                                            key={`grid-${index}`}
-                                                            points={buildRadarPoints({
-                                                                values: Object.fromEntries(priorityAxis.map(axis => [axis, ratio * priorityRadar.maxValue])),
-                                                                radius: 120,
-                                                                center: 0,
-                                                                maxValue: priorityRadar.maxValue,
-                                                                axes: priorityAxis
-                                                            })}
-                                                            fill="none"
-                                                            stroke="#d9d9d9"
-                                                            strokeWidth="1"
-                                                        />
-                                                    ))}
-                                                    {priorityAxis.map((axis, index) => {
-                                                        const angle = (Math.PI * 2 * index) / priorityAxis.length - Math.PI / 2;
-                                                        const x = Math.cos(angle) * 120;
-                                                        const y = Math.sin(angle) * 120;
-                                                        return (
-                                                            <line
-                                                                key={`axis-${axis}`}
-                                                                x1="0"
-                                                                y1="0"
-                                                                x2={x}
-                                                                y2={y}
-                                                                stroke="#d9d9d9"
-                                                                strokeWidth="1"
-                                                            />
-                                                        );
-                                                    })}
-                                                    {priorityRadar.series.map((series, idx) => {
-                                                        const color = resolveTeamColor(series.id);
-                                                        const isActive = priorityHoverIndex === null || priorityHoverIndex === idx;
-                                                        return (
-                                                            <polygon
-                                                                key={series.id}
-                                                                points={buildRadarPoints({
-                                                                    values: series.pointsByPriority,
-                                                                    radius: 120,
-                                                                    center: 0,
-                                                                    maxValue: priorityRadar.maxValue,
-                                                                    axes: priorityAxis
-                                                                })}
-                                                                fill={color}
-                                                                fillOpacity={isActive ? '0.18' : '0.04'}
-                                                                stroke={color}
-                                                                strokeWidth={isActive ? '2.5' : '1.2'}
-                                                                style={{ transition: 'all 0.2s ease', cursor: 'pointer' }}
-                                                                onMouseEnter={() => setPriorityHoverIndex(idx)}
-                                                                onMouseLeave={() => setPriorityHoverIndex(null)}
-                                                            />
-                                                        );
-                                                    })}
-                                                    {[0.25, 0.5, 0.75, 1].map((ratio, index) => (
-                                                        <text
-                                                            key={`value-${index}`}
-                                                            x="0"
-                                                            y={-(120 * ratio) - 6}
-                                                            textAnchor="middle"
-                                                            dominantBaseline="middle"
-                                                            fontSize="8"
-                                                            fill="#8c8c8c"
-                                                            fontFamily="IBM Plex Mono, monospace"
-                                                        >
-                                                            {(priorityRadar.maxValue * ratio).toFixed(1)}
-                                                        </text>
-                                                    ))}
-                                                    {priorityAxis.map((axis, index) => {
-                                                        const angle = (Math.PI * 2 * index) / priorityAxis.length - Math.PI / 2;
-                                                        const x = Math.cos(angle) * 150;
-                                                        const y = Math.sin(angle) * 150;
-                                                        return (
-                                                            <text
-                                                                key={`label-${axis}`}
-                                                                x={x}
-                                                                y={y}
-                                                                textAnchor="middle"
-                                                                dominantBaseline="middle"
-                                                                fontSize="8"
-                                                                fill="#555"
-                                                                fontFamily="IBM Plex Mono, monospace"
-                                                            >
-                                                                {axis}
-                                                            </text>
-                                                        );
-                                                    })}
-                                                </g>
-                                            </svg>
-                                            <div className="priority-legend">
-                                                {priorityRadar.series.map((series, idx) => {
-                                                    const color = resolveTeamColor(series.id);
-                                                    const isActive = priorityHoverIndex === null || priorityHoverIndex === idx;
-                                                    return (
-                                                        <span
-                                                            key={series.id}
-                                                            style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)' }}
-                                                            onMouseEnter={() => setPriorityHoverIndex(idx)}
-                                                            onMouseLeave={() => setPriorityHoverIndex(null)}
-                                                        >
-                                                            <i style={{ background: color, opacity: isActive ? 0.95 : 0.45 }} />
-                                                            {series.name}
-                                                        </span>
-                                                    );
-                                                })}
-                                            </div>
-                                            <div className="priority-axis-note">Axis values show story points.</div>
-                                        </>
-                                    )}
-                                    <table className="stats-table">
-                                        <thead>
-                                            <tr>
-                                                <th className="dimension">Priority</th>
-                                                <th className="metric">Story Points</th>
-                                                <th className="metric">Done</th>
-                                                <th className="metric">Incomplete</th>
-                                                <th className="metric">Rate</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {priorityRows.map(row => {
-                                                const pointsLink = buildPriorityStatLink(row.points, {
-                                                    priorityName: row.name
-                                                });
-                                                const doneLink = buildPriorityStatLink(row.done, {
-                                                    priorityName: row.name,
-                                                    statuses: ['Done']
-                                                });
-                                                const incompleteLink = buildPriorityStatLink(row.incomplete, {
-                                                    priorityName: row.name,
-                                                    excludeStatuses: ['Done', 'Killed']
-                                                });
-
-                                                return (
-                                                    <tr key={row.name}>
-                                                        <td className="dimension">{row.name}</td>
-                                                        <td className="metric">
-                                                            <div className="postponed-cell">
-                                                                <span>{row.points.toFixed(1)}</span>
-                                                                {pointsLink && (
-                                                                    <a
-                                                                        className="stats-link"
-                                                                        href={pointsLink}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        title="View stories for this priority in Jira"
-                                                                        aria-label="Open stories in Jira"
-                                                                    >
-                                                                        ↗
-                                                                    </a>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                        <td className="metric">
-                                                            <div className="postponed-cell">
-                                                                <span>{row.done}</span>
-                                                                {doneLink && (
-                                                                    <a
-                                                                        className="stats-link"
-                                                                        href={doneLink}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        title="View done stories for this priority in Jira"
-                                                                        aria-label="Open done stories in Jira"
-                                                                    >
-                                                                        ↗
-                                                                    </a>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                        <td className="metric">
-                                                            <div className="postponed-cell">
-                                                                <span>{row.incomplete}</span>
-                                                                {incompleteLink && (
-                                                                    <a
-                                                                        className="stats-link"
-                                                                        href={incompleteLink}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        title="View incomplete stories for this priority in Jira"
-                                                                        aria-label="Open incomplete stories in Jira"
-                                                                    >
-                                                                        ↗
-                                                                    </a>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                        <td className="metric">{formatPercent(row.rate)}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                                <div className={`stats-view ${statsView === 'burnout' ? 'open' : ''}`}>
-                                    <div className="stats-controls">
-                                        <div className="stats-control-group">
-                                            <label>Assignee</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={burnoutAssigneeFilter}
-                                                onChange={(event) => setBurnoutAssigneeFilter(event.target.value)}
-                                            >
-                                                {burnoutAssigneeOptions.map((item) => (
-                                                    <option key={item.value} value={item.value}>
-                                                        {item.events > 0 && item.value !== 'all'
-                                                            ? `${item.label} (${item.events})`
-                                                            : item.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="stats-control-group">
-                                            <label>Metric</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={burndownMetric}
-                                                onChange={(event) => setBurndownMetric(event.target.value)}
-                                            >
-                                                <option value="storyPoints">Story Points</option>
-                                                <option value="issueCount">Issue Count</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div className="stats-summary burnout-summary">
-                                        <div className="stats-card">
-                                            <h4>Start</h4>
-                                            <div className="stat-value">{formatBurndownValue(burnoutTotals.start)}</div>
-                                            <div className="stats-note">
-                                                {burndownMetricIsStoryPoints ? 'Story points at sprint start' : 'Issues at sprint start'}
-                                            </div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Added</h4>
-                                            <div className="stat-value">{formatBurndownValue(burnoutTotals.added)}</div>
-                                            <div className="stats-note">
-                                                {burndownMetricIsStoryPoints ? 'Story points added after sprint start' : 'Issues added after sprint start'}
-                                            </div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Closed</h4>
-                                            <div className="stat-value">{formatBurndownValue(burnoutTotals.closed)}</div>
-                                            <div className="stats-note">
-                                                {burnoutTotals.closureBuckets.done} done · {burnoutTotals.closureBuckets.killed} killed · {burnoutTotals.closureBuckets.incomplete} incomplete
-                                            </div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Remaining</h4>
-                                            <div className="stat-value">{formatBurndownValue(burnoutTotals.remaining)}</div>
-                                            <div className="stats-note">
-                                                {burndownMetricIsStoryPoints ? 'Open story points at sprint end' : 'Open issues at sprint end'}
-                                            </div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Timezone</h4>
-                                            <div className="stat-value">UTC+2</div>
-                                        </div>
-                                    </div>
-                                    {burnoutTaskFilter && (
-                                        <div className="stats-note">
-                                            Task list filter: {burnoutTaskFilter.teamName} open on {burnoutTaskFilter.dateKey} ({burnoutTaskFilter.issueKeys.length})
-                                            <button
-                                                type="button"
-                                                className="stats-toggle"
-                                                style={{ marginLeft: '0.6rem' }}
-                                                onClick={() => setBurnoutTaskFilter(null)}
-                                            >
-                                                Clear
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {burnoutLoading && (
-                                        <div className="stats-note">Loading burndown history…</div>
-                                    )}
-                                    {!burnoutLoading && burnoutError && (
-                                        <div className="stats-note" style={{ color: '#cf1322' }}>{burnoutError}</div>
-                                    )}
-                                    {!burnoutLoading && !burnoutError && !burnoutChartModel && (
-                                        <div className="stats-note">No burndown timeline data found for the selected sprint and filters.</div>
-                                    )}
-                                    {!burnoutLoading && !burnoutError && burnoutChartModel && (
-                                        <>
-                                            <div className="burnout-chart-wrap">
-                                            <div
-                                                className="burnout-chart"
-                                                ref={burnoutChartRef}
-                                                onMouseLeave={() => {
-                                                    setBurnoutHoverPoint(null);
-                                                    setBurnoutHoverTeamKey(null);
-                                                }}
-                                                role="img"
-                                                aria-label="Daily burndown stacked area chart by team"
-                                            >
-                                                <svg
-                                                    className="burnout-area-chart"
-                                                    viewBox={`0 0 ${burnoutChartModel.width} ${burnoutChartModel.height}`}
-                                                    preserveAspectRatio="none"
-                                                >
-                                                    {burnoutChartModel.yTicks.map((tick) => (
-                                                        <line
-                                                            key={`grid-${tick.value}`}
-                                                            className="burnout-grid-line"
-                                                            x1={burnoutChartModel.padding.left}
-                                                            x2={burnoutChartModel.width - burnoutChartModel.padding.right}
-                                                            y1={tick.y}
-                                                            y2={tick.y}
-                                                        />
-                                                    ))}
-                                                    {burnoutChartModel.weeklyMarkers.map((marker) => (
-                                                        <line
-                                                            key={`week-${marker.key}`}
-                                                            className="burnout-weekly-line"
-                                                            x1={marker.x}
-                                                            x2={marker.x}
-                                                            y1={burnoutChartModel.padding.top}
-                                                            y2={burnoutChartModel.height - burnoutChartModel.padding.bottom}
-                                                        />
-                                                    ))}
-                                                    {burnoutChartModel.futureOverlay && (
-                                                        <rect
-                                                            className="burnout-future-overlay"
-                                                            x={burnoutChartModel.futureOverlay.x}
-                                                            y={burnoutChartModel.padding.top}
-                                                            width={burnoutChartModel.futureOverlay.width}
-                                                            height={burnoutChartModel.height - burnoutChartModel.padding.top - burnoutChartModel.padding.bottom}
-                                                        />
-                                                    )}
-                                                    {burnoutChartModel.areas.map((area) => (
-                                                        <g key={`team-area-${area.team.key}`}>
-                                                            <path
-                                                                className={`burnout-area-team ${
-                                                                    burnoutHoverTeamKey && burnoutHoverTeamKey !== area.team.key ? 'dimmed' : 'active'
-                                                                }`}
-                                                                d={area.areaPath}
-                                                                onMouseEnter={() => setBurnoutHoverTeamKey(area.team.key)}
-                                                                onMouseMove={() => setBurnoutHoverTeamKey(area.team.key)}
-                                                                style={{
-                                                                    fill: area.team.color,
-                                                                    stroke: area.team.color
-                                                                }}
-                                                            />
-                                                            <path
-                                                                className={`burnout-team-line ${
-                                                                    burnoutHoverTeamKey && burnoutHoverTeamKey !== area.team.key ? 'dimmed' : 'active'
-                                                                }`}
-                                                                d={area.linePastPath || area.linePath}
-                                                                onMouseEnter={() => setBurnoutHoverTeamKey(area.team.key)}
-                                                                onMouseMove={() => setBurnoutHoverTeamKey(area.team.key)}
-                                                                style={{
-                                                                    stroke: area.team.color
-                                                                }}
-                                                            />
-                                                            {area.lineFuturePath && (
-                                                                <path
-                                                                    className={`burnout-team-line burnout-team-line-future ${
-                                                                        burnoutHoverTeamKey && burnoutHoverTeamKey !== area.team.key ? 'dimmed' : 'active'
-                                                                    }`}
-                                                                    d={area.lineFuturePath}
-                                                                    onMouseEnter={() => setBurnoutHoverTeamKey(area.team.key)}
-                                                                    onMouseMove={() => setBurnoutHoverTeamKey(area.team.key)}
-                                                                    style={{
-                                                                        stroke: area.team.color
-                                                                    }}
-                                                                />
-                                                            )}
-                                                        </g>
-                                                    ))}
-                                                    {burnoutHoverPoint && (
-                                                        <rect
-                                                            className="burnout-hover-band active"
-                                                            x={Math.max(
-                                                                burnoutChartModel.padding.left,
-                                                                (burnoutHoverPoint.row?.x || burnoutChartModel.padding.left) - (burnoutChartModel.xStep / 2)
-                                                            )}
-                                                            y={burnoutChartModel.padding.top}
-                                                            width={Math.max(8, burnoutChartModel.xStep)}
-                                                            height={burnoutChartModel.height - burnoutChartModel.padding.top - burnoutChartModel.padding.bottom}
-                                                        />
-                                                    )}
-                                                    <rect
-                                                        className="burnout-hover-capture"
-                                                        x={burnoutChartModel.padding.left}
-                                                        y={burnoutChartModel.padding.top}
-                                                        width={burnoutChartModel.width - burnoutChartModel.padding.left - burnoutChartModel.padding.right}
-                                                        height={burnoutChartModel.height - burnoutChartModel.padding.top - burnoutChartModel.padding.bottom}
-                                                        onMouseMove={(event) => {
-                                                            const point = resolveBurnoutPointer(event);
-                                                            if (!point) return;
-                                                            setBurnoutHoverTeamKey(point.hoveredTeamKey);
-                                                            setBurnoutHoverPoint({
-                                                                key: point.row.date,
-                                                                date: point.row.date,
-                                                                row: point.row,
-                                                                x: point.row.x,
-                                                                bubbleX: point.bubbleX
-                                                            });
-                                                        }}
-                                                        onClick={(event) => {
-                                                            const point = resolveBurnoutPointer(event);
-                                                            if (!point) return;
-                                                            const nextFilter = buildBurnoutTaskFilter(point.row.date, point.hoveredTeamKey);
-                                                            if (!nextFilter) return;
-                                                            setBurnoutTaskFilter((prev) => {
-                                                                if (!prev) return nextFilter;
-                                                                if (prev.dateKey === nextFilter.dateKey && prev.teamKey === nextFilter.teamKey) {
-                                                                    return null;
-                                                                }
-                                                                return nextFilter;
-                                                            });
-                                                        }}
-                                                    />
-                                                    {burnoutChartModel.todayX !== null && (
-                                                        <>
-                                                            <line
-                                                                className="burnout-today-line"
-                                                                x1={burnoutChartModel.todayX}
-                                                                x2={burnoutChartModel.todayX}
-                                                                y1={burnoutChartModel.padding.top}
-                                                                y2={burnoutChartModel.height - burnoutChartModel.padding.bottom}
-                                                            />
-                                                            <text
-                                                                className="burnout-today-label"
-                                                                x={burnoutChartModel.todayX + 4}
-                                                                y={burnoutChartModel.padding.top + 11}
-                                                            >
-                                                                Today
-                                                            </text>
-                                                        </>
-                                                    )}
-                                                    {burnoutHoverPoint && (
-                                                        <line
-                                                            className="burnout-hover-line"
-                                                            x1={burnoutHoverPoint.x}
-                                                            x2={burnoutHoverPoint.x}
-                                                            y1={burnoutChartModel.padding.top}
-                                                            y2={burnoutChartModel.height - burnoutChartModel.padding.bottom}
-                                                        />
-                                                    )}
-                                                    {burnoutChartModel.yTicks.map((tick) => (
-                                                        <text
-                                                            key={`label-${tick.value}`}
-                                                            className="burnout-y-axis-label"
-                                                            x={burnoutChartModel.padding.left - 8}
-                                                            y={tick.y + 3}
-                                                            textAnchor="end"
-                                                        >
-                                                            {formatBurndownValue(tick.value)}
-                                                        </text>
-                                                    ))}
-                                                </svg>
-                                            </div>
-                                            {burnoutHoverPoint && (
-                                                <div
-                                                    className="burnout-hover-bubble"
-                                                    style={{
-                                                        left: `${burnoutHoverPoint.bubbleX || 180}px`
-                                                    }}
-                                                >
-                                                    <div className="burnout-hover-title">{burnoutHoverPoint.date}</div>
-                                                    <div className="burnout-hover-row">Total: <strong>{formatBurndownValue(burnoutHoverPoint.row?.total || 0)}</strong></div>
-                                                    <div className="burnout-hover-row">
-                                                        Added: <strong>{formatBurndownValue(
-                                                            burndownMetricIsStoryPoints
-                                                                ? (burnoutHoverPoint.row?.details?.added || []).reduce((sum, event) => sum + Number(event?.metricValue || 0), 0)
-                                                                : (burnoutHoverPoint.row?.details?.added || []).length
-                                                        )}</strong> ·
-                                                        Closed: <strong>{formatBurndownValue(
-                                                            burndownMetricIsStoryPoints
-                                                                ? (burnoutHoverPoint.row?.details?.closed || []).reduce((sum, event) => sum + Number(event?.metricValue || 0), 0)
-                                                                : (burnoutHoverPoint.row?.details?.closed || []).length
-                                                        )}</strong>
-                                                    </div>
-                                                    {(burnoutHoverPoint.row?.details?.closed || []).slice(0, 5).map((event, index) => (
-                                                        <div
-                                                            key={`${event.issueKey}-${index}`}
-                                                            className="burnout-hover-row muted"
-                                                            style={{ color: burnoutChartModel.teamColors?.[event.teamName] || '#6b7280', opacity: 1 }}
-                                                        >
-                                                            <strong style={{ color: burnoutChartModel.teamColors?.[event.teamName] || '#374151' }}>
-                                                                {event.issueKey || 'Story'}
-                                                            </strong> · {String(event.status || 'closed').toUpperCase()} · {event.teamName} · {event.assigneeName}
-                                                        </div>
-                                                    ))}
-                                                    {(burnoutHoverPoint.row?.details?.closed || []).length > 5 && (
-                                                        <div className="burnout-hover-row muted">
-                                                            +{(burnoutHoverPoint.row?.details?.closed || []).length - 5} more closed stories
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                            </div>
-                                            <div className="burnout-axis">
-                                                {burnoutChartModel.rows.map((row, index) => {
-                                                    const date = new Date(`${row.date}T00:00:00`);
-                                                    if (Number.isNaN(date.getTime())) return null;
-                                                    const shouldShow = index === 0 || index === burnoutChartModel.rows.length - 1 || index % 7 === 0 || row.date === burnoutChartModel.todayDateKey;
-                                                    if (!shouldShow) return null;
-                                                    return (
-                                                        <span key={row.date} className={row.date === burnoutChartModel.todayDateKey ? 'today' : ''}>
-                                                            {date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
-                                                        </span>
-                                                    );
-                                                })}
-                                            </div>
-                                            <div className="burnout-legend">
-                                                {burnoutChartModel.teams.map((team) => (
-                                                    <span
-                                                        key={team.key}
-                                                        className={burnoutHoverTeamKey && burnoutHoverTeamKey !== team.key ? 'dimmed' : 'active'}
-                                                        onMouseEnter={() => setBurnoutHoverTeamKey(team.key)}
-                                                        onMouseLeave={() => setBurnoutHoverTeamKey(null)}
-                                                    >
-                                                        <i className="burnout-color" style={{ background: team.color }} />
-                                                        {team.name}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-
+                                <BurnoutChart
+                                    open={statsView === 'burnout'}
+                                    burnoutAssigneeFilter={burnoutAssigneeFilter}
+                                    setBurnoutAssigneeFilter={setBurnoutAssigneeFilter}
+                                    burnoutAssigneeOptions={burnoutAssigneeOptions}
+                                    burndownMetric={burndownMetric}
+                                    setBurndownMetric={setBurndownMetric}
+                                    burndownMetricIsStoryPoints={burndownMetricIsStoryPoints}
+                                    burnoutTotals={burnoutTotals}
+                                    burnoutLoading={burnoutLoading}
+                                    burnoutError={burnoutError}
+                                    burnoutChartModel={burnoutChartModel}
+                                    burnoutChartRef={burnoutChartRef}
+                                    burnoutHoverPoint={burnoutHoverPoint}
+                                    setBurnoutHoverPoint={setBurnoutHoverPoint}
+                                    burnoutHoverTeamKey={burnoutHoverTeamKey}
+                                    setBurnoutHoverTeamKey={setBurnoutHoverTeamKey}
+                                    burnoutTaskFilter={burnoutTaskFilter}
+                                    setBurnoutTaskFilter={setBurnoutTaskFilter}
+                                    formatBurndownValue={formatBurndownValue}
+                                    resolveBurnoutPointer={resolveBurnoutPointer}
+                                    buildBurnoutTaskFilter={buildBurnoutTaskFilter}
+                                />
                                 <div className={`stats-view ${statsView === 'excludedCapacity' ? 'open' : ''}`}>
                                     <div className="stats-controls excluded-capacity-controls excluded-capacity-filter-controls">
                                         <div className="stats-control-group excluded-capacity-epic-filter" ref={excludedCapacityEpicDropdownRef}>
@@ -13218,18 +13283,23 @@ import {
                                         </div>
                                         <div className="stats-card">
                                             <h4>Excluded SP</h4>
-                                            <div className="stat-value">{formatExcludedPoints(excludedCapacityTotals.excludedPoints)}</div>
-                                            <div className="stats-note">Out of {formatExcludedPoints(excludedCapacityTotals.totalPoints)} scoped SP</div>
+                                            <div className="stat-value">{formatExcludedPoints(effortSplitTotals.excludedCapacityPoints)}</div>
+                                            <div className="stats-note">Out of {formatExcludedPoints(effortSplitTotals.totalPoints)} scoped SP</div>
                                         </div>
                                         <div className="stats-card">
                                             <h4>Excluded Share</h4>
-                                            <div className="stat-value">{formatPercent(excludedCapacityTotals.percent)}</div>
+                                            <div className="stat-value">{formatPercent(effortSplitTotals.excludedCapacityPercent)}</div>
                                             <div className="stats-note">Approximate, story-point based</div>
                                         </div>
                                         <div className="stats-card">
-                                            <h4>Source</h4>
-                                            <div className="stat-value">Planning config</div>
-                                            <div className="stats-note">Excluded epic keys from team group settings</div>
+                                            <h4>Product Share</h4>
+                                            <div className="stat-value">{formatPercent(effortSplitTotals.productPercent)}</div>
+                                            <div className="stats-note">Approximate, story-point based</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Tech Share</h4>
+                                            <div className="stat-value">{formatPercent(effortSplitTotals.techPercent)}</div>
+                                            <div className="stats-note">Approximate, story-point based</div>
                                         </div>
                                     </div>
 
@@ -13253,6 +13323,23 @@ import {
                                     )}
                                     {!excludedCapacityError && excludedCapacityRows.length > 0 && (
                                         <div className="excluded-capacity-panel">
+                                            <div className="cohort-section cohort-section-fullbleed">
+                                                <div className="cohort-section-title">Effort Split</div>
+                                                <div className="cohort-section-subtitle">
+                                                    Selected sprint-range story points by Excluded Capacity, Tech, and Product.
+                                                </div>
+                                                <div className="cohort-section-subtitle">
+                                                    Sprint range: {effortSplitSprintLabel}
+                                                </div>
+                                                <EffortTypeSplitChart
+                                                    rows={effortSplitRows}
+                                                    metric={excludedCapacityMetric}
+                                                    visibleBuckets={effortSplitVisibleBuckets}
+                                                    onToggleBucket={toggleEffortSplitBucket}
+                                                    formatExcludedPoints={formatExcludedPoints}
+                                                    formatPercent={formatPercent}
+                                                />
+                                            </div>
                                             <div className="cohort-section cohort-section-fullbleed">
                                                 <div className="cohort-section-title">Excluded Capacity by Team and Sprint</div>
                                                 <ExcludedCapacityLineChart
@@ -13633,6 +13720,17 @@ import {
                                             >
                                                 {scenarioEditMode ? 'Exit Edit' : 'Edit'}
                                             </button>
+                                            {scenarioData && !scenarioEditMode && (
+                                                <button
+                                                    type="button"
+                                                    ref={scenarioHistoryButtonRef}
+                                                    className="scenario-toggle"
+                                                    onClick={openScenarioDraftHistory}
+                                                    disabled={scenarioDraftMeta.loadingHistory}
+                                                >
+                                                    History
+                                                </button>
+                                            )}
                                             <button
                                                 className={`scenario-toggle ${scenarioShowConflictsOnly ? 'active' : ''}`}
                                                 onClick={() => setScenarioShowConflictsOnly(prev => !prev)}
@@ -13667,15 +13765,24 @@ import {
                                                     <button
                                                         className="scenario-edit-toggle"
                                                         onClick={saveScenarioDraft}
-                                                        disabled={scenarioOverrideCount === 0 || !scenarioScopeKey}
+                                                        disabled={!scenarioCanSaveDraft}
                                                         title="Save draft overrides to server"
                                                     >
-                                                        Save Draft
+                                                        {scenarioDraftMeta.saving ? 'Saving...' : 'Save Draft'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        ref={scenarioHistoryButtonRef}
+                                                        className="scenario-edit-toggle"
+                                                        onClick={openScenarioDraftHistory}
+                                                        disabled={scenarioDraftMeta.loadingHistory}
+                                                    >
+                                                        History
                                                     </button>
                                                     <button
                                                         className="scenario-edit-toggle"
                                                         onClick={discardScenarioOverrides}
-                                                        disabled={scenarioOverrideCount === 0}
+                                                        disabled={!scenarioHasUnsavedChanges}
                                                         title="Discard all overrides"
                                                     >
                                                         Discard
@@ -13688,7 +13795,277 @@ import {
                                         </div>
                                     </div>
 
-                                    {scenarioError && <div className="scenario-error">{scenarioError}</div>}
+                                    {scenarioRemoteEditors.length > 0 && (
+                                        <div className="scenario-draft-history-note" role="status" aria-live="polite">
+                                            Editing now: {scenarioRemoteEditors.map(item => item.displayName).join(', ')}
+                                        </div>
+                                    )}
+                                    {scenarioDraftRealtimeStatus.paused && (
+                                        <div className="scenario-draft-history-note" role="status" aria-live="polite">
+                                            Realtime paused: {scenarioDraftRealtimeStatus.message || 'keep editing local-only'}
+                                        </div>
+                                    )}
+                                    {scenarioError && <div className="scenario-error" role="alert">{scenarioError}</div>}
+                                    {scenarioDraftMeta.error && (
+                                        <div className="scenario-error" role="alert">{scenarioDraftMeta.error}</div>
+                                    )}
+                                    {scenarioDraftMeta.message && (
+                                        <div className="scenario-draft-history-note" aria-live="polite">{scenarioDraftMeta.message}</div>
+                                    )}
+                                    {scenarioIssueLockWarnings.map(lock => (
+                                        <div key={`${lock.issueKey}-${lock.holderDisplayName}`} className="scenario-error" role="alert">
+                                            {lock.holderDisplayName} is editing {lock.issueKey}. Advisory lock only; local edits stay available.
+                                        </div>
+                                    ))}
+                                    {scenarioDraftMeta.staleDraft && (
+                                        <div className="scenario-error" role="alert">
+                                            <span>
+                                                Newer draft available at revision {scenarioDraftMeta.staleDraft.draftRevision || 'unknown'}
+                                                {scenarioDraftMeta.staleDraft.updatedBy ? ` by ${scenarioDraftMeta.staleDraft.updatedBy}` : ''}. Local edits were not changed.
+                                            </span>
+                                            <button
+                                                type="button"
+                                                className="scenario-link"
+                                                onClick={openScenarioDraftHistory}
+                                            >
+                                                Review history
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="scenario-link"
+                                                onClick={requestReloadActiveDraft}
+                                                disabled={scenarioDraftMeta.loadingActiveDraft}
+                                            >
+                                                {scenarioDraftMeta.loadingActiveDraft ? 'Reloading active draft...' : 'Reload active draft'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="scenario-link"
+                                                onClick={() => setScenarioDraftMeta(prev => ({
+                                                    ...prev,
+                                                    dirtyState: scenarioHasUnsavedChanges ? 'dirty' : 'clean',
+                                                    staleDraft: null,
+                                                    message: '',
+                                                    error: ''
+                                                }))}
+                                            >
+                                                Keep editing locally
+                                            </button>
+                                            {scenarioDraftMeta.pendingActiveDraftReload && (
+                                                <div className="scenario-draft-history-confirmation">
+                                                    Reload active draft and replace local edits?
+                                                    <button
+                                                        type="button"
+                                                        className="scenario-link"
+                                                        onClick={runReloadActiveDraft}
+                                                    >
+                                                        Confirm reload active draft
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="scenario-link"
+                                                        onClick={cancelReloadActiveDraft}
+                                                    >
+                                                        Cancel active draft reload
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {scenarioDraftMeta.conflict && (
+                                        <div className="scenario-error" role="alert">
+                                            <span>
+                                                Scenario draft conflict. Current draft revision {scenarioDraftMeta.conflict.currentDraftRevision || 'unknown'}, version {scenarioDraftMeta.conflict.currentVersionNumber || 'unknown'}
+                                                {scenarioDraftMeta.conflict.activeDraft?.updatedBy ? ` by ${scenarioDraftMeta.conflict.activeDraft.updatedBy}` : ''}
+                                                {scenarioDraftMeta.conflict.activeDraft?.updatedAt ? ` at ${scenarioDraftMeta.conflict.activeDraft.updatedAt}` : ''}.
+                                            </span>
+                                            <button
+                                                type="button"
+                                                className="scenario-link"
+                                                onClick={() => setScenarioDraftMeta(prev => ({
+                                                    ...prev,
+                                                    dirtyState: 'dirty_local',
+                                                    conflict: null,
+                                                    error: '',
+                                                    message: ''
+                                                }))}
+                                            >
+                                                Keep Editing
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="scenario-link"
+                                                onClick={openScenarioDraftHistory}
+                                            >
+                                                Review history
+                                            </button>
+                                        </div>
+                                    )}
+                                    {scenarioDraftMeta.historyOpen && (
+                                        <section
+                                            ref={scenarioHistoryPanelRef}
+                                            className="scenario-draft-history-panel"
+                                            role="dialog"
+                                            aria-modal="false"
+                                            aria-labelledby="scenario-draft-history-title"
+                                        >
+                                            <div
+                                                id="scenario-draft-history-title"
+                                                ref={scenarioHistoryTitleRef}
+                                                className="scenario-draft-history-title"
+                                                tabIndex={-1}
+                                            >
+                                                Scenario draft history
+                                            </div>
+                                            {scenarioDraftMeta.versions.length === 0 ? (
+                                                <div className="scenario-draft-history-note">No draft versions yet.</div>
+                                            ) : (
+                                                <div className="scenario-draft-history-list">
+                                                    {scenarioDraftMeta.versions.map(version => {
+                                                        const versionNumber = Number(version.versionNumber || 0);
+                                                        const overrideCount = Number.isFinite(Number(version.overrideCount))
+                                                            ? Number(version.overrideCount)
+                                                            : Object.keys(version.overrides || {}).length;
+                                                        const isCurrent = versionNumber === Number(scenarioDraftMeta.conflict?.currentVersionNumber || scenarioDraftMeta.activeDraft?.versionNumber || 0);
+                                                        const isLoaded = versionNumber === Number(scenarioDraftMeta.loadedVersionNumber || 0);
+                                                        const pendingAction = scenarioDraftMeta.pendingHistoryAction?.versionNumber === versionNumber
+                                                            ? scenarioDraftMeta.pendingHistoryAction
+                                                            : null;
+                                                        const actor = version.createdBy || version.updatedBy || 'Unknown actor';
+                                                        const timestamp = version.createdAt || version.updatedAt || 'Unknown time';
+                                                        return (
+                                                            <div key={version.versionId || versionNumber} className="scenario-draft-history-row">
+                                                                <div className="scenario-draft-history-main">
+                                                                    <strong>Version {versionNumber}</strong>
+                                                                    <span>{actor}</span>
+                                                                    <span>{timestamp}</span>
+                                                                    <span>{overrideCount} override{overrideCount === 1 ? '' : 's'}</span>
+                                                                    {isCurrent && <span>Current</span>}
+                                                                    {!isCurrent && isLoaded && <span>Loaded</span>}
+                                                                </div>
+                                                                <div className="scenario-draft-history-actions">
+                                                                    <button
+                                                                        type="button"
+                                                                        className="scenario-link"
+                                                                        onClick={() => requestScenarioHistoryAction('reload', versionNumber)}
+                                                                        disabled={scenarioDraftMeta.loadingVersionNumber === versionNumber || scenarioDraftMeta.rollingBackVersionNumber === versionNumber}
+                                                                        aria-label={`Reload version ${versionNumber}`}
+                                                                    >
+                                                                        Reload Version
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="scenario-link"
+                                                                        onClick={() => requestScenarioHistoryAction('rollback', versionNumber)}
+                                                                        disabled={scenarioDraftMeta.loadingVersionNumber === versionNumber || scenarioDraftMeta.rollingBackVersionNumber === versionNumber}
+                                                                        aria-label={`Rollback to version ${versionNumber}`}
+                                                                    >
+                                                                        Rollback to Version
+                                                                    </button>
+                                                                </div>
+                                                                {pendingAction && (
+                                                                    <div className="scenario-draft-history-confirmation">
+                                                                        {pendingAction.type === 'reload'
+                                                                            ? `Reload version ${versionNumber} and replace local edits?`
+                                                                            : `Rollback to version ${versionNumber} and replace local edits?`}
+                                                                        <button
+                                                                            type="button"
+                                                                            className="scenario-link"
+                                                                            onClick={() => runScenarioHistoryAction(pendingAction)}
+                                                                        >
+                                                                            {pendingAction.type === 'reload' ? 'Reload Version' : 'Rollback to Version'}
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            className="scenario-link"
+                                                                            onClick={cancelScenarioHistoryAction}
+                                                                        >
+                                                                            Cancel
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                            <div className="scenario-draft-history-actions">
+                                                <button
+                                                    type="button"
+                                                    className="scenario-link"
+                                                    onClick={requestScenarioReloadFromJira}
+                                                    disabled={!scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.reloadingFromJira}
+                                                >
+                                                    {scenarioDraftMeta.reloadingFromJira ? 'Reloading from Jira...' : 'Reload from Jira'}
+                                                </button>
+                                            </div>
+                                            {scenarioDraftMeta.pendingReloadFromJira && (
+                                                <div className="scenario-draft-history-confirmation">
+                                                    Reload from Jira and replace local edits?
+                                                    <button
+                                                        type="button"
+                                                        className="scenario-link"
+                                                        onClick={runScenarioReloadFromJira}
+                                                    >
+                                                        Confirm reload from Jira
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="scenario-link"
+                                                        onClick={cancelScenarioReloadFromJira}
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            )}
+                                            <div className="scenario-draft-history-note">
+                                                Jira write-back is gated. Preview is dry-run only; mutation remains disabled.
+                                            </div>
+                                            <div className="scenario-draft-history-actions">
+                                                <button
+                                                    type="button"
+                                                    className="scenario-link"
+                                                    onClick={previewScenarioDraftWriteback}
+                                                    disabled={!scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.writebackPreviewing}
+                                                >
+                                                    {scenarioDraftMeta.writebackPreviewing ? 'Previewing Jira write-back...' : 'Preview Jira write-back'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="scenario-link"
+                                                    onClick={checkScenarioDraftWritebackGate}
+                                                    disabled={!scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.writebackChecking}
+                                                >
+                                                    {scenarioDraftMeta.writebackChecking ? 'Checking write-back gate...' : 'Check write-back gate'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="scenario-link"
+                                                    disabled
+                                                    title="Real Jira write-back requires a separate future execution plan."
+                                                >
+                                                    Write Back to Jira
+                                                </button>
+                                            </div>
+                                            {scenarioDraftMeta.writebackPreview && (
+                                                <div className="scenario-draft-history-note" role="status" aria-live="polite">
+                                                    Jira write-back preview is dry-run only. {Array.isArray(scenarioDraftMeta.writebackPreview.changes) ? scenarioDraftMeta.writebackPreview.changes.length : 0} changes would be prepared.
+                                                </div>
+                                            )}
+                                            {scenarioDraftMeta.writebackBlocked && (
+                                                <div className="scenario-error" role="alert">
+                                                    {scenarioDraftMeta.writebackBlocked.message || 'Jira write-back is blocked by the migration gate.'}
+                                                </div>
+                                            )}
+                                            <button
+                                                type="button"
+                                                className="scenario-link"
+                                                onClick={closeScenarioDraftHistory}
+                                            >
+                                                Close
+                                            </button>
+                                        </section>
+                                    )}
                                     {scenarioLoading && <div className="scenario-loading">Computing scenario timeline...</div>}
 
                                     {scenarioData && (

@@ -15,6 +15,13 @@ class FakeJiraResponse:
 
 
 class ExcludedCapacityStatsApiTests(unittest.TestCase):
+    def setUp(self):
+        self._auth_mode_patcher = patch.object(jira_server, "JIRA_AUTH_MODE", "basic")
+        self._auth_mode_patcher.start()
+
+    def tearDown(self):
+        self._auth_mode_patcher.stop()
+
     def test_excluded_capacity_source_fetches_range_with_next_page_token_contract(self):
         sprint_field = "customfield_sprint"
         team_field = "customfield_team"
@@ -85,6 +92,7 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
         self.assertEqual(payload["issues"][0]["fields"]["epicKey"], "BAU-1")
         self.assertEqual(payload["issues"][0]["fields"]["epicSummary"], "BAU Workstream")
         self.assertEqual(payload["issues"][0]["fields"]["teamId"], "team-alpha")
+        self.assertEqual(payload["issues"][0]["fields"]["projectKey"], "SYN")
         self.assertNotIn("dependencies", payload)
         self.assertEqual(mock_search.call_count, 2)
 
@@ -254,6 +262,7 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
         self.assertEqual(fields, [
             story_points_field,
             "parent",
+            "project",
             sprint_field,
             epic_field,
             team_field,

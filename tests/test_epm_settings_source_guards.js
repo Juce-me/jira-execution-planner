@@ -215,6 +215,8 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const epmSubGoalsRequestIdRef = useRef(0);'), 'Expected stale-response guard ref for sub-goal fetches');
     assert.ok(epmViewDataSource.includes('if (epmProjectsRequestIdRef.current !== requestId) {'), 'Expected stale-response guard branch for EPM project refreshes');
     assert.ok(dashboardSource.includes('if (epmSubGoalsRequestIdRef.current !== requestId) {'), 'Expected stale-response guard branch for sub-goal fetches');
+    assert.ok(dashboardSource.includes('const { csrfToken } = await fetchCsrfToken(BACKEND_URL);'), 'Expected EPM config save to fetch a token-bound CSRF token');
+    assert.ok(dashboardSource.includes("'X-CSRF-Token': csrfToken || ''"), 'Expected EPM config save to send the CSRF header');
     assert.ok(dashboardSource.includes('const config = await loadEpmConfig();'), 'Expected config load to remain independent');
     assert.ok(dashboardSource.includes('const scopeMeta = await loadEpmScopeMeta();'), 'Expected scope metadata load to be handled separately');
     assert.ok(dashboardSource.includes('const rootGoalsPayload = await loadEpmGoals();'), 'Expected root-goal discovery load to be handled separately');

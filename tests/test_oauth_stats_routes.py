@@ -1,4 +1,5 @@
 import base64
+import os
 import unittest
 from unittest.mock import patch
 
@@ -21,6 +22,12 @@ class OAuthStatsRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
+        self._env_patcher = patch.dict(os.environ, {
+            "CONFIG_STORAGE_BACKEND": "",
+            "DATABASE_URL": "",
+            "TEST_DATABASE_URL": "",
+        }, clear=False)
+        self._env_patcher.start()
         self.client = jira_server.app.test_client()
         install_oauth_session(self.client)
 
@@ -29,6 +36,7 @@ class OAuthStatsRouteTests(unittest.TestCase):
         jira_server.OAUTH_REFRESH_LOCKS.clear()
         jira_server.SCENARIO_CACHE.clear()
         jira_server.EPIC_COHORT_CACHE.clear()
+        self._env_patcher.stop()
 
     def test_sprints_route_is_oauth_ready(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -143,7 +151,7 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["data"], {"quarters": []})
         mock_fetch.assert_called_once()
 
-    def test_scenario_overrides_routes_are_oauth_ready(self):
+    def test_scenario_overrides_get_is_oauth_ready_and_post_is_legacy_basic_local(self):
         overrides_payload = {"scenarios": {"2026Q2": {"overrides": {"PROD-1": {"start": "2026-04-01"}}}}}
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "load_scenario_overrides", return_value=overrides_payload), \
@@ -157,8 +165,19 @@ class OAuthStatsRouteTests(unittest.TestCase):
 
         self.assertEqual(get_response.status_code, 200, get_response.get_data(as_text=True))
         self.assertEqual(get_response.get_json()["overrides"], {"PROD-1": {"start": "2026-04-01"}})
-        self.assertEqual(post_response.status_code, 200, post_response.get_data(as_text=True))
-        mock_save.assert_called_once()
+        self.assertEqual(post_response.status_code, 501, post_response.get_data(as_text=True))
+        self.assertEqual(post_response.get_json()["error"], "route_not_oauth_ready")
+        mock_save.assert_not_called()
+
+    def test_scenario_draft_routes_are_oauth_ready_before_unsafe_header_guard(self):
+        self.assertTrue(jira_server.is_oauth_ready_api_path("/api/scenario/drafts"))
+        self.assertTrue(jira_server.is_oauth_ready_api_path("/api/scenario/drafts/draft-1/rollback"))
+        self.assertTrue(jira_server.is_oauth_ready_api_path("/api/scenario/drafts/draft-1/versions/1"))
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            response = self.client.post("/api/scenario/drafts/draft-1/rollback", json={})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["error"], "csrf_required")
 
     def test_epm_home_routes_are_oauth_ready_with_service_home_credentials(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -174,13 +193,14 @@ class OAuthStatsRouteTests(unittest.TestCase):
              patch.object(jira_server, "build_base_jql", return_value="project = ABC"), \
              patch.object(jira_server, "fetch_issues_by_jql", return_value=[]), \
              patch.object(jira_server, "build_per_project_rollup", return_value=({"project": {}}, 200, {})):
+            csrf = self.client.get("/api/auth/csrf").get_json()["csrfToken"]
             responses = [
                 self.client.get("/api/epm/scope"),
                 self.client.get("/api/epm/goals"),
                 self.client.get("/api/epm/projects"),
                 self.client.post(
                     "/api/epm/projects/configuration",
-                    headers={"X-Requested-With": "jira-execution-planner"},
+                    headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf},
                     json={},
                 ),
                 self.client.post(
@@ -225,7 +245,16 @@ class BasicStatsRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
+        self._env_patcher = patch.dict(os.environ, {
+            "CONFIG_STORAGE_BACKEND": "",
+            "DATABASE_URL": "",
+            "TEST_DATABASE_URL": "",
+        }, clear=False)
+        self._env_patcher.start()
         self.client = jira_server.app.test_client()
+
+    def tearDown(self):
+        self._env_patcher.stop()
 
     def test_sprints_basic_uses_jira_url_basic_auth_without_csrf_header(self):
         calls = []

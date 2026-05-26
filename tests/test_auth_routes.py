@@ -380,7 +380,8 @@ class TestAuthRoutes(unittest.TestCase):
              patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
              patch.object(jira_server, 'exchange_authorization_code', return_value=token_data) as exchange_code, \
              patch.object(jira_server, 'fetch_current_user', return_value=user_profile), \
-             patch.object(jira_server, 'fetch_accessible_resources', return_value=[resource]):
+             patch.object(jira_server, 'fetch_accessible_resources', return_value=[resource]), \
+             patch.object(jira_server, 'database_storage_enabled', return_value=False):
             response = self.client.get('/api/auth/atlassian/callback?state=state-123&code=abc')
 
         self.assertEqual(response.status_code, 302)

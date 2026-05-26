@@ -11,6 +11,7 @@ Postmortems serve to:
 - Build institutional knowledge
 - Improve development practices
 - Capture misses and near-misses while they are fresh
+- Guide agents to review relevant postmortems before touching related code
 
 ## Postmortem List
 
@@ -32,6 +33,7 @@ Postmortems serve to:
 | [MRT014](./MRT014-epm-cold-load-cache-race.md) | EPM Cold Load Cache Race | 2026-04-30 | Medium | Resolved | EPM cold load could race Home project discovery with all-project rollup and lacked timing visibility |
 | [MRT015](./MRT015-epm-first-load-home-fanout-overfetch.md) | EPM First Load Home Fan-Out and Overfetch | 2026-05-01 | High | Resolved | Slow first EPM load came from per-project Home enrichment fan-out and unscoped all-project metadata fetches |
 | [MRT016](./MRT016-exec-02-plan-file-map-drift.md) | EXEC-02 Plan File Map Drift | 2026-05-11 | Medium | Resolved | EXEC-02 frontend task referenced future files as existing files and crossed task boundaries |
+| [MRT017](./MRT017-chart-hover-readout-placement.md) | Chart Hover Readout Placement Regression | 2026-05-20 | Medium | Resolved | Chart hover readouts were offset by transformed containers and clipped by center-only edge clamping |
 
 ## Postmortem Template
 
@@ -85,8 +87,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 16
-- **Metadata complete (Date/Severity/Status)**: 16 (MRT001-MRT016)
+- **Total postmortems**: 17
+- **Metadata complete (Date/Severity/Status)**: 17 (MRT001-MRT017)
 
 ## Common Themes
 
@@ -122,12 +124,16 @@ Across all postmortems, key actions needed:
 
 When creating a new postmortem:
 
-1. **Name it sequentially**: `MRTXXX-short-title.md` (oldest first, then increment)
-2. **Use the template** above
-3. **Be blameless**: Focus on systems, not people
-4. **Be specific**: Include code snippets, data, screenshots
-5. **Be actionable**: List concrete action items
-6. **Update this README**: Add entry to the table
+1. **Review related postmortems first**: Apply relevant lessons before touching related code
+2. **Follow local instructions**: Use [postmortem/AGENTS.md](./AGENTS.md) for directory-specific agent guidance
+3. **Name it sequentially**: `MRTXXX-short-title.md` (oldest first, then increment)
+4. **Use the template** above
+5. **Be blameless**: Focus on systems, not people
+6. **Be specific**: Include code snippets, data, screenshots
+7. **Be verified**: Include how the fix or conclusion was validated
+8. **Be actionable**: List concrete action items
+9. **Update this README**: Add entry to the table whenever adding or renaming a postmortem
+10. **Keep docs aligned**: Update `README.md`, `AGENTS.md`, and `postmortem/README.md` together when workflow or structure changes
 
 ## Related Documentation
 
@@ -140,5 +146,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-05-11*
-*Total Postmortems: 16*
+*Last Updated: 2026-05-20*
+*Total Postmortems: 17*

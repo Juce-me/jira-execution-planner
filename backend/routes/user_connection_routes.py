@@ -25,6 +25,8 @@ def _require_token_bound_csrf():
         return None
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return None
+    if getattr(g, 'security_csrf_validated', False):
+        return None
     data = oauth_session_data()
     if validate_csrf_token(session, data, request.headers.get('X-CSRF-Token')):
         return None

@@ -1,5 +1,11 @@
 # docs/plans/AGENTS.md
 
+| Field | Value |
+| --- | --- |
+| Date | 2026-05-20 |
+| Version | 2026.05.20.1 |
+| Status | Active |
+
 Plan-specific instructions for this repository.
 
 ## Plan Naming
@@ -23,6 +29,38 @@ At the start of any session that touches auth, DB, Home/Townsquare, EPM, or plan
 5. Update the gate's `Checked on` and `Last result` fields.
 6. Keep `Status` as `Blocked` unless the required command prints the documented `PASS` result.
 7. Never paste token material, personal emails, Authorization headers, OAuth callback URLs, bearer tokens, refresh tokens, or raw sensitive probe payloads into the gate doc.
+
+## Plan Review Prompt
+
+Use this prompt when asked to review an `EXEC-*`, `FUTURE-*`, `SUPPORT-*`, or cross-slice plan. Treat the plan as an implementation contract, not prose.
+
+```text
+Review the plan for correctness, execution safety, and verification quality.
+
+Before findings:
+- Read the root AGENTS.md, docs/plans/AGENTS.md, docs/plans/README.md, every reviewed plan slice, referenced gate docs, and the existing files or functions the plan says it will touch.
+- Trace current implementation paths with rg before accepting a migration claim. Inventory old and new routes, storage, callers, source guards, and compatibility aliases.
+- Build an endpoint contract matrix for every planned route: method, auth mode, workspace/site boundary, CSRF and X-Requested-With requirements, request body, success body, error bodies, and required tests.
+- Build a state-machine checklist for user-visible flows: dirty state, save, stale save, conflict recovery, reload, rollback, scope switch, remote event, retry, and auth-expired recovery.
+- Check data ownership boundaries: workspace_id, user identity, shared group references, generated caches, service credentials, OAuth-only routes, and forbidden Home/Townsquare or Jira write paths.
+- Check runtime feasibility for polling, SSE, fan-out, heavy reloads, migrations, cache warming, and initial-load impact.
+- Check that verification proves the dangerous claims with concrete tests, source guards, UI assertions, screenshots for UI/sticky changes, and named symbols patched to fail on forbidden credential or mutation paths.
+
+Output:
+1. Findings first, ordered by severity: Blocker, P1, P2, Minor.
+2. For each finding, cite exact file paths and lines, explain the failure mode, and state the concrete plan change required.
+3. Do not say "No blockers" until source-of-truth migration, auth/workspace boundaries, dirty/concurrent edit behavior, and verification gates have all been checked.
+4. Call out cross-slice terminology drift, missing request/response JSON shapes, and tests that assert only happy paths.
+5. End with residual risks only after findings; do not bury blockers in residual risk.
+```
+
+Minimum review coverage:
+- Source-of-truth migrations: every old caller is removed, delegated, or intentionally preserved with concurrency semantics.
+- Auth and CSRF: unsafe routes name both token-bound CSRF and `X-Requested-With` behavior where OAuth mode requires them.
+- Workspace and ownership: every id-based route proves the object belongs to the current workspace/site boundary.
+- Credential policy: Jira/Home/Townsquare/API-token/service-credential guardrails are enforced by negative tests against concrete symbols, not prose.
+- Concurrency: base revision, conflict response shapes, dirty local edits, rollback/reload behavior, and multi-user events are all specified.
+- Verification: tests cover no-request-context paths, multi-workspace isolation, source guards, UI behavior, visual proof for layout changes, and gate-doc checks when relevant.
 
 ## Home/Townsquare 3LO Gate
 

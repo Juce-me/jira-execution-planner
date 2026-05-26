@@ -40,6 +40,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 
 - Scenario Planner technical rules are included in [Scenario Planner](docs/features/scenario-planner.md)
 - Local install, DB mode, migrations, and Home token setup are covered in [INSTALL.md](INSTALL.md)
+- Agent work artifact rules are defined in [docs/agents.md](docs/agents.md)
 
 ## 📋 Files
 
@@ -47,6 +48,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - `jira-dashboard.html` - Frontend dashboard page
 - `frontend/` - Frontend source (`src/`) and compiled bundle (`dist/`)
 - `docs/features/` - User-facing feature guides for alerts, statistics, and scenario planning
+- `docs/agents.md` - Rules for agent-created work artifacts
 - `.env.example` - Template for environment variables
 - `INSTALL.md` - Local install, PostgreSQL, DB migration, and Home token setup flow
 - `.gitignore` - Git ignore file (keeps secrets safe)
@@ -75,9 +77,13 @@ If you want the fastest setup with no frontend build step:
 1. Download the latest release asset (e.g. `jira-execution-planner-latest.zip`) from GitHub Releases.
 2. Unzip it anywhere.
 3. Configure `.env` from `.env.example`.
-4. Install backend deps: `python3 -m pip install --user -r requirements.txt`
-5. Start the backend: `python3 jira_server.py`
+4. Install backend deps: `chmod +x install.sh && ./install.sh`
+5. Start the backend: `.venv/bin/python jira_server.py`
 6. Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`).
+
+The server binds to `127.0.0.1` by default. Use `APP_BIND_HOST=0.0.0.0` only for intentional network exposure, with `ALLOW_NETWORK_BIND=true`; Basic auth network exposure also requires `ALLOW_BASIC_AUTH_ON_NETWORK=true` and `APP_ENVIRONMENT_KEY=local`. Dev diagnostics require `ALLOW_DEV_DIAGNOSTIC_ENDPOINTS=true` and loopback access.
+
+Prebuilt release zips omit source tests and development plans. Use a source checkout when you need to run the unit test suite.
 
 The UI shows a “New Version Available” badge when a newer release is detected. Release zips include `release-info.json` so update checks work without git. Download the latest zip and replace your folder to update.
 
@@ -105,11 +111,14 @@ chmod +x install.sh
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
+python -m pip install -e .
 ```
 
-**Option C - Using python3 directly (if pip3 not available):**
+**Option C - Standard local targets:**
 ```bash
-python3 -m pip install --user -r requirements.txt
+make install
+make test
+make run
 ```
 
 ### Step 3: Configure credentials (and optional server settings)
@@ -362,7 +371,9 @@ jira-dashboard/
 ├── frontend/               # Frontend source + compiled bundle
 │   ├── src/                # JSX source (dashboard.jsx + scenario/)
 │   └── dist/               # Compiled JS + CSS output (committed)
-├── docs/features/          # User-facing feature guides
+├── docs/                   # Documentation
+│   ├── agents.md           # Agent work artifact rules
+│   └── features/           # User-facing feature guides
 ├── planning/               # Scenario planner core logic
 ├── tests/                  # Unit tests
 ├── postmortem/             # Postmortems and incident learnings
@@ -397,7 +408,9 @@ The dashboard uses a few different cache layers to keep Jira traffic reasonable:
 ## 📚 Documentation & Postmortems
 
 - Keep `README.md`, `AGENTS.md`, and `postmortem/README.md` aligned with structural or workflow changes.
+- Agent-created work artifacts live under `docs/agents/` and follow [docs/agents.md](docs/agents.md).
 - Postmortems live in `postmortem/` and follow `MRTXXX-short-title.md` naming in creation order (oldest first).
+- Postmortem-specific agent instructions live in [postmortem/AGENTS.md](postmortem/AGENTS.md).
 - Capture misses and fixes in postmortems and update the index when adding one.
 
 ## 🤝 Contributing

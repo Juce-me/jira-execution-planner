@@ -15,6 +15,14 @@ class PreDbToolAdminGateTests(unittest.TestCase):
         jira_server.OAUTH_TOKEN_STORE.clear()
         jira_server.OAUTH_REFRESH_LOCKS.clear()
 
+    def csrf_headers(self):
+        response = self.client.get("/api/auth/csrf")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return {
+            "X-Requested-With": "jira-execution-planner",
+            "X-CSRF-Token": response.get_json()["csrfToken"],
+        }
+
     def test_authenticated_oauth_account_can_save_shared_config_before_db_roles(self):
         install_oauth_session(self.client, account_id="regular-user-account")
         routes = [
@@ -39,7 +47,7 @@ class PreDbToolAdminGateTests(unittest.TestCase):
                     response = self.client.post(
                         route,
                         json=payload,
-                        headers={"X-Requested-With": "jira-execution-planner"},
+                        headers=self.csrf_headers(),
                     )
 
                     self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
@@ -67,7 +75,7 @@ class PreDbToolAdminGateTests(unittest.TestCase):
             response = self.client.post(
                 "/api/board-config",
                 json={"boardId": "7", "boardName": "Product"},
-                headers={"X-Requested-With": "jira-execution-planner"},
+                headers=self.csrf_headers(),
             )
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
@@ -88,7 +96,7 @@ class PreDbToolAdminGateTests(unittest.TestCase):
             response = self.client.post(
                 "/api/groups-config",
                 json=payload,
-                headers={"X-Requested-With": "jira-execution-planner"},
+                headers=self.csrf_headers(),
             )
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
@@ -113,7 +121,7 @@ class PreDbToolAdminGateTests(unittest.TestCase):
             response = self.client.post(
                 "/api/groups-config",
                 json=payload,
-                headers={"X-Requested-With": "jira-execution-planner"},
+                headers=self.csrf_headers(),
             )
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
@@ -133,7 +141,7 @@ class PreDbToolAdminGateTests(unittest.TestCase):
             response = self.client.post(
                 "/api/projects/selected",
                 json={"selected": []},
-                headers={"X-Requested-With": "jira-execution-planner"},
+                headers=self.csrf_headers(),
             )
 
         self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
@@ -157,7 +165,7 @@ class PreDbToolAdminGateTests(unittest.TestCase):
             response = self.client.post(
                 "/api/groups-config",
                 json={"version": 1, "groups": [], "defaultGroupId": ""},
-                headers={"X-Requested-With": "jira-execution-planner"},
+                headers=self.csrf_headers(),
             )
 
         self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
@@ -175,7 +183,7 @@ class PreDbToolAdminGateTests(unittest.TestCase):
             response = self.client.post(
                 "/api/team-catalog",
                 json={"catalog": {"team-1": {"id": "team-1", "name": "Team 1"}}, "meta": {}},
-                headers={"X-Requested-With": "jira-execution-planner"},
+                headers=self.csrf_headers(),
             )
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))

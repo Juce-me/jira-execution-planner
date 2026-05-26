@@ -53,7 +53,7 @@ from backend.config.repository import (
     json_repository as build_json_config_repository,
     validate_config_storage_startup,
 )
-from backend.db.engine import database_storage_enabled, session_scope, validate_startup_database_config
+from backend.db.engine import DatabaseConfigurationError, database_storage_enabled, session_scope, validate_startup_database_config
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
     AUTH_MODE_BASIC,
@@ -81,6 +81,11 @@ from backend.app import app
 from backend import config_store as _config_store
 from backend import jira_client as _jira_client
 from backend.epm import projects as epm_projects
+from backend.security.policy import (
+    is_oauth_ready_api_path as policy_is_oauth_ready_api_path,
+    oauth_ready_api_paths,
+    shared_config_write_paths,
+)
 
 # Reuse a single HTTP session to avoid reconnect overhead on repeated calls
 HTTP_SESSION = Session()
@@ -310,80 +315,12 @@ configure_logging()
 
 UNSAFE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
 OAUTH_DASHBOARD_ENTRY_PATHS = {'/', '/jira-dashboard.html'}
-OAUTH_READY_API_PATHS = {
-    '/api/test',
-    '/api/tasks',
-    '/api/tasks-with-team-name',
-    '/api/missing-info',
-    '/api/dependencies',
-    '/api/issues/lookup',
-    '/api/teams',
-    '/api/teams/resolve',
-    '/api/teams/all',
-    '/api/backlog-epics',
-    '/api/config',
-    '/api/version',
-    '/api/groups-config',
-    '/api/team-catalog',
-    '/api/projects',
-    '/api/components',
-    '/api/epics/search',
-    '/api/jira/labels',
-    '/api/projects/selected',
-    '/api/capacity/config',
-    '/api/board-config',
-    '/api/sprint-field/config',
-    '/api/story-points-field/config',
-    '/api/parent-name-field/config',
-    '/api/team-field/config',
-    '/api/stats/priority-weights-config',
-    '/api/issue-types',
-    '/api/issue-types/config',
-    '/api/fields',
-    '/api/boards',
-    '/api/epm/config',
-    '/api/epm/scope',
-    '/api/epm/goals',
-    '/api/epm/projects',
-    '/api/epm/projects/configuration',
-    '/api/epm/projects/preview',
-    '/api/epm/projects/rollup/all',
-    '/api/sprints',
-    '/api/capacity',
-    '/api/planned-capacity',
-    '/api/scenario',
-    '/api/scenario/overrides',
-    '/api/stats',
-    '/api/stats/burnout',
-    '/api/stats/epic-cohort',
-    '/api/stats/excluded-capacity-source',
-}
-
-OAUTH_SHARED_CONFIG_WRITE_PATHS = {
-    '/api/projects/selected',
-    '/api/board-config',
-    '/api/capacity/config',
-    '/api/sprint-field/config',
-    '/api/story-points-field/config',
-    '/api/parent-name-field/config',
-    '/api/team-field/config',
-    '/api/stats/priority-weights-config',
-    '/api/issue-types/config',
-}
+OAUTH_READY_API_PATHS = oauth_ready_api_paths()
+OAUTH_SHARED_CONFIG_WRITE_PATHS = shared_config_write_paths()
 
 
 def is_oauth_ready_api_path(path):
-    if path.startswith('/api/auth/') or path in OAUTH_READY_API_PATHS:
-        return True
-    if path.startswith('/api/admin/'):
-        return True
-    if path == '/api/me/views' or path.startswith('/api/me/views/'):
-        return True
-    if path.startswith('/api/me/connections/'):
-        return True
-    if path.startswith('/api/epm/projects/') and (path.endswith('/issues') or path.endswith('/rollup')):
-        return True
-    return False
+    return policy_is_oauth_ready_api_path(path)
 
 
 def bootstrap_tool_admin_account_ids():
@@ -546,6 +483,15 @@ def db_oauth_browser_session_data():
     if payload:
         session['db_oauth_session'] = payload
     return payload
+
+
+def strict_db_oauth_browser_session_data():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH or not database_storage_enabled():
+        return {}
+    stored = session.get('db_oauth_session')
+    if isinstance(stored, dict):
+        return _db_oauth_browser_session_payload(stored)
+    return {}
 
 
 def _cleanup_expired_oauth_sessions(now=None):
@@ -746,6 +692,29 @@ def oauth_auth_required_payload():
     }, 401
 
 
+def csrf_session_data_for_request():
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
+        context = scenario_draft_request_auth_context()
+        return {
+            'db_auth_connection_id': context.auth_connection_id,
+            'db_token_version': context.token_version,
+            'account_id': context.atlassian_account_id,
+        }
+    return oauth_session_data()
+
+
+def scenario_draft_request_auth_context():
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
+        db_session_data = strict_db_oauth_browser_session_data()
+        if not db_session_data:
+            raise AuthError('auth_required', 'Atlassian authentication is required.')
+        return resolve_db_request_auth_context(
+            db_session_data,
+            required_scopes=ATLASSIAN_SCOPES,
+        )
+    return current_request_auth_context()
+
+
 def current_jira_auth_context(context=None):
     if context is not None:
         return context
@@ -902,39 +871,66 @@ def validate_startup_auth_config():
         raise AuthError('config_storage_invalid', str(error))
 
 
-@app.before_request
-def require_oauth_unsafe_method_header():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return None
-    if request.method not in UNSAFE_METHODS:
-        return None
-    if request.path.startswith('/api/') and not is_oauth_ready_api_path(request.path):
-        return None
-    if request.headers.get('X-Requested-With') == 'jira-execution-planner':
-        return None
-    return jsonify({
-        'error': 'csrf_required',
-        'message': 'Unsafe OAuth requests require X-Requested-With: jira-execution-planner',
-    }), 403
+def _env_flag(name):
+    return os.getenv(name, '').strip().lower() in {'1', 'true', 'yes'}
 
 
-@app.before_request
-def require_db_admin_csrf_token():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return None
-    if not database_storage_enabled():
-        return None
-    if request.method not in UNSAFE_METHODS:
-        return None
-    if not request.path.startswith('/api/admin/'):
-        return None
-    data = oauth_session_data()
-    if validate_csrf_token(session, data, request.headers.get('X-CSRF-Token')):
-        return None
-    return jsonify({
-        'error': 'csrf_required',
-        'message': 'A valid CSRF token is required for this request.',
-    }), 403
+def default_bind_host():
+    """Return the default Flask bind host for local execution."""
+    return os.getenv('APP_BIND_HOST', '127.0.0.1').strip() or '127.0.0.1'
+
+
+def validate_network_bind(host):
+    """Validate and return the requested bind host, or raise AuthError with a stable code."""
+    bind_host = (host or '').strip() or '127.0.0.1'
+    if bind_host in {'127.0.0.1', 'localhost', '::1'}:
+        return bind_host
+
+    if not _env_flag('ALLOW_NETWORK_BIND'):
+        raise AuthError(
+            'network_bind_not_allowed',
+            'Network bind requires ALLOW_NETWORK_BIND=true.',
+        )
+
+    if JIRA_AUTH_MODE == AUTH_MODE_BASIC:
+        if not _env_flag('ALLOW_BASIC_AUTH_ON_NETWORK') or (os.getenv('APP_ENVIRONMENT_KEY', APP_ENVIRONMENT_KEY).strip().lower() != 'local'):
+            raise AuthError(
+                'basic_network_bind_not_allowed',
+                'Basic auth network bind requires ALLOW_BASIC_AUTH_ON_NETWORK=true and APP_ENVIRONMENT_KEY=local.',
+            )
+        return bind_host
+
+    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+        if not _env_flag('SESSION_COOKIE_SECURE'):
+            raise AuthError(
+                'secure_cookie_required',
+                'OAuth network bind requires SESSION_COOKIE_SECURE=true.',
+            )
+        allowed_origins = [origin.strip() for origin in os.getenv('APP_ALLOWED_ORIGINS', '').split(',') if origin.strip()]
+        if not allowed_origins or '*' in allowed_origins:
+            raise AuthError(
+                'allowed_origins_required',
+                'OAuth network bind requires explicit APP_ALLOWED_ORIGINS without *.',
+            )
+        if not os.getenv('FLASK_SECRET_KEY', '').strip():
+            raise AuthError(
+                'flask_secret_required',
+                'OAuth network bind requires FLASK_SECRET_KEY.',
+            )
+        if _env_flag('OAUTH_LOCAL_TOKEN_STORE_ALLOWED'):
+            raise AuthError(
+                'local_token_store_network_bind_not_allowed',
+                'Local OAuth token storage cannot be used with network bind.',
+            )
+    return bind_host
+
+
+def dev_diagnostics_allowed():
+    return (
+        os.getenv('APP_ENVIRONMENT_KEY', APP_ENVIRONMENT_KEY).strip().lower() in {'local', 'dev'}
+        and _env_flag('ALLOW_DEV_DIAGNOSTIC_ENDPOINTS')
+        and (request.remote_addr or '').strip().lower() in {'127.0.0.1', '::1', 'localhost'}
+    )
 
 
 @app.before_request
@@ -953,53 +949,6 @@ def redirect_unauthenticated_oauth_dashboard_entry():
     if data.get('access_token') and data.get('cloudid'):
         return None
     return redirect('/login?reason=session_expired' if session.get('atlassian_oauth_session_id') else '/login')
-
-
-@app.before_request
-def reject_unmigrated_oauth_routes():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return None
-    if request.path.startswith('/api/') and not is_oauth_ready_api_path(request.path):
-        return jsonify({
-            'error': 'route_not_oauth_ready',
-            'message': 'This API route has not been migrated to Atlassian OAuth yet',
-        }), 501
-    return None
-
-
-@app.before_request
-def reject_stale_oauth_scope_api_sessions():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return None
-    if not request.path.startswith('/api/') or request.path.startswith('/api/auth/'):
-        return None
-    if not is_oauth_ready_api_path(request.path):
-        return None
-    data = oauth_session_data()
-    if data.get('access_token') and data.get('cloudid') and missing_oauth_scopes(data, ATLASSIAN_SCOPES):
-        return jsonify({
-            'error': 'auth_required',
-            'loginUrl': '/login?reason=missing_scope',
-        }), 401
-    return None
-
-
-@app.before_request
-def require_oauth_shared_config_admin():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return None
-    if request.method not in UNSAFE_METHODS:
-        return None
-    if request.path not in OAUTH_SHARED_CONFIG_WRITE_PATHS:
-        return None
-    data = oauth_session_data()
-    if not data.get('access_token') or not data.get('cloudid'):
-        payload, status = oauth_auth_required_payload()
-        return jsonify(payload), status
-    if current_request_auth_context().is_admin:
-        return None
-    payload, status = admin_required_payload()
-    return jsonify(payload), status
 
 
 def utc_now_iso(timespec=None):
@@ -4518,7 +4467,6 @@ def collect_dependencies(keys, context=None):
     return dependencies
 
 
-@app.route('/api/scenario', methods=['GET', 'POST'])
 def scenario_planner():
     """Scenario planner endpoint."""
     auth_context = current_request_auth_context()
@@ -4979,22 +4927,88 @@ def scenario_planner():
         return jsonify({'error': 'Failed to compute scenario', 'message': str(e)}), 500
 
 
-@app.route('/api/scenario/overrides', methods=['GET'])
 def get_scenario_overrides():
     """Return overrides for a given scope_key, or empty overrides."""
     scope_key = request.args.get('scope_key', '').strip()
     if not scope_key:
         return jsonify({'overrides': {}})
+    if database_storage_enabled():
+        try:
+            from backend.scenario_drafts import get_active_draft
+
+            response = get_active_draft(
+                scenario_draft_request_auth_context(),
+                scope_key,
+                legacy_loader=load_scenario_overrides,
+            )
+            active = response.get('activeDraft') or {}
+            return jsonify({
+                'overrides': active.get('overrides', {}),
+                'activeDraft': response.get('activeDraft'),
+                'versions': response.get('versions', []),
+                'storage': 'db',
+            })
+        except AuthError as error:
+            return auth_error_response(error, 401)
+        except DatabaseConfigurationError:
+            return jsonify({
+                'error': 'config_storage_unavailable',
+                'message': 'Scenario drafts require database-backed configuration storage.',
+            }), 503
     data = load_scenario_overrides()
     entry = data.get('scenarios', {}).get(scope_key, {})
     return jsonify({'overrides': entry.get('overrides', {})})
 
 
-@app.route('/api/scenario/overrides', methods=['POST'])
 def post_scenario_overrides():
     """Upsert overrides for a scope_key."""
     body = request.get_json(force=True, silent=True) or {}
     scope_key = (body.get('scope_key') or '').strip()
+    if database_storage_enabled():
+        if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+            try:
+                data = csrf_session_data_for_request()
+            except AuthError as error:
+                return auth_error_response(error, 401)
+            except DatabaseConfigurationError:
+                return jsonify({
+                    'error': 'config_storage_unavailable',
+                    'message': 'Scenario drafts require database-backed configuration storage.',
+                }), 503
+            if not validate_csrf_token(session, data, request.headers.get('X-CSRF-Token')):
+                return jsonify({
+                    'error': 'csrf_required',
+                    'message': 'A valid CSRF token is required for this request.',
+                }), 403
+        if not scope_key:
+            return jsonify({'error': 'scope_key is required'}), 400
+        try:
+            from backend.scenario_drafts import get_active_draft
+
+            response = get_active_draft(
+                scenario_draft_request_auth_context(),
+                scope_key,
+            )
+        except AuthError as error:
+            return auth_error_response(error, 401)
+        except DatabaseConfigurationError:
+            return jsonify({
+                'error': 'config_storage_unavailable',
+                'message': 'Scenario drafts require database-backed configuration storage.',
+            }), 503
+        if body.get('baseDraftRevision') is None:
+            return jsonify({
+                'error': 'scenario_draft_revision_required',
+                'message': 'Scenario draft writes require baseDraftRevision. Use POST /api/scenario/drafts.',
+                'activeDraft': response.get('activeDraft'),
+                'versions': response.get('versions', []),
+                'storage': 'db',
+            }), 409
+        return jsonify({
+            'error': 'scenario_draft_api_required',
+            'message': 'Use POST /api/scenario/drafts to save database-backed scenario drafts.',
+            'storage': 'db',
+        }), 409
     if not scope_key:
         return jsonify({'error': 'scope_key is required'}), 400
     overrides = body.get('overrides', {})
@@ -6079,7 +6093,7 @@ def _excluded_capacity_server_timing_header(timings_ms):
 
 def _build_excluded_capacity_stats_source_fields(story_points_field, sprint_field_id, epic_link_field_id, team_field_id):
     fields = []
-    for field_id in (story_points_field, 'parent', sprint_field_id, epic_link_field_id, team_field_id):
+    for field_id in (story_points_field, 'parent', 'project', sprint_field_id, epic_link_field_id, team_field_id):
         if field_id and field_id not in fields:
             fields.append(field_id)
     return fields
@@ -6225,7 +6239,6 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
     return result, None
 
 
-@app.route('/api/stats/excluded-capacity-source', methods=['POST'])
 def get_excluded_capacity_stats_source():
     payload = request.get_json(silent=True) or {}
     raw_sprint_ids = payload.get('sprintIds') if isinstance(payload, dict) else []
@@ -6277,7 +6290,6 @@ def get_excluded_capacity_stats_source():
         }), 500
 
 
-@app.route('/api/stats', methods=['GET'])
 def get_completed_sprint_stats():
     """Fetch cached delivery stats for a completed sprint."""
     sprint_name = request.args.get('sprint', '').strip()
@@ -6339,7 +6351,6 @@ def get_completed_sprint_stats():
         return jsonify(payload), status
 
 
-@app.route('/api/stats/burnout', methods=['GET', 'POST'])
 def get_burnout_stats():
     """Fetch sprint burnout events from Jira changelog on demand."""
     payload = request.get_json(silent=True) if request.method == 'POST' else None
@@ -6401,7 +6412,6 @@ def get_burnout_stats():
         return jsonify(payload), status
 
 
-@app.route('/api/stats/epic-cohort', methods=['POST'])
 def get_epic_cohort_stats():
     payload = request.get_json(silent=True) or {}
     start_quarter = str(payload.get('startQuarter') or '').strip()
@@ -6546,7 +6556,6 @@ ISSUE_TYPES_CACHE = {'data': None, 'timestamp': 0}
 ISSUE_TYPES_CACHE_TTL = 60 * 60  # 1 hour
 
 
-@app.route('/api/capacity', methods=['GET'])
 def get_capacity():
     """Get estimated team capacity for a sprint."""
     sprint_name = request.args.get('sprint', '').strip()
@@ -6574,7 +6583,6 @@ def get_capacity():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/planned-capacity', methods=['GET'])
 def get_planned_capacity():
     """Alias endpoint for planned capacity."""
     return get_capacity()
@@ -6589,7 +6597,6 @@ def health_check():
     })
 
 
-@app.route('/api/test', methods=['GET'])
 def test_connection():
     """Test Jira connection with simple query"""
     try:
@@ -6632,20 +6639,11 @@ def test_connection():
         }), 500
 
 
-@app.route('/api/debug-fields', methods=['GET'])
 def debug_fields():
     """Debug endpoint to see all fields of a single task"""
+    if not dev_diagnostics_allowed():
+        return jsonify({'error': 'not_found'}), 404
     try:
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
         # Get one issue with ALL fields
         payload = {
             'jql': build_base_jql() or 'ORDER BY created DESC',
@@ -6692,20 +6690,11 @@ def debug_fields():
         }), 500
 
 
-@app.route('/api/tasks-fields', methods=['GET'])
 def get_tasks_fields():
     """Return all available fields and values for issues matching JQL_QUERY."""
+    if not dev_diagnostics_allowed():
+        return jsonify({'error': 'not_found'}), 404
     try:
-        auth_string = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
-        auth_bytes = auth_string.encode('ascii')
-        auth_base64 = base64.b64encode(auth_bytes).decode('ascii')
-
-        headers = {
-            'Authorization': f'Basic {auth_base64}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-
         limit = request.args.get('limit', '5')
         try:
             limit_value = max(1, min(int(limit), 50))
@@ -6743,7 +6732,6 @@ def get_tasks_fields():
         }), 500
 
 
-@app.route('/api/export-excel', methods=['POST'])
 def export_excel():
     """Export selected tasks to Excel file"""
     try:
@@ -6811,13 +6799,9 @@ def export_excel():
         }), 500
 
 
-@app.route('/')
-def index():
-    """Serve the dashboard HTML."""
-    return send_file('jira-dashboard.html')
+def main():
+    global JIRA_URL, JIRA_EMAIL, JIRA_TOKEN, JQL_QUERY, SERVER_PORT
 
-
-if __name__ == '__main__':
     args = parse_args()
 
     # Apply CLI overrides while keeping env defaults as fallbacks
@@ -6839,7 +6823,13 @@ if __name__ == '__main__':
     except AuthError as error:
         log_error(str(error))
         log_info('Please copy .env.example to .env and configure either basic auth or Atlassian OAuth')
-        exit(1)
+        return 1
+
+    try:
+        bind_host = validate_network_bind(default_bind_host())
+    except AuthError as error:
+        log_error(str(error))
+        return 1
 
     # Only print on first startup, not on reload
     if not DEBUG_MODE or os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
@@ -6847,7 +6837,8 @@ if __name__ == '__main__':
         today = date.today()
         current_quarter = f"{today.year}Q{(today.month - 1) // 3 + 1}"
 
-        log_info(f'Jira Proxy Server starting on http://localhost:{SERVER_PORT}')
+        display_host = 'localhost' if bind_host in {'127.0.0.1', '::1'} else bind_host
+        log_info(f'Jira Proxy Server starting on http://{display_host}:{SERVER_PORT}')
         log_info(f'   Jira: {JIRA_URL}')
         log_info(f'   Auth mode: {JIRA_AUTH_MODE}')
         if JIRA_AUTH_MODE == AUTH_MODE_BASIC:
@@ -6865,4 +6856,9 @@ if __name__ == '__main__':
         log_info(f'   • http://localhost:{SERVER_PORT}/api/groups-config')
         log_info()
 
-    app.run(host='0.0.0.0', port=SERVER_PORT, debug=DEBUG_MODE)
+    app.run(host=bind_host, port=SERVER_PORT, debug=DEBUG_MODE)
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

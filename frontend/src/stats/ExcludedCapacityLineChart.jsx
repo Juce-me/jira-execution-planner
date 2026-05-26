@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { createPortal } from 'react-dom';
+import { resolveFloatingHoverPosition } from '../ui/hoverBubblePosition.js';
 
 const CHART_WIDTH = 760;
 const CHART_HEIGHT = 240;
@@ -8,6 +10,10 @@ const PADDING_TOP = 16;
 const PADDING_BOTTOM = 40;
 const PLOT_WIDTH = CHART_WIDTH - PADDING_LEFT - PADDING_RIGHT;
 const PLOT_HEIGHT = CHART_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
+const HOVER_EDGE_GUTTER = 12;
+const HOVER_POINTER_GAP = 12;
+const HOVER_BUBBLE_WIDTH = 260;
+const HOVER_BUBBLE_HEIGHT = 88;
 
 const GROUP_LINE_COLOR = '#1f6feb';
 
@@ -23,6 +29,18 @@ function formatTick(value, metric, formatPercent, formatExcludedPoints) {
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
+}
+
+function clampHoverBubblePoint(x, y, boundaryRect = null) {
+    return resolveFloatingHoverPosition({
+        x,
+        y,
+        boundaryRect,
+        bubbleWidth: HOVER_BUBBLE_WIDTH,
+        bubbleHeight: HOVER_BUBBLE_HEIGHT,
+        edgeGutter: HOVER_EDGE_GUTTER,
+        pointerGap: HOVER_POINTER_GAP
+    });
 }
 
 function ExcludedCapacityLineChart({
@@ -106,6 +124,8 @@ function ExcludedCapacityLineChart({
         if (!rect || rect.width <= 0 || rect.height <= 0) return null;
         const localX = ((event.clientX - rect.left) / rect.width) * CHART_WIDTH;
         const localY = ((event.clientY - rect.top) / rect.height) * CHART_HEIGHT;
+        const boundaryRect = svg?.closest?.('.excluded-capacity-line-chart')?.getBoundingClientRect?.();
+        const bubblePoint = clampHoverBubblePoint(event.clientX, event.clientY, boundaryRect);
         if (
             localX < PADDING_LEFT ||
             localX > CHART_WIDTH - PADDING_RIGHT ||
@@ -137,8 +157,9 @@ function ExcludedCapacityLineChart({
                     sprintName: point.sprintName || point.sprintId || '',
                     x,
                     y,
-                    leftPercent: clamp((x / CHART_WIDTH) * 100, 10, 90),
-                    topPercent: clamp((y / CHART_HEIGHT) * 100, 12, 78),
+                    readoutX: bubblePoint.x,
+                    readoutY: bubblePoint.y,
+                    side: bubblePoint.side,
                     valueText: valueTextFor(point),
                     detailText: detailTextFor(point)
                 };
@@ -149,6 +170,22 @@ function ExcludedCapacityLineChart({
 
     const tickLabelEvery = sprintCount <= 8 ? 1 : Math.ceil(sprintCount / 6);
     const chartAriaLabel = ariaLabel || (mode === 'group' ? 'Group excluded capacity over sprints' : 'Excluded capacity per team over sprints');
+    const hoverBubble = hoverPoint ? (
+        <div
+            className={`burnout-hover-bubble excluded-capacity-line-hover-bubble is-${hoverPoint.side || 'right'}`}
+            style={{
+                left: `${hoverPoint.readoutX}px`,
+                top: `${hoverPoint.readoutY}px`
+            }}
+        >
+            <div className="burnout-hover-title">{hoverPoint.sprintName}</div>
+            <div className="burnout-hover-row">
+                <i className="burnout-color" style={{ background: hoverPoint.color }} />
+                <span>{hoverPoint.label}: <strong>{hoverPoint.valueText}</strong></span>
+            </div>
+            <div className="burnout-hover-row muted">{hoverPoint.detailText}</div>
+        </div>
+    ) : null;
 
     return (
         <div className="excluded-capacity-line-chart" onMouseLeave={() => setHoverPoint(null)}>
@@ -266,22 +303,9 @@ function ExcludedCapacityLineChart({
                     </g>
                 )}
             </svg>
-            {hoverPoint && (
-                <div
-                    className="burnout-hover-bubble excluded-capacity-line-hover-bubble"
-                    style={{
-                        left: `${hoverPoint.leftPercent}%`,
-                        top: `${hoverPoint.topPercent}%`
-                    }}
-                >
-                    <div className="burnout-hover-title">{hoverPoint.sprintName}</div>
-                    <div className="burnout-hover-row">
-                        <i className="burnout-color" style={{ background: hoverPoint.color }} />
-                        <span>{hoverPoint.label}: <strong>{hoverPoint.valueText}</strong></span>
-                    </div>
-                    <div className="burnout-hover-row muted">{hoverPoint.detailText}</div>
-                </div>
-            )}
+            {hoverBubble && typeof document !== 'undefined' && document.body
+                ? createPortal(hoverBubble, document.body)
+                : hoverBubble}
             <div className="burnout-legend excluded-capacity-line-legend">
                 {seriesList.length === 0 && <span className="excluded-capacity-line-empty">No data in range.</span>}
                 {seriesList.map((entry) => {

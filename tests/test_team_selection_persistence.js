@@ -43,6 +43,26 @@ test('team selection persistence round-trips through scoped browser storage', as
     );
 });
 
+test('team selection hydration prefers scoped storage over stale global all-team prefs', async () => {
+    const {
+        resolveTeamSelectionHydrationState
+    } = await import('../frontend/src/teamSelectionPersistence.mjs');
+
+    assert.deepEqual(
+        resolveTeamSelectionHydrationState({
+            storedState: {
+                selectedTeams: ['team-a'],
+                selectedTeamId: 'team-a'
+            },
+            savedPrefsSelectedTeams: ['all']
+        }),
+        {
+            selectedTeams: ['team-a'],
+            selectedTeamId: 'team-a'
+        }
+    );
+});
+
 test('reconcileTeamSelectionState falls back to all when the selected team is invalid', async () => {
     const {
         reconcileTeamSelectionState

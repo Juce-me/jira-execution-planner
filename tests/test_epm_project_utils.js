@@ -392,7 +392,13 @@ test('buildEpmProjectUpdateLine uses relative dates and status fallback', async 
             title: '2026-04-16 · Ada Lovelace',
             relativeDate: '2 weeks ago',
             author: 'Ada Lovelace',
-            message: '[on track] Work is progressing'
+            message: '[on track] Work is progressing',
+            freshness: {
+                state: 'fresh',
+                label: 'Updated recently',
+                ageDays: 14,
+                thresholdDays: 14
+            }
         }
     );
     assert.deepStrictEqual(
@@ -405,7 +411,13 @@ test('buildEpmProjectUpdateLine uses relative dates and status fallback', async 
             text: 'today · Status is pending.',
             title: '2026-04-30',
             relativeDate: 'today',
-            message: 'Status is pending.'
+            message: 'Status is pending.',
+            freshness: {
+                state: 'fresh',
+                label: 'Updated recently',
+                ageDays: 0,
+                thresholdDays: 14
+            }
         }
     );
     assert.deepStrictEqual(
@@ -414,9 +426,53 @@ test('buildEpmProjectUpdateLine uses relative dates and status fallback', async 
             text: 'Status is on track.',
             title: '',
             relativeDate: '',
-            message: 'Status is on track.'
+            message: 'Status is on track.',
+            freshness: {
+                state: 'missing',
+                label: 'No Home update',
+                ageDays: null,
+                thresholdDays: 14
+            }
         }
     );
+});
+
+test('buildEpmProjectUpdateLine marks Home updates older than two weeks as stale', async () => {
+    const { buildEpmProjectUpdateLine } = await import(helperUrl);
+    const now = new Date('2026-04-30T12:00:00Z');
+
+    const line = buildEpmProjectUpdateLine({
+        latestUpdateDate: '2026-04-15',
+        latestUpdateSnippet: 'Rollout is still on track.',
+        latestUpdateAuthor: 'Ada Lovelace',
+        stateLabel: 'On track'
+    }, now);
+
+    assert.strictEqual(line.relativeDate, '2 weeks ago');
+    assert.deepStrictEqual(line.freshness, {
+        state: 'stale',
+        label: 'Stale update',
+        ageDays: 15,
+        thresholdDays: 14
+    });
+});
+
+test('buildEpmProjectUpdateLine marks Home update content without a date as unknown freshness', async () => {
+    const { buildEpmProjectUpdateLine } = await import(helperUrl);
+    const now = new Date('2026-04-30T12:00:00Z');
+
+    const line = buildEpmProjectUpdateLine({
+        latestUpdateSnippet: 'Status text exists, but Home did not provide a date.',
+        stateLabel: 'On track'
+    }, now);
+
+    assert.strictEqual(line.relativeDate, '');
+    assert.deepStrictEqual(line.freshness, {
+        state: 'unknown',
+        label: 'Update date missing',
+        ageDays: null,
+        thresholdDays: 14
+    });
 });
 
 test('buildEpmProjectUpdateLine exposes formatted Home update html when available', async () => {
@@ -434,7 +490,13 @@ test('buildEpmProjectUpdateLine exposes formatted Home update html when availabl
             title: '2026-04-29',
             relativeDate: 'yesterday',
             message: 'Build ready and linked.',
-            messageHtml: '<p><strong>Build ready</strong> and <a href="https://example.test">linked</a>.</p>'
+            messageHtml: '<p><strong>Build ready</strong> and <a href="https://example.test">linked</a>.</p>',
+            freshness: {
+                state: 'fresh',
+                label: 'Updated recently',
+                ageDays: 1,
+                thresholdDays: 14
+            }
         }
     );
 });
@@ -454,7 +516,13 @@ test('buildEpmProjectUpdateLine exposes specific Home update url when available'
             title: '2026-04-29',
             relativeDate: 'yesterday',
             message: 'Build ready and linked.',
-            url: 'https://home.atlassian.com/o/example/s/example/project/PROJ/updates/update-1'
+            url: 'https://home.atlassian.com/o/example/s/example/project/PROJ/updates/update-1',
+            freshness: {
+                state: 'fresh',
+                label: 'Updated recently',
+                ageDays: 1,
+                thresholdDays: 14
+            }
         }
     );
 });

@@ -110,11 +110,12 @@ async function loadHeaderFixture(page) {
                                 </div>
                             </div>
                         </div>
-                        <div class="epm-project-board-update-row">
-                            <article class="epm-project-board-update" aria-label="Latest Home update">
+                        <div class="epm-project-board-update-row is-stale">
+                            <article class="epm-project-board-update is-stale" aria-label="Latest Home update">
                                 <a class="epm-project-board-update-meta epm-project-board-update-meta-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-325/updates/update-2">
-                                    <span class="epm-project-board-update-date">1 week ago</span>
+                                    <span class="epm-project-board-update-date">3 weeks ago</span>
                                     <span class="epm-project-board-update-author">Grace Hopper</span>
+                                    <span class="epm-project-board-update-freshness is-stale">Stale update</span>
                                 </a>
                                 <div class="epm-project-board-update-copy">
                                     <ul>
@@ -196,6 +197,59 @@ async function loadHeaderFixture(page) {
                             </div>
                         </div>
                     </section>
+                    <section class="epm-project-board is-collapsed">
+                        <div class="epm-project-board-header">
+                            <div class="epm-project-board-title-block">
+                                <div class="epm-project-board-title-row">
+                                    <span class="epm-project-board-home-icon" aria-hidden="true">📊</span>
+                                    <h3 class="epm-project-board-name">
+                                        <a class="epm-project-board-name-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-327">Signal Quality Guardrail Pilot</a>
+                                    </h3>
+                                    <div class="epm-project-board-title-meta" aria-label="Project status and owner">
+                                        <span class="status-pill task-status epm-project-board-status-pill at-risk">At risk</span>
+                                        <span class="epm-project-board-owner" title="Owner: Dorothy Vaughan">
+                                            <span class="epm-project-board-owner-avatar" aria-hidden="true">DV</span>
+                                            <span class="epm-project-board-owner-name">Dorothy Vaughan</span>
+                                        </span>
+                                        <span class="epm-project-board-label-pill">rnd_project_signal_quality_guardrail</span>
+                                    </div>
+                                </div>
+                                <div class="epm-project-board-meta" aria-label="Project metadata">
+                                    <span class="epm-project-board-target-date" title="Target date: May">
+                                        <span class="epm-project-board-target-date-icon" aria-hidden="true">
+                                            <svg viewBox="0 0 16 16">
+                                                <path d="M4.5 1.75v2.5M11.5 1.75v2.5M2.75 6.25h10.5M3.5 3.25h9a1.5 1.5 0 0 1 1.5 1.5v7.75a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12.5V4.75a1.5 1.5 0 0 1 1.5-1.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+                                            </svg>
+                                        </span>
+                                        May
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="epm-project-board-update-row is-missing">
+                            <article class="epm-project-board-update is-missing" aria-label="Home update status">
+                                <div class="epm-project-board-update-meta">
+                                    <span class="epm-project-board-update-freshness is-missing">No Home update</span>
+                                </div>
+                                <span class="epm-project-board-update-copy">Status is on track.</span>
+                            </article>
+                        </div>
+                        <div class="epm-project-board-rollup-control">
+                            <button type="button" class="epm-project-board-toggle" aria-expanded="false" aria-label="Show Jira rollup for Signal Quality Guardrail Pilot">
+                                <span class="epm-project-board-chevron">
+                                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                                        <path d="M5.5 3.75L9.75 8l-4.25 4.25" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+                                    </svg>
+                                </span>
+                                <span class="epm-project-board-toggle-label">Jira rollup</span>
+                            </button>
+                        </div>
+                        <div class="epm-project-board-body">
+                            <div class="epic-card">
+                                <div class="epic-title">Signal quality pilot <span class="issue-key">PRODUCT-29923</span></div>
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </main>
         </body>
@@ -237,14 +291,17 @@ for (const viewport of [
         const updateCopyLink = board.locator('.epm-project-board-update-copy a').first();
         const updateMoreLink = board.locator('.epm-project-board-update-more').first();
         const collapsedBoard = page.locator('.epm-project-board.is-collapsed');
-        const collapsedUpdate = collapsedBoard.locator('.epm-project-board-update');
-        const collapsedCopy = collapsedBoard.locator('.epm-project-board-update-copy');
-        const collapsedBody = collapsedBoard.locator('.epm-project-board-body');
+        const longCollapsedBoard = collapsedBoard.filter({ hasText: 'Dynamic Floor Harness With Pricing Analysis Rollout Controls' });
+        const missingCollapsedBoard = collapsedBoard.filter({ hasText: 'Signal Quality Guardrail Pilot' });
+        const collapsedUpdate = longCollapsedBoard.locator('.epm-project-board-update');
+        const collapsedCopy = longCollapsedBoard.locator('.epm-project-board-update-copy');
+        const collapsedBody = longCollapsedBoard.locator('.epm-project-board-body');
 
         await expect(header).toBeVisible();
-        await expect(page.locator('.epm-project-board')).toHaveCount(3);
-        await expect(collapsedBoard).toHaveCount(1);
-        await expect(collapsedBoard.locator('.epm-project-board-toggle')).toHaveAttribute('aria-expanded', 'false');
+        await expect(page.locator('.epm-project-board')).toHaveCount(4);
+        await expect(collapsedBoard).toHaveCount(2);
+        await expect(longCollapsedBoard.locator('.epm-project-board-toggle')).toHaveAttribute('aria-expanded', 'false');
+        await expect(missingCollapsedBoard.locator('.epm-project-board-toggle')).toHaveAttribute('aria-expanded', 'false');
         await expect(header.locator('.epm-project-board-toggle')).toHaveCount(0);
         await expect(toggle).toHaveText('Jira rollup');
         await expect(toggle.locator('a')).toHaveCount(0);
@@ -277,7 +334,7 @@ for (const viewport of [
         const updateMetaBox = await updateMeta.boundingBox();
         const updateDateBox = await updateDate.boundingBox();
         const updateAuthorBox = await updateAuthor.boundingBox();
-        const collapsedBoardBox = await collapsedBoard.boundingBox();
+        const collapsedBoardBox = await longCollapsedBoard.boundingBox();
         const collapsedUpdateBox = await collapsedUpdate.boundingBox();
 
         expect(headerBox).toBeTruthy();
@@ -341,6 +398,9 @@ for (const viewport of [
         await expect(page.locator('.epm-project-board-update-copy li')).toHaveCount(2);
         await expect(collapsedUpdate.locator('li')).toHaveCount(0);
         await expect(collapsedCopy).toContainText('profitable pairs');
+        await expect(collapsedUpdate.locator('.epm-project-board-update-date')).toHaveText('today');
+        await expect(collapsedUpdate.locator('.epm-project-board-update-author')).toHaveText('Katherine Johnson');
+        await expect(collapsedUpdate.locator('.epm-project-board-update-more')).toHaveAttribute('href', 'https://home.atlassian.com/o/example/s/example/project/CRITE-326/updates/update-3');
 
         const titleStyle = await title.evaluate((node) => {
             const style = window.getComputedStyle(node);
@@ -381,6 +441,53 @@ for (const viewport of [
         expect(updateStyle.maxWidthPx).toBeLessThanOrEqual(760);
         expect(updateStyle.fontSizePx).toBeGreaterThanOrEqual(14);
         expect(updateBox.width).toBeLessThanOrEqual(760);
+
+        const staleUpdate = page.locator('.epm-project-board-update.is-stale');
+        const staleFreshness = staleUpdate.locator('.epm-project-board-update-freshness');
+        await expect(staleFreshness).toHaveText('Stale update');
+        const staleDateColor = await staleUpdate.locator('.epm-project-board-update-date').evaluate((node) => (
+            window.getComputedStyle(node).color
+        ));
+        const staleAuthorColor = await staleUpdate.locator('.epm-project-board-update-author').evaluate((node) => (
+            window.getComputedStyle(node).color
+        ));
+        const staleCopyColor = await staleUpdate.locator('.epm-project-board-update-copy').evaluate((node) => (
+            window.getComputedStyle(node).color
+        ));
+        const staleBadgeStyle = await staleFreshness.evaluate((node) => {
+            const style = window.getComputedStyle(node);
+            return {
+                color: style.color,
+                backgroundColor: style.backgroundColor,
+                borderColor: style.borderColor,
+            };
+        });
+        expect(staleDateColor).toBe('rgb(185, 28, 28)');
+        expect(staleAuthorColor).not.toBe('rgb(185, 28, 28)');
+        expect(staleCopyColor).not.toBe('rgb(185, 28, 28)');
+        expect(staleBadgeStyle.color).not.toBe('rgb(185, 28, 28)');
+        expect(staleBadgeStyle.backgroundColor).not.toBe('rgb(254, 242, 242)');
+        expect(staleBadgeStyle.borderColor).not.toBe('rgb(254, 202, 202)');
+
+        const missingUpdate = missingCollapsedBoard.locator('.epm-project-board-update.is-missing');
+        await expect(missingUpdate).toHaveAttribute('aria-label', 'Home update status');
+        const missingFreshness = missingUpdate.locator('.epm-project-board-update-freshness');
+        await expect(missingFreshness).toHaveText('No Home update');
+        const missingBadgeStyle = await missingFreshness.evaluate((node) => {
+            const style = window.getComputedStyle(node);
+            return {
+                color: style.color,
+                backgroundColor: style.backgroundColor,
+                borderColor: style.borderColor,
+            };
+        });
+        const missingCopyColor = await missingUpdate.locator('.epm-project-board-update-copy').evaluate((node) => (
+            window.getComputedStyle(node).color
+        ));
+        expect(missingBadgeStyle.color).not.toBe('rgb(185, 28, 28)');
+        expect(missingBadgeStyle.backgroundColor).not.toBe('rgb(254, 242, 242)');
+        expect(missingBadgeStyle.borderColor).not.toBe('rgb(254, 202, 202)');
+        expect(missingCopyColor).not.toBe('rgb(185, 28, 28)');
 
         const updateMetaStyle = await updateMeta.evaluate((node) => {
             const style = window.getComputedStyle(node);

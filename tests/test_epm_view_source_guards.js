@@ -686,7 +686,7 @@ test('EPM portfolio update line renders below the project header with relative d
     );
     const headerCloseIndex = headerSource.indexOf('</div>');
     const updateIndex = headerSource.indexOf('renderProjectUpdate(updateLine)');
-    assert.ok(epmRollupPanelSource.includes('className="epm-project-board-update"'), 'Expected visible project board update line');
+    assert.ok(epmRollupPanelSource.includes('epm-project-board-update${freshnessClassName}'), 'Expected visible project board update line');
     assert.ok(updateIndex > headerCloseIndex, 'Project update line must render after the header wrapper');
 
     const metaStart = headerSource.indexOf('className="epm-project-board-meta"');
@@ -699,7 +699,7 @@ test('EPM portfolio update line renders below the project header with relative d
 });
 
 test('EPM portfolio update line preserves formatted Home update HTML safely', () => {
-    assert.ok(epmRollupPanelSource.includes('className="epm-project-board-update-row"'), 'Expected project update row to remain fully readable in collapsed project rows');
+    assert.ok(epmRollupPanelSource.includes('epm-project-board-update-row${freshnessClassName}'), 'Expected project update row to remain fully readable in collapsed project rows');
     assert.ok(!epmRollupPanelSource.includes("epm-project-board-update-row ${collapsed ? 'is-collapsed' : ''}"), 'Collapsed project rows must not truncate the project update');
     assert.ok(epmRollupPanelSource.includes('updateLine.messageHtml'), 'Expected update renderer to branch on formatted Home update HTML');
     assert.ok(!epmRollupPanelSource.includes('!collapsed && updateLine.messageHtml'), 'Formatted Home update HTML should remain visible in collapsed project rows');
@@ -725,7 +725,23 @@ test('EPM portfolio update line preserves formatted Home update HTML safely', ()
         updateRendererSource.indexOf('epm-project-board-update-author') < updateRendererSource.indexOf('epm-project-board-update-copy'),
         'Expected author to render before the update copy'
     );
-    assert.ok(helperSource.includes('message:'), 'Expected shared update helper to expose plain message without the date');
+    assert.ok(helperSource.includes('message,'), 'Expected shared update helper to expose plain message without the date');
+});
+
+test('EPM portfolio update line exposes freshness state for stale or missing Home updates', () => {
+    assert.ok(helperSource.includes('EPM_PROJECT_UPDATE_STALE_DAYS = 14'), 'Expected two-week Home update freshness threshold');
+    assert.ok(helperSource.includes('buildEpmProjectUpdateFreshness'), 'Expected shared update helper to classify freshness');
+    assert.ok(helperSource.includes("state: 'stale'"), 'Expected stale Home update state');
+    assert.ok(helperSource.includes("state: 'missing'"), 'Expected missing Home update state');
+    assert.ok(helperSource.includes('freshness'), 'Expected update line to expose freshness metadata');
+});
+
+test('EPM portfolio renders visible stale and missing update signals', () => {
+    assert.ok(epmRollupPanelSource.includes('epm-project-board-update-freshness'), 'Expected visible freshness badge in the project update row');
+    assert.ok(epmRollupPanelSource.includes('is-${freshnessState}'), 'Expected update row to receive freshness state classes');
+    assert.ok(dashboardCssSource.includes('.epm-project-board-update.is-stale .epm-project-board-update-date'), 'Expected stale update date to be styled');
+    assert.ok(!dashboardCssSource.includes('.epm-project-board-update.is-stale .epm-project-board-update-copy'), 'Stale update copy should not get the red date treatment');
+    assert.ok(dashboardCssSource.includes('.epm-project-board-update-freshness.is-missing'), 'Expected missing update badge styling');
 });
 
 test('EPM portfolio update line links to the specific Home update', () => {

@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-> **Gate status:** Blocked. Checked on 2026-05-20. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+> **Gate status:** Blocked. Checked on 2026-05-26. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,7 +15,7 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-05-20 |
+| Checked on | 2026-05-26 |
 | Last result | FAIL insufficient_home_write_probe_input |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |

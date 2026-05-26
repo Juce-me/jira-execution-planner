@@ -15,6 +15,7 @@ export function isEmptyCustomEpmProjectRow(row) {
 const ACTIVE_EPM_PROJECT_STATES = new Set(['pending', 'on track', 'at risk', 'off track']);
 const BACKLOG_EPM_PROJECT_STATES = new Set(['paused', 'todo', 'to do']);
 const ARCHIVED_EPM_PROJECT_STATES = new Set(['completed', 'cancelled', 'archived', 'done', 'release', 'released']);
+export const EPM_PROJECT_UPDATE_STALE_DAYS = 14;
 
 function getEpmProjectLifecycleBucket(project) {
     const tabBucket = String(project?.tabBucket || '').trim().toLowerCase();
@@ -369,12 +370,17 @@ function startOfUtcDay(value) {
     return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
 
-function formatEpmProjectRelativeDate(value, now = new Date()) {
+function getEpmProjectUpdateAgeDays(value, now = new Date()) {
     const date = parseEpmProjectDate(value);
     const nowDay = startOfUtcDay(now);
-    if (!date || nowDay === null) return '';
+    if (!date || nowDay === null) return null;
     const dateDay = startOfUtcDay(date);
-    const days = Math.max(0, Math.floor((nowDay - dateDay) / 86400000));
+    return Math.max(0, Math.floor((nowDay - dateDay) / 86400000));
+}
+
+function formatEpmProjectRelativeDate(value, now = new Date()) {
+    const days = getEpmProjectUpdateAgeDays(value, now);
+    if (days === null) return '';
     if (days === 0) return 'today';
     if (days === 1) return 'yesterday';
     if (days < 7) return `${days} days ago`;
@@ -390,6 +396,41 @@ function formatEpmProjectRelativeDate(value, now = new Date()) {
     return `${years} ${years === 1 ? 'year' : 'years'} ago`;
 }
 
+function buildEpmProjectUpdateFreshness(date, hasHomeUpdate, now = new Date()) {
+    const ageDays = getEpmProjectUpdateAgeDays(date, now);
+    const base = {
+        ageDays,
+        thresholdDays: EPM_PROJECT_UPDATE_STALE_DAYS
+    };
+    if (!hasHomeUpdate) {
+        return {
+            state: 'missing',
+            label: 'No Home update',
+            ...base,
+            ageDays: null
+        };
+    }
+    if (ageDays === null) {
+        return {
+            state: 'unknown',
+            label: 'Update date missing',
+            ...base
+        };
+    }
+    if (ageDays > EPM_PROJECT_UPDATE_STALE_DAYS) {
+        return {
+            state: 'stale',
+            label: 'Stale update',
+            ...base
+        };
+    }
+    return {
+        state: 'fresh',
+        label: 'Updated recently',
+        ...base
+    };
+}
+
 function getEpmProjectStatusText(project) {
     const status = normalizeEpmSettingsStatus(project?.stateLabel || project?.stateValue || '');
     return status;
@@ -402,13 +443,16 @@ export function buildEpmProjectUpdateLine(project, now = new Date()) {
     const messageHtml = String(project?.latestUpdateHtml || '').trim();
     const author = String(project?.latestUpdateAuthor || '').trim();
     const updateUrl = String(project?.latestUpdateUrl || '').trim();
+    const hasHomeUpdate = Boolean(date || snippet || messageHtml || author || updateUrl);
+    const freshness = buildEpmProjectUpdateFreshness(date, hasHomeUpdate, now);
     const status = getEpmProjectStatusText(project);
     const message = snippet || (status ? `Status is ${status}.` : 'No Home status update.');
     const line = {
         text: [relativeDate, author, message].filter(Boolean).join(' · '),
         title: [date, author].filter(Boolean).join(' · '),
         relativeDate,
-        message: message
+        message,
+        freshness
     };
     if (author) {
         line.author = author;

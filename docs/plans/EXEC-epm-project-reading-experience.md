@@ -1,219 +1,629 @@
 # EPM Project Reading Experience Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]` / `- [x]`) syntax for tracking.
 
-**Goal:** Improve the EPM all-projects reading experience so project names, status, labels, Home links, and latest updates remain available but scan like an operational project list instead of a collection of visually noisy cards.
+**Goal:** Make the EPM all-projects board answer which projects are on track, stale, or missing status updates without changing Jira/Home API behavior.
 
-**Architecture:** Keep the existing EPM data model, rollup loading, collapse state, links, and Jira/Home API behavior unchanged. Rework only the EPM project board header/update markup in `EpmRollupPanel.jsx`, the matching CSS in `dashboard.css`, and the Playwright visual fixture that guards geometry and reading rhythm. Remove decorative project icons rather than realigning them; the collapse chevron plus title block is the complete project header affordance.
+**Architecture:** Treat the current EPM project board redesign as the baseline. Keep the existing data model, rollup loading, collapse behavior, links, and Home/Jira fetches unchanged; extend the shared project update helper to classify update freshness from the already available `latestUpdateDate`, then render stale or missing update states in `EpmRollupPanel.jsx` and the matching CSS/tests.
 
-**Tech Stack:** React 19 JSX, existing CSS in `frontend/src/styles/dashboard.css`, esbuild build output, Playwright UI tests, Node source guards.
+**Tech Stack:** React 19 JSX, shared EPM helpers in `frontend/src/epm/epmProjectUtils.mjs`, existing CSS in `frontend/src/styles/dashboard.css`, Node source guards, Playwright visual tests, esbuild generated output.
 
 ---
 
-## Context
+## Revision Snapshot
 
-The current view contains the right information, but the presentation makes it hard to read:
+This plan was partially implemented before this revision. Do not re-execute the old header-only checklist.
 
-- Project names render as small blue uppercase monospace text with wide letter spacing, which makes every row feel like a label instead of a title.
-- Status, Jira label, and Home link float far to the right, so the eye jumps across the full viewport before reaching the project update.
-- Latest updates render inside bordered/shadowed boxes with absolutely positioned date/author metadata, making operational notes look like form fields.
-- Update text is too visually separated from the project title, even though it is the main human-readable summary for each project.
-- The visual test currently proves there is no overlap, but it also encodes parts of the current card-like treatment that are causing the reading problem.
+Already present in the current code:
 
-Relevant prior lessons:
+- Project titles use natural-case system typography instead of uppercase monospace labels.
+- The Jira rollup disclosure is separate from the title/header content.
+- Status, owner, Jira label, and target date render in compact metadata positions.
+- Latest Home update text renders below the project identity, preserves sanitized HTML, preserves author/date, and links to the specific Home update when available.
+- The Playwright fixture already covers desktop, medium, and narrow viewports.
 
-- `postmortem/MRT011-epm-settings-overgeneralized-selection-ux.md`: do not preserve display-heavy cards when the user task is compact review.
-- `postmortem/MRT012-epm-active-sprint-value-hidden.md`: visible state and visible scope are part of correctness.
-- `docs/plans/GATE-05-home-write-capability.md` was reviewed on 2026-05-13. This plan does not add Home write routes or mutation UI, so the gate remains blocked and does not need a write probe.
+Still true in the current code:
 
-## Approaches
+- The Home emoji/icon remains in the title row.
+- The project name itself is the Home link; there is no separate plain `Home` link chip.
+- Latest updates still use a subtle bordered note style.
+- The vertical rail is attached to the rollup body, not the whole project board.
 
-**Recommended: component-level reading redesign.** Keep the existing data and controls, but revise markup and CSS so each project reads as title, metadata, update, then Jira work. This solves the actual reading issue while keeping the change local and testable.
+Those remaining differences are not the main UX problem now. The higher-value gap is status freshness: a project can look "On track" even when the last Home status update is stale or missing.
 
-**Lower-risk but insufficient: CSS-only polish.** Changing colors, gaps, and font sizes without touching markup would reduce some noise, but the right-floating metadata and absolute update label would still drive poor scanning.
+## Execution Status
 
-**Higher-scope: structured project digest.** Parsing Home updates into status, blockers, and next actions could produce a richer summary, but it would change content semantics and require backend or sanitizer decisions. Keep that out of this pass.
+Updated on 2026-05-26.
+
+Implemented:
+
+- Shared EPM project update freshness classification with a 14-day stale threshold.
+- Visible `Stale update`, `No Home update`, and `Update date missing` badges.
+- Red stale update date text so status age is scannable without turning the whole update red.
+- Visual fixture coverage for expanded stale rows and collapsed missing-update rows.
+- Source guards and utility tests for freshness metadata.
+
+Still blocked or out of scope:
+
+- Home/Townsquare write capability remains blocked by `docs/plans/GATE-05-home-write-capability.md`.
+- This plan does not add update creation/editing, Jira/Home fetch changes, EPM settings behavior, or new backend routes.
+
+Verified on 2026-05-26:
+
+- `npm run build`
+- `node --test tests/test_epm_project_utils.js tests/test_epm_view_source_guards.js`
+- `npx playwright test tests/ui/epm_portfolio_header_visual.spec.js tests/ui/epm_multi_subgoal_visual.spec.js tests/ui/epm_initial_config_load.spec.js`
+- Visual screenshots inspected at `/tmp/epm-portfolio-header-qa/desktop.png`, `/tmp/epm-portfolio-header-qa/medium.png`, and `/tmp/epm-portfolio-header-qa/narrow.png`.
+- `env CONFIG_STORAGE_BACKEND=jsonfile JIRA_AUTH_MODE=basic DATABASE_URL= TEST_DATABASE_URL= .venv/bin/python -m unittest discover -s tests` passed: 687 tests, 1 skipped.
+
+## UX Decision
+
+Use update freshness as the missing/at-risk reading signal:
+
+- `fresh`: a Home update date exists and is at most 14 calendar days old.
+- `stale`: a Home update date exists and is more than 14 calendar days old.
+- `missing`: there is no Home update content to show, so the UI is only displaying a status fallback such as `Status is on track.`
+- `unknown`: update content exists, but no parseable update date is available.
+
+For `stale`, highlight only `.epm-project-board-update-date` in red and add a compact `Stale update` badge. For `missing`, show a `No Home update` badge while keeping fallback copy in the normal update text color. The color must not be the only signal: the visible badge text is required.
+
+Use a strict threshold: exactly 14 days old is still fresh; more than 14 days is stale.
 
 ## File Map
 
 Modify:
 
-- `frontend/src/epm/EpmRollupPanel.jsx` — project header and latest-update markup only.
-- `frontend/src/styles/dashboard.css` — `.epm-project-board*` layout, typography, and responsive behavior.
-- `tests/ui/epm_portfolio_header_visual.spec.js` — fixture and assertions for the new reading treatment.
+- `frontend/src/epm/epmProjectUtils.mjs` - compute update age and freshness metadata from existing project fields.
+- `frontend/src/epm/EpmRollupPanel.jsx` - add freshness classes and visible stale/missing badges to the latest-update row.
+- `frontend/src/styles/dashboard.css` - add stale date and freshness badge treatment.
+- `tests/test_epm_project_utils.js` - cover freshness classification and update existing expected objects.
+- `tests/test_epm_view_source_guards.js` - guard against losing the freshness UI path.
+- `tests/ui/epm_portfolio_header_visual.spec.js` - add stale and missing update fixture rows and style assertions.
 
 Do not modify:
 
 - Backend EPM routes or Home/Townsquare fetchers.
 - `frontend/src/api/epmApi.js` or EPM request timing.
 - EPM settings behavior.
+- Home write routes or mutation UI. `docs/plans/GATE-05-home-write-capability.md` remains blocked.
 - Generated `frontend/dist/*` by hand. Run `npm run build` after source changes.
-
-## Design Rules
-
-- Preserve every piece of currently visible project information: project name, collapse affordance, Home status, Jira label, Home link, date, author, update text, HTML links inside updates, and issue rollup body.
-- Keep the collapse button separate from links, pills, and long update text. Never nest anchors or metadata inside the toggle.
-- Drop the generic project icon SVG. It is decorative, adds no information next to the chevron, and complicates the rail alignment.
-- Render the Home link text as plain `Home`; do not append `↗`.
-- Use natural-case project titles. Do not uppercase project names through CSS.
-- Use system UI typography for titles and update text. Reserve monospace only for Jira labels or compact technical keys.
-- Keep title letter spacing at `0`.
-- Keep update copy within a readable measure, target `max-width: 72ch`.
-- Remove the form-field feeling from updates: no floating meta label, no heavy shadow, no boxed card treatment.
-- Keep the title hover model simple: the icon-only collapse button carries the expand/collapse affordance; do not preserve dead title-underlining rules that depend on the title being inside the button.
-- On narrow viewports, stack metadata under the title and keep the Home link reachable without horizontal scroll.
-- Do not add new data fetches, endpoints, persisted state, or per-project enrichment.
 
 ---
 
-### Task 1: Update the Visual Regression Fixture First
+### Task 1: Add Failing Freshness Tests
+
+**Files:**
+- Modify: `tests/test_epm_project_utils.js`
+
+- [x] **Step 1: Update existing expected update-line objects**
+
+In the existing `buildEpmProjectUpdateLine uses relative dates and status fallback` test, add a `freshness` object to each expected result:
+
+```js
+freshness: {
+    state: 'fresh',
+    label: 'Updated recently',
+    ageDays: 14,
+    thresholdDays: 14
+}
+```
+
+for the `2026-04-16` case when `now` is `2026-04-30T12:00:00Z`.
+
+Use this object for the `2026-04-30` case:
+
+```js
+freshness: {
+    state: 'fresh',
+    label: 'Updated recently',
+    ageDays: 0,
+    thresholdDays: 14
+}
+```
+
+Use this object for the status-fallback-only case:
+
+```js
+freshness: {
+    state: 'missing',
+    label: 'No Home update',
+    ageDays: null,
+    thresholdDays: 14
+}
+```
+
+Also add matching `freshness` objects to the expected results in:
+
+- `buildEpmProjectUpdateLine exposes formatted Home update html when available`
+- `buildEpmProjectUpdateLine exposes specific Home update url when available`
+
+Those two existing tests use `2026-04-29` with `now` set to `2026-04-30T12:00:00Z`, so the expected freshness object is:
+
+```js
+freshness: {
+    state: 'fresh',
+    label: 'Updated recently',
+    ageDays: 1,
+    thresholdDays: 14
+}
+```
+
+- [x] **Step 2: Add a stale-update test**
+
+Add this test after the existing relative-date test:
+
+```js
+test('buildEpmProjectUpdateLine marks Home updates older than two weeks as stale', async () => {
+    const { buildEpmProjectUpdateLine } = await import(helperUrl);
+    const now = new Date('2026-04-30T12:00:00Z');
+
+    const line = buildEpmProjectUpdateLine({
+        latestUpdateDate: '2026-04-15',
+        latestUpdateSnippet: 'Rollout is still on track.',
+        latestUpdateAuthor: 'Ada Lovelace',
+        stateLabel: 'On track'
+    }, now);
+
+    assert.strictEqual(line.relativeDate, '2 weeks ago');
+    assert.deepStrictEqual(line.freshness, {
+        state: 'stale',
+        label: 'Stale update',
+        ageDays: 15,
+        thresholdDays: 14
+    });
+});
+```
+
+- [x] **Step 3: Add an unknown-date test**
+
+Add:
+
+```js
+test('buildEpmProjectUpdateLine marks Home update content without a date as unknown freshness', async () => {
+    const { buildEpmProjectUpdateLine } = await import(helperUrl);
+    const now = new Date('2026-04-30T12:00:00Z');
+
+    const line = buildEpmProjectUpdateLine({
+        latestUpdateSnippet: 'Status text exists, but Home did not provide a date.',
+        stateLabel: 'On track'
+    }, now);
+
+    assert.strictEqual(line.relativeDate, '');
+    assert.deepStrictEqual(line.freshness, {
+        state: 'unknown',
+        label: 'Update date missing',
+        ageDays: null,
+        thresholdDays: 14
+    });
+});
+```
+
+- [x] **Step 4: Run the utility tests and confirm failure**
+
+Run:
+
+```bash
+node --test tests/test_epm_project_utils.js
+```
+
+Expected before implementation: FAIL because `buildEpmProjectUpdateLine` does not expose `freshness`.
+
+---
+
+### Task 2: Classify Update Freshness In The Shared Helper
+
+**Files:**
+- Modify: `frontend/src/epm/epmProjectUtils.mjs`
+
+- [x] **Step 1: Add the threshold constant**
+
+Near the existing helper constants/functions, add:
+
+```js
+export const EPM_PROJECT_UPDATE_STALE_DAYS = 14;
+```
+
+- [x] **Step 2: Add an age helper**
+
+After `startOfUtcDay(value)`, add:
+
+```js
+function getEpmProjectUpdateAgeDays(value, now = new Date()) {
+    const date = parseEpmProjectDate(value);
+    const nowDay = startOfUtcDay(now);
+    if (!date || nowDay === null) return null;
+    const dateDay = startOfUtcDay(date);
+    return Math.max(0, Math.floor((nowDay - dateDay) / 86400000));
+}
+```
+
+- [x] **Step 3: Reuse the age helper in relative dates**
+
+Change `formatEpmProjectRelativeDate(value, now = new Date())` so it uses `getEpmProjectUpdateAgeDays`:
+
+```js
+function formatEpmProjectRelativeDate(value, now = new Date()) {
+    const days = getEpmProjectUpdateAgeDays(value, now);
+    if (days === null) return '';
+    if (days === 0) return 'today';
+    if (days === 1) return 'yesterday';
+    if (days < 7) return `${days} days ago`;
+    if (days < 30) {
+        const weeks = Math.max(1, Math.floor(days / 7));
+        return `${weeks} ${weeks === 1 ? 'week' : 'weeks'} ago`;
+    }
+    if (days < 365) {
+        const months = Math.max(1, Math.floor(days / 30));
+        return `${months} ${months === 1 ? 'month' : 'months'} ago`;
+    }
+    const years = Math.max(1, Math.floor(days / 365));
+    return `${years} ${years === 1 ? 'year' : 'years'} ago`;
+}
+```
+
+- [x] **Step 4: Add a freshness helper**
+
+Add below `formatEpmProjectRelativeDate`:
+
+```js
+function buildEpmProjectUpdateFreshness(date, hasHomeUpdate, now = new Date()) {
+    const ageDays = getEpmProjectUpdateAgeDays(date, now);
+    const base = {
+        ageDays,
+        thresholdDays: EPM_PROJECT_UPDATE_STALE_DAYS
+    };
+    if (!hasHomeUpdate) {
+        return {
+            state: 'missing',
+            label: 'No Home update',
+            ...base,
+            ageDays: null
+        };
+    }
+    if (ageDays === null) {
+        return {
+            state: 'unknown',
+            label: 'Update date missing',
+            ...base
+        };
+    }
+    if (ageDays > EPM_PROJECT_UPDATE_STALE_DAYS) {
+        return {
+            state: 'stale',
+            label: 'Stale update',
+            ...base
+        };
+    }
+    return {
+        state: 'fresh',
+        label: 'Updated recently',
+        ...base
+    };
+}
+```
+
+- [x] **Step 5: Attach freshness to update lines**
+
+Inside `buildEpmProjectUpdateLine(project, now = new Date())`, after `updateUrl` is calculated, add:
+
+```js
+const hasHomeUpdate = Boolean(date || snippet || messageHtml || author || updateUrl);
+const freshness = buildEpmProjectUpdateFreshness(date, hasHomeUpdate, now);
+```
+
+Then add `freshness` to the returned `line` object:
+
+```js
+const line = {
+    text: [relativeDate, author, message].filter(Boolean).join(' · '),
+    title: [date, author].filter(Boolean).join(' · '),
+    relativeDate,
+    message,
+    freshness
+};
+```
+
+- [x] **Step 6: Run the utility tests**
+
+Run:
+
+```bash
+node --test tests/test_epm_project_utils.js
+```
+
+Expected: PASS.
+
+---
+
+### Task 3: Render Freshness State In The Project Board
+
+**Files:**
+- Modify: `frontend/src/epm/EpmRollupPanel.jsx`
+
+- [x] **Step 1: Normalize the freshness fields**
+
+Inside `renderProjectUpdate(updateLine)`, after `updateHref` is calculated, add:
+
+```jsx
+const freshnessState = String(updateLine.freshness?.state || '').trim();
+const freshnessLabel = String(updateLine.freshness?.label || '').trim();
+const freshnessClassName = freshnessState ? ` is-${freshnessState}` : '';
+const showFreshnessLabel = freshnessLabel && freshnessState !== 'fresh';
+```
+
+- [x] **Step 2: Add state classes to the row and article**
+
+Change:
+
+```jsx
+<div className="epm-project-board-update-row" title={updateLine.title || undefined}>
+    <article className="epm-project-board-update" aria-label="Latest Home update">
+```
+
+to:
+
+```jsx
+<div className={`epm-project-board-update-row${freshnessClassName}`} title={updateLine.title || undefined}>
+    <article className={`epm-project-board-update${freshnessClassName}`} aria-label="Latest Home update">
+```
+
+- [x] **Step 3: Render a visible badge for stale, missing, and unknown states**
+
+Inside `renderUpdateMeta()`, first change the early return from:
+
+```jsx
+if (!updateLine.relativeDate && !updateLine.author) return null;
+```
+
+to:
+
+```jsx
+if (!updateLine.relativeDate && !updateLine.author && !showFreshnessLabel) return null;
+```
+
+Then append this after the author/date spans:
+
+```jsx
+{showFreshnessLabel && (
+    <span className={`epm-project-board-update-freshness is-${freshnessState}`}>
+        {freshnessLabel}
+    </span>
+)}
+```
+
+The badge must be inside the metadata link when `updateHref` exists, so the stale/missing signal stays attached to the update metadata. Do not render it as a separate project action.
+
+- [x] **Step 4: Preserve existing update HTML and links**
+
+Do not change these existing paths:
+
+```jsx
+dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }}
+```
+
+and:
+
+```jsx
+<a className="epm-project-board-update-more" href={updateHref} target="_blank" rel="noopener noreferrer">
+    More details
+</a>
+```
+
+The freshness UI is additive only.
+
+---
+
+### Task 4: Style Stale And Missing Update Signals
+
+**Files:**
+- Modify: `frontend/src/styles/dashboard.css`
+
+- [x] **Step 1: Add the freshness badge style**
+
+Place near the existing `.epm-project-board-update-meta` and date/author styles:
+
+```css
+.epm-project-board-update-freshness {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    max-width: 100%;
+    padding: 0.08rem 0.34rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.5rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1.1;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.epm-project-board-update-freshness.is-stale,
+.epm-project-board-update-freshness.is-missing {
+    color: var(--text-secondary);
+    border-color: var(--border);
+    background: rgba(255, 255, 255, 0.78);
+}
+
+.epm-project-board-update-freshness.is-unknown {
+    color: #92400e;
+    border-color: #fed7aa;
+    background: #fff7ed;
+}
+```
+
+- [x] **Step 2: Make only the stale update date red**
+
+Add this after the existing update metadata hover/focus rules so the stale date does not turn blue on hover:
+
+```css
+.epm-project-board-update.is-stale .epm-project-board-update-date {
+    color: #b91c1c;
+}
+```
+
+This implements the red text rule for status updates older than two weeks without making the update copy, author, or missing fallback text red.
+
+- [x] **Step 3: Run a source search for duplicate one-off colors**
+
+Run:
+
+```bash
+rg -n "#b91c1c|#fef2f2|#fecaca" frontend/src/styles/dashboard.css
+```
+
+Expected: no stale/missing badge, copy, or link rules use red; any matches should be unrelated existing styles or the stale date rule.
+
+---
+
+### Task 5: Update Source Guards
+
+**Files:**
+- Modify: `tests/test_epm_view_source_guards.js`
+
+- [x] **Step 1: Add a helper-source guard**
+
+Add a test near the other EPM project update-line source guards:
+
+```js
+test('EPM portfolio update line exposes freshness state for stale or missing Home updates', () => {
+    assert.ok(helperSource.includes('EPM_PROJECT_UPDATE_STALE_DAYS = 14'), 'Expected two-week Home update freshness threshold');
+    assert.ok(helperSource.includes('buildEpmProjectUpdateFreshness'), 'Expected shared update helper to classify freshness');
+    assert.ok(helperSource.includes("state: 'stale'"), 'Expected stale Home update state');
+    assert.ok(helperSource.includes("state: 'missing'"), 'Expected missing Home update state');
+    assert.ok(helperSource.includes('freshness'), 'Expected update line to expose freshness metadata');
+});
+```
+
+- [x] **Step 2: Add a render/CSS guard**
+
+Add:
+
+```js
+test('EPM portfolio renders visible stale and missing update signals', () => {
+    assert.ok(epmRollupPanelSource.includes('epm-project-board-update-freshness'), 'Expected visible freshness badge in the project update row');
+    assert.ok(epmRollupPanelSource.includes('is-${freshnessState}'), 'Expected update row to receive freshness state classes');
+    assert.ok(dashboardCssSource.includes('.epm-project-board-update.is-stale .epm-project-board-update-date'), 'Expected stale update date to be styled');
+    assert.ok(!dashboardCssSource.includes('.epm-project-board-update.is-stale .epm-project-board-update-copy'), 'Stale update copy should not get the red date treatment');
+    assert.ok(dashboardCssSource.includes('.epm-project-board-update-freshness.is-missing'), 'Expected missing update badge styling');
+});
+```
+
+- [x] **Step 3: Run the source guards**
+
+Run:
+
+```bash
+node --test tests/test_epm_view_source_guards.js
+```
+
+Expected: PASS after implementation.
+
+---
+
+### Task 6: Update The Visual Fixture And Assertions
 
 **Files:**
 - Modify: `tests/ui/epm_portfolio_header_visual.spec.js`
 
-- [ ] **Step 1: Rewrite and expand the fixture to match the new DOM**
+- [x] **Step 1: Make the fixture include one stale update**
 
-Update `loadHeaderFixture(page)` so it no longer hard-codes the old header where chevron, project icon, and project name are nested inside `.epm-project-board-toggle`.
-
-Replace that fixture shape with the target DOM shape:
+In the second `.epm-project-board`, change the update metadata date from `1 week ago` to `3 weeks ago`, add `is-stale` to `.epm-project-board-update-row` and `.epm-project-board-update`, and add the badge:
 
 ```html
-<div class="epm-project-board-header">
-    <button type="button" class="epm-project-board-toggle" aria-expanded="true" aria-label="Collapse AI for RFP creation">
-        <span class="epm-project-board-chevron">...</span>
-    </button>
-    <div class="epm-project-board-title-block">
-        <h3 class="epm-project-board-name">AI for RFP creation</h3>
-        <div class="epm-project-board-meta" aria-label="Project metadata">
-            <span class="epm-project-board-status-pill">On track</span>
-            <span class="epm-project-board-label-pill">RnD_Project_RFP_AI</span>
-            <a class="epm-project-board-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-324">Home</a>
+<div class="epm-project-board-update-row is-stale">
+    <article class="epm-project-board-update is-stale" aria-label="Latest Home update">
+        <a class="epm-project-board-update-meta epm-project-board-update-meta-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-325/updates/update-2">
+            <span class="epm-project-board-update-date">3 weeks ago</span>
+            <span class="epm-project-board-update-author">Grace Hopper</span>
+            <span class="epm-project-board-update-freshness is-stale">Stale update</span>
+        </a>
+```
+
+Keep the existing bullet-list copy so the stale state proves list text stays readable.
+
+- [x] **Step 2: Add collapsed missing-update coverage**
+
+Keep the existing collapsed long-update board with its `today` metadata, author, `profitable pairs` copy, and update-specific `More details` link. Add a separate collapsed board for the missing-update state:
+
+```html
+<div class="epm-project-board-update-row is-missing">
+    <article class="epm-project-board-update is-missing" aria-label="Home update status">
+        <div class="epm-project-board-update-meta">
+            <span class="epm-project-board-update-freshness is-missing">No Home update</span>
         </div>
-    </div>
+        <span class="epm-project-board-update-copy">Status is on track.</span>
+    </article>
 </div>
 ```
 
-The expanded fixture must include:
+This verifies that collapsed project rows still expose missing status information without weakening the existing long-update collapsed-row coverage.
 
-- three `.epm-project-board` sections
-- a status pill in `.epm-project-board-meta`
-- a long Jira label that must ellipsize or wrap safely
-- one update with a single sentence
-- one update with a bullet list
-- one long project name
-- one plain `Home` link with no `↗` glyph
+- [x] **Step 3: Add style assertions**
 
-Keep the existing checks that `.epm-project-board-toggle` does not contain anchors or update content.
-
-- [ ] **Step 2: Delete old card-encoding assertions before adding new ones**
-
-Delete the current assertions in `tests/ui/epm_portfolio_header_visual.spec.js` that encode the old boxed update treatment. In the current file, these are lines 117-119:
+Keep the existing collapsed-copy assertion for the long-update board and add metadata/link assertions so that coverage remains explicit:
 
 ```js
-expect(updateMetaBox.y).toBeLessThanOrEqual(updateBox.y + 1);
-expect(updateMetaBox.x).toBeGreaterThan(updateBox.x);
-expect(updateMetaBox.x + updateMetaBox.width).toBeLessThan(updateBox.x + updateBox.width);
+await expect(collapsedCopy).toContainText('profitable pairs');
+await expect(collapsedUpdate.locator('.epm-project-board-update-date')).toHaveText('today');
+await expect(collapsedUpdate.locator('.epm-project-board-update-author')).toHaveText('Katherine Johnson');
+await expect(collapsedUpdate.locator('.epm-project-board-update-more')).toHaveAttribute('href', 'https://home.atlassian.com/o/example/s/example/project/CRITE-326/updates/update-3');
 ```
 
-Delete the current card-style checks. In the current file, these are lines 135-137:
+Then add these assertions after the existing update style checks:
 
 ```js
-expect(updateStyle.borderRadius).toBe('8px');
-expect(updateStyle.backgroundColor).toBe('rgb(255, 255, 255)');
-expect(updateStyle.color).not.toBe('rgb(255, 255, 255)');
-```
-
-These assertions conflict with the target design and must not remain beside the new assertions.
-
-- [ ] **Step 3: Add failing assertions for the desired reading treatment**
-
-Add computed-style checks for the first board:
-
-```js
-const titleStyle = await page.locator('.epm-project-board-name').first().evaluate((node) => {
+const staleUpdate = page.locator('.epm-project-board').nth(1).locator('.epm-project-board-update');
+const staleFreshness = staleUpdate.locator('.epm-project-board-update-freshness');
+await expect(staleFreshness).toHaveText('Stale update');
+const staleDateColor = await staleUpdate.locator('.epm-project-board-update-date').evaluate((node) => (
+    window.getComputedStyle(node).color
+));
+const staleAuthorColor = await staleUpdate.locator('.epm-project-board-update-author').evaluate((node) => (
+    window.getComputedStyle(node).color
+));
+const staleCopyColor = await staleUpdate.locator('.epm-project-board-update-copy').evaluate((node) => (
+    window.getComputedStyle(node).color
+));
+const staleBadgeStyle = await staleFreshness.evaluate((node) => {
     const style = window.getComputedStyle(node);
     return {
-        fontFamily: style.fontFamily,
-        letterSpacing: style.letterSpacing,
-        textTransform: style.textTransform,
-        whiteSpace: style.whiteSpace,
-    };
-});
-expect(titleStyle.textTransform).toBe('none');
-expect(['0px', 'normal']).toContain(titleStyle.letterSpacing);
-expect(titleStyle.fontFamily).not.toContain('IBM Plex Mono');
-expect(titleStyle.whiteSpace).not.toBe('nowrap');
-```
-
-Add computed-style checks for the update without asserting exact `ch` serialization from `getComputedStyle`:
-
-```js
-const updateStyle = await update.evaluate((node) => {
-    const style = window.getComputedStyle(node);
-    return {
-        boxShadow: style.boxShadow,
-        borderTopStyle: style.borderTopStyle,
-        fontSizePx: Number.parseFloat(style.fontSize),
-        maxWidthValue: style.maxWidth,
-        maxWidthPx: Number.parseFloat(style.maxWidth),
-    };
-});
-expect(updateStyle.boxShadow).toBe('none');
-expect(updateStyle.borderTopStyle).toBe('none');
-expect(updateStyle.maxWidthValue).not.toBe('none');
-expect(Number.isFinite(updateStyle.maxWidthPx)).toBe(true);
-expect(updateStyle.maxWidthPx).toBeLessThanOrEqual(760);
-expect(updateStyle.fontSizePx).toBeGreaterThanOrEqual(14);
-expect(updateBox.width).toBeLessThanOrEqual(760);
-```
-
-Add a meta-position check:
-
-```js
-const updateMetaStyle = await page.locator('.epm-project-board-update-meta').first().evaluate((node) => {
-    const style = window.getComputedStyle(node);
-    return {
-        position: style.position,
+        color: style.color,
         backgroundColor: style.backgroundColor,
+        borderColor: style.borderColor,
     };
 });
-expect(updateMetaStyle.position).toBe('static');
-expect(updateMetaStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)');
-```
+expect(staleDateColor).toBe('rgb(185, 28, 28)');
+expect(staleAuthorColor).not.toBe('rgb(185, 28, 28)');
+expect(staleCopyColor).not.toBe('rgb(185, 28, 28)');
+expect(staleBadgeStyle.color).not.toBe('rgb(185, 28, 28)');
+expect(staleBadgeStyle.backgroundColor).not.toBe('rgb(254, 242, 242)');
+expect(staleBadgeStyle.borderColor).not.toBe('rgb(254, 202, 202)');
 
-Add a separator check so date and author still read as one metadata phrase:
-
-```js
-const authorSeparator = await page.locator('.epm-project-board-update-author').first().evaluate((node) => {
-    return window.getComputedStyle(node, '::before').content;
-});
-expect(authorSeparator).toBe('"·"');
-```
-
-Add rail-position checks that anchor the vertical line to the collapse column instead of relying only on a broad `top < update row` range:
-
-```js
-const board = page.locator('.epm-project-board').first();
-const boardBox = await board.boundingBox();
-const railStyle = await board.evaluate((node) => {
-    const style = window.getComputedStyle(node, '::before');
+const missingUpdate = missingCollapsedBoard.locator('.epm-project-board-update.is-missing');
+await expect(missingUpdate).toHaveAttribute('aria-label', 'Home update status');
+const missingFreshness = missingUpdate.locator('.epm-project-board-update-freshness');
+await expect(missingFreshness).toHaveText('No Home update');
+const missingBadgeStyle = await missingFreshness.evaluate((node) => {
+    const style = window.getComputedStyle(node);
     return {
-        content: style.content,
-        left: Number.parseFloat(style.left),
-        top: Number.parseFloat(style.top),
-        width: Number.parseFloat(style.width),
+        color: style.color,
+        backgroundColor: style.backgroundColor,
+        borderColor: style.borderColor,
     };
 });
-const railCenterX = boardBox.x + railStyle.left + (railStyle.width / 2);
-const toggleCenterX = toggleBox.x + (toggleBox.width / 2);
-const railStartY = boardBox.y + railStyle.top;
-const toggleCenterY = toggleBox.y + (toggleBox.height / 2);
-expect(railStyle.content).not.toBe('none');
-expect(Math.abs(railCenterX - toggleCenterX)).toBeLessThanOrEqual(2);
-expect(Math.abs(railStartY - toggleCenterY)).toBeLessThanOrEqual(4);
+const missingCopyColor = await missingUpdate.locator('.epm-project-board-update-copy').evaluate((node) => (
+    window.getComputedStyle(node).color
+));
+expect(missingBadgeStyle.color).not.toBe('rgb(185, 28, 28)');
+expect(missingBadgeStyle.backgroundColor).not.toBe('rgb(254, 242, 242)');
+expect(missingBadgeStyle.borderColor).not.toBe('rgb(254, 202, 202)');
+expect(missingCopyColor).not.toBe('rgb(185, 28, 28)');
 ```
 
-- [ ] **Step 4: Run the visual test and confirm it fails before implementation**
+- [x] **Step 4: Run the focused visual test**
 
 Run:
 
@@ -222,325 +632,20 @@ npm run build
 npx playwright test tests/ui/epm_portfolio_header_visual.spec.js
 ```
 
-Expected result before implementation: FAIL on the new DOM, typography, update-style, separator, or rail-alignment assertions.
+Expected: PASS after implementation and fresh screenshots under `/tmp/epm-portfolio-header-qa/`.
 
 ---
 
-### Task 2: Rework Project Header Markup
+### Task 7: Focused Verification
 
 **Files:**
-- Modify: `frontend/src/epm/EpmRollupPanel.jsx`
-
-- [ ] **Step 1: Verify the heading level**
-
-Run:
-
-```bash
-rg -n "<h[1-6]|\\.epm-project-board-name|h3\\b" frontend/src/epm frontend/src/styles/dashboard.css
-```
-
-Expected before this implementation: `EpmRollupPanel.jsx` has `h2` only for empty states and no project-list heading above each project board; `EpmRollupTree.jsx` uses `h3` for task titles. Keep project board titles at `h3` unless this command shows a new enclosing project-list heading that changes the outline.
-
-- [ ] **Step 2: Make the collapse button icon-only**
-
-In `renderPortfolioHeader(project)`, keep the existing `toggleCollapsed(project)` behavior, but render the button as an icon affordance with an explicit label:
-
-```jsx
-<button
-    type="button"
-    className="epm-project-board-toggle"
-    onClick={() => toggleCollapsed(project)}
-    aria-expanded={!collapsed}
-    aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${getEpmProjectDisplayName(project)}`}
->
-    <span className="epm-project-board-chevron">{renderChevron()}</span>
-</button>
-```
-
-- [ ] **Step 3: Render title and metadata as readable content**
-
-Next to the toggle, render the title block. Do not render `renderProjectIcon()` in the portfolio header.
-
-```jsx
-<div className="epm-project-board-title-block">
-    <h3 className="epm-project-board-name">{getEpmProjectDisplayName(project)}</h3>
-    <div className="epm-project-board-meta" aria-label="Project metadata">
-        {projectStatus && (
-            <StatusPill className="epm-project-board-status-pill" label={projectStatus} />
-        )}
-        {project?.label && (
-            <StatusPill className="epm-project-board-label-pill" label={project.label} />
-        )}
-        {project?.homeUrl && (
-            <a
-                className="epm-project-board-link"
-                href={project.homeUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-            >
-                Home
-            </a>
-        )}
-    </div>
-</div>
-```
-
-This keeps the link and pills out of the toggle and keeps the title in normal document flow.
-
-- [ ] **Step 4: Preserve the update render call**
-
-Keep `renderProjectUpdate(updateLine)` immediately after the header. Do not move update text into the toggle or metadata row.
-
----
-
-### Task 3: Rework Latest Update Markup
-
-**Files:**
-- Modify: `frontend/src/epm/EpmRollupPanel.jsx`
-
-- [ ] **Step 1: Keep update HTML and links intact**
-
-Do not parse or rewrite `updateLine.messageHtml` in this pass. Continue using the existing `dangerouslySetInnerHTML` path so Home-provided emphasis, bullets, and links survive unchanged.
-
-- [ ] **Step 2: Move date/author into normal flow**
-
-Change `renderProjectUpdate(updateLine)` so `.epm-project-board-update-meta` is a normal child above the copy, not an absolute overlay:
-
-```jsx
-const renderProjectUpdate = (updateLine) => {
-    if (!updateLine?.text) return null;
-    return (
-        <div className="epm-project-board-update-row" title={updateLine.title || undefined}>
-            <article className="epm-project-board-update" aria-label="Latest Home update">
-                {(updateLine.relativeDate || updateLine.author) && (
-                    <div className="epm-project-board-update-meta">
-                        {updateLine.relativeDate && <span className="epm-project-board-update-date">{updateLine.relativeDate}</span>}
-                        {updateLine.author && <span className="epm-project-board-update-author">{updateLine.author}</span>}
-                    </div>
-                )}
-                {updateLine.messageHtml ? (
-                    <div className="epm-project-board-update-copy" dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }} />
-                ) : (
-                    <span className="epm-project-board-update-copy">{updateLine.message || updateLine.text}</span>
-                )}
-            </article>
-        </div>
-    );
-};
-```
-
-This intentionally drops the literal `· ` prefix from the author span in JSX because the separator belongs in CSS. Task 4 adds the separator back with `.epm-project-board-update-date + .epm-project-board-update-author::before`.
-
----
-
-### Task 4: Apply the Reading-Focused CSS
-
-**Files:**
-- Modify: `frontend/src/styles/dashboard.css`
-
-- [ ] **Step 1: Replace the header grid and recalibrate the rail**
-
-Update the EPM project rail and header selectors so the vertical line is anchored to the icon-only collapse column, not to a decorative project icon:
-
-```css
-.epm-project-board::before {
-    left: 0.78rem;
-    top: 0.8rem;
-    bottom: 8px;
-    width: 2px;
-}
-
-.epm-project-board-header {
-    display: grid;
-    grid-template-columns: 1.6rem minmax(0, 1fr);
-    align-items: start;
-    column-gap: 0.65rem;
-    width: 100%;
-    margin: 0;
-    min-width: 0;
-}
-
-.epm-project-board-title-block {
-    min-width: 0;
-}
-```
-
-The `::before` line must visually align with the collapse button center in the Playwright fixture. If the exact `top` value needs a small adjustment after screenshots, update the CSS and the rail-position assertion together.
-
-- [ ] **Step 2: Make the toggle compact**
-
-Replace the existing `.epm-project-board-toggle` rule so it is an icon button, not a grid title container. This removes the old `grid-template-columns: 14px 18px minmax(0, auto)` declaration.
-
-```css
-.epm-project-board-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.6rem;
-    height: 1.6rem;
-    padding: 0;
-    background: transparent;
-    border: 0;
-    cursor: pointer;
-    color: var(--epm-project-accent);
-    border-radius: 6px;
-    transition: background-color 0.14s ease, box-shadow 0.14s ease, color 0.14s ease;
-}
-```
-
-Keep the existing hover/focus principle: a light accent surface with dark readable text, no transform.
-
-- [ ] **Step 3: Delete dead title-hover selectors**
-
-Delete the now-orphaned selectors:
-
-```css
-.epm-project-board-toggle:hover .epm-project-board-name,
-.epm-project-board-toggle:focus-visible .epm-project-board-name {
-    text-decoration: underline;
-    text-underline-offset: 2px;
-}
-```
-
-Do not replace them with a title underline. The collapse button is icon-only and the project title is not a button or link.
-
-- [ ] **Step 4: Replace project-title typography**
-
-Update `.epm-project-board-name`:
-
-```css
-.epm-project-board-name {
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 0.95rem;
-    line-height: 1.25;
-    letter-spacing: 0;
-    text-transform: none;
-    color: var(--text-primary);
-    font-weight: 650;
-    white-space: normal;
-    overflow-wrap: break-word;
-    word-break: normal;
-    min-width: 0;
-}
-```
-
-- [ ] **Step 5: Move metadata under the title**
-
-Update `.epm-project-board-meta`:
-
-```css
-.epm-project-board-meta {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 0.4rem;
-    flex-wrap: wrap;
-    min-width: 0;
-    max-width: 100%;
-    margin-top: 0.25rem;
-}
-```
-
-Keep `.epm-project-board-label-pill` ellipsizing long labels with `max-width: min(22rem, 100%)`.
-
-- [ ] **Step 6: Remove the boxed-update treatment**
-
-Update `.epm-project-board-update-row`, `.epm-project-board-update`, and `.epm-project-board-update-meta`:
-
-```css
-.epm-project-board-update-row {
-    display: block;
-    max-width: 72ch;
-    margin: 0.45rem 0 0.75rem 2.25rem;
-}
-
-.epm-project-board-update {
-    max-width: 72ch;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 0.9rem;
-    line-height: 1.45;
-    color: var(--text-primary);
-    white-space: normal;
-    overflow-wrap: break-word;
-    word-break: normal;
-    display: block;
-    margin: 0;
-    padding: 0;
-    text-align: left;
-    background: transparent;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-}
-
-.epm-project-board-update-meta {
-    position: static;
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    max-width: 100%;
-    background: transparent;
-    white-space: normal;
-    line-height: 1.2;
-    padding: 0;
-    margin-bottom: 0.18rem;
-}
-```
-
-- [ ] **Step 7: Add the date/author separator in CSS**
-
-Add:
-
-```css
-.epm-project-board-update-date + .epm-project-board-update-author::before {
-    content: '·';
-    margin-right: 0.35rem;
-    color: var(--text-secondary);
-}
-```
-
-This preserves the old readable separator without baking punctuation into the React text node.
-
-- [ ] **Step 8: Keep mobile layout within the viewport**
-
-Add or update the narrow viewport rules. Do not add an `.epm-project-board-icon { display: none; }` rule because the icon is removed from markup and the header grid already has only two columns.
-
-```css
-@media (max-width: 640px) {
-    .epm-project-board-update-row {
-        max-width: calc(100% - 2.15rem);
-        margin-left: 2.15rem;
-    }
-}
-```
-
-Use an existing media-query block if one already covers this section; do not add duplicate scattered responsive rules.
-
-- [ ] **Step 9: Confirm removed selectors stay removed**
-
-Run:
-
-```bash
-rg -n "epm-project-board-icon|epm-project-board-toggle:hover \\.epm-project-board-name|epm-project-board-toggle:focus-visible \\.epm-project-board-name|Home ↗" frontend/src/epm/EpmRollupPanel.jsx frontend/src/styles/dashboard.css tests/ui/epm_portfolio_header_visual.spec.js
-```
-
-Expected: no matches.
-
----
-
-### Task 5: Build and Run Focused Verification
-
-**Files:**
-- Test: `tests/ui/epm_portfolio_header_visual.spec.js`
-- Test: `tests/ui/codebase_structure_smoke.spec.js`
-- Test: `tests/ui/epm_multi_subgoal_visual.spec.js`
-- Test: `tests/ui/epm_initial_config_load.spec.js`
 - Test: `tests/test_epm_project_utils.js`
 - Test: `tests/test_epm_view_source_guards.js`
-- Test: `tests/test_epm_shell_source_guards.js`
+- Test: `tests/ui/epm_portfolio_header_visual.spec.js`
+- Test: `tests/ui/epm_multi_subgoal_visual.spec.js`
+- Test: `tests/ui/epm_initial_config_load.spec.js`
 
-- [ ] **Step 1: Rebuild generated assets**
+- [x] **Step 1: Rebuild generated assets**
 
 Run:
 
@@ -550,17 +655,17 @@ npm run build
 
 Expected: build succeeds and regenerates `frontend/dist/dashboard.css`, `frontend/dist/dashboard.js`, and `frontend/dist/dashboard.js.map`.
 
-- [ ] **Step 2: Run EPM source guards**
+- [x] **Step 2: Run focused Node tests**
 
 Run:
 
 ```bash
-node --test tests/test_epm_project_utils.js tests/test_epm_view_source_guards.js tests/test_epm_shell_source_guards.js
+node --test tests/test_epm_project_utils.js tests/test_epm_view_source_guards.js
 ```
 
-Expected: all tests pass.
+Expected: PASS.
 
-- [ ] **Step 3: Run focused Playwright coverage**
+- [x] **Step 3: Run focused Playwright coverage**
 
 Run:
 
@@ -568,40 +673,11 @@ Run:
 npx playwright test tests/ui/epm_portfolio_header_visual.spec.js tests/ui/epm_multi_subgoal_visual.spec.js tests/ui/epm_initial_config_load.spec.js
 ```
 
-Expected: all tests pass. The portfolio header test should write fresh screenshots under `/tmp/epm-portfolio-header-qa/`.
+Expected: PASS.
 
-- [ ] **Step 4: Run sticky/collapse smoke coverage**
+- [x] **Step 4: Inspect generated screenshots**
 
-Run:
-
-```bash
-npx playwright test tests/ui/codebase_structure_smoke.spec.js --grep "EPM"
-```
-
-Expected: EPM collapse and sticky-header checks still pass.
-
-- [ ] **Step 5: Confirm viewport coverage includes the awkward mid-width**
-
-Open `tests/ui/epm_portfolio_header_visual.spec.js` and verify the viewport list includes:
-
-```js
-{ name: 'desktop', width: 1520, height: 900 },
-{ name: 'medium', width: 960, height: 760 },
-{ name: 'narrow', width: 520, height: 720 },
-```
-
-Expected: the portfolio header visual test writes screenshots for all three sizes.
-
----
-
-### Task 6: Manual Visual QA
-
-**Files:**
-- No code changes.
-
-- [ ] **Step 1: Inspect generated screenshots**
-
-Open the screenshots written by the portfolio visual test:
+Open:
 
 - `/tmp/epm-portfolio-header-qa/desktop.png`
 - `/tmp/epm-portfolio-header-qa/medium.png`
@@ -609,43 +685,29 @@ Open the screenshots written by the portfolio visual test:
 
 Expected:
 
-- project titles read as titles, not all-caps labels
-- status, Jira label, and Home link are visually subordinate to the title
-- update text sits directly under the project identity and reads as prose
-- long labels do not overlap title or Home link
-- the collapsed/expanded affordance remains obvious
-- no update card shadow or floating date label remains
-- the rail starts from the collapse column and does not look detached from the header
+- On-track projects still show their Home status pill.
+- Stale update date text is red and has a visible `Stale update` badge.
+- Missing Home status information has a visible `No Home update` badge.
+- Long labels, owner names, update badges, and update links do not overlap at desktop, medium, or narrow widths.
+- Collapsed project rows still show status freshness even when Jira rollup details are hidden.
 
-- [ ] **Step 2: Optional real-view check if local EPM credentials are available**
+- [x] **Step 5: Run the full suite before push**
 
-This is useful evidence, but it is not a completion gate. Do not block the plan if local Atlassian/Jira/Home credentials are unavailable.
-
-Run the app locally:
+Run:
 
 ```bash
-python3 jira_server.py
+env CONFIG_STORAGE_BACKEND=jsonfile JIRA_AUTH_MODE=basic DATABASE_URL= TEST_DATABASE_URL= .venv/bin/python -m unittest discover -s tests
 ```
 
-Open `http://localhost:5050`, switch to EPM Active all-projects, and compare against the screenshot that triggered this plan.
-
-Expected:
-
-- the first viewport shows several project sections without the heavy bordered update boxes
-- Home links still open in a new tab
-- HTML emphasis, bullets, and links inside Home updates still render
-- project collapse/expand still works
-- Catch Up, Planning, and Scenario sticky behavior is unchanged when returning to ENG
+Expected: PASS before any push or merge.
 
 ---
 
 ## Completion Criteria
 
-- `frontend/src/epm/EpmRollupPanel.jsx` changes are limited to project header/update markup.
-- `frontend/src/styles/dashboard.css` changes are limited to EPM project board reading/layout selectors unless a related responsive rule must move for correctness.
-- `tests/ui/epm_portfolio_header_visual.spec.js` fails before the implementation and passes after it.
-- `npm run build` passes.
-- EPM source guards pass.
-- Focused EPM Playwright tests pass.
-- Before/after screenshots are available in the implementation notes or PR notes.
-- The optional credential-backed real-view check is recorded if available, but missing local EPM credentials do not block completion.
+- The plan no longer asks workers to redo already-landed header restructuring.
+- `buildEpmProjectUpdateLine` exposes deterministic freshness metadata.
+- More-than-14-day Home updates render with red date text plus a visible `Stale update` badge.
+- Missing Home updates render with a visible `No Home update` badge.
+- Existing update HTML, author/date metadata, update links, rollup collapse behavior, and EPM data fetching are unchanged.
+- `npm run build`, focused Node tests, focused Playwright tests, and the full Python suite pass before push.

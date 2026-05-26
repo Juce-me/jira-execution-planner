@@ -69,12 +69,21 @@ export function EpmRollupPanel({
     const renderProjectUpdate = (updateLine) => {
         if (!updateLine?.text) return null;
         const updateHref = String(updateLine.url || '').trim();
+        const freshnessState = String(updateLine.freshness?.state || '').trim();
+        const freshnessLabel = String(updateLine.freshness?.label || '').trim();
+        const freshnessClassName = freshnessState ? ` is-${freshnessState}` : '';
+        const showFreshnessLabel = freshnessLabel && freshnessState !== 'fresh';
         const renderUpdateMeta = () => {
-            if (!updateLine.relativeDate && !updateLine.author) return null;
+            if (!updateLine.relativeDate && !updateLine.author && !showFreshnessLabel) return null;
             const metaContent = (
                 <>
                     {updateLine.relativeDate && <span className="epm-project-board-update-date">{updateLine.relativeDate}</span>}
                     {updateLine.author && <span className="epm-project-board-update-author">{updateLine.author}</span>}
+                    {showFreshnessLabel && (
+                        <span className={`epm-project-board-update-freshness is-${freshnessState}`}>
+                            {freshnessLabel}
+                        </span>
+                    )}
                 </>
             );
             if (updateHref) {
@@ -84,7 +93,6 @@ export function EpmRollupPanel({
                         href={updateHref}
                         target="_blank"
                         rel="noopener noreferrer"
-                        aria-label="Open latest Home update"
                     >
                         {metaContent}
                     </a>
@@ -97,8 +105,8 @@ export function EpmRollupPanel({
             );
         };
         return (
-            <div className="epm-project-board-update-row" title={updateLine.title || undefined}>
-                <article className="epm-project-board-update" aria-label="Latest Home update">
+            <div className={`epm-project-board-update-row${freshnessClassName}`} title={updateLine.title || undefined}>
+                <article className={`epm-project-board-update${freshnessClassName}`} aria-label="Latest Home update">
                     {renderUpdateMeta()}
                     {updateLine.messageHtml ? (
                         <div className="epm-project-board-update-copy" dangerouslySetInnerHTML={{ __html: updateLine.messageHtml }} />

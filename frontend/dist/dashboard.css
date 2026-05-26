@@ -7282,6 +7282,33 @@ button.toggle.initiative-toggle.active {
   padding: 0;
   margin-bottom: 0.18rem;
 }
+.epm-project-board-update-freshness {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.08rem 0.34rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.epm-project-board-update-freshness.is-stale,
+.epm-project-board-update-freshness.is-missing {
+  color: var(--text-secondary);
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.78);
+}
+.epm-project-board-update-freshness.is-unknown {
+  color: #92400e;
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
 .epm-project-board-update-meta-link {
   color: inherit;
   text-decoration: none;
@@ -7319,6 +7346,9 @@ button.toggle.initiative-toggle.active {
 .epm-project-board-update-meta-link:focus-visible .epm-project-board-update-date,
 .epm-project-board-update-meta-link:focus-visible .epm-project-board-update-author {
   color: var(--epm-project-accent);
+}
+.epm-project-board-update.is-stale .epm-project-board-update-date {
+  color: #b91c1c;
 }
 .epm-project-board-update-copy {
   min-width: 0;

@@ -41,6 +41,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - Scenario Planner technical rules are included in [Scenario Planner](docs/features/scenario-planner.md)
 - Local install, DB mode, migrations, and Home token setup are covered in [INSTALL.md](INSTALL.md)
 - Agent work artifact rules are defined in [docs/agents.md](docs/agents.md)
+- Product analytics rules are defined in [docs/README_ANALYTICS.md](docs/README_ANALYTICS.md)
 
 ## 📋 Files
 

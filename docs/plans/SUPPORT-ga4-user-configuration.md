@@ -4,22 +4,29 @@
 
 **Audience:** The GA4 property owner or operator configuring Google Analytics for Jira Execution Planner.
 
-**Important ID note:** `G-6QERX19WB0` is the GA4 web stream Measurement ID used by the website tag. GA Admin may also show a separate numeric property ID; do not place that numeric ID in `gtag.js` code.
+**Important ID note:** `G-6QERX19WB0` is the GA4 web stream Measurement ID configured inside Google Tag Manager. GA Admin may also show a separate numeric property ID; do not place that numeric ID in app code or GTM tags.
 
 ---
 
 ## Preconditions
 
 - You have Editor or Administrator access to the GA4 property that owns web stream `G-6QERX19WB0`.
+- You have edit/publish access to the GTM web container used by this app.
 - The implementation from `docs/plans/EXEC-ga4-instrumentation.md` has shipped to the target environment.
-- The deployment has set `GA4_ENABLED=true`, `GA4_MEASUREMENT_ID=G-6QERX19WB0`, and a secret `GA4_USER_ID_PEPPER`.
+- The deployment has set `GA4_ENABLED=true`, `GTM_CONTAINER_ID=<container id>`, `GA4_MEASUREMENT_ID=G-6QERX19WB0`, and a secret `GA4_USER_ID_PEPPER`.
 - The app exposes an analytics consent control and defaults consent to denied before any Google tag can collect data.
 
 Official docs checked on 2026-05-26:
-- Events and `gtag('event', ...)`: https://developers.google.com/analytics/devguides/collection/ga4/events
+- Events: https://developers.google.com/analytics/devguides/collection/ga4/events
 - User-ID: https://developers.google.com/analytics/devguides/collection/ga4/user-id
 - Consent Mode: https://developers.google.com/tag-platform/security/guides/consent
 - CSP for Google tags: https://developers.google.com/tag-platform/security/guides/csp
+- GTM data layer: https://developers.google.com/tag-platform/tag-manager/datalayer
+- GA4 setup in GTM: https://support.google.com/tagmanager/answer/9442095
+- GA4 pageview behavior: https://developers.google.com/analytics/devguides/collection/ga4/views
+- GA4 Enhanced Measurement events: https://support.google.com/analytics/answer/9216061
+- GA4 DebugView: https://support.google.com/analytics/answer/7201382
+- GA4 EU data and privacy controls: https://support.google.com/analytics/answer/12017362
 - Measurement ID: https://support.google.com/analytics/answer/12270356
 - Event naming and reserved names: https://support.google.com/analytics/answer/13316687
 - Custom definitions and limits: https://support.google.com/analytics/answer/14240153
@@ -33,17 +40,20 @@ Official docs checked on 2026-05-26:
 1. Open Google Analytics Admin.
 2. Select the property that contains the web stream with Measurement ID `G-6QERX19WB0`.
 3. Go to **Data streams** and confirm the web stream URL matches the deployed Jira Execution Planner URL.
-4. In **View tag instructions**, choose manual installation only if you need to inspect the tag. The app implementation should own the actual code snippet.
-5. Do not create a Google Tag Manager container for this first slice unless a separate migration plan is approved.
+4. Create or select the GTM web container whose public ID is deployed as `GTM_CONTAINER_ID`.
+5. In GTM, create a Google tag or GA4 configuration tag for Measurement ID `G-6QERX19WB0`. Do not paste the GA4 numeric property ID into GTM.
 6. Keep Google Signals and ad personalization disabled unless legal/privacy review explicitly approves advertising use.
 7. Set data retention to the longest allowed period that matches company policy, commonly 14 months for standard GA4 properties.
 8. Configure internal traffic filters if company policy requires excluding developer or office traffic.
+9. In the web stream's Enhanced Measurement settings, allow these GA4-managed events after consent: Scrolls (`scroll`), outbound clicks (`click`), Site search (`view_search_results`), file downloads (`file_download`), and form interactions (`form_start`, `form_submit`). Keep video engagement off unless the app later embeds YouTube content and a separate report needs it.
+10. For app-controlled page views, use only the GTM `pageview` Custom Event trigger described below. Disable browser-history-change page-view tracking in Enhanced Measurement so route changes are not double-counted.
+11. If company privacy policy wants less device/location detail, disable granular location and device data by region in GA4 Admin. With browser GTM/GA4, the app cannot pre-strip the network source IP before Google receives the request; this runbook relies on GA4's documented IP handling and forbids IP addresses in app-owned event parameters.
 
 ---
 
 ## Consent Configuration
 
-The website must set Consent Mode defaults before any possible Google tag injection. For this app, the remote Google tag is not loaded until analytics consent is granted, so a fresh browser profile should make no request to Google before consent.
+The website must set Consent Mode defaults before any possible GTM tag injection. For this app, the remote GTM container is not loaded until analytics consent is granted, so a fresh browser profile should make no request to `googletagmanager.com` or `google-analytics.com` before consent. The app-owned consent preference is stored only in first-party localStorage key `jep.analyticsConsent.v1` with values `granted` or `denied`; do not use cookies or server-side app config for the app's own consent preference. This does not claim GTM/GA4 sets no Google-managed storage after consent; that behavior is controlled by Consent Mode and GA4 Admin.
 
 ```js
 gtag('consent', 'default', {
@@ -78,20 +88,43 @@ gtag('consent', 'update', {
 
 Operator check:
 - In a fresh browser profile, open the app before consenting and verify no requests are sent to `googletagmanager.com` or `google-analytics.com`.
-- Grant analytics consent, perform a view switch, and verify a GA4 request appears.
+- Grant analytics consent, perform a view switch, and verify the app pushes `event=pageview` to `dataLayer` and GTM sends a GA4 `page_view` with only the configured pageview parameters. GA4 default page URL/title metadata is allowed after consent, but app-owned custom parameters must not contain OAuth callback markers, Jira/Home URLs, tokens, issue keys, IP addresses, local file paths, or config payloads.
+- After consent, verify enabled Enhanced Measurement interactions can appear as GA4-managed events: 90% scroll (`scroll`), outbound link click (`click`), file link click (`file_download`), form submit (`form_submit`), and URL-query-driven site search (`view_search_results`) when the test environment exposes those interactions.
 - Revoke consent, repeat the action, and verify no further GA4 requests are sent.
+
+Tag loading must initialize `dataLayer` before loading GTM:
+
+```js
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+
+gtag('consent', 'default', {
+  ad_storage: 'denied',
+  ad_user_data: 'denied',
+  ad_personalization: 'denied',
+  analytics_storage: 'denied'
+});
+
+// After analytics consent is granted:
+// Inject https://www.googletagmanager.com/gtm.js?id=<GTM_CONTAINER_ID>
+```
+
+The local `gtag` function above is only a consent-command helper that queues commands into `dataLayer`. App-owned analytics events must use `dataLayer.push({ event: 'pageview', ... })` or `dataLayer.push({ event: 'userevent', ... })`.
+
+Do not override `page_location` or `page_title` in app code. GA4 defaults are accepted after consent for the web stream. App-owned `pageview` and `userevent` payloads still must not pass raw URLs or titles as custom event parameters.
 
 ---
 
 ## User-ID Configuration
 
-The app sends a server-derived pseudonymous `user_id` with GA4, not raw user identity.
+The app sends a server-derived pseudonymous `user_id` with GA4, not raw user identity. GA4 property users must not be able to identify a specific person from the GA4 User-ID value, custom definitions, reports, exports, PR notes, logs, or this runbook.
 
 Allowed:
 - HMAC-SHA256 output derived from `RequestAuthContext.stable_subject` and `GA4_USER_ID_PEPPER`.
 - Pseudonymous `user_id` only for real per-user OAuth/DB identities.
 - `null` on logout or expired auth.
 - `null` for Basic/local shared auth, because the shared `local-basic` subject is not an individual user.
+- No GA4 report, custom dimension, export, or admin workflow may map the pseudonymous value back to a specific person.
 
 Forbidden:
 - Atlassian account ID.
@@ -105,72 +138,178 @@ Forbidden:
 - Team or group name.
 
 GA4 Admin steps:
-1. Confirm the website sends `user_id` through the GA4 config/set path, not as a custom event parameter.
+1. Confirm GTM maps `ga4_user_id` to GA4 User-ID in the Google tag / GA4 settings path, not as a custom event parameter.
 2. Do not create a custom dimension named `user_id`, `uid`, `userid`, `customer_id`, or anything equivalent.
 3. Use GA4 reporting identity settings according to company policy. For internal product analytics, prefer an identity mode that uses User-ID when available without enabling ad personalization.
 4. In DebugView, verify authenticated events include User-ID association while event parameters do not include identity fields.
 5. In Basic/local shared mode, verify events have no GA4 User-ID association.
 
+Privacy operations:
+1. Treat GA4 User-ID as pseudonymous personal data, not anonymous data.
+2. This implementation does not add a GA4 data-subject-request or account-deletion workflow. If policy later requires GA4 deletion, create a separate implementation plan that covers GA Admin deletion credentials, downstream exports, client-ID-only events, audit evidence, and pepper rotation.
+3. Do not paste pseudonymous ids, source identities, local URLs, callback URLs, tokens, or raw DebugView payloads into plans, PR descriptions, or commit messages.
+
+---
+
+## GTM Schema Configuration
+
+The app uses a stable two-trigger dataLayer schema. Do not create a new GTM trigger or tag for each app event.
+
+App syntax is always object-push based:
+
+```js
+window.dataLayer.push({ event: 'pageview', /* pageview properties */ });
+window.dataLayer.push({ event: 'userevent', ga4_event_name: 'scenario_action', /* event properties */ });
+```
+
+Do not configure GTM around product event names such as `scenario_action`, `settings_action`, or `api_result` as Custom Event trigger names. Those values live in `ga4_event_name` and are read by the single `userevent` tag.
+
+### Trigger 1: Pageview
+
+Create one Custom Event trigger:
+
+| GTM item | Value |
+| --- | --- |
+| Trigger type | Custom Event |
+| Event name | `pageview` |
+| Fires on | All Custom Events matching `pageview` |
+| GA4 Event tag name | `GA4 - page_view from dataLayer pageview` |
+| GA4 event name | `page_view` |
+
+Create these Data Layer Variables and map them as GA4 event parameters on that tag:
+
+| Data layer key | GA4 parameter | Notes |
+| --- | --- | --- |
+| `logical_page` | `logical_page` | Low-cardinality page family, for example `dashboard`. |
+| `dashboard_view` | `dashboard_view` | `eng` or `epm`. |
+| `eng_mode` | `eng_mode` | `catch_up`, `planning`, `statistics`, or `scenario` when applicable. |
+| `auth_mode` | `auth_mode` | Low-cardinality auth mode. |
+| `source_surface` | `source_surface` | Where the pageview was produced. |
+| `debug_mode` | `debug_mode` | Map only in debug environments; do not create a custom dimension. |
+
+Map `ga4_user_id` to GA4 User-ID, not to an event parameter.
+
+### Trigger 2: User Event
+
+Create one Custom Event trigger:
+
+| GTM item | Value |
+| --- | --- |
+| Trigger type | Custom Event |
+| Event name | `userevent` |
+| Fires on | All Custom Events matching `userevent` |
+| GA4 Event tag name | `GA4 - dynamic app event from dataLayer userevent` |
+| GA4 event name | Data Layer Variable `ga4_event_name` |
+
+Create one Data Layer Variable for `ga4_event_name` and use it only as the GA4 Event Name. Do not send `ga4_event_name` as a GA4 event parameter.
+
+Create Data Layer Variables once for all allowed app-owned user-event properties. Map every variable below as a GA4 event parameter on the single `userevent` tag; undefined values can be ignored by GTM/GA4.
+
+```text
+api_surface
+auth_mode
+blocking_reason
+cache_state
+chart_id
+connection_type
+content_id
+content_type
+conflict_count_bucket
+dashboard_view
+dirty_state
+duration_bucket
+eng_mode
+epm_tab
+error_area
+error_code
+filter_type
+from_mode
+from_view
+group_count_bucket
+has_dep_violations
+has_conflicts
+has_selected_sprint
+issue_count_bucket
+lane_mode
+logical_page
+method
+metric
+override_count_bucket
+pending_unsaved_state
+point_bucket
+previous_status
+project_count_bucket
+project_scope
+query_length_bucket
+range_size_bucket
+recoverable_state
+result
+result_count_bucket
+search_scope
+section
+selection_count_bucket
+selected_count_bucket
+selected_sp_bucket
+series_type
+source_surface
+scope_type
+stats_view
+status_bucket
+subgoal_scope
+team_count_bucket
+value_state
+validation_count_bucket
+visible_count_bucket
+workflow_action
+duration_ms
+visible_count
+selected_count
+selected_story_points
+override_count
+issue_count
+conflict_count
+unschedulable_count
+project_count
+```
+
+No additional GTM configuration is required for a new app event name when it uses `event=userevent`, an allowlisted `ga4_event_name`, and only the properties above. GTM changes are required only when adding a new dataLayer property key, changing consent behavior, or adding a new analytics destination.
+
 ---
 
 ## Custom Definitions
 
-Create only the following event-scoped custom dimensions initially. Do not register high-cardinality names, IDs, URLs, raw labels, or search terms.
+Create only the following event-scoped custom dimensions initially. Do not register every allowed event parameter. This first set uses 26 of 50 standard-property event-scoped custom-dimension slots because the named page/view report needs three pageview fields; it still leaves nearly half the standard quota open for corrections and future features.
 
 | Display name | Scope | Event parameter |
 | --- | --- | --- |
-| Action | Event | `action` |
 | API Surface | Event | `api_surface` |
 | Auth Mode | Event | `auth_mode` |
 | Blocking Reason | Event | `blocking_reason` |
 | Cache State | Event | `cache_state` |
-| Chart ID | Event | `chart_id` |
-| Connection Type | Event | `connection_type` |
 | Content Type | Event | `content_type` |
-| Conflict Count Bucket | Event | `conflict_count_bucket` |
-| Dirty State | Event | `dirty_state` |
+| Content ID | Event | `content_id` |
+| Dashboard View | Event | `dashboard_view` |
 | Duration Bucket | Event | `duration_bucket` |
+| ENG Mode | Event | `eng_mode` |
 | EPM Tab | Event | `epm_tab` |
 | Error Area | Event | `error_area` |
 | Error Code | Event | `error_code` |
 | Filter Type | Event | `filter_type` |
-| Group Count Bucket | Event | `group_count_bucket` |
-| Has Conflicts | Event | `has_conflicts` |
-| Has Dependency Violations | Event | `has_dep_violations` |
-| Has Selected Sprint | Event | `has_selected_sprint` |
-| Content ID | Event | `content_id` |
-| Issue Count Bucket | Event | `issue_count_bucket` |
 | Lane Mode | Event | `lane_mode` |
-| Method | Event | `method` |
-| Metric | Event | `metric` |
-| Override Count Bucket | Event | `override_count_bucket` |
-| Pending Unsaved State | Event | `pending_unsaved_state` |
-| Point Bucket | Event | `point_bucket` |
-| Previous Status | Event | `previous_status` |
-| Project Count Bucket | Event | `project_count_bucket` |
+| Logical Page | Event | `logical_page` |
 | Project Scope | Event | `project_scope` |
 | Query Length Bucket | Event | `query_length_bucket` |
-| Range Size Bucket | Event | `range_size_bucket` |
-| Recoverable State | Event | `recoverable_state` |
 | Result | Event | `result` |
 | Result Count Bucket | Event | `result_count_bucket` |
 | Search Scope | Event | `search_scope` |
 | Section | Event | `section` |
 | Selection Count Bucket | Event | `selection_count_bucket` |
-| Selected Count Bucket | Event | `selected_count_bucket` |
-| Selected SP Bucket | Event | `selected_sp_bucket` |
-| Series Type | Event | `series_type` |
-| Scope Type | Event | `scope_type` |
 | Source Surface | Event | `source_surface` |
 | Stats View | Event | `stats_view` |
 | Status Bucket | Event | `status_bucket` |
-| Subgoal Scope | Event | `subgoal_scope` |
-| Team Count Bucket | Event | `team_count_bucket` |
-| Value State | Event | `value_state` |
-| Validation Count Bucket | Event | `validation_count_bucket` |
-| Visible Count Bucket | Event | `visible_count_bucket` |
+| Workflow Action | Event | `workflow_action` |
 
-This uses all 50 standard-property event-scoped custom dimension slots. The allowlisted `from_mode` and `from_view` parameters are intentionally not registered initially because `content_type` plus `content_id` answer the first reporting questions without spending extra quota.
+Allowed but initially unregistered parameters include `chart_id`, `connection_type`, `conflict_count_bucket`, `dirty_state`, `from_mode`, `from_view`, `group_count_bucket`, `has_conflicts`, `has_dep_violations`, `has_selected_sprint`, `issue_count_bucket`, `method`, `metric`, `override_count_bucket`, `pending_unsaved_state`, `point_bucket`, `previous_status`, `project_count_bucket`, `range_size_bucket`, `recoverable_state`, `scope_type`, `selected_count_bucket`, `selected_sp_bucket`, `series_type`, `subgoal_scope`, `team_count_bucket`, `validation_count_bucket`, `value_state`, and `visible_count_bucket`. Register one later only when a named report needs it.
 
 Create these event-scoped custom metrics:
 
@@ -191,7 +330,6 @@ Create these user-scoped custom dimensions only if they are sent by the shipped 
 | Display name | Scope | User property |
 | --- | --- | --- |
 | Auth Mode | User | `auth_mode` |
-| Analytics Consent State | User | `analytics_consent_state` |
 
 Do not create custom dimensions for:
 - `user_id`
@@ -223,27 +361,36 @@ Representative events to verify:
 
 | User action | Expected GA4 event | Must include | Must not include |
 | --- | --- | --- | --- |
+| Load dashboard or switch logical view | `page_view` from `dataLayer.event=pageview` | `logical_page`, `dashboard_view`, `source_surface` | raw URL as custom param, issue key, token |
 | Sign in and load dashboard | `login` | `method`, `auth_mode`, `result` | email, account ID, callback URL |
+| Basic/local dashboard reload | no `login` | n/a | repeated bootstrap login event |
 | Switch ENG to EPM | `select_content` | `content_type=dashboard_view`, `content_id=epm` | project names, Home URLs |
 | Change ENG mode to Scenario | `select_content` | `content_type=eng_mode`, `content_id=scenario` | issue keys |
 | Search dashboard | `app_search` | `search_scope`, `query_length_bucket`, `result_count_bucket` | raw search text, `search_term` |
 | Select teams/groups | `filter_changed` | `filter_type`, `selection_count_bucket` | team names, group names, team IDs |
-| Save Settings | `settings_action` | `section`, `action=save`, `result` | config payload, field IDs, validation text |
-| Connect Home token | `connection_action` | `connection_type`, `action`, `result` | email, token, credential subject |
-| Edit Scenario timeline | `scenario_action` | `action`, `override_count_bucket`, `result` | issue key, draft ID, assignee |
+| Save Settings | `settings_action` | `section`, `workflow_action=save`, `result` | config payload, field IDs, validation text |
+| Connect Home token | `connection_action` | `connection_type`, `workflow_action`, `result` | email, token, credential subject |
+| Edit Scenario timeline | `scenario_action` | `workflow_action`, `override_count_bucket`, `result` | issue key, draft ID, assignee |
 | Load EPM rollup | `epm_action` | `epm_tab`, `project_scope`, `project_count_bucket` | project name, label, Home ID |
 | API completes | `api_result` | `api_surface`, `status_bucket`, `duration_bucket` | URL query, response body, Jira error text |
+| Reach 90% scroll depth | `scroll` | GA4-managed Enhanced Measurement event | app-owned custom params |
+| Click outbound link | `click` | GA4-managed Enhanced Measurement event | app-owned custom params |
+| Download file link | `file_download` | GA4-managed Enhanced Measurement event | app-owned custom params |
+| Submit form | `form_submit` | GA4-managed Enhanced Measurement event | app-owned custom params |
+| URL-query-driven site search | `view_search_results` | GA4-managed Enhanced Measurement event | app-owned custom params |
 
 Validation commands for implementers:
 
 ```bash
 npm run build
 node tests/test_analytics_source_guards.js
+node tests/test_analytics_events.js
 npx playwright test tests/ui/ga4_consent_and_events.spec.js
 .venv/bin/python -m unittest tests.test_analytics_identity tests.test_analytics_routes
+.venv/bin/python -m unittest tests.test_security_headers
 ```
 
-For production validation, use GA4 DebugView with `GA4_DEBUG_MODE=true` in a non-production or controlled environment. Turn debug mode off after validation.
+For validation, use GTM Preview/Tag Assistant plus GA4 DebugView with `GA4_DEBUG_MODE=true` in a non-production or controlled environment. `debug_mode` is a transport flag only; do not create a custom dimension for it. Turn debug mode off by omitting the flag after validation, not by sending `debug_mode:false`.
 
 ---
 
@@ -256,30 +403,41 @@ Start with Explore reports or standard custom reports:
    - Metrics: event count, active users
    - Events: `select_content`, `stats_action`, `epm_action`, `scenario_action`
 
-2. **Search And Filter Friction**
+2. **Logical Page/View Adoption**
+   - Rows: `logical_page`, `dashboard_view`, `eng_mode`, `source_surface`
+   - Metrics: event count, active users
+   - Events: `page_view`
+
+3. **Search And Filter Friction**
    - Rows: `search_scope`, `query_length_bucket`, `result_count_bucket`, `filter_type`
    - Metrics: event count, active users
    - Events: `app_search`, `filter_changed`
 
-3. **Settings And Connection Reliability**
-   - Rows: `section`, `action`, `result`, `error_code`
+4. **Settings And Connection Reliability**
+   - Rows: `section`, `workflow_action`, `result`, `error_code`
    - Metrics: event count, active users
    - Events: `settings_action`, `connection_action`
 
-4. **Scenario Planner Usage**
-   - Rows: `action`, `lane_mode`, `result`, `blocking_reason`
+5. **Scenario Planner Usage**
+   - Rows: `workflow_action`, `lane_mode`, `result`, `blocking_reason`
    - Metrics: event count, `override_count`, `conflict_count`, active users
    - Events: `scenario_action`
 
-5. **EPM Usage And Load Outcomes**
+6. **EPM Usage And Load Outcomes**
    - Rows: `epm_tab`, `project_scope`, `result`, `duration_bucket`
    - Metrics: event count, `project_count`, `duration_ms`, active users
    - Events: `epm_action`, `api_result`
 
-6. **API Reliability**
+7. **API Reliability**
    - Rows: `api_surface`, `status_bucket`, `result`, `cache_state`
    - Metrics: event count, `duration_ms`, active users
    - Events: `api_result`
+
+8. **Enhanced Measurement Engagement**
+   - Rows: event name, page title/location, link/file/form/search dimensions when approved for reporting
+   - Metrics: event count, active users
+   - Events: `scroll`, `click`, `view_search_results`, `file_download`, `form_start`, `form_submit`
+   - Do not create custom dimensions for link/form/search parameters until a named report needs them.
 
 ---
 

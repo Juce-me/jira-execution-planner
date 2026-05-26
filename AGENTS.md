@@ -219,6 +219,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Keep `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` aligned at the root and in subfolders; `CLAUDE.md` and `GEMINI.md` should point to the local `AGENTS.md`.
 - Agent work artifacts under `docs/agents/` use `YYYY-MM-DD-status-summary.md` per `docs/agents.md`.
 - Keep `AGENTS.md`, `README.md`, and other contributor docs aligned when workflow or structure changes
+- User-visible feature changes must include analytics impact review: event name, typed params, tests, `docs/README_ANALYTICS.md` taxonomy updates, and GA4 runbook updates when relevant; app-owned analytics must keep the two-trigger GTM dataLayer contract (`pageview`/`userevent`) unless the runbook is explicitly updated; if no event is needed, document the allowlist reason.
 
 ### Repo-specific constraints
 - Review relevant postmortems before making related changes. Add new postmortems under `postmortem/` as `MRTXXX-short-title.md` and update `postmortem/README.md`.

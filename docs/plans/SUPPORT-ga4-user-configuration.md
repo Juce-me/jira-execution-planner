@@ -19,6 +19,8 @@ Official docs checked on 2026-05-26:
 - Events and `gtag('event', ...)`: https://developers.google.com/analytics/devguides/collection/ga4/events
 - User-ID: https://developers.google.com/analytics/devguides/collection/ga4/user-id
 - Consent Mode: https://developers.google.com/tag-platform/security/guides/consent
+- CSP for Google tags: https://developers.google.com/tag-platform/security/guides/csp
+- Measurement ID: https://support.google.com/analytics/answer/12270356
 - Event naming and reserved names: https://support.google.com/analytics/answer/13316687
 - Custom definitions and limits: https://support.google.com/analytics/answer/14240153
 - PII guidance: https://support.google.com/analytics/answer/6366371
@@ -41,7 +43,7 @@ Official docs checked on 2026-05-26:
 
 ## Consent Configuration
 
-The website must set Consent Mode defaults before loading the Google tag:
+The website must set Consent Mode defaults before any possible Google tag injection. For this app, the remote Google tag is not loaded until analytics consent is granted, so a fresh browser profile should make no request to Google before consent.
 
 ```js
 gtag('consent', 'default', {
@@ -87,7 +89,9 @@ The app sends a server-derived pseudonymous `user_id` with GA4, not raw user ide
 
 Allowed:
 - HMAC-SHA256 output derived from `RequestAuthContext.stable_subject` and `GA4_USER_ID_PEPPER`.
+- Pseudonymous `user_id` only for real per-user OAuth/DB identities.
 - `null` on logout or expired auth.
+- `null` for Basic/local shared auth, because the shared `local-basic` subject is not an individual user.
 
 Forbidden:
 - Atlassian account ID.
@@ -105,6 +109,7 @@ GA4 Admin steps:
 2. Do not create a custom dimension named `user_id`, `uid`, `userid`, `customer_id`, or anything equivalent.
 3. Use GA4 reporting identity settings according to company policy. For internal product analytics, prefer an identity mode that uses User-ID when available without enabling ad personalization.
 4. In DebugView, verify authenticated events include User-ID association while event parameters do not include identity fields.
+5. In Basic/local shared mode, verify events have no GA4 User-ID association.
 
 ---
 
@@ -122,21 +127,31 @@ Create only the following event-scoped custom dimensions initially. Do not regis
 | Chart ID | Event | `chart_id` |
 | Connection Type | Event | `connection_type` |
 | Content Type | Event | `content_type` |
+| Conflict Count Bucket | Event | `conflict_count_bucket` |
 | Dirty State | Event | `dirty_state` |
 | Duration Bucket | Event | `duration_bucket` |
 | EPM Tab | Event | `epm_tab` |
 | Error Area | Event | `error_area` |
 | Error Code | Event | `error_code` |
 | Filter Type | Event | `filter_type` |
-| From Mode | Event | `from_mode` |
-| From View | Event | `from_view` |
-| Item ID | Event | `item_id` |
+| Group Count Bucket | Event | `group_count_bucket` |
+| Has Conflicts | Event | `has_conflicts` |
+| Has Dependency Violations | Event | `has_dep_violations` |
+| Has Selected Sprint | Event | `has_selected_sprint` |
+| Content ID | Event | `content_id` |
+| Issue Count Bucket | Event | `issue_count_bucket` |
 | Lane Mode | Event | `lane_mode` |
 | Method | Event | `method` |
 | Metric | Event | `metric` |
+| Override Count Bucket | Event | `override_count_bucket` |
+| Pending Unsaved State | Event | `pending_unsaved_state` |
+| Point Bucket | Event | `point_bucket` |
+| Previous Status | Event | `previous_status` |
+| Project Count Bucket | Event | `project_count_bucket` |
 | Project Scope | Event | `project_scope` |
 | Query Length Bucket | Event | `query_length_bucket` |
 | Range Size Bucket | Event | `range_size_bucket` |
+| Recoverable State | Event | `recoverable_state` |
 | Result | Event | `result` |
 | Result Count Bucket | Event | `result_count_bucket` |
 | Search Scope | Event | `search_scope` |
@@ -144,13 +159,18 @@ Create only the following event-scoped custom dimensions initially. Do not regis
 | Selection Count Bucket | Event | `selection_count_bucket` |
 | Selected Count Bucket | Event | `selected_count_bucket` |
 | Selected SP Bucket | Event | `selected_sp_bucket` |
+| Series Type | Event | `series_type` |
+| Scope Type | Event | `scope_type` |
 | Source Surface | Event | `source_surface` |
 | Stats View | Event | `stats_view` |
 | Status Bucket | Event | `status_bucket` |
 | Subgoal Scope | Event | `subgoal_scope` |
+| Team Count Bucket | Event | `team_count_bucket` |
 | Value State | Event | `value_state` |
 | Validation Count Bucket | Event | `validation_count_bucket` |
 | Visible Count Bucket | Event | `visible_count_bucket` |
+
+This uses all 50 standard-property event-scoped custom dimension slots. The allowlisted `from_mode` and `from_view` parameters are intentionally not registered initially because `content_type` plus `content_id` answer the first reporting questions without spending extra quota.
 
 Create these event-scoped custom metrics:
 
@@ -204,9 +224,9 @@ Representative events to verify:
 | User action | Expected GA4 event | Must include | Must not include |
 | --- | --- | --- | --- |
 | Sign in and load dashboard | `login` | `method`, `auth_mode`, `result` | email, account ID, callback URL |
-| Switch ENG to EPM | `select_content` | `content_type=dashboard_view`, `item_id=epm` | project names, Home URLs |
-| Change ENG mode to Scenario | `select_content` | `content_type=eng_mode`, `item_id=scenario` | issue keys |
-| Search dashboard | `search` | `search_scope`, `query_length_bucket`, `result_count_bucket` | raw search text |
+| Switch ENG to EPM | `select_content` | `content_type=dashboard_view`, `content_id=epm` | project names, Home URLs |
+| Change ENG mode to Scenario | `select_content` | `content_type=eng_mode`, `content_id=scenario` | issue keys |
+| Search dashboard | `app_search` | `search_scope`, `query_length_bucket`, `result_count_bucket` | raw search text, `search_term` |
 | Select teams/groups | `filter_changed` | `filter_type`, `selection_count_bucket` | team names, group names, team IDs |
 | Save Settings | `settings_action` | `section`, `action=save`, `result` | config payload, field IDs, validation text |
 | Connect Home token | `connection_action` | `connection_type`, `action`, `result` | email, token, credential subject |
@@ -232,14 +252,14 @@ For production validation, use GA4 DebugView with `GA4_DEBUG_MODE=true` in a non
 Start with Explore reports or standard custom reports:
 
 1. **Feature Adoption**
-   - Rows: `source_surface`, `content_type`, `item_id`
+   - Rows: `source_surface`, `content_type`, `content_id`
    - Metrics: event count, active users
    - Events: `select_content`, `stats_action`, `epm_action`, `scenario_action`
 
 2. **Search And Filter Friction**
    - Rows: `search_scope`, `query_length_bucket`, `result_count_bucket`, `filter_type`
    - Metrics: event count, active users
-   - Events: `search`, `filter_changed`
+   - Events: `app_search`, `filter_changed`
 
 3. **Settings And Connection Reliability**
    - Rows: `section`, `action`, `result`, `error_code`
@@ -271,4 +291,3 @@ Start with Explore reports or standard custom reports:
 - Treat values that identify a person, team, project, Jira issue, Home project, deployment, or workspace as sensitive even when they are not obvious PII.
 - If stakeholders require reports by actual team or group name, build a separate internal reporting path with access controls. Do not overload GA4.
 - Keep Measurement Protocol API secrets out of this slice.
-

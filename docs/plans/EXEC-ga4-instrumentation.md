@@ -6,7 +6,7 @@
 
 **Goal:** Add privacy-safe Google Analytics 4 tracking for Jira Execution Planner usage: authenticated user continuity, major view/mode adoption, search and filter usage, settings and connection flows, Scenario Planner actions, EPM usage, chart interactions, API outcome timing, and reliability signals.
 
-**Architecture:** Use direct browser-side `gtag.js` as the primary GA4 transport. Add one small backend analytics context endpoint that returns only feature flags, the measurement ID, and pseudonymous identifiers derived server-side. Instrument browser UX and API outcomes through an allowlisted analytics wrapper. Do not add Measurement Protocol in this slice; if later server-only events are needed, create a separate `EXEC-*` plan with an API-secret operating model.
+**Architecture:** Use direct browser-side `gtag.js` as the primary GA4 transport, but defer loading the remote Google tag until analytics consent is granted. Add one small backend analytics context endpoint that returns only feature flags, the measurement ID, and pseudonymous identifiers derived server-side for real per-user OAuth/DB sessions. Instrument browser UX and API outcomes through an allowlisted analytics wrapper. Do not add Measurement Protocol in this slice; if later server-only events are needed, create a separate `EXEC-*` plan with an API-secret operating model.
 
 **Tech Stack:** Flask, React 19, esbuild, `gtag.js`, GA4 Consent Mode v2, Python `unittest`, Node source-guard tests, Playwright UI/network assertions.
 
@@ -15,6 +15,8 @@
 - GA4 recommended events: https://developers.google.com/analytics/devguides/collection/ga4/reference/events
 - GA4 User-ID: https://developers.google.com/analytics/devguides/collection/ga4/user-id
 - Consent Mode: https://developers.google.com/tag-platform/security/guides/consent
+- CSP for Google tags: https://developers.google.com/tag-platform/security/guides/csp
+- GA4 Measurement ID: https://support.google.com/analytics/answer/12270356
 - Event naming rules and reserved names: https://support.google.com/analytics/answer/13316687
 - Custom dimension/metric limits and cardinality guidance: https://support.google.com/analytics/answer/14240153
 - GA4 PII policy guidance: https://support.google.com/analytics/answer/6366371
@@ -29,7 +31,7 @@
 3. Send `user_id` only as a server-derived pseudonymous value. Never send raw Atlassian account IDs, emails, display names, workspace IDs, cloud IDs, site URLs, API tokens, OAuth codes, Jira issue keys, Home project IDs, or local file paths.
 4. Do not send raw custom group names, team names, sprint names, project names, Jira labels, search terms, issue summaries, assignees, draft IDs, version IDs, JQL, Jira URLs, Home URLs, validation messages, imported JSON, or saved config payloads.
 5. For user-requested "custom groups names" and "team names", collect usage safely as `filter_type`, `selection_count_bucket`, `team_count_bucket`, `group_count_bucket`, `scope_type`, and `source_surface`. Raw names belong in product-owned operational reporting, not GA4 custom dimensions.
-6. Prefer GA4 recommended events where they match the action (`login`, `search`, `select_content`). Use a small set of custom events for app-specific workflows.
+6. Prefer GA4 recommended events where their required parameter contract matches the privacy rules (`login`, `select_content`). Use a small set of custom events for app-specific workflows. Use `app_search`, not GA4 `search`, because GA4 `search` requires raw `search_term` and this app must not send search terms.
 7. Keep event names below 40 characters and events below 25 parameters. Keep custom definitions below the standard GA4 quota: 50 event-scoped custom dimensions, 50 custom metrics, and 25 user properties.
 8. Do not track hover/readout events unless throttled to once per chart per session. Native tooltip hover noise is out of scope.
 9. Analytics must be non-blocking. A GA script failure or send failure must not block dashboard load, auth refresh, Jira fetches, EPM rollups, Scenario drafts, settings saves, or exports.
@@ -101,15 +103,21 @@ Create:
 - `backend/analytics/__init__.py` - package marker.
 - `backend/analytics/identity.py` - HMAC-SHA256 pseudonymous ID helpers and bucket utilities.
 - `frontend/src/analytics/analytics.js` - GA loader/context, consent handling, event send wrapper, sanitization, bucketing.
-- `frontend/src/analytics/events.js` - event-name constants and allowlisted parameter schema.
+- `frontend/src/analytics/events.js` - event-name constants, enum/bucket validators, and allowlisted parameter schema.
 - `tests/test_analytics_identity.py` - backend pseudonymous ID and context tests.
 - `tests/test_analytics_routes.py` - Flask route tests for disabled/enabled context and no raw identity fields.
+- `tests/test_security_headers.py` - extend security header coverage for GA4 CSP directives.
+- `tests/test_analytics_events.js` - unit tests for event schema validation, sanitizer rejection, and bucket helpers.
 - `tests/test_analytics_source_guards.js` - source guard for forbidden analytics payload names and generated dist exclusion.
 - `tests/ui/ga4_consent_and_events.spec.js` - Playwright network tests for denied consent, granted consent, and representative event payloads.
 
 Modify:
 - `backend/app.py` - register analytics blueprint.
-- `backend/security/headers.py` - allow `https://www.googletagmanager.com`, `https://www.google-analytics.com`, and `https://region1.google-analytics.com` in CSP.
+- `backend/security/headers.py` - update CSP directives for direct GA4:
+  - `script-src`: keep existing app sources and add `https://*.googletagmanager.com`.
+  - `img-src`: keep existing app sources and add `https://*.google-analytics.com` and `https://*.googletagmanager.com`.
+  - `connect-src`: keep existing app sources and add `https://*.google-analytics.com`, `https://*.analytics.google.com`, and `https://*.googletagmanager.com`.
+  - Do not add Google Ads or DoubleClick endpoints in this slice because ad features stay disabled.
 - `jira-dashboard.html` - add Consent Mode default and Google tag snippet in the correct order.
 - `.env.example` - document analytics env flags and hash pepper.
 - `README.md` - document local analytics setup and verification.
@@ -149,14 +157,13 @@ Rules:
 
 ## User Identity Contract
 
-Backend creates pseudonymous IDs:
+Backend creates a pseudonymous user ID only when the request has a real per-user OAuth/DB identity:
 
 ```text
 analytics_user_id = base64url(HMAC_SHA256(GA4_USER_ID_PEPPER, "user:" + RequestAuthContext.stable_subject))
-analytics_workspace_id = base64url(HMAC_SHA256(GA4_USER_ID_PEPPER, "workspace:" + RequestAuthContext.workspace_id))
 ```
 
-Only `analytics_user_id` is sent as GA4 `user_id`. `analytics_workspace_id` may be sent only as an unregistered event parameter for debugging during implementation; do not register it as a custom dimension because workspace IDs are high-cardinality.
+Only `analytics_user_id` is sent as GA4 `user_id`. Return `userId: null` for Basic/local shared mode because the current Basic subject is shared (`local-basic`) and does not represent an individual user. Do not derive or send a workspace hash; workspace and deployment identifiers are high-cardinality and can identify a deployment.
 
 `GET /api/analytics/context` returns:
 
@@ -172,6 +179,25 @@ Only `analytics_user_id` is sent as GA4 `user_id`. `analytics_workspace_id` may 
 
 The response must not include raw Atlassian account IDs, emails, display names, workspace IDs, cloud IDs, Jira URLs, Home URLs, project keys, team IDs, group IDs, auth connection IDs, token versions, or service integration metadata.
 
+## Analytics Context Route Contract
+
+| Case | Expected response | Notes |
+| --- | --- | --- |
+| `GA4_ENABLED=false` | `200 {"enabled": false, "measurementId": null, "debugMode": false, "consentRequired": true, "userId": null}` | Must not require auth and must not expose config details. |
+| `GA4_ENABLED=true` with missing/invalid `GA4_MEASUREMENT_ID` | Startup/config validation failure before serving requests | Do not return a partially enabled context. |
+| `GA4_ENABLED=true` with missing `GA4_USER_ID_PEPPER` | Startup/config validation failure before serving requests | Required because enabled OAuth/DB sessions can set `user_id`. |
+| Basic/local shared auth | `200` enabled context with `userId: null` | Never send a shared `local-basic` user as GA4 User-ID. |
+| Unauthenticated or expired OAuth/browser session | `200` enabled context with `userId: null` | The route is read-only and must not redirect or leak auth state; product auth recovery remains owned by existing auth routes. |
+| Authenticated DB/OAuth user | `200` enabled context with pseudonymous `userId` | Pseudonym must be stable for the same user and pepper, and different across users. |
+| Unsupported method | `405` | Only `GET` is allowed. |
+
+Route rules:
+- Do not require CSRF for `GET /api/analytics/context`.
+- Do include the existing `X-Requested-With` client convention when calling from the browser for consistency with app APIs.
+- Return `Cache-Control: no-store` because the response can depend on signed-in user state.
+- Do not make Jira, Home/Townsquare, database fan-out, or external Google calls from the context route.
+- Do not include workspace/site/cloud boundaries in the response. Use them only as internal inputs if later cache partitioning is needed.
+
 ---
 
 ## Event Catalog
@@ -182,11 +208,11 @@ Use these event names and parameters as the v1 allowlist. Do not add ad hoc even
 | --- | --- | --- | --- |
 | Auth adoption and recovery | `login` | Authenticated bootstrap after Atlassian OAuth or Basic local auth is confirmed | `method`, `auth_mode`, `result`, `source_surface` |
 | Auth exit | `logout` | User-triggered logout completes | `auth_mode`, `source_surface` |
-| ENG/EPM adoption | `select_content` | Top-level ENG/EPM view changes | `content_type=dashboard_view`, `item_id=eng|epm`, `from_view`, `source_surface` |
-| ENG mode adoption | `select_content` | Catch Up, Planning, Statistics, or Scenario mode changes | `content_type=eng_mode`, `item_id`, `from_mode`, `source_surface` |
-| Search friction | `search` | Debounced dashboard, EPM, or settings search submits/settles | `search_scope`, `query_length_bucket`, `result_count_bucket`, `source_surface` |
-| Filter usage | `filter_changed` | Sprint, group, team, EPM project, stats, field, or issue-type filters change | `filter_type`, `selection_count_bucket`, `value_state`, `source_surface` |
-| Header/tool actions | `select_content` | Refresh, settings open, update notice, Jira export | `content_type=tool_action`, `item_id`, `source_surface`, `visible_count_bucket` |
+| ENG/EPM adoption | `select_content` | Top-level ENG/EPM view changes | `content_type=dashboard_view`, `content_id=eng|epm`, `from_view`, `source_surface` |
+| ENG mode adoption | `select_content` | Catch Up, Planning, Statistics, or Scenario mode changes | `content_type=eng_mode`, `content_id`, `from_mode`, `source_surface` |
+| Search friction | `app_search` | Debounced dashboard, EPM, or settings search submits/settles | `search_scope`, `query_length_bucket`, `result_count_bucket`, `source_surface` |
+| Filter usage | `filter_changed` | Sprint, group, team, EPM project, stats, field, or issue-type filters change | `filter_type`, `selection_count_bucket`, `team_count_bucket`, `group_count_bucket`, `scope_type`, `value_state`, `source_surface` |
+| Header/tool actions | `select_content` | Refresh, settings open, update notice, Jira export | `content_type=tool_action`, `content_id`, `source_surface`, `visible_count_bucket` |
 | Settings workflow | `settings_action` | Settings tab open, test, save, cancel, validation failure | `section`, `action`, `result`, `validation_count_bucket`, `dirty_state` |
 | User connection workflow | `connection_action` | Home token connect/revoke/status recovery | `connection_type=home_townsquare`, `action`, `previous_status`, `result`, `error_code` |
 | Planning selection | `planning_action` | Task select/deselect/bulk select/status include change | `action`, `status_bucket`, `selected_count_bucket`, `selected_sp_bucket` |
@@ -213,7 +239,9 @@ Allowed event-scoped dimensions:
 - `cache_state`
 - `chart_id`
 - `connection_type`
+- `content_id`
 - `content_type`
+- `conflict_count_bucket`
 - `dirty_state`
 - `duration_bucket`
 - `eng_mode`
@@ -223,15 +251,19 @@ Allowed event-scoped dimensions:
 - `filter_type`
 - `from_mode`
 - `from_view`
+- `group_count_bucket`
 - `has_dep_violations`
 - `has_conflicts`
 - `has_selected_sprint`
-- `item_id`
+- `issue_count_bucket`
 - `lane_mode`
 - `method`
 - `metric`
+- `override_count_bucket`
 - `pending_unsaved_state`
+- `point_bucket`
 - `previous_status`
+- `project_count_bucket`
 - `project_scope`
 - `query_length_bucket`
 - `range_size_bucket`
@@ -245,9 +277,11 @@ Allowed event-scoped dimensions:
 - `selected_sp_bucket`
 - `series_type`
 - `source_surface`
+- `scope_type`
 - `stats_view`
 - `status_bucket`
 - `subgoal_scope`
+- `team_count_bucket`
 - `value_state`
 - `validation_count_bucket`
 - `visible_count_bucket`
@@ -269,7 +303,7 @@ Allowed user properties:
 
 Forbidden parameter/property names or values:
 - `user_id` as a custom dimension or event parameter. GA4 `user_id` must be set through the config/set command only.
-- `uid`, `userid`, `customer_id`, `session_id`, `sid`, `cid`, or any reserved `ga_`, `google_`, `firebase_`, `_`, or `gtag.` prefixes.
+- `uid`, `userid`, `customer_id`, `session_id`, `sid`, `cid`, `item_id`, or any reserved `ga_`, `google_`, `firebase_`, `_`, or `gtag.` prefixes.
 - Raw names, emails, account IDs, issue keys, Jira keys, Home IDs, URLs, labels, search text, assignees, owners, team/group names, sprint names, project names, field IDs, board IDs, draft IDs, version IDs, JQL, error messages, callback query strings, token material, local paths, or JSON payloads.
 
 ---
@@ -287,20 +321,26 @@ Ownership:
 - `backend/security/headers.py`
 - `.env.example`
 - `README.md`
+- `tests/test_analytics_events.js`
 - `tests/test_analytics_source_guards.js`
 - `tests/ui/ga4_consent_and_events.spec.js`
 
 Tasks:
 - [ ] Add Consent Mode default-denied initialization before loading the Google tag.
-- [ ] Load `https://www.googletagmanager.com/gtag/js?id=G-6QERX19WB0` only when analytics context is enabled and consent allows analytics storage, or queue it behind the consent update path.
+- [ ] Define `window.dataLayer`, `gtag`, and default-denied consent in the HTML shell without making a network request to Google.
+- [ ] Inject `https://www.googletagmanager.com/gtag/js?id=G-6QERX19WB0` only after analytics context is enabled and the user grants analytics consent.
 - [ ] Implement `initAnalytics`, `setAnalyticsConsent`, `setAnalyticsUser`, `trackEvent`, `trackRecommendedEvent`, `bucketCount`, `bucketDuration`, and `sanitizeAnalyticsParams`.
-- [ ] Reject forbidden parameter names and values at runtime in development/test.
-- [ ] Add CSP support for GA script and collect endpoints.
-- [ ] Add Playwright assertions that denied consent sends no requests to `google-analytics.com` or `googletagmanager.com`, and granted consent sends only sanitized payloads.
+- [ ] Implement a central event schema that validates event names, allowed parameters, enum values, bucket formats, booleans, and numeric metric fields before any call reaches `gtag`.
+- [ ] Reject forbidden parameter names and values at runtime in development/test, including dynamic values such as selected project names, sprint labels, team/group objects, Jira error text, URLs, query strings, issue keys, and Home/Jira labels.
+- [ ] Add CSP support for GA script, image, and collect endpoints using the directive-specific file map above.
+- [ ] Add `tests/test_security_headers.py` assertions for `script-src`, `img-src`, and `connect-src`.
+- [ ] Add Playwright assertions that denied consent sends no requests to `google-analytics.com` or `googletagmanager.com`, granted consent sends sanitized payloads, and the browser console has no CSP violation for post-consent collect requests.
 
 Verification:
 - [ ] `node tests/test_analytics_source_guards.js`
+- [ ] `node tests/test_analytics_events.js`
 - [ ] `npx playwright test tests/ui/ga4_consent_and_events.spec.js`
+- [ ] `.venv/bin/python -m unittest tests.test_security_headers`
 - [ ] `npm run build`
 
 ### Worker B: Backend Analytics Context
@@ -317,6 +357,7 @@ Tasks:
 - [ ] Add analytics env parsing and fail-closed validation when analytics is enabled without required config.
 - [ ] Add `/api/analytics/context` route that returns the compact contract in this plan.
 - [ ] Register the blueprint from `backend/app.py`.
+- [ ] Prove disabled, misconfigured, Basic/local, unauthenticated/expired OAuth, and authenticated DB/OAuth behavior from the route contract table.
 - [ ] Prove tests cannot observe raw `stable_subject`, `atlassian_account_id`, `email`, `display_name`, `workspace_id`, `cloud_id`, `site_url`, token fields, or route credentials in the response.
 
 Verification:
@@ -337,7 +378,7 @@ Ownership:
 - `frontend/src/stats/*.jsx`
 
 Tasks:
-- [ ] Wire `login`, `logout`, `select_content`, `search`, `filter_changed`, and `app_error_shown` at top-level dashboard/auth recovery surfaces.
+- [ ] Wire `login`, `logout`, `select_content`, `app_search`, `filter_changed`, and `app_error_shown` at top-level dashboard/auth recovery surfaces.
 - [ ] Wire settings and user connection events without sending config values or credential fields.
 - [ ] Wire EPM controls and board events without Home project names, IDs, labels, goal keys, or URLs.
 - [ ] Wire Scenario events for compute/open, edits, draft save/history, and writeback gate outcomes without issue keys, draft IDs, version IDs, assignees, or override payloads.
@@ -355,16 +396,19 @@ Ownership:
 - No production ownership unless fixing failures found in analytics files.
 
 Tasks:
-- [ ] Run a forbidden-payload source scan for `searchTerm`, `issue.key`, `assignee`, `displayName`, `email`, `team.name`, `group.name`, `project.name`, `label`, `jql`, `draftId`, `versionId`, `jiraUrl`, `homeUrl`, `apiToken`, `access_token`, `refresh_token`, `authorization`, and local absolute path patterns in analytics send calls.
+- [ ] Run sanitizer unit tests with raw forbidden examples: search text, selected project names, sprint labels, team/group objects, Jira error text, URLs, query strings, issue keys, Home/Jira labels, draft IDs, version IDs, and token-like strings.
+- [ ] Run a forbidden-payload source scan for `searchTerm`, `issue.key`, `assignee`, `displayName`, `email`, `team.name`, `group.name`, `project.name`, `label`, `jql`, `draftId`, `versionId`, `jiraUrl`, `homeUrl`, `apiToken`, `access_token`, `refresh_token`, `authorization`, and local absolute path patterns in analytics send calls. Treat this as a backstop, not the primary privacy test.
 - [ ] With consent denied, verify no GA network requests are made on initial load, view switches, search, filters, settings open, and scenario interactions.
-- [ ] With consent granted and `GA4_DEBUG_MODE=true`, verify representative events appear in DebugView or network payloads with only allowed parameters.
+- [ ] With consent granted and `GA4_DEBUG_MODE=true`, verify representative app search, team/group/sprint/project filters, EPM, settings, connection, scenario, and API events appear in DebugView or network payloads with only allowed enum, bucket, boolean, and numeric values.
 - [ ] Run the full test suite before push.
 
 Verification:
 - [ ] `npm run build`
 - [ ] `node tests/test_analytics_source_guards.js`
+- [ ] `node tests/test_analytics_events.js`
 - [ ] `npx playwright test tests/ui/ga4_consent_and_events.spec.js`
 - [ ] `.venv/bin/python -m unittest tests.test_analytics_identity tests.test_analytics_routes`
+- [ ] `.venv/bin/python -m unittest tests.test_security_headers`
 - [ ] `.venv/bin/python -m unittest discover -s tests`
 
 ---
@@ -374,13 +418,15 @@ Verification:
 ### Task 1: Add Analytics Foundation Tests
 
 Files:
+- Create `tests/test_analytics_events.js`
 - Create `tests/test_analytics_source_guards.js`
 - Create `tests/ui/ga4_consent_and_events.spec.js`
 
+- [ ] Add event schema tests that reject unknown event names, unknown parameters, reserved parameter names, malformed buckets, non-enum values, raw search terms, project/team/group/sprint names, issue keys, URLs/query strings, Jira error text, labels, draft/version IDs, token-like strings, and object payloads.
 - [ ] Add a source-guard test that fails if analytics send calls include forbidden parameter names or string snippets from the forbidden list.
 - [ ] Add a Playwright test that loads the dashboard with analytics enabled but consent denied and asserts no requests to GA domains.
-- [ ] Add a Playwright test that grants analytics consent, performs one view switch, one search, and one filter action, then asserts network payloads use only allowlisted names and bucketed values.
-- [ ] Run `node tests/test_analytics_source_guards.js` and `npx playwright test tests/ui/ga4_consent_and_events.spec.js`; expected result before implementation is failure.
+- [ ] Add a Playwright test that grants analytics consent, performs one view switch, one app search, one sprint filter, one team/group filter, one EPM project filter, one settings action, one connection action, one scenario action, and one API action, then asserts network payloads use only allowlisted enum, bucket, boolean, and numeric values.
+- [ ] Run `node tests/test_analytics_events.js`, `node tests/test_analytics_source_guards.js`, and `npx playwright test tests/ui/ga4_consent_and_events.spec.js`; expected result before implementation is failure.
 
 ### Task 2: Add Backend Identity And Context
 
@@ -396,7 +442,9 @@ Files:
 - [ ] Add env parsing for `GA4_ENABLED`, `GA4_MEASUREMENT_ID`, `GA4_USER_ID_PEPPER`, and `GA4_DEBUG_MODE`.
 - [ ] Return disabled context when `GA4_ENABLED=false`.
 - [ ] Fail closed when `GA4_ENABLED=true` and required measurement ID or pepper is missing.
-- [ ] Return compact enabled context for authenticated users and `userId: null` for unauthenticated users.
+- [ ] Return compact enabled context with `userId: null` for unauthenticated users, expired OAuth users, and Basic/local shared auth.
+- [ ] Return compact enabled context with pseudonymous `userId` only for real per-user OAuth/DB users.
+- [ ] Add `Cache-Control: no-store` to every context response.
 - [ ] Prove route output excludes raw identity/config/credential fields.
 - [ ] Run `.venv/bin/python -m unittest tests.test_analytics_identity tests.test_analytics_routes`.
 
@@ -408,12 +456,13 @@ Files:
 - Create/modify `frontend/src/analytics/analytics.js`
 - Create/modify `frontend/src/analytics/events.js`
 
-- [ ] Add Consent Mode default-denied snippet before the Google tag.
-- [ ] Add the Google tag loader for `G-6QERX19WB0` in the order required by Google Consent Mode.
+- [ ] Add Consent Mode default-denied snippet before any possible Google tag injection.
+- [ ] Add lazy Google tag injection for `G-6QERX19WB0` after the user grants analytics consent.
 - [ ] Implement consent persistence in first-party local storage or cookie using a project-specific key.
 - [ ] Add runtime guards that no event is sent while analytics is disabled or consent is denied.
 - [ ] Update CSP for GA script/connect endpoints.
-- [ ] Run the Playwright denied-consent test and confirm no GA network calls.
+- [ ] Extend `tests/test_security_headers.py` for the exact `script-src`, `img-src`, and `connect-src` directive additions.
+- [ ] Run the Playwright denied-consent and post-consent CSP tests and confirm no denied-consent GA network calls and no post-consent CSP violation.
 
 ### Task 4: Wire User Identity And App Bootstrap
 
@@ -434,7 +483,7 @@ Files:
 - Modify the frontend files listed in Worker C ownership.
 
 - [ ] Wire top-level view/mode changes.
-- [ ] Wire search with `query_length_bucket` and `result_count_bucket`; never send the search term.
+- [ ] Wire `app_search` with `query_length_bucket` and `result_count_bucket`; never send the search term.
 - [ ] Wire sprint/group/team filters with counts and scope enums; never send names or IDs.
 - [ ] Wire settings open/test/save/cancel/result actions.
 - [ ] Wire user Home/Townsquare connection connect/revoke/recovery events.
@@ -472,8 +521,10 @@ Files:
 
 - [ ] Run `npm run build`.
 - [ ] Run `node tests/test_analytics_source_guards.js`.
+- [ ] Run `node tests/test_analytics_events.js`.
 - [ ] Run `npx playwright test tests/ui/ga4_consent_and_events.spec.js`.
 - [ ] Run `.venv/bin/python -m unittest tests.test_analytics_identity tests.test_analytics_routes`.
+- [ ] Run `.venv/bin/python -m unittest tests.test_security_headers`.
 - [ ] Run `.venv/bin/python -m unittest discover -s tests`.
 - [ ] Inspect `git diff -- frontend/dist` after build and commit generated output if the build changes it.
 - [ ] Record DebugView or network-payload evidence in the PR notes, redacting any local URLs or user identifiers.
@@ -489,4 +540,3 @@ Files:
 - Home/Townsquare writes or Scenario Jira write-back capability.
 - Broad route-body or response-body analytics sampling.
 - Per-user, per-team, per-project, or per-workspace custom dimensions.
-

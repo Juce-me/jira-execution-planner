@@ -1,19 +1,13 @@
 const { test, expect } = require('@playwright/test');
-const fs = require('fs');
-const path = require('path');
+const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
-const dashboardHtml = fs.readFileSync(path.join(__dirname, '..', '..', 'jira-dashboard.html'), 'utf8');
 
 async function mockBaseApp(page, { connection, connectStatus = 200 } = {}) {
     const requests = [];
     let currentConnection = connection || { connected: false };
 
-    await page.route(`${appBaseUrl}/`, route => route.fulfill({
-        status: 200,
-        contentType: 'text/html',
-        body: dashboardHtml,
-    }));
+    await installDashboardShell(page);
 
     await page.route('**/api/**', async route => {
         const request = route.request();

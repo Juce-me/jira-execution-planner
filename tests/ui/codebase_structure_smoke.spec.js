@@ -1076,6 +1076,7 @@ test('team dropdown restores scoped team selection after page refresh', async ({
             selectedSprint: selectedSprintId,
             activeGroupId: 'grp-default',
             selectedTeams: ['all'],
+            searchQuery: 'PROD-2',
             showPlanning: false,
             showScenario: false,
         },
@@ -1089,7 +1090,12 @@ test('team dropdown restores scoped team selection after page refresh', async ({
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
-    await expect(page.locator('.team-dropdown-toggle', { hasText: 'Alpha Team' }).first()).toBeVisible();
+    const teamToggle = page.locator('.team-dropdown-toggle').first();
+    await expect(teamToggle.locator('.team-dropdown-selection-label')).toHaveText('Alpha Team');
+    await expect(teamToggle).toBeVisible();
+    await expect(teamToggle).toHaveClass(/active-filter/);
+    await expect(page.locator('.control-search').first()).toHaveClass(/active-filter/);
+    await captureSmokeScreenshot(page, 'team-search-active-filters');
     await expect.poll(() => page.evaluate(() => {
         const raw = window.localStorage.getItem('jira_dashboard_team_selection_state_v1');
         const stored = JSON.parse(raw || '{}');
@@ -1097,7 +1103,10 @@ test('team dropdown restores scoped team selection after page refresh', async ({
     })).toEqual(['team-alpha']);
 
     await page.reload({ waitUntil: 'networkidle' });
-    await expect(page.locator('.team-dropdown-toggle', { hasText: 'Alpha Team' }).first()).toBeVisible();
+    await expect(teamToggle.locator('.team-dropdown-selection-label')).toHaveText('Alpha Team');
+    await expect(teamToggle).toBeVisible();
+    await expect(teamToggle).toHaveClass(/active-filter/);
+    await expect(page.locator('.control-search').first()).toHaveClass(/active-filter/);
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 

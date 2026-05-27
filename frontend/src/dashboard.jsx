@@ -129,6 +129,7 @@ import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
 import { fetchCsrfToken, fetchHomeTokenConnection } from './api/authApi.js';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
+    DEFAULT_EPM_PROJECT_SORT,
     filterEpmSettingsProjectsForView,
     flattenEpmRollupBoardsForDependencies,
     getEpmProjectDisplayName,
@@ -137,6 +138,7 @@ import {
     hydrateEpmProjectDraft,
     isEmptyCustomEpmProjectRow,
     isEpmProjectsConfigReady,
+    normalizeEpmProjectSort,
     normalizeEpmScopeSubGoalKeys,
     shouldUseEpmSprint,
     sortEpmSettingsProjects
@@ -342,10 +344,13 @@ import {
             const [statusFilter, setStatusFilter] = useState(savedPrefsRef.current.statusFilter ?? null); // null = show all, 'in-progress', 'todo-accepted', 'done', 'high-priority'
             const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
             const [epmProjectSearch, setEpmProjectSearch] = useState('');
+            const [epmProjectSort, setEpmProjectSort] = useState(normalizeEpmProjectSort(savedPrefsRef.current.epmProjectSort || DEFAULT_EPM_PROJECT_SORT));
             const [showEpmProjectDropdown, setShowEpmProjectDropdown] = useState(false);
             const epmProjectDropdownRefs = useRef({ main: null, compact: null });
             const [showEpmSubGoalFilterDropdown, setShowEpmSubGoalFilterDropdown] = useState(false);
             const epmSubGoalFilterDropdownRefs = useRef({ main: null, compact: null });
+            const [showEpmSortDropdown, setShowEpmSortDropdown] = useState(false);
+            const epmSortDropdownRefs = useRef({ main: null, compact: null });
             const [epmConfigDraft, setEpmConfigDraft] = useState(createEmptyEpmConfigDraft());
             const [epmConfigLoading, setEpmConfigLoading] = useState(false);
             const [epmConfigSaving, setEpmConfigSaving] = useState(false);
@@ -1392,6 +1397,7 @@ import {
                 setShowTeamDropdown(next.team);
                 setShowEpmProjectDropdown(next.project);
                 setShowEpmSubGoalFilterDropdown(next.subGoal);
+                setShowEpmSortDropdown(next.sort);
             };
 
             const invalidateSprintDataForConfigSave = (refreshTarget) => {
@@ -2270,6 +2276,7 @@ import {
                 savedEpmSubGoalKeys,
                 selectedSprint,
                 epmProjectSearch,
+                epmProjectSort,
                 searchQuery,
                 onHomeTokenRequired: markHomeTokenRequired,
                 onServerConnectionFailure: reportServerConnectionError,
@@ -4962,6 +4969,18 @@ import {
             }, [compactStickyVisible]);
 
             useEffect(() => {
+                const handleClickOutside = (event) => {
+                    const node = getActiveDropdownNode(epmSortDropdownRefs);
+                    if (!node) return;
+                    if (!node.contains(event.target)) {
+                        setShowEpmSortDropdown(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, [compactStickyVisible]);
+
+            useEffect(() => {
                 const handle = window.setTimeout(() => {
                     setSearchQuery(searchInput);
                 }, 200);
@@ -5011,6 +5030,7 @@ import {
                     selectedView,
                     epmTab,
                     epmSelectedProjectId,
+                    epmProjectSort,
                     selectedSprint,
                     selectedTeams,
                     activeGroupId,
@@ -5059,6 +5079,7 @@ import {
                 selectedView,
                 epmTab,
                 epmSelectedProjectId,
+                epmProjectSort,
                 selectedSprint,
                 selectedTeams,
                 activeGroupId,
@@ -11876,6 +11897,7 @@ import {
                 setShowGroupDropdown(false);
                 setShowEpmProjectDropdown(false);
                 setShowEpmSubGoalFilterDropdown(false);
+                setShowEpmSortDropdown(false);
             }, [compactStickyVisible]);
 
             useEffect(() => {
@@ -12062,6 +12084,11 @@ import {
                     epmProjectDropdownRefs={epmProjectDropdownRefs}
                     epmProjectSearch={epmProjectSearch}
                     setEpmProjectSearch={setEpmProjectSearch}
+                    epmProjectSort={epmProjectSort}
+                    setEpmProjectSort={setEpmProjectSort}
+                    showEpmSortDropdown={showEpmSortDropdown}
+                    setShowEpmSortDropdown={setShowEpmSortDropdown}
+                    epmSortDropdownRefs={epmSortDropdownRefs}
                     setEpmSelectedProjectId={setEpmSelectedProjectId}
                     setShowEpmProjectDropdown={setShowEpmProjectDropdown}
                     savedEpmSubGoalKeys={savedEpmSubGoalKeys}

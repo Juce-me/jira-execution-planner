@@ -15,7 +15,27 @@ export function isEmptyCustomEpmProjectRow(row) {
 const ACTIVE_EPM_PROJECT_STATES = new Set(['pending', 'on track', 'at risk', 'off track']);
 const BACKLOG_EPM_PROJECT_STATES = new Set(['paused', 'todo', 'to do']);
 const ARCHIVED_EPM_PROJECT_STATES = new Set(['completed', 'cancelled', 'archived', 'done', 'release', 'released']);
+const RECENT_COMPLETED_EPM_PROJECT_STATES = new Set(['completed', 'done']);
+const TERMINAL_EPM_ISSUE_STATUSES = new Set(['done', 'killed', 'incomplete']);
+const EPM_PROJECT_PRIORITY_ORDER = {
+    blocker: 0,
+    highest: 1,
+    critical: 2,
+    high: 3,
+    major: 4,
+    medium: 5,
+    minor: 6,
+    low: 7,
+    trivial: 8,
+    lowest: 9
+};
 export const EPM_PROJECT_UPDATE_STALE_DAYS = 14;
+export const DEFAULT_EPM_PROJECT_SORT = 'priority';
+export const EPM_PROJECT_SORT_OPTIONS = Object.freeze([
+    { value: 'priority', label: 'Priority' },
+    { value: 'updated-desc', label: 'Updated ↓' },
+    { value: 'updated-asc', label: 'Updated ↑' }
+]);
 
 function isPendingEpmProject(project) {
     return normalizeEpmSettingsStatus(project?.stateValue || project?.stateLabel || '') === 'pending';
@@ -31,13 +51,22 @@ function getEpmProjectLifecycleBucket(project) {
     return '';
 }
 
-export function filterEpmProjectsForTab(projects, tab) {
+export function isRecentlyCompletedEpmProject(project, now = new Date()) {
+    if (project?.recentlyCompleted === true) return true;
+    const status = normalizeEpmSettingsStatus(project?.stateValue || project?.stateLabel || '');
+    if (!RECENT_COMPLETED_EPM_PROJECT_STATES.has(status)) return false;
+    const ageDays = getEpmProjectUpdateAgeDays(project?.latestUpdateDate, now);
+    return ageDays !== null && ageDays >= 0 && ageDays < EPM_PROJECT_UPDATE_STALE_DAYS;
+}
+
+export function filterEpmProjectsForTab(projects, tab, now = new Date()) {
     const normalizedTab = String(tab || 'active').trim().toLowerCase();
     return Array.isArray(projects)
         ? projects.filter((project) => {
             const tabBucket = getEpmProjectLifecycleBucket(project);
+            const recentlyCompleted = isRecentlyCompletedEpmProject(project, now);
             if (normalizedTab === 'active') {
-                return tabBucket === 'active' || tabBucket === 'all';
+                return tabBucket === 'active' || tabBucket === 'all' || recentlyCompleted;
             }
             if (normalizedTab === 'backlog' && isPendingEpmProject(project)) {
                 return true;
@@ -125,6 +154,95 @@ export function buildAggregateRollupBoards(payload) {
         truncated: Boolean(payload?.truncated),
         fallback: Boolean(payload?.fallback)
     };
+}
+
+export function normalizeEpmProjectSort(value) {
+    const key = String(value || '').trim().toLowerCase();
+    return EPM_PROJECT_SORT_OPTIONS.some(option => option.value === key) ? key : DEFAULT_EPM_PROJECT_SORT;
+}
+
+export function getEpmProjectSortLabel(value) {
+    const normalized = normalizeEpmProjectSort(value);
+    return EPM_PROJECT_SORT_OPTIONS.find(option => option.value === normalized)?.label || 'Priority';
+}
+
+function getEpmProjectUpdatedTime(project) {
+    const parsed = parseEpmProjectDate(project?.latestUpdateDate);
+    return parsed ? parsed.getTime() : null;
+}
+
+function collectEpmTreeEpicNodes(tree) {
+    if (!tree || tree.kind !== 'tree') return [];
+    const epics = [];
+    tree.initiatives.forEach(initiative => {
+        initiative.epics.forEach(epic => epics.push(epic));
+    });
+    tree.rootEpics.forEach(epic => epics.push(epic));
+    return epics;
+}
+
+function getEpmIssuePriorityRank(issue) {
+    const priority = normalizeEpmSettingsSortText(issue?.priority);
+    return Object.prototype.hasOwnProperty.call(EPM_PROJECT_PRIORITY_ORDER, priority)
+        ? EPM_PROJECT_PRIORITY_ORDER[priority]
+        : 999;
+}
+
+function getEpmBoardPriorityRank(board) {
+    const ranks = collectEpmTreeEpicNodes(board?.tree)
+        .map(epicNode => epicNode?.issue)
+        .filter(issue => !TERMINAL_EPM_ISSUE_STATUSES.has(normalizeEpmSettingsStatus(issue?.status)))
+        .map(getEpmIssuePriorityRank);
+    return ranks.length ? Math.min(...ranks) : 999;
+}
+
+function compareNullableTime(left, right, direction) {
+    const leftMissing = left === null || Number.isNaN(left);
+    const rightMissing = right === null || Number.isNaN(right);
+    if (leftMissing && rightMissing) return 0;
+    if (leftMissing) return 1;
+    if (rightMissing) return -1;
+    return direction === 'asc' ? left - right : right - left;
+}
+
+function compareEpmBoardName(a, b) {
+    return normalizeEpmSettingsSortText(getEpmProjectDisplayName(a.board?.project))
+        .localeCompare(normalizeEpmSettingsSortText(getEpmProjectDisplayName(b.board?.project)));
+}
+
+export function sortEpmRollupBoards(boards, sortKey = DEFAULT_EPM_PROJECT_SORT, now = new Date()) {
+    const key = normalizeEpmProjectSort(sortKey);
+    const source = Array.isArray(boards) ? boards : [];
+    return source
+        .map((board, index) => ({
+            board,
+            index,
+            recentlyCompletedRank: isRecentlyCompletedEpmProject(board?.project, now) ? 0 : 1,
+            priorityRank: getEpmBoardPriorityRank(board),
+            updatedTime: getEpmProjectUpdatedTime(board?.project)
+        }))
+        .sort((a, b) => {
+            const completedCompare = a.recentlyCompletedRank - b.recentlyCompletedRank;
+            if (completedCompare) return completedCompare;
+            if (key === 'updated-asc') {
+                const updatedCompare = compareNullableTime(a.updatedTime, b.updatedTime, 'asc');
+                if (updatedCompare) return updatedCompare;
+                const priorityCompare = a.priorityRank - b.priorityRank;
+                if (priorityCompare) return priorityCompare;
+            } else if (key === 'updated-desc') {
+                const updatedCompare = compareNullableTime(a.updatedTime, b.updatedTime, 'desc');
+                if (updatedCompare) return updatedCompare;
+                const priorityCompare = a.priorityRank - b.priorityRank;
+                if (priorityCompare) return priorityCompare;
+            } else {
+                const priorityCompare = a.priorityRank - b.priorityRank;
+                if (priorityCompare) return priorityCompare;
+                const updatedCompare = compareNullableTime(a.updatedTime, b.updatedTime, 'desc');
+                if (updatedCompare) return updatedCompare;
+            }
+            return compareEpmBoardName(a.board, b.board) || a.index - b.index;
+        })
+        .map(entry => entry.board);
 }
 
 function normalizeEpmSearchText(value) {

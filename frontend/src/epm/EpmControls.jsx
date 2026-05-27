@@ -2,10 +2,13 @@ import * as React from 'react';
 import ControlField from '../ui/ControlField.jsx';
 import SegmentedControl from '../ui/SegmentedControl.jsx';
 import {
+    EPM_PROJECT_SORT_OPTIONS,
+    getEpmProjectSortLabel,
     getEpmSubGoalDisplayParts,
     getEpmProjectDisplayName,
     getEpmProjectIdentity,
     getNextEpmSubGoalSelection,
+    normalizeEpmProjectSort,
     normalizeEpmScopeSubGoalKeys,
 } from './epmProjectUtils.mjs';
 
@@ -32,6 +35,11 @@ export function EpmControls({
     epmProjectDropdownRefs,
     epmProjectSearch,
     setEpmProjectSearch,
+    epmProjectSort,
+    setEpmProjectSort,
+    showEpmSortDropdown,
+    setShowEpmSortDropdown,
+    epmSortDropdownRefs,
     setEpmSelectedProjectId,
     setShowEpmProjectDropdown,
     savedEpmSubGoalKeys = [],
@@ -140,6 +148,53 @@ export function EpmControls({
         );
     };
 
+    const renderEpmSortPicker = () => {
+        const selectedSort = normalizeEpmProjectSort(epmProjectSort);
+        return (
+            <ControlField label="Sort">
+                <div className="sprint-dropdown epm-sort-dropdown" ref={(node) => { epmSortDropdownRefs.current[surface] = node; }}>
+                    <div
+                        className={`sprint-dropdown-toggle ${showEpmSortDropdown ? 'open' : ''}`}
+                        role="button"
+                        aria-label="Sort EPM projects"
+                        tabIndex={0}
+                        onClick={() => applyExclusiveDropdownState('sort', showEpmSortDropdown)}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                applyExclusiveDropdownState('sort', showEpmSortDropdown);
+                            }
+                        }}
+                    >
+                        <span>{getEpmProjectSortLabel(selectedSort)}</span>
+                        <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                            <path d="M6 9L1 4h10z"/>
+                        </svg>
+                    </div>
+                    {showEpmSortDropdown && surface === activeControlSurface && (
+                        <div className="sprint-dropdown-panel">
+                            <div className="sprint-dropdown-list">
+                                {EPM_PROJECT_SORT_OPTIONS.map((option) => (
+                                    <div
+                                        key={option.value}
+                                        className={`sprint-dropdown-option ${selectedSort === option.value ? 'selected' : ''}`}
+                                        data-epm-sort={option.value}
+                                        onClick={() => {
+                                            setEpmProjectSort(option.value);
+                                            setShowEpmSortDropdown(false);
+                                        }}
+                                    >
+                                        {option.label}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </ControlField>
+        );
+    };
+
     const renderEpmSubGoalPicker = () => {
         if (savedSubGoalKeys.length <= 1) return null;
         const selectedSet = new Set(selectedSubGoalKeys);
@@ -231,6 +286,7 @@ export function EpmControls({
         <>
             {renderEpmSubGoalPicker()}
             {renderEpmProjectPicker()}
+            {renderEpmSortPicker()}
             {showStateControl && renderEpmTabs()}
         </>
     );

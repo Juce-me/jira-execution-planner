@@ -557,6 +557,10 @@ h1 {
   background: var(--bg-primary);
   color: var(--text-primary);
 }
+.sprint-dropdown-option.selected {
+  background: var(--bg-primary);
+  font-weight: 700;
+}
 .sprint-dropdown-option + .sprint-dropdown-option {
   border-top: 1px dashed var(--border);
 }
@@ -571,6 +575,10 @@ h1 {
 .epm-project-dropdown .sprint-dropdown-option {
   max-width: calc(var(--sprint-dropdown-max-width) - 1.2rem);
   overflow-wrap: anywhere;
+}
+.epm-sort-dropdown {
+  --sprint-dropdown-min-width: 8.25rem;
+  --sprint-dropdown-max-width: min(12rem, calc(100vw - 2rem));
 }
 .epm-subgoal-dropdown {
   --sprint-dropdown-min-width: 10rem;
@@ -7233,6 +7241,10 @@ button.toggle.initiative-toggle.active {
 }
 .epm-project-board-status-pill.task-status.pending {
   background: #597ef7;
+  color: white;
+}
+.epm-project-board-status-pill.task-status.completed {
+  background: #52c41a;
   color: white;
 }
 .epm-project-board-rollup-control {

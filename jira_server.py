@@ -2368,8 +2368,8 @@ def build_epm_projects_payload(epm_config, force_refresh=False, tab=None, sub_go
     )
 
 
-def filter_epm_projects_for_tab(projects, tab):
-    return epm_projects.filter_epm_projects_for_tab(projects, tab)
+def filter_epm_projects_for_tab(projects, tab, now=None):
+    return epm_projects.filter_epm_projects_for_tab(projects, tab, now=now)
 
 
 def _epm_collection_values(collection):

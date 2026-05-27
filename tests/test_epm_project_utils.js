@@ -14,6 +14,7 @@ test('filterEpmProjectsForTab uses strict lifecycle buckets outside active', asy
         { id: 'pending-state-project', stateValue: 'PENDING' },
         { id: 'todo-state-project', stateValue: 'TODO' },
         { id: 'paused-state-project', stateLabel: 'Paused' },
+        { id: 'recent-completed-project', stateValue: 'COMPLETED', latestUpdateDate: '2026-05-20' },
         { id: 'stale-completed-project', tabBucket: 'backlog', stateValue: 'DONE', stateLabel: 'Completed 🎉' },
         { id: 'stale-unknown-project', tabBucket: 'backlog', stateValue: 'UNKNOWN' },
         { id: 'archived-project', tabBucket: 'archived' },
@@ -23,16 +24,96 @@ test('filterEpmProjectsForTab uses strict lifecycle buckets outside active', asy
     ];
 
     assert.deepStrictEqual(
-        filterEpmProjectsForTab(projects, 'active').map(project => project.id),
-        ['all-project', 'active-project', 'pending-state-project']
+        filterEpmProjectsForTab(projects, 'active', new Date('2026-05-26T12:00:00Z')).map(project => project.id),
+        ['all-project', 'active-project', 'pending-state-project', 'recent-completed-project']
     );
     assert.deepStrictEqual(
-        filterEpmProjectsForTab(projects, 'backlog').map(project => project.id),
+        filterEpmProjectsForTab(projects, 'backlog', new Date('2026-05-26T12:00:00Z')).map(project => project.id),
         ['backlog-project', 'pending-state-project', 'todo-state-project', 'paused-state-project']
     );
     assert.deepStrictEqual(
-        filterEpmProjectsForTab(projects, 'archived').map(project => project.id),
-        ['stale-completed-project', 'archived-project', 'completed-state-project']
+        filterEpmProjectsForTab(projects, 'archived', new Date('2026-05-26T12:00:00Z')).map(project => project.id),
+        ['recent-completed-project', 'stale-completed-project', 'archived-project', 'completed-state-project']
+    );
+});
+
+test('sortEpmRollupBoards pins recent completed projects and sorts by active epic priority', async () => {
+    const { sortEpmRollupBoards } = await import(helperUrl);
+    const boards = [
+        {
+            project: {
+                id: 'low-open',
+                displayName: 'Low Open',
+                stateValue: 'ON_TRACK',
+                latestUpdateDate: '2026-05-25'
+            },
+            tree: {
+                kind: 'tree',
+                initiatives: [],
+                rootEpics: [
+                    {
+                        issue: { key: 'EPIC-1', status: 'Done', priority: 'Blocker' },
+                        stories: []
+                    },
+                    {
+                        issue: { key: 'EPIC-2', status: 'In Progress', priority: 'Low' },
+                        stories: []
+                    }
+                ],
+                orphanStories: []
+            }
+        },
+        {
+            project: {
+                id: 'critical-open',
+                displayName: 'Critical Open',
+                stateValue: 'ON_TRACK',
+                latestUpdateDate: '2026-05-20'
+            },
+            tree: {
+                kind: 'tree',
+                initiatives: [],
+                rootEpics: [
+                    {
+                        issue: { key: 'EPIC-3', status: 'To Do', priority: 'Critical' },
+                        stories: []
+                    }
+                ],
+                orphanStories: []
+            }
+        },
+        {
+            project: {
+                id: 'recent-completed',
+                displayName: 'Recent Completed',
+                stateValue: 'COMPLETED',
+                latestUpdateDate: '2026-05-24'
+            },
+            tree: {
+                kind: 'tree',
+                initiatives: [],
+                rootEpics: [
+                    {
+                        issue: { key: 'EPIC-4', status: 'Done', priority: 'Lowest' },
+                        stories: []
+                    }
+                ],
+                orphanStories: []
+            }
+        }
+    ];
+
+    assert.deepStrictEqual(
+        sortEpmRollupBoards(boards, 'priority', new Date('2026-05-26T12:00:00Z')).map(board => board.project.id),
+        ['recent-completed', 'critical-open', 'low-open']
+    );
+    assert.deepStrictEqual(
+        sortEpmRollupBoards(boards, 'updated-asc', new Date('2026-05-26T12:00:00Z')).map(board => board.project.id),
+        ['recent-completed', 'critical-open', 'low-open']
+    );
+    assert.deepStrictEqual(
+        sortEpmRollupBoards(boards, 'updated-desc', new Date('2026-05-26T12:00:00Z')).map(board => board.project.id),
+        ['recent-completed', 'low-open', 'critical-open']
     );
 });
 

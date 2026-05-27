@@ -560,7 +560,6 @@ import {
             const [showDependencies, setShowDependencies] = useState(true);
             const [searchQuery, setSearchQuery] = useState(savedPrefsRef.current.searchQuery ?? '');
             const [searchInput, setSearchInput] = useState(savedPrefsRef.current.searchQuery ?? '');
-            const [searchFocused, setSearchFocused] = useState(false);
             const normalizeSelectedTeams = (value) => {
                 if (Array.isArray(value)) {
                     return value.length ? value : ['all'];
@@ -672,7 +671,6 @@ import {
             const [scenarioFlashKey, setScenarioFlashKey] = useState(null);
             const [scenarioScrollTop, setScenarioScrollTop] = useState(0);
             const searchInputRef = useRef(null);
-            const searchFocusReleaseTimeoutRef = useRef(null);
             const [scenarioScrollLeft, setScenarioScrollLeft] = useState(0);
             const [scenarioViewportHeight, setScenarioViewportHeight] = useState(0);
             const [scenarioEpicFocus, setScenarioEpicFocus] = useState(null);
@@ -4325,9 +4323,19 @@ import {
                 const planningState = planningScopeKey
                     ? loadPlanningState(window.localStorage, planningScopeKey)
                     : null;
+                const storedTeamSelectionState = teamSelectionScopeKey
+                    ? loadTeamSelectionState(window.localStorage, teamSelectionScopeKey)
+                    : null;
+                const liveTeamSelection = storedTeamSelectionState
+                    ? resolveTeamSelectionHydrationState({
+                        storedState: storedTeamSelectionState,
+                        savedPrefsSelectedTeams: savedPrefsRef.current.selectedTeams,
+                        savedPrefsSelectedTeam: savedPrefsRef.current.selectedTeam
+                    }).selectedTeams
+                    : selectedTeams;
                 const selectedTeamsFromPlanning = resolvePlanningTeamSelection({
                     scopedState: hasStoredPlanningState ? planningState : null,
-                    liveSelectedTeams: selectedTeams,
+                    liveSelectedTeams: liveTeamSelection,
                     savedPrefsSelectedTeams: savedPrefsRef.current.selectedTeams,
                     savedPrefsSelectedTeam: savedPrefsRef.current.selectedTeam
                 });
@@ -5002,12 +5010,6 @@ import {
                 };
                 window.addEventListener('keydown', handleKey);
                 return () => window.removeEventListener('keydown', handleKey);
-            }, []);
-
-            useEffect(() => () => {
-                if (searchFocusReleaseTimeoutRef.current) {
-                    window.clearTimeout(searchFocusReleaseTimeoutRef.current);
-                }
             }, []);
 
             useEffect(() => {
@@ -11958,26 +11960,10 @@ import {
                 '--scenario-sticky-top': `${epicStickyTop}px`
             };
             const showGroupControl = (groupsConfig.groups || []).length > 1;
-            const searchActive = searchFocused || Boolean(String(searchInput || '').trim());
-            const handleSearchFocus = () => {
-                if (searchFocusReleaseTimeoutRef.current) {
-                    window.clearTimeout(searchFocusReleaseTimeoutRef.current);
-                    searchFocusReleaseTimeoutRef.current = null;
-                }
-                setSearchFocused(true);
-            };
-            const handleSearchBlur = () => {
-                if (searchFocusReleaseTimeoutRef.current) {
-                    window.clearTimeout(searchFocusReleaseTimeoutRef.current);
-                }
-                searchFocusReleaseTimeoutRef.current = window.setTimeout(() => {
-                    setSearchFocused(false);
-                    searchFocusReleaseTimeoutRef.current = null;
-                }, 220);
-            };
+            const searchActive = Boolean(String(searchInput || searchQuery || '').trim());
 
             const renderSearchControl = (surface, extraClassName = '') => (
-                <ControlField label="Search" className={`control-search ${extraClassName}`.trim()}>
+                <ControlField label="Search" className={`control-search ${searchActive ? 'active-filter' : ''} ${extraClassName}`.trim()}>
                     <div className="search-wrap">
                         <input
                             type="text"
@@ -11985,8 +11971,6 @@ import {
                             placeholder="Search tickets..."
                             value={searchInput}
                             onChange={(e) => setSearchInput(e.target.value)}
-                            onFocus={handleSearchFocus}
-                            onBlur={handleSearchBlur}
                             ref={searchInputRef}
                         />
                         {searchInput && (
@@ -12275,7 +12259,7 @@ import {
                 <ControlField label="Teams">
                     <div className="team-dropdown" ref={(node) => { teamDropdownRefs.current[surface] = node; }}>
                         <div
-                            className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''}`}
+                            className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''} ${!isAllTeamsSelected ? 'active-filter' : ''}`}
                             role="button"
                             aria-label="Filter teams"
                             tabIndex={tasks.length === 0 && loading ? -1 : 0}
@@ -12293,8 +12277,8 @@ import {
                             aria-disabled={tasks.length === 0 && loading}
                         >
                             <span style={{flex: 1, display: 'grid', textAlign: 'left', minWidth: 0}}>
-                                <span style={{gridArea: '1/1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{selectedTeamsLabel}</span>
-                                <span style={{gridArea: '1/1', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap'}} aria-hidden="true">{longestTeamOptionLabel}</span>
+                                <span className="team-dropdown-selection-label" style={{gridArea: '1/1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{selectedTeamsLabel}</span>
+                                <span className="team-dropdown-width-label" style={{gridArea: '1/1', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap'}} aria-hidden="true">{longestTeamOptionLabel}</span>
                             </span>
                             <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
                                 <path d="M6 9L1 4h10z"/>

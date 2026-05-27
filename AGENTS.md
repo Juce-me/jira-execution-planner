@@ -321,6 +321,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In dashboard filters, reuse existing dropdown classes such as `team-dropdown-*` or `sprint-dropdown-*`; do not create bespoke hover, caret, radius, or action styles for one-off dropdowns.
 - For EPM project board visual changes, preserve clear per-project boundaries and verify collapsed and expanded states with screenshots before committing.
 - EPM project board status pills must reuse the existing status-pill sizing, casing, and success green; do not create one-off completed badge styling.
+- When preparing PRs, keep feature commits on the feature branch; never merge feature work into local `main` just to create or test the PR branch.
 - When frontend source changes, run `npm run build` and commit generated `frontend/dist` output if `.github/workflows/verify-frontend-build.yml` requires a clean post-build diff; do not hand-edit dist.
 
 ---

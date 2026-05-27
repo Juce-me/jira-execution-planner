@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Template version: 2026-05-19
+Template version: 2026-05-26
 
 Drop-in operating instructions for coding agents. Read this file before every task.
 

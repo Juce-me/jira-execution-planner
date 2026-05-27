@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime, timezone
 import json
+import re
 import time
 from typing import Callable, MutableMapping
 
@@ -10,6 +12,9 @@ from backend.auth.cache_policy import (
     jira_home_partitioned_process_cache_enabled,
 )
 from backend.epm import home as epm_home
+
+RECENTLY_COMPLETED_DAYS = 14
+RECENTLY_COMPLETED_STATES = {'completed', 'done'}
 
 
 @dataclass
@@ -34,6 +39,57 @@ def normalize_epm_text(value):
 
 def normalize_epm_upper_text(value):
     return normalize_epm_text(value).upper()
+
+
+def normalize_epm_status_text(value):
+    return re.sub(r'[^a-z0-9]+', ' ', normalize_epm_text(value).lower()).strip()
+
+
+def parse_epm_project_date(value):
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).date() if value.tzinfo else value.date()
+    if isinstance(value, date):
+        return value
+    text = normalize_epm_text(value)
+    if not text:
+        return None
+    normalized = text.replace('Z', '+00:00')
+    try:
+        parsed = datetime.fromisoformat(normalized)
+        return parsed.astimezone(timezone.utc).date() if parsed.tzinfo else parsed.date()
+    except ValueError:
+        pass
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def get_epm_project_update_age_days(value, now=None):
+    project_date = parse_epm_project_date(value)
+    now_date = parse_epm_project_date(now) if now is not None else datetime.now(timezone.utc).date()
+    if project_date is None or now_date is None:
+        return None
+    return max(0, (now_date - project_date).days)
+
+
+def is_recently_completed_epm_project(project, now=None):
+    status = normalize_epm_status_text((project or {}).get('stateValue') or (project or {}).get('stateLabel'))
+    if status not in RECENTLY_COMPLETED_STATES:
+        return False
+    age_days = get_epm_project_update_age_days((project or {}).get('latestUpdateDate'), now=now)
+    return age_days is not None and age_days < RECENTLY_COMPLETED_DAYS
+
+
+def get_epm_project_lifecycle_bucket(project):
+    tab_bucket = normalize_epm_text((project or {}).get('tabBucket')).lower()
+    state_value = normalize_epm_text((project or {}).get('stateValue') or (project or {}).get('stateLabel'))
+    state_bucket = epm_home.bucket_epm_state(state_value) if state_value else ''
+    if state_bucket:
+        return state_bucket
+    if state_value:
+        return ''
+    return tab_bucket if tab_bucket in {'active', 'backlog', 'archived', 'all'} else ''
 
 
 def normalize_epm_sub_goal_keys(values):
@@ -327,7 +383,7 @@ def build_epm_projects_payload(epm_config, deps, force_refresh=False, tab=None, 
             projects.append(missing_home_row)
             continue
         projects.append(build_custom_project_payload(row))
-    filtered_projects = filter_epm_projects_for_tab(projects, tab) if normalize_epm_text(tab) else projects
+    filtered_projects = filter_epm_projects_for_tab(projects, tab, now=home_state['fetchedAt']) if normalize_epm_text(tab) else projects
     return {
         'projects': filtered_projects,
         'cacheHit': home_state['cacheHit'],
@@ -338,28 +394,29 @@ def build_epm_projects_payload(epm_config, deps, force_refresh=False, tab=None, 
     }
 
 
-def filter_epm_projects_for_tab(projects, tab):
+def filter_epm_projects_for_tab(projects, tab, now=None):
     normalized_tab = normalize_epm_text(tab or 'active').lower()
     visible = []
     for project in projects or []:
-        tab_bucket = normalize_epm_text((project or {}).get('tabBucket')).lower()
         state_value = normalize_epm_text((project or {}).get('stateValue') or (project or {}).get('stateLabel'))
         is_pending_state = epm_home.is_pending_epm_state(state_value)
-        state_bucket = epm_home.bucket_epm_state(state_value) if state_value else ''
-        if state_bucket:
-            tab_bucket = state_bucket
-        elif state_value:
-            tab_bucket = ''
-        if tab_bucket not in {'active', 'backlog', 'archived', 'all'}:
-            tab_bucket = ''
+        tab_bucket = get_epm_project_lifecycle_bucket(project)
+        recently_completed = is_recently_completed_epm_project(project, now=now)
         if normalized_tab == 'active':
-            matches_tab = tab_bucket == 'active' or tab_bucket == 'all'
+            matches_tab = tab_bucket == 'active' or tab_bucket == 'all' or recently_completed
         elif normalized_tab == 'backlog' and is_pending_state:
             matches_tab = True
         else:
             matches_tab = tab_bucket == normalized_tab
         if matches_tab:
-            visible.append(project)
+            shaped_project = dict(project or {})
+            shaped_project['recentlyCompleted'] = recently_completed
+            shaped_project['lifecycleBucket'] = (
+                'recently-completed'
+                if normalized_tab == 'active' and recently_completed
+                else tab_bucket
+            )
+            visible.append(shaped_project)
     return visible
 
 

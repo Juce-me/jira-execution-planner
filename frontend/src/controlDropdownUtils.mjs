@@ -4,7 +4,8 @@ export function getNextExclusiveDropdownState(kind, isOpen) {
         group: false,
         team: false,
         project: false,
-        subGoal: false
+        subGoal: false,
+        sort: false
     };
     if (!kind) {
         return next;

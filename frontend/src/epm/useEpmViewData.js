@@ -12,6 +12,7 @@ import {
     getEpmProjectDisplayName,
     getEpmProjectIdentity,
     normalizeEpmScopeSubGoalKeys,
+    sortEpmRollupBoards,
 } from './epmProjectUtils.mjs';
 
 const { useState, useEffect, useRef } = React;
@@ -44,6 +45,7 @@ export function useEpmViewData({
     savedEpmSubGoalKeys = [],
     selectedSprint,
     epmProjectSearch,
+    epmProjectSort,
     searchQuery,
     onHomeTokenRequired,
     onServerConnectionFailure,
@@ -89,8 +91,8 @@ export function useEpmViewData({
     }, [visibleEpmProjects, epmProjectSearch]);
     const visibleEpmRollupBoards = React.useMemo(() => {
         if (!Array.isArray(epmRollupBoards)) return epmRollupBoards;
-        return filterEpmRollupBoardsForSearch(epmRollupBoards, searchQuery);
-    }, [epmRollupBoards, searchQuery]);
+        return sortEpmRollupBoards(filterEpmRollupBoardsForSearch(epmRollupBoards, searchQuery), epmProjectSort);
+    }, [epmRollupBoards, epmProjectSort, searchQuery]);
 
     const refreshEpmProjects = React.useCallback(async (options = {}) => {
         const background = Boolean(options.background);

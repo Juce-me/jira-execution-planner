@@ -203,8 +203,10 @@ class TestEpmProjectsApi(unittest.TestCase):
         )
 
     @patch('jira_server.get_epm_config')
+    @patch('jira_server.utc_now_iso')
     @patch('jira_server.fetch_epm_home_projects', create=True)
-    def test_projects_endpoint_can_return_active_lifecycle_subset(self, mock_fetch_projects, mock_get_epm_config):
+    def test_projects_endpoint_can_return_active_lifecycle_subset(self, mock_fetch_projects, mock_utc_now_iso, mock_get_epm_config):
+        mock_utc_now_iso.return_value = '2026-05-26T12:00:00+00:00'
         mock_fetch_projects.return_value = [
             {
                 'homeProjectId': 'pending-one',
@@ -243,6 +245,16 @@ class TestEpmProjectsApi(unittest.TestCase):
                 'resolvedLinkage': {'labels': [], 'epicKeys': []},
             },
             {
+                'homeProjectId': 'recent-completed-one',
+                'name': 'Recent Completed One',
+                'stateValue': 'COMPLETED',
+                'stateLabel': 'Completed',
+                'tabBucket': 'archived',
+                'latestUpdateDate': '2026-05-20',
+                'homeTags': ['rnd_project_recent_completed'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            },
+            {
                 'homeProjectId': 'paused-one',
                 'name': 'Paused One',
                 'stateValue': 'PAUSED',
@@ -257,6 +269,7 @@ class TestEpmProjectsApi(unittest.TestCase):
                 'stateValue': 'COMPLETED',
                 'stateLabel': 'Completed',
                 'tabBucket': 'archived',
+                'latestUpdateDate': '2026-04-20',
                 'homeTags': ['rnd_project_completed'],
                 'resolvedLinkage': {'labels': [], 'epicKeys': []},
             },
@@ -273,8 +286,11 @@ class TestEpmProjectsApi(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(
             [project['id'] for project in response.get_json()['projects']],
-            ['pending-one', 'on-track-one', 'at-risk-one', 'off-track-one'],
+            ['pending-one', 'on-track-one', 'at-risk-one', 'off-track-one', 'recent-completed-one'],
         )
+        recent_project = response.get_json()['projects'][-1]
+        self.assertEqual(recent_project['recentlyCompleted'], True)
+        self.assertEqual(recent_project['lifecycleBucket'], 'recently-completed')
 
     @patch('jira_server.get_epm_config')
     @patch('jira_server.fetch_epm_home_projects', create=True)

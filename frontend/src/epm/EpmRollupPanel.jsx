@@ -3,7 +3,7 @@ import IssueCard, { IssueCardContext } from '../issues/IssueCard.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import LoadingState from '../ui/LoadingState.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
-import { buildEpmProjectUpdateLine, getEpmProjectDisplayName, toEpmEngTask } from './epmProjectUtils.mjs';
+import { buildEpmProjectUpdateLine, getEpmProjectDisplayName, isRecentlyCompletedEpmProject, toEpmEngTask } from './epmProjectUtils.mjs';
 
 export function EpmRollupPanel({
     selectedEpmProject,
@@ -219,10 +219,20 @@ export function EpmRollupPanel({
         );
     };
 
+    const isRecentlyCompletedProject = (project) => (
+        project?.recentlyCompleted === true || isRecentlyCompletedEpmProject(project)
+    );
+
+    const getProjectStatusLabel = (project) => {
+        if (isRecentlyCompletedProject(project)) return 'Completed 🎉';
+        return String(project?.stateLabel || project?.stateValue || '').trim();
+    };
+
     const renderPortfolioHeader = (project) => {
         const collapsed = isCollapsed(project);
         const updateLine = buildEpmProjectUpdateLine(project);
-        const projectStatus = String(project?.stateLabel || project?.stateValue || '').trim();
+        const projectStatus = getProjectStatusLabel(project);
+        const projectStatusClassValue = isRecentlyCompletedProject(project) ? 'completed' : projectStatus;
         const projectName = getEpmProjectDisplayName(project);
         const projectTargetDate = renderProjectTargetDate(project);
         const projectOwner = renderProjectOwner(project);
@@ -253,7 +263,7 @@ export function EpmRollupPanel({
                                 <div className="epm-project-board-title-meta" aria-label="Project status and owner">
                                     {projectStatus && (
                                         <StatusPill
-                                            className={getIssueStatusClassName(projectStatus, 'epm-project-board-status-pill')}
+                                            className={getIssueStatusClassName(projectStatusClassValue, 'epm-project-board-status-pill')}
                                             label={projectStatus}
                                             title={`Project status: ${projectStatus}`}
                                             aria-label={`Project status: ${projectStatus}`}

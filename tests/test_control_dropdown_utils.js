@@ -10,18 +10,22 @@ test('exclusive dropdown state includes the EPM project and sub-goal pickers', a
 
     assert.deepStrictEqual(
         getNextExclusiveDropdownState('project', false),
-        { sprint: false, group: false, team: false, project: true, subGoal: false }
+        { sprint: false, group: false, team: false, project: true, subGoal: false, sort: false }
     );
     assert.deepStrictEqual(
         getNextExclusiveDropdownState('project', true),
-        { sprint: false, group: false, team: false, project: false, subGoal: false }
+        { sprint: false, group: false, team: false, project: false, subGoal: false, sort: false }
     );
     assert.deepStrictEqual(
         getNextExclusiveDropdownState('sprint', false),
-        { sprint: true, group: false, team: false, project: false, subGoal: false }
+        { sprint: true, group: false, team: false, project: false, subGoal: false, sort: false }
     );
     assert.deepStrictEqual(
         getNextExclusiveDropdownState('subGoal', false),
-        { sprint: false, group: false, team: false, project: false, subGoal: true }
+        { sprint: false, group: false, team: false, project: false, subGoal: true, sort: false }
+    );
+    assert.deepStrictEqual(
+        getNextExclusiveDropdownState('sort', false),
+        { sprint: false, group: false, team: false, project: false, subGoal: false, sort: true }
     );
 });

@@ -24,6 +24,7 @@ class TestBackendServiceExtraction(unittest.TestCase):
         update_check_service = importlib.import_module('backend.services.update_check')
         priority_weights_service = importlib.import_module('backend.services.priority_weights')
         team_catalog_service = importlib.import_module('backend.services.team_catalog')
+        group_config_service = importlib.import_module('backend.services.group_config')
         config_store = importlib.import_module('backend.config_store')
         epm_config = importlib.import_module('backend.epm.config')
         epm_aggregate = importlib.import_module('backend.epm.aggregate')
@@ -44,6 +45,8 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertTrue(hasattr(priority_weights_service, 'normalize_priority_weight_rows'))
         self.assertTrue(hasattr(team_catalog_service, 'normalize_team_catalog'))
         self.assertTrue(hasattr(team_catalog_service, 'normalize_group_team_labels'))
+        self.assertTrue(hasattr(group_config_service, 'validate_groups_config'))
+        self.assertTrue(hasattr(group_config_service, 'build_default_groups_config'))
         self.assertTrue(hasattr(local_oauth_store, 'LocalOAuthTokenStore'))
         self.assertTrue(hasattr(config_store, 'load_dashboard_config'))
         self.assertTrue(hasattr(config_store, 'save_dashboard_config'))
@@ -198,6 +201,14 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertNotIn("catalog[team_id] = {'id': team_id, 'name': name}", server_source)
         self.assertNotIn("for key in ('updatedAt', 'sprintId', 'sprintName', 'source', 'resolvedAt'):", server_source)
         self.assertNotIn("labels[team_id] = label", server_source)
+
+    def test_group_config_service_logic_lives_outside_jira_server(self):
+        with open(jira_server.__file__, encoding='utf-8') as handle:
+            server_source = handle.read()
+
+        self.assertNotIn("errors.append('groups must be a list.')", server_source)
+        self.assertNotIn("warnings.append('No teams found in JQL_QUERY. Default group is empty; add teams manually.')", server_source)
+        self.assertNotIn("raw_components = group.get('missingInfoComponents')", server_source)
 
     def test_config_wrappers_keep_patchable_paths_and_migration_shape(self):
         with tempfile.TemporaryDirectory() as tmp:

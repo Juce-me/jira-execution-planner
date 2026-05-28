@@ -197,6 +197,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.
    - Expected output: team catalog, catalog metadata, and group team-label normalization moved to `backend/services/team_catalog.py` while `jira_server.py` compatibility wrappers remain patchable.
 
+32. `EXEC-codebase-operability-group-config-service.md`
+   - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.
+   - Expected output: team-group env parsing, validation, and default construction moved to `backend/services/group_config.py` while `jira_server.py` compatibility wrappers remain patchable.
+
 ## Legacy Unclassified Date-Only Plans
 
 These files predate the `EXEC`/`DONE`/`GATE`/`SUPPORT`/`FUTURE` taxonomy. Treat them as unclassified historical context, not executable current plans, until a reviewer classifies and renames them or moves them to `docs/agents/`:

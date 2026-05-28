@@ -89,6 +89,7 @@ from backend.services import stats_cache as _stats_cache_service
 from backend.services import update_check as _update_check_service
 from backend.services import priority_weights as _priority_weights_service
 from backend.services import team_catalog as _team_catalog_service
+from backend.services import group_config as _group_config_service
 from backend.epm import projects as epm_projects
 from backend.security.policy import (
     is_oauth_ready_api_path as policy_is_oauth_ready_api_path,
@@ -2253,13 +2254,10 @@ def get_effective_capacity_project():
 
 
 def parse_groups_config_env():
-    if not TEAM_GROUPS_JSON:
-        return None
-    try:
-        return json.loads(TEAM_GROUPS_JSON)
-    except Exception as e:
-        log_warning(f'Failed to parse TEAM_GROUPS_JSON: {e}')
-        return None
+    return _group_config_service.parse_groups_config_env(
+        TEAM_GROUPS_JSON,
+        log_warning_fn=log_warning,
+    )
 
 
 def invalidate_sprints_cache():
@@ -2311,106 +2309,26 @@ def normalize_group_team_labels(raw, team_ids):
 
 
 def validate_groups_config(payload, allow_empty=False):
-    errors = []
-    warnings = []
-    if not isinstance(payload, dict):
-        errors.append('Config must be an object.')
-        return None, errors, warnings
-
-    groups_raw = payload.get('groups')
-    if not isinstance(groups_raw, list):
-        errors.append('groups must be a list.')
-        return None, errors, warnings
-
-    normalized_groups = []
-    seen_ids = set()
-    seen_names = set()
-    for idx, group in enumerate(groups_raw):
-        if not isinstance(group, dict):
-            errors.append(f'Group at index {idx} must be an object.')
-            continue
-        group_id = str(group.get('id') or '').strip()
-        name = str(group.get('name') or '').strip()
-        if not group_id:
-            errors.append(f'Group at index {idx} is missing id.')
-            continue
-        if not name:
-            errors.append(f'Group "{group_id}" is missing name.')
-            continue
-        if group_id.lower() in seen_ids:
-            errors.append(f'Duplicate group id "{group_id}".')
-            continue
-        if name.lower() in seen_names:
-            errors.append(f'Duplicate group name "{name}".')
-            continue
-        seen_ids.add(group_id.lower())
-        seen_names.add(name.lower())
-
-        team_ids = normalize_team_ids(group.get('teamIds') or [])
-        if not team_ids and not allow_empty:
-            errors.append(f'Group "{name}" must include at least one team.')
-        if len(team_ids) > GROUPS_MAX_TEAMS:
-            errors.append(f'Group "{name}" exceeds {GROUPS_MAX_TEAMS} teams.')
-        raw_components = group.get('missingInfoComponents')
-        if isinstance(raw_components, list):
-            missing_info_components = [str(c).strip() for c in raw_components if str(c).strip()]
-        elif isinstance(raw_components, str) and raw_components.strip():
-            missing_info_components = [raw_components.strip()]
-        else:
-            # Backwards compat: accept old singular field
-            old_single = str(group.get('missingInfoComponent') or '').strip()
-            missing_info_components = [old_single] if old_single else []
-        raw_excluded_epics = group.get('excludedCapacityEpics')
-        if isinstance(raw_excluded_epics, list):
-            excluded_capacity_epics = normalize_epic_keys(raw_excluded_epics)
-        elif isinstance(raw_excluded_epics, str) and raw_excluded_epics.strip():
-            excluded_capacity_epics = normalize_epic_keys([raw_excluded_epics.strip()])
-        else:
-            excluded_capacity_epics = []
-        team_labels = normalize_group_team_labels(group.get('teamLabels') or {}, team_ids)
-        normalized_groups.append({
-            'id': group_id,
-            'name': name,
-            'teamIds': team_ids,
-            'missingInfoComponents': missing_info_components,
-            'excludedCapacityEpics': excluded_capacity_epics,
-            'teamLabels': team_labels
-        })
-
-    default_group_id = str(payload.get('defaultGroupId') or '').strip()
-    if default_group_id:
-        if default_group_id not in {g['id'] for g in normalized_groups}:
-            errors.append('defaultGroupId must reference an existing group.')
-
-    normalized = {
-        'version': payload.get('version') or GROUPS_CONFIG_VERSION,
-        'groups': normalized_groups,
-        'defaultGroupId': default_group_id,
-    }
-    return normalized, errors, warnings
+    return _group_config_service.validate_groups_config(
+        payload,
+        allow_empty=allow_empty,
+        groups_config_version=GROUPS_CONFIG_VERSION,
+        groups_max_teams=GROUPS_MAX_TEAMS,
+        normalize_team_ids_fn=normalize_team_ids,
+        normalize_epic_keys_fn=normalize_epic_keys,
+        normalize_group_team_labels_fn=normalize_group_team_labels,
+    )
 
 
 def build_default_groups_config():
-    warnings = []
-    team_ids = normalize_team_ids(extract_team_ids_from_jql(build_base_jql()))
-    if len(team_ids) > GROUPS_MAX_TEAMS:
-        warnings.append(f'Found more than {GROUPS_MAX_TEAMS} teams in JQL_QUERY; truncated to first {GROUPS_MAX_TEAMS}.')
-        team_ids = team_ids[:GROUPS_MAX_TEAMS]
-    if not team_ids:
-        warnings.append('No teams found in JQL_QUERY. Default group is empty; add teams manually.')
-
-    config = {
-        'version': GROUPS_CONFIG_VERSION,
-        'groups': [{
-            'id': 'default',
-            'name': 'Default',
-            'teamIds': team_ids,
-            'missingInfoComponents': [MISSING_INFO_COMPONENT] if MISSING_INFO_COMPONENT else [],
-            'excludedCapacityEpics': []
-        }],
-        'defaultGroupId': 'default',
-    }
-    return config, warnings
+    return _group_config_service.build_default_groups_config(
+        base_jql=build_base_jql(),
+        missing_info_component=MISSING_INFO_COMPONENT,
+        groups_config_version=GROUPS_CONFIG_VERSION,
+        groups_max_teams=GROUPS_MAX_TEAMS,
+        normalize_team_ids_fn=normalize_team_ids,
+        extract_team_ids_from_jql_fn=extract_team_ids_from_jql,
+    )
 
 
 def apply_team_ids_to_template(team_ids):

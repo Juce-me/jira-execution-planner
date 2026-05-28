@@ -84,6 +84,7 @@ No P0 issues were found. The main structural risk is that extracted modules exis
 - The Planning project split bar extraction slice is implemented locally in `EXEC-codebase-operability-planning-project-split-bar.md`.
 - The priority-weights service extraction slice is implemented locally in `EXEC-codebase-operability-priority-weights-service.md`.
 - The team-catalog service extraction slice is implemented locally in `EXEC-codebase-operability-team-catalog-service.md`.
+- The group-config service extraction slice is implemented locally in `EXEC-codebase-operability-group-config-service.md`.
 - Keep this as future scope until the user explicitly chooses a slice to execute.
 - Convert a chosen slice into a separate `EXEC-*` plan before implementation.
 - Do not execute multiple slices that touch `frontend/src/dashboard.jsx` in parallel.

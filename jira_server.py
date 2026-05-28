@@ -53,7 +53,7 @@ from backend.config.repository import (
     json_repository as build_json_config_repository,
     validate_config_storage_startup,
 )
-from backend.db.engine import DatabaseConfigurationError, database_storage_enabled, session_scope, validate_startup_database_config
+from backend.db.engine import DatabaseConfigurationError, database_storage_enabled, session_scope
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
     AUTH_MODE_BASIC,
@@ -77,7 +77,7 @@ from backend.auth.jira_auth import (
 
 # Load environment variables from .env file before constructing the Flask app.
 load_dotenv()
-from backend.app import app
+from backend.app import create_app
 from backend import config_store as _config_store
 from backend import jira_client as _jira_client
 from backend.epm import projects as epm_projects
@@ -104,6 +104,7 @@ ATLASSIAN_SCOPES = os.getenv(
     'read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access',
 ).strip()
 FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', '').strip()
+app = create_app()
 app.secret_key = FLASK_SECRET_KEY or os.urandom(32)
 APP_ENVIRONMENT_KEY = os.getenv('APP_ENVIRONMENT_KEY', 'local').strip() or 'local'
 OAUTH_LOCAL_TOKEN_STORE_ALLOWED = os.getenv('OAUTH_LOCAL_TOKEN_STORE_ALLOWED', '').strip().lower() in {'1', 'true', 'yes'}
@@ -142,7 +143,6 @@ UPDATE_CHECK_BRANCH = os.getenv('UPDATE_CHECK_BRANCH', 'main').strip() or 'main'
 UPDATE_CHECK_TTL_SECONDS = int(os.getenv('UPDATE_CHECK_TTL_SECONDS', '300'))
 UPDATE_CHECK_RELEASE_INFO = os.getenv('UPDATE_CHECK_RELEASE_INFO', 'release-info.json').strip() or 'release-info.json'
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').strip().upper() or 'INFO'
-validate_startup_database_config()
 JIRA_RETRY_MAX_ATTEMPTS = int(os.getenv('JIRA_RETRY_MAX_ATTEMPTS', '4'))
 JIRA_RETRY_MAX_ELAPSED_SECONDS = float(os.getenv('JIRA_RETRY_MAX_ELAPSED_SECONDS', '10'))
 JIRA_RETRY_BASE_DELAY_SECONDS = float(os.getenv('JIRA_RETRY_BASE_DELAY_SECONDS', '0.5'))

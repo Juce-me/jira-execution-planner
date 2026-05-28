@@ -18,6 +18,7 @@ class TestBackendServiceExtraction(unittest.TestCase):
     def test_backend_modules_export_extracted_services(self):
         jira_client = importlib.import_module('backend.jira_client')
         local_oauth_store = importlib.import_module('backend.auth.local_oauth_store')
+        capacity_service = importlib.import_module('backend.services.capacity')
         config_store = importlib.import_module('backend.config_store')
         epm_config = importlib.import_module('backend.epm.config')
         epm_aggregate = importlib.import_module('backend.epm.aggregate')
@@ -26,6 +27,8 @@ class TestBackendServiceExtraction(unittest.TestCase):
 
         self.assertTrue(hasattr(jira_client, 'resilient_jira_get'))
         self.assertTrue(hasattr(jira_client, 'jira_search_request'))
+        self.assertTrue(hasattr(capacity_service, 'fetch_capacity_for_sprint'))
+        self.assertTrue(hasattr(capacity_service, 'fetch_capacity_team_sizes'))
         self.assertTrue(hasattr(local_oauth_store, 'LocalOAuthTokenStore'))
         self.assertTrue(hasattr(config_store, 'load_dashboard_config'))
         self.assertTrue(hasattr(config_store, 'save_dashboard_config'))
@@ -124,6 +127,18 @@ class TestBackendServiceExtraction(unittest.TestCase):
 
         self.assertNotIn('while len(results) < max_results:', server_source)
         self.assertNotIn('for i in range(0, len(keys), batch_size):', server_source)
+
+    def test_capacity_service_logic_lives_outside_jira_server_and_routes_do_not_delegate(self):
+        route_module = importlib.import_module('backend.routes.capacity_routes')
+        with open(jira_server.__file__, encoding='utf-8') as handle:
+            server_source = handle.read()
+        with open(route_module.__file__, encoding='utf-8') as handle:
+            route_source = handle.read()
+
+        self.assertNotIn('def build_capacity_jql(sprint_name, team_names=None):\n    capacity_project = get_effective_capacity_project()', server_source)
+        self.assertNotIn('def fetch_capacity_for_sprint(sprint_name, headers, debug=False, team_names=None):\n    if not get_effective_capacity_project():', server_source)
+        self.assertNotIn('return get_jira_server().get_capacity()', route_source)
+        self.assertNotIn('return get_jira_server().get_planned_capacity()', route_source)
 
     def test_config_wrappers_keep_patchable_paths_and_migration_shape(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -84,6 +84,7 @@ load_dotenv()
 from backend.app import create_app
 from backend import config_store as _config_store
 from backend import jira_client as _jira_client
+from backend.services import capacity as _capacity_service
 from backend.epm import projects as epm_projects
 from backend.security.policy import (
     is_oauth_ready_api_path as policy_is_oauth_ready_api_path,
@@ -1238,14 +1239,7 @@ def normalize_team_value(value):
 
 def normalize_capacity_team_name(team_name):
     """Strip prefixes to match capacity team labels."""
-    if not team_name:
-        return None
-    cleaned = str(team_name).replace('\u00a0', ' ').strip()
-    cleaned = re.sub(r'^\[archived\]\s*', '', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'^r&d\s+', '', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'^(product|tech)\s*-\s*', '', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'\s+', ' ', cleaned)
-    return cleaned.strip()
+    return _capacity_service.normalize_capacity_team_name(team_name)
 
 
 def build_team_value(raw_team):
@@ -1305,177 +1299,51 @@ def fetch_teams_from_jira_api():
 
 
 def build_capacity_jql(sprint_name, team_names=None):
-    capacity_project = get_effective_capacity_project()
-    sprint_label = str(sprint_name or '').replace('"', '\\"')
-    if team_names:
-        clauses = []
-        for name in team_names:
-            cleaned = str(name).replace('"', '\\"').strip()
-            if not cleaned:
-                continue
-            phrase = f'\\"Team info {sprint_label} - {cleaned}\\"'
-            clauses.append(f'summary ~ "{phrase}"')
-        if clauses:
-            return f'project = "{capacity_project}" AND ({ " OR ".join(clauses) })'
-    phrase = f'\\"Team info {sprint_label} -\\"'
-    return f'project = "{capacity_project}" AND summary ~ "{phrase}"'
+    return _capacity_service.build_capacity_jql(
+        sprint_name,
+        team_names,
+        capacity_project=get_effective_capacity_project(),
+    )
 
 
 def fetch_capacity_for_sprint(sprint_name, headers, debug=False, team_names=None):
-    if not get_effective_capacity_project():
-        return {
-            'enabled': False,
-            'capacities': {}
-        }, None
-
-    capacity_field_id = resolve_capacity_field_id(headers)
-    if not capacity_field_id:
-        return {
-            'enabled': False,
-            'capacities': {},
-            'message': 'Missing Team capacity field ID'
-        }, None
-
-    capacities = {}
-    debug_items = []
-    issues = []
-    jqls = []
-    chunk_size = 20
-    team_chunks = [team_names[i:i + chunk_size] for i in range(0, len(team_names or []), chunk_size)]
-    if not team_chunks:
-        team_chunks = [None]
-
-    for chunk in team_chunks:
-        jql = build_capacity_jql(sprint_name, chunk)
-        jqls.append(jql)
-        payload = {
-            'jql': jql,
-            'maxResults': 200,
-            'fields': ['summary', capacity_field_id]
-        }
-        response = jira_search_request(payload)
-        if response.status_code != 200:
-            return None, response.text
-        data = response.json() or {}
-        issues.extend(data.get('issues') or [])
-    pattern = re.compile(rf'^Team info\s+{re.escape(str(sprint_name))}\s*-\s*(.+)$', re.IGNORECASE)
-    for issue in issues:
-        fields = issue.get('fields') or {}
-        summary = str(fields.get('summary') or '').strip()
-        match = pattern.match(summary)
-        if not match:
-            continue
-        short_name = normalize_capacity_team_name(match.group(1))
-        if not short_name:
-            continue
-        raw_capacity = fields.get(capacity_field_id)
-        if debug:
-            debug_items.append({
-                'summary': summary,
-                'rawCapacity': raw_capacity
-            })
-        try:
-            capacity_value = float(raw_capacity)
-        except (TypeError, ValueError):
-            continue
-        capacities[short_name] = capacity_value
-
-    response_payload = {
-        'enabled': True,
-        'sprint': sprint_name,
-        'capacities': capacities
-    }
-    if debug:
-        response_payload['debug'] = {
-            'jql': jqls if len(jqls) > 1 else jqls[0],
-            'issueCount': len(issues),
-            'matched': debug_items[:20],
-            'fieldId': capacity_field_id
-        }
-    return response_payload, None
+    return _capacity_service.fetch_capacity_for_sprint(
+        sprint_name,
+        headers,
+        debug=debug,
+        team_names=team_names,
+        capacity_project=get_effective_capacity_project(),
+        resolve_capacity_field_id=resolve_capacity_field_id,
+        search_request=jira_search_request,
+        build_capacity_jql_fn=build_capacity_jql,
+        normalize_capacity_team_name_fn=normalize_capacity_team_name,
+    )
 
 
 def fetch_watchers_count(issue_key):
     """Fetch watchers count for an issue (fallback if watches field is missing)."""
-    if not issue_key:
-        return None
-    try:
-        response = current_jira_get(f'/rest/api/3/issue/{issue_key}/watchers', timeout=20)
-        if response.status_code != 200:
-            log_warning(f'Watchers fetch failed: status={response.status_code}')
-            return None
-        data = response.json() or {}
-        if isinstance(data.get('watchCount'), int):
-            return data['watchCount']
-        watchers = data.get('watchers') or []
-        return len(watchers)
-    except Exception as e:
-        logger.exception('Watchers fetch exception')
-        return None
+    return _capacity_service.fetch_watchers_count(
+        issue_key,
+        current_jira_get=current_jira_get,
+        log_warning_fn=log_warning,
+        logger=logger,
+    )
 
 
 def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
     """Fetch team sizes from Jira capacity issues (watchers count)."""
-    if not get_effective_capacity_project() or not sprint_name:
-        return {}, {}
-
-    issues = []
-    jqls = []
-    chunk_size = 20
-    team_chunks = [team_names[i:i + chunk_size] for i in range(0, len(team_names or []), chunk_size)]
-    if not team_chunks:
-        team_chunks = [None]
-
-    for chunk in team_chunks:
-        jql = build_capacity_jql(sprint_name, chunk)
-        jqls.append(jql)
-        payload = {
-            'jql': jql,
-            'maxResults': 200,
-            'fields': ['summary', 'watches', 'reporter']
-        }
-        response = jira_search_request(payload)
-        if response.status_code != 200:
-            log_warning(f'Capacity size fetch failed: status={response.status_code}')
-            continue
-        data = response.json() or {}
-        issues.extend(data.get('issues') or [])
-
-    sizes = {}
-    details = {}
-    pattern = re.compile(rf'^Team info\s+{re.escape(str(sprint_name))}\s*-\s*(.+)$', re.IGNORECASE)
-    for issue in issues:
-        fields = issue.get('fields') or {}
-        summary = str(fields.get('summary') or '').strip()
-        match = pattern.match(summary)
-        if not match:
-            continue
-        short_name = normalize_capacity_team_name(match.group(1))
-        if not short_name:
-            continue
-        watch_count = None
-        watches = fields.get('watches') or {}
-        if isinstance(watches, dict):
-            watch_count = watches.get('watchCount')
-        if watch_count is None:
-            watch_count = fetch_watchers_count(issue.get('key'))
-        if watch_count is None:
-            continue
-        try:
-            count = int(watch_count)
-            sizes[short_name] = count
-            reporter_name = (fields.get('reporter') or {}).get('displayName')
-            details[short_name] = {
-                'watchers': count,
-                'issue_key': issue.get('key'),
-                'reporter': reporter_name
-            }
-            if issue.get('key'):
-                log_debug(f'Capacity size resolved team={short_name} watchers={count} reporter={reporter_name}')
-        except (TypeError, ValueError):
-            continue
-
-    return sizes, details
+    return _capacity_service.fetch_capacity_team_sizes(
+        sprint_name,
+        headers,
+        team_names=team_names,
+        capacity_project=get_effective_capacity_project(),
+        search_request=jira_search_request,
+        fetch_watchers_count=fetch_watchers_count,
+        build_capacity_jql_fn=build_capacity_jql,
+        normalize_capacity_team_name_fn=normalize_capacity_team_name,
+        log_warning_fn=log_warning,
+        log_debug_fn=log_debug,
+    )
 
 
 # Cache helper functions
@@ -6146,38 +6014,6 @@ def _save_field_config(config_key, cache_name=None):
 # --- Issue Types ---
 ISSUE_TYPES_CACHE = {'data': None, 'timestamp': 0}
 ISSUE_TYPES_CACHE_TTL = 60 * 60  # 1 hour
-
-
-def get_capacity():
-    """Get estimated team capacity for a sprint."""
-    sprint_name = request.args.get('sprint', '').strip()
-    debug = request.args.get('debug', '').lower() in ('1', 'true', 'yes')
-    team_param = request.args.get('teams', '').strip()
-    team_names = [s.strip() for s in team_param.split(',') if s.strip()]
-    if not sprint_name:
-        return jsonify({'error': 'Sprint name is required'}), 400
-
-    if not get_effective_capacity_project():
-        return jsonify({
-            'enabled': False,
-            'capacities': {}
-        })
-
-    try:
-        payload, error_message = fetch_capacity_for_sprint(sprint_name, None, debug=debug, team_names=team_names)
-        if error_message:
-            return jsonify({'error': error_message}), 500
-        return jsonify(payload)
-    except AuthError:
-        payload, status = oauth_auth_required_payload()
-        return jsonify(payload), status
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-def get_planned_capacity():
-    """Alias endpoint for planned capacity."""
-    return get_capacity()
 
 
 @app.route('/health', methods=['GET'])

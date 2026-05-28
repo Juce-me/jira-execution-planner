@@ -85,6 +85,7 @@ from backend.app import create_app
 from backend import config_store as _config_store
 from backend import jira_client as _jira_client
 from backend.services import capacity as _capacity_service
+from backend.services import sprints as _sprints_service
 from backend.epm import projects as epm_projects
 from backend.security.policy import (
     is_oauth_ready_api_path as policy_is_oauth_ready_api_path,
@@ -1349,62 +1350,36 @@ def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
 # Cache helper functions
 def load_sprints_cache():
     """Load sprints from cache file"""
-    try:
-        if os.path.exists(SPRINTS_CACHE_FILE):
-            with open(SPRINTS_CACHE_FILE, 'r') as f:
-                cache_data = json.load(f)
-                return cache_data
-        return None
-    except Exception as e:
-        log_warning(f'Failed to load cache: {e}')
-        return None
+    return _sprints_service.load_sprints_cache(
+        SPRINTS_CACHE_FILE,
+        log_warning_fn=log_warning,
+    )
 
 
 def save_sprints_cache(sprints):
     """Save sprints to cache file"""
-    try:
-        cache_data = {
-            'timestamp': datetime.now().isoformat(),
-            'boardId': get_effective_board_id(),
-            'sprints': sprints
-        }
-        with open(SPRINTS_CACHE_FILE, 'w') as f:
-            json.dump(cache_data, f, indent=2)
-        log_info(f'Cached {len(sprints)} sprints to {SPRINTS_CACHE_FILE}')
-        return True
-    except Exception as e:
-        log_warning(f'Failed to save cache: {e}')
-        return False
+    return _sprints_service.save_sprints_cache(
+        sprints,
+        cache_file=SPRINTS_CACHE_FILE,
+        board_id=get_effective_board_id(),
+        now_fn=datetime.now,
+        log_info_fn=log_info,
+        log_warning_fn=log_warning,
+    )
 
 
 def is_cache_valid():
     """Check if cache exists, is not expired, and matches the current board config"""
     cache_data = load_sprints_cache()
-    if not cache_data or 'timestamp' not in cache_data:
-        return False
-
-    try:
-        # Invalidate if board config changed since cache was built
-        cached_board = str(cache_data.get('boardId') or '').strip()
-        current_board = get_effective_board_id()
-        if cached_board != current_board:
-            log_info(f'Cache invalidated: board changed ({cached_board!r} → {current_board!r})')
-            return False
-
-        cache_time = datetime.fromisoformat(cache_data['timestamp'])
-        expiry_time = cache_time + timedelta(hours=CACHE_EXPIRY_HOURS)
-        is_valid = datetime.now() < expiry_time
-
-        if is_valid:
-            hours_old = (datetime.now() - cache_time).total_seconds() / 3600
-            log_debug(f'Cache is valid (age: {hours_old:.1f} hours)')
-        else:
-            log_info(f'Cache expired (age: {(datetime.now() - cache_time).total_seconds() / 3600:.1f} hours)')
-
-        return is_valid
-    except Exception as e:
-        log_warning(f'Failed to validate cache: {e}')
-        return False
+    return _sprints_service.is_sprints_cache_valid(
+        cache_data,
+        current_board_id=get_effective_board_id(),
+        cache_expiry_hours=CACHE_EXPIRY_HOURS,
+        now_fn=datetime.now,
+        log_info_fn=log_info,
+        log_debug_fn=log_debug,
+        log_warning_fn=log_warning,
+    )
 
 
 def load_stats_cache():
@@ -2331,11 +2306,10 @@ def parse_groups_config_env():
 
 
 def invalidate_sprints_cache():
-    try:
-        if os.path.exists(SPRINTS_CACHE_FILE):
-            os.remove(SPRINTS_CACHE_FILE)
-    except Exception as e:
-        log_warning(f'Failed to invalidate sprints cache file: {e}')
+    return _sprints_service.invalidate_sprints_cache(
+        SPRINTS_CACHE_FILE,
+        log_warning_fn=log_warning,
+    )
 
 
 def run_git_command(args):
@@ -2618,211 +2592,37 @@ def fetch_board_sprint_ids(board_id, headers):
     """Fetch the set of sprint IDs that originated on a specific board.
     Uses originBoardId to exclude cross-board sprints that Jira includes
     in the board API response."""
-    sprint_ids = set()
-    start_at = 0
-    try:
-        while True:
-            response = current_jira_get(
-                f'/rest/agile/1.0/board/{board_id}/sprint',
-                params={'maxResults': 100, 'startAt': start_at, 'state': 'active,future,closed'},
-                timeout=30
-            )
-            if response.status_code != 200:
-                break
-            data = response.json()
-            for sprint in data.get('values', []):
-                sid = sprint.get('id')
-                origin = sprint.get('originBoardId')
-                # Only include sprints that originated on this board
-                if sid and (origin is None or str(origin) == str(board_id)):
-                    sprint_ids.add(sid)
-            if data.get('isLast', False) or not data.get('values'):
-                break
-            start_at += len(data['values'])
-    except AuthError:
-        raise
-    except Exception as e:
-        log_warning(f'Failed to fetch board sprint IDs for board {board_id}: {e}')
-    return sprint_ids
+    return _sprints_service.fetch_board_sprint_ids(
+        board_id,
+        jira_get=current_jira_get,
+        auth_error_class=AuthError,
+        log_warning_fn=log_warning,
+    )
 
 
 def deduplicate_sprints_by_name(sprints, board_sprint_ids=None):
     """When multiple sprints share a name, keep the one on the configured board.
     If neither or both are on the board, prefer active > closed > future."""
-    STATE_PRIORITY = {'active': 0, 'closed': 1, 'future': 2}
-    by_name = {}
-    for sprint in sprints:
-        name = sprint.get('name', '')
-        prev = by_name.get(name)
-        if prev is None:
-            by_name[name] = sprint
-            continue
-        # Prefer the sprint that belongs to the configured board
-        if board_sprint_ids:
-            prev_on_board = prev['id'] in board_sprint_ids
-            curr_on_board = sprint['id'] in board_sprint_ids
-            if curr_on_board and not prev_on_board:
-                by_name[name] = sprint
-                continue
-            if prev_on_board and not curr_on_board:
-                continue
-        # Tie-break by state priority
-        prev_prio = STATE_PRIORITY.get((prev.get('state') or '').lower(), 9)
-        curr_prio = STATE_PRIORITY.get((sprint.get('state') or '').lower(), 9)
-        if curr_prio < prev_prio:
-            by_name[name] = sprint
-    return list(by_name.values())
+    return _sprints_service.deduplicate_sprints_by_name(sprints, board_sprint_ids)
 
 
 def fetch_sprints_from_jira():
     """Fetch sprints from Jira (not from cache)"""
-    headers = None
-    formatted_sprints = []
-    effective_board_id = get_effective_board_id()
-    board_sprint_ids = None  # lazily fetched when needed for dedup/filtering
-
-    # Method 1: Try to get sprints from board (if JIRA_BOARD_ID is set)
-    if effective_board_id:
-        try:
-            log_info(f'Fetching sprints from board {effective_board_id}')
-            start_at = 0
-            while True:
-                response = current_jira_get(
-                    f'/rest/agile/1.0/board/{effective_board_id}/sprint',
-                    params={'maxResults': 100, 'startAt': start_at, 'state': 'active,future,closed'},
-                    timeout=30
-                )
-
-                if response.status_code != 200:
-                    log_warning(f'Board API returned {response.status_code}, trying alternative method')
-                    break
-
-                data = response.json()
-                sprints = data.get('values', [])
-
-                for sprint in sprints:
-                    name = sprint.get('name', '')
-                    sprint_id = sprint.get('id')
-                    state = sprint.get('state', '')
-                    origin = sprint.get('originBoardId')
-
-                    # Skip sprints that originated on a different board
-                    if origin is not None and str(origin) != str(effective_board_id):
-                        continue
-
-                    if re.match(r'^\d{4}Q[1-4]$', name):
-                        formatted_sprints.append({
-                            'id': sprint_id,
-                            'name': name,
-                            'state': state,
-                            'startDate': sprint.get('startDate'),
-                            'endDate': sprint.get('endDate'),
-                        })
-
-                if data.get('isLast', False) or not sprints:
-                    break
-
-                start_at += len(sprints)
-
-            if formatted_sprints:
-                # All sprints from Method 1 belong to this board by definition
-                board_sprint_ids = {s['id'] for s in formatted_sprints}
-                log_info(f'Found {len(formatted_sprints)} sprints from board')
-            else:
-                log_warning(f'Board API returned {response.status_code}, trying alternative method')
-        except AuthError:
-            raise
-        except Exception as board_error:
-            log_warning(f'Board API failed: {board_error}, trying alternative method')
-
-    # Method 2: If board method failed or found no sprints, get sprints from issues
-    if len(formatted_sprints) == 0:
-        log_info('Fetching sprints from issues (alternative method)')
-
-        # Build JQL query without sprint filter to get all issues
-        base_jql = STATS_JQL_BASE or f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")'
-        # Remove any existing sprint filters from the query
-        base_jql = strip_sprint_clause(base_jql)
-
-        def collect_sprints_by_jql(jql_query, sprints_dict):
-            total_issues = 0
-            next_page_token = None
-            while True:
-                payload = {
-                    'jql': jql_query,
-                    'maxResults': 200,  # Reduced from 1000 for better performance
-                    'fields': [get_sprint_field_id()]  # Only get sprint field
-                }
-                if next_page_token:
-                    payload['nextPageToken'] = next_page_token
-
-                response = jira_search_request(payload)
-                if response.status_code != 200:
-                    break
-
-                data = response.json()
-                issues = data.get('issues', [])
-
-                for issue in issues:
-                    sprint_field = issue.get('fields', {}).get(get_sprint_field_id(), [])
-                    if sprint_field and isinstance(sprint_field, list):
-                        for sprint in sprint_field:
-                            if sprint and isinstance(sprint, dict):
-                                name = sprint.get('name', '')
-                                sprint_id = sprint.get('id')
-                                state = sprint.get('state', '')
-
-                                if re.match(r'^\d{4}Q[1-4]$', name) and sprint_id:
-                                    sprints_dict[sprint_id] = {
-                                        'id': sprint_id,
-                                        'name': name,
-                                        'state': state,
-                                        'startDate': sprint.get('startDate'),
-                                        'endDate': sprint.get('endDate'),
-                                    }
-
-                total_issues += len(issues)
-                next_page_token = data.get('nextPageToken')
-                if data.get('isLast', not next_page_token) or not next_page_token:
-                    break
-
-            return total_issues
-
-        sprints_dict = {}
-        issues_count = collect_sprints_by_jql(base_jql, sprints_dict)
-        closed_jql = add_clause_to_jql(base_jql, 'Sprint in closedSprints()')
-        issues_count += collect_sprints_by_jql(closed_jql, sprints_dict)
-        future_jql = add_clause_to_jql(base_jql, 'Sprint in futureSprints()')
-        issues_count += collect_sprints_by_jql(future_jql, sprints_dict)
-        open_jql = add_clause_to_jql(base_jql, 'Sprint in openSprints()')
-        issues_count += collect_sprints_by_jql(open_jql, sprints_dict)
-
-        formatted_sprints = list(sprints_dict.values())
-        log_info(f'Found {len(formatted_sprints)} unique sprints from {issues_count} issues')
-
-        # Board-scope: filter out cross-board sprints when a board is configured
-        if effective_board_id:
-            board_sprint_ids = fetch_board_sprint_ids(effective_board_id, headers)
-            if board_sprint_ids:
-                before_count = len(formatted_sprints)
-                formatted_sprints = [s for s in formatted_sprints if s['id'] in board_sprint_ids]
-                filtered_count = before_count - len(formatted_sprints)
-                if filtered_count:
-                    log_info(f'Filtered out {filtered_count} cross-board sprints (board {effective_board_id})')
-
-    # Deduplicate sprints that share a name (e.g. same quarter on different boards)
-    if effective_board_id and board_sprint_ids is None:
-        board_sprint_ids = fetch_board_sprint_ids(effective_board_id, headers)
-    before_dedup = len(formatted_sprints)
-    formatted_sprints = deduplicate_sprints_by_name(formatted_sprints, board_sprint_ids)
-    dedup_removed = before_dedup - len(formatted_sprints)
-    if dedup_removed:
-        log_info(f'Deduplicated {dedup_removed} sprints with duplicate names')
-
-    # Sort sprints by name (latest first)
-    formatted_sprints.sort(key=lambda x: x['name'], reverse=True)
-
-    return formatted_sprints
+    return _sprints_service.fetch_sprints_from_jira(
+        board_id=get_effective_board_id(),
+        stats_jql_base=STATS_JQL_BASE,
+        product_project=JIRA_PRODUCT_PROJECT,
+        tech_project=JIRA_TECH_PROJECT,
+        jira_get=current_jira_get,
+        jira_search_request=jira_search_request,
+        get_sprint_field_id=get_sprint_field_id,
+        strip_sprint_clause=strip_sprint_clause,
+        add_clause_to_jql=add_clause_to_jql,
+        auth_error_class=AuthError,
+        fetch_board_sprint_ids_fn=fetch_board_sprint_ids,
+        log_info_fn=log_info,
+        log_warning_fn=log_warning,
+    )
 
 
 def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):

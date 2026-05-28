@@ -19,6 +19,7 @@ class TestBackendServiceExtraction(unittest.TestCase):
         jira_client = importlib.import_module('backend.jira_client')
         local_oauth_store = importlib.import_module('backend.auth.local_oauth_store')
         capacity_service = importlib.import_module('backend.services.capacity')
+        sprint_service = importlib.import_module('backend.services.sprints')
         config_store = importlib.import_module('backend.config_store')
         epm_config = importlib.import_module('backend.epm.config')
         epm_aggregate = importlib.import_module('backend.epm.aggregate')
@@ -29,6 +30,8 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertTrue(hasattr(jira_client, 'jira_search_request'))
         self.assertTrue(hasattr(capacity_service, 'fetch_capacity_for_sprint'))
         self.assertTrue(hasattr(capacity_service, 'fetch_capacity_team_sizes'))
+        self.assertTrue(hasattr(sprint_service, 'fetch_sprints_from_jira'))
+        self.assertTrue(hasattr(sprint_service, 'deduplicate_sprints_by_name'))
         self.assertTrue(hasattr(local_oauth_store, 'LocalOAuthTokenStore'))
         self.assertTrue(hasattr(config_store, 'load_dashboard_config'))
         self.assertTrue(hasattr(config_store, 'save_dashboard_config'))
@@ -139,6 +142,16 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertNotIn('def fetch_capacity_for_sprint(sprint_name, headers, debug=False, team_names=None):\n    if not get_effective_capacity_project():', server_source)
         self.assertNotIn('return get_jira_server().get_capacity()', route_source)
         self.assertNotIn('return get_jira_server().get_planned_capacity()', route_source)
+
+    def test_sprint_service_logic_lives_outside_jira_server(self):
+        with open(jira_server.__file__, encoding='utf-8') as handle:
+            server_source = handle.read()
+
+        self.assertNotIn("with open(SPRINTS_CACHE_FILE, 'r') as f:", server_source)
+        self.assertNotIn("with open(SPRINTS_CACHE_FILE, 'w') as f:", server_source)
+        self.assertNotIn("while True:\n            response = current_jira_get(\n                f'/rest/agile/1.0/board/{board_id}/sprint'", server_source)
+        self.assertNotIn("def collect_sprints_by_jql(jql_query, sprints_dict):", server_source)
+        self.assertNotIn("STATE_PRIORITY = {'active': 0, 'closed': 1, 'future': 2}", server_source)
 
     def test_config_wrappers_keep_patchable_paths_and_migration_shape(self):
         with tempfile.TemporaryDirectory() as tmp:

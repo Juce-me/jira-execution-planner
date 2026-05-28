@@ -5,8 +5,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 LEGACY_ENTRYPOINT_LINE_BUDGETS = {
-    "jira_server.py": 6696,
-    "frontend/src/dashboard.jsx": 15412,
+    "jira_server.py": 5900,
+    "frontend/src/dashboard.jsx": 15050,
 }
 
 

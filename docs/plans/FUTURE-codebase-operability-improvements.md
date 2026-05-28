@@ -65,7 +65,7 @@ No P0 issues were found. The main structural risk is that extracted modules exis
 - The frontend API boundary slice is implemented locally in `EXEC-codebase-operability-frontend-api-boundary.md`.
 - The config repository selection slice is implemented locally in `EXEC-codebase-operability-config-repository-selection.md`.
 - The EPM config normalization extraction slice is implemented locally in `EXEC-codebase-operability-epm-config-extraction.md`.
-- The structural budgets slice is implemented locally in `EXEC-codebase-operability-structural-budgets.md`.
+- The structural budgets slice is implemented locally and ratcheted after follow-up extractions in `EXEC-codebase-operability-structural-budgets.md`.
 - The EPM project issues extraction slice is implemented locally in `EXEC-codebase-operability-epm-issues-extraction.md`.
 - The local OAuth token-store extraction slice is implemented locally in `EXEC-codebase-operability-local-oauth-store-extraction.md`.
 - The CSS source split slice is implemented locally in `EXEC-codebase-operability-css-split.md`.

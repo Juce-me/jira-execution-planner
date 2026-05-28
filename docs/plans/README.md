@@ -123,7 +123,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 13. `EXEC-codebase-operability-structural-budgets.md`
    - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.
-   - Expected output: source guard budgets prevent `jira_server.py` and `frontend/src/dashboard.jsx` from growing while extraction work continues.
+   - Expected output: source guard budgets prevent `jira_server.py` and `frontend/src/dashboard.jsx` from growing while extraction work continues, with ceilings ratcheted after follow-up extraction slices.
 
 14. `EXEC-codebase-operability-epm-issues-extraction.md`
    - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.

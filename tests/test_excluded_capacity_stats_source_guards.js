@@ -2,10 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { readDashboardCssSource } = require('./css_source_helpers');
 
 const repoRoot = path.join(__dirname, '..');
 const dashboardSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx'), 'utf8');
-const cssSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'styles', 'dashboard.css'), 'utf8');
+const cssSource = readDashboardCssSource(repoRoot);
 const lineChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'ExcludedCapacityLineChart.jsx'), 'utf8');
 const effortSplitChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'EffortTypeSplitChart.jsx'), 'utf8');
 const hoverBubblePositionSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'ui', 'hoverBubblePosition.js'), 'utf8');

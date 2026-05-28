@@ -1,0 +1,460 @@
+---
+status: planned
+type: ga4_gtm_mcp_execution_spec
+version: 1
+revision:
+  checked_on: "2026-05-28"
+  summary: "Dry-run desired state for configuring Jira Execution Planner GA4/GTM with a custom write-capable MCP server."
+
+capability_boundary:
+  official_google_analytics_mcp:
+    allowed: "read_only_reporting_and_exploration"
+    forbidden:
+      - "edit_ga4_configuration"
+      - "edit_gtm_configuration"
+      - "publish_gtm_versions"
+  required_mcp_kind: "custom_write_capable_google_admin_and_gtm_api_wrapper"
+  required_api_scopes:
+    ga_admin:
+      - "https://www.googleapis.com/auth/analytics.edit"
+    gtm_workspace_edits:
+      - "https://www.googleapis.com/auth/tagmanager.edit.containers"
+    gtm_preview_or_version:
+      - "https://www.googleapis.com/auth/tagmanager.edit.containerversions"
+    gtm_publish:
+      - "https://www.googleapis.com/auth/tagmanager.publish"
+  notes:
+    - "The MCP server must not store OAuth tokens, API secrets, Measurement Protocol secrets, or raw preview/debug payloads in this repository."
+    - "If native GTM tag type or parameter keys cannot be resolved from the current API/library/exported container state, stop and require operator input."
+    - "Do not use Custom HTML, direct gtag event calls, or one trigger/tag per app event."
+
+target:
+  environment: "<staging|prod>"
+  ga4_property_id: "<GA4_PROPERTY_ID>"
+  web_stream_id: "<WEB_STREAM_ID>"
+  measurement_id: "G-6QERX19WB0"
+  gtm_account_id: "<GTM_ACCOUNT_ID>"
+  gtm_web_container_id: "<GTM_WEB_CONTAINER_ID>"
+  gtm_server_container_id: null
+
+source_artifacts:
+  implementation_plan: "docs/plans/EXEC-ga4-instrumentation.md"
+  setup_runbook: "docs/plans/SUPPORT-ga4-user-configuration.md"
+  analytics_contract: "docs/README_ANALYTICS.md"
+  project_rules: "AGENTS.md"
+
+execution:
+  mode: "dry_run"
+  workspace_name: "ga4-jira-execution-planner-2026-05-28"
+  create_workspace_allowed: true
+  apply_to_new_workspace_only: true
+  create_container_version_allowed: false
+  publish_allowed: false
+  require_human_approval: true
+  approval_token_required: true
+  destructive_changes_allowed: false
+  consent_changes_allowed: false
+  secret_material_allowed_in_spec: false
+  note: "Creating a GTM container version materializes the workspace into a version. Publishing changes live collection. Both are separate gated approvals."
+
+preflight:
+  required:
+    - "source_artifacts_exist"
+    - "target_ids_operator_supplied"
+    - "measurement_id_matches_web_stream"
+    - "gtm_current_state_read"
+    - "ga4_current_state_read"
+    - "gtm_workspace_capacity_checked"
+    - "gtm_workspace_status_has_no_conflicts"
+    - "no_existing_unreviewed_ga4_or_gtm_changes_conflict_with_this_spec"
+    - "operator_confirms_internal_employee_analytics_policy"
+
+ga4_admin:
+  data_retention:
+    action: "manual_policy_confirm"
+    note: "Runbook says use the longest allowed retention matching company policy, commonly 14 months for standard properties. MCP must not guess this value."
+
+  google_signals_and_ads:
+    action: "verify_disabled"
+    modify_allowed: false
+    forbidden:
+      - "google_signals_enabled"
+      - "ad_personalization_enabled"
+      - "remarketing_enabled"
+      - "audiences_for_advertising"
+
+  enhanced_measurement:
+    api_resource: "properties/{property}/dataStreams/{dataStream}/enhancedMeasurementSettings"
+    default_desired_state:
+      streamEnabled: true
+      scrollsEnabled: true
+      outboundClicksEnabled: false
+      siteSearchEnabled: false
+      videoEngagementEnabled: false
+      fileDownloadsEnabled: false
+      pageChangesEnabled: false
+      formInteractionsEnabled: false
+    gated_enablement:
+      siteSearchEnabled:
+        allowed_after: "managed_metadata_safety_gate_passes"
+        must_not_send:
+          - "raw_app_search_text"
+          - "issue_keys"
+          - "jql"
+          - "callback_values"
+          - "tokens"
+          - "local_paths"
+          - "jira_or_home_urls"
+      fileDownloadsEnabled:
+        allowed_after: "managed_metadata_safety_gate_passes"
+        must_not_send:
+          - "jira_or_home_urls"
+          - "query_strings"
+          - "issue_keys"
+          - "tokens"
+          - "local_paths"
+          - "sensitive_filenames"
+      formInteractionsEnabled:
+        allowed_after: "managed_metadata_safety_gate_passes"
+        must_not_send:
+          - "auth_callback_destinations"
+          - "jira_or_home_urls"
+          - "token_bearing_queries"
+          - "user_entered_text"
+          - "credential_field_names"
+          - "sensitive_submit_text"
+      outboundClicksEnabled:
+        allowed_after: "operator_configuration_and_tests_prove_link_url_safety"
+        default: false
+      pageChangesEnabled:
+        default: false
+        reason: "The app sends logical page views through dataLayer.event=pageview; browser-history page changes can double-count page_view."
+
+  custom_dimensions:
+    - { display_name: "API Surface", scope: "EVENT", parameter_name: "api_surface" }
+    - { display_name: "Auth Mode", scope: "EVENT", parameter_name: "auth_mode" }
+    - { display_name: "Blocking Reason", scope: "EVENT", parameter_name: "blocking_reason" }
+    - { display_name: "Cache State", scope: "EVENT", parameter_name: "cache_state" }
+    - { display_name: "Chart ID", scope: "EVENT", parameter_name: "chart_id" }
+    - { display_name: "Connection Type", scope: "EVENT", parameter_name: "connection_type" }
+    - { display_name: "Content ID", scope: "EVENT", parameter_name: "content_id" }
+    - { display_name: "Content Type", scope: "EVENT", parameter_name: "content_type" }
+    - { display_name: "Dashboard View", scope: "EVENT", parameter_name: "dashboard_view" }
+    - { display_name: "Duration Bucket", scope: "EVENT", parameter_name: "duration_bucket" }
+    - { display_name: "ENG Mode", scope: "EVENT", parameter_name: "eng_mode" }
+    - { display_name: "EPM Tab", scope: "EVENT", parameter_name: "epm_tab" }
+    - { display_name: "Error Area", scope: "EVENT", parameter_name: "error_area" }
+    - { display_name: "Error Code", scope: "EVENT", parameter_name: "error_code" }
+    - { display_name: "Feature Name", scope: "EVENT", parameter_name: "feature_name" }
+    - { display_name: "Filter Type", scope: "EVENT", parameter_name: "filter_type" }
+    - { display_name: "Issue Kind", scope: "EVENT", parameter_name: "issue_kind" }
+    - { display_name: "Lane Mode", scope: "EVENT", parameter_name: "lane_mode" }
+    - { display_name: "Link Type", scope: "EVENT", parameter_name: "link_type" }
+    - { display_name: "Metric", scope: "EVENT", parameter_name: "metric" }
+    - { display_name: "Page Name", scope: "EVENT", parameter_name: "page_name" }
+    - { display_name: "Project Scope", scope: "EVENT", parameter_name: "project_scope" }
+    - { display_name: "Query Length Bucket", scope: "EVENT", parameter_name: "query_length_bucket" }
+    - { display_name: "Range Size Bucket", scope: "EVENT", parameter_name: "range_size_bucket" }
+    - { display_name: "Result", scope: "EVENT", parameter_name: "result" }
+    - { display_name: "Result Count Bucket", scope: "EVENT", parameter_name: "result_count_bucket" }
+    - { display_name: "Search Scope", scope: "EVENT", parameter_name: "search_scope" }
+    - { display_name: "Section", scope: "EVENT", parameter_name: "section" }
+    - { display_name: "Selection Count Bucket", scope: "EVENT", parameter_name: "selection_count_bucket" }
+    - { display_name: "Sort Key", scope: "EVENT", parameter_name: "sort_key" }
+    - { display_name: "Sort Scope", scope: "EVENT", parameter_name: "sort_scope" }
+    - { display_name: "Source Surface", scope: "EVENT", parameter_name: "source_surface" }
+    - { display_name: "Stats View", scope: "EVENT", parameter_name: "stats_view" }
+    - { display_name: "Status Bucket", scope: "EVENT", parameter_name: "status_bucket" }
+    - { display_name: "Subgoal Scope", scope: "EVENT", parameter_name: "subgoal_scope" }
+    - { display_name: "Workflow Action", scope: "EVENT", parameter_name: "workflow_action" }
+  custom_metrics:
+    - { display_name: "Duration MS", scope: "EVENT", parameter_name: "duration_ms", measurement_unit: "MILLISECONDS" }
+    - { display_name: "Visible Count", scope: "EVENT", parameter_name: "visible_count", measurement_unit: "STANDARD" }
+    - { display_name: "Selected Count", scope: "EVENT", parameter_name: "selected_count", measurement_unit: "STANDARD" }
+    - { display_name: "Selected Story Points", scope: "EVENT", parameter_name: "selected_story_points", measurement_unit: "STANDARD" }
+    - { display_name: "Override Count", scope: "EVENT", parameter_name: "override_count", measurement_unit: "STANDARD" }
+    - { display_name: "Issue Count", scope: "EVENT", parameter_name: "issue_count", measurement_unit: "STANDARD" }
+    - { display_name: "Conflict Count", scope: "EVENT", parameter_name: "conflict_count", measurement_unit: "STANDARD" }
+    - { display_name: "Unschedulable Count", scope: "EVENT", parameter_name: "unschedulable_count", measurement_unit: "STANDARD" }
+    - { display_name: "Project Count", scope: "EVENT", parameter_name: "project_count", measurement_unit: "STANDARD" }
+  user_scoped_custom_dimensions:
+    - display_name: "Auth Mode"
+      scope: "USER"
+      parameter_name: "auth_mode"
+      create_only_if_sent_by_shipped_implementation: true
+  key_events: []
+  measurement_protocol:
+    enabled: false
+    api_secret_action: "none"
+    note: "Measurement Protocol is out of scope for v1. Do not create or store an API secret."
+
+gtm_web:
+  enabled: true
+  contract:
+    data_layer_object: "window.dataLayer"
+    allowed_top_level_events:
+      - "pageview"
+      - "userevent"
+    required_control_fields:
+      - "event"
+      - "trigger"
+      - "event_type"
+      - "event_name"
+    forbidden_patterns:
+      - "single_userevent_trigger_filtered_by_event_type"
+      - "one_trigger_per_product_event"
+      - "one_tag_per_product_event"
+      - "custom_html_google_tag_or_ga4_event_code"
+      - "direct_gtag_event_calls_from_app_code"
+
+  built_in_variables:
+    enable:
+      - "Page URL"
+      - "Page Path"
+      - "Page Title"
+      - "Referrer"
+
+  data_layer_variables:
+    naming_format: "DLV - <data_layer_key>"
+    version: 2
+    no_default_values: true
+    control_keys:
+      - "trigger"
+      - "event_type"
+      - "event_name"
+      - "ga4_user_id"
+      - "debug_mode"
+    pageview_parameter_keys:
+      - "page_name"
+      - "dashboard_view"
+      - "eng_mode"
+      - "auth_mode"
+      - "source_surface"
+    user_event_parameter_keys:
+      - "api_surface"
+      - "auth_mode"
+      - "blocking_reason"
+      - "cache_state"
+      - "chart_id"
+      - "connection_type"
+      - "content_id"
+      - "content_type"
+      - "conflict_count_bucket"
+      - "conflict_state"
+      - "dashboard_view"
+      - "dependency_state"
+      - "dirty_state"
+      - "duration_bucket"
+      - "eng_mode"
+      - "epm_tab"
+      - "error_area"
+      - "error_code"
+      - "feature_name"
+      - "filter_type"
+      - "from_mode"
+      - "from_view"
+      - "group_count_bucket"
+      - "issue_count_bucket"
+      - "issue_kind"
+      - "lane_mode"
+      - "link_type"
+      - "page_name"
+      - "method"
+      - "metric"
+      - "override_count_bucket"
+      - "pending_unsaved_state"
+      - "point_bucket"
+      - "previous_status"
+      - "project_count_bucket"
+      - "project_scope"
+      - "query_length_bucket"
+      - "range_size_bucket"
+      - "recoverable_state"
+      - "result"
+      - "result_count_bucket"
+      - "search_scope"
+      - "section"
+      - "selection_count_bucket"
+      - "selected_count_bucket"
+      - "selected_sp_bucket"
+      - "series_type"
+      - "source_surface"
+      - "scope_type"
+      - "sort_direction"
+      - "sort_key"
+      - "sort_scope"
+      - "sprint_selection_state"
+      - "stats_view"
+      - "status_bucket"
+      - "subgoal_scope"
+      - "team_count_bucket"
+      - "value_state"
+      - "validation_count_bucket"
+      - "visible_count_bucket"
+      - "workflow_action"
+      - "duration_ms"
+      - "visible_count"
+      - "selected_count"
+      - "selected_story_points"
+      - "override_count"
+      - "issue_count"
+      - "conflict_count"
+      - "unschedulable_count"
+      - "project_count"
+
+  triggers:
+    - name: "CE - pageview"
+      type: "Custom Event"
+      event_name: "pageview"
+      filter:
+        - field: "trigger"
+          operator: "equals"
+          value: "pageview"
+        - field: "event_type"
+          operator: "equals"
+          value: "pageview"
+    - name: "CE - userevent"
+      type: "Custom Event"
+      event_name: "userevent"
+      filter:
+        - field: "trigger"
+          operator: "equals"
+          value: "userevent"
+        - field: "event_type"
+          operator: "equals"
+          value: "event"
+
+  tags:
+    - name: "Google tag - Jira Execution Planner"
+      logical_type: "Google tag"
+      tag_id: "G-6QERX19WB0"
+      trigger: "Initialization - All Pages"
+      configuration_parameters:
+        send_page_view: false
+      user_id_mapping:
+        source: "{{DLV - ga4_user_id}}"
+        destination: "GA4 User-ID"
+        send_as_event_parameter: false
+      debug_mode_mapping:
+        source: "{{DLV - debug_mode}}"
+        send_only_when: "GA4_DEBUG_MODE=true"
+      native_gtm_type_resolution: "required_from_current_gtm_api_or_template_catalog"
+    - name: "GA4 - page_view from dataLayer pageview"
+      logical_type: "Google Analytics: GA4 Event"
+      measurement_id: "G-6QERX19WB0"
+      event_name: "page_view"
+      trigger: "CE - pageview"
+      event_parameters_from_keys:
+        - "page_name"
+        - "dashboard_view"
+        - "eng_mode"
+        - "auth_mode"
+        - "source_surface"
+      omit_undefined_or_blank_parameters: true
+      do_not_override:
+        - "page_location"
+        - "page_title"
+      native_gtm_type_resolution: "required_from_current_gtm_api_or_template_catalog"
+    - name: "GA4 - dynamic app event from dataLayer userevent"
+      logical_type: "Google Analytics: GA4 Event"
+      measurement_id: "G-6QERX19WB0"
+      event_name_source: "{{DLV - event_name}}"
+      trigger: "CE - userevent"
+      event_parameters_from_keys: "gtm_web.data_layer_variables.user_event_parameter_keys"
+      omit_undefined_or_blank_parameters: true
+      forbidden_event_parameters:
+        - "event_name"
+        - "ga4_user_id"
+        - "user_id"
+        - "debug_mode"
+      max_parameters_per_hit: 25
+      native_gtm_type_resolution: "required_from_current_gtm_api_or_template_catalog"
+
+validation:
+  dry_run_required: true
+  quick_preview_required: true
+  tag_assistant_required: true
+  ga4_debugview_required: true
+  realtime_required: true
+  required_checks:
+    - "official_google_analytics_mcp_not_used_for_writes"
+    - "custom_mcp_uses_new_gtm_workspace"
+    - "dry_run_diff_generated"
+    - "workspace_status_has_no_conflicts"
+    - "measurement_id_matches_web_stream"
+    - "google_tag_send_page_view_false"
+    - "enhanced_measurement_page_changes_false"
+    - "only_data_layer_events_pageview_and_userevent"
+    - "normal_product_events_use_reusable_userevent_path"
+    - "no_per_event_gtm_tag_or_trigger_explosion"
+    - "event_name_used_as_ga4_event_name_not_parameter"
+    - "ga4_user_id_mapped_only_to_user_id"
+    - "undefined_or_blank_variables_not_serialized"
+    - "each_ga4_hit_has_at_most_25_event_parameters"
+    - "no_raw_pii_or_secrets"
+    - "no_universal_analytics_fields"
+    - "no_event_group_or_ga4_event_name_fields"
+    - "no_custom_dimension_for_user_id_session_id_url_jql_issue_key_or_names"
+    - "consent_settings_not_modified"
+    - "measurement_protocol_secret_not_created"
+    - "create_container_version_blocked_without_explicit_approval"
+    - "publish_blocked_without_explicit_approval"
+
+  forbidden_keys:
+    exact:
+      - "email"
+      - "name"
+      - "phone"
+      - "ip"
+      - "user_agent"
+      - "user_id"
+      - "session_id"
+      - "cid"
+      - "uid"
+      - "customer_id"
+      - "event_category"
+      - "event_action"
+      - "event_label"
+      - "event_group"
+      - "ga4_event_name"
+    contains:
+      - "token"
+      - "secret"
+      - "password"
+      - "oauth"
+      - "authorization"
+      - "jira_url"
+      - "home_url"
+      - "jql"
+      - "issue_key"
+    prefixes:
+      - "ga_"
+      - "google_"
+      - "firebase_"
+      - "_"
+      - "gtag."
+    value_patterns:
+      - "email_like_value"
+      - "bearer_or_jwt_token_like_value"
+      - "full_url_with_query_string"
+      - "full_ipv4_or_ipv6_address"
+      - "local_absolute_path"
+
+publish_gate:
+  default_allowed: false
+  create_container_version_allowed: false
+  publish_allowed: false
+  requires_human_approval: true
+  requires_approval_token: true
+  requires_successful_quick_preview: true
+  requires_tag_assistant_validation: true
+  requires_ga4_debugview_validation: true
+  requires_diff_review: true
+
+destructive_change_guard:
+  delete_gtm_entities: false
+  archive_ga4_custom_definitions: false
+  patch_existing_production_tags_without_override: false
+  modify_consent_settings: false
+  modify_consent_initialization_tags: false
+  create_measurement_protocol_secret: false

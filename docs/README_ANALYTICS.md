@@ -188,6 +188,7 @@ CI or focused source-guard tests must fail when:
 
 - Implementation plan: `docs/plans/EXEC-ga4-instrumentation.md`
 - GA4 setup runbook: `docs/plans/SUPPORT-ga4-user-configuration.md`
+- GA4/GTM MCP dry-run spec: `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml` (requires a custom write-capable MCP; the official Google Analytics MCP server is read-only)
 - GA4 web stream Measurement ID: `G-6QERX19WB0`
 - GTM container: configured by `GTM_CONTAINER_ID`
 - Measurement Protocol secret: none in v1

@@ -33,6 +33,8 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertTrue(hasattr(epm_aggregate, 'build_all_epm_projects_rollup'))
         self.assertTrue(hasattr(epm_issues, 'build_epm_project_issues_payload'))
         self.assertTrue(hasattr(epm_payload, 'build_epm_rollup_hierarchy'))
+        self.assertTrue(hasattr(jira_client, 'fetch_issues_by_jql'))
+        self.assertTrue(hasattr(jira_client, 'fetch_issues_by_keys'))
 
     def test_epm_issues_orchestration_lives_in_epm_package(self):
         epm_issues = importlib.import_module('backend.epm.issues')
@@ -115,6 +117,13 @@ class TestBackendServiceExtraction(unittest.TestCase):
         jira_client = importlib.import_module('backend.jira_client')
         with self.assertRaises(ValueError):
             jira_client.resilient_jira_get('http://jira.example/rest/api/3/search/jql')
+
+    def test_jira_issue_fetch_pagination_lives_in_backend_jira_client(self):
+        with open(jira_server.__file__, encoding='utf-8') as handle:
+            server_source = handle.read()
+
+        self.assertNotIn('while len(results) < max_results:', server_source)
+        self.assertNotIn('for i in range(0, len(keys), batch_size):', server_source)
 
     def test_config_wrappers_keep_patchable_paths_and_migration_shape(self):
         with tempfile.TemporaryDirectory() as tmp:

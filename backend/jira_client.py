@@ -224,3 +224,60 @@ def jira_search_request(jira_url, headers, payload, *, request_fn=None):
         headers=headers,
         timeout=30
     )
+
+
+def fetch_issues_by_keys(keys, fields_list, *, search_request, context=None, log_warning_fn=None):
+    """Fetch issues by keys in batches using Jira search."""
+    if not keys:
+        return []
+    log_warning_fn = log_warning_fn or _noop_log
+
+    results = []
+    batch_size = 100
+    for i in range(0, len(keys), batch_size):
+        batch = keys[i:i + batch_size]
+        quoted_keys = ','.join(f'"{key}"' for key in batch)
+        payload = {
+            'jql': f'key in ({quoted_keys})',
+            'maxResults': batch_size,
+            'fields': fields_list,
+        }
+        response = search_request(payload, context=context)
+        if response.status_code != 200:
+            log_warning_fn(f'Dependencies fetch error: status={response.status_code}')
+            continue
+        data = response.json() or {}
+        results.extend(data.get('issues', []) or [])
+    return results
+
+
+def fetch_issues_by_jql(jql, fields_list, *, max_results=500, search_request, context=None, log_warning_fn=None):
+    """Fetch issues by JQL with Jira search nextPageToken pagination."""
+    log_warning_fn = log_warning_fn or _noop_log
+
+    results = []
+    next_page_token = None
+    page_size = 100
+    while len(results) < max_results:
+        remaining = max_results - len(results)
+        page_limit = min(page_size, remaining)
+        payload = {
+            'jql': jql,
+            'maxResults': page_limit,
+            'fields': fields_list,
+        }
+        if next_page_token:
+            payload['nextPageToken'] = next_page_token
+        response = search_request(payload, context=context)
+        if response.status_code != 200:
+            log_warning_fn(f'Scenario fetch error: status={response.status_code}')
+            break
+        data = response.json() or {}
+        issues = data.get('issues', []) or []
+        if not issues:
+            break
+        results.extend(issues)
+        next_page_token = data.get('nextPageToken')
+        if data.get('isLast', not next_page_token) or not next_page_token:
+            break
+    return results

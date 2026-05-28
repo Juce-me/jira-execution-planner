@@ -201,6 +201,36 @@ test('EPM API module owns endpoint construction without EPM compatibility wrappe
     assert.ok(epmApiSource.includes("fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {})"), 'Expected configuration project wrapper in epmApi.js');
 });
 
+test('EPM configuration project refresh sends token-bound CSRF header', async () => {
+    const { getJson, postJson } = loadHttpHelpers();
+    const epmApi = loadApiModule('epmApi.js', [
+        'fetchEpmConfigurationProjects',
+    ], { getJson, postJson });
+
+    await withMockFetch(async (calls) => {
+        await epmApi.fetchEpmConfigurationProjects(
+            'http://backend',
+            { scope: { rootGoalKey: 'CRITE-1', subGoalKeys: ['CRITE-2'] } },
+            { forceRefresh: true },
+        );
+
+        assert.equal(calls[0].url, 'http://backend/api/auth/csrf');
+        assert.equal(calls[0].options.cache, 'no-cache');
+        assert.equal(calls[1].url, 'http://backend/api/epm/projects/configuration?refresh=true');
+        assert.equal(calls[1].options.method, 'POST');
+        assert.equal(calls[1].options.body, JSON.stringify({
+            scope: { rootGoalKey: 'CRITE-1', subGoalKeys: ['CRITE-2'] },
+        }));
+        assert.equal(new Headers(calls[1].options.headers).get('X-CSRF-Token'), 'csrf-token');
+        assertJsonHeader(calls[1].options);
+    }, (url) => {
+        if (String(url).endsWith('/api/auth/csrf')) {
+            return jsonResponse({ csrfToken: 'csrf-token' });
+        }
+        return jsonResponse({ projects: [] });
+    });
+});
+
 test('ENG API module owns ENG task, backlog, and dependency endpoint construction', () => {
     const engApiPath = path.join(frontendSrcPath, 'api', 'engApi.js');
     assert.ok(fs.existsSync(engApiPath), 'Expected frontend/src/api/engApi.js to exist');

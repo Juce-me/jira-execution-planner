@@ -18,6 +18,7 @@ import { buildDependencyFocusPayload, buildDependencyKeySignature, buildIssueByK
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
 import EngView from './eng/EngView.jsx';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
+import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam } from './eng/engTaskUtils.js';
 import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
@@ -14188,68 +14189,26 @@ import {
                     {selectedView === 'eng' && showPlanning && (
                     <div ref={planningPanelRef} className={`planning-panel ${showPlanning ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`}>
                         {/* --- Planning Actions (top of panel) --- */}
-                        <div className="planning-actions">
-                            <button
-                                className={`planning-action-button ${isAcceptedIncluded ? 'active' : ''}`}
-                                onClick={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
-                                disabled={visibleTasks.length === 0}
-                                title="Include all Accepted and In Progress stories for the current view"
-                            >
-                                Accepted
-                            </button>
-                            <button
-                                className={`planning-action-button ${isTodoIncluded ? 'active' : ''}`}
-                                onClick={() => toggleIncludeByStatus(['To Do', 'Pending'])}
-                                disabled={visibleTasks.length === 0}
-                                title="Include all To Do / Pending stories for the current view"
-                            >
-                                To Do
-                            </button>
-                            <button
-                                className={`planning-action-button ${isPostponedIncluded ? 'active' : ''}`}
-                                onClick={() => toggleIncludeByStatus(['Postponed'])}
-                                disabled={planningPostponedTasks.length === 0}
-                                title="Include all Postponed stories for the current view"
-                            >
-                                Postponed
-                            </button>
-                            <button
-                                className={`planning-action-button ${isAwaitingValidationIncluded ? 'active' : ''}`}
-                                onClick={() => toggleIncludeByStatus(['Awaiting Validation'])}
-                                disabled={planningAwaitingValidationTasks.length === 0}
-                                title="Include all Awaiting Validation stories for the current view"
-                            >
-                                Awaiting Val.
-                            </button>
-                            <button
-                                className={`planning-action-button ${areAllVisiblePlanningTasksSelected ? 'active' : ''}`}
-                                onClick={selectAllVisiblePlanningTasks}
-                                disabled={visibleTasksForList.length === 0}
-                                title="Select every task currently visible in the planning list"
-                            >
-                                Select All
-                            </button>
-                            <button
-                                className="uncheck-button"
-                                onClick={clearSelectedTasks}
-                                disabled={selectedCount === 0}
-                                title="Clear all selected tasks"
-                            >
-                                Clear Selected
-                            </button>
-                            <button
-                                className="planning-action-button planning-icon-button"
-                                onClick={openSelectedInJira}
-                                disabled={selectedCount === 0 || !jiraUrl}
-                                title="Open selected stories in Jira (tip: bulk move them to Accepted)"
-                                aria-label="Open selected stories in Jira"
-                            >
-                                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                                    <path d="M10 2h4v4h-1.5V4.56L8.53 8.53l-1.06-1.06L11.44 3.5H10V2z" />
-                                    <path d="M13 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4v1.5H3.5v8h8V9H13z" />
-                                </svg>
-                            </button>
-                        </div>
+                        <PlanningActionBar
+                            isAcceptedIncluded={isAcceptedIncluded}
+                            isTodoIncluded={isTodoIncluded}
+                            isPostponedIncluded={isPostponedIncluded}
+                            isAwaitingValidationIncluded={isAwaitingValidationIncluded}
+                            areAllVisiblePlanningTasksSelected={areAllVisiblePlanningTasksSelected}
+                            hasVisibleTasks={visibleTasks.length > 0}
+                            hasVisiblePlanningTasks={visibleTasksForList.length > 0}
+                            hasPostponedTasks={planningPostponedTasks.length > 0}
+                            hasAwaitingValidationTasks={planningAwaitingValidationTasks.length > 0}
+                            selectedCount={selectedCount}
+                            jiraUrl={jiraUrl}
+                            onToggleAccepted={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
+                            onToggleTodo={() => toggleIncludeByStatus(['To Do', 'Pending'])}
+                            onTogglePostponed={() => toggleIncludeByStatus(['Postponed'])}
+                            onToggleAwaitingValidation={() => toggleIncludeByStatus(['Awaiting Validation'])}
+                            onSelectAllVisible={selectAllVisiblePlanningTasks}
+                            onClearSelected={clearSelectedTasks}
+                            onOpenSelectedInJira={openSelectedInJira}
+                        />
                         {/* --- Capacity Bar Graph --- */}
                         {capacityEnabled && totalCapacityAdjusted > 0 ? (() => {
                             const scale = Math.max(totalCapacityAdjusted, selectedSP) * 1.15;

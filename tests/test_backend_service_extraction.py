@@ -18,11 +18,13 @@ class TestBackendServiceExtraction(unittest.TestCase):
     def test_backend_modules_export_extracted_services(self):
         jira_client = importlib.import_module('backend.jira_client')
         config_store = importlib.import_module('backend.config_store')
+        epm_aggregate = importlib.import_module('backend.epm.aggregate')
 
         self.assertTrue(hasattr(jira_client, 'resilient_jira_get'))
         self.assertTrue(hasattr(jira_client, 'jira_search_request'))
         self.assertTrue(hasattr(config_store, 'load_dashboard_config'))
         self.assertTrue(hasattr(config_store, 'save_dashboard_config'))
+        self.assertTrue(hasattr(epm_aggregate, 'build_all_epm_projects_rollup'))
 
     def test_jira_search_wrapper_keeps_patchable_request_and_next_page_token(self):
         with patch.object(jira_server, 'current_jira_search', return_value=sentinel.response) as mock_search:

@@ -61,6 +61,7 @@ No P0 issues were found. The main structural risk is that extracted modules exis
 - The release-zip packaging-contract slice is implemented locally in `EXEC-codebase-operability-packaging-contract.md`.
 - The import-safe startup/app-creation slice is implemented locally in `EXEC-codebase-operability-import-safe-startup.md`.
 - The worker fan-out request-context guardrail slice is implemented locally in `EXEC-codebase-operability-request-context-guardrails.md`.
+- The EPM aggregate rollup extraction slice is implemented locally in `EXEC-codebase-operability-epm-aggregate-extraction.md`.
 - Keep this as future scope until the user explicitly chooses a slice to execute.
 - Convert a chosen slice into a separate `EXEC-*` plan before implementation.
 - Do not execute multiple slices that touch `frontend/src/dashboard.jsx` in parallel.

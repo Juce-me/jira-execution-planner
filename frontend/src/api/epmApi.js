@@ -1,5 +1,8 @@
 import { getJson, postJson } from './http.js';
 
+const fetchCsrfToken = (backendUrl) =>
+    getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' });
+
 async function epmJson(response, label) {
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
@@ -65,9 +68,12 @@ export const fetchEpmProjects = (backendUrl, { tab, subGoalKeys } = {}) => {
 export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {}) {
     const forceRefresh = Boolean(options.forceRefresh);
     const refreshParam = forceRefresh ? '?refresh=true' : '';
-    return postJson(`${backendUrl}/api/epm/projects/configuration${refreshParam}`, draftConfig || {}, 'EPM project configuration', {
-        cache: 'no-cache'
-    });
+    return fetchCsrfToken(backendUrl).then(({ csrfToken }) =>
+        postJson(`${backendUrl}/api/epm/projects/configuration${refreshParam}`, draftConfig || {}, 'EPM project configuration', {
+            cache: 'no-cache',
+            headers: { 'X-CSRF-Token': csrfToken || '' },
+        })
+    );
 }
 
 export const fetchEpmProjectRollup = (backendUrl, projectId, { tab, sprint, subGoalKeys } = {}) => {

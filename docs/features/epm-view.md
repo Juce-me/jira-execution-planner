@@ -12,7 +12,7 @@ The Home token is a credential connection, not EPM saved-view state. Token mater
 
 If `Active` has no sprint selected, the dashboard keeps the EPM project selected but does not request Jira issues until you choose a sprint.
 
-The EPM settings panel auto-detects the Atlassian site from Jira, then lets operators choose a root goal and one of its child sub-goals. The selected child sub-goal is the exact Jira Home catalog used for EPM projects.
+The EPM settings panel auto-detects the Atlassian site from Jira, then lets operators choose a root goal and one or more of its child sub-goals. EPM project discovery includes projects linked directly to the selected sub-goals and projects linked to their nested child goals.
 
 EPM Jira queries stay scoped to the Jira projects in `dashboard-config.json -> projects.selected`. If an Atlassian Home project maps to Jira work outside that set, add the Jira project in Settings first.
 

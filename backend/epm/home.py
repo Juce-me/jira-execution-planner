@@ -30,6 +30,7 @@ HOME_MAX_RETRIES = 3
 HOME_PAGE_SIZE = 50
 HOME_UPDATE_PAGE_SIZE = 5
 HOME_MAX_PROJECTS_PER_GOAL = 500
+HOME_MAX_PROJECT_GOALS_PER_SCOPE = 100
 
 _CLOUD_ID_CACHE: dict[str, str] = {}
 _GOAL_BY_KEY_CACHE: dict[str, dict] = {}
@@ -1478,6 +1479,30 @@ def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str, context=Non
     return [record for record in records if record is not None]
 
 
+def fetch_project_goals_for_sub_goal(client: HomeGraphQLClient, sub_goal: dict) -> list[dict]:
+    project_goals: list[dict] = []
+    queue: list[dict] = [sub_goal]
+    seen_goal_ids: set[str] = set()
+    while queue and len(project_goals) < HOME_MAX_PROJECT_GOALS_PER_SCOPE:
+        goal = queue.pop(0)
+        goal_id = str((goal or {}).get("id") or "").strip()
+        if not goal_id or goal_id in seen_goal_ids:
+            continue
+        seen_goal_ids.add(goal_id)
+        project_goals.append(goal)
+        for child_goal in fetch_sub_goals(client, goal_id):
+            child_goal_id = str((child_goal or {}).get("id") or "").strip()
+            if child_goal_id and child_goal_id not in seen_goal_ids:
+                queue.append(child_goal)
+    if queue:
+        logger.warning(
+            "Home project-goal traversal for %s truncated at %d goals.",
+            _normalize_goal_key((sub_goal or {}).get("key")) or str((sub_goal or {}).get("id") or "").strip(),
+            HOME_MAX_PROJECT_GOALS_PER_SCOPE,
+        )
+    return project_goals
+
+
 def fetch_latest_project_update(client: HomeGraphQLClient, project_id: str) -> list[dict]:
     try:
         response = client.execute(
@@ -1549,25 +1574,26 @@ def fetch_epm_home_projects(epm_scope, context=None):
             "key": sub_goal_key,
             "name": str(sub_goal.get("name") or "").strip(),
         }
-        projects = (
-            fetch_projects_for_goal(client, sub_goal["id"], context=context)
-            if context is not None
-            else fetch_projects_for_goal(client, sub_goal["id"])
-        )
-        for home_project in projects:
-            project_id = home_project.get("homeProjectId") or home_project.get("id")
-            if not project_id:
-                continue
-            if project_id in seen_project_ids:
-                existing = projects_by_id.get(project_id)
-                if existing is not None and sub_goal_key not in existing.get("subGoalKeys", []):
-                    existing.setdefault("subGoalKeys", []).append(sub_goal_key)
-                    existing.setdefault("subGoals", []).append(sub_goal_record)
-                continue
-            seen_project_ids.add(project_id)
-            shaped_project = dict(home_project)
-            shaped_project["subGoalKeys"] = [sub_goal_key]
-            shaped_project["subGoals"] = [sub_goal_record]
-            projects_by_id[project_id] = shaped_project
-            result.append(shaped_project)
+        for project_goal in fetch_project_goals_for_sub_goal(client, sub_goal):
+            projects = (
+                fetch_projects_for_goal(client, project_goal["id"], context=context)
+                if context is not None
+                else fetch_projects_for_goal(client, project_goal["id"])
+            )
+            for home_project in projects:
+                project_id = home_project.get("homeProjectId") or home_project.get("id")
+                if not project_id:
+                    continue
+                if project_id in seen_project_ids:
+                    existing = projects_by_id.get(project_id)
+                    if existing is not None and sub_goal_key not in existing.get("subGoalKeys", []):
+                        existing.setdefault("subGoalKeys", []).append(sub_goal_key)
+                        existing.setdefault("subGoals", []).append(sub_goal_record)
+                    continue
+                seen_project_ids.add(project_id)
+                shaped_project = dict(home_project)
+                shaped_project["subGoalKeys"] = [sub_goal_key]
+                shaped_project["subGoals"] = [sub_goal_record]
+                projects_by_id[project_id] = shaped_project
+                result.append(shaped_project)
     return result

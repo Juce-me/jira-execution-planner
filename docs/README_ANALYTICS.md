@@ -169,6 +169,9 @@ State-changing routes or user-visible surfaces without analytics must be documen
 | --- | --- | --- | --- |
 | Home/Townsquare writes | `docs/plans/GATE-05-home-write-capability.md` | Blocked external capability; no write route exists in this analytics slice. | 2026-05-26 |
 | EPM project progress display | `frontend/src/epm/EpmRollupPanel.jsx` | Passive readout derived from already-loaded rollup Stories; existing EPM rollup load and expand/collapse analytics cover the surrounding workflow. | 2026-05-28 |
+| EPM nested Home goal project discovery | `backend/epm/home.py` | Backend broadens the existing selected sub-goal project catalog; existing EPM API result, rollup load, and sub-goal filter analytics cover the workflow without adding a new user action. | 2026-05-28 |
+| EPM Pending lifecycle tab correction | `backend/epm/projects.py`, `frontend/src/epm/epmProjectUtils.mjs` | Lifecycle bucket correction changes which existing EPM tab displays Pending projects; existing EPM API result and tab/filter analytics cover the workflow. | 2026-05-28 |
+| EPM collapse-all control placement | `frontend/src/epm/EpmControls.jsx` | Placement-only UI change for the existing expand/collapse control; existing `epm_action` expand/collapse analytics cover usage. | 2026-05-28 |
 
 ## Drift Checks
 

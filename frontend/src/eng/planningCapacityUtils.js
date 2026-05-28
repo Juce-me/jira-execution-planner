@@ -101,3 +101,182 @@ export function buildProjectCapacity({
     if (!showTech) totals.TECH = 0;
     return totals;
 }
+
+function emptyCapacityBreakdown() {
+    return { todoPending: 0, accepted: 0, postponed: 0 };
+}
+
+function emptyCapacityTotals() {
+    return {
+        product: emptyCapacityBreakdown(),
+        tech: emptyCapacityBreakdown(),
+        total: emptyCapacityBreakdown()
+    };
+}
+
+export function buildTeamCapacityStats({
+    showPlanning,
+    capacityEnabled,
+    capacityTasks,
+    normalizeStatus,
+    getTeamInfo,
+    techProjectKeys
+}) {
+    if (!showPlanning || !capacityEnabled) return {};
+    return capacityTasks.reduce((acc, task) => {
+        const status = normalizeStatus(task.fields.status?.name);
+        const sp = parseFloat(task.fields.customfield_10004 || 0);
+        if (!sp) {
+            return acc;
+        }
+
+        const teamInfo = getTeamInfo(task);
+        if (!acc[teamInfo.id]) {
+            acc[teamInfo.id] = {
+                name: teamInfo.name,
+                product: emptyCapacityBreakdown(),
+                tech: emptyCapacityBreakdown()
+            };
+        }
+
+        const pk = task.fields?.projectKey || task.key.split('-')[0];
+        const bucket = techProjectKeys.has(pk) ? 'tech' : 'product';
+        if (status === 'to do' || status === 'pending') {
+            acc[teamInfo.id][bucket].todoPending += sp;
+        }
+        if (status === 'accepted') {
+            acc[teamInfo.id][bucket].accepted += sp;
+        }
+        if (status === 'postponed') {
+            acc[teamInfo.id][bucket].postponed += sp;
+        }
+
+        return acc;
+    }, {});
+}
+
+export function buildTeamCapacityEntries(teamCapacityStats) {
+    return Object.entries(teamCapacityStats)
+        .map(([id, info]) => ({
+            id,
+            name: info.name,
+            product: info.product,
+            tech: info.tech,
+            total: {
+                todoPending: info.product.todoPending + info.tech.todoPending,
+                accepted: info.product.accepted + info.tech.accepted,
+                postponed: info.product.postponed + info.tech.postponed
+            }
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function buildTeamSpTotals(capacityTasks, getTeamInfo) {
+    const totals = {};
+    for (const task of capacityTasks) {
+        const sp = parseFloat(task.fields?.customfield_10004 || 0);
+        if (!sp) continue;
+        const tid = getTeamInfo(task).id;
+        totals[tid] = (totals[tid] || 0) + sp;
+    }
+    return totals;
+}
+
+export function buildDisplayedTeamOptions({
+    teamOptions,
+    isAllTeamsSelected,
+    selectedTeamSet,
+    teamSpTotals
+}) {
+    const base = !isAllTeamsSelected
+        ? teamOptions.filter(team => team.id !== 'all' && selectedTeamSet.has(team.id))
+        : teamOptions.filter(team => team.id !== 'all');
+    return base.filter(team => (teamSpTotals[team.id] || 0) > 0);
+}
+
+export function buildExcludedCapacityByTeamId({
+    capacityEnabled,
+    showPlanning,
+    capacityTasks,
+    excludedEpicSet,
+    normalizeEpicKey,
+    getTeamInfo
+}) {
+    if (!capacityEnabled || !showPlanning) return {};
+    return capacityTasks.reduce((acc, task) => {
+        const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
+        if (!excludedEpicSet.has(epicKey)) return acc;
+        const teamInfo = getTeamInfo(task);
+        const sp = parseFloat(task.fields.customfield_10004 || 0);
+        if (Number.isNaN(sp)) return acc;
+        acc[teamInfo.id] = (acc[teamInfo.id] || 0) + sp;
+        return acc;
+    }, {});
+}
+
+export function buildSelectedProjectEntries({
+    showPlanning,
+    selectedProjectStats,
+    capacityEnabled,
+    projectCapacity
+}) {
+    if (!showPlanning) return [];
+    return Object.entries(selectedProjectStats)
+        .map(([id, storyPoints]) => ({
+            id,
+            name: id,
+            storyPoints,
+            capacity: capacityEnabled ? (projectCapacity[id] || 0) : null
+        }))
+        .sort((a, b) => {
+            const order = (key) => {
+                if (key === 'PRODUCT') return 0;
+                if (key === 'TECH') return 1;
+                return 99;
+            };
+            const diff = order(a.id) - order(b.id);
+            if (diff !== 0) return diff;
+            return a.name.localeCompare(b.name);
+        });
+}
+
+export function buildSelectedTeamEntries({
+    showPlanning,
+    displayedTeamOptions,
+    selectedTeamStats,
+    capacityEnabled,
+    getTeamCapacity,
+    getTeamNetCapacity,
+    capacityMultiplier
+}) {
+    if (!showPlanning) return [];
+    return displayedTeamOptions.map((team) => ({
+        id: team.id,
+        name: team.name,
+        storyPoints: selectedTeamStats[team.id]?.storyPoints || 0,
+        teamCapacity: capacityEnabled ? getTeamCapacity(team.name) * capacityMultiplier : null,
+        planningCapacity: capacityEnabled ? getTeamNetCapacity(team) * capacityMultiplier : null
+    }));
+}
+
+export function buildCapacityTotals({
+    showPlanning,
+    capacityEnabled,
+    displayedTeamCapacityEntries
+}) {
+    if (!showPlanning || !capacityEnabled) {
+        return emptyCapacityTotals();
+    }
+    return displayedTeamCapacityEntries.reduce((acc, info) => {
+        acc.product.todoPending += info.product.todoPending;
+        acc.product.accepted += info.product.accepted;
+        acc.product.postponed += info.product.postponed;
+        acc.tech.todoPending += info.tech.todoPending;
+        acc.tech.accepted += info.tech.accepted;
+        acc.tech.postponed += info.tech.postponed;
+        acc.total.todoPending += info.total.todoPending;
+        acc.total.accepted += info.total.accepted;
+        acc.total.postponed += info.total.postponed;
+        return acc;
+    }, emptyCapacityTotals());
+}

@@ -105,3 +105,12 @@ test('dashboard imports planning selection stat helpers from ENG module', () => 
     assert.doesNotMatch(source, /selectedTasksList\.reduce\(\(sum, task\) => \{/);
     assert.doesNotMatch(source, /selectedPlanningTasksList\.reduce\(\(acc, task\) => \{/);
 });
+
+test('dashboard imports planning capacity aggregate helpers from ENG module', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /buildTeamCapacityStats/);
+    assert.doesNotMatch(source, /capacityTasks\.reduce\(\(acc, task\) => \{/);
+    assert.doesNotMatch(source, /displayedTeamCapacityEntries\.reduce\(\(acc, info\) => \{/);
+});

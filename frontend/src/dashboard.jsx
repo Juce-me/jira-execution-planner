@@ -19,7 +19,7 @@ import EngView from './eng/EngView.jsx';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam } from './eng/engTaskUtils.js';
-import { buildCapacityTotalsSummary, buildProjectCapacity, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
+import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
 import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
 import {
     aggregateCohortSummary,
@@ -10593,53 +10593,18 @@ import {
                         : 1;
 
             const teamCapacityStats = React.useMemo(() => {
-                if (!showPlanning || !capacityEnabled) return {};
-                return capacityTasks.reduce((acc, task) => {
-                    const status = normalizeStatus(task.fields.status?.name);
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    if (!sp) {
-                        return acc;
-                    }
-
-                    const teamInfo = getTeamInfo(task);
-                    if (!acc[teamInfo.id]) {
-                        acc[teamInfo.id] = {
-                            name: teamInfo.name,
-                            product: { todoPending: 0, accepted: 0, postponed: 0 },
-                            tech: { todoPending: 0, accepted: 0, postponed: 0 }
-                        };
-                    }
-
-                    const pk = task.fields?.projectKey || task.key.split('-')[0];
-                    const bucket = techProjectKeys.has(pk) ? 'tech' : 'product';
-                    if (status === 'to do' || status === 'pending') {
-                        acc[teamInfo.id][bucket].todoPending += sp;
-                    }
-                    if (status === 'accepted') {
-                        acc[teamInfo.id][bucket].accepted += sp;
-                    }
-                    if (status === 'postponed') {
-                        acc[teamInfo.id][bucket].postponed += sp;
-                    }
-
-                    return acc;
-                }, {});
+                return buildTeamCapacityStats({
+                    showPlanning,
+                    capacityEnabled,
+                    capacityTasks,
+                    normalizeStatus,
+                    getTeamInfo,
+                    techProjectKeys
+                });
             }, [showPlanning, capacityEnabled, capacityTasks, techProjectKeys]);
 
             const teamCapacityEntries = React.useMemo(() => {
-                return Object.entries(teamCapacityStats)
-                    .map(([id, info]) => ({
-                        id,
-                        name: info.name,
-                        product: info.product,
-                        tech: info.tech,
-                        total: {
-                            todoPending: info.product.todoPending + info.tech.todoPending,
-                            accepted: info.product.accepted + info.tech.accepted,
-                            postponed: info.product.postponed + info.tech.postponed
-                        }
-                    }))
-                    .sort((a, b) => a.name.localeCompare(b.name));
+                return buildTeamCapacityEntries(teamCapacityStats);
             }, [teamCapacityStats]);
 
             const displayedTeamCapacityEntries = React.useMemo(() => {
@@ -10649,21 +10614,16 @@ import {
             }, [teamCapacityEntries, isAllTeamsSelected, selectedTeamSet]);
 
             const teamSpTotals = React.useMemo(() => {
-                const totals = {};
-                for (const task of capacityTasks) {
-                    const sp = parseFloat(task.fields?.customfield_10004 || 0);
-                    if (!sp) continue;
-                    const tid = getTeamInfo(task).id;
-                    totals[tid] = (totals[tid] || 0) + sp;
-                }
-                return totals;
+                return buildTeamSpTotals(capacityTasks, getTeamInfo);
             }, [capacityTasks]);
 
             const displayedTeamOptions = React.useMemo(() => {
-                const base = !isAllTeamsSelected
-                    ? teamOptions.filter(team => team.id !== 'all' && selectedTeamSet.has(team.id))
-                    : teamOptions.filter(team => team.id !== 'all');
-                return base.filter(team => (teamSpTotals[team.id] || 0) > 0);
+                return buildDisplayedTeamOptions({
+                    teamOptions,
+                    isAllTeamsSelected,
+                    selectedTeamSet,
+                    teamSpTotals
+                });
             }, [teamOptions, isAllTeamsSelected, selectedTeamSet, teamSpTotals]);
 
             const capacityTeamNames = React.useMemo(() => {
@@ -10698,16 +10658,14 @@ import {
             };
 
             const excludedCapacityByTeamId = React.useMemo(() => {
-                if (!capacityEnabled || !showPlanning) return {};
-                return capacityTasks.reduce((acc, task) => {
-                    const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
-                    if (!excludedEpicSet.has(epicKey)) return acc;
-                    const teamInfo = getTeamInfo(task);
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    if (Number.isNaN(sp)) return acc;
-                    acc[teamInfo.id] = (acc[teamInfo.id] || 0) + sp;
-                    return acc;
-                }, {});
+                return buildExcludedCapacityByTeamId({
+                    capacityEnabled,
+                    showPlanning,
+                    capacityTasks,
+                    excludedEpicSet,
+                    normalizeEpicKey,
+                    getTeamInfo
+                });
             }, [capacityEnabled, showPlanning, capacityTasks, excludedEpicSet]);
 
             const getTeamNetCapacity = (team) => {
@@ -10774,35 +10732,24 @@ import {
             ]);
 
             const selectedProjectEntries = React.useMemo(() => {
-                if (!showPlanning) return [];
-                return Object.entries(selectedProjectStats)
-                    .map(([id, storyPoints]) => ({
-                        id,
-                        name: id,
-                        storyPoints,
-                        capacity: capacityEnabled ? (projectCapacity[id] || 0) : null
-                    }))
-                    .sort((a, b) => {
-                        const order = (key) => {
-                            if (key === 'PRODUCT') return 0;
-                            if (key === 'TECH') return 1;
-                            return 99;
-                        };
-                        const diff = order(a.id) - order(b.id);
-                        if (diff !== 0) return diff;
-                        return a.name.localeCompare(b.name);
-                    });
+                return buildSelectedProjectEntries({
+                    showPlanning,
+                    selectedProjectStats,
+                    capacityEnabled,
+                    projectCapacity
+                });
             }, [showPlanning, selectedProjectStats, capacityEnabled, projectCapacity]);
 
             const selectedTeamEntries = React.useMemo(() => {
-                if (!showPlanning) return [];
-                return displayedTeamOptions.map((team) => ({
-                    id: team.id,
-                    name: team.name,
-                    storyPoints: selectedTeamStats[team.id]?.storyPoints || 0,
-                    teamCapacity: capacityEnabled ? getTeamCapacity(team.name) * capacityMultiplier : null,
-                    planningCapacity: capacityEnabled ? getTeamNetCapacity(team) * capacityMultiplier : null
-                }));
+                return buildSelectedTeamEntries({
+                    showPlanning,
+                    displayedTeamOptions,
+                    selectedTeamStats,
+                    capacityEnabled,
+                    getTeamCapacity,
+                    getTeamNetCapacity,
+                    capacityMultiplier
+                });
             }, [
                 showPlanning,
                 displayedTeamOptions,
@@ -10814,28 +10761,10 @@ import {
             ]);
 
             const capacityTotals = React.useMemo(() => {
-                if (!showPlanning || !capacityEnabled) {
-                    return {
-                        product: { todoPending: 0, accepted: 0, postponed: 0 },
-                        tech: { todoPending: 0, accepted: 0, postponed: 0 },
-                        total: { todoPending: 0, accepted: 0, postponed: 0 }
-                    };
-                }
-                return displayedTeamCapacityEntries.reduce((acc, info) => {
-                    acc.product.todoPending += info.product.todoPending;
-                    acc.product.accepted += info.product.accepted;
-                    acc.product.postponed += info.product.postponed;
-                    acc.tech.todoPending += info.tech.todoPending;
-                    acc.tech.accepted += info.tech.accepted;
-                    acc.tech.postponed += info.tech.postponed;
-                    acc.total.todoPending += info.total.todoPending;
-                    acc.total.accepted += info.total.accepted;
-                    acc.total.postponed += info.total.postponed;
-                    return acc;
-                }, {
-                    product: { todoPending: 0, accepted: 0, postponed: 0 },
-                    tech: { todoPending: 0, accepted: 0, postponed: 0 },
-                    total: { todoPending: 0, accepted: 0, postponed: 0 }
+                return buildCapacityTotals({
+                    showPlanning,
+                    capacityEnabled,
+                    displayedTeamCapacityEntries
                 });
             }, [showPlanning, capacityEnabled, displayedTeamCapacityEntries]);
 

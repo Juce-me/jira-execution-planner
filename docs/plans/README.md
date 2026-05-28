@@ -153,6 +153,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.
    - Expected output: pure selected Planning task filtering and selected story-point/team/project aggregation helpers moved to `frontend/src/eng/planningSelectionStats.js` while Planning state and rendering remain in `frontend/src/dashboard.jsx`.
 
+21. `EXEC-codebase-operability-eng-planning-capacity-aggregates.md`
+   - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.
+   - Expected output: pure Planning capacity table aggregation and entry-shaping helpers moved to `frontend/src/eng/planningCapacityUtils.js` while capacity fetching, Planning state, and rendering remain in `frontend/src/dashboard.jsx`.
+
 ## Legacy Unclassified Date-Only Plans
 
 These files predate the `EXEC`/`DONE`/`GATE`/`SUPPORT`/`FUTURE` taxonomy. Treat them as unclassified historical context, not executable current plans, until a reviewer classifies and renames them or moves them to `docs/agents/`:

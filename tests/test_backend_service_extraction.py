@@ -22,6 +22,7 @@ class TestBackendServiceExtraction(unittest.TestCase):
         epm_config = importlib.import_module('backend.epm.config')
         epm_aggregate = importlib.import_module('backend.epm.aggregate')
         epm_issues = importlib.import_module('backend.epm.issues')
+        epm_payload = importlib.import_module('backend.epm.payload')
 
         self.assertTrue(hasattr(jira_client, 'resilient_jira_get'))
         self.assertTrue(hasattr(jira_client, 'jira_search_request'))
@@ -31,6 +32,7 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertTrue(hasattr(epm_config, 'normalize_epm_config'))
         self.assertTrue(hasattr(epm_aggregate, 'build_all_epm_projects_rollup'))
         self.assertTrue(hasattr(epm_issues, 'build_epm_project_issues_payload'))
+        self.assertTrue(hasattr(epm_payload, 'build_epm_rollup_hierarchy'))
 
     def test_epm_issues_orchestration_lives_in_epm_package(self):
         epm_issues = importlib.import_module('backend.epm.issues')
@@ -50,6 +52,19 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertNotIn('def _read_persistent_oauth_token_store(', server_source)
         self.assertNotIn('def _write_persistent_oauth_token_store(', server_source)
         self.assertNotIn('def _cleanup_expired_oauth_sessions(', server_source)
+
+    def test_epm_payload_helpers_live_in_epm_package_with_compatibility_aliases(self):
+        epm_payload = importlib.import_module('backend.epm.payload')
+        with open(jira_server.__file__, encoding='utf-8') as handle:
+            server_source = handle.read()
+
+        self.assertIs(jira_server.dedupe_issues_by_key, epm_payload.dedupe_issues_by_key)
+        self.assertIs(jira_server.validate_epm_tab_sprint, epm_payload.validate_epm_tab_sprint)
+        self.assertIs(jira_server.normalize_epm_issue_type_sets, epm_payload.normalize_epm_issue_type_sets)
+        self.assertIs(jira_server.build_empty_epm_rollup_payload, epm_payload.build_empty_epm_rollup_payload)
+        self.assertIs(jira_server.build_epm_rollup_hierarchy, epm_payload.build_epm_rollup_hierarchy)
+        self.assertNotIn('def normalize_epm_issue_type_sets(', server_source)
+        self.assertNotIn('def build_epm_rollup_hierarchy(', server_source)
 
     def test_epm_config_normalizers_live_in_epm_package_with_compatibility_aliases(self):
         epm_config = importlib.import_module('backend.epm.config')

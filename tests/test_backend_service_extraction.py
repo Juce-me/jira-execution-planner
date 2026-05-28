@@ -20,6 +20,7 @@ class TestBackendServiceExtraction(unittest.TestCase):
         local_oauth_store = importlib.import_module('backend.auth.local_oauth_store')
         capacity_service = importlib.import_module('backend.services.capacity')
         sprint_service = importlib.import_module('backend.services.sprints')
+        stats_cache_service = importlib.import_module('backend.services.stats_cache')
         config_store = importlib.import_module('backend.config_store')
         epm_config = importlib.import_module('backend.epm.config')
         epm_aggregate = importlib.import_module('backend.epm.aggregate')
@@ -32,6 +33,8 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertTrue(hasattr(capacity_service, 'fetch_capacity_team_sizes'))
         self.assertTrue(hasattr(sprint_service, 'fetch_sprints_from_jira'))
         self.assertTrue(hasattr(sprint_service, 'deduplicate_sprints_by_name'))
+        self.assertTrue(hasattr(stats_cache_service, 'load_stats_cache'))
+        self.assertTrue(hasattr(stats_cache_service, 'build_stats_cache_key'))
         self.assertTrue(hasattr(local_oauth_store, 'LocalOAuthTokenStore'))
         self.assertTrue(hasattr(config_store, 'load_dashboard_config'))
         self.assertTrue(hasattr(config_store, 'save_dashboard_config'))
@@ -152,6 +155,15 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertNotIn("while True:\n            response = current_jira_get(\n                f'/rest/agile/1.0/board/{board_id}/sprint'", server_source)
         self.assertNotIn("def collect_sprints_by_jql(jql_query, sprints_dict):", server_source)
         self.assertNotIn("STATE_PRIORITY = {'active': 0, 'closed': 1, 'future': 2}", server_source)
+
+    def test_stats_cache_service_logic_lives_outside_jira_server(self):
+        with open(jira_server.__file__, encoding='utf-8') as handle:
+            server_source = handle.read()
+
+        self.assertNotIn("with open(STATS_CACHE_FILE, 'r') as f:", server_source)
+        self.assertNotIn("with open(STATS_CACHE_FILE, 'w') as f:", server_source)
+        self.assertNotIn('raw = f"{sprint_name}::{base_jql}::', server_source)
+        self.assertNotIn("if os.path.exists(STATS_CACHE_FILE):\n            os.remove(STATS_CACHE_FILE)", server_source)
 
     def test_config_wrappers_keep_patchable_paths_and_migration_shape(self):
         with tempfile.TemporaryDirectory() as tmp:

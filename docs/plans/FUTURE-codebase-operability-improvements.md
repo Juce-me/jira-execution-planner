@@ -78,6 +78,7 @@ No P0 issues were found. The main structural risk is that extracted modules exis
 - The dependency-focus utility extraction slice is implemented locally in `EXEC-codebase-operability-dependency-focus-utils.md`.
 - The sprint service extraction slice is implemented locally in `EXEC-codebase-operability-sprint-service-extraction.md`.
 - The Planning action bar extraction slice is implemented locally in `EXEC-codebase-operability-planning-action-bar.md`.
+- The stats cache service extraction slice is implemented locally in `EXEC-codebase-operability-stats-cache-service.md`.
 - Keep this as future scope until the user explicitly chooses a slice to execute.
 - Convert a chosen slice into a separate `EXEC-*` plan before implementation.
 - Do not execute multiple slices that touch `frontend/src/dashboard.jsx` in parallel.

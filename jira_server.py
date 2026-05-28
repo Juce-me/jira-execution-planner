@@ -86,6 +86,7 @@ from backend import config_store as _config_store
 from backend import jira_client as _jira_client
 from backend.services import capacity as _capacity_service
 from backend.services import sprints as _sprints_service
+from backend.services import stats_cache as _stats_cache_service
 from backend.epm import projects as epm_projects
 from backend.security.policy import (
     is_oauth_ready_api_path as policy_is_oauth_ready_api_path,
@@ -1384,31 +1385,26 @@ def is_cache_valid():
 
 def load_stats_cache():
     """Load stats cache from disk."""
-    try:
-        if os.path.exists(STATS_CACHE_FILE):
-            with open(STATS_CACHE_FILE, 'r') as f:
-                return json.load(f)
-        return {}
-    except Exception as e:
-        log_warning(f'Failed to load stats cache: {e}')
-        return {}
+    return _stats_cache_service.load_stats_cache(STATS_CACHE_FILE, log_warning_fn=log_warning)
 
 
 def save_stats_cache(cache_data):
     """Persist stats cache to disk."""
-    try:
-        with open(STATS_CACHE_FILE, 'w') as f:
-            json.dump(cache_data, f, indent=2)
-        return True
-    except Exception as e:
-        log_warning(f'Failed to save stats cache: {e}')
-        return False
+    return _stats_cache_service.save_stats_cache(
+        cache_data,
+        cache_file=STATS_CACHE_FILE,
+        log_warning_fn=log_warning,
+    )
 
 
 def build_stats_cache_key(sprint_name, base_jql, team_ids, group_id=None):
-    raw = f"{sprint_name}::{base_jql}::{','.join(team_ids or [])}::{STATS_JQL_ORDER_BY}::{group_id or ''}"
-    digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
-    return f"sprint:{sprint_name}:{digest}"
+    return _stats_cache_service.build_stats_cache_key(
+        sprint_name,
+        base_jql,
+        team_ids,
+        order_by=STATS_JQL_ORDER_BY,
+        group_id=group_id,
+    )
 
 
 def strip_sprint_clause(jql):
@@ -1747,11 +1743,7 @@ def clear_epm_caches():
 
 
 def invalidate_stats_cache():
-    try:
-        if os.path.exists(STATS_CACHE_FILE):
-            os.remove(STATS_CACHE_FILE)
-    except Exception as exc:
-        log_warning(f'Failed to invalidate stats cache file: {exc}')
+    return _stats_cache_service.invalidate_stats_cache(STATS_CACHE_FILE, log_warning_fn=log_warning)
 
 
 def clear_auth_sensitive_caches(reason='auth_context_change'):

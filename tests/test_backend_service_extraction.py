@@ -17,6 +17,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 class TestBackendServiceExtraction(unittest.TestCase):
     def test_backend_modules_export_extracted_services(self):
         jira_client = importlib.import_module('backend.jira_client')
+        local_oauth_store = importlib.import_module('backend.auth.local_oauth_store')
         config_store = importlib.import_module('backend.config_store')
         epm_config = importlib.import_module('backend.epm.config')
         epm_aggregate = importlib.import_module('backend.epm.aggregate')
@@ -24,6 +25,7 @@ class TestBackendServiceExtraction(unittest.TestCase):
 
         self.assertTrue(hasattr(jira_client, 'resilient_jira_get'))
         self.assertTrue(hasattr(jira_client, 'jira_search_request'))
+        self.assertTrue(hasattr(local_oauth_store, 'LocalOAuthTokenStore'))
         self.assertTrue(hasattr(config_store, 'load_dashboard_config'))
         self.assertTrue(hasattr(config_store, 'save_dashboard_config'))
         self.assertTrue(hasattr(epm_config, 'normalize_epm_config'))
@@ -40,6 +42,14 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertIn('build_epm_project_issues_response', route_source)
         self.assertNotIn('fetch_issues_by_jql(jql, build_epm_fields_list()', route_source)
         self.assertNotIn('EPM_ISSUES_CACHE.get(cache_key)', route_source)
+
+    def test_local_oauth_store_mechanics_live_in_auth_package(self):
+        with open(jira_server.__file__, encoding='utf-8') as handle:
+            server_source = handle.read()
+
+        self.assertNotIn('def _read_persistent_oauth_token_store(', server_source)
+        self.assertNotIn('def _write_persistent_oauth_token_store(', server_source)
+        self.assertNotIn('def _cleanup_expired_oauth_sessions(', server_source)
 
     def test_epm_config_normalizers_live_in_epm_package_with_compatibility_aliases(self):
         epm_config = importlib.import_module('backend.epm.config')

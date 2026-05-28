@@ -46,6 +46,7 @@ from backend.auth.csrf import validate_csrf_token
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
 from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
 from backend.auth.key_provider import key_provider_from_env
+from backend.auth.local_oauth_store import LocalOAuthStoreConfig, LocalOAuthTokenStore
 from backend.auth.project_access import project_access_denied_response
 from backend.auth.service_integrations import register_service_integration_cache_invalidator
 from backend.config.repository import (
@@ -373,86 +374,34 @@ def current_auth_config():
     )
 
 
+def _local_oauth_store_config():
+    return LocalOAuthStoreConfig(
+        auth_mode=JIRA_AUTH_MODE,
+        oauth_mode=AUTH_MODE_ATLASSIAN_OAUTH,
+        environment_key=APP_ENVIRONMENT_KEY,
+        persistence_allowed=OAUTH_LOCAL_TOKEN_STORE_ALLOWED,
+        token_store_path=OAUTH_TOKEN_STORE_PATH,
+        ttl_seconds=OAUTH_TOKEN_STORE_TTL_SECONDS,
+    )
+
+
+_LOCAL_OAUTH_STORE = LocalOAuthTokenStore(
+    token_store=OAUTH_TOKEN_STORE,
+    refresh_locks=OAUTH_REFRESH_LOCKS,
+    store_lock=OAUTH_TOKEN_STORE_LOCK,
+    config=_local_oauth_store_config,
+    new_session_id=new_oauth_state,
+    now=lambda: time.time(),
+    logger=logger,
+)
+
+
 def _drop_oauth_session(session_id):
-    with OAUTH_TOKEN_STORE_LOCK:
-        OAUTH_TOKEN_STORE.pop(session_id, None)
-        OAUTH_REFRESH_LOCKS.pop(session_id, None)
-        _drop_persistent_oauth_session(session_id)
+    _LOCAL_OAUTH_STORE.drop_session(session_id)
 
 
 def _oauth_token_store_persistence_enabled():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return False
-    if APP_ENVIRONMENT_KEY.strip().lower() not in {'local', 'dev'}:
-        return False
-    return bool(OAUTH_LOCAL_TOKEN_STORE_ALLOWED and OAUTH_TOKEN_STORE_PATH)
-
-
-def _read_persistent_oauth_token_store():
-    if not _oauth_token_store_persistence_enabled():
-        return {}
-    try:
-        with open(OAUTH_TOKEN_STORE_PATH, 'r', encoding='utf-8') as handle:
-            payload = json.load(handle)
-    except FileNotFoundError:
-        return {}
-    except (OSError, ValueError) as exc:
-        logger.warning('Failed to read local OAuth token store: %s', exc)
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _write_persistent_oauth_token_store(payload):
-    if not _oauth_token_store_persistence_enabled():
-        return
-    directory = os.path.dirname(OAUTH_TOKEN_STORE_PATH)
-    if directory:
-        os.makedirs(directory, exist_ok=True)
-    if not payload:
-        try:
-            os.remove(OAUTH_TOKEN_STORE_PATH)
-        except FileNotFoundError:
-            pass
-        except OSError as exc:
-            logger.warning('Failed to remove local OAuth token store: %s', exc)
-        return
-    temp_path = f'{OAUTH_TOKEN_STORE_PATH}.tmp'
-    try:
-        fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
-            json.dump(payload, handle)
-        os.replace(temp_path, OAUTH_TOKEN_STORE_PATH)
-        os.chmod(OAUTH_TOKEN_STORE_PATH, 0o600)
-    except OSError as exc:
-        logger.warning('Failed to write local OAuth token store: %s', exc)
-        try:
-            os.remove(temp_path)
-        except OSError:
-            pass
-
-
-def _drop_persistent_oauth_session(session_id):
-    if not _oauth_token_store_persistence_enabled():
-        return
-    payload = _read_persistent_oauth_token_store()
-    if session_id not in payload:
-        return
-    payload.pop(session_id, None)
-    _write_persistent_oauth_token_store(payload)
-
-
-def _save_persistent_oauth_session(session_id, data):
-    if not _oauth_token_store_persistence_enabled():
-        return
-    payload = _read_persistent_oauth_token_store()
-    payload[session_id] = dict(data)
-    _write_persistent_oauth_token_store(payload)
-
-
-def _load_persistent_oauth_session(session_id):
-    payload = _read_persistent_oauth_token_store()
-    data = payload.get(session_id)
-    return data if isinstance(data, dict) else {}
+    return _LOCAL_OAUTH_STORE.persistence_enabled()
 
 
 def _db_oauth_browser_session_payload(data):
@@ -496,72 +445,28 @@ def strict_db_oauth_browser_session_data():
     return {}
 
 
-def _cleanup_expired_oauth_sessions(now=None):
-    now = time.time() if now is None else now
-    expired = [
-        stored_id
-        for stored_id, stored in OAUTH_TOKEN_STORE.items()
-        if now - stored.get('stored_at', 0) > OAUTH_TOKEN_STORE_TTL_SECONDS
-    ]
-    for stored_id in expired:
-        OAUTH_TOKEN_STORE.pop(stored_id, None)
-        OAUTH_REFRESH_LOCKS.pop(stored_id, None)
-        _drop_persistent_oauth_session(stored_id)
-
-
 def save_oauth_session(data):
     if not data:
         session.pop('db_oauth_session', None)
         session_id = session.pop('atlassian_oauth_session_id', None)
         if session_id:
-            with OAUTH_TOKEN_STORE_LOCK:
-                refresh_lock = OAUTH_REFRESH_LOCKS.get(session_id)
+            refresh_lock = _LOCAL_OAUTH_STORE.existing_refresh_lock(session_id)
             if refresh_lock:
                 with refresh_lock:
                     _drop_oauth_session(session_id)
             else:
                 _drop_oauth_session(session_id)
         return
-    now = time.time()
-    session_id = session.get('atlassian_oauth_session_id')
     remember_db_oauth_browser_session(data)
-    with OAUTH_TOKEN_STORE_LOCK:
-        _cleanup_expired_oauth_sessions(now)
-        if not session_id:
-            session_id = new_oauth_state()
-            session['atlassian_oauth_session_id'] = session_id
-        stored = dict(data, stored_at=now)
-        OAUTH_TOKEN_STORE[session_id] = stored
-        OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
-        _save_persistent_oauth_session(session_id, stored)
+    _LOCAL_OAUTH_STORE.save_session(session, data)
 
 
 def oauth_refresh_lock():
-    session_id = session.get('atlassian_oauth_session_id')
-    if not session_id:
-        return OAUTH_TOKEN_STORE_LOCK
-    with OAUTH_TOKEN_STORE_LOCK:
-        return OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+    return _LOCAL_OAUTH_STORE.refresh_lock(session)
 
 
 def oauth_session_data():
-    session_id = session.get('atlassian_oauth_session_id')
-    if not session_id:
-        with OAUTH_TOKEN_STORE_LOCK:
-            _cleanup_expired_oauth_sessions()
-        return {}
-    with OAUTH_TOKEN_STORE_LOCK:
-        _cleanup_expired_oauth_sessions()
-        data = OAUTH_TOKEN_STORE.get(session_id) or {}
-        if not data:
-            data = _load_persistent_oauth_session(session_id)
-            if data:
-                OAUTH_TOKEN_STORE[session_id] = dict(data)
-                OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
-    if data and time.time() - data.get('stored_at', 0) > OAUTH_TOKEN_STORE_TTL_SECONDS:
-        save_oauth_session({})
-        return {}
-    return data
+    return _LOCAL_OAUTH_STORE.session_data(session)
 
 
 def jira_session_data():
@@ -586,19 +491,7 @@ def oauth_session_data_for_auth_context(context):
         return db_oauth_session_data_for_auth_context(context)
     if not session_id:
         return {}
-    now = time.time()
-    with OAUTH_TOKEN_STORE_LOCK:
-        _cleanup_expired_oauth_sessions(now)
-        data = OAUTH_TOKEN_STORE.get(session_id) or {}
-        if not data:
-            data = _load_persistent_oauth_session(session_id)
-            if data:
-                OAUTH_TOKEN_STORE[session_id] = dict(data)
-                OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
-    if data and now - data.get('stored_at', 0) > OAUTH_TOKEN_STORE_TTL_SECONDS:
-        _drop_oauth_session(session_id)
-        return {}
-    return dict(data)
+    return _LOCAL_OAUTH_STORE.session_data_for_id(session_id)
 
 
 def db_oauth_session_data_for_auth_context(context):
@@ -616,24 +509,12 @@ def save_oauth_session_for_auth_context(context, data):
     session_id = oauth_session_id_from_auth_context(context)
     if not session_id:
         return
-    if not data:
-        _drop_oauth_session(session_id)
-        return
-    now = time.time()
-    with OAUTH_TOKEN_STORE_LOCK:
-        _cleanup_expired_oauth_sessions(now)
-        stored = dict(data, stored_at=now)
-        OAUTH_TOKEN_STORE[session_id] = stored
-        OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
-        _save_persistent_oauth_session(session_id, stored)
+    _LOCAL_OAUTH_STORE.save_session_for_id(session_id, data)
 
 
 def oauth_refresh_lock_for_auth_context(context):
     session_id = oauth_session_id_from_auth_context(context)
-    if not session_id:
-        return OAUTH_TOKEN_STORE_LOCK
-    with OAUTH_TOKEN_STORE_LOCK:
-        return OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+    return _LOCAL_OAUTH_STORE.refresh_lock_for_id(session_id)
 
 
 def current_jira_session_data(context=None):

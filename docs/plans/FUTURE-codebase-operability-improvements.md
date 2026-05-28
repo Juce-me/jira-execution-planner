@@ -67,6 +67,7 @@ No P0 issues were found. The main structural risk is that extracted modules exis
 - The EPM config normalization extraction slice is implemented locally in `EXEC-codebase-operability-epm-config-extraction.md`.
 - The structural budgets slice is implemented locally in `EXEC-codebase-operability-structural-budgets.md`.
 - The EPM project issues extraction slice is implemented locally in `EXEC-codebase-operability-epm-issues-extraction.md`.
+- The local OAuth token-store extraction slice is implemented locally in `EXEC-codebase-operability-local-oauth-store-extraction.md`.
 - Keep this as future scope until the user explicitly chooses a slice to execute.
 - Convert a chosen slice into a separate `EXEC-*` plan before implementation.
 - Do not execute multiple slices that touch `frontend/src/dashboard.jsx` in parallel.

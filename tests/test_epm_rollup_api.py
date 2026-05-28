@@ -1,8 +1,11 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from flask import has_request_context
+
 from backend.auth.context import RequestAuthContext
 from backend.auth.jira_auth import AuthError
+from backend.config.repository import ConfigStorageError
 import jira_server
 from tests.auth_mode_test_utils import force_basic_auth_mode
 
@@ -583,6 +586,52 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['active-one'])
         mock_fetch.assert_called_once()
         self.assertIs(mock_fetch.call_args.kwargs.get('context'), context)
+
+    def test_all_projects_rollup_workers_use_captured_dashboard_config_in_db_mode(self):
+        context = make_auth_context()
+        project = {
+            'id': 'active-one',
+            'displayName': 'Active One',
+            'label': 'synthetic_one',
+            'resolvedLinkage': {'labels': ['synthetic_one'], 'epicKeys': []},
+            'matchState': 'home-linked',
+            'tabBucket': 'active',
+        }
+        dashboard_config = {
+            'version': 1,
+            'projects': {'selected': ['SYN']},
+            'teamGroups': {},
+            'epm': {
+                'projects': [
+                    {'homeProjectId': 'active-one', 'jiraLabel': 'synthetic_one'},
+                ],
+            },
+        }
+        load_contexts = []
+
+        def load_dashboard_config(*, source='auto'):
+            load_contexts.append(has_request_context())
+            if not has_request_context():
+                raise ConfigStorageError('dashboard config read escaped request context')
+            return dashboard_config
+
+        with self.app.test_request_context('/api/epm/projects/rollup/all?tab=active&sprint=42'), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
+             patch.object(jira_server, 'load_dashboard_config', side_effect=load_dashboard_config), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': [project]}), \
+             patch.object(jira_server, 'find_epm_project_or_404', return_value=project), \
+             patch.object(jira_server, 'get_story_points_field_id', return_value=None), \
+             patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value=None), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value=None), \
+             patch.object(jira_server, 'fetch_issues_by_jql', return_value=[]):
+            payload, status, _headers = jira_server.build_all_epm_projects_rollup('active', '42')
+
+        self.assertEqual(status, 200)
+        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['active-one'])
+        self.assertTrue(load_contexts)
+        self.assertTrue(all(load_contexts))
 
     def test_active_labeled_epic_fetches_all_selected_sprint_stories_under_epic(self):
         project = {

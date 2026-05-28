@@ -1787,9 +1787,10 @@ def clear_auth_sensitive_caches(reason='auth_context_change'):
 register_service_integration_cache_invalidator(clear_auth_sensitive_caches)
 
 
-def build_epm_projects_dependencies(context=None):
+def build_epm_projects_dependencies(context=None, epm_config_override=None):
     auth_context = context if context is not None else (current_request_auth_context() if has_request_context() else None)
     fetch_context = auth_context if auth_context is not None and not jira_home_process_cache_enabled(auth_context) else None
+    get_config = (lambda: epm_config_override) if epm_config_override is not None else get_epm_config
     return epm_projects.EpmProjectsDependencies(
         fetch_epm_home_projects=(
             lambda epm_scope: fetch_epm_home_projects(epm_scope, context=fetch_context)
@@ -1803,7 +1804,7 @@ def build_epm_projects_dependencies(context=None):
         cache_lock=_epm_cache_lock,
         cache_ttl_seconds=EPM_PROJECTS_CACHE_TTL_SECONDS,
         home_project_limit=epm_home.HOME_MAX_PROJECTS_PER_GOAL,
-        get_epm_config=get_epm_config,
+        get_epm_config=get_config,
         abort_not_found=abort,
         context=auth_context,
     )
@@ -1941,16 +1942,19 @@ def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_quer
 
 def build_epm_rollup_dependencies(sub_goal_keys=None):
     auth_context = current_request_auth_context() if has_request_context() else None
+    epm_config_snapshot = get_epm_config()
+    base_jql_snapshot = build_base_jql()
     return EpmRollupDependencies(
         find_epm_project_or_404=lambda project_id: find_epm_project_or_404(
             project_id,
             sub_goal_keys=sub_goal_keys,
             context=auth_context,
+            epm_config_override=epm_config_snapshot,
         ),
         normalize_epm_text=normalize_epm_text,
         validate_epm_tab_sprint=validate_epm_tab_sprint,
         build_empty_epm_rollup_payload=build_empty_epm_rollup_payload,
-        build_base_jql=build_base_jql,
+        build_base_jql=lambda: base_jql_snapshot,
         add_clause_to_jql=add_clause_to_jql,
         build_jira_headers=(
             (lambda: {}) if auth_context is not None and auth_context.auth_mode != AUTH_MODE_BASIC
@@ -1967,7 +1971,7 @@ def build_epm_rollup_dependencies(sub_goal_keys=None):
             else resolve_team_field_id(headers)
         ),
         build_epm_rollup_fields_list=build_epm_rollup_fields_list,
-        get_epm_config=get_epm_config,
+        get_epm_config=lambda: epm_config_snapshot,
         normalize_epm_issue_type_sets=normalize_epm_issue_type_sets,
         fetch_epm_rollup_query=(
             lambda jql, query_name, headers, fields_list, truncated_queries:
@@ -2050,10 +2054,10 @@ def build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=None):
     )
 
 
-def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None):
+def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None, epm_config_override=None):
     requested_sub_goal_keys = epm_projects.normalize_epm_sub_goal_keys(sub_goal_keys)
     if requested_sub_goal_keys:
-        epm_config = get_epm_config()
+        epm_config = epm_config_override if epm_config_override is not None else get_epm_config()
         projects_payload = build_epm_projects_payload(
             epm_config,
             sub_goal_keys=requested_sub_goal_keys,
@@ -2067,7 +2071,10 @@ def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None):
             if normalize_epm_text(project_id) in candidates:
                 return project
         abort(404)
-    return epm_projects.find_epm_project_or_404(project_id, build_epm_projects_dependencies(context=context))
+    return epm_projects.find_epm_project_or_404(
+        project_id,
+        build_epm_projects_dependencies(context=context, epm_config_override=epm_config_override),
+    )
 
 
 def get_epm_project_payload_identity(project):

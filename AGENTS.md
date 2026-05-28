@@ -303,7 +303,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Team Groups saves must allow empty `teamIds`; group-level components, labels, and exclusions must save even when team discovery returns no teams.
 - Dashboard config save endpoints must reject implicit empty overwrites of existing selected projects or groups; clearing shared JSON state needs an explicit action.
 - DB/OAuth EPM must not require Jira/Home Basic credential environment variables; Home/Townsquare EPM reads use the current user's connected `atlassian_user_api_token`.
-- DB/OAuth EPM routes use user OAuth for Jira REST and the current user's Home token only for Home/Townsquare metadata; worker-thread Jira searches must carry the captured request auth context.
+- DB/OAuth EPM routes use user OAuth for Jira REST and the current user's Home token only for Home/Townsquare metadata; worker-thread rollups must carry captured request auth context plus dashboard-derived config and base JQL.
 - Scenario Planner Jira publish/write-back plans must use only the signed-in user's OAuth Jira REST context; never use Jira/Home API tokens, Basic credentials, service integrations, Home/Townsquare APIs, or local token-store helpers for publishing.
 - Treat Scenario Planner group scope as a shared environment-scoped PM/EPM-managed configuration reference; drafts may reference groups but must not create private group definitions or own group membership.
 - In DB/OAuth mode, hide the EPM tab until the current user has connected a Home/Townsquare token in Settings; once visible, the EPM tab must expose an accessible EPM settings gear.

@@ -21,3 +21,4 @@ Move all-project EPM rollup aggregation out of `jira_server.py` and into the `ba
 ## Verification
 
 - `.venv/bin/python -m unittest tests.test_epm_rollup_api tests.test_backend_service_extraction tests.test_backend_route_source_guards`: passed 48 tests.
+- `.venv/bin/python -m unittest tests.test_epm_rollup_api tests.test_oauth_stats_routes tests.test_backend_route_source_guards tests.test_route_move_preservation tests.test_codebase_structure_budgets`: passed 62 tests after the worker-thread dashboard config capture fix.

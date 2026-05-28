@@ -1702,9 +1702,9 @@ def get_capacity_config():
     }
 
 
-def get_board_config():
+def get_board_config(*, source='auto'):
     """Return dashboard Jira board config, falling back to env var."""
-    config = load_dashboard_config()
+    config = load_dashboard_config(source=source)
     if config and 'board' in config:
         board = config.get('board') or {}
         return {
@@ -1719,8 +1719,8 @@ def get_board_config():
     }
 
 
-def get_effective_board_id():
-    return get_board_config().get('boardId', '').strip()
+def get_effective_board_id(*, source='auto'):
+    return get_board_config(source=source).get('boardId', '').strip()
 
 
 def build_epm_home_projects_cache_key(epm_scope):
@@ -5849,7 +5849,7 @@ def main():
         log_info(f'   Auth mode: {JIRA_AUTH_MODE}')
         if JIRA_AUTH_MODE == AUTH_MODE_BASIC:
             log_info(f'   Email: {JIRA_EMAIL}')
-        effective_board_id = get_effective_board_id()
+        effective_board_id = get_effective_board_id(source='jsonfile')
         if effective_board_id:
             log_info(f'   Board: {effective_board_id}')
         if GROUPS_CONFIG_PATH and os.path.exists(GROUPS_CONFIG_PATH):

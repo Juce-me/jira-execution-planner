@@ -56,6 +56,33 @@ class AppStartupTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "config_storage_invalid")
 
+    def test_main_startup_banner_uses_json_board_config_without_request_context(self):
+        import jira_server
+
+        args = mock.Mock(
+            jira_url=None,
+            jira_email=None,
+            jira_token=None,
+            jira_query=None,
+            server_port=None,
+        )
+        with mock.patch.dict(os.environ, {"CONFIG_STORAGE_BACKEND": "db"}, clear=False), \
+             mock.patch.object(jira_server, "parse_args", return_value=args), \
+             mock.patch.object(jira_server, "validate_startup_auth_config"), \
+             mock.patch.object(jira_server, "default_bind_host", return_value="127.0.0.1"), \
+             mock.patch.object(jira_server, "validate_network_bind", return_value="127.0.0.1"), \
+             mock.patch.object(jira_server, "JIRA_AUTH_MODE", jira_server.AUTH_MODE_ATLASSIAN_OAUTH), \
+             mock.patch.object(jira_server, "load_dashboard_config", return_value={
+                 "version": 1,
+                 "board": {"boardId": "42", "boardName": "Planning"},
+             }) as load_dashboard_config, \
+             mock.patch.object(jira_server.app, "run") as run:
+            result = jira_server.main()
+
+        self.assertEqual(result, 0)
+        load_dashboard_config.assert_called_once_with(source="jsonfile")
+        run.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -65,6 +65,8 @@ No P0 issues were found. The main structural risk is that extracted modules exis
 
 ## First Executable Slice Recommendation
 
+> **Slice status:** Converted to `EXEC-codebase-operability-verification.md` and implemented locally on 2026-05-28; keep the execution plan as `EXEC-*` until acceptance or merge.
+
 Start with a small operability slice:
 
 1. Add `npm run test:frontend:unit` for `node --test tests/test_*.js`.

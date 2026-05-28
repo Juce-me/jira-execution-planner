@@ -218,6 +218,12 @@ npm run watch
 
 CI will fail if `frontend/dist` is out of sync. We precompile JSX so production does not transform JSX in the browser.
 
+Run the local CI-style verification path before preparing a PR:
+
+```bash
+make verify
+```
+
 ## 🔧 How it works
 
 1. **Backend** (`jira_server.py`):

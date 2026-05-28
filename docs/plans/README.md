@@ -74,9 +74,13 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Future Codebase Structure And Operability
 
-1. `FUTURE-codebase-operability-improvements.md`
+1. `EXEC-codebase-operability-verification.md`
+   - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.
+   - Expected output: local frontend unit/UI npm scripts, `make verify` for build/Python/security/Node/dist checks, and refreshed test-command documentation.
+
+2. `FUTURE-codebase-operability-improvements.md`
    - Deferred structural review and prioritized backlog for packaging, local verification, startup preflight, backend service extraction, frontend feature ownership, and source guards.
-   - Do not execute directly. Convert a chosen slice into a separate `EXEC-*` plan before implementation.
+   - Do not execute directly. Convert each chosen slice into a separate `EXEC-*` plan before implementation.
 
 ## Legacy Unclassified Date-Only Plans
 

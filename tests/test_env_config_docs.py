@@ -21,6 +21,14 @@ FORBIDDEN_DB_OAUTH_EPM_ENV_NAMES = (
 
 
 class EnvConfigDocsTests(unittest.TestCase):
+    def test_security_fixed_http_stack_requires_python_310_or_newer(self):
+        pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf8")
+        workflow = (REPO_ROOT / ".github" / "workflows" / "verify-frontend-build.yml").read_text(encoding="utf8")
+
+        self.assertIn('requires-python = ">=3.10"', pyproject)
+        self.assertIn('"3.10"', workflow)
+        self.assertNotIn('"3.9"', workflow)
+
     def test_requirements_pin_security_fixed_urllib3_and_document_openssl_runtime(self):
         requirements = (REPO_ROOT / "requirements.txt").read_text(encoding="utf8").splitlines()
         urllib3_pins = [

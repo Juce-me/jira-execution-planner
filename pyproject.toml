@@ -7,7 +7,7 @@ name = "jira-execution-planner"
 version = "0.1.0"
 description = "Local Jira execution planning dashboard"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 
 [project.scripts]
 jira-execution-planner = "jira_server:main"

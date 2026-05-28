@@ -63,7 +63,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 
 For the current DB/OAuth path, use [INSTALL.md](INSTALL.md). The short version is:
 
-1. Create a virtualenv with a Python runtime linked against OpenSSL 1.1.1+ and install `requirements.txt`.
+1. Create a virtualenv with Python 3.10+ linked against OpenSSL 1.1.1+ and install `requirements.txt`.
 2. Copy `.env.example` to `.env`.
 3. Configure PostgreSQL, Atlassian OAuth, and token-encryption values.
 4. Run Alembic migrations.
@@ -101,7 +101,7 @@ cd jira-dashboard
 
 ### Step 2: Install Python dependencies
 
-Use a Python runtime linked against OpenSSL 1.1.1+; macOS system Python builds linked against LibreSSL are not supported because the security-patched `urllib3` 2.x line requires OpenSSL.
+Use Python 3.10+ linked against OpenSSL 1.1.1+; macOS system Python builds linked against LibreSSL are not supported because the security-patched HTTP dependency stack requires Python 3.10+ and OpenSSL.
 
 **Option A - Using install script (recommended):**
 ```bash

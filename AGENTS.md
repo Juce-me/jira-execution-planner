@@ -178,7 +178,7 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 ## 10. Project context
 
 ### Stack
-- Backend: Python + Flask + Flask-Cors; use a Python runtime linked against OpenSSL 1.1.1+, not LibreSSL
+- Backend: Python 3.10+ + Flask + Flask-Cors; use a Python runtime linked against OpenSSL 1.1.1+, not LibreSSL
 - Frontend: React 19 + esbuild with a Node 20.x toolchain
 - Package management: Python dependencies in `requirements.txt`; frontend dependencies in `package-lock.json`
 - Runtime: local Flask server on port `5050` by default; dashboard served by Flask or opened via `jira-dashboard.html`

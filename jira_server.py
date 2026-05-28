@@ -13,7 +13,6 @@ import json
 import hashlib
 import threading
 import time
-import subprocess
 import uuid
 from contextlib import nullcontext
 from datetime import datetime, timedelta, date, timezone
@@ -87,6 +86,7 @@ from backend import jira_client as _jira_client
 from backend.services import capacity as _capacity_service
 from backend.services import sprints as _sprints_service
 from backend.services import stats_cache as _stats_cache_service
+from backend.services import update_check as _update_check_service
 from backend.epm import projects as epm_projects
 from backend.security.policy import (
     is_oauth_ready_api_path as policy_is_oauth_ready_api_path,
@@ -2305,90 +2305,28 @@ def invalidate_sprints_cache():
 
 
 def run_git_command(args):
-    try:
-        result = subprocess.run(
-            ['git'] + args,
-            cwd=os.path.dirname(os.path.abspath(__file__)),
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode != 0:
-            return None, (result.stderr or result.stdout or '').strip()
-        return result.stdout.strip(), None
-    except Exception as e:
-        return None, str(e)
+    return _update_check_service.run_git_command(
+        args,
+        repo_dir=os.path.dirname(os.path.abspath(__file__)),
+    )
 
 
 def load_release_info():
-    if not UPDATE_CHECK_RELEASE_INFO:
-        return None
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), UPDATE_CHECK_RELEASE_INFO)
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, 'r') as handle:
-            data = json.load(handle)
-        if not isinstance(data, dict):
-            return None
-        return data
-    except Exception as e:
-        log_warning(f'Failed to read release info: {e}')
-        return None
+    return _update_check_service.load_release_info(
+        UPDATE_CHECK_RELEASE_INFO,
+        base_dir=os.path.dirname(os.path.abspath(__file__)),
+        log_warning_fn=log_warning,
+    )
 
 
 def build_update_check_payload():
-    local_hash, local_err = run_git_command(['rev-parse', 'HEAD'])
-    local_branch, _ = run_git_command(['rev-parse', '--abbrev-ref', 'HEAD'])
-    local_source = 'git'
-    if local_err:
-        release_info = load_release_info() or {}
-        release_hash = str(release_info.get('hash') or '').strip()
-        if release_hash:
-            local_hash = release_hash
-            local_branch = str(release_info.get('tag') or release_info.get('branch') or 'release').strip()
-            local_source = 'release'
-            local_err = None
-        else:
-            return {
-                'enabled': True,
-                'error': f'Failed to read local git state: {local_err}'
-            }
-
-    remote_output, remote_err = run_git_command(['ls-remote', UPDATE_CHECK_REMOTE, f'refs/heads/{UPDATE_CHECK_BRANCH}'])
-    if remote_err:
-        return {
-            'enabled': True,
-            'local': {
-                'hash': local_hash,
-                'short': local_hash[:7] if local_hash else '',
-                'branch': local_branch or ''
-            },
-            'error': f'Failed to check remote: {remote_err}'
-        }
-
-    remote_hash = ''
-    if remote_output:
-        remote_hash = remote_output.split()[0].strip()
-
-    update_available = bool(local_hash and remote_hash and local_hash != remote_hash)
-    return {
-        'enabled': True,
-        'local': {
-            'hash': local_hash,
-            'short': local_hash[:7] if local_hash else '',
-            'branch': local_branch or '',
-            'source': local_source
-        },
-        'remote': {
-            'hash': remote_hash,
-            'short': remote_hash[:7] if remote_hash else '',
-            'branch': UPDATE_CHECK_BRANCH,
-            'remote': UPDATE_CHECK_REMOTE
-        },
-        'updateAvailable': update_available,
-        'checkedAt': utc_now_iso()
-    }
+    return _update_check_service.build_update_check_payload(
+        remote=UPDATE_CHECK_REMOTE,
+        branch=UPDATE_CHECK_BRANCH,
+        run_git_command_fn=run_git_command,
+        load_release_info_fn=load_release_info,
+        now_iso_fn=utc_now_iso,
+    )
 
 
 def normalize_team_catalog(raw):

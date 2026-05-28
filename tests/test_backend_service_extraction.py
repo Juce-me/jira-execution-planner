@@ -21,6 +21,7 @@ class TestBackendServiceExtraction(unittest.TestCase):
         capacity_service = importlib.import_module('backend.services.capacity')
         sprint_service = importlib.import_module('backend.services.sprints')
         stats_cache_service = importlib.import_module('backend.services.stats_cache')
+        update_check_service = importlib.import_module('backend.services.update_check')
         config_store = importlib.import_module('backend.config_store')
         epm_config = importlib.import_module('backend.epm.config')
         epm_aggregate = importlib.import_module('backend.epm.aggregate')
@@ -35,6 +36,8 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertTrue(hasattr(sprint_service, 'deduplicate_sprints_by_name'))
         self.assertTrue(hasattr(stats_cache_service, 'load_stats_cache'))
         self.assertTrue(hasattr(stats_cache_service, 'build_stats_cache_key'))
+        self.assertTrue(hasattr(update_check_service, 'build_update_check_payload'))
+        self.assertTrue(hasattr(update_check_service, 'run_git_command'))
         self.assertTrue(hasattr(local_oauth_store, 'LocalOAuthTokenStore'))
         self.assertTrue(hasattr(config_store, 'load_dashboard_config'))
         self.assertTrue(hasattr(config_store, 'save_dashboard_config'))
@@ -164,6 +167,15 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertNotIn("with open(STATS_CACHE_FILE, 'w') as f:", server_source)
         self.assertNotIn('raw = f"{sprint_name}::{base_jql}::', server_source)
         self.assertNotIn("if os.path.exists(STATS_CACHE_FILE):\n            os.remove(STATS_CACHE_FILE)", server_source)
+
+    def test_update_check_service_logic_lives_outside_jira_server(self):
+        with open(jira_server.__file__, encoding='utf-8') as handle:
+            server_source = handle.read()
+
+        self.assertNotIn('import subprocess', server_source)
+        self.assertNotIn('subprocess.run(', server_source)
+        self.assertNotIn("local_hash, local_err = run_git_command(['rev-parse', 'HEAD'])", server_source)
+        self.assertNotIn("remote_output, remote_err = run_git_command(['ls-remote', UPDATE_CHECK_REMOTE", server_source)
 
     def test_config_wrappers_keep_patchable_paths_and_migration_shape(self):
         with tempfile.TemporaryDirectory() as tmp:

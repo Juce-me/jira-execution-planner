@@ -18,13 +18,27 @@ class TestBackendServiceExtraction(unittest.TestCase):
     def test_backend_modules_export_extracted_services(self):
         jira_client = importlib.import_module('backend.jira_client')
         config_store = importlib.import_module('backend.config_store')
+        epm_config = importlib.import_module('backend.epm.config')
         epm_aggregate = importlib.import_module('backend.epm.aggregate')
 
         self.assertTrue(hasattr(jira_client, 'resilient_jira_get'))
         self.assertTrue(hasattr(jira_client, 'jira_search_request'))
         self.assertTrue(hasattr(config_store, 'load_dashboard_config'))
         self.assertTrue(hasattr(config_store, 'save_dashboard_config'))
+        self.assertTrue(hasattr(epm_config, 'normalize_epm_config'))
         self.assertTrue(hasattr(epm_aggregate, 'build_all_epm_projects_rollup'))
+
+    def test_epm_config_normalizers_live_in_epm_package_with_compatibility_aliases(self):
+        epm_config = importlib.import_module('backend.epm.config')
+        with open(jira_server.__file__, encoding='utf-8') as handle:
+            server_source = handle.read()
+
+        self.assertIs(jira_server.normalize_epm_config, epm_config.normalize_epm_config)
+        self.assertIs(jira_server.normalize_epm_scope, epm_config.normalize_epm_scope)
+        self.assertIs(jira_server.normalize_epm_issue_types, epm_config.normalize_epm_issue_types)
+        self.assertNotIn('def normalize_epm_config(', server_source)
+        self.assertNotIn('def normalize_epm_scope(', server_source)
+        self.assertNotIn('def normalize_epm_issue_types(', server_source)
 
     def test_jira_search_wrapper_keeps_patchable_request_and_next_page_token(self):
         with patch.object(jira_server, 'current_jira_search', return_value=sentinel.response) as mock_search:

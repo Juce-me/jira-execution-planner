@@ -9,6 +9,8 @@ This app has two local run modes:
 
 ## 1. Python Environment
 
+Use Python 3.10+ linked against OpenSSL 1.1.1+. macOS system Python builds linked against LibreSSL are not supported because the security-patched HTTP dependency stack requires Python 3.10+ and OpenSSL.
+
 From the repo root:
 
 ```bash

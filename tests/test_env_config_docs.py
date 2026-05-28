@@ -21,7 +21,15 @@ FORBIDDEN_DB_OAUTH_EPM_ENV_NAMES = (
 
 
 class EnvConfigDocsTests(unittest.TestCase):
-    def test_requirements_pin_libressl_compatible_urllib3(self):
+    def test_security_fixed_http_stack_requires_python_310_or_newer(self):
+        pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf8")
+        workflow = (REPO_ROOT / ".github" / "workflows" / "verify-frontend-build.yml").read_text(encoding="utf8")
+
+        self.assertIn('requires-python = ">=3.10"', pyproject)
+        self.assertIn('"3.10"', workflow)
+        self.assertNotIn('"3.9"', workflow)
+
+    def test_requirements_pin_security_fixed_urllib3_and_document_openssl_runtime(self):
         requirements = (REPO_ROOT / "requirements.txt").read_text(encoding="utf8").splitlines()
         urllib3_pins = [
             line.strip()
@@ -29,11 +37,12 @@ class EnvConfigDocsTests(unittest.TestCase):
             if line.strip().lower().startswith("urllib3==")
         ]
 
-        self.assertEqual(
-            urllib3_pins,
-            ["urllib3==1.26.20"],
-            "The local Python 3.9 venv is linked against LibreSSL; urllib3 v2 emits a startup warning.",
-        )
+        self.assertEqual(urllib3_pins, ["urllib3==2.7.0"])
+        for doc_path in (REPO_ROOT / "README.md", REPO_ROOT / "INSTALL.md", REPO_ROOT / "AGENTS.md"):
+            with self.subTest(path=doc_path.name):
+                text = doc_path.read_text(encoding="utf8")
+                self.assertIn("OpenSSL 1.1.1+", text)
+                self.assertIn("LibreSSL", text)
 
     def test_db_oauth_epm_docs_do_not_reference_basic_credential_env_names(self):
         offenders = []

@@ -20,6 +20,7 @@ class TestBackendServiceExtraction(unittest.TestCase):
         config_store = importlib.import_module('backend.config_store')
         epm_config = importlib.import_module('backend.epm.config')
         epm_aggregate = importlib.import_module('backend.epm.aggregate')
+        epm_issues = importlib.import_module('backend.epm.issues')
 
         self.assertTrue(hasattr(jira_client, 'resilient_jira_get'))
         self.assertTrue(hasattr(jira_client, 'jira_search_request'))
@@ -27,6 +28,18 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertTrue(hasattr(config_store, 'save_dashboard_config'))
         self.assertTrue(hasattr(epm_config, 'normalize_epm_config'))
         self.assertTrue(hasattr(epm_aggregate, 'build_all_epm_projects_rollup'))
+        self.assertTrue(hasattr(epm_issues, 'build_epm_project_issues_payload'))
+
+    def test_epm_issues_orchestration_lives_in_epm_package(self):
+        epm_issues = importlib.import_module('backend.epm.issues')
+        route_module = importlib.import_module('backend.routes.epm_routes')
+        with open(route_module.__file__, encoding='utf-8') as handle:
+            route_source = handle.read()
+
+        self.assertTrue(hasattr(epm_issues, 'EpmIssuesDependencies'))
+        self.assertIn('build_epm_project_issues_response', route_source)
+        self.assertNotIn('fetch_issues_by_jql(jql, build_epm_fields_list()', route_source)
+        self.assertNotIn('EPM_ISSUES_CACHE.get(cache_key)', route_source)
 
     def test_epm_config_normalizers_live_in_epm_package_with_compatibility_aliases(self):
         epm_config = importlib.import_module('backend.epm.config')

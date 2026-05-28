@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from backend.auth.context import RequestAuthContext
 from backend.auth.jira_auth import AuthError
 import jira_server
 from tests.auth_mode_test_utils import force_basic_auth_mode
@@ -54,6 +55,22 @@ def collect_hierarchy_issue_keys(payload):
         keys.extend(story['key'] for story in epic['stories'])
     keys.extend(story['key'] for story in payload['orphanStories'])
     return keys
+
+
+def make_auth_context():
+    return RequestAuthContext(
+        auth_mode='atlassian_oauth',
+        user_id='user-1',
+        stable_subject='account-1',
+        atlassian_account_id='account-1',
+        workspace_id='workspace-1',
+        auth_connection_id='connection-1',
+        cloud_id='cloud-1',
+        site_url='https://example.atlassian.net',
+        token_version='7',
+        account_status='active',
+        is_admin=False,
+    )
 
 
 class TestEpmRollupApi(unittest.TestCase):
@@ -529,6 +546,43 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertIn('home-projects;dur=', server_timing)
         self.assertIn('epm-rollups;dur=', server_timing)
         self.assertIn('total;dur=', server_timing)
+
+    def test_all_projects_rollup_worker_fetch_uses_captured_request_context(self):
+        context = make_auth_context()
+        projects = [
+            {
+                'id': 'active-one',
+                'displayName': 'Active One',
+                'label': 'synthetic_one',
+                'resolvedLinkage': {'labels': ['synthetic_one'], 'epicKeys': []},
+                'matchState': 'home-linked',
+                'tabBucket': 'active',
+            },
+        ]
+
+        def rollup_side_effect(project_id, tab, sprint, deps):
+            deps.fetch_epm_rollup_query(
+                'project = SYN',
+                'q1',
+                {},
+                ['summary'],
+                [],
+            )
+            return deps.build_empty_epm_rollup_payload(projects[0], metadata_only=False), 200, {}
+
+        with self.app.test_request_context('/api/epm/projects/rollup/all?tab=active&sprint=42'), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
+             patch.object(jira_server, 'get_epm_config', return_value={'version': 2}), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': projects}), \
+             patch.object(jira_server, 'build_per_project_rollup', side_effect=rollup_side_effect), \
+             patch.object(jira_server, 'fetch_issues_by_jql', return_value=[]) as mock_fetch:
+            payload, status, _headers = jira_server.build_all_epm_projects_rollup('active', '42')
+
+        self.assertEqual(status, 200)
+        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['active-one'])
+        mock_fetch.assert_called_once()
+        self.assertIs(mock_fetch.call_args.kwargs.get('context'), context)
 
     def test_active_labeled_epic_fetches_all_selected_sprint_stories_under_epic(self):
         project = {

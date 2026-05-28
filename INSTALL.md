@@ -9,6 +9,8 @@ This app has two local run modes:
 
 ## 1. Python Environment
 
+Use a Python runtime linked against OpenSSL 1.1.1+. macOS system Python builds linked against LibreSSL are not supported because the security-patched `urllib3` 2.x line requires OpenSSL.
+
 From the repo root:
 
 ```bash

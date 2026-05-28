@@ -1,0 +1,2 @@
+(()=>{var n=0;async function t(){if(document.visibilityState&&document.visibilityState!=="visible")return;let i=Date.now();if(!(i-n<6e4)){n=i;try{let e=await fetch("/api/auth/refresh",{method:"POST",credentials:"same-origin",headers:{"X-Requested-With":"jira-execution-planner"}});if(e.status===401){let s=await e.json().catch(()=>({}));window.location.assign(s.loginUrl||"/login?reason=session_expired")}}catch{}}}function o(){window.addEventListener("focus",t),document.addEventListener("visibilitychange",t),t()}o();})();
+//# sourceMappingURL=auth-focus-refresh.js.map

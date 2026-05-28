@@ -57,6 +57,8 @@ class TestAuthEntryPage(unittest.TestCase):
 
     def test_dashboard_auth_shell_refreshes_on_initial_load(self):
         source = Path('jira-dashboard.html').read_text()
-        self.assertIn("fetch('/api/auth/refresh'", source)
-        self.assertIn("headers: {'X-Requested-With': 'jira-execution-planner'}", source)
-        self.assertIn('refreshAuthOnFocus();', source)
+        refresh_source = Path('frontend/src/api/authFocusRefresh.js').read_text()
+        self.assertNotIn("<script>\n    (() => {", source)
+        self.assertIn("fetch('/api/auth/refresh'", refresh_source)
+        self.assertIn("'X-Requested-With': 'jira-execution-planner'", refresh_source)
+        self.assertIn('refreshAuthOnFocus();', refresh_source)

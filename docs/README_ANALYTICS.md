@@ -168,6 +168,7 @@ State-changing routes or user-visible surfaces without analytics must be documen
 | Surface | File/line anchor | Reason no event is emitted | Review date |
 | --- | --- | --- | --- |
 | Home/Townsquare writes | `docs/plans/GATE-05-home-write-capability.md` | Blocked external capability; no write route exists in this analytics slice. | 2026-05-26 |
+| EPM project progress display | `frontend/src/epm/EpmRollupPanel.jsx` | Passive readout derived from already-loaded rollup Stories; existing EPM rollup load and expand/collapse analytics cover the surrounding workflow. | 2026-05-28 |
 
 ## Drift Checks
 

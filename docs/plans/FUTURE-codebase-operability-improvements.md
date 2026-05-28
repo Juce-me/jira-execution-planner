@@ -65,6 +65,7 @@ No P0 issues were found. The main structural risk is that extracted modules exis
 - The frontend API boundary slice is implemented locally in `EXEC-codebase-operability-frontend-api-boundary.md`.
 - The config repository selection slice is implemented locally in `EXEC-codebase-operability-config-repository-selection.md`.
 - The EPM config normalization extraction slice is implemented locally in `EXEC-codebase-operability-epm-config-extraction.md`.
+- The structural budgets slice is implemented locally in `EXEC-codebase-operability-structural-budgets.md`.
 - Keep this as future scope until the user explicitly chooses a slice to execute.
 - Convert a chosen slice into a separate `EXEC-*` plan before implementation.
 - Do not execute multiple slices that touch `frontend/src/dashboard.jsx` in parallel.

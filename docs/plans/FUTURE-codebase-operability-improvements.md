@@ -72,6 +72,7 @@ No P0 issues were found. The main structural risk is that extracted modules exis
 - The EPM payload-helper extraction slice is implemented locally in `EXEC-codebase-operability-epm-payload-helpers.md`.
 - The ENG planning capacity utility extraction slice is implemented locally in `EXEC-codebase-operability-eng-planning-capacity-utils.md`.
 - The Jira issue fetch helper extraction slice is implemented locally in `EXEC-codebase-operability-jira-issue-fetch-helpers.md`.
+- The ENG planning selection-stats extraction slice is implemented locally in `EXEC-codebase-operability-eng-planning-selection-stats.md`.
 - Keep this as future scope until the user explicitly chooses a slice to execute.
 - Convert a chosen slice into a separate `EXEC-*` plan before implementation.
 - Do not execute multiple slices that touch `frontend/src/dashboard.jsx` in parallel.

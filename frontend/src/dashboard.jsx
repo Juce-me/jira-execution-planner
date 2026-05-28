@@ -20,6 +20,7 @@ import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam } from './eng/engTaskUtils.js';
 import { buildCapacityTotalsSummary, buildProjectCapacity, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
+import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
 import {
     aggregateCohortSummary,
     buildCohortGridModel,
@@ -10554,76 +10555,32 @@ import {
 
             const selectedPlanningTasksList = React.useMemo(() => {
                 if (!showPlanning) return [];
-                return selectedTasksList.filter(task => {
-                    const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
-                    return !excludedEpicSet.has(epicKey);
-                });
+                return buildSelectedPlanningTasksList(selectedTasksList, excludedEpicSet, normalizeEpicKey);
             }, [showPlanning, selectedTasksList, excludedEpicSet]);
             const selectedSP = React.useMemo(() => {
                 if (!showPlanning) return 0;
-                return selectedTasksList.reduce((sum, task) => {
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    return sum + (Number.isNaN(sp) ? 0 : sp);
-                }, 0);
+                return sumPlanningStoryPoints(selectedTasksList);
             }, [showPlanning, selectedTasksList]);
             const selectedCount = showPlanning ? selectedTasksList.length : 0;
 
             const selectedTeamStats = React.useMemo(() => {
                 if (!showPlanning) return {};
-                return selectedTasksList.reduce((acc, task) => {
-                    const teamInfo = getTeamInfo(task);
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    if (!acc[teamInfo.id]) {
-                        acc[teamInfo.id] = { name: teamInfo.name, storyPoints: 0 };
-                    }
-                    acc[teamInfo.id].storyPoints += Number.isNaN(sp) ? 0 : sp;
-                    return acc;
-                }, {});
+                return buildSelectedTeamStats(selectedTasksList, getTeamInfo);
             }, [showPlanning, selectedTasksList]);
 
             const selectedProjectStats = React.useMemo(() => {
                 if (!showPlanning) return {};
-                return selectedPlanningTasksList.reduce((acc, task) => {
-                    const pk = task.fields?.projectKey || task.key.split('-')[0];
-                    const bucket = techProjectKeys.has(pk) ? 'TECH' : 'PRODUCT';
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    if (!acc[bucket]) {
-                        acc[bucket] = 0;
-                    }
-                    acc[bucket] += Number.isNaN(sp) ? 0 : sp;
-                    return acc;
-                }, {});
+                return buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys);
             }, [showPlanning, selectedPlanningTasksList, techProjectKeys]);
 
             const selectedTeamProjectStats = React.useMemo(() => {
                 if (!showPlanning) return {};
-                return selectedPlanningTasksList.reduce((acc, task) => {
-                    const teamInfo = getTeamInfo(task);
-                    const pk = task.fields?.projectKey || task.key.split('-')[0];
-                    const bucket = techProjectKeys.has(pk) ? 'tech' : 'product';
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    if (!acc[teamInfo.id]) {
-                        acc[teamInfo.id] = { product: 0, tech: 0 };
-                    }
-                    acc[teamInfo.id][bucket] += Number.isNaN(sp) ? 0 : sp;
-                    return acc;
-                }, {});
+                return buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys);
             }, [showPlanning, selectedPlanningTasksList, techProjectKeys]);
 
             const excludedProjectStats = React.useMemo(() => {
                 if (!showPlanning) return {};
-                return selectedTasksList.reduce((acc, task) => {
-                    const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
-                    if (!excludedEpicSet.has(epicKey)) return acc;
-                    const pk = task.fields?.projectKey || task.key.split('-')[0];
-                    const projectKey = techProjectKeys.has(pk) ? 'TECH' : 'PRODUCT';
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    if (!acc[projectKey]) {
-                        acc[projectKey] = 0;
-                    }
-                    acc[projectKey] += Number.isNaN(sp) ? 0 : sp;
-                    return acc;
-                }, {});
+                return buildExcludedProjectStats(selectedTasksList, excludedEpicSet, techProjectKeys, normalizeEpicKey);
             }, [showPlanning, selectedTasksList, excludedEpicSet, techProjectKeys]);
 
             const capacitySplit = React.useMemo(() => ({ product: 0.7, tech: 0.3 }), []);

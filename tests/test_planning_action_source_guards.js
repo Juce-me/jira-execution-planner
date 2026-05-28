@@ -96,3 +96,12 @@ test('dashboard imports planning capacity helpers from ENG module', () => {
     assert.doesNotMatch(source, /const getCapacityStatus = \(/);
     assert.doesNotMatch(source, /const getTeamCapacityMeta = \(/);
 });
+
+test('dashboard imports planning selection stat helpers from ENG module', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /from '\.\/eng\/planningSelectionStats\.js'/);
+    assert.doesNotMatch(source, /selectedTasksList\.reduce\(\(sum, task\) => \{/);
+    assert.doesNotMatch(source, /selectedPlanningTasksList\.reduce\(\(acc, task\) => \{/);
+});

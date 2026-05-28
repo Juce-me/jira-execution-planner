@@ -637,11 +637,11 @@ test('EPM portfolio project header separates collapse control from metadata', ()
     const headerSource = getSnippetBetween(
         epmRollupPanelSource,
         'const renderPortfolioHeader = (project) => {',
-        'const renderProjectRollupToggle = (project, collapsed) => ('
+        'const renderProjectRollupToggle = (project, collapsed, tree) => ('
     );
     const toggleSource = getSnippetBetween(
         epmRollupPanelSource,
-        'const renderProjectRollupToggle = (project, collapsed) => (',
+        'const renderProjectRollupToggle = (project, collapsed, tree) => (',
         'const buildDuplicateClusters = () => {'
     );
 
@@ -682,7 +682,7 @@ test('EPM portfolio update line renders below the project header with relative d
     const headerSource = getSnippetBetween(
         epmRollupPanelSource,
         'const renderPortfolioHeader = (project) => {',
-        'const renderProjectRollupToggle = (project, collapsed) => ('
+        'const renderProjectRollupToggle = (project, collapsed, tree) => ('
     );
     const headerCloseIndex = headerSource.indexOf('</div>');
     const updateIndex = headerSource.indexOf('renderProjectUpdate(updateLine)');

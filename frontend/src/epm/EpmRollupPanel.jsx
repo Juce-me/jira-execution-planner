@@ -3,7 +3,7 @@ import IssueCard, { IssueCardContext } from '../issues/IssueCard.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import LoadingState from '../ui/LoadingState.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
-import { buildEpmProjectUpdateLine, getEpmProjectDisplayName, isRecentlyCompletedEpmProject, toEpmEngTask } from './epmProjectUtils.mjs';
+import { buildEpmProjectProgress, buildEpmProjectUpdateLine, getEpmProjectDisplayName, isRecentlyCompletedEpmProject, toEpmEngTask } from './epmProjectUtils.mjs';
 
 export function EpmRollupPanel({
     selectedEpmProject,
@@ -65,6 +65,43 @@ export function EpmRollupPanel({
             <path d="M5.5 3.75L9.75 8l-4.25 4.25" stroke="currentColor" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
     );
+
+    const formatProgressStoryPoints = (value) => `${Number(value || 0).toFixed(1)} SP`;
+
+    const formatProgressWidth = (value) => {
+        const bounded = Math.max(0, Math.min(100, Number(value) || 0));
+        return `${bounded.toFixed(3).replace(/\.?0+$/, '')}%`;
+    };
+
+    const renderProjectProgress = (tree) => {
+        const progress = buildEpmProjectProgress(tree);
+        if (!progress) return null;
+        const percentLabel = `${Math.round(progress.progressPercent)}%`;
+        const progressWidth = formatProgressWidth(progress.progressPercent);
+        const completedLabel = formatProgressStoryPoints(progress.completedStoryPoints);
+        const totalLabel = formatProgressStoryPoints(progress.totalStoryPoints);
+        const doneLabel = formatProgressStoryPoints(progress.doneStoryPoints);
+        const incompleteLabel = formatProgressStoryPoints(progress.incompleteStoryPoints);
+        const killedLabel = formatProgressStoryPoints(progress.killedStoryPoints);
+        return (
+            <div
+                className="epm-project-progress"
+                role="img"
+                tabIndex={0}
+                aria-label={`Project progress ${percentLabel}. Completed ${completedLabel} of ${totalLabel}.`}
+            >
+                <span className="epm-project-progress-track" aria-hidden="true">
+                    <span className="epm-project-progress-fill" style={{ width: progressWidth }} />
+                </span>
+                <span className="epm-project-progress-percent">{percentLabel}</span>
+                <span className="epm-project-progress-tooltip" role="tooltip">
+                    <strong>{`Completed ${completedLabel} / Total ${totalLabel}`}</strong>
+                    <span>{`Done ${doneLabel} · Incomplete ${incompleteLabel}`}</span>
+                    {progress.killedStoryPoints > 0 && <span>{`Killed excluded ${killedLabel}`}</span>}
+                </span>
+            </div>
+        );
+    };
 
     const renderProjectUpdate = (updateLine) => {
         if (!updateLine?.text) return null;
@@ -288,7 +325,7 @@ export function EpmRollupPanel({
         );
     };
 
-    const renderProjectRollupToggle = (project, collapsed) => (
+    const renderProjectRollupToggle = (project, collapsed, tree) => (
         <div className="epm-project-board-rollup-control">
             <button
                 type="button"
@@ -300,6 +337,7 @@ export function EpmRollupPanel({
                 <span className="epm-project-board-chevron">{renderChevron()}</span>
                 <span className="epm-project-board-toggle-label">Jira rollup</span>
             </button>
+            {renderProjectProgress(tree)}
         </div>
     );
 
@@ -597,7 +635,7 @@ export function EpmRollupPanel({
                             key={getProjectKey(project)}
                         >
                             {renderPortfolioHeader(project)}
-                            {renderProjectRollupToggle(project, collapsed)}
+                            {renderProjectRollupToggle(project, collapsed, tree)}
                             <div className="epm-project-board-body">
                                 {projectLoading && (
                                     <LoadingState

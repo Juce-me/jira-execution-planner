@@ -8041,7 +8041,7 @@
             align-items: center;
             justify-content: center;
             gap: 0.42rem;
-            min-width: 0;
+            min-width: 6.5rem;
             height: 1.75rem;
             padding: 0 0.6rem 0 0.38rem;
             background: var(--epm-project-surface-soft);
@@ -8049,6 +8049,7 @@
             cursor: pointer;
             color: var(--epm-project-accent);
             border-radius: 8px;
+            flex: 0 0 auto;
             box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8);
             transition: background-color 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, color 0.14s ease;
         }
@@ -8254,9 +8255,91 @@
         .epm-project-board-rollup-control {
             display: flex;
             align-items: center;
+            gap: 0.72rem;
+            flex-wrap: wrap;
             margin: 0.8rem 0 0 0;
             padding-top: 0.72rem;
             border-top: 1px solid var(--epm-project-border);
+        }
+
+        .epm-project-progress {
+            position: relative;
+            display: grid;
+            grid-template-columns: minmax(7rem, 1fr) auto;
+            align-items: center;
+            gap: 0.55rem;
+            flex: 1 1 15rem;
+            max-width: 30rem;
+            min-width: 11rem;
+            outline: none;
+        }
+
+        .epm-project-progress-track {
+            display: block;
+            width: 100%;
+            height: 0.42rem;
+            overflow: hidden;
+            border-radius: 999px;
+            background: #e7ecf4;
+        }
+
+        .epm-project-progress-fill {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: #52c41a;
+        }
+
+        .epm-project-progress-percent {
+            min-width: 2.2rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.66rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1;
+            text-align: right;
+        }
+
+        .epm-project-progress-tooltip {
+            position: absolute;
+            left: 50%;
+            bottom: calc(100% + 0.45rem);
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            gap: 0.16rem;
+            width: max-content;
+            max-width: min(19rem, calc(100vw - 2rem));
+            padding: 0.42rem 0.54rem;
+            border: 1px solid #dfe5ee;
+            border-radius: 6px;
+            background: #ffffff;
+            color: var(--text-primary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.56rem;
+            line-height: 1.35;
+            box-shadow: 0 8px 18px rgba(9, 30, 66, 0.14);
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(-50%) translateY(2px);
+            visibility: hidden;
+            transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s ease;
+        }
+
+        .epm-project-progress-tooltip strong {
+            font-weight: 700;
+        }
+
+        .epm-project-progress:hover .epm-project-progress-tooltip,
+        .epm-project-progress:focus-visible .epm-project-progress-tooltip {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+            visibility: visible;
+        }
+
+        .epm-project-progress:focus-visible .epm-project-progress-track {
+            outline: 2px solid var(--epm-project-accent);
+            outline-offset: 3px;
         }
 
         .epm-project-board-update-row {
@@ -8479,6 +8562,23 @@
             .epm-project-board-toggle {
                 height: 1.62rem;
                 padding-right: 0.5rem;
+            }
+
+            .epm-project-progress {
+                flex-basis: 100%;
+                max-width: 100%;
+            }
+
+            .epm-project-progress-tooltip {
+                top: calc(100% + 0.45rem);
+                bottom: auto;
+                left: 0;
+                transform: translateY(-2px);
+            }
+
+            .epm-project-progress:hover .epm-project-progress-tooltip,
+            .epm-project-progress:focus-visible .epm-project-progress-tooltip {
+                transform: translateY(0);
             }
 
             .epm-project-board-toggle-label {

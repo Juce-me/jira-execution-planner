@@ -78,6 +78,10 @@ function emptyRollup(project) {
     };
 }
 
+function resolveFixturePayload(value, ...args) {
+    return typeof value === 'function' ? value(...args) : value;
+}
+
 function requestBody(request) {
     try {
         return request.postDataJSON();
@@ -203,6 +207,8 @@ async function installDashboardFixture(page, options = {}) {
                 return homeTokenRequired();
             }
             const project = epmProject(url.searchParams.get('tab') || 'active');
+            const rollupPayload = resolveFixturePayload(options.allProjectsRollup, project, url);
+            if (rollupPayload) return json(rollupPayload);
             return json({ projects: [emptyRollup(project)], duplicates: {}, truncated: false, fallback: true });
         }
         if (url.pathname.startsWith('/api/epm/projects/') && url.pathname.endsWith('/rollup')) {
@@ -210,7 +216,9 @@ async function installDashboardFixture(page, options = {}) {
                 currentConnection = disconnectedHomeTokenConnection();
                 return homeTokenRequired();
             }
-            return json(emptyRollup(epmProject(url.searchParams.get('tab') || 'active')).rollup);
+            const project = epmProject(url.searchParams.get('tab') || 'active');
+            const rollupPayload = resolveFixturePayload(options.projectRollup, project, url);
+            return json(rollupPayload || emptyRollup(project).rollup);
         }
         return json({});
     });

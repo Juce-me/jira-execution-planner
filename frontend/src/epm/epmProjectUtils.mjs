@@ -17,6 +17,7 @@ const BACKLOG_EPM_PROJECT_STATES = new Set(['paused', 'todo', 'to do']);
 const ARCHIVED_EPM_PROJECT_STATES = new Set(['completed', 'cancelled', 'archived', 'done', 'release', 'released']);
 const RECENT_COMPLETED_EPM_PROJECT_STATES = new Set(['completed', 'done']);
 const TERMINAL_EPM_ISSUE_STATUSES = new Set(['done', 'killed', 'incomplete']);
+const COMPLETED_EPM_PROGRESS_STATUSES = new Set(['done', 'incomplete']);
 const EPM_PROJECT_PRIORITY_ORDER = {
     blocker: 0,
     highest: 1,
@@ -297,6 +298,62 @@ export function filterEpmRollupBoardsForSearch(boards, query) {
         ].map(normalizeEpmSearchText).filter(Boolean).join(' ');
         return `${projectText} ${collectEpmTreeSearchText(tree)}`.includes(normalizedQuery);
     });
+}
+
+function collectEpmProjectStories(tree) {
+    if (!tree || tree.kind !== 'tree') return [];
+    const stories = [];
+    tree.initiatives.forEach(initiative => {
+        initiative.epics.forEach(epic => {
+            epic.stories.forEach(story => stories.push(story));
+        });
+        initiative.looseStories.forEach(story => stories.push(story));
+    });
+    tree.rootEpics.forEach(epic => {
+        epic.stories.forEach(story => stories.push(story));
+    });
+    tree.orphanStories.forEach(story => stories.push(story));
+    return stories;
+}
+
+function getEpmStoryPoints(issue) {
+    const value = Number(issue?.storyPoints);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+export function buildEpmProjectProgress(tree) {
+    const progress = {
+        completedStoryPoints: 0,
+        incompleteStoryPoints: 0,
+        doneStoryPoints: 0,
+        killedStoryPoints: 0,
+        remainingStoryPoints: 0,
+        totalStoryPoints: 0,
+        progressPercent: 0
+    };
+
+    collectEpmProjectStories(tree).forEach((story) => {
+        const storyPoints = getEpmStoryPoints(story);
+        if (storyPoints <= 0) return;
+        const status = normalizeEpmSettingsStatus(story?.status);
+        if (status === 'killed') {
+            progress.killedStoryPoints += storyPoints;
+            return;
+        }
+        progress.totalStoryPoints += storyPoints;
+        if (!COMPLETED_EPM_PROGRESS_STATUSES.has(status)) return;
+        progress.completedStoryPoints += storyPoints;
+        if (status === 'done') {
+            progress.doneStoryPoints += storyPoints;
+        } else {
+            progress.incompleteStoryPoints += storyPoints;
+        }
+    });
+
+    if (progress.totalStoryPoints <= 0) return null;
+    progress.remainingStoryPoints = Math.max(0, progress.totalStoryPoints - progress.completedStoryPoints);
+    progress.progressPercent = (progress.completedStoryPoints / progress.totalStoryPoints) * 100;
+    return progress;
 }
 
 export function toEpmEngTask(issue = {}) {

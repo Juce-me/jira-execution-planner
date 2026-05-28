@@ -252,6 +252,73 @@ test('buildAggregateRollupBoards normalizes project entries and duplicate metada
     assert.strictEqual(result.boards[1].tree.kind, 'metadataOnly');
 });
 
+test('buildEpmProjectProgress counts completed story points over non-killed story points', async () => {
+    const { buildEpmProjectProgress, buildRollupTree } = await import(helperUrl);
+    const tree = buildRollupTree({
+        initiatives: {
+            'INIT-1': {
+                issue: { key: 'INIT-1', summary: 'Initiative', storyPoints: 100, status: 'Done' },
+                epics: {
+                    'EPIC-1': {
+                        issue: { key: 'EPIC-1', summary: 'Epic', storyPoints: 50, status: 'Done' },
+                        stories: [
+                            { key: 'STORY-1', summary: 'Done story', status: 'Done', storyPoints: 3 },
+                            { key: 'STORY-2', summary: 'Incomplete story', status: 'Incomplete', storyPoints: '2.5' },
+                            { key: 'STORY-3', summary: 'Open story', status: 'In Progress', storyPoints: 4 },
+                            { key: 'STORY-4', summary: 'Killed story', status: 'Killed', storyPoints: 13 }
+                        ]
+                    }
+                },
+                looseStories: [
+                    { key: 'STORY-5', summary: 'Loose done story', status: 'DONE', storyPoints: 1 }
+                ]
+            }
+        },
+        rootEpics: {
+            'EPIC-2': {
+                issue: { key: 'EPIC-2', summary: 'Root epic', storyPoints: 20, status: 'To Do' },
+                stories: [
+                    { key: 'STORY-6', summary: 'Root open story', status: 'To Do', storyPoints: 2 },
+                    { key: 'STORY-7', summary: 'Root killed story', status: 'Killed', storyPoints: 8 }
+                ]
+            }
+        },
+        orphanStories: [
+            { key: 'STORY-8', summary: 'Orphan incomplete story', status: 'Incomplete', storyPoints: 0.5 }
+        ]
+    });
+
+    assert.deepStrictEqual(buildEpmProjectProgress(tree), {
+        completedStoryPoints: 7,
+        incompleteStoryPoints: 3,
+        doneStoryPoints: 4,
+        killedStoryPoints: 21,
+        remainingStoryPoints: 6,
+        totalStoryPoints: 13,
+        progressPercent: 53.84615384615385
+    });
+});
+
+test('buildEpmProjectProgress returns null when no non-killed story points exist', async () => {
+    const { buildEpmProjectProgress, buildRollupTree } = await import(helperUrl);
+    const tree = buildRollupTree({
+        initiatives: {},
+        rootEpics: {
+            'EPIC-1': {
+                issue: { key: 'EPIC-1', summary: 'Epic', storyPoints: 50, status: 'Done' },
+                stories: [
+                    { key: 'STORY-1', summary: 'Killed story', status: 'Killed', storyPoints: 13 },
+                    { key: 'STORY-2', summary: 'Unestimated story', status: 'Done', storyPoints: null }
+                ]
+            }
+        },
+        orphanStories: []
+    });
+
+    assert.strictEqual(buildEpmProjectProgress(tree), null);
+    assert.strictEqual(buildEpmProjectProgress({ kind: 'metadataOnly' }), null);
+});
+
 test('EPM rollup issues adapt to ENG task cards and dependency lookup', async () => {
     const { buildEpmEngEpicGroup, toEpmEngTask, flattenEpmRollupBoardsForDependencies } = await import(helperUrl);
     const story = {

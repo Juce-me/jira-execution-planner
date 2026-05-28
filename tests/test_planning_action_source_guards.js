@@ -114,3 +114,12 @@ test('dashboard imports planning capacity aggregate helpers from ENG module', ()
     assert.doesNotMatch(source, /capacityTasks\.reduce\(\(acc, task\) => \{/);
     assert.doesNotMatch(source, /displayedTeamCapacityEntries\.reduce\(\(acc, info\) => \{/);
 });
+
+test('dashboard imports dependency focus helpers from issues module', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /from '\.\/issues\/dependencyFocusUtils\.js'/);
+    assert.doesNotMatch(source, /const getBlockLinkBuckets = \(entries, taskKey\) => \{/);
+    assert.doesNotMatch(source, /const dependencyKeySignature = React\.useMemo\(\(\) => \{\s*const keys = Array\.from\(new Set\(dependencyTasks\.map\(task => task\.key\)\.filter\(Boolean\)\)\);/);
+});

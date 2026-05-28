@@ -14,6 +14,7 @@ import EmptyState from './ui/EmptyState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
+import { buildDependencyFocusPayload, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
 import EngView from './eng/EngView.jsx';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
@@ -10069,10 +10070,10 @@ import {
                 () => selectedView === 'epm' ? epmDependencyTasks : [...loadedProductTasks, ...loadedTechTasks],
                 [selectedView, epmDependencyTasks, loadedProductTasks, loadedTechTasks]
             );
-            const dependencyKeySignature = React.useMemo(() => {
-                const keys = Array.from(new Set(dependencyTasks.map(task => task.key).filter(Boolean)));
-                return keys.sort().join('|');
-            }, [dependencyTasks]);
+            const dependencyKeySignature = React.useMemo(
+                () => buildDependencyKeySignature(dependencyTasks),
+                [dependencyTasks]
+            );
 
             useEffect(() => {
                 if (!showDependencies && !showBlockedAlert) {
@@ -10100,15 +10101,10 @@ import {
                 }
             }, [showDependencies]);
 
-            const issueByKey = React.useMemo(() => {
-                const map = new Map();
-                dependencyTasks.forEach(task => {
-                    if (task.key) {
-                        map.set(task.key, task);
-                    }
-                });
-                return map;
-            }, [dependencyTasks]);
+            const issueByKey = React.useMemo(
+                () => buildIssueByKey(dependencyTasks),
+                [dependencyTasks]
+            );
 
             const activeDependencyFocus = dependencyFocus || dependencyHover;
             const focusRelatedSet = React.useMemo(() => {
@@ -10242,70 +10238,6 @@ import {
                 setDismissedAlertKeys(prev => (prev.includes(taskKey) ? prev : [...prev, taskKey]));
             };
 
-            const getDependencyKeys = React.useCallback((taskKey, action) => {
-                if (!taskKey) return [];
-                const entries = (dependencyData[taskKey] || [])
-                    .filter(dep => dep.key && dep.category === 'dependency');
-                const direction = action === 'dependents' ? 'inward' : 'outward';
-                const seen = new Set();
-                return entries
-                    .filter(dep => dep.direction === direction)
-                    .filter(dep => {
-                        const key = `${dep.key}-${dep.direction}`;
-                        if (seen.has(key)) return false;
-                        seen.add(key);
-                        return true;
-                    })
-                    .map(dep => dep.key)
-                    .filter(Boolean);
-            }, [dependencyData]);
-
-            const getBlockLinkBuckets = (entries, taskKey) => {
-                const blockedBy = [];
-                const blocks = [];
-                (entries || []).forEach(dep => {
-                    if (!dep?.key || !taskKey) return;
-                    const otherKey = dep.key !== taskKey
-                        ? dep.key
-                        : (dep.prereqKey === taskKey ? dep.dependentKey : dep.prereqKey);
-                    if (!otherKey) return;
-                    if (dep.dependentKey === taskKey) {
-                        blockedBy.push(otherKey);
-                        return;
-                    }
-                    if (dep.prereqKey === taskKey) {
-                        blocks.push(otherKey);
-                        return;
-                    }
-                    if (dep.direction === 'inward') {
-                        blockedBy.push(otherKey);
-                        return;
-                    }
-                    if (dep.direction === 'outward') {
-                        blocks.push(otherKey);
-                    }
-                });
-                return {
-                    blockedBy: Array.from(new Set(blockedBy)),
-                    blocks: Array.from(new Set(blocks))
-                };
-            };
-
-            const getBlockKeys = React.useCallback((taskKey, action) => {
-                if (!taskKey) return [];
-                const entries = (dependencyData[taskKey] || [])
-                    .filter(dep => dep.key && dep.category === 'block');
-                const { blockedBy, blocks } = getBlockLinkBuckets(entries, taskKey);
-                return action === 'blocks' ? blocks : blockedBy;
-            }, [dependencyData]);
-
-            const getFocusKeys = React.useCallback((taskKey, action) => {
-                if (action === 'blocked-by' || action === 'blocks') {
-                    return getBlockKeys(taskKey, action);
-                }
-                return getDependencyKeys(taskKey, action);
-            }, [getBlockKeys, getDependencyKeys]);
-
             const handleDependencyFocusClick = (event) => {
                 const button = event.target.closest('button[data-dep-chip]');
                 if (button) {
@@ -10317,16 +10249,12 @@ import {
                         setDependencyFocus(null);
                         return;
                     }
-                    const dependencyKeys = getFocusKeys(taskKey, action);
-                    const relatedKeys = Array.from(new Set([taskKey, ...dependencyKeys]));
-                    const missingKeys = dependencyKeys.filter(key => !issueByKey.has(key));
-                    setDependencyFocus({
+                    setDependencyFocus(buildDependencyFocusPayload({
                         taskKey,
                         action,
-                        relatedKeys,
-                        dependencyKeys,
-                        missingKeys
-                    });
+                        dependencyData,
+                        issueByKey
+                    }));
                     return;
                 }
                 if (dependencyFocus && !event.target.closest('.task-item')) {
@@ -10337,14 +10265,12 @@ import {
             const handleDependencyHoverEnter = (taskKey, action) => {
                 if (!taskKey || !action) return;
                 if (dependencyFocus) return;
-                const dependencyKeys = getFocusKeys(taskKey, action);
-                const relatedKeys = Array.from(new Set([taskKey, ...dependencyKeys]));
-                setDependencyHover({
+                setDependencyHover(buildDependencyFocusPayload({
                     taskKey,
                     action,
-                    relatedKeys,
-                    dependencyKeys
-                });
+                    dependencyData,
+                    issueByKey
+                }));
             };
 
             const handleDependencyHoverLeave = (taskKey, action) => {

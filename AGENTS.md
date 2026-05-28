@@ -184,15 +184,16 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 - Runtime: local Flask server on port `5050` by default; dashboard served by Flask or opened via `jira-dashboard.html`
 
 ### Commands
-- Install backend deps: `python3 -m pip install --user -r requirements.txt`
+- Install backend deps: `.venv/bin/python -m pip install -r requirements.txt && .venv/bin/python -m pip install -e .`
 - Install frontend deps: `npm ci`
 - Optional bootstrap: `./install.sh`
 - Build: `npm run build`
+- Preflight: `.venv/bin/python scripts/check_startup_preflight.py`
 - Watch frontend: `npm run watch`
 - Test (all): `python3 -m unittest discover -s tests`
 - Test (single file): `python3 -m unittest tests.test_planning`
 - Test (single case): `python3 -m unittest tests.test_planning.PlanningSchedulerTests.test_dependency_ordering`
-- Run locally: `python3 jira_server.py`
+- Run locally: `.venv/bin/python jira_server.py`
 - Quick API check: `curl http://localhost:5050/api/test`
 - EPM scope: configure `rootGoalKey` and `subGoalKey` in `Settings -> EPM`; the Atlassian site cloudId is detected from Jira /_edge/tenant_info
 
@@ -293,7 +294,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Browser-focus auth refresh is an optimization only; keep the visible expired-auth recovery path as the fallback.
 - Keep local task changes in the checkout the user is actively viewing; use a secondary worktree only when the user explicitly asks for one.
 - For shared header/menu UI changes, add or update Playwright assertions for menu layering and icon/control geometry before reporting visual verification.
-- Before merging backend dependency or startup-path changes, launch `source .venv/bin/activate; python3 jira_server.py` and verify `/api/test`.
+- Before merging backend dependency or startup-path changes, launch `.venv/bin/python jira_server.py` and verify `/api/test`.
 - Treat Python dependency/runtime warnings before the Flask startup banner as failed server verification unless the warning is intentionally documented as benign.
 - In settings, keep Team Groups/Group Labels and ENG/EPM view preferences separate from admin-only shared configuration; never bundle their saves with scope, field, priority, issue-type, or EPM mapping writes.
 - For cross-layer access or configuration changes, verify the backend response contract and the frontend render/edit/save gates together; do not treat backend route tests as enough when UI permissions control the user journey.

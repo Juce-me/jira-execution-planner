@@ -86,6 +86,13 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Deferred structural review and prioritized backlog for packaging, local verification, startup preflight, backend service extraction, frontend feature ownership, and source guards.
    - Do not execute directly. Convert each chosen slice into a separate `EXEC-*` plan before implementation.
 
+4. `2026-05-01-codebase-structure-optimization.md`
+   - Support/history context for earlier structure extraction work. Do not execute directly.
+
+5. `EXEC-codebase-operability-doc-cleanup.md`
+   - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.
+   - Expected output: refreshed quickstart/setup docs, May 1 plan support/history status, and current README structure snapshot.
+
 ## Legacy Unclassified Date-Only Plans
 
 These files predate the `EXEC`/`DONE`/`GATE`/`SUPPORT`/`FUTURE` taxonomy. Treat them as unclassified historical context, not executable current plans, until a reviewer classifies and renames them or moves them to `docs/agents/`:
@@ -118,14 +125,13 @@ These files predate the `EXEC`/`DONE`/`GATE`/`SUPPORT`/`FUTURE` taxonomy. Treat 
 - `2026-04-28-epm-goals-2-3-portfolio-active-sprint.md`
 - `2026-04-28-epm-zero-manual-portfolio-default.md`
 - `2026-04-29-epm-portfolio-ui-cleanup.md`
-- `2026-05-01-codebase-structure-optimization.md`
 - `2026-05-04-epm-multi-subgoal-scope.md`
 
 ## Known Artifact Drift
 
 Use this section to avoid treating missing historical artifacts as current work:
 
-- Legacy EPM plans that reference `frontend/src/epm/epmFetch.js` predate the frontend API consolidation. Current EPM API wrappers live in `frontend/src/api/epmApi.js`; `2026-05-01-codebase-structure-optimization.md` records that migration.
+- Legacy EPM plans that reference `frontend/src/epm/epmFetch.js` predate the frontend API consolidation. Current EPM API wrappers live in `frontend/src/api/epmApi.js`; `2026-05-01-codebase-structure-optimization.md` records that history.
 - `docs/features/epm-rollup.md` was optional in `2026-04-21-epm-project-rollup.md` and is not present in this checkout. Current operator-facing EPM rollup guidance lives in `docs/features/epm-view.md`.
 - `2026-04-21-epm-settings-scope-and-linkage.md` and `2026-04-21-epm-goal-picker.md` were branch-only predecessor plans referenced by `2026-04-21-epm-project-rollup.md`; they are not present in this checkout.
 - Missing files named under `Create:` or unchecked task lists inside legacy, `DONE-*`, or `SUPPORT-*` plans are not automatically current missing artifacts. Create them only when a reviewed `EXEC-*` plan or explicit reopened scope requires them.

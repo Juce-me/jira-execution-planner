@@ -71,7 +71,7 @@ For the current DB/OAuth path, use [INSTALL.md](INSTALL.md). The short version i
 6. Start the backend with `.venv/bin/python jira_server.py`.
 7. Sign in, then connect the current user's Home/Townsquare token in `Settings -> Connections` if you need EPM.
 
-Starting `python3 jira_server.py` does not start PostgreSQL, create the database, or run migrations. More detailed single-user/legacy setup guidance remains below if you need it.
+Starting `.venv/bin/python jira_server.py` does not start PostgreSQL, create the database, or run migrations. More detailed single-user/legacy setup guidance remains below if you need it.
 
 ## 📦 Prebuilt download (no Node required)
 
@@ -154,7 +154,7 @@ Server-side API-token auth remains a legacy compatibility mode. Do not use legac
 You can override the environment values at launch time instead of editing `.env`:
 
 ```bash
-python3 jira_server.py \
+.venv/bin/python jira_server.py \
   --server_port 5050 \
   --jira_url https://your-company.atlassian.net
 ```
@@ -314,7 +314,7 @@ See the full guide:
 ## 🛠 Troubleshooting
 
 **"Connection refused" error:**
-- Make sure the Python server is running (`python3 jira_server.py`)
+- Make sure the Python server is running (`.venv/bin/python jira_server.py`)
 
 **"ModuleNotFoundError" when starting server:**
 - Install dependencies from the repo root: `.venv/bin/python -m pip install -r requirements.txt`
@@ -380,16 +380,31 @@ See the full guide:
 ```
 jira-dashboard/
 ├── AGENTS.md              # Contributor guidelines
-├── jira_server.py          # Backend Flask server with caching
-├── jira-dashboard.html     # Frontend interface with sprint selector
+├── jira_server.py          # Flask entrypoint and compatibility shims
+├── jira-dashboard.html     # Served dashboard shell
+├── backend/
+│   ├── routes/             # Flask blueprints by route surface
+│   ├── auth/               # OAuth, DB auth context, CSRF, token crypto
+│   ├── config/             # JSON/DB config repositories and validation
+│   ├── epm/                # Home/Townsquare access, EPM scope, rollups
+│   ├── security/           # Endpoint policy and security headers
+│   └── services/           # Service extraction namespace
 ├── frontend/               # Frontend source + compiled bundle
-│   ├── src/                # JSX source (dashboard.jsx + scenario/)
+│   ├── src/
+│   │   ├── api/            # Frontend endpoint wrappers
+│   │   ├── eng/            # ENG dashboard view modules
+│   │   ├── epm/            # EPM controls, settings, and rollup views
+│   │   ├── scenario/       # Scenario planner helpers/components
+│   │   ├── settings/       # Settings modal modules
+│   │   ├── stats/          # Statistics views and utilities
+│   │   ├── ui/             # Shared UI primitives
+│   │   └── dashboard.jsx   # App shell and remaining legacy wiring
 │   └── dist/               # Compiled JS + CSS output (committed)
 ├── docs/                   # Documentation
-│   ├── agents.md           # Agent work artifact rules
+│   ├── plans/              # EXEC/DONE/FUTURE/SUPPORT/GATE plans
 │   └── features/           # User-facing feature guides
 ├── planning/               # Scenario planner core logic
-├── tests/                  # Unit tests
+├── tests/                  # Python, Node, source-guard, and UI tests
 ├── postmortem/             # Postmortems and incident learnings
 ├── requirements.txt        # Python dependencies
 ├── .env.example           # Environment variables template

@@ -20,5 +20,11 @@ class ProjectPackagingTests(unittest.TestCase):
 
     def test_makefile_exposes_standard_targets(self):
         source = (ROOT / "Makefile").read_text(encoding="utf8")
-        for target in ("install:", "build:", "test:", "test-security:", "run:"):
+        for target in ("install:", "build:", "test:", "test-security:", "preflight:", "run:"):
             self.assertIn(target, source)
+
+    def test_startup_preflight_script_exists(self):
+        source = (ROOT / "scripts" / "check_startup_preflight.py").read_text(encoding="utf8")
+        self.assertIn("run_preflight", source)
+        self.assertIn("validate_config_storage_startup", source)
+        self.assertIn("key_provider_from_env", source)

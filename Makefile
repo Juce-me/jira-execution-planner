@@ -1,6 +1,6 @@
 PYTHON_TEST_ENV = JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile
 
-.PHONY: install build test test-security test-frontend-unit test-frontend-ui verify verify-dist-clean run
+.PHONY: install build test test-security test-frontend-unit test-frontend-ui verify verify-dist-clean preflight run
 
 install:
 	python3 -m venv .venv
@@ -32,6 +32,9 @@ verify-dist-clean:
 		echo "Compiled frontend output changed. Run 'npm run build' and commit frontend/dist."; \
 		exit 1; \
 	fi
+
+preflight:
+	.venv/bin/python scripts/check_startup_preflight.py
 
 run:
 	.venv/bin/python jira_server.py

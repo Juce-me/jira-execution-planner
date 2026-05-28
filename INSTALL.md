@@ -127,6 +127,18 @@ Prebuilt release zips omit the test suite; skip this check there and use the sou
 
 ## 5. Start The App
 
+Check startup prerequisites before launching Flask:
+
+```bash
+.venv/bin/python scripts/check_startup_preflight.py
+```
+
+The equivalent Make target is:
+
+```bash
+make preflight
+```
+
 ```bash
 .venv/bin/python jira_server.py
 ```
@@ -182,6 +194,14 @@ Do not seed a Home/Townsquare service integration for the DB/OAuth EPM read path
 `DATABASE_URL is required when CONFIG_STORAGE_BACKEND=db`
 
 Set `DATABASE_URL`, export it before CLI migration/seeding commands, run migrations, then restart Flask.
+
+`FAIL migrations: Database is unavailable or migrations are not at head.`
+
+Start PostgreSQL, check `DATABASE_URL`, then run:
+
+```bash
+.venv/bin/alembic -c backend/db/alembic.ini upgrade head
+```
 
 `TOKEN_ENCRYPTION_MASTER_KEY_B64 or TOKEN_ENCRYPTION_KEY_ID is required`
 

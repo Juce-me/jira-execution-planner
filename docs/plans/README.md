@@ -78,7 +78,11 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.
    - Expected output: local frontend unit/UI npm scripts, `make verify` for build/Python/security/Node/dist checks, and refreshed test-command documentation.
 
-2. `FUTURE-codebase-operability-improvements.md`
+2. `EXEC-codebase-operability-startup-preflight.md`
+   - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.
+   - Expected output: operator preflight for runtime/auth/DB/encryption/migrations plus unified DB storage aliases.
+
+3. `FUTURE-codebase-operability-improvements.md`
    - Deferred structural review and prioritized backlog for packaging, local verification, startup preflight, backend service extraction, frontend feature ownership, and source guards.
    - Do not execute directly. Convert each chosen slice into a separate `EXEC-*` plan before implementation.
 

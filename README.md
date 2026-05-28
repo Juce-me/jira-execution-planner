@@ -67,8 +67,9 @@ For the current DB/OAuth path, use [INSTALL.md](INSTALL.md). The short version i
 2. Copy `.env.example` to `.env`.
 3. Configure PostgreSQL, Atlassian OAuth, and token-encryption values.
 4. Run Alembic migrations.
-5. Start the backend with `.venv/bin/python jira_server.py`.
-6. Sign in, then connect the current user's Home/Townsquare token in `Settings -> Connections` if you need EPM.
+5. Run `.venv/bin/python scripts/check_startup_preflight.py`.
+6. Start the backend with `.venv/bin/python jira_server.py`.
+7. Sign in, then connect the current user's Home/Townsquare token in `Settings -> Connections` if you need EPM.
 
 Starting `python3 jira_server.py` does not start PostgreSQL, create the database, or run migrations. More detailed single-user/legacy setup guidance remains below if you need it.
 
@@ -141,6 +142,10 @@ DB/OAuth mode is the production-like local path. It requires `JIRA_URL`, `JIRA_A
 Server-side API-token auth remains a legacy compatibility mode. Do not use legacy Jira/Home Basic credentials for the DB/OAuth EPM path.
 
 ### Step 4: Start the server
+
+```bash
+.venv/bin/python scripts/check_startup_preflight.py
+```
 
 ```bash
 .venv/bin/python jira_server.py

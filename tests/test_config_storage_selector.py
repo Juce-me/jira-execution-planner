@@ -32,6 +32,11 @@ class ConfigStorageSelectorTests(unittest.TestCase):
         with self.assertRaises(ConfigStorageError):
             selected_config_storage_backend({'CONFIG_STORAGE_BACKEND': 'auto'})
 
+    def test_db_storage_aliases_match_database_engine(self):
+        for backend in ('db', 'database', 'postgres', 'postgresql'):
+            with self.subTest(backend=backend):
+                self.assertEqual(selected_config_storage_backend({'CONFIG_STORAGE_BACKEND': backend}), 'db')
+
     def test_db_storage_requires_database_url(self):
         with self.assertRaises(ConfigStorageError):
             validate_config_storage_startup({'CONFIG_STORAGE_BACKEND': 'db'})

@@ -27,7 +27,7 @@ def selected_config_storage_backend(environ=None):
     backend = str(env.get('CONFIG_STORAGE_BACKEND') or 'jsonfile').strip().lower()
     if backend in {'', 'jsonfile'}:
         return 'jsonfile'
-    if backend == 'db':
+    if backend in db_engine.DB_STORAGE_BACKENDS:
         return 'db'
     raise ConfigStorageError('CONFIG_STORAGE_BACKEND must be jsonfile or db')
 

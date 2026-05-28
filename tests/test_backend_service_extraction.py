@@ -80,13 +80,13 @@ class TestBackendServiceExtraction(unittest.TestCase):
             with patch.object(jira_server, 'DASHBOARD_CONFIG_PATH', dashboard_path), \
                  patch.object(jira_server, 'GROUPS_CONFIG_PATH', groups_path), \
                  patch.object(jira_server, 'TEAM_CATALOG_PATH', team_catalog_path):
-                migrated = jira_server.load_dashboard_config()
+                migrated = jira_server.load_dashboard_config(source='jsonfile')
                 self.assertEqual(migrated, {
                     'version': 1,
                     'projects': {'selected': []},
                     'teamGroups': legacy_groups
                 })
-                self.assertEqual(jira_server.load_dashboard_config(), migrated)
+                self.assertEqual(jira_server.load_dashboard_config(source='jsonfile'), migrated)
 
                 saved_catalog = jira_server.save_team_catalog_file({
                     'catalog': {'team-1': {'name': 'Team A'}},

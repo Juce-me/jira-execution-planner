@@ -113,6 +113,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.
    - Expected output: remaining Scenario, stats, issue lookup, and EPM config endpoint construction moved out of `frontend/src/dashboard.jsx` into `frontend/src/api/*` modules.
 
+11. `EXEC-codebase-operability-config-repository-selection.md`
+   - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.
+   - Expected output: dashboard config load/save wrappers require explicit JSON selection when DB mode is active without request context.
+
 ## Legacy Unclassified Date-Only Plans
 
 These files predate the `EXEC`/`DONE`/`GATE`/`SUPPORT`/`FUTURE` taxonomy. Treat them as unclassified historical context, not executable current plans, until a reviewer classifies and renames them or moves them to `docs/agents/`:

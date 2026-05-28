@@ -1802,10 +1802,29 @@ def _load_dashboard_config_json():
     return _json_config_repository().load_dashboard_config()
 
 
-def load_dashboard_config():
+def _normalize_dashboard_config_source(source):
+    value = str(source or 'auto').strip().lower()
+    if value in {'auto', 'jsonfile', 'db'}:
+        return value
+    raise ConfigStorageError('dashboard config source must be auto, jsonfile, or db')
+
+
+def _current_dashboard_config_context_or_error():
+    if has_request_context():
+        return current_request_auth_context()
+    raise ConfigStorageError(
+        'CONFIG_STORAGE_BACKEND=db requires request context for dashboard config; '
+        'pass source="jsonfile" for explicit legacy JSON access'
+    )
+
+
+def load_dashboard_config(*, source='auto'):
     """Load the unified dashboard config."""
-    if config_storage_db_enabled() and has_request_context():
-        context = current_request_auth_context()
+    source = _normalize_dashboard_config_source(source)
+    if source == 'jsonfile':
+        return _load_dashboard_config_json()
+    if source == 'db' or config_storage_db_enabled():
+        context = _current_dashboard_config_context_or_error()
         return build_db_config_repository().load_dashboard_config(
             context,
             fallback_loader=_load_dashboard_config_json,
@@ -1817,10 +1836,13 @@ def _save_dashboard_config_json(config):
     return _config_store.save_dashboard_config(config, resolve_dashboard_config_path())
 
 
-def save_dashboard_config(config):
+def save_dashboard_config(config, *, source='auto'):
     """Write the unified dashboard config."""
-    if config_storage_db_enabled() and has_request_context():
-        context = current_request_auth_context()
+    source = _normalize_dashboard_config_source(source)
+    if source == 'jsonfile':
+        return _save_dashboard_config_json(config)
+    if source == 'db' or config_storage_db_enabled():
+        context = _current_dashboard_config_context_or_error()
         return build_db_config_repository().save_dashboard_config(context, config)
     return _save_dashboard_config_json(config)
 
@@ -1852,7 +1874,7 @@ def migrate_team_catalog_from_config():
     catalog_path = resolve_team_catalog_path()
     if os.path.exists(catalog_path):
         return  # Already migrated or manually created
-    dashboard_config = load_dashboard_config()
+    dashboard_config = load_dashboard_config(source='jsonfile')
     if not dashboard_config:
         return
     team_groups = dashboard_config.get('teamGroups')

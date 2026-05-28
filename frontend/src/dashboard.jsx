@@ -104,7 +104,24 @@ import {
     fetchEpmScope,
     fetchEpmGoals,
     fetchEpmConfigurationProjects,
+    saveEpmConfig as requestSaveEpmConfig,
 } from './api/epmApi.js';
+import {
+    buildScenarioDraftEventsStreamUrl,
+    fetchScenarioDraft as requestScenarioDraft,
+    fetchScenarioDraftVersion as requestScenarioDraftVersion,
+    fetchScenarioRun as requestScenarioRun,
+    pollScenarioDraftEvents as requestScenarioDraftEvents,
+    postScenarioRealtimeJson as requestScenarioRealtimeJson,
+    reloadScenarioDraftFromJira as requestReloadScenarioDraftFromJira,
+    rollbackScenarioDraft as requestRollbackScenarioDraft,
+    saveScenarioDraftVersion as requestSaveScenarioDraftVersion,
+} from './api/scenarioApi.js';
+import {
+    fetchBurnoutStats as requestBurnoutStats,
+    fetchEpicCohortStats as requestEpicCohortStats,
+} from './api/statsApi.js';
+import { fetchIssuesLookup as requestIssuesLookup } from './api/issuesApi.js';
 import {
     fetchJiraLabels as requestJiraLabels,
     fetchTeamCatalog as requestTeamCatalog,
@@ -998,20 +1015,7 @@ import {
                 setGroupDraftError('');
                 try {
                     const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraft);
-                    const { csrfToken } = await fetchCsrfToken(BACKEND_URL);
-                    const response = await fetch(`${BACKEND_URL}/api/epm/config`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'jira-execution-planner',
-                            'X-CSRF-Token': csrfToken || ''
-                        },
-                        body: JSON.stringify(normalizedDraft)
-                    });
-                    if (!response.ok) {
-                        throw new Error(`Failed to save EPM config: ${response.status}`);
-                    }
-                    const payload = await response.json();
+                    const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft);
                     const nextConfig = normalizeEpmConfigDraft(payload);
                     applySavedEpmConfig(nextConfig);
                     updateEpmSettingsProjectRowsAfterSave(nextConfig);
@@ -5412,17 +5416,8 @@ import {
             const fetchScenarioCsrfToken = () =>
                 fetchCsrfToken(BACKEND_URL).then(({ csrfToken }) => csrfToken || '');
 
-            const fetchScenarioDraft = async (scopeKey, signal) => {
-                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts?scope_key=${encodeURIComponent(scopeKey)}`, {
-                    cache: 'no-cache',
-                    signal
-                });
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.message || errorData.error || `Scenario draft error ${response.status}`);
-                }
-                return response.json();
-            };
+            const fetchScenarioDraft = (scopeKey, signal) =>
+                requestScenarioDraft(BACKEND_URL, scopeKey, { signal });
 
             const fetchScenarioRealtimeCsrfToken = async (forceRefresh = false) => {
                 if (!forceRefresh && scenarioRealtimeCsrfRef.current) {
@@ -5443,24 +5438,7 @@ import {
 
             const postScenarioRealtimeJson = async (draftId, path, payload) => {
                 const postWithToken = async (csrfToken) => {
-                    const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}${path}`, {
-                        method: 'POST',
-                        cache: 'no-cache',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'jira-execution-planner',
-                            'X-CSRF-Token': csrfToken
-                        },
-                        body: JSON.stringify(payload)
-                    });
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({}));
-                        const error = new Error(errorData.message || errorData.error || `Scenario realtime error ${response.status}`);
-                        error.payload = errorData;
-                        error.status = response.status;
-                        throw error;
-                    }
-                    return response.json();
+                    return requestScenarioRealtimeJson(BACKEND_URL, draftId, path, payload, { csrfToken });
                 };
                 try {
                     return await postWithToken(await fetchScenarioRealtimeCsrfToken(false));
@@ -5599,21 +5577,8 @@ import {
                 });
             };
 
-            const pollScenarioDraftEvents = async (draftId, sinceEventNumber, signal) => {
-                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/events?since=${encodeURIComponent(sinceEventNumber || 0)}`, {
-                    cache: 'no-cache',
-                    signal
-                });
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.message || errorData.error || `Scenario draft events error ${response.status}`);
-                }
-                const data = await response.json();
-                return {
-                    events: Array.isArray(data.events) ? data.events : [],
-                    nextSince: Number(data.nextSince || 0)
-                };
-            };
+            const pollScenarioDraftEvents = (draftId, sinceEventNumber, signal) =>
+                requestScenarioDraftEvents(BACKEND_URL, draftId, sinceEventNumber, { signal });
 
             const saveScenarioDraftVersion = async (scopeKey, name, baseDraftRevision, scope, overrides) => {
                 const payload = {
@@ -5625,24 +5590,7 @@ import {
                     overrides: normalizeScenarioDraftOverrides(overrides)
                 };
                 const postScenarioDraft = async (csrfToken) => {
-                    const response = await fetch(`${BACKEND_URL}/api/scenario/drafts`, {
-                        method: 'POST',
-                        cache: 'no-cache',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'jira-execution-planner',
-                            'X-CSRF-Token': csrfToken
-                        },
-                        body: JSON.stringify(payload)
-                    });
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({}));
-                        const error = new Error(errorData.message || errorData.error || `Scenario draft save error ${response.status}`);
-                        error.payload = errorData;
-                        error.status = response.status;
-                        throw error;
-                    }
-                    return response.json();
+                    return requestSaveScenarioDraftVersion(BACKEND_URL, payload, { csrfToken });
                 };
                 const csrfToken = await fetchScenarioCsrfToken();
                 try {
@@ -5661,65 +5609,32 @@ import {
                 }
             };
 
-            const fetchScenarioDraftVersion = async (draftId, versionNumber, signal) => {
-                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/versions/${encodeURIComponent(versionNumber)}`, {
-                    cache: 'no-cache',
-                    signal
-                });
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.message || errorData.error || `Scenario draft version error ${response.status}`);
-                }
-                return response.json();
-            };
+            const fetchScenarioDraftVersion = (draftId, versionNumber, signal) =>
+                requestScenarioDraftVersion(BACKEND_URL, draftId, versionNumber, { signal });
 
             const rollbackScenarioDraft = async (draftId, targetVersionNumber, baseDraftRevision, signal) => {
                 const csrfToken = await fetchScenarioCsrfToken();
-                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/rollback`, {
-                    method: 'POST',
-                    cache: 'no-cache',
-                    signal,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'jira-execution-planner',
-                        'X-CSRF-Token': csrfToken
-                    },
-                    body: JSON.stringify({
+                return requestRollbackScenarioDraft(
+                    BACKEND_URL,
+                    draftId,
+                    {
                         targetVersionNumber,
                         baseDraftRevision
-                    })
-                });
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    const error = new Error(errorData.message || errorData.error || `Scenario draft rollback error ${response.status}`);
-                    error.payload = errorData;
-                    throw error;
-                }
-                return response.json();
+                    },
+                    { csrfToken, signal }
+                );
             };
 
             const reloadScenarioDraftFromJira = async (draftId, baseDraftRevision, signal) => {
                 const csrfToken = await fetchScenarioCsrfToken();
-                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/reload-from-jira`, {
-                    method: 'POST',
-                    cache: 'no-cache',
-                    signal,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'jira-execution-planner',
-                        'X-CSRF-Token': csrfToken
-                    },
-                    body: JSON.stringify({
+                return requestReloadScenarioDraftFromJira(
+                    BACKEND_URL,
+                    draftId,
+                    {
                         baseDraftRevision
-                    })
-                });
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    const error = new Error(errorData.message || errorData.error || `Scenario draft reload error ${response.status}`);
-                    error.payload = errorData;
-                    throw error;
-                }
-                return response.json();
+                    },
+                    { csrfToken, signal }
+                );
             };
 
             const buildScenarioDraftScope = () => ({
@@ -5783,20 +5698,9 @@ import {
                 setScenarioError('');
                 const controller = registerSprintFetch();
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/scenario`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'jira-execution-planner'
-                        },
-                        body: JSON.stringify(buildScenarioPayload()),
+                    const data = await requestScenarioRun(BACKEND_URL, buildScenarioPayload(), {
                         signal: controller.signal
                     });
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({}));
-                        throw new Error(errorData.error || `Scenario error ${response.status}`);
-                    }
-                    const data = await response.json();
                     const scopePayload = buildScenarioDraftScope();
                     setScenarioOverrides({});
                     setScenarioDraftEvents([]);
@@ -6459,21 +6363,16 @@ import {
                     setBurnoutLoading(true);
                     setBurnoutError('');
                     try {
-                        const response = await fetch(`${BACKEND_URL}/api/stats/burnout`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-Requested-With': 'jira-execution-planner'
-                            },
-                            cache: 'no-cache',
-                            signal: controller.signal,
-                            body: JSON.stringify({
+                        const response = await requestBurnoutStats(
+                            BACKEND_URL,
+                            {
                                 sprint: sprintLabel,
                                 teamIds: burnoutScopedTeamIds,
                                 issueKeys: burnoutIssueKeys,
                                 includePostSprintClosures: isCompletedSprintSelected
-                            })
-                        });
+                            },
+                            { signal: controller.signal }
+                        );
                         if (!response.ok) {
                             const err = await response.json().catch(() => ({}));
                             throw new Error(err.error || err.message || `Burndown fetch failed (${response.status})`);
@@ -6585,21 +6484,16 @@ import {
                     setCohortLoading(true);
                     setCohortError('');
                     try {
-                        const response = await fetch(`${BACKEND_URL}/api/stats/epic-cohort`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-Requested-With': 'jira-execution-planner'
-                            },
-                            cache: 'no-cache',
-                            signal: controller.signal,
-                            body: JSON.stringify({
+                        const response = await requestEpicCohortStats(
+                            BACKEND_URL,
+                            {
                                 startQuarter: startQuarter,
                                 teamIds: burnoutScopedTeamIds,
                                 components: activeGroupMissingComponents,
                                 refresh: false
-                            })
-                        });
+                            },
+                            { signal: controller.signal }
+                        );
                         if (!response.ok) {
                             const err = await response.json().catch(() => ({}));
                             throw new Error(err.error || err.message || `Lead times fetch failed (${response.status})`);
@@ -7308,7 +7202,7 @@ import {
                 if (!scenarioActiveDraftReady) return undefined;
                 const sseEnabled = window.SCENARIO_DRAFT_SSE_ENABLED === true;
                 if (!sseEnabled || typeof window.EventSource !== 'function') return undefined;
-                const source = new window.EventSource(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(scenarioActiveDraftId)}/events/stream?since=${encodeURIComponent(scenarioDraftLastEventNumber || 0)}`);
+                const source = new window.EventSource(buildScenarioDraftEventsStreamUrl(BACKEND_URL, scenarioActiveDraftId, scenarioDraftLastEventNumber));
                 const expectedDraftId = scenarioActiveDraftId;
                 const handleStreamMessage = (message) => {
                     if (scenarioActiveDraftIdRef.current !== expectedDraftId) return;
@@ -10486,10 +10380,7 @@ import {
                 const fetchLookup = async () => {
                     setDependencyLookupLoading(true);
                     try {
-                        const response = await fetch(
-                            `${BACKEND_URL}/api/issues/lookup?keys=${encodeURIComponent(missingKeys.join(','))}`,
-                            { signal: controller.signal }
-                        );
+                        const response = await requestIssuesLookup(BACKEND_URL, missingKeys, { signal: controller.signal });
                         if (!response.ok) {
                             console.error('Dependency lookup failed:', response.status);
                             return;

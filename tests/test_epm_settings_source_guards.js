@@ -13,6 +13,7 @@ const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'Co
 const iconButtonPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'IconButton.jsx');
 const loadingRowsPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'LoadingRows.jsx');
 const emptyStatePath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'EmptyState.jsx');
+const epmApiPath = path.join(__dirname, '..', 'frontend', 'src', 'api', 'epmApi.js');
 const epmViewDataPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'useEpmViewData.js');
 const epmControlsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmControls.jsx');
 const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngView.jsx');
@@ -23,6 +24,7 @@ const settingsModalSource = fs.existsSync(settingsModalPath) ? fs.readFileSync(s
 const teamGroupsSettingsSource = fs.existsSync(teamGroupsSettingsPath) ? fs.readFileSync(teamGroupsSettingsPath, 'utf8') : '';
 const jiraFieldSettingsSource = fs.existsSync(jiraFieldSettingsPath) ? fs.readFileSync(jiraFieldSettingsPath, 'utf8') : '';
 const epmSettingsUiSource = epmSettingsSource || dashboardSource;
+const epmApiSource = fs.existsSync(epmApiPath) ? fs.readFileSync(epmApiPath, 'utf8') : '';
 const epmViewDataSource = fs.existsSync(epmViewDataPath) ? fs.readFileSync(epmViewDataPath, 'utf8') : '';
 const epmControlsSource = fs.existsSync(epmControlsPath) ? fs.readFileSync(epmControlsPath, 'utf8') : '';
 const engViewSource = fs.existsSync(engViewPath) ? fs.readFileSync(engViewPath, 'utf8') : '';
@@ -215,8 +217,9 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const epmSubGoalsRequestIdRef = useRef(0);'), 'Expected stale-response guard ref for sub-goal fetches');
     assert.ok(epmViewDataSource.includes('if (epmProjectsRequestIdRef.current !== requestId) {'), 'Expected stale-response guard branch for EPM project refreshes');
     assert.ok(dashboardSource.includes('if (epmSubGoalsRequestIdRef.current !== requestId) {'), 'Expected stale-response guard branch for sub-goal fetches');
-    assert.ok(dashboardSource.includes('const { csrfToken } = await fetchCsrfToken(BACKEND_URL);'), 'Expected EPM config save to fetch a token-bound CSRF token');
-    assert.ok(dashboardSource.includes("'X-CSRF-Token': csrfToken || ''"), 'Expected EPM config save to send the CSRF header');
+    assert.ok(dashboardSource.includes('const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft);'), 'Expected dashboard EPM save to delegate endpoint construction to the API wrapper');
+    assert.ok(epmApiSource.includes('const { csrfToken } = await fetchCsrfToken(backendUrl);'), 'Expected EPM config save wrapper to fetch a token-bound CSRF token');
+    assert.ok(epmApiSource.includes("'X-CSRF-Token': csrfToken || ''"), 'Expected EPM config save wrapper to send the CSRF header');
     assert.ok(dashboardSource.includes('const config = await loadEpmConfig();'), 'Expected config load to remain independent');
     assert.ok(dashboardSource.includes('const scopeMeta = await loadEpmScopeMeta();'), 'Expected scope metadata load to be handled separately');
     assert.ok(dashboardSource.includes('const rootGoalsPayload = await loadEpmGoals();'), 'Expected root-goal discovery load to be handled separately');

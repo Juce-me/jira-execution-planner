@@ -74,7 +74,7 @@ test('extracted statistics modules remain render/pure helpers with no request or
     [
         'burnoutCacheRef',
         'excludedCapacityCacheRef',
-        '/api/stats/burnout',
+        'requestBurnoutStats',
         'requestExcludedCapacityStatsSource',
     ].forEach((term) => {
         assert.ok(dashboardSource.includes(term), `dashboard.jsx must keep request/cache ownership for ${term}`);

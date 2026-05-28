@@ -5,11 +5,8 @@ const path = require('node:path');
 
 const frontendSrcPath = path.join(__dirname, '..', 'frontend', 'src');
 const apiPathSegment = `${path.sep}api${path.sep}`;
-// Raw API endpoint literals belong under frontend/src/api during migration.
-// dashboard.jsx remains an approved transitional wrapper until migrated.
-const allowedTransitionalWrappers = new Set([
-    path.join(frontendSrcPath, 'dashboard.jsx'),
-]);
+// Raw API endpoint literals belong under frontend/src/api.
+const allowedTransitionalWrappers = new Set();
 
 function listSourceFiles(root) {
     if (!fs.existsSync(root)) return [];
@@ -43,6 +40,7 @@ function loadApiModule(fileName, exportNames, dependencies = {}) {
     assert.ok(fs.existsSync(modulePath), `Expected frontend/src/api/${fileName} to exist`);
     const source = readSource(modulePath)
         .replace(/import\s+\{[^}]+\}\s+from\s+'\.\/http\.js';\n?/, '')
+        .replaceAll('export async function ', 'async function ')
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
     const names = Object.keys(dependencies);
@@ -196,6 +194,7 @@ test('EPM API module owns endpoint construction without EPM compatibility wrappe
     const epmApiSource = readSource(epmApiPath);
 
     assert.ok(epmApiSource.includes("from './http.js'"), 'Expected EPM API module to use shared HTTP helpers');
+    assert.ok(epmApiSource.includes('/api/epm/config'), 'Expected EPM config URL construction in epmApi.js');
     assert.ok(epmApiSource.includes('/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}'), 'Expected project rollup URL construction in epmApi.js');
     assert.ok(epmApiSource.includes('/api/epm/projects/rollup/all?${params.toString()}'), 'Expected aggregate rollup URL construction in epmApi.js');
     assert.ok(epmApiSource.includes("fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {})"), 'Expected configuration project wrapper in epmApi.js');
@@ -228,6 +227,34 @@ test('EPM configuration project refresh sends token-bound CSRF header', async ()
             return jsonResponse({ csrfToken: 'csrf-token' });
         }
         return jsonResponse({ projects: [] });
+    });
+});
+
+test('EPM config save wrapper sends token-bound CSRF header', async () => {
+    const { getJson, postJson } = loadHttpHelpers();
+    const epmApi = loadApiModule('epmApi.js', [
+        'saveEpmConfig',
+    ], { getJson, postJson });
+
+    await withMockFetch(async (calls) => {
+        const payload = await epmApi.saveEpmConfig('http://backend', {
+            scope: { rootGoalKey: 'CRITE-1' },
+        });
+
+        assert.deepEqual(payload, { ok: true });
+        assert.equal(calls[0].url, 'http://backend/api/auth/csrf');
+        assert.equal(calls[1].url, 'http://backend/api/epm/config');
+        assert.equal(calls[1].options.method, 'POST');
+        assert.equal(calls[1].options.body, JSON.stringify({
+            scope: { rootGoalKey: 'CRITE-1' },
+        }));
+        assert.equal(new Headers(calls[1].options.headers).get('X-CSRF-Token'), 'csrf-token');
+        assertJsonHeader(calls[1].options);
+    }, (url) => {
+        if (String(url).endsWith('/api/auth/csrf')) {
+            return jsonResponse({ csrfToken: 'csrf-token' });
+        }
+        return jsonResponse({ ok: true });
     });
 });
 
@@ -618,5 +645,167 @@ test('auth API wrappers preserve Home token request details and CSRF use', async
             return jsonResponse({ csrfToken: `csrf-token-${index}` });
         }
         return jsonResponse({ ok: true });
+    });
+});
+
+test('Scenario API module owns draft, realtime, and run endpoint construction', () => {
+    const scenarioApiPath = path.join(frontendSrcPath, 'api', 'scenarioApi.js');
+    const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+    assert.ok(fs.existsSync(scenarioApiPath), 'Expected frontend/src/api/scenarioApi.js to exist');
+
+    const scenarioApiSource = readSource(scenarioApiPath);
+
+    assert.ok(scenarioApiSource.includes('/api/scenario/drafts?scope_key='), 'Expected draft load URL construction in scenarioApi.js');
+    assert.ok(scenarioApiSource.includes('/api/scenario/drafts/${encodeURIComponent(draftId)}${path}'), 'Expected draft path construction in scenarioApi.js');
+    assert.ok(scenarioApiSource.includes('/api/scenario/drafts'), 'Expected draft save URL construction in scenarioApi.js');
+    assert.ok(scenarioApiSource.includes('/api/scenario'), 'Expected scenario run URL construction in scenarioApi.js');
+    assert.ok(scenarioApiSource.includes("'X-CSRF-Token': csrfToken"), 'Expected scenario CSRF header in scenarioApi.js');
+    assert.ok(dashboardSource.includes("from './api/scenarioApi.js'"), 'Expected dashboard to import scenario API wrappers');
+    assert.equal(/(^|[^.])\/api\/scenario/.test(dashboardSource), false, 'dashboard.jsx must not own scenario endpoint literals');
+});
+
+test('Scenario API wrappers preserve request details and error payloads', async () => {
+    const scenarioApi = loadApiModule('scenarioApi.js', [
+        'buildScenarioDraftEventsStreamUrl',
+        'fetchScenarioDraft',
+        'fetchScenarioDraftVersion',
+        'fetchScenarioRun',
+        'pollScenarioDraftEvents',
+        'postScenarioRealtimeJson',
+        'reloadScenarioDraftFromJira',
+        'rollbackScenarioDraft',
+        'saveScenarioDraftVersion',
+    ]);
+    const signal = new AbortController().signal;
+
+    await withMockFetch(async (calls) => {
+        await scenarioApi.fetchScenarioDraft('http://backend', 'group::sprint', { signal });
+        await scenarioApi.postScenarioRealtimeJson('http://backend', 'draft-1', '/locks', { action: 'acquire' }, { csrfToken: 'csrf-a' });
+        await scenarioApi.pollScenarioDraftEvents('http://backend', 'draft-1', 7, { signal });
+        await scenarioApi.saveScenarioDraftVersion('http://backend', { scope_key: 'group::sprint' }, { csrfToken: 'csrf-b' });
+        await scenarioApi.fetchScenarioDraftVersion('http://backend', 'draft-1', 3, { signal });
+        await scenarioApi.rollbackScenarioDraft('http://backend', 'draft-1', { targetVersionNumber: 2, baseDraftRevision: 5 }, { csrfToken: 'csrf-c', signal });
+        await scenarioApi.reloadScenarioDraftFromJira('http://backend', 'draft-1', { baseDraftRevision: 6 }, { csrfToken: 'csrf-d', signal });
+        await scenarioApi.fetchScenarioRun('http://backend', { filters: { sprint: '42' } }, { signal });
+        const streamUrl = scenarioApi.buildScenarioDraftEventsStreamUrl('http://backend', 'draft-1', 8);
+
+        assert.equal(new URL(calls[0].url).pathname, '/api/scenario/drafts');
+        assert.equal(new URL(calls[0].url).searchParams.get('scope_key'), 'group::sprint');
+        assert.equal(calls[0].options.cache, 'no-cache');
+        assert.equal(calls[0].options.signal, signal);
+
+        assert.equal(calls[1].url, 'http://backend/api/scenario/drafts/draft-1/locks');
+        assert.equal(calls[1].options.method, 'POST');
+        assert.equal(calls[1].options.body, JSON.stringify({ action: 'acquire' }));
+        assert.equal(new Headers(calls[1].options.headers).get('X-CSRF-Token'), 'csrf-a');
+        assertJsonHeader(calls[1].options);
+
+        assert.equal(calls[2].url, 'http://backend/api/scenario/drafts/draft-1/events?since=7');
+        assert.equal(calls[2].options.signal, signal);
+
+        assert.equal(calls[3].url, 'http://backend/api/scenario/drafts');
+        assert.equal(calls[3].options.method, 'POST');
+        assert.equal(new Headers(calls[3].options.headers).get('X-CSRF-Token'), 'csrf-b');
+
+        assert.equal(calls[4].url, 'http://backend/api/scenario/drafts/draft-1/versions/3');
+        assert.equal(calls[4].options.signal, signal);
+
+        assert.equal(calls[5].url, 'http://backend/api/scenario/drafts/draft-1/rollback');
+        assert.equal(calls[5].options.method, 'POST');
+        assert.equal(calls[5].options.signal, signal);
+        assert.deepEqual(JSON.parse(calls[5].options.body), {
+            targetVersionNumber: 2,
+            baseDraftRevision: 5,
+        });
+        assert.equal(new Headers(calls[5].options.headers).get('X-CSRF-Token'), 'csrf-c');
+
+        assert.equal(calls[6].url, 'http://backend/api/scenario/drafts/draft-1/reload-from-jira');
+        assert.equal(calls[6].options.method, 'POST');
+        assert.equal(new Headers(calls[6].options.headers).get('X-CSRF-Token'), 'csrf-d');
+
+        assert.equal(calls[7].url, 'http://backend/api/scenario');
+        assert.equal(calls[7].options.method, 'POST');
+        assert.equal(calls[7].options.signal, signal);
+        assert.deepEqual(JSON.parse(calls[7].options.body), { filters: { sprint: '42' } });
+        assertJsonHeader(calls[7].options);
+        assert.equal(new Headers(calls[7].options.headers).get('X-Requested-With'), 'jira-execution-planner');
+
+        assert.equal(streamUrl, 'http://backend/api/scenario/drafts/draft-1/events/stream?since=8');
+    });
+});
+
+test('Stats and issues API modules own dashboard stats and lookup endpoints', () => {
+    const statsApiPath = path.join(frontendSrcPath, 'api', 'statsApi.js');
+    const issuesApiPath = path.join(frontendSrcPath, 'api', 'issuesApi.js');
+    const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+    assert.ok(fs.existsSync(statsApiPath), 'Expected frontend/src/api/statsApi.js to exist');
+    assert.ok(fs.existsSync(issuesApiPath), 'Expected frontend/src/api/issuesApi.js to exist');
+
+    const statsApiSource = readSource(statsApiPath);
+    const issuesApiSource = readSource(issuesApiPath);
+
+    assert.ok(statsApiSource.includes('/api/stats/burnout'), 'Expected burnout URL construction in statsApi.js');
+    assert.ok(statsApiSource.includes('/api/stats/epic-cohort'), 'Expected epic cohort URL construction in statsApi.js');
+    assert.ok(issuesApiSource.includes('/api/issues/lookup?keys='), 'Expected issue lookup URL construction in issuesApi.js');
+    assert.ok(dashboardSource.includes("from './api/statsApi.js'"), 'Expected dashboard to import stats API wrappers');
+    assert.ok(dashboardSource.includes("from './api/issuesApi.js'"), 'Expected dashboard to import issue lookup API wrapper');
+    assert.equal(/(^|[^.])\/api\/stats/.test(dashboardSource), false, 'dashboard.jsx must not own stats endpoint literals');
+    assert.equal(/(^|[^.])\/api\/issues/.test(dashboardSource), false, 'dashboard.jsx must not own issue lookup endpoint literals');
+});
+
+test('Stats and issues API wrappers preserve request details', async () => {
+    const statsApi = loadApiModule('statsApi.js', [
+        'fetchBurnoutStats',
+        'fetchEpicCohortStats',
+    ]);
+    const issuesApi = loadApiModule('issuesApi.js', [
+        'fetchIssuesLookup',
+    ]);
+    const signal = new AbortController().signal;
+
+    await withMockFetch(async (calls) => {
+        await statsApi.fetchBurnoutStats('http://backend', {
+            sprint: 'Sprint 1',
+            teamIds: ['team-1'],
+            issueKeys: ['ABC-1'],
+            includePostSprintClosures: false,
+        }, { signal });
+        await statsApi.fetchEpicCohortStats('http://backend', {
+            startQuarter: '2026 Q1',
+            teamIds: ['team-1'],
+            components: ['Comp A'],
+            refresh: false,
+        }, { signal });
+        await issuesApi.fetchIssuesLookup('http://backend', ['ABC-1', 'XYZ-2'], { signal });
+
+        assert.equal(calls[0].url, 'http://backend/api/stats/burnout');
+        assert.equal(calls[0].options.method, 'POST');
+        assert.equal(calls[0].options.cache, 'no-cache');
+        assert.equal(calls[0].options.signal, signal);
+        assert.equal(new Headers(calls[0].options.headers).get('X-Requested-With'), 'jira-execution-planner');
+        assert.deepEqual(JSON.parse(calls[0].options.body), {
+            sprint: 'Sprint 1',
+            teamIds: ['team-1'],
+            issueKeys: ['ABC-1'],
+            includePostSprintClosures: false,
+        });
+        assertJsonHeader(calls[0].options);
+
+        assert.equal(calls[1].url, 'http://backend/api/stats/epic-cohort');
+        assert.equal(calls[1].options.method, 'POST');
+        assert.equal(calls[1].options.cache, 'no-cache');
+        assert.equal(calls[1].options.signal, signal);
+        assert.deepEqual(JSON.parse(calls[1].options.body), {
+            startQuarter: '2026 Q1',
+            teamIds: ['team-1'],
+            components: ['Comp A'],
+            refresh: false,
+        });
+        assertJsonHeader(calls[1].options);
+
+        const lookupUrl = new URL(calls[2].url);
+        assert.equal(lookupUrl.pathname, '/api/issues/lookup');
+        assert.equal(lookupUrl.searchParams.get('keys'), 'ABC-1,XYZ-2');
+        assert.equal(calls[2].options.signal, signal);
     });
 });

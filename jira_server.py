@@ -88,6 +88,7 @@ from backend.services import sprints as _sprints_service
 from backend.services import stats_cache as _stats_cache_service
 from backend.services import update_check as _update_check_service
 from backend.services import priority_weights as _priority_weights_service
+from backend.services import team_catalog as _team_catalog_service
 from backend.epm import projects as epm_projects
 from backend.security.policy import (
     is_oauth_ready_api_path as policy_is_oauth_ready_api_path,
@@ -2294,54 +2295,19 @@ def build_update_check_payload():
 
 
 def normalize_team_catalog(raw):
-    catalog = {}
-    if isinstance(raw, list):
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            team_id = str(item.get('id') or '').strip()
-            name = str(item.get('name') or '').strip()
-            if not team_id or not name:
-                continue
-            catalog[team_id] = {'id': team_id, 'name': name}
-    elif isinstance(raw, dict):
-        for key, value in raw.items():
-            if isinstance(value, dict):
-                team_id = str(value.get('id') or key or '').strip()
-                name = str(value.get('name') or '').strip()
-            else:
-                team_id = str(key or '').strip()
-                name = str(value or '').strip()
-            if not team_id or not name:
-                continue
-            catalog[team_id] = {'id': team_id, 'name': name}
-    return catalog
+    return _team_catalog_service.normalize_team_catalog(raw)
 
 
 def normalize_team_catalog_meta(raw):
-    if not isinstance(raw, dict):
-        return {}
-    meta = {}
-    for key in ('updatedAt', 'sprintId', 'sprintName', 'source', 'resolvedAt'):
-        value = raw.get(key)
-        if value is None:
-            continue
-        meta[key] = str(value)
-    return meta
+    return _team_catalog_service.normalize_team_catalog_meta(raw)
 
 
 def normalize_group_team_labels(raw, team_ids):
-    if not isinstance(raw, dict):
-        return {}
-    allowed_ids = set(normalize_team_ids(team_ids or []))
-    labels = {}
-    for raw_team_id, raw_label in raw.items():
-        team_id = str(raw_team_id or '').strip()
-        label = str(raw_label or '').strip()
-        if not team_id or not label or team_id not in allowed_ids:
-            continue
-        labels[team_id] = label
-    return labels
+    return _team_catalog_service.normalize_group_team_labels(
+        raw,
+        team_ids,
+        normalize_team_ids_fn=normalize_team_ids,
+    )
 
 
 def validate_groups_config(payload, allow_empty=False):

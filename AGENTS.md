@@ -28,9 +28,6 @@ These rules override everything else in this file when in conflict:
 3. **Never fabricate.** Not file paths, not commit hashes, not API names, not test results, not library functions. If you don't know, read the file, run the command, or say "I don't know, let me check."
 4. **Stop when confused.** If the task has two plausible interpretations, ask. Do not pick silently and proceed.
 5. **Touch only what you must.** Every changed line must trace directly to the user's request. No drive-by refactors, reformatting, or "while I was in there" cleanups.
-6. **Do not discard prior architecture constraints.** Carry forward existing architectural decisions unless the user explicitly changes them.
-7. **If context becomes uncertain, stop and state uncertainty.** Do not keep implementing on a shaky or guessed understanding.
-8. **Do not simplify implementation for brevity.** Solve the actual requirement even when the correct implementation is longer than a short answer.
 
 ---
 
@@ -39,7 +36,7 @@ These rules override everything else in this file when in conflict:
 **Goal: understand the problem and the codebase before producing a diff.**
 
 - State your plan in one or two sentences before editing. For anything non-trivial, produce a numbered list of steps with a verification check for each.
-- Do not create persistent agent plan files unless explicitly needed; when needed, use `docs/agents/` per `docs/agents.md`, not `docs/superpowers/`.
+- Do not create persistent agent plan files unless explicitly needed; when needed, use `docs/agents/` per `docs/AGENTS.md`, not `docs/superpowers/`.
 - If Superpowers is active, use the relevant Superpowers skills for planning and execution. Use `writing-plans` for implementation plans, then `subagent-driven-development` when available or `executing-plans` for plan execution.
 - Read the files you will touch. Read the files that call the files you will touch. Claude Code: use subagents for exploration so the main context stays clean.
 - Match existing patterns in the codebase. If the project uses pattern X, use pattern X, even if you'd do it differently in a greenfield repo.
@@ -76,7 +73,7 @@ The test: would a senior engineer reading the diff call this overcomplicated? If
 - Do not delete pre-existing dead code unless asked. If you notice it, mention it in the summary.
 - Do clean up orphans created by your own changes (unused imports, variables, functions your edit made obsolete).
 - Match the project's existing style exactly: indentation, quotes, naming, file layout.
-- Put reusable project rules at the highest applicable level. Use subfolder `AGENTS.md` files only for stricter local instructions, and keep `CLAUDE.md` and `GEMINI.md` symlinked to the local `AGENTS.md`.
+- Put reusable project rules at the highest applicable level. Subfolder `AGENTS.md` files may add stricter constraints but must not redefine artifact naming, location, or other rules set by the root template or `docs/AGENTS.md` — if a different scheme is genuinely needed, change it at the template level so every project stays consistent. Keep `CLAUDE.md` and `GEMINI.md` symlinked to the local `AGENTS.md`.
 - Place new files in the appropriate top-level subfolder (e.g., `assets/` for static assets, `scripts/` for tooling and automation, `src/` for sources, `tests/` for tests, `docs/` for documentation) instead of the project root. If the project has an established layout, follow it; otherwise use these defaults. Create a folder only when adding its first real file. Do not commit empty placeholders, `.keep` files, or scaffold directories.
 
 The test: every changed line traces directly to the user's request. If a line fails that test, revert it.
@@ -171,7 +168,7 @@ For significant misses, regressions, or repeated mistakes:
 
 - Review existing postmortems before touching related code.
 - Follow `postmortem/AGENTS.md` when creating or updating postmortems.
-- Follow `docs/agents.md` when creating or updating agent work artifacts such as feature plans, prompt notes, bugfix investigations, or execution summaries.
+- Follow `docs/AGENTS.md` when creating or updating agent work artifacts such as feature plans, prompt notes, bugfix investigations, or execution summaries.
 - Keep `README.md`, `AGENTS.md`, and `postmortem/README.md` aligned when workflow or structure changes.
 
 Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Under 300 is a good ceiling. Over 500 and you are fighting your own config.
@@ -206,7 +203,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Frontend source: `frontend/src/`, `jira-dashboard.html`
 - Generated frontend output: `frontend/dist/`
 - Tests: `tests/`, `tests/ui/`
-- Docs: `docs/features/`, `docs/agents.md`, `postmortem/`
+- Docs: `docs/features/`, `docs/AGENTS.md`, `postmortem/`
 
 ### Conventions
 - Python: 4-space indentation, `snake_case` functions, `CapWords` classes
@@ -217,8 +214,9 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Do not hand-edit `frontend/dist/`; rebuild it from `frontend/src/` with `npm run build`
 - Reusable rules and design guidance belong at the highest applicable `AGENTS.md`; subfolder `AGENTS.md` files are for local constraints only.
 - Keep `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` aligned at the root and in subfolders; `CLAUDE.md` and `GEMINI.md` should point to the local `AGENTS.md`.
-- Agent work artifacts under `docs/agents/` use `YYYY-MM-DD-status-summary.md` per `docs/agents.md`.
+- Agent work artifacts under `docs/agents/` use `YYYY-MM-DD-status-summary.md` per `docs/AGENTS.md`.
 - Keep `AGENTS.md`, `README.md`, and other contributor docs aligned when workflow or structure changes
+- User-visible feature changes must include analytics impact review: `trigger`, `event_type`, canonical `event_name`, `feature_name` or `page_name`, typed params, tests, `docs/README_ANALYTICS.md` taxonomy updates, and GA4 runbook updates when relevant; app-owned analytics must keep the two-trigger GTM dataLayer contract (`pageview`/`userevent`), avoid bulk custom-dimension registration, use `GA4_ENABLED` as the app-level transport gate without in-app consent UI, and never use `event_group`, `ga4_event_name`, Universal Analytics fields, or boolean presence dimensions such as `has_*`; if no event is needed, document the allowlist reason.
 
 ### Repo-specific constraints
 - Review relevant postmortems before making related changes. Add new postmortems under `postmortem/` as `MRTXXX-short-title.md` and update `postmortem/README.md`.

@@ -58,6 +58,7 @@ No P0 issues were found. The main structural risk is that extracted modules exis
 - The verification-command slice is implemented locally in `EXEC-codebase-operability-verification.md`.
 - The startup/preflight and storage-alias slice is implemented locally in `EXEC-codebase-operability-startup-preflight.md`.
 - The quickstart, May 1 plan reclassification, and current structure docs slice is implemented locally in `EXEC-codebase-operability-doc-cleanup.md`.
+- The release-zip packaging-contract slice is implemented locally in `EXEC-codebase-operability-packaging-contract.md`.
 - Keep this as future scope until the user explicitly chooses a slice to execute.
 - Convert a chosen slice into a separate `EXEC-*` plan before implementation.
 - Do not execute multiple slices that touch `frontend/src/dashboard.jsx` in parallel.

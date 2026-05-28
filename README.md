@@ -87,6 +87,8 @@ The server binds to `127.0.0.1` by default. Use `APP_BIND_HOST=0.0.0.0` only for
 
 Prebuilt release zips omit source tests and development plans. Use a source checkout when you need to run the unit test suite.
 
+The release zip is the runnable package for normal installs. Editable installs assume the source checkout or extracted release directory is still present because Flask serves `jira-dashboard.html` and `frontend/dist` from sibling files. Do not treat `pip install .` by itself as a self-contained wheel distribution.
+
 The UI shows a “New Version Available” badge when a newer release is detected. Release zips include `release-info.json` so update checks work without git. Download the latest zip and replace your folder to update.
 
 ### Local mock data (dev)

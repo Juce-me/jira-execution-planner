@@ -125,6 +125,8 @@ Quick DB verification for source checkouts:
 
 Prebuilt release zips omit the test suite; skip this check there and use the source checkout when you need to run tests.
 
+The release zip is the runnable package for normal installs. Editable installs assume the source checkout or extracted release directory is still present because Flask serves `jira-dashboard.html` and `frontend/dist` from sibling files. Do not treat `pip install .` by itself as a self-contained wheel distribution.
+
 ## 5. Start The App
 
 Check startup prerequisites before launching Flask:

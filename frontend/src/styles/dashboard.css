@@ -1535,6 +1535,13 @@
             margin-top: 0.5rem;
         }
 
+        .epm-subgoal-scope-search .team-search-results {
+            top: auto;
+            bottom: calc(100% + 2px);
+            max-height: min(240px, 42vh);
+            overscroll-behavior-y: contain;
+        }
+
         @media (max-width: 760px) {
             .epm-scope-card-row {
                 grid-template-columns: 1fr;
@@ -1977,6 +1984,7 @@
             right: 0;
             max-height: 200px;
             overflow-y: auto;
+            overscroll-behavior-y: contain;
             background: #fff;
             border: 1px solid var(--border);
             border-radius: 6px;

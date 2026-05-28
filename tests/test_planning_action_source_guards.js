@@ -146,3 +146,20 @@ test('dashboard delegates planning action row to ENG component', () => {
     assert.match(componentSource, />\s*Clear Selected\s*</);
     assert.match(componentSource, /onOpenSelectedInJira/);
 });
+
+test('dashboard delegates planning capacity bar to ENG component', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningCapacityBar.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    const componentSource = fs.readFileSync(componentPath, 'utf8');
+
+    assert.match(source, /import PlanningCapacityBar from '\.\/eng\/PlanningCapacityBar\.jsx'/);
+    assert.match(source, /<PlanningCapacityBar/);
+    assert.doesNotMatch(source, /className="capacity-bar-graph"/);
+    assert.match(componentSource, /className="capacity-bar-graph"/);
+    assert.match(componentSource, /capacity-bar-excluded-zone/);
+    assert.match(componentSource, /capacity-bar-variance-zone/);
+    assert.match(componentSource, /capacity-bar-marker teamcap/);
+    assert.match(componentSource, /Selected:/);
+    assert.match(componentSource, /\{selectedCount\} · \{selectedSP\.toFixed\(1\)\} SP/);
+});

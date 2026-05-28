@@ -177,6 +177,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.
    - Expected output: completed-sprint stats file-cache load/save/invalidation and cache-key construction moved to `backend/services/stats_cache.py` while `jira_server.py` compatibility wrappers remain patchable.
 
+27. `EXEC-codebase-operability-planning-capacity-bar.md`
+   - Implemented locally and verified on 2026-05-28; keep as `EXEC-*` until acceptance or merge.
+   - Expected output: the ENG Planning capacity bar and selected-summary fallback moved to `frontend/src/eng/PlanningCapacityBar.jsx` while Planning state, capacity math inputs, team microbars, and project split bars stay in `dashboard.jsx`.
+
 ## Legacy Unclassified Date-Only Plans
 
 These files predate the `EXEC`/`DONE`/`GATE`/`SUPPORT`/`FUTURE` taxonomy. Treat them as unclassified historical context, not executable current plans, until a reviewer classifies and renames them or moves them to `docs/agents/`:

@@ -87,3 +87,12 @@ test('selected sp by team cards still render for a single team entry', () => {
 
     assert.match(source, /\{selectedTeamEntries\.length > 0 && \(\(\) => \{/);
 });
+
+test('dashboard imports planning capacity helpers from ENG module', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /from '\.\/eng\/planningCapacityUtils\.js'/);
+    assert.doesNotMatch(source, /const getCapacityStatus = \(/);
+    assert.doesNotMatch(source, /const getTeamCapacityMeta = \(/);
+});

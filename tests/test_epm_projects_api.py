@@ -297,6 +297,15 @@ class TestEpmProjectsApi(unittest.TestCase):
     def test_projects_endpoint_can_return_backlog_lifecycle_subset(self, mock_fetch_projects, mock_get_epm_config):
         mock_fetch_projects.return_value = [
             {
+                'homeProjectId': 'pending-one',
+                'name': 'Pending One',
+                'stateValue': 'PENDING',
+                'stateLabel': 'Pending',
+                'tabBucket': 'active',
+                'homeTags': ['rnd_project_pending'],
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+            },
+            {
                 'homeProjectId': 'todo-one',
                 'name': 'Todo One',
                 'stateValue': 'TODO',

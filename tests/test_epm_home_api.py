@@ -484,10 +484,19 @@ class TestEpmHomeApi(unittest.TestCase):
             'CHILD-B': {'id': 'goal-b', 'key': 'CHILD-B', 'name': 'Child B'},
         }
         mock_resolve_goal.side_effect = lambda _client, key, _container_id: goals[key]
-        client.execute_paginated.return_value = [
-            {'id': 'goal-a', 'key': 'CHILD-A', 'name': 'Child A', 'isArchived': False},
-            {'id': 'goal-b', 'key': 'CHILD-B', 'name': 'Child B', 'isArchived': False},
-        ]
+
+        def execute_paginated(_query, variables, path):
+            self.assertEqual(path, 'goals_byId.subGoals')
+            if variables['goalId'] == 'goal-root':
+                return [
+                    {'id': 'goal-a', 'key': 'CHILD-A', 'name': 'Child A', 'isArchived': False},
+                    {'id': 'goal-b', 'key': 'CHILD-B', 'name': 'Child B', 'isArchived': False},
+                ]
+            if variables['goalId'] in {'goal-a', 'goal-b'}:
+                return []
+            raise AssertionError(f'unexpected goal id: {variables["goalId"]}')
+
+        client.execute_paginated.side_effect = execute_paginated
         mock_fetch_projects.side_effect = [
             [
                 {
@@ -551,6 +560,75 @@ class TestEpmHomeApi(unittest.TestCase):
         self.assertEqual(result[2]['subGoals'], [{'key': 'CHILD-B', 'name': 'Child B'}])
         self.assertEqual([call.args[1] for call in mock_fetch_projects.call_args_list], ['goal-a', 'goal-b'])
 
+    @patch('backend.epm.home.fetch_projects_for_goal')
+    @patch('backend.epm.home.resolve_goal_by_key')
+    @patch('backend.epm.home.fetch_home_site_cloud_id')
+    @patch('backend.epm.home.build_home_graphql_client')
+    def test_fetch_epm_home_projects_includes_projects_under_child_goals(
+        self,
+        mock_build_client,
+        mock_fetch_cloud_id,
+        mock_resolve_goal,
+        mock_fetch_projects,
+    ):
+        client = Mock()
+        mock_build_client.return_value = client
+        mock_fetch_cloud_id.return_value = 'cloud-123'
+        mock_resolve_goal.return_value = {'id': 'goal-root', 'key': 'ROOT-100', 'name': 'Root'}
+
+        def execute_paginated(_query, variables, path):
+            self.assertEqual(path, 'goals_byId.subGoals')
+            goal_id = variables['goalId']
+            if goal_id == 'goal-root':
+                return [
+                    {'id': 'goal-34', 'key': 'CRITE-34', 'name': 'BidSwitch', 'isArchived': False},
+                ]
+            if goal_id == 'goal-34':
+                return [
+                    {'id': 'goal-456', 'key': 'CRITE-456', 'name': 'Bidline SSP', 'isArchived': False},
+                    {'id': 'goal-495', 'key': 'CRITE-495', 'name': 'Enriched Deals', 'isArchived': False},
+                ]
+            if goal_id in {'goal-456', 'goal-495'}:
+                return []
+            raise AssertionError(f'unexpected goal id: {goal_id}')
+
+        def projects_for_goal(_client, goal_id):
+            project = {
+                'homeProjectId': f'project-{goal_id}',
+                'name': f'Project {goal_id}',
+                'homeUrl': f'https://home/project/{goal_id}',
+                'stateValue': 'ON_TRACK',
+                'stateLabel': 'On track',
+                'tabBucket': 'active',
+                'latestUpdateDate': '',
+                'latestUpdateSnippet': '',
+                'resolvedLinkage': {'labels': [], 'epicKeys': []},
+                'matchState': 'metadata-only',
+            }
+            return [project]
+
+        client.execute_paginated.side_effect = execute_paginated
+        mock_fetch_projects.side_effect = projects_for_goal
+
+        result = fetch_epm_home_projects({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CRITE-34']})
+
+        self.assertEqual(
+            [project['homeProjectId'] for project in result],
+            ['project-goal-34', 'project-goal-456', 'project-goal-495'],
+        )
+        self.assertEqual(
+            [call.args[1] for call in mock_fetch_projects.call_args_list],
+            ['goal-34', 'goal-456', 'goal-495'],
+        )
+        self.assertEqual(
+            [project['subGoalKeys'] for project in result],
+            [['CRITE-34'], ['CRITE-34'], ['CRITE-34']],
+        )
+        self.assertEqual(
+            result[1]['subGoals'],
+            [{'key': 'CRITE-34', 'name': 'BidSwitch'}],
+        )
+
     @patch('backend.epm.home.extract_home_jira_linkage')
     @patch('backend.epm.home.fetch_latest_project_update')
     @patch('backend.epm.home.fetch_projects_for_goal')
@@ -570,6 +648,8 @@ class TestEpmHomeApi(unittest.TestCase):
             if path == 'goals_search':
                 return [{'id': 'goal-root', 'key': 'ROOT-100', 'name': 'Synthetic Root Goal'}]
             if path == 'goals_byId.subGoals':
+                if variables['goalId'] == 'goal-child':
+                    return []
                 self.assertEqual(variables['goalId'], 'goal-root')
                 return [
                     {'id': 'goal-child', 'key': ' CHILD-200 ', 'name': 'Synthetic Child Goal', 'url': 'https://home/goal/child-200', 'isArchived': False},
@@ -618,6 +698,7 @@ class TestEpmHomeApi(unittest.TestCase):
     ):
         client = Mock()
         mock_build_client.return_value = client
+        client.execute_paginated.return_value = []
         mock_fetch_cloud_id.return_value = 'cloud-123'
         mock_resolve_goal.return_value = {'id': 'goal-child', 'key': 'CHILD-200'}
         mock_fetch_projects.return_value = [
@@ -813,6 +894,7 @@ class TestEpmHomeApi(unittest.TestCase):
     ):
         client = Mock()
         mock_build_client.return_value = client
+        client.execute_paginated.return_value = []
         mock_fetch_cloud_id.return_value = 'cloud-123'
         mock_resolve_goal.return_value = [{'id': 'goal-1', 'key': 'CHILD-200'}]
         mock_project_links.return_value = [{'id': 'proj-a'}, {'id': 'proj-b'}]

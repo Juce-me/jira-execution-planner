@@ -73,7 +73,7 @@ test('compact EPM sticky controls keep project picker but omit settings and stat
         compactEpmControls.includes("renderEpmControls('compact', { showProjectPicker: true, showStateControl: false })"),
         'Expected compact EPM sticky controls to render the Project picker and hide state tabs'
     );
-    assert.ok(compactEpmControls.includes("renderEpmProjectCollapseAllButton('compact')"), 'Expected compact EPM sticky controls to keep the collapse-all action');
+    assert.ok(epmControlsSource.includes('{renderEpmProjectCollapseAllButton?.(surface)}'), 'Expected EpmControls to keep the collapse-all action on each surface');
     assert.ok(!compactEpmControls.includes('Open EPM settings'), 'Expected compact EPM sticky controls to omit the settings gear');
 });
 

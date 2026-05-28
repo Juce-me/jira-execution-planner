@@ -38,10 +38,6 @@ export const EPM_PROJECT_SORT_OPTIONS = Object.freeze([
     { value: 'updated-asc', label: 'Updated ↑' }
 ]);
 
-function isPendingEpmProject(project) {
-    return normalizeEpmSettingsStatus(project?.stateValue || project?.stateLabel || '') === 'pending';
-}
-
 function getEpmProjectLifecycleBucket(project) {
     const tabBucket = String(project?.tabBucket || '').trim().toLowerCase();
     const status = normalizeEpmSettingsStatus(project?.stateValue || project?.stateLabel || '');
@@ -68,9 +64,6 @@ export function filterEpmProjectsForTab(projects, tab, now = new Date()) {
             const recentlyCompleted = isRecentlyCompletedEpmProject(project, now);
             if (normalizedTab === 'active') {
                 return tabBucket === 'active' || tabBucket === 'all' || recentlyCompleted;
-            }
-            if (normalizedTab === 'backlog' && isPendingEpmProject(project)) {
-                return true;
             }
             return tabBucket === normalizedTab;
         })

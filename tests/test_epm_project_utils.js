@@ -29,7 +29,7 @@ test('filterEpmProjectsForTab uses strict lifecycle buckets outside active', asy
     );
     assert.deepStrictEqual(
         filterEpmProjectsForTab(projects, 'backlog', new Date('2026-05-26T12:00:00Z')).map(project => project.id),
-        ['backlog-project', 'pending-state-project', 'todo-state-project', 'paused-state-project']
+        ['backlog-project', 'todo-state-project', 'paused-state-project']
     );
     assert.deepStrictEqual(
         filterEpmProjectsForTab(projects, 'archived', new Date('2026-05-26T12:00:00Z')).map(project => project.id),

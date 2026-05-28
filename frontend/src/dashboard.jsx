@@ -12082,6 +12082,7 @@ import {
                     showEpmSubGoalDropdown={showEpmSubGoalFilterDropdown}
                     setShowEpmSubGoalDropdown={setShowEpmSubGoalFilterDropdown}
                     epmSubGoalFilterDropdownRefs={epmSubGoalFilterDropdownRefs}
+                    renderEpmProjectCollapseAllButton={renderEpmProjectCollapseAllButton}
                 />
             );
 
@@ -12623,7 +12624,6 @@ import {
                                 )}
                                 {selectedView === 'epm' && (
                                     <>
-                                        {renderEpmProjectCollapseAllButton('main')}
                                         {canEditEpmConfiguration && (
                                             <button
                                                 className="group-gear-button"
@@ -12663,7 +12663,6 @@ import {
                                         <>
                                             {shouldUseEpmSprint(epmTab) && renderSprintControl('compact')}
                                             {renderEpmControls('compact', { showProjectPicker: true, showStateControl: false })}
-                                            {renderEpmProjectCollapseAllButton('compact')}
                                         </>
                                     )}
                                 </div>

@@ -310,7 +310,7 @@ export default function EpmSettings(props) {
                                                     <div className="group-pane-header-row">
                                                         <div>
                                                             <div className="group-pane-title">EPM projects</div>
-                                                            <div className="group-pane-subtitle">Map direct Jira Home projects under the selected sub-goals to exact Jira labels.</div>
+                                                            <div className="group-pane-subtitle">Map Jira Home projects under the selected sub-goals and nested child goals to exact Jira labels.</div>
                                                         </div>
                                                         <div className="epm-projects-header-actions">
                                                             {canLoadEpmProjects && (
@@ -618,7 +618,7 @@ export default function EpmSettings(props) {
                                                 ) : (epmSettingsProjects.length === 0 && epmSettingsProjectsLoaded && !epmSettingsProjectsLoading && !epmSettingsProjectsError) ? (
                                                     <div className="epm-project-empty-state">
                                                         <div className="group-pane-subtitle">No Home projects under the configured sub-goals.</div>
-                                                        <div className="group-pane-subtitle">These sub-goals have no direct Jira Home projects. Choose different child goals.</div>
+                                                        <div className="group-pane-subtitle">These sub-goals have no Jira Home projects or nested child-goal projects. Choose different child goals.</div>
                                                         <div className="epm-project-state-actions">
                                                             <button
                                                                 className="secondary compact"

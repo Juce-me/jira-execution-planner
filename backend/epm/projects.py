@@ -398,14 +398,10 @@ def filter_epm_projects_for_tab(projects, tab, now=None):
     normalized_tab = normalize_epm_text(tab or 'active').lower()
     visible = []
     for project in projects or []:
-        state_value = normalize_epm_text((project or {}).get('stateValue') or (project or {}).get('stateLabel'))
-        is_pending_state = epm_home.is_pending_epm_state(state_value)
         tab_bucket = get_epm_project_lifecycle_bucket(project)
         recently_completed = is_recently_completed_epm_project(project, now=now)
         if normalized_tab == 'active':
             matches_tab = tab_bucket == 'active' or tab_bucket == 'all' or recently_completed
-        elif normalized_tab == 'backlog' and is_pending_state:
-            matches_tab = True
         else:
             matches_tab = tab_bucket == normalized_tab
         if matches_tab:

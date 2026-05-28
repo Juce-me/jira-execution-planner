@@ -238,7 +238,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(epmSettingsUiSource.includes('Select a main goal before choosing sub-goals.'), 'Expected main-goal prerequisite helper copy');
     assert.ok(epmSettingsUiSource.includes('epm-scope-chip is-root'), 'Expected selected main goal to use compact EPM scope chip styling');
     assert.ok(epmSettingsUiSource.includes('epm-scope-chip is-child'), 'Expected selected sub-goals to use compact EPM scope chip styling');
-    assert.ok(epmSettingsUiSource.includes('These sub-goals have no direct Jira Home projects. Choose different child goals.'), 'Expected empty child-goal helper copy');
+    assert.ok(epmSettingsUiSource.includes('These sub-goals have no Jira Home projects or nested child-goal projects. Choose different child goals.'), 'Expected empty child-goal helper copy');
     assert.ok(epmSettingsUiSource.includes('Loading main goals...'), 'Expected main goal loading copy');
     assert.ok(epmSettingsUiSource.includes('Loading sub-goals...'), 'Expected sub-goal loading copy');
     assert.ok(dashboardSource.includes('setShowGroupManage(true);') && dashboardSource.includes('setGroupManageTab(\'epm\');'), 'Expected EPM settings open action to switch tabs without mutating main EPM project state');

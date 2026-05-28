@@ -244,9 +244,14 @@ test('dashboard source renders mutually exclusive view controls and delegates EP
     );
     const subGoalIndex = epmControlsReturn.indexOf('{renderEpmSubGoalPicker()}');
     const projectIndex = epmControlsReturn.indexOf('{renderEpmProjectPicker()}');
+    const sortIndex = epmControlsReturn.indexOf('{renderEpmSortPicker()}');
+    const collapseIndex = epmControlsReturn.indexOf('{renderEpmProjectCollapseAllButton?.(surface)}');
     const stateModeIndex = epmControlsReturn.indexOf('{showStateControl && renderEpmTabs()}');
-    assert.ok(subGoalIndex !== -1 && projectIndex !== -1 && stateModeIndex !== -1, 'Expected EPM sub-goal, project, and state-mode controls');
-    assert.ok(subGoalIndex < projectIndex && projectIndex < stateModeIndex, 'Expected EPM controls order to be sub-goals, projects, then view modes after Sprint');
+    assert.ok(subGoalIndex !== -1 && projectIndex !== -1 && sortIndex !== -1 && collapseIndex !== -1 && stateModeIndex !== -1, 'Expected EPM sub-goal, project, sort, collapse-all, and state-mode controls');
+    assert.ok(
+        subGoalIndex < projectIndex && projectIndex < sortIndex && sortIndex < collapseIndex && collapseIndex < stateModeIndex,
+        'Expected EPM controls order to be sub-goals, projects, sort, collapse-all, then view modes after Sprint'
+    );
 });
 
 test('dashboard source uses shared basic UI primitives for representative controls and states', () => {
@@ -378,16 +383,19 @@ test('dashboard uses a project-stack icon for the EPM collapse-all control', () 
     assert.ok(dashboardCssSource.includes('.epm-project-collapse-all-button .epm-project-collapse-all-icon'), 'Expected collapse-all icon sizing override');
     assert.ok(!dashboardSource.includes('<path d="M5 12h14"'), 'Did not expect the old divider-only collapse glyph');
 
-    const firstSettingsIndex = dashboardSource.indexOf('title="Open EPM settings"');
-    const firstCollapseIndex = dashboardSource.lastIndexOf("renderEpmProjectCollapseAllButton('main')", firstSettingsIndex);
-    assert.ok(firstCollapseIndex > 0 && firstCollapseIndex < firstSettingsIndex, 'Expected main collapse-all control immediately before the EPM settings gear');
+    const mainControlsSource = getSnippetBetween(
+        dashboardSource,
+        '<EpmControls',
+        '{canEditEpmConfiguration && ('
+    );
+    assert.ok(mainControlsSource.includes('renderEpmProjectCollapseAllButton={renderEpmProjectCollapseAllButton}'), 'Expected main collapse-all control to be delegated into EpmControls before header buttons');
 
+    assert.ok(epmControlsSource.includes('{renderEpmProjectCollapseAllButton?.(surface)}'), 'Expected compact collapse-all control to render through EpmControls');
     const compactControlsSource = getSnippetBetween(
         dashboardSource,
         'className="compact-sticky-header-controls"',
         'className="compact-sticky-header-search"'
     );
-    assert.ok(compactControlsSource.includes("renderEpmProjectCollapseAllButton('compact')"), 'Expected compact collapse-all control');
     assert.ok(!compactControlsSource.includes('title="Open EPM settings"'), 'Did not expect compact collapse-all control to sit beside a settings gear');
 });
 
@@ -812,7 +820,7 @@ test('EPM project helper uses strict backlog and archived lifecycle buckets', ()
     assert.ok(helperSource.includes("normalizedTab === 'active'"), 'Expected active tab to own custom all project visibility');
     assert.ok(helperSource.includes("ACTIVE_EPM_PROJECT_STATES = new Set(['pending', 'on track', 'at risk', 'off track'])"), 'Expected active tab to include pending and active Home states');
     assert.ok(helperSource.includes("BACKLOG_EPM_PROJECT_STATES = new Set(['paused', 'todo', 'to do'])"), 'Expected backlog lifecycle bucket to keep paused and todo states explicit');
-    assert.ok(helperSource.includes("normalizedTab === 'backlog'") && helperSource.includes("isPendingEpmProject(project)"), 'Expected backlog tab to also include pending Home projects');
+    assert.ok(!helperSource.includes("isPendingEpmProject(project)"), 'Expected Pending Home projects to stay out of Backlog');
     assert.ok(helperSource.includes("ARCHIVED_EPM_PROJECT_STATES"), 'Expected archived tab to be limited to archived/completed states');
     assert.ok(helperSource.includes('filterEpmRollupBoardsForSearch'), 'Expected EPM board search helper');
 });

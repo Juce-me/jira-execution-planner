@@ -49,6 +49,7 @@ export function EpmControls({
     showEpmSubGoalDropdown,
     setShowEpmSubGoalDropdown,
     epmSubGoalFilterDropdownRefs,
+    renderEpmProjectCollapseAllButton,
 }) {
     if (selectedView !== 'epm') return null;
     const savedSubGoalKeys = normalizeEpmScopeSubGoalKeys({ subGoalKeys: savedEpmSubGoalKeys });
@@ -287,6 +288,7 @@ export function EpmControls({
             {renderEpmSubGoalPicker()}
             {renderEpmProjectPicker()}
             {renderEpmSortPicker()}
+            {renderEpmProjectCollapseAllButton?.(surface)}
             {showStateControl && renderEpmTabs()}
         </>
     );

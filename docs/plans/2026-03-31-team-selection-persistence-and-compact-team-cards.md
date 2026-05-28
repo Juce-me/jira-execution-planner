@@ -1,5 +1,7 @@
 # Team Selection Persistence And Compact Team Cards Implementation Plan
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Persist team dropdown selection by `group + sprint` and keep the `Selected SP by Team` cards compact for low team counts while forcing `6` teams onto multiple rows.

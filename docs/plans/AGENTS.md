@@ -10,13 +10,21 @@ Plan-specific instructions for this repository.
 
 ## Plan Naming
 
-Use `EXEC-*` for implementation plans, `DONE-*` for executed plans kept for audit, `GATE-*` for blocked external capability gates that must be rechecked over time, `SUPPORT-*` for review, handoff, setup, or historical-reference workflows, and `FUTURE-*` for deferred scope. Do not create new date-only auth/DB/Home migration docs.
+Use `EXEC-*` for implementation plans, `DONE-*` for executed plans kept for audit, `GATE-*` for blocked external capability gates that must be rechecked over time, `SUPPORT-*` for review, handoff, setup, or historical-reference workflows, and `FUTURE-*` for deferred scope. Do not create new date-only docs in `docs/plans/`.
+
+`docs/agents.md` governs the separate `docs/agents/` work-artifact namespace. That directory may not exist until the first real artifact is created; do not create it just to satisfy this reference. `docs/plans/` intentionally uses this prefix taxonomy instead of the `YYYY-MM-DD-status-summary.md` naming pattern. When a temporary agent note fits `docs/agents/`, put it there; when a document is an implementation contract, gate, support reference, or deferred scope for this repository, keep it in `docs/plans/` and use one of the prefixes above.
+
+Existing date-only files in `docs/plans/` are legacy unclassified plans. Do not execute one as an active plan until it has been reviewed and either renamed to the right `EXEC-*`, `DONE-*`, `SUPPORT-*`, `FUTURE-*`, or `GATE-*` file, or moved to `docs/agents/` if it is only an agent work artifact.
+
+Every remaining date-only legacy file must keep a top `Legacy plan status` note so direct file reads do not look implementation-ready.
 
 Do not rename an `EXEC-*` plan to `DONE-*` until the implementation has been completed, verified, and accepted or merged. Add a short top note naming the execution commit or PR, for example:
 
 ```md
 > **Status:** Done. Executed in `<commit-or-PR>`. Kept for audit context only.
 ```
+
+For `DONE-*` plans, the top status note plus the `docs/plans/README.md` entry is the required execution-status record. If an executed plan no longer describes current behavior, add an explicit current-accuracy note near the top or mark it as superseded in `docs/plans/README.md`; do not leave stale plans looking executable.
 
 ## Startup Gate Sweep
 

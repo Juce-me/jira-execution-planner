@@ -2,6 +2,8 @@
 
 Use this file to choose the right plan before starting auth, DB, or Home/Townsquare work.
 
+`docs/plans/` uses the prefix taxonomy below. The date/status naming rules in `docs/agents.md` apply to the separate `docs/agents/` artifact namespace, not to this directory. `docs/agents/` may be absent until the first real artifact is created.
+
 ## Prefixes
 
 - `EXEC-*`: implementation-ready execution plans. Run these in numeric order unless a plan says it is gated or explicitly independent of the previous `EXEC-*` plan.
@@ -9,7 +11,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 - `GATE-*`: blocked external capability gates. Check these at session startup for relevant auth, DB, Home/Townsquare, EPM, or plan work, then update `Checked on` and `Last result`.
 - `SUPPORT-*`: review, handoff, or operator support documents. Do not execute them as implementation plans.
 - `FUTURE-*`: deferred scope. Do not pull these into the current implementation unless the scope is explicitly reopened.
-- Do not create new date-only auth/DB/Home migration docs. Use one of the prefixes above so execution state is visible from the filename.
+- Do not create new date-only docs in `docs/plans/`. Use one of the prefixes above so execution state is visible from the filename.
 
 ## Current DB Workflow
 
@@ -69,6 +71,51 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Completed Statistics module extraction. Use for audit and prerequisite evidence; do not execute as active work.
    - Supersedes the stale root-level `statistics_module_extraction_plan.md` from `origin/plan/statistics-module-extraction`.
    - Output: remaining legacy Statistics Teams, Priority, and Burndown utilities/components extracted from `frontend/src/dashboard.jsx` into the existing `frontend/src/stats/` package, with source guards, focused Node tests, full unit verification, Playwright smoke coverage, regenerated frontend dist output, and shared bounded hover positioning for stats chart readouts.
+
+## Legacy Unclassified Date-Only Plans
+
+These files predate the `EXEC`/`DONE`/`GATE`/`SUPPORT`/`FUTURE` taxonomy. Treat them as unclassified historical context, not executable current plans, until a reviewer classifies and renames them or moves them to `docs/agents/`:
+
+- `2026-03-03-epic-lead-time-cohort-design.md`
+- `2026-03-03-epic-lead-time-cohort.md`
+- `2026-03-04-create-stories-alert.md`
+- `2026-03-06-create-stories-alert-design.md`
+- `2026-03-06-split-team-catalog-design.md`
+- `2026-03-06-split-team-catalog-plan.md`
+- `2026-03-13-compact-sticky-header-design.md`
+- `2026-03-13-compact-sticky-header.md`
+- `2026-03-18-config-save-refresh-design.md`
+- `2026-03-18-config-save-refresh.md`
+- `2026-03-24-epic-icon-swap-design.md`
+- `2026-03-24-epic-icon-swap.md`
+- `2026-03-24-needs-stories-alert.md`
+- `2026-03-30-planning-module-improvements-design.md`
+- `2026-03-30-planning-module-improvements.md`
+- `2026-03-31-scenario-planner-improvements.md`
+- `2026-03-31-team-selection-persistence-and-compact-team-cards-design.md`
+- `2026-03-31-team-selection-persistence-and-compact-team-cards.md`
+- `2026-04-09-incomplete-stories-visual.md`
+- `2026-04-10-initiative-level-grouping.md`
+- `2026-04-20-epm-project-view.md`
+- `2026-04-21-epm-project-rollup.md`
+- `2026-04-27-epm-active-sprint-visibility.md`
+- `2026-04-27-epm-project-config-tab-cache.md`
+- `2026-04-27-epm-view-extraction.md`
+- `2026-04-28-epm-goals-2-3-portfolio-active-sprint.md`
+- `2026-04-28-epm-zero-manual-portfolio-default.md`
+- `2026-04-29-epm-portfolio-ui-cleanup.md`
+- `2026-05-01-codebase-structure-optimization.md`
+- `2026-05-04-epm-multi-subgoal-scope.md`
+
+## Known Artifact Drift
+
+Use this section to avoid treating missing historical artifacts as current work:
+
+- Legacy EPM plans that reference `frontend/src/epm/epmFetch.js` predate the frontend API consolidation. Current EPM API wrappers live in `frontend/src/api/epmApi.js`; `2026-05-01-codebase-structure-optimization.md` records that migration.
+- `docs/features/epm-rollup.md` was optional in `2026-04-21-epm-project-rollup.md` and is not present in this checkout. Current operator-facing EPM rollup guidance lives in `docs/features/epm-view.md`.
+- `2026-04-21-epm-settings-scope-and-linkage.md` and `2026-04-21-epm-goal-picker.md` were branch-only predecessor plans referenced by `2026-04-21-epm-project-rollup.md`; they are not present in this checkout.
+- Missing files named under `Create:` or unchecked task lists inside legacy, `DONE-*`, or `SUPPORT-*` plans are not automatically current missing artifacts. Create them only when a reviewed `EXEC-*` plan or explicit reopened scope requires them.
+- Generated local cache files such as `team-groups.json`, `team-catalog.json`, and `sprints_cache.json` may be absent in a checkout and should not be recreated for documentation cleanup.
 
 ## Expectations
 

@@ -1,5 +1,7 @@
 # EPM View Extraction (Plan 1) Implementation Plan
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Prepare the current EPM rollup code for the multi-Project portfolio work with zero behavior change, without moving Flask routes or EPM settings yet.

@@ -1,5 +1,7 @@
 # Create Stories and Backlog Alerts Implementation Plan
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add future-planning epic alerts for `Backlog`, `Missing Team`, `Missing Labels`, and `Create Stories`, backed by per-group team label mappings and a dedicated labels-management UI, without duplicating epics across the current alert stack.

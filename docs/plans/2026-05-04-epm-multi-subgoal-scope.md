@@ -1,5 +1,7 @@
 # EPM Multi-Sub-Goal Scope Plan
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 ## Summary
 
 Keep a single `EPM` view. Expand EPM scope from one child sub-goal to multiple selected child sub-goals under the configured root goal, while reusing the existing lifecycle tabs, sprint selector, project picker, all-project rollup, focus-mode rollup, and board rendering.

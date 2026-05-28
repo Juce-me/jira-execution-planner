@@ -1,5 +1,7 @@
 # Config Save Refresh Implementation Plan
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Refresh the selected sprint's active view immediately after saving configuration changes so newly added teams appear without a manual page refresh.

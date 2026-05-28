@@ -1,5 +1,7 @@
 # Config Save Refresh Design
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 **Problem:** When team-group configuration changes are saved, the dashboard can keep showing stale data for the currently selected sprint. This is most visible when adding teams to the active group: the save succeeds, but the selected sprint view does not refetch immediately.
 
 **Root Cause:** The frontend saves the new group config, then rehydrates active-group state from cached sprint data. Because the cache snapshot is rewritten with the new team signature before the selected-sprint loaders rerun, the normal sprint-loading effect can incorrectly treat the stale snapshot as current and skip a fetch.

@@ -1,5 +1,7 @@
 # Needs Stories Alert Implementation Plan
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Replace the separate future-planning `Create Stories` and `Waiting for Stories` alerts with one merged alert that still shows the specific per-epic reason.

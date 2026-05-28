@@ -1,5 +1,7 @@
 # EPM Project Rollup Implementation Plan
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 ## Glossary
@@ -17,8 +19,8 @@ When this plan says "Project" it means the dashboard entity unless prefixed with
 - **Branch:** `feature/epm-project-view-impl`. Plan is written against HEAD `1bd92f1` (author: Juce-me, 2026-04-21). Merge base is `main`.
 - **Prior plans on this branch (for context only — do not re-implement):**
   - `docs/plans/2026-04-20-epm-project-view.md` — introduced EPM view, Home client, config, and endpoints.
-  - `docs/plans/2026-04-21-epm-settings-scope-and-linkage.md` — moved EPM scope into settings, added `customName` + free-text Jira label/epic fields.
-  - `docs/plans/2026-04-21-epm-goal-picker.md` — replaced manual scope entry with root-goal + sub-goal pickers; fixed the Home container ARI (`ari:cloud:townsquare::site/<cloudId>`); added `/api/epm/scope`, `/api/epm/goals`.
+  - Branch-only predecessor, not present in this checkout: `2026-04-21-epm-settings-scope-and-linkage.md` — moved EPM scope into settings, added `customName` + free-text Jira label/epic fields.
+  - Branch-only predecessor, not present in this checkout: `2026-04-21-epm-goal-picker.md` — replaced manual scope entry with root-goal + sub-goal pickers; fixed the Home container ARI (`ari:cloud:townsquare::site/<cloudId>`); added `/api/epm/scope`, `/api/epm/goals`.
 - **What user feedback triggered THIS plan (reviewers should assume this is the authoritative description of the problem):**
   1. `POST /api/epm/projects/preview` takes **~78s**, `GET /api/epm/projects` takes **~45s** for a goal with ~20 Home projects. Cause: sequential per-project GraphQL fan-out, paginated `projects_byId.updates` with `first: 10` even though only the single latest update is used.
   2. The user-visible "projects dropdown is empty" symptom was actually "projects list has not loaded yet after 45s." Separate from the perf issue, this exposed a model mismatch: the user wants the dashboard to surface Jira Initiatives/Epics/Stories grouped by **Project**, where a Project is defined by a single Jira label (e.g., `rnd_project_bsw`), not by re-fetching Home metadata.
@@ -413,7 +415,7 @@ All new tests use synthetic placeholders (`ACME-1`, `rnd_project_example`, `clou
 
 - `tests/test_epm_rollup_api.py` — `/api/epm/projects/<id>/rollup` endpoint (S1/S2/S3 union, dedup, tab/sprint contract, three response states)
 - `tests/test_epm_project_utils.js` — pure-function Node test for `filterEpmProjectsForTab` with the `tabBucket: 'all'` wildcard behavior (N4b)
-- `docs/features/epm-rollup.md` — operator-facing doc for the new Project model (optional — can be folded into `epm-view.md` if concise)
+- Optional branch artifact, not present in this checkout: `docs/features/epm-rollup.md` — operator-facing doc for the new Project model. Current rollup guidance is folded into `docs/features/epm-view.md`.
 
 **Note on labels tests:** extend the existing Jira labels endpoint test coverage (wherever `/api/jira/labels` is currently tested, or add a small case to `tests/test_epm_config_api.py`) to cover the new `prefix=` param. Do not create a new `test_epm_labels_api.py`.
 

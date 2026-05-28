@@ -1,5 +1,7 @@
 # Epic Lead Time Cohort Chart — Implementation Plan (v3)
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 ## Goal
 Implement a full-screen **Lead Times** panel for epics with:
 - cohort heatmap grid (count-based)

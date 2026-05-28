@@ -1,5 +1,7 @@
 # Planning Module Improvements Implementation Plan
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Persist planning selections per sprint and group, restore them safely after refresh, add the missing planning bulk actions, keep dropdowns above sticky elements, and compact the sticky planning panel so it is usable on limited-height screens.

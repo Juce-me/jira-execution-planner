@@ -1,5 +1,7 @@
 # Split teamCatalog Out of Groups Config
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 **Date:** 2026-03-06
 **Branch:** `investigate/default-group-team-catalog`
 **Status:** Approved

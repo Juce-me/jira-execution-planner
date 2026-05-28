@@ -1,5 +1,7 @@
 # Epic Icon Swap Design
 
+> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+
 **Goal:** Replace the current epic-level checkmark icon with the provided purple SVG in the dashboard epic header UI.
 
 **Scope:** This change is limited to the existing epic icon render points in the React dashboard source. No layout, spacing, interaction, or data behavior changes are included.

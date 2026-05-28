@@ -163,3 +163,21 @@ test('dashboard delegates planning capacity bar to ENG component', () => {
     assert.match(componentSource, /Selected:/);
     assert.match(componentSource, /\{selectedCount\} · \{selectedSP\.toFixed\(1\)\} SP/);
 });
+
+test('dashboard delegates planning project split bar to ENG component', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningProjectSplitBar.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    const componentSource = fs.readFileSync(componentPath, 'utf8');
+
+    assert.match(source, /import PlanningProjectSplitBar from '\.\/eng\/PlanningProjectSplitBar\.jsx'/);
+    assert.match(source, /<PlanningProjectSplitBar/);
+    assert.doesNotMatch(source, /className="project-bar-graph"/);
+    assert.doesNotMatch(source, /className="project-bar-fill product"/);
+    assert.match(componentSource, /Selected SP by Project:/);
+    assert.match(componentSource, /className="project-bar-graph"/);
+    assert.match(componentSource, /className="project-bar-fill product"/);
+    assert.match(componentSource, /className="project-bar-fill tech"/);
+    assert.match(componentSource, /Target<br\/>/);
+    assert.match(componentSource, /No tasks selected/);
+});

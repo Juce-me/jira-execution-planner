@@ -935,6 +935,10 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     const stickyEngModes = page.locator('.compact-sticky-header .eng-mode-control');
     await stickyEngModes.getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expect(page.getByText('Selected SP by Project:')).toBeVisible();
+    const projectSplitBarVisible = await page.locator('.project-bar-graph').isVisible().catch(() => false);
+    const projectSplitEmptyVisible = await page.getByText('No tasks selected').isVisible().catch(() => false);
+    expect(projectSplitBarVisible || projectSplitEmptyVisible).toBeTruthy();
     await captureSmokeScreenshot(page, 'planning');
     await expectWindowSticky(page, '.planning-panel.open');
     await expectPlanningAboveEpic(page);

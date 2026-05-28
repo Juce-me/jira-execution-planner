@@ -601,6 +601,9 @@ class TestEpmRollupApi(unittest.TestCase):
             'version': 1,
             'projects': {'selected': ['SYN']},
             'teamGroups': {},
+            'sprintField': {'fieldId': 'customfield_sprint', 'fieldName': 'Sprint'},
+            'storyPointsField': {'fieldId': 'customfield_story_points', 'fieldName': 'Story Points'},
+            'teamField': {'fieldId': 'customfield_team', 'fieldName': 'Team[Team]'},
             'epm': {
                 'projects': [
                     {'homeProjectId': 'active-one', 'jiraLabel': 'synthetic_one'},
@@ -615,21 +618,26 @@ class TestEpmRollupApi(unittest.TestCase):
                 raise ConfigStorageError('dashboard config read escaped request context')
             return dashboard_config
 
+        issue = make_issue('SYN-1', 'Story', labels=['synthetic_one'], sprint=[{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
+        issue['fields']['customfield_story_points'] = 5
+        issue['fields']['customfield_team'] = {'id': 'team-a', 'name': 'Team A'}
+
         with self.app.test_request_context('/api/epm/projects/rollup/all?tab=active&sprint=42'), \
              patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'current_request_auth_context', return_value=context), \
              patch.object(jira_server, 'load_dashboard_config', side_effect=load_dashboard_config), \
              patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': [project]}), \
              patch.object(jira_server, 'find_epm_project_or_404', return_value=project), \
-             patch.object(jira_server, 'get_story_points_field_id', return_value=None), \
-             patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
              patch.object(jira_server, 'resolve_epic_link_field_id', return_value=None), \
-             patch.object(jira_server, 'resolve_team_field_id', return_value=None), \
-             patch.object(jira_server, 'fetch_issues_by_jql', return_value=[]):
+             patch.object(jira_server, 'fetch_issues_by_jql', return_value=[issue]):
             payload, status, _headers = jira_server.build_all_epm_projects_rollup('active', '42')
 
         self.assertEqual(status, 200)
         self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['active-one'])
+        story = payload['projects'][0]['rollup']['orphanStories'][0]
+        self.assertEqual(story['storyPoints'], 5)
+        self.assertEqual(story['teamName'], 'Team A')
+        self.assertEqual(story['sprint'], [{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
         self.assertTrue(load_contexts)
         self.assertTrue(all(load_contexts))
 
@@ -747,6 +755,7 @@ class TestEpmRollupApi(unittest.TestCase):
         patches = self.patch_common(project, [q1, q2])
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], \
              patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_10004'), \
+             patch.object(jira_server, 'get_team_field_id', return_value='customfield_team'), \
              patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'):
             response = self.client.get('/api/epm/projects/project-1/rollup?tab=active&sprint=42')
 

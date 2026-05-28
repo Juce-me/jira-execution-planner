@@ -1840,17 +1840,24 @@ def build_jira_headers():
     }
 
 
-def build_epm_fields_list():
+_FIELD_ID_NOT_PROVIDED = object()
+
+
+def _resolve_epm_field_id(field_id, getter):
+    return getter() if field_id is _FIELD_ID_NOT_PROVIDED else field_id
+
+
+def build_epm_fields_list(story_points_field_id=_FIELD_ID_NOT_PROVIDED):
     fields_list = ['summary', 'status', 'assignee', 'priority', 'issuetype', 'parent', 'labels', 'created', 'updated']
-    story_points_field = get_story_points_field_id()
+    story_points_field = _resolve_epm_field_id(story_points_field_id, get_story_points_field_id)
     if story_points_field and story_points_field not in fields_list:
         fields_list.append(story_points_field)
     return fields_list
 
 
-def build_epm_rollup_fields_list(epic_link_field_id=None, team_field_id=None):
-    fields_list = build_epm_fields_list()
-    sprint_field_id = get_sprint_field_id()
+def build_epm_rollup_fields_list(epic_link_field_id=None, team_field_id=None, story_points_field_id=_FIELD_ID_NOT_PROVIDED, sprint_field_id=_FIELD_ID_NOT_PROVIDED):
+    fields_list = build_epm_fields_list(story_points_field_id=story_points_field_id)
+    sprint_field_id = _resolve_epm_field_id(sprint_field_id, get_sprint_field_id)
     if sprint_field_id and sprint_field_id not in fields_list:
         fields_list.append(sprint_field_id)
     if epic_link_field_id and epic_link_field_id not in fields_list:
@@ -1860,8 +1867,8 @@ def build_epm_rollup_fields_list(epic_link_field_id=None, team_field_id=None):
     return fields_list
 
 
-def shape_epm_issue_payload(issues, team_field_id=None, include_card_fields=False):
-    story_points_field = get_story_points_field_id() if include_card_fields else None
+def shape_epm_issue_payload(issues, team_field_id=None, include_card_fields=False, story_points_field_id=_FIELD_ID_NOT_PROVIDED):
+    story_points_field = _resolve_epm_field_id(story_points_field_id, get_story_points_field_id) if include_card_fields else None
     team_field_id = team_field_id or (get_team_field_id() if include_card_fields else None)
     slim_issues = []
     epic_details = {}
@@ -1902,9 +1909,9 @@ def shape_epm_issue_payload(issues, team_field_id=None, include_card_fields=Fals
     return slim_issues, epic_details
 
 
-def shape_epm_rollup_issue_payload(issues, epic_link_field_id=None, team_field_id=None):
-    slim_issues, epic_details = shape_epm_issue_payload(issues, team_field_id=team_field_id, include_card_fields=True)
-    sprint_field_id = get_sprint_field_id()
+def shape_epm_rollup_issue_payload(issues, epic_link_field_id=None, team_field_id=None, story_points_field_id=_FIELD_ID_NOT_PROVIDED, sprint_field_id=_FIELD_ID_NOT_PROVIDED):
+    slim_issues, epic_details = shape_epm_issue_payload(issues, team_field_id=team_field_id, include_card_fields=True, story_points_field_id=story_points_field_id)
+    sprint_field_id = _resolve_epm_field_id(sprint_field_id, get_sprint_field_id)
     for raw_issue, slim_issue in zip(issues or [], slim_issues):
         fields = raw_issue.get('fields') or {}
         if not slim_issue.get('parentKey') and epic_link_field_id:
@@ -1944,6 +1951,9 @@ def build_epm_rollup_dependencies(sub_goal_keys=None):
     auth_context = current_request_auth_context() if has_request_context() else None
     epm_config_snapshot = get_epm_config()
     base_jql_snapshot = build_base_jql()
+    story_points_field_id_snapshot = get_story_points_field_id()
+    sprint_field_id_snapshot = get_sprint_field_id()
+    team_field_id_snapshot = get_team_field_id()
     return EpmRollupDependencies(
         find_epm_project_or_404=lambda project_id: find_epm_project_or_404(
             project_id,
@@ -1965,19 +1975,26 @@ def build_epm_rollup_dependencies(sub_goal_keys=None):
             if auth_context is not None
             else resolve_epic_link_field_id(headers)
         ),
-        resolve_team_field_id=(
-            lambda headers: resolve_team_field_id(headers, context=auth_context)
-            if auth_context is not None
-            else resolve_team_field_id(headers)
+        resolve_team_field_id=lambda headers: team_field_id_snapshot,
+        build_epm_rollup_fields_list=lambda epic_link_field_id=None, team_field_id=None: build_epm_rollup_fields_list(
+            epic_link_field_id,
+            team_field_id if team_field_id is not None else team_field_id_snapshot,
+            story_points_field_id=story_points_field_id_snapshot,
+            sprint_field_id=sprint_field_id_snapshot,
         ),
-        build_epm_rollup_fields_list=build_epm_rollup_fields_list,
         get_epm_config=lambda: epm_config_snapshot,
         normalize_epm_issue_type_sets=normalize_epm_issue_type_sets,
         fetch_epm_rollup_query=(
             lambda jql, query_name, headers, fields_list, truncated_queries:
             fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_queries, context=auth_context)
         ),
-        shape_epm_rollup_issue_payload=shape_epm_rollup_issue_payload,
+        shape_epm_rollup_issue_payload=lambda issues, epic_link_field_id=None, team_field_id=None: shape_epm_rollup_issue_payload(
+            issues,
+            epic_link_field_id=epic_link_field_id,
+            team_field_id=team_field_id,
+            story_points_field_id=story_points_field_id_snapshot,
+            sprint_field_id=sprint_field_id_snapshot,
+        ),
         dedupe_issues_by_key=dedupe_issues_by_key,
         build_epm_rollup_hierarchy=build_epm_rollup_hierarchy,
         cache=EPM_ROLLUP_CACHE,

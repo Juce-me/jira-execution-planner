@@ -20,4 +20,4 @@ Add guardrails that prevent future worker fan-out from losing the explicit `Requ
 ## Verification
 
 - `.venv/bin/python -m unittest tests.test_epm_rollup_api tests.test_backend_route_source_guards`: passed 41 tests.
-- `.venv/bin/python -m unittest tests.test_epm_rollup_api.TestEpmRollupApi.test_all_projects_rollup_workers_use_captured_dashboard_config_in_db_mode`: failed before the fix with `ConfigStorageError: dashboard config read escaped request context`, then passed after capturing EPM config and base JQL before fan-out.
+- `.venv/bin/python -m unittest tests.test_epm_rollup_api.TestEpmRollupApi.test_all_projects_rollup_workers_use_captured_dashboard_config_in_db_mode`: failed before the fix with `ConfigStorageError: dashboard config read escaped request context`, then passed after capturing EPM config, base JQL, sprint/story/team field IDs, and shaped issue fields before fan-out.

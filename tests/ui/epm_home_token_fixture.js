@@ -182,7 +182,10 @@ async function installDashboardFixture(page, options = {}) {
                 });
             }
             if (url.searchParams.get('rootGoalKey')) {
-                return json({ goals: [{ id: 'child', key: 'CHILD-200', name: 'Connected Child Goal' }], error: '' });
+                return json({
+                    goals: options.epmSubGoals || [{ id: 'child', key: 'CHILD-200', name: 'Connected Child Goal' }],
+                    error: '',
+                });
             }
             return json({ goals: [{ id: 'root', key: 'ROOT-100', name: 'Connected Root Goal' }], error: '' });
         }

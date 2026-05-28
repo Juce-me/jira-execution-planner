@@ -248,7 +248,7 @@ export default function EpmSettings(props) {
                                                                 })}
                                                             </div>
                                                         )}
-                                                        <div className="team-search-wrapper epm-scope-search">
+                                                        <div className="team-search-wrapper epm-scope-search epm-subgoal-scope-search">
                                                             <input
                                                                 type="text"
                                                                 className="team-search-input"

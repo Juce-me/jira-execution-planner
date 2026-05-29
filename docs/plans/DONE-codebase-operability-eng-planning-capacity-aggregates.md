@@ -1,6 +1,6 @@
 # Codebase Operability: ENG Planning Capacity Aggregates
 
-> **Status:** Implemented and verified locally on 2026-05-28. Keep as `EXEC-*` until acceptance or merge.
+> **Status:** Done. Executed in PR #54 (`879ad59`). Kept for audit context only.
 
 ## Goal
 

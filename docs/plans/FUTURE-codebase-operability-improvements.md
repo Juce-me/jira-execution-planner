@@ -55,36 +55,36 @@ No P0 issues were found. The main structural risk is that extracted modules exis
 
 ## Implementation Notes
 
-- The verification-command slice is implemented locally in `EXEC-codebase-operability-verification.md`.
-- The startup/preflight and storage-alias slice is implemented locally in `EXEC-codebase-operability-startup-preflight.md`.
-- The quickstart, May 1 plan reclassification, and current structure docs slice is implemented locally in `EXEC-codebase-operability-doc-cleanup.md`.
-- The release-zip packaging-contract slice is implemented locally in `EXEC-codebase-operability-packaging-contract.md`.
-- The import-safe startup/app-creation slice is implemented locally in `EXEC-codebase-operability-import-safe-startup.md`.
-- The worker fan-out request-context guardrail slice is implemented locally in `EXEC-codebase-operability-request-context-guardrails.md`.
-- The EPM aggregate rollup extraction slice is implemented locally in `EXEC-codebase-operability-epm-aggregate-extraction.md`.
-- The frontend API boundary slice is implemented locally in `EXEC-codebase-operability-frontend-api-boundary.md`.
-- The config repository selection slice is implemented locally in `EXEC-codebase-operability-config-repository-selection.md`.
-- The EPM config normalization extraction slice is implemented locally in `EXEC-codebase-operability-epm-config-extraction.md`.
-- The structural budgets slice is implemented locally and ratcheted after follow-up extractions in `EXEC-codebase-operability-structural-budgets.md`.
-- The EPM project issues extraction slice is implemented locally in `EXEC-codebase-operability-epm-issues-extraction.md`.
-- The local OAuth token-store extraction slice is implemented locally in `EXEC-codebase-operability-local-oauth-store-extraction.md`.
-- The CSS source split slice is implemented locally in `EXEC-codebase-operability-css-split.md`.
-- The EPM payload-helper extraction slice is implemented locally in `EXEC-codebase-operability-epm-payload-helpers.md`.
-- The ENG planning capacity utility extraction slice is implemented locally in `EXEC-codebase-operability-eng-planning-capacity-utils.md`.
-- The Jira issue fetch helper extraction slice is implemented locally in `EXEC-codebase-operability-jira-issue-fetch-helpers.md`.
-- The ENG planning selection-stats extraction slice is implemented locally in `EXEC-codebase-operability-eng-planning-selection-stats.md`.
-- The ENG planning capacity-aggregate extraction slice is implemented locally in `EXEC-codebase-operability-eng-planning-capacity-aggregates.md`.
-- The capacity service extraction slice is implemented locally in `EXEC-codebase-operability-capacity-service-extraction.md`.
-- The dependency-focus utility extraction slice is implemented locally in `EXEC-codebase-operability-dependency-focus-utils.md`.
-- The sprint service extraction slice is implemented locally in `EXEC-codebase-operability-sprint-service-extraction.md`.
-- The Planning action bar extraction slice is implemented locally in `EXEC-codebase-operability-planning-action-bar.md`.
-- The stats cache service extraction slice is implemented locally in `EXEC-codebase-operability-stats-cache-service.md`.
-- The Planning capacity bar extraction slice is implemented locally in `EXEC-codebase-operability-planning-capacity-bar.md`.
-- The update-check service extraction slice is implemented locally in `EXEC-codebase-operability-update-check-service.md`.
-- The Planning project split bar extraction slice is implemented locally in `EXEC-codebase-operability-planning-project-split-bar.md`.
-- The priority-weights service extraction slice is implemented locally in `EXEC-codebase-operability-priority-weights-service.md`.
-- The team-catalog service extraction slice is implemented locally in `EXEC-codebase-operability-team-catalog-service.md`.
-- The group-config service extraction slice is implemented locally in `EXEC-codebase-operability-group-config-service.md`.
+- The verification-command slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-verification.md`.
+- The startup/preflight and storage-alias slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-startup-preflight.md`.
+- The quickstart, May 1 plan reclassification, and current structure docs slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-doc-cleanup.md`.
+- The release-zip packaging-contract slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-packaging-contract.md`.
+- The import-safe startup/app-creation slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-import-safe-startup.md`.
+- The worker fan-out request-context guardrail slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-request-context-guardrails.md`.
+- The EPM aggregate rollup extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-epm-aggregate-extraction.md`.
+- The frontend API boundary slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-frontend-api-boundary.md`.
+- The config repository selection slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-config-repository-selection.md`.
+- The EPM config normalization extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-epm-config-extraction.md`.
+- The structural budgets slice was completed and ratcheted in PR #54 (`879ad59`) after follow-up extractions in `DONE-codebase-operability-structural-budgets.md`.
+- The EPM project issues extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-epm-issues-extraction.md`.
+- The local OAuth token-store extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-local-oauth-store-extraction.md`.
+- The CSS source split slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-css-split.md`.
+- The EPM payload-helper extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-epm-payload-helpers.md`.
+- The ENG planning capacity utility extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-eng-planning-capacity-utils.md`.
+- The Jira issue fetch helper extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-jira-issue-fetch-helpers.md`.
+- The ENG planning selection-stats extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-eng-planning-selection-stats.md`.
+- The ENG planning capacity-aggregate extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-eng-planning-capacity-aggregates.md`.
+- The capacity service extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-capacity-service-extraction.md`.
+- The dependency-focus utility extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-dependency-focus-utils.md`.
+- The sprint service extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-sprint-service-extraction.md`.
+- The Planning action bar extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-planning-action-bar.md`.
+- The stats cache service extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-stats-cache-service.md`.
+- The Planning capacity bar extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-planning-capacity-bar.md`.
+- The update-check service extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-update-check-service.md`.
+- The Planning project split bar extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-planning-project-split-bar.md`.
+- The priority-weights service extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-priority-weights-service.md`.
+- The team-catalog service extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-team-catalog-service.md`.
+- The group-config service extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-group-config-service.md`.
 - Keep this as future scope until the user explicitly chooses a slice to execute.
 - Convert a chosen slice into a separate `EXEC-*` plan before implementation.
 - Do not execute multiple slices that touch `frontend/src/dashboard.jsx` in parallel.
@@ -93,11 +93,11 @@ No P0 issues were found. The main structural risk is that extracted modules exis
 - For UI-affecting slices, include Playwright assertions and screenshots.
 - For auth, DB, Home/Townsquare, EPM, or plan execution work, follow the `docs/plans/AGENTS.md` gate sweep rules before execution.
 
-## First Executable Slice Recommendation
+## First Completed Slice Record
 
-> **Slice status:** Converted to `EXEC-codebase-operability-verification.md` and implemented locally on 2026-05-28; keep the execution plan as `EXEC-*` until acceptance or merge.
+> **Slice status:** Converted to `DONE-codebase-operability-verification.md` and completed in PR #54 (`879ad59`) after local verification on 2026-05-28.
 
-Start with a small operability slice:
+The first completed operability slice:
 
 1. Add `npm run test:frontend:unit` for `node --test tests/test_*.js`.
 2. Add `npm run test:frontend:ui` for Playwright UI specs.

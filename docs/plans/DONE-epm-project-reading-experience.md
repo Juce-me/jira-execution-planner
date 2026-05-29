@@ -1,5 +1,7 @@
 # EPM Project Reading Experience Implementation Plan
 
+> **Status:** Done. Executed in PR #41 (`94b759b`). Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]` / `- [x]`) syntax for tracking.
 
 **Goal:** Make the EPM all-projects board answer which projects are on track, stale, or missing status updates without changing Jira/Home API behavior.

@@ -94,6 +94,10 @@ export function useEpmViewData({
         if (!Array.isArray(epmRollupBoards)) return epmRollupBoards;
         return sortEpmRollupBoards(filterEpmRollupBoardsForSearch(epmRollupBoards, searchQuery), epmProjectSort);
     }, [epmRollupBoards, epmProjectSort, searchQuery]);
+    const invalidateEpmRollupRequest = React.useCallback(() => {
+        epmRollupRequestIdRef.current += 1;
+        setEpmProjectRollupLoadingIds(new Set());
+    }, []);
 
     const refreshEpmProjects = React.useCallback(async (options = {}) => {
         const background = Boolean(options.background);
@@ -140,12 +144,10 @@ export function useEpmViewData({
     }, [backendUrl, epmTab, onHomeTokenRequired, onServerConnectionFailure, runtimeEpmSubGoalKeys]);
 
     const refreshEpmRollup = React.useCallback(async (projectOverride = selectedEpmProject, projectIdOverride = epmSelectedProjectId) => {
-        epmRollupRequestIdRef.current += 1;
-        const requestId = epmRollupRequestIdRef.current;
         const currentProject = projectOverride || null;
         const currentProjectId = projectIdOverride || getEpmProjectIdentity(currentProject);
-        setEpmProjectRollupLoadingIds(new Set());
         if (selectedView !== 'epm') {
+            invalidateEpmRollupRequest();
             setEpmRollupTree(null);
             setEpmRollupBoards(null);
             setEpmDuplicates({});
@@ -159,6 +161,7 @@ export function useEpmViewData({
             return;
         }
         if (!hasSavedEpmScope) {
+            invalidateEpmRollupRequest();
             setEpmRollupTree(null);
             setEpmRollupBoards(null);
             setEpmDuplicates({});
@@ -184,6 +187,9 @@ export function useEpmViewData({
             return;
         }
         epmRollupRetryAfterProjectsRef.current = false;
+        epmRollupRequestIdRef.current += 1;
+        const requestId = epmRollupRequestIdRef.current;
+        setEpmProjectRollupLoadingIds(new Set());
         if (epmSelectedProjectId === '' && currentProjectId === '') {
             setEpmRollupLoading(true);
             setEpmRollupTree(null);
@@ -278,7 +284,7 @@ export function useEpmViewData({
                 setEpmRollupLoading(false);
             }
         }
-    }, [backendUrl, epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, onHomeTokenRequired, onServerConnectionFailure, runtimeEpmSubGoalKeys, selectedEpmProject, selectedSprint, selectedView]);
+    }, [backendUrl, epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, invalidateEpmRollupRequest, onHomeTokenRequired, onServerConnectionFailure, runtimeEpmSubGoalKeys, selectedEpmProject, selectedSprint, selectedView]);
 
     const loadArchivedEpmProjectRollup = React.useCallback(async (project) => {
         if (epmTab !== 'archived') return;

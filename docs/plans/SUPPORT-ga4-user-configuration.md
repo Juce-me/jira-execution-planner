@@ -2,7 +2,9 @@
 
 **Status:** Drafted on 2026-05-26 for GA4 web stream Measurement ID `G-6QERX19WB0`. Use this runbook alongside `docs/plans/EXEC-ga4-instrumentation.md`.
 
-**Revision note, 2026-05-28:** Re-verified the GA4/GTM configuration instructions against current Google docs and the latest `google-analytics-implementation-planner` MCP guidance. Added the custom MCP boundary, API-backed automation rules, and the dry-run desired-state spec at `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml`.
+**Revision notes:**
+- 2026-05-28: Re-verified the GA4/GTM configuration instructions against current Google docs and the latest `google-analytics-implementation-planner` MCP guidance. Added the custom MCP boundary, API-backed automation rules, and the dry-run desired-state spec at `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml`.
+- 2026-05-29: Re-verified the MCP handoff against the current `ga4-gtm-config-mcp` validator. The YAML spec now uses the strict validator schema, a concrete `target.environment` enum, supported GTM built-ins only, and current MCP-supported tag/config resources. Google tag setup, Enhanced Measurement toggles, retention, ads/signals settings, and full sparse event-parameter mapping remain manual runbook steps unless a later MCP release adds those resource types.
 
 **Audience:** The GA4 property owner or operator configuring Google Analytics for Jira Execution Planner.
 
@@ -18,7 +20,7 @@
 - The deployment has set `GA4_ENABLED=true`, `GTM_CONTAINER_ID=<container id>`, `GA4_MEASUREMENT_ID=G-6QERX19WB0`, and a secret `GA4_USER_ID_PEPPER`.
 - The deployment is approved for internal employee product analytics. This app does not implement an in-app analytics consent control; `GA4_ENABLED=false` is the app-level off switch and must prevent GTM/GA4 requests.
 
-Official docs checked on 2026-05-28:
+Official docs checked on 2026-05-29:
 - Events: https://developers.google.com/analytics/devguides/collection/ga4/events
 - User-ID: https://developers.google.com/analytics/devguides/collection/ga4/user-id
 - CSP for Google tags: https://developers.google.com/tag-platform/security/guides/csp
@@ -53,13 +55,16 @@ Official docs checked on 2026-05-28:
 
 MCP configuration is possible only with a custom, write-capable MCP server that wraps the Google Analytics Admin API and Google Tag Manager API. The official Google Analytics MCP server is read-only for Analytics data exploration and must not be described as able to edit GA4 properties, web streams, custom definitions, Enhanced Measurement, or GTM containers.
 
-Use `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml` as the project-specific desired-state handoff. The default execution mode is `dry_run`; publishing is disabled; creating a GTM container version is disabled; deleting GTM entities, archiving GA4 custom definitions, changing consent settings, and storing secrets are disabled.
+Use `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml` as the project-specific desired-state handoff. It must pass the custom MCP's strict schema before any dry-run diff or workspace apply. The default execution mode is `dry_run`; publishing is disabled; creating a GTM container version is disabled; deleting GTM entities, archiving GA4 custom definitions, changing consent settings, and storing secrets are disabled.
 
 Confirmed API-backed MCP scope:
-- A custom MCP can use the GA Admin API with `analytics.edit` to create or update event/user-scoped custom dimensions, event-scoped custom metrics, key events, web-stream Enhanced Measurement settings, and Measurement Protocol secrets where this runbook explicitly allows them. Measurement Protocol remains disabled in v1, so secret creation must stay off unless a later plan approves MP.
-- A custom MCP can use the GTM API v2 to create a new workspace, enable built-in variables, create Data Layer Variables, create two Custom Event triggers, create the Google tag and two GA4 Event tags, run quick preview, create a container version, and publish a version. Version creation and publish are gated because version creation materializes workspace changes and publish changes live collection.
+- The current custom MCP can use the GA Admin API with `analytics.edit` to create or update custom dimensions, custom metrics, and key events. It reads Measurement Protocol secret metadata only; Measurement Protocol remains disabled in v1, so secret creation must stay off unless a later plan and MCP release approve it.
+- The current custom MCP can use the GTM API v2 to create a new workspace, enable supported built-in variables, create Data Layer Variables, create two Custom Event triggers, create GA4 Event tags, run quick preview, create a container version, and publish a version. Version creation and publish are gated because version creation materializes workspace changes and publish changes live collection.
 - A custom MCP must work in a new GTM workspace, run workspace status/conflict checks, generate a dry-run diff, and produce a quick-preview or Tag Assistant validation artifact before any version or publish request.
 - If the MCP server cannot map the logical tag names in the YAML spec to native GTM tag template/type parameters from the current API/library/exported container state, it must stop and ask for operator input. It must not fall back to Custom HTML, direct `gtag('event', ...)`, or ad hoc tags.
+- The current MCP spec supports only GTM built-ins from this list: `Page URL`, `Page Path`, `Page Hostname`, `Referrer`, and `Event`. Do not include `Page Title`; GA4 default page-title behavior is accepted through the Google tag/GA4 web stream, not through an MCP-requested built-in variable.
+- The current MCP schema caps each GA4 Event tag at 25 static event parameters. Use the YAML for the validator-compatible core mapping, then complete any remaining approved sparse event-parameter mappings manually from this runbook until the MCP supports a sparse allowlisted event-parameter variable or equivalent.
+- The current MCP does not create the Google tag or edit Enhanced Measurement, retention, Google Signals, ads, or consent settings. Those remain manual operator steps in this runbook.
 
 Project-specific rule: this repo intentionally uses two app-owned dataLayer trigger names, `pageview` and `userevent`. Do not convert it to a single top-level `userevent` trigger filtered by `event_type`. The latest planner skill supports that generic pattern, but this repository's root `AGENTS.md`, implementation plan, and analytics contract require the two-trigger GTM contract.
 

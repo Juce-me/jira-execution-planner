@@ -73,30 +73,51 @@ export function EpmRollupPanel({
         return `${bounded.toFixed(3).replace(/\.?0+$/, '')}%`;
     };
 
+    const formatProgressSegmentWidth = (value, total) => (
+        formatProgressWidth(total > 0 ? (Number(value || 0) / total) * 100 : 0)
+    );
+
     const renderProjectProgress = (tree) => {
         const progress = buildEpmProjectProgress(tree);
         if (!progress) return null;
         const percentLabel = `${Math.round(progress.progressPercent)}%`;
-        const progressWidth = formatProgressWidth(progress.progressPercent);
+        const completedWidth = formatProgressSegmentWidth(progress.completedStoryPoints, progress.totalStoryPoints);
+        const inProgressWidth = formatProgressSegmentWidth(progress.inProgressStoryPoints, progress.totalStoryPoints);
         const completedLabel = formatProgressStoryPoints(progress.completedStoryPoints);
         const totalLabel = formatProgressStoryPoints(progress.totalStoryPoints);
         const doneLabel = formatProgressStoryPoints(progress.doneStoryPoints);
         const incompleteLabel = formatProgressStoryPoints(progress.incompleteStoryPoints);
+        const inProgressLabel = formatProgressStoryPoints(progress.inProgressStoryPoints);
+        const waitingLabel = formatProgressStoryPoints(progress.waitingStoryPoints);
         const killedLabel = formatProgressStoryPoints(progress.killedStoryPoints);
+        const hasCompletedProgress = progress.completedStoryPoints > 0;
+        const hasInProgress = progress.inProgressStoryPoints > 0;
         return (
             <div
-                className="epm-project-progress"
+                className={`epm-project-progress${hasInProgress ? ' is-in-progress' : ''}`}
                 role="img"
                 tabIndex={0}
-                aria-label={`Project progress ${percentLabel}. Completed ${completedLabel} of ${totalLabel}.`}
+                aria-label={`Project progress ${percentLabel}. Completed ${completedLabel} of ${totalLabel}. In progress ${inProgressLabel}. Waiting ${waitingLabel}.`}
             >
                 <span className="epm-project-progress-track" aria-hidden="true">
-                    <span className="epm-project-progress-fill" style={{ width: progressWidth }} />
+                    {hasCompletedProgress && (
+                        <span className="epm-project-progress-segment epm-project-progress-segment-done" style={{ width: completedWidth }} />
+                    )}
+                    {hasInProgress && (
+                        <span className="epm-project-progress-segment epm-project-progress-segment-in-progress is-in-progress" style={{ width: inProgressWidth }} />
+                    )}
                 </span>
                 <span className="epm-project-progress-percent">{percentLabel}</span>
+                {hasInProgress && (
+                    <StatusPill
+                        className={getIssueStatusClassName('In Progress', 'epm-project-progress-status')}
+                        label="In Progress"
+                    />
+                )}
                 <span className="epm-project-progress-tooltip" role="tooltip">
                     <strong>{`Completed ${completedLabel} / Total ${totalLabel}`}</strong>
                     <span>{`Done ${doneLabel} · Incomplete ${incompleteLabel}`}</span>
+                    <span>{`In progress ${inProgressLabel} · Waiting ${waitingLabel}`}</span>
                     {progress.killedStoryPoints > 0 && <span>{`Killed excluded ${killedLabel}`}</span>}
                 </span>
             </div>

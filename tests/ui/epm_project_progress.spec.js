@@ -50,6 +50,13 @@ function progressRollup(project) {
                                     storyPoints: 3
                                 },
                                 {
+                                    key: 'PRODUCT-105',
+                                    summary: 'Waiting story',
+                                    status: 'To Do',
+                                    issueType: 'Story',
+                                    storyPoints: 4
+                                },
+                                {
                                     key: 'PRODUCT-104',
                                     summary: 'Killed story',
                                     status: 'Killed',
@@ -90,10 +97,37 @@ test('EPM project board shows progress beside Jira rollup with hover story-point
     await expect(board).toHaveCount(1);
     const progress = board.locator('.epm-project-progress');
     await expect(progress).toBeVisible();
-    await expect(progress.locator('.epm-project-progress-percent')).toHaveText('50%');
-    await expect(progress.locator('.epm-project-progress-fill')).toHaveAttribute('style', /width: 50%;/);
+    await expect(progress.locator('.epm-project-progress-percent')).toHaveText('30%');
+    const doneSegment = progress.locator('.epm-project-progress-segment-done');
+    const inProgressSegment = progress.locator('.epm-project-progress-segment-in-progress');
+    await expect(doneSegment).toHaveAttribute('style', /width: 30%;/);
+    await expect(inProgressSegment).toHaveAttribute('style', /width: 30%;/);
+    const statusPill = progress.locator('.epm-project-progress-status');
+    await expect(statusPill).toHaveText('In Progress');
+    await expect(statusPill).toHaveClass(/status-pill/);
+    await expect(statusPill).toHaveClass(/task-status/);
+    await expect(statusPill).toHaveClass(/in-progress/);
+    await expect.poll(async () => (
+        statusPill.evaluate((node) => getComputedStyle(node).animationName)
+    )).toBe('none');
+    await expect.poll(async () => (
+        statusPill.evaluate((node) => getComputedStyle(node).textTransform)
+    )).toBe('uppercase');
+    await expect.poll(async () => (
+        statusPill.evaluate((node) => getComputedStyle(node).fontFamily)
+    )).toContain('IBM Plex Mono');
+    await expect(progress).toHaveClass(/is-in-progress/);
+    await expect(doneSegment).not.toHaveClass(/is-in-progress/);
+    await expect(inProgressSegment).toHaveClass(/is-in-progress/);
+    await expect.poll(async () => (
+        doneSegment.evaluate((node) => getComputedStyle(node).animationName)
+    )).toBe('none');
+    await expect.poll(async () => (
+        inProgressSegment.evaluate((node) => getComputedStyle(node).animationName)
+    )).toBe('epmProjectProgressShimmer');
 
     await progress.hover();
     await expect(progress.locator('.epm-project-progress-tooltip')).toBeVisible();
-    await expect(progress.locator('.epm-project-progress-tooltip')).toContainText('Completed 3.0 SP / Total 6.0 SP');
+    await expect(progress.locator('.epm-project-progress-tooltip')).toContainText('Completed 3.0 SP / Total 10.0 SP');
+    await expect(progress.locator('.epm-project-progress-tooltip')).toContainText('In progress 3.0 SP · Waiting 4.0 SP');
 });

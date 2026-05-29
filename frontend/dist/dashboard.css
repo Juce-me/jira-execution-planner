@@ -7301,7 +7301,7 @@ button.toggle.initiative-toggle.active {
 .epm-project-progress {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(7rem, 1fr) auto;
+  grid-template-columns: minmax(7rem, 1fr) auto auto;
   align-items: center;
   gap: 0.55rem;
   flex: 1 1 15rem;
@@ -7310,18 +7310,30 @@ button.toggle.initiative-toggle.active {
   outline: none;
 }
 .epm-project-progress-track {
-  display: block;
+  display: flex;
   width: 100%;
   height: 0.42rem;
   overflow: hidden;
   border-radius: 999px;
   background: #e7ecf4;
 }
-.epm-project-progress-fill {
+.epm-project-progress-segment {
   display: block;
   height: 100%;
-  border-radius: inherit;
+  flex: 0 0 auto;
+}
+.epm-project-progress-segment-done {
   background: #52c41a;
+}
+.epm-project-progress-segment-in-progress {
+  background:
+    linear-gradient(
+      90deg,
+      #135fcf 0%,
+      #69c0ff 50%,
+      #135fcf 100%);
+  background-size: 220% 100%;
+  animation: epmProjectProgressShimmer 4.8s ease-in-out infinite;
 }
 .epm-project-progress-percent {
   min-width: 2.2rem;
@@ -7331,6 +7343,31 @@ button.toggle.initiative-toggle.active {
   color: var(--text-primary);
   line-height: 1;
   text-align: right;
+}
+.epm-project-progress-status.task-status {
+  padding: 0.18rem 0.48rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+@keyframes epmProjectProgressShimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .epm-project-progress-segment-in-progress {
+    animation: none;
+    background: #69c0ff;
+  }
 }
 .epm-project-progress-tooltip {
   position: absolute;

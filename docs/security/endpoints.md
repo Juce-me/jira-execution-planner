@@ -86,8 +86,8 @@ The endpoint policy registry lives in `backend/security/policy.py`. Every Flask 
 | `epm-scope` | `GET` | `/api/epm/scope` | `authenticated_read` | `exact` |
 | `epm-goals` | `GET` | `/api/epm/goals` | `authenticated_read` | `exact` |
 | `epm-projects` | `GET` | `/api/epm/projects` | `authenticated_read` | `exact` |
-| `epm-project-issues` | `GET` | `/api/epm/projects/<home_project_id>/issues` | `authenticated_read` | `dynamic` |
-| `epm-project-rollup` | `GET` | `/api/epm/projects/<project_id>/rollup` | `authenticated_read` | `dynamic` |
+| `epm-project-issues` | `GET` | `/api/epm/projects/<path:home_project_id>/issues` | `authenticated_read` | `dynamic` |
+| `epm-project-rollup` | `GET` | `/api/epm/projects/<path:project_id>/rollup` | `authenticated_read` | `dynamic` |
 | `epm-projects-configuration` | `POST` | `/api/epm/projects/configuration` | `shared_admin_write` | `exact` |
 | `epm-projects-preview` | `POST` | `/api/epm/projects/preview` | `authenticated_read` | `exact` |
 | `epm-projects-rollup-all` | `GET` | `/api/epm/projects/rollup/all` | `authenticated_read` | `exact` |

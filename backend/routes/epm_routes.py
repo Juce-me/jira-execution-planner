@@ -175,7 +175,7 @@ def get_all_epm_projects_rollup_endpoint():
     return response, status
 
 
-@bp.route('/api/epm/projects/<home_project_id>/issues', methods=['GET'])
+@bp.route('/api/epm/projects/<path:home_project_id>/issues', methods=['GET'])
 def get_epm_project_issues_endpoint(home_project_id):
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
@@ -197,7 +197,7 @@ def get_epm_project_issues_endpoint(home_project_id):
     return response, status
 
 
-@bp.route('/api/epm/projects/<project_id>/rollup', methods=['GET'])
+@bp.route('/api/epm/projects/<path:project_id>/rollup', methods=['GET'])
 def get_epm_project_rollup_endpoint(project_id):
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()

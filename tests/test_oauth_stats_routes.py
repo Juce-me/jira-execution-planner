@@ -1,9 +1,11 @@
 import base64
 import os
 import unittest
+from urllib.parse import quote
 from unittest.mock import patch
 
 import jira_server
+from backend.routes import epm_routes
 from backend.auth.context import RequestAuthContext
 from tests.oauth_test_helpers import install_oauth_session
 
@@ -211,6 +213,38 @@ class OAuthStatsRouteTests(unittest.TestCase):
                 self.client.get("/api/epm/projects/rollup/all?tab=backlog"),
                 self.client.get("/api/epm/projects/home-1/issues?tab=backlog"),
                 self.client.get("/api/epm/projects/project-1/rollup?tab=backlog"),
+            ]
+
+        for response in responses:
+            self.assertNotEqual(response.status_code, 501, response.get_data(as_text=True))
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+    def test_epm_home_ari_project_routes_are_oauth_ready(self):
+        home_project_id = "ari:cloud:townsquare:cloud-123:project/project-1"
+        encoded_home_project_id = quote(home_project_id, safe=":")
+        rollup_deps = object()
+
+        def fake_rollup(project_id, tab, sprint, deps):
+            self.assertEqual(project_id, home_project_id)
+            self.assertEqual(tab, "backlog")
+            self.assertEqual(sprint, "")
+            self.assertIs(deps, rollup_deps)
+            return {"project": {"id": project_id}}, 200, {}
+
+        def fake_issues(project_id, tab, sprint, sub_goal_keys=None):
+            self.assertEqual(project_id, home_project_id)
+            self.assertEqual(tab, "backlog")
+            self.assertEqual(sprint, "")
+            self.assertEqual(sub_goal_keys, [])
+            return {"issues": []}, 200, {}
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "build_epm_rollup_dependencies", return_value=rollup_deps), \
+             patch.object(jira_server, "build_per_project_rollup", side_effect=fake_rollup), \
+             patch.object(epm_routes, "build_epm_project_issues_response", side_effect=fake_issues):
+            responses = [
+                self.client.get(f"/api/epm/projects/{encoded_home_project_id}/rollup?tab=backlog"),
+                self.client.get(f"/api/epm/projects/{encoded_home_project_id}/issues?tab=backlog"),
             ]
 
         for response in responses:

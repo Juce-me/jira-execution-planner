@@ -66,6 +66,7 @@ export function useEpmViewData({
     const epmProjectsPendingSelectionRef = useRef(false);
     const epmProjectsRequestIdRef = useRef(0);
     const epmRollupRequestIdRef = useRef(0);
+    const epmRollupRetryAfterProjectsRef = useRef(false);
     const normalizedSavedEpmSubGoalKeys = React.useMemo(
         () => normalizeEpmScopeSubGoalKeys({ subGoalKeys: savedEpmSubGoalKeys }),
         [savedEpmSubGoalKeys]
@@ -166,18 +167,23 @@ export function useEpmViewData({
             setEpmRollupLoading(false);
             return;
         }
-        if (epmProjectsPendingSelectionRef.current) {
-            return;
-        }
         if (epmTab === 'active' && !selectedSprint) {
-            setEpmRollupTree(null);
-            setEpmRollupBoards(null);
-            setEpmDuplicates({});
-            setEpmAggregateTruncated(false);
-            setEpmAggregateFallback(false);
-            setEpmRollupLoading(false);
+            if (!epmRollupRetryAfterProjectsRef.current) {
+                setEpmRollupTree(null);
+                setEpmRollupBoards(null);
+                setEpmDuplicates({});
+                setEpmAggregateTruncated(false);
+                setEpmAggregateFallback(false);
+                setEpmRollupLoading(false);
+            }
             return;
         }
+        if (epmProjectsPendingSelectionRef.current) {
+            epmRollupRetryAfterProjectsRef.current = true;
+            setEpmRollupLoading(true);
+            return;
+        }
+        epmRollupRetryAfterProjectsRef.current = false;
         if (epmSelectedProjectId === '' && currentProjectId === '') {
             setEpmRollupLoading(true);
             setEpmRollupTree(null);
@@ -385,6 +391,13 @@ export function useEpmViewData({
     useEffect(() => {
         void refreshEpmRollup();
     }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, selectedEpmProject, epmTab, runtimeEpmSubGoalKeys, selectedSprint]);
+
+    useEffect(() => {
+        if (!epmRollupRetryAfterProjectsRef.current) return;
+        if (selectedView !== 'epm') return;
+        if (epmProjectsLoading || epmProjectsPendingSelectionRef.current) return;
+        void refreshEpmRollup();
+    }, [selectedView, epmProjectsLoading, refreshEpmRollup]);
 
     return {
         epmTab,

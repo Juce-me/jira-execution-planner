@@ -610,6 +610,8 @@ async function installApiMocks(page, calls, options = {}) {
         }));
     }
     const configGate = options.delayConfig ? createDeferred() : null;
+    const sprintGate = options.delaySprintsUntilEpmProjects ? createDeferred() : null;
+    const epmProjectsGate = options.delaySprintsUntilEpmProjects ? createDeferred() : null;
     const epmProjectCount = options.epmProjectCount || 1;
     const unexpectedCalls = [];
     const state = {
@@ -769,7 +771,13 @@ async function installApiMocks(page, calls, options = {}) {
         if (url.pathname.endsWith('/config') && url.pathname.includes('-field')) return json({ fieldId: '', fieldName: '' });
         if (url.pathname === '/api/issue-types/config') return json({ issueTypes: ['Epic'] });
         if (url.pathname === '/api/issue-types') return json({ issueTypes: [{ name: 'Epic' }, { name: 'Story' }] });
-        if (url.pathname === '/api/sprints') return json({ sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
+        if (url.pathname === '/api/sprints') {
+            if (sprintGate) {
+                await sprintGate.promise;
+                setTimeout(() => epmProjectsGate.resolve(), 50);
+            }
+            return json({ sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
+        }
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose');
@@ -809,6 +817,10 @@ async function installApiMocks(page, calls, options = {}) {
             });
         }
         if (url.pathname === '/api/epm/projects') {
+            if (sprintGate) {
+                sprintGate.resolve();
+                await epmProjectsGate.promise;
+            }
             const tab = url.searchParams.get('tab') || 'active';
             return json({
                 projects: Array.from({ length: epmProjectCount }, (_, index) => epmProject(tab, index + 1)),
@@ -1172,6 +1184,28 @@ test('EPM lifecycle tabs load after config with scoped rollup requests and stick
         expect(metadataCalls.length).toBeLessThanOrEqual(1);
         expect(tabRollups).toHaveLength(1);
     });
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('EPM all-project rollup retries after sprint selection arrives during project load', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, { delaySprintsUntilEpmProjects: true });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'epm',
+        epmTab: 'active',
+        epmSelectedProjectId: '',
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.epm-project-board-name', { hasText: 'Active Project' })).toBeVisible();
+    await expect(page.locator('.epm-portfolio-board .epic-header').first()).toBeVisible();
+
+    const activeRollups = callsFor(calls, '/api/epm/projects/rollup/all')
+        .filter(call => (call.params.tab || 'active') === 'active');
+    expect(activeRollups).toHaveLength(1);
+    expect(activeRollups[0].params.sprint).toBe(String(selectedSprintId));
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 

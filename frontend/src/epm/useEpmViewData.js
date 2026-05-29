@@ -172,11 +172,6 @@ export function useEpmViewData({
         }
         if (epmTab === 'active' && !selectedSprint) {
             if (!epmRollupRetryAfterProjectsRef.current) {
-                setEpmRollupTree(null);
-                setEpmRollupBoards(null);
-                setEpmDuplicates({});
-                setEpmAggregateTruncated(false);
-                setEpmAggregateFallback(false);
                 setEpmRollupLoading(false);
             }
             return;

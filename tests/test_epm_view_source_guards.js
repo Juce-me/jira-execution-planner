@@ -460,6 +460,15 @@ test('EPM board fetches rollup with tab and sprint params while preserving activ
         noSprintGuardIndex !== -1 && requestIdIncrementIndex !== -1 && noSprintGuardIndex < requestIdIncrementIndex,
         'Expected stale active-tab no-sprint callbacks not to invalidate newer EPM rollup requests'
     );
+    const noSprintGuardSource = refreshEpmRollupSource.slice(
+        noSprintGuardIndex,
+        projectsPendingGuardIndex
+    );
+    assert.ok(
+        !noSprintGuardSource.includes('setEpmRollupBoards(null)') &&
+            !noSprintGuardSource.includes('setEpmRollupTree(null)'),
+        'Expected stale active-tab no-sprint callbacks not to clear rendered EPM rollup boards'
+    );
     assert.ok(
         projectsPendingGuardIndex !== -1 && requestIdIncrementIndex !== -1 && projectsPendingGuardIndex < requestIdIncrementIndex,
         'Expected project-metadata wait callbacks not to invalidate newer EPM rollup requests'

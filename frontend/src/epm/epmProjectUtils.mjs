@@ -18,6 +18,7 @@ const ARCHIVED_EPM_PROJECT_STATES = new Set(['completed', 'cancelled', 'archived
 const RECENT_COMPLETED_EPM_PROJECT_STATES = new Set(['completed', 'done']);
 const TERMINAL_EPM_ISSUE_STATUSES = new Set(['done', 'killed', 'incomplete']);
 const COMPLETED_EPM_PROGRESS_STATUSES = new Set(['done', 'incomplete']);
+const IN_PROGRESS_EPM_PROGRESS_STATUSES = new Set(['in progress']);
 const EPM_PROJECT_PRIORITY_ORDER = {
     blocker: 0,
     highest: 1,
@@ -318,9 +319,11 @@ export function buildEpmProjectProgress(tree) {
     const progress = {
         completedStoryPoints: 0,
         incompleteStoryPoints: 0,
+        inProgressStoryPoints: 0,
         doneStoryPoints: 0,
         killedStoryPoints: 0,
         remainingStoryPoints: 0,
+        waitingStoryPoints: 0,
         totalStoryPoints: 0,
         progressPercent: 0
     };
@@ -334,17 +337,25 @@ export function buildEpmProjectProgress(tree) {
             return;
         }
         progress.totalStoryPoints += storyPoints;
-        if (!COMPLETED_EPM_PROGRESS_STATUSES.has(status)) return;
-        progress.completedStoryPoints += storyPoints;
-        if (status === 'done') {
-            progress.doneStoryPoints += storyPoints;
-        } else {
-            progress.incompleteStoryPoints += storyPoints;
+        if (COMPLETED_EPM_PROGRESS_STATUSES.has(status)) {
+            progress.completedStoryPoints += storyPoints;
+            if (status === 'done') {
+                progress.doneStoryPoints += storyPoints;
+            } else {
+                progress.incompleteStoryPoints += storyPoints;
+            }
+            return;
         }
+        if (IN_PROGRESS_EPM_PROGRESS_STATUSES.has(status)) {
+            progress.inProgressStoryPoints += storyPoints;
+            return;
+        }
+        progress.waitingStoryPoints += storyPoints;
     });
 
     if (progress.totalStoryPoints <= 0) return null;
     progress.remainingStoryPoints = Math.max(0, progress.totalStoryPoints - progress.completedStoryPoints);
+    progress.waitingStoryPoints = Math.max(0, progress.totalStoryPoints - progress.completedStoryPoints - progress.inProgressStoryPoints);
     progress.progressPercent = (progress.completedStoryPoints / progress.totalStoryPoints) * 100;
     return progress;
 }

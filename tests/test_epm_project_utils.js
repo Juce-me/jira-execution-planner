@@ -291,9 +291,11 @@ test('buildEpmProjectProgress counts completed story points over non-killed stor
     assert.deepStrictEqual(buildEpmProjectProgress(tree), {
         completedStoryPoints: 7,
         incompleteStoryPoints: 3,
+        inProgressStoryPoints: 4,
         doneStoryPoints: 4,
         killedStoryPoints: 21,
         remainingStoryPoints: 6,
+        waitingStoryPoints: 2,
         totalStoryPoints: 13,
         progressPercent: 53.84615384615385
     });

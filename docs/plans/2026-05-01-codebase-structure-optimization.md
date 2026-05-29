@@ -1,6 +1,6 @@
 # Codebase Structure Optimization Support History
 
-> **Legacy plan status:** Support/history context. Do not execute from this file. Current executable codebase-operability slices are tracked in `EXEC-codebase-operability-*` plans.
+> **Legacy plan status:** Support/history context. Do not execute from this file. Recently completed codebase-operability slices are tracked in `DONE-codebase-operability-*` plans.
 
 Date: 2026-05-01
 Plan branch: `docs/codebase-structure-optimization-plan`

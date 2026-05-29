@@ -1,6 +1,6 @@
 # Codebase Operability: Planning Capacity Bar Component
 
-> **Status:** In progress on 2026-05-28. Keep as `EXEC-*` until acceptance or merge.
+> **Status:** Done. Executed in PR #54 (`879ad59`). Kept for audit context only.
 
 ## Goal
 

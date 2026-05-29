@@ -2,9 +2,9 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
+const { readDashboardCssSource } = require('./css_source_helpers');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
-const dashboardCssPath = path.join(__dirname, '..', 'frontend', 'src', 'styles', 'dashboard.css');
 const epmApiPath = path.join(__dirname, '..', 'frontend', 'src', 'api', 'epmApi.js');
 const epmViewDataPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'useEpmViewData.js');
 const epmControlsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmControls.jsx');
@@ -33,7 +33,7 @@ const loadingRowsSource = fs.existsSync(loadingRowsPath) ? fs.readFileSync(loadi
 const loadingStateSource = fs.existsSync(loadingStatePath) ? fs.readFileSync(loadingStatePath, 'utf8') : '';
 const emptyStateSource = fs.existsSync(emptyStatePath) ? fs.readFileSync(emptyStatePath, 'utf8') : '';
 const statusPillSource = fs.existsSync(statusPillPath) ? fs.readFileSync(statusPillPath, 'utf8') : '';
-const dashboardCssSource = fs.existsSync(dashboardCssPath) ? fs.readFileSync(dashboardCssPath, 'utf8') : '';
+const dashboardCssSource = readDashboardCssSource(path.join(__dirname, '..'));
 const epmApiSource = fs.existsSync(epmApiPath) ? fs.readFileSync(epmApiPath, 'utf8') : '';
 const epmViewDataSource = fs.existsSync(epmViewDataPath) ? fs.readFileSync(epmViewDataPath, 'utf8') : '';
 const epmControlsSource = fs.existsSync(epmControlsPath) ? fs.readFileSync(epmControlsPath, 'utf8') : '';
@@ -442,6 +442,11 @@ test('ENG task fetching effects are unreachable in EPM view', () => {
 });
 
 test('EPM board fetches rollup with tab and sprint params while preserving active sprint gating', () => {
+    const functions = getConstFunctionBodies(epmViewDataSource);
+    const refreshEpmRollupSource = functions.get('refreshEpmRollup') || '';
+    const noSprintGuardIndex = refreshEpmRollupSource.indexOf("epmTab === 'active' && !selectedSprint");
+    const projectsPendingGuardIndex = refreshEpmRollupSource.indexOf('if (epmProjectsPendingSelectionRef.current) {');
+    const requestIdIncrementIndex = refreshEpmRollupSource.indexOf('epmRollupRequestIdRef.current += 1;');
     assert.ok(fs.existsSync(epmViewDataPath), 'Expected useEpmViewData.js to own EPM view data fetching');
     assert.ok(epmViewDataSource.includes('fetchEpmProjectRollup(backendUrl, currentProjectId'), 'Expected EPM hook to fetch the rollup endpoint through wrapper');
     assert.ok(epmViewDataSource.includes('fetchEpmAllProjectsRollup(backendUrl'), 'Expected EPM hook to fetch the aggregate rollup endpoint through wrapper');
@@ -451,6 +456,23 @@ test('EPM board fetches rollup with tab and sprint params while preserving activ
     assert.ok(epmApiSource.includes("params.set('sprint', String(sprint))"), 'Expected EPM rollup request to include selected sprint');
     assert.ok(epmApiSource.includes('/api/epm/projects/rollup/all?${params.toString()}'), 'Expected aggregate EPM rollup request wrapper');
     assert.ok(epmViewDataSource.includes("epmTab === 'active' && !selectedSprint"), 'Expected active tab to require selectedSprint before rollup fetch');
+    assert.ok(
+        noSprintGuardIndex !== -1 && requestIdIncrementIndex !== -1 && noSprintGuardIndex < requestIdIncrementIndex,
+        'Expected stale active-tab no-sprint callbacks not to invalidate newer EPM rollup requests'
+    );
+    const noSprintGuardSource = refreshEpmRollupSource.slice(
+        noSprintGuardIndex,
+        projectsPendingGuardIndex
+    );
+    assert.ok(
+        !noSprintGuardSource.includes('setEpmRollupBoards(null)') &&
+            !noSprintGuardSource.includes('setEpmRollupTree(null)'),
+        'Expected stale active-tab no-sprint callbacks not to clear rendered EPM rollup boards'
+    );
+    assert.ok(
+        projectsPendingGuardIndex !== -1 && requestIdIncrementIndex !== -1 && projectsPendingGuardIndex < requestIdIncrementIndex,
+        'Expected project-metadata wait callbacks not to invalidate newer EPM rollup requests'
+    );
 });
 
 test('EPM project metadata fetch is scoped to the current lifecycle tab', () => {

@@ -36,7 +36,7 @@ jobs:
           CONFIG_STORAGE_BACKEND: jsonfile
         run: python -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
       - name: Frontend tests
-        run: node --test tests/test_*.js
+        run: npm run test:frontend:unit
       - name: Fail if dist changed
         run: |
           if ! git diff --exit-code; then

@@ -1,0 +1,644 @@
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #f8f7f4;
+            --bg-secondary: #ffffff;
+            --text-primary: #1a1a1a;
+            --text-secondary: #666666;
+            --accent: #d4380d;
+            --good: #389e0d;
+            --warn: #cf1322;
+            --muted: #bfbfbf;
+            --alert-missing: #fa8c16;
+            --alert-blocked: #d4380d;
+            --border: #e0ddd7;
+            --shadow: rgba(0, 0, 0, 0.04);
+            --control-height: 38px;
+            --sticky-search-z: 1000;
+            --modal-backdrop-z: 9000;
+            --modal-popup-z: 9100;
+            --sticky-compact-z: 70;
+            --sticky-planning-z: 60;
+            --sticky-stats-z: 55;
+            --sticky-epic-z: 50;
+            --sticky-scenario-z: 60;
+            --sticky-control-overlay-z: 80;
+            --sticky-gap: 0px;
+            --compact-header-offset: 0px;
+            --planning-sticky-top: 0px;
+            --epic-sticky-top: 0px;
+            --scenario-sticky-top: 0px;
+        }
+
+        body {
+            font-family: 'Crimson Pro', serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 0.9rem 1.5rem 3rem;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        header {
+            margin-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.2rem;
+        }
+
+        .compact-sticky-header {
+            display: none;
+            align-items: flex-end;
+            gap: 0.65rem;
+            flex-wrap: nowrap;
+            min-width: 0;
+            padding: 0 0 0.45rem;
+            margin-bottom: 0.85rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-primary);
+            position: sticky;
+            top: 0;
+            z-index: var(--sticky-compact-z);
+        }
+
+        .compact-sticky-header.is-visible {
+            display: flex;
+        }
+
+        .compact-sticky-header:has(.sprint-dropdown-panel),
+        .compact-sticky-header:has(.group-dropdown-panel),
+        .compact-sticky-header:has(.team-dropdown-panel) {
+            z-index: calc(var(--sticky-control-overlay-z) + 2);
+        }
+
+        .compact-sticky-header-controls {
+            display: flex;
+            align-items: flex-end;
+            gap: 0.35rem;
+            flex: 1 1 auto;
+            flex-wrap: nowrap;
+            min-width: 0;
+            overflow: visible;
+        }
+
+        .compact-sticky-header-search {
+            flex: 0 1 190px;
+            min-width: 150px;
+            max-width: 210px;
+            margin-left: auto;
+        }
+
+        .compact-sticky-header .eng-mode-control {
+            flex: 0 0 auto;
+        }
+
+        .compact-sticky-header .eng-mode-control .segmented-control-button {
+            padding: 0 0.52rem;
+            font-size: 0.62rem;
+            min-width: 2.4rem;
+        }
+
+        .compact-sticky-header .control-field {
+            min-width: 0;
+            flex: 0 1 auto;
+        }
+
+        .compact-sticky-header .control-search,
+        .compact-sticky-header-search .control-search,
+        .compact-sticky-header-search-field {
+            min-width: 0;
+            width: 100%;
+        }
+
+        .compact-sticky-header .control-search:focus-within {
+            width: 100%;
+        }
+
+        .compact-sticky-header .sprint-dropdown,
+        .compact-sticky-header .group-dropdown,
+        .compact-sticky-header .team-dropdown {
+            min-width: 0;
+            width: 100%;
+            max-width: 170px;
+        }
+
+        .compact-sticky-header .sprint-dropdown-toggle,
+        .compact-sticky-header .group-dropdown-toggle,
+        .compact-sticky-header .team-dropdown-toggle {
+            min-width: 0;
+            width: 100%;
+            max-width: none;
+        }
+
+        .compact-sticky-header .sprint-dropdown-toggle span,
+        .compact-sticky-header .group-dropdown-toggle span,
+        .compact-sticky-header .team-dropdown-toggle span {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .compact-sticky-header .control-label {
+            background: var(--bg-primary);
+        }
+
+        h1 {
+            font-size: 2.4rem;
+            font-weight: 300;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.2rem;
+            animation: slideDown 0.8s ease-out 0.2s both;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .subtitle {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            animation: slideDown 0.8s ease-out 0.4s both;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            position: relative;
+            z-index: calc(var(--sticky-control-overlay-z) + 1);
+        }
+
+        .subtitle-main {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .subtitle-logo {
+            width: 0.82rem;
+            height: 0.82rem;
+            display: inline-block;
+            vertical-align: middle;
+            flex: 0 0 auto;
+        }
+
+        .subtitle-secondary {
+            font-size: 0.4375rem;
+            letter-spacing: 0.12em;
+            opacity: 0.85;
+        }
+
+        .update-badge {
+            margin: 0;
+            padding: 0.15rem 0.5rem;
+            border: 1px solid rgba(220, 38, 38, 0.2);
+            color: #b91c1c;
+            background: rgba(220, 38, 38, 0.04);
+            border-radius: 999px;
+            font-size: 0.55rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-family: 'IBM Plex Mono', monospace;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: padding 0.16s ease, font-size 0.16s ease, letter-spacing 0.16s ease;
+        }
+
+        .update-badge.compact {
+            padding: 0.12rem 0.38rem;
+            font-size: 0.47rem;
+            letter-spacing: 0.06em;
+        }
+
+        .update-badge:hover {
+            background: rgba(220, 38, 38, 0.1);
+            border-color: rgba(220, 38, 38, 0.4);
+        }
+
+        .search-input {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            padding: 0.55rem 0.7rem 0.45rem;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            text-transform: none;
+            letter-spacing: normal;
+            width: 100%;
+            transition: all 0.2s ease;
+            border-radius: 10px;
+            height: var(--control-height);
+            box-sizing: border-box;
+        }
+
+
+        .header-actions {
+            margin-left: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.3rem;
+            flex-wrap: nowrap;
+        }
+
+        .header-actions-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .sticky-search-shell {
+            display: none;
+        }
+
+        .sticky-search-bar {
+            position: static;
+            padding: 0;
+            background: transparent;
+            box-shadow: none;
+        }
+
+        .header-actions-row button {
+            margin-right: 0;
+        }
+
+        .header-actions-row .secondary.compact {
+            height: var(--control-height);
+            padding: 0.4rem 0.9rem;
+        }
+
+        .secondary.compact {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.7rem;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(212, 56, 13, 0.1);
+        }
+
+        .control-search.active-filter .search-input {
+            border-color: #597ef7;
+            background: #f4f7ff;
+            box-shadow: 0 0 0 2px rgba(89, 126, 247, 0.18);
+        }
+
+        .control-search.active-filter .search-input:focus {
+            border-color: #597ef7;
+            box-shadow: 0 0 0 2px rgba(89, 126, 247, 0.22);
+        }
+
+        .search-input::placeholder {
+            color: var(--text-secondary);
+            opacity: 0.6;
+        }
+
+        .search-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+
+        .control-search {
+            min-width: 220px;
+            width: 220px;
+            transition: width 0.2s ease;
+        }
+
+        .control-search:focus-within {
+            width: 360px;
+        }
+
+        .refresh-icon {
+            width: calc(var(--control-height) + 8px);
+            height: calc(var(--control-height) + 8px);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .refresh-icon svg {
+            width: 30px;
+            height: 30px;
+        }
+
+        .refresh-icon.is-loading svg {
+            animation: epm-refresh-spin 0.9s linear infinite;
+        }
+
+        @keyframes epm-refresh-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .search-clear {
+            position: absolute;
+            right: 0.35rem;
+            background: transparent;
+            border: none;
+            font-size: 1rem;
+            line-height: 1;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 0.1rem 0.3rem;
+            border-radius: 10px;
+        }
+
+        .search-clear:hover {
+            color: var(--text-primary);
+        }
+
+        .view-selector {
+            display: flex;
+            align-items: center;
+            margin-top: 0.05rem;
+            position: relative;
+            z-index: calc(var(--sticky-planning-z) + 10);
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.2rem;
+        }
+
+        .view-selector:has(.sprint-dropdown-panel),
+        .view-selector:has(.group-dropdown-panel),
+        .view-selector:has(.team-dropdown-panel) {
+            z-index: calc(var(--sticky-control-overlay-z) + 2);
+        }
+
+        .controls-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.55rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-secondary);
+        }
+
+        .view-filters {
+            display: flex;
+            align-items: flex-end;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            width: 100%;
+        }
+
+        .control-field {
+            position: relative;
+            display: inline-flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            padding-top: 0.4rem;
+        }
+
+        .control-field .sprint-dropdown-toggle,
+        .control-field .group-dropdown-toggle,
+        .control-field .team-dropdown-toggle,
+        .control-field .search-input {
+            position: relative;
+        }
+
+        .control-label {
+            position: absolute;
+            top: 0.55rem;
+            left: 0.75rem;
+            font-size: 0.5rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            background: var(--bg-primary);
+            padding: 0 0.3rem;
+            font-family: 'IBM Plex Mono', monospace;
+            line-height: 1;
+            z-index: 2;
+            transform: translateY(-50%);
+        }
+
+
+        .segmented-control {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            height: var(--control-height);
+            margin-left: 0.4rem;
+            margin-top: 0.4rem;
+            margin-bottom: 0;
+            padding: 3px;
+            background: #ece9e1;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            align-self: flex-start;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+        }
+
+        .view-mode-control,
+        .eng-mode-control,
+        .epm-state-control {
+            margin-left: 0;
+        }
+
+        .segmented-control-button {
+            padding: 0 0.75rem;
+            font-size: 0.7rem;
+            font-family: 'IBM Plex Mono', monospace;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            background: transparent;
+            border: 0;
+            margin: 0;
+            color: var(--text-secondary);
+            height: 100%;
+            min-width: 2.8rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            box-shadow: none;
+            transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+        }
+
+        .segmented-control-button:hover {
+            background: rgba(255, 255, 255, 0.72);
+            color: var(--text-primary);
+            transform: none;
+            box-shadow: none;
+        }
+
+        .segmented-control-button.active {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            box-shadow: 0 1px 2px rgba(22, 22, 22, 0.18);
+        }
+
+        .segmented-control-button.active:hover {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            box-shadow: 0 1px 2px rgba(22, 22, 22, 0.18);
+        }
+
+        .segmented-control-button:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        .sprint-dropdown {
+            position: relative;
+            width: max-content;
+            min-width: 0;
+            max-width: 100%;
+            --sprint-dropdown-min-width: 8.5rem;
+            --sprint-dropdown-max-width: min(24rem, calc(100vw - 2rem));
+        }
+
+        .sprint-dropdown-toggle {
+            width: max-content;
+            min-width: 0;
+            max-width: var(--sprint-dropdown-max-width);
+            padding: 0.5rem 0.7rem 0.4rem;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            transition: all 0.2s;
+            text-transform: none;
+            letter-spacing: normal;
+            margin-right: 0;
+            box-shadow: none;
+            border-radius: 10px;
+            height: var(--control-height);
+            min-width: var(--sprint-dropdown-min-width);
+        }
+
+        .sprint-dropdown-toggle span {
+            flex: 1;
+            text-align: left;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .sprint-dropdown-toggle svg {
+            width: 0.55rem;
+            height: 0.55rem;
+            flex-shrink: 0;
+            transition: transform 0.2s ease;
+        }
+
+        .sprint-dropdown-toggle:hover {
+            border-color: var(--border);
+            transform: none;
+            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .sprint-dropdown-toggle.open {
+            border-color: var(--border);
+            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
+        }
+
+        .sprint-dropdown-toggle.open svg {
+            transform: rotate(180deg);
+        }
+
+        .sprint-dropdown-panel {
+            position: absolute;
+            top: calc(100% + 0.35rem);
+            left: 0;
+            right: auto;
+            width: 100%;
+            min-width: 100%;
+            max-width: var(--sprint-dropdown-max-width);
+            background: #fff;
+            border: 1px solid var(--border);
+            box-shadow: 0 12px 28px rgba(22, 22, 22, 0.12);
+            padding: 0.5rem 0.6rem;
+            z-index: calc(var(--sticky-control-overlay-z) + 3);
+            text-align: left;
+            box-sizing: border-box;
+        }
+
+        .sprint-dropdown-search {
+            width: 100%;
+            padding: 0.45rem 0.55rem;
+            border: 1px solid var(--border);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.65rem;
+            margin-bottom: 0.4rem;
+            border-radius: 8px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .sprint-dropdown-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .sprint-dropdown-option {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.3rem 0.2rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.55rem;
+            color: var(--text-primary);
+            text-align: left;
+            text-transform: none;
+            letter-spacing: normal;
+            line-height: 1.2;
+            cursor: pointer;
+        }
+
+        .sprint-dropdown-option:hover {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .sprint-dropdown-option.selected {
+            background: var(--bg-primary);
+            font-weight: 700;
+        }
+
+        .sprint-dropdown-option + .sprint-dropdown-option {
+            border-top: 1px dashed var(--border);
+        }
+

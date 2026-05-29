@@ -1,48 +1,69 @@
-QUICK START - New .env Based Setup
-===================================
+QUICK START - Current Local Setup
+=================================
 
-1. INSTALL DEPENDENCIES:
-   python3 -m pip install --user python-dotenv
+For the supported DB/OAuth path, use INSTALL.md. This file is a short checklist.
 
-2. CREATE .env FILE:
+1. INSTALL DEPENDENCIES IN A PROJECT VIRTUALENV
+
+   ./install.sh
+
+   Or manually:
+
+   python3 -m venv .venv
+   . .venv/bin/activate
+   python -m pip install -r requirements.txt
+   python -m pip install -e .
+
+2. CREATE .env
+
    cp .env.example .env
 
-3. OPEN .env AND FILL IN:
-   nano .env
+3. CONFIGURE DB/OAUTH VALUES
 
-   Change:
-   - JIRA_EMAIL to your email
-   - JIRA_TOKEN to your API token
-   - JQL_QUERY if needed
-   - STATS_JQL_BASE if you want the completed sprint Statistics panel
+   Set the values documented in INSTALL.md:
 
-4. START SERVER:
-   python3 jira_server.py
+   - JIRA_URL
+   - JIRA_AUTH_MODE=atlassian_oauth
+   - Atlassian OAuth client settings
+   - CONFIG_STORAGE_BACKEND=db
+   - DATABASE_URL
+   - TOKEN_ENCRYPTION_MASTER_KEY_B64
+   - TOKEN_ENCRYPTION_KEY_ID
+   - FLASK_SECRET_KEY
 
-5. OPEN DASHBOARD:
-   Open jira-dashboard.html in browser
+4. RUN DATABASE MIGRATIONS
 
-DONE! 🎉
+   export DATABASE_URL=postgresql+psycopg:///jep_local
+   .venv/bin/alembic -c backend/db/alembic.ini upgrade head
 
+5. CHECK STARTUP PREREQUISITES
 
-FOR UPLOADING TO GITHUB:
-========================
+   .venv/bin/python scripts/check_startup_preflight.py
 
-✅ .env is already in .gitignore - won't go to git
-✅ .env.example will be in repository as template
-✅ Safe to do git push
+6. START SERVER
 
-Commands:
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin <your-repo-url>
-git push -u origin main
+   .venv/bin/python jira_server.py
 
+7. OPEN DASHBOARD
 
-WHERE TO GET API TOKEN:
+   http://localhost:5050/
+
+8. CONNECT HOME TOKEN FOR EPM
+
+   Sign in, then open Settings -> Connections and connect the signed-in user's
+   Home/Townsquare token. DB/OAuth EPM stays hidden until that encrypted user
+   token exists.
+
+PREBUILT RELEASE ZIP
 ====================
 
-1. https://id.atlassian.com/manage-profile/security/api-tokens
-2. Create API token
-3. Copy and paste into .env file
+Release zips are the runnable package for non-development use. They include
+frontend/dist and omit frontend source tests/plans. Unzip the release, run
+./install.sh, configure .env, run migrations for DB/OAuth mode, then run the
+startup preflight before launching the server.
+
+LEGACY BASIC MODE
+=================
+
+Server-side API-token auth remains only a local compatibility mode. Do not use
+legacy Jira/Home Basic credentials for the DB/OAuth EPM path.

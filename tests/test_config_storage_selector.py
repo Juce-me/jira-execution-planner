@@ -2,10 +2,12 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from alembic import command
 from alembic.config import Config
 
+import jira_server
 from backend.config.repository import (
     ConfigStorageError,
     selected_config_storage_backend,
@@ -32,6 +34,11 @@ class ConfigStorageSelectorTests(unittest.TestCase):
         with self.assertRaises(ConfigStorageError):
             selected_config_storage_backend({'CONFIG_STORAGE_BACKEND': 'auto'})
 
+    def test_db_storage_aliases_match_database_engine(self):
+        for backend in ('db', 'database', 'postgres', 'postgresql'):
+            with self.subTest(backend=backend):
+                self.assertEqual(selected_config_storage_backend({'CONFIG_STORAGE_BACKEND': backend}), 'db')
+
     def test_db_storage_requires_database_url(self):
         with self.assertRaises(ConfigStorageError):
             validate_config_storage_startup({'CONFIG_STORAGE_BACKEND': 'db'})
@@ -48,6 +55,30 @@ class ConfigStorageSelectorTests(unittest.TestCase):
 
             command.upgrade(config, 'head')
             validate_config_storage_startup(env)
+
+    def test_dashboard_config_requires_explicit_json_source_without_request_context_in_db_mode(self):
+        with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db'}, clear=False), \
+             patch.object(jira_server, '_load_dashboard_config_json', return_value={'version': 1}) as load_json, \
+             patch.object(jira_server, '_save_dashboard_config_json', return_value={'version': 1}) as save_json:
+            with self.assertRaises(ConfigStorageError):
+                jira_server.load_dashboard_config()
+            self.assertEqual(load_json.call_count, 0)
+
+            self.assertEqual(
+                jira_server.load_dashboard_config(source='jsonfile'),
+                {'version': 1},
+            )
+            load_json.assert_called_once_with()
+
+            with self.assertRaises(ConfigStorageError):
+                jira_server.save_dashboard_config({'version': 1})
+            self.assertEqual(save_json.call_count, 0)
+
+            self.assertEqual(
+                jira_server.save_dashboard_config({'version': 1}, source='jsonfile'),
+                {'version': 1},
+            )
+            save_json.assert_called_once_with({'version': 1})
 
 
 if __name__ == '__main__':

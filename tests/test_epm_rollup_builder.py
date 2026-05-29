@@ -3,9 +3,13 @@ import unittest
 
 import jira_server
 from backend.epm.rollup import EpmRollupDependencies, build_per_project_rollup
+from tests.auth_mode_test_utils import force_basic_auth_mode
 
 
 class BuildPerProjectRollupTests(unittest.TestCase):
+    def setUp(self):
+        force_basic_auth_mode(self, jira_server)
+
     def make_deps(self, project, fetch_results):
         cache = {}
         fetch_calls = []

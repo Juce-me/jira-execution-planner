@@ -73,6 +73,26 @@ class TestDashboardCssFileContract(unittest.TestCase):
         css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'src' / 'styles' / 'dashboard.css'
         self.assertTrue(css_path.is_file())
 
+    def test_dashboard_css_source_is_ordered_import_entrypoint(self):
+        styles_dir = Path(__file__).resolve().parents[1] / 'frontend' / 'src' / 'styles'
+        entrypoint = styles_dir / 'dashboard.css'
+        expected_imports = [
+            'base.css',
+            'settings.css',
+            'eng.css',
+            'stats-summary.css',
+            'scenario.css',
+            'stats.css',
+            'planning.css',
+            'epm.css',
+        ]
+        self.assertEqual(
+            entrypoint.read_text(encoding='utf-8').splitlines(),
+            [f'@import "./{filename}";' for filename in expected_imports],
+        )
+        for filename in expected_imports:
+            self.assertTrue((styles_dir / filename).is_file(), filename)
+
     def test_dashboard_css_includes_compact_sticky_header_contract(self):
         css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'dist' / 'dashboard.css'
         css = css_path.read_text(encoding='utf-8')

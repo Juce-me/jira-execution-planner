@@ -1,53 +1,9 @@
 import * as React from 'react';
+import { buildBlockLinkBuckets, getBlockOtherKey, uniqueDependencyEntries } from './dependencyFocusUtils.js';
 import { normalizeIssueStatus } from './issueViewUtils.js';
-
-function getBlockOtherKey(dep, taskKey) {
-    if (!dep?.key || !taskKey) return '';
-    return dep.key !== taskKey
-        ? dep.key
-        : (dep.prereqKey === taskKey ? dep.dependentKey : dep.prereqKey);
-}
-
-function getBlockLinkBuckets(entries, taskKey) {
-    const blockedBy = [];
-    const blocks = [];
-    (entries || []).forEach(dep => {
-        const otherKey = getBlockOtherKey(dep, taskKey);
-        if (!otherKey) return;
-        if (dep.dependentKey === taskKey) {
-            blockedBy.push(otherKey);
-            return;
-        }
-        if (dep.prereqKey === taskKey) {
-            blocks.push(otherKey);
-            return;
-        }
-        if (dep.direction === 'inward') {
-            blockedBy.push(otherKey);
-            return;
-        }
-        if (dep.direction === 'outward') {
-            blocks.push(otherKey);
-        }
-    });
-    return {
-        blockedBy: Array.from(new Set(blockedBy)),
-        blocks: Array.from(new Set(blocks))
-    };
-}
 
 function getIssueStatusName(issue) {
     return issue?.fields?.status?.name || issue?.status?.name || issue?.status || '';
-}
-
-function uniqueDependencyEntries(entries) {
-    const seen = new Set();
-    return (entries || []).filter(dep => {
-        const key = `${dep.key}-${dep.direction}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-    });
 }
 
 function buildMissingLine({ key, lookup, info, normalizeStatus }) {
@@ -103,7 +59,7 @@ export function buildIssueDependencyViewModel({
     const dependentsAll = uniqueDeps.filter(dep => dep.direction === 'inward');
     const dependsOnIds = dependsOnAll.map(dep => dep.key).filter(Boolean);
     const dependentIds = dependentsAll.map(dep => dep.key).filter(Boolean);
-    const { blockedBy: blockedByIds, blocks: blocksIds } = getBlockLinkBuckets(rawBlockDeps, task.key);
+    const { blockedBy: blockedByIds, blocks: blocksIds } = buildBlockLinkBuckets(rawBlockDeps, task.key);
     const blockInfoByKey = new Map();
     rawBlockDeps.forEach(dep => {
         const key = getBlockOtherKey(dep, task.key);

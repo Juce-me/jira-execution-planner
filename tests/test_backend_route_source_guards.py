@@ -23,6 +23,7 @@ BACKEND_ROUTE_GROUPS = {
 }
 BACKEND_SECURITY_GUARDS_PATH = REPO_ROOT / "backend" / "security" / "guards.py"
 BACKEND_EPM_PATH = REPO_ROOT / "backend" / "epm"
+BACKEND_EPM_HOME_PATH = BACKEND_EPM_PATH / "home.py"
 APP_ROUTE_EPM_PATTERN = re.compile(
     r"@app\.(?:route|get|post|put|patch|delete)\(\s*['\"]\/api\/epm(?:\/|['\"])",
     re.MULTILINE,
@@ -197,6 +198,15 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
             [],
             "root epm_*.py compatibility modules must not return after backend/epm/ exists",
         )
+
+    def test_home_project_worker_fanout_preserves_explicit_context(self):
+        if not BACKEND_EPM_HOME_PATH.exists():
+            return
+
+        source = BACKEND_EPM_HOME_PATH.read_text(encoding="utf8")
+        self.assertIn("def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str, context=None)", source)
+        self.assertIn("_fetch_or_build_home_project_record(client, row, context=context)", source)
+        self.assertIn("executor.map(lambda row:", source)
 
     def test_epm_aggregate_route_forwards_rollup_headers_and_params(self):
         if not BACKEND_EPM_ROUTES_PATH.exists():

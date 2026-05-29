@@ -5,24 +5,31 @@ const path = require('node:path');
 
 test('planning action row includes postponed and awaiting validation bulk actions', () => {
     const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningActionBar.jsx');
     const source = fs.readFileSync(sourcePath, 'utf8');
+    const componentSource = fs.readFileSync(componentPath, 'utf8');
 
     assert.match(source, /toggleIncludeByStatus\(\['Postponed'\]\)/);
     assert.match(source, /toggleIncludeByStatus\(\['Awaiting Validation'\]\)/);
-    assert.match(source, /status === 'postponed'/);
-    assert.match(source, /status === 'awaiting validation'/);
+    assert.match(componentSource, />\s*Postponed\s*</);
+    assert.match(componentSource, />\s*Awaiting Val\.\s*</);
+    assert.match(componentSource, /onTogglePostponed/);
+    assert.match(componentSource, /onToggleAwaitingValidation/);
 });
 
 test('planning action row includes select all for currently visible planning tasks', () => {
     const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningActionBar.jsx');
     const source = fs.readFileSync(sourcePath, 'utf8');
+    const componentSource = fs.readFileSync(componentPath, 'utf8');
 
     assert.match(source, /const selectAllVisiblePlanningTasks = \(\) => \{/);
     assert.match(source, /visibleTasksForList\.forEach\(task => \{/);
     assert.match(source, /next\[task\.key\] = true;/);
-    assert.match(source, /onClick=\{selectAllVisiblePlanningTasks\}/);
-    assert.match(source, /disabled=\{visibleTasksForList\.length === 0\}/);
-    assert.match(source, />\s*Select All\s*</);
+    assert.match(source, /hasVisiblePlanningTasks=\{visibleTasksForList\.length > 0\}/);
+    assert.match(componentSource, /onSelectAllVisible/);
+    assert.match(componentSource, /disabled=\{!hasVisiblePlanningTasks\}/);
+    assert.match(componentSource, />\s*Select All\s*</);
 });
 
 test('planning panel no longer renders capacity bar footer rows', () => {
@@ -86,4 +93,91 @@ test('selected sp by team cards still render for a single team entry', () => {
     const source = fs.readFileSync(sourcePath, 'utf8');
 
     assert.match(source, /\{selectedTeamEntries\.length > 0 && \(\(\) => \{/);
+});
+
+test('dashboard imports planning capacity helpers from ENG module', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /from '\.\/eng\/planningCapacityUtils\.js'/);
+    assert.doesNotMatch(source, /const getCapacityStatus = \(/);
+    assert.doesNotMatch(source, /const getTeamCapacityMeta = \(/);
+});
+
+test('dashboard imports planning selection stat helpers from ENG module', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /from '\.\/eng\/planningSelectionStats\.js'/);
+    assert.doesNotMatch(source, /selectedTasksList\.reduce\(\(sum, task\) => \{/);
+    assert.doesNotMatch(source, /selectedPlanningTasksList\.reduce\(\(acc, task\) => \{/);
+});
+
+test('dashboard imports planning capacity aggregate helpers from ENG module', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /buildTeamCapacityStats/);
+    assert.doesNotMatch(source, /capacityTasks\.reduce\(\(acc, task\) => \{/);
+    assert.doesNotMatch(source, /displayedTeamCapacityEntries\.reduce\(\(acc, info\) => \{/);
+});
+
+test('dashboard imports dependency focus helpers from issues module', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.match(source, /from '\.\/issues\/dependencyFocusUtils\.js'/);
+    assert.doesNotMatch(source, /const getBlockLinkBuckets = \(entries, taskKey\) => \{/);
+    assert.doesNotMatch(source, /const dependencyKeySignature = React\.useMemo\(\(\) => \{\s*const keys = Array\.from\(new Set\(dependencyTasks\.map\(task => task\.key\)\.filter\(Boolean\)\)\);/);
+});
+
+test('dashboard delegates planning action row to ENG component', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningActionBar.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    const componentSource = fs.readFileSync(componentPath, 'utf8');
+
+    assert.match(source, /import PlanningActionBar from '\.\/eng\/PlanningActionBar\.jsx'/);
+    assert.match(source, /<PlanningActionBar/);
+    assert.doesNotMatch(source, /className="planning-actions"/);
+    assert.match(componentSource, /className="planning-actions"/);
+    assert.match(componentSource, />\s*Accepted\s*</);
+    assert.match(componentSource, />\s*To Do\s*</);
+    assert.match(componentSource, />\s*Clear Selected\s*</);
+    assert.match(componentSource, /onOpenSelectedInJira/);
+});
+
+test('dashboard delegates planning capacity bar to ENG component', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningCapacityBar.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    const componentSource = fs.readFileSync(componentPath, 'utf8');
+
+    assert.match(source, /import PlanningCapacityBar from '\.\/eng\/PlanningCapacityBar\.jsx'/);
+    assert.match(source, /<PlanningCapacityBar/);
+    assert.doesNotMatch(source, /className="capacity-bar-graph"/);
+    assert.match(componentSource, /className="capacity-bar-graph"/);
+    assert.match(componentSource, /capacity-bar-excluded-zone/);
+    assert.match(componentSource, /capacity-bar-variance-zone/);
+    assert.match(componentSource, /capacity-bar-marker teamcap/);
+    assert.match(componentSource, /Selected:/);
+    assert.match(componentSource, /\{selectedCount\} · \{selectedSP\.toFixed\(1\)\} SP/);
+});
+
+test('dashboard delegates planning project split bar to ENG component', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningProjectSplitBar.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    const componentSource = fs.readFileSync(componentPath, 'utf8');
+
+    assert.match(source, /import PlanningProjectSplitBar from '\.\/eng\/PlanningProjectSplitBar\.jsx'/);
+    assert.match(source, /<PlanningProjectSplitBar/);
+    assert.doesNotMatch(source, /className="project-bar-graph"/);
+    assert.doesNotMatch(source, /className="project-bar-fill product"/);
+    assert.match(componentSource, /Selected SP by Project:/);
+    assert.match(componentSource, /className="project-bar-graph"/);
+    assert.match(componentSource, /className="project-bar-fill product"/);
+    assert.match(componentSource, /className="project-bar-fill tech"/);
+    assert.match(componentSource, /Target<br\/>/);
+    assert.match(componentSource, /No tasks selected/);
 });

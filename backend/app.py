@@ -62,6 +62,3 @@ def register_blueprints(flask_app):
     flask_app.register_blueprint(dev_bp)
     flask_app.register_blueprint(export_bp)
     return flask_app
-
-
-app = create_app()

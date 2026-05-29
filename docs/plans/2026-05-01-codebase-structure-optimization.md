@@ -1,6 +1,6 @@
-# Codebase Structure Optimization Execution Plan
+# Codebase Structure Optimization Support History
 
-> **Legacy plan status:** Unclassified historical plan. Do not execute from this file until it is reviewed and renamed or moved according to `docs/plans/AGENTS.md`.
+> **Legacy plan status:** Support/history context. Do not execute from this file. Current executable codebase-operability slices are tracked in `EXEC-codebase-operability-*` plans.
 
 Date: 2026-05-01
 Plan branch: `docs/codebase-structure-optimization-plan`

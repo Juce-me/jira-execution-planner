@@ -125,7 +125,21 @@ Quick DB verification for source checkouts:
 
 Prebuilt release zips omit the test suite; skip this check there and use the source checkout when you need to run tests.
 
+The release zip is the runnable package for normal installs. Editable installs assume the source checkout or extracted release directory is still present because Flask serves `jira-dashboard.html` and `frontend/dist` from sibling files. Do not treat `pip install .` by itself as a self-contained wheel distribution.
+
 ## 5. Start The App
+
+Check startup prerequisites before launching Flask:
+
+```bash
+.venv/bin/python scripts/check_startup_preflight.py
+```
+
+The equivalent Make target is:
+
+```bash
+make preflight
+```
 
 ```bash
 .venv/bin/python jira_server.py
@@ -182,6 +196,14 @@ Do not seed a Home/Townsquare service integration for the DB/OAuth EPM read path
 `DATABASE_URL is required when CONFIG_STORAGE_BACKEND=db`
 
 Set `DATABASE_URL`, export it before CLI migration/seeding commands, run migrations, then restart Flask.
+
+`FAIL migrations: Database is unavailable or migrations are not at head.`
+
+Start PostgreSQL, check `DATABASE_URL`, then run:
+
+```bash
+.venv/bin/alembic -c backend/db/alembic.ini upgrade head
+```
 
 `TOKEN_ENCRYPTION_MASTER_KEY_B64 or TOKEN_ENCRYPTION_KEY_ID is required`
 

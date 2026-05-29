@@ -13,7 +13,6 @@ import json
 import hashlib
 import threading
 import time
-import subprocess
 import uuid
 from contextlib import nullcontext
 from datetime import datetime, timedelta, date, timezone
@@ -28,7 +27,10 @@ from openpyxl.styles import Font, PatternFill, Alignment
 import io
 from requests import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
+from backend.epm import config as epm_config
 from backend.epm import home as epm_home
+from backend.epm import aggregate as epm_aggregate
+from backend.epm import payload as epm_payload
 from backend.epm.home import fetch_epm_home_projects, merge_epm_linkage
 from backend.epm.rollup import EpmRollupDependencies, build_per_project_rollup
 from backend.epm.scope import build_epm_scope_clause, normalize_epm_sprint_field, should_apply_epm_sprint
@@ -44,6 +46,7 @@ from backend.auth.csrf import validate_csrf_token
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
 from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
 from backend.auth.key_provider import key_provider_from_env
+from backend.auth.local_oauth_store import LocalOAuthStoreConfig, LocalOAuthTokenStore
 from backend.auth.project_access import project_access_denied_response
 from backend.auth.service_integrations import register_service_integration_cache_invalidator
 from backend.config.repository import (
@@ -53,7 +56,7 @@ from backend.config.repository import (
     json_repository as build_json_config_repository,
     validate_config_storage_startup,
 )
-from backend.db.engine import DatabaseConfigurationError, database_storage_enabled, session_scope, validate_startup_database_config
+from backend.db.engine import DatabaseConfigurationError, database_storage_enabled, session_scope
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
     AUTH_MODE_BASIC,
@@ -77,9 +80,16 @@ from backend.auth.jira_auth import (
 
 # Load environment variables from .env file before constructing the Flask app.
 load_dotenv()
-from backend.app import app
+from backend.app import create_app
 from backend import config_store as _config_store
 from backend import jira_client as _jira_client
+from backend.services import capacity as _capacity_service
+from backend.services import sprints as _sprints_service
+from backend.services import stats_cache as _stats_cache_service
+from backend.services import update_check as _update_check_service
+from backend.services import priority_weights as _priority_weights_service
+from backend.services import team_catalog as _team_catalog_service
+from backend.services import group_config as _group_config_service
 from backend.epm import projects as epm_projects
 from backend.security.policy import (
     is_oauth_ready_api_path as policy_is_oauth_ready_api_path,
@@ -104,6 +114,7 @@ ATLASSIAN_SCOPES = os.getenv(
     'read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access',
 ).strip()
 FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', '').strip()
+app = create_app()
 app.secret_key = FLASK_SECRET_KEY or os.urandom(32)
 APP_ENVIRONMENT_KEY = os.getenv('APP_ENVIRONMENT_KEY', 'local').strip() or 'local'
 OAUTH_LOCAL_TOKEN_STORE_ALLOWED = os.getenv('OAUTH_LOCAL_TOKEN_STORE_ALLOWED', '').strip().lower() in {'1', 'true', 'yes'}
@@ -142,7 +153,6 @@ UPDATE_CHECK_BRANCH = os.getenv('UPDATE_CHECK_BRANCH', 'main').strip() or 'main'
 UPDATE_CHECK_TTL_SECONDS = int(os.getenv('UPDATE_CHECK_TTL_SECONDS', '300'))
 UPDATE_CHECK_RELEASE_INFO = os.getenv('UPDATE_CHECK_RELEASE_INFO', 'release-info.json').strip() or 'release-info.json'
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').strip().upper() or 'INFO'
-validate_startup_database_config()
 JIRA_RETRY_MAX_ATTEMPTS = int(os.getenv('JIRA_RETRY_MAX_ATTEMPTS', '4'))
 JIRA_RETRY_MAX_ELAPSED_SECONDS = float(os.getenv('JIRA_RETRY_MAX_ELAPSED_SECONDS', '10'))
 JIRA_RETRY_BASE_DELAY_SECONDS = float(os.getenv('JIRA_RETRY_BASE_DELAY_SECONDS', '0.5'))
@@ -371,86 +381,34 @@ def current_auth_config():
     )
 
 
+def _local_oauth_store_config():
+    return LocalOAuthStoreConfig(
+        auth_mode=JIRA_AUTH_MODE,
+        oauth_mode=AUTH_MODE_ATLASSIAN_OAUTH,
+        environment_key=APP_ENVIRONMENT_KEY,
+        persistence_allowed=OAUTH_LOCAL_TOKEN_STORE_ALLOWED,
+        token_store_path=OAUTH_TOKEN_STORE_PATH,
+        ttl_seconds=OAUTH_TOKEN_STORE_TTL_SECONDS,
+    )
+
+
+_LOCAL_OAUTH_STORE = LocalOAuthTokenStore(
+    token_store=OAUTH_TOKEN_STORE,
+    refresh_locks=OAUTH_REFRESH_LOCKS,
+    store_lock=OAUTH_TOKEN_STORE_LOCK,
+    config=_local_oauth_store_config,
+    new_session_id=new_oauth_state,
+    now=lambda: time.time(),
+    logger=logger,
+)
+
+
 def _drop_oauth_session(session_id):
-    with OAUTH_TOKEN_STORE_LOCK:
-        OAUTH_TOKEN_STORE.pop(session_id, None)
-        OAUTH_REFRESH_LOCKS.pop(session_id, None)
-        _drop_persistent_oauth_session(session_id)
+    _LOCAL_OAUTH_STORE.drop_session(session_id)
 
 
 def _oauth_token_store_persistence_enabled():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return False
-    if APP_ENVIRONMENT_KEY.strip().lower() not in {'local', 'dev'}:
-        return False
-    return bool(OAUTH_LOCAL_TOKEN_STORE_ALLOWED and OAUTH_TOKEN_STORE_PATH)
-
-
-def _read_persistent_oauth_token_store():
-    if not _oauth_token_store_persistence_enabled():
-        return {}
-    try:
-        with open(OAUTH_TOKEN_STORE_PATH, 'r', encoding='utf-8') as handle:
-            payload = json.load(handle)
-    except FileNotFoundError:
-        return {}
-    except (OSError, ValueError) as exc:
-        logger.warning('Failed to read local OAuth token store: %s', exc)
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _write_persistent_oauth_token_store(payload):
-    if not _oauth_token_store_persistence_enabled():
-        return
-    directory = os.path.dirname(OAUTH_TOKEN_STORE_PATH)
-    if directory:
-        os.makedirs(directory, exist_ok=True)
-    if not payload:
-        try:
-            os.remove(OAUTH_TOKEN_STORE_PATH)
-        except FileNotFoundError:
-            pass
-        except OSError as exc:
-            logger.warning('Failed to remove local OAuth token store: %s', exc)
-        return
-    temp_path = f'{OAUTH_TOKEN_STORE_PATH}.tmp'
-    try:
-        fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
-            json.dump(payload, handle)
-        os.replace(temp_path, OAUTH_TOKEN_STORE_PATH)
-        os.chmod(OAUTH_TOKEN_STORE_PATH, 0o600)
-    except OSError as exc:
-        logger.warning('Failed to write local OAuth token store: %s', exc)
-        try:
-            os.remove(temp_path)
-        except OSError:
-            pass
-
-
-def _drop_persistent_oauth_session(session_id):
-    if not _oauth_token_store_persistence_enabled():
-        return
-    payload = _read_persistent_oauth_token_store()
-    if session_id not in payload:
-        return
-    payload.pop(session_id, None)
-    _write_persistent_oauth_token_store(payload)
-
-
-def _save_persistent_oauth_session(session_id, data):
-    if not _oauth_token_store_persistence_enabled():
-        return
-    payload = _read_persistent_oauth_token_store()
-    payload[session_id] = dict(data)
-    _write_persistent_oauth_token_store(payload)
-
-
-def _load_persistent_oauth_session(session_id):
-    payload = _read_persistent_oauth_token_store()
-    data = payload.get(session_id)
-    return data if isinstance(data, dict) else {}
+    return _LOCAL_OAUTH_STORE.persistence_enabled()
 
 
 def _db_oauth_browser_session_payload(data):
@@ -494,72 +452,28 @@ def strict_db_oauth_browser_session_data():
     return {}
 
 
-def _cleanup_expired_oauth_sessions(now=None):
-    now = time.time() if now is None else now
-    expired = [
-        stored_id
-        for stored_id, stored in OAUTH_TOKEN_STORE.items()
-        if now - stored.get('stored_at', 0) > OAUTH_TOKEN_STORE_TTL_SECONDS
-    ]
-    for stored_id in expired:
-        OAUTH_TOKEN_STORE.pop(stored_id, None)
-        OAUTH_REFRESH_LOCKS.pop(stored_id, None)
-        _drop_persistent_oauth_session(stored_id)
-
-
 def save_oauth_session(data):
     if not data:
         session.pop('db_oauth_session', None)
         session_id = session.pop('atlassian_oauth_session_id', None)
         if session_id:
-            with OAUTH_TOKEN_STORE_LOCK:
-                refresh_lock = OAUTH_REFRESH_LOCKS.get(session_id)
+            refresh_lock = _LOCAL_OAUTH_STORE.existing_refresh_lock(session_id)
             if refresh_lock:
                 with refresh_lock:
                     _drop_oauth_session(session_id)
             else:
                 _drop_oauth_session(session_id)
         return
-    now = time.time()
-    session_id = session.get('atlassian_oauth_session_id')
     remember_db_oauth_browser_session(data)
-    with OAUTH_TOKEN_STORE_LOCK:
-        _cleanup_expired_oauth_sessions(now)
-        if not session_id:
-            session_id = new_oauth_state()
-            session['atlassian_oauth_session_id'] = session_id
-        stored = dict(data, stored_at=now)
-        OAUTH_TOKEN_STORE[session_id] = stored
-        OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
-        _save_persistent_oauth_session(session_id, stored)
+    _LOCAL_OAUTH_STORE.save_session(session, data)
 
 
 def oauth_refresh_lock():
-    session_id = session.get('atlassian_oauth_session_id')
-    if not session_id:
-        return OAUTH_TOKEN_STORE_LOCK
-    with OAUTH_TOKEN_STORE_LOCK:
-        return OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+    return _LOCAL_OAUTH_STORE.refresh_lock(session)
 
 
 def oauth_session_data():
-    session_id = session.get('atlassian_oauth_session_id')
-    if not session_id:
-        with OAUTH_TOKEN_STORE_LOCK:
-            _cleanup_expired_oauth_sessions()
-        return {}
-    with OAUTH_TOKEN_STORE_LOCK:
-        _cleanup_expired_oauth_sessions()
-        data = OAUTH_TOKEN_STORE.get(session_id) or {}
-        if not data:
-            data = _load_persistent_oauth_session(session_id)
-            if data:
-                OAUTH_TOKEN_STORE[session_id] = dict(data)
-                OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
-    if data and time.time() - data.get('stored_at', 0) > OAUTH_TOKEN_STORE_TTL_SECONDS:
-        save_oauth_session({})
-        return {}
-    return data
+    return _LOCAL_OAUTH_STORE.session_data(session)
 
 
 def jira_session_data():
@@ -584,19 +498,7 @@ def oauth_session_data_for_auth_context(context):
         return db_oauth_session_data_for_auth_context(context)
     if not session_id:
         return {}
-    now = time.time()
-    with OAUTH_TOKEN_STORE_LOCK:
-        _cleanup_expired_oauth_sessions(now)
-        data = OAUTH_TOKEN_STORE.get(session_id) or {}
-        if not data:
-            data = _load_persistent_oauth_session(session_id)
-            if data:
-                OAUTH_TOKEN_STORE[session_id] = dict(data)
-                OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
-    if data and now - data.get('stored_at', 0) > OAUTH_TOKEN_STORE_TTL_SECONDS:
-        _drop_oauth_session(session_id)
-        return {}
-    return dict(data)
+    return _LOCAL_OAUTH_STORE.session_data_for_id(session_id)
 
 
 def db_oauth_session_data_for_auth_context(context):
@@ -614,24 +516,12 @@ def save_oauth_session_for_auth_context(context, data):
     session_id = oauth_session_id_from_auth_context(context)
     if not session_id:
         return
-    if not data:
-        _drop_oauth_session(session_id)
-        return
-    now = time.time()
-    with OAUTH_TOKEN_STORE_LOCK:
-        _cleanup_expired_oauth_sessions(now)
-        stored = dict(data, stored_at=now)
-        OAUTH_TOKEN_STORE[session_id] = stored
-        OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
-        _save_persistent_oauth_session(session_id, stored)
+    _LOCAL_OAUTH_STORE.save_session_for_id(session_id, data)
 
 
 def oauth_refresh_lock_for_auth_context(context):
     session_id = oauth_session_id_from_auth_context(context)
-    if not session_id:
-        return OAUTH_TOKEN_STORE_LOCK
-    with OAUTH_TOKEN_STORE_LOCK:
-        return OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+    return _LOCAL_OAUTH_STORE.refresh_lock_for_id(session_id)
 
 
 def current_jira_session_data(context=None):
@@ -1354,14 +1244,7 @@ def normalize_team_value(value):
 
 def normalize_capacity_team_name(team_name):
     """Strip prefixes to match capacity team labels."""
-    if not team_name:
-        return None
-    cleaned = str(team_name).replace('\u00a0', ' ').strip()
-    cleaned = re.sub(r'^\[archived\]\s*', '', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'^r&d\s+', '', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'^(product|tech)\s*-\s*', '', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'\s+', ' ', cleaned)
-    return cleaned.strip()
+    return _capacity_service.normalize_capacity_team_name(team_name)
 
 
 def build_team_value(raw_team):
@@ -1421,267 +1304,110 @@ def fetch_teams_from_jira_api():
 
 
 def build_capacity_jql(sprint_name, team_names=None):
-    capacity_project = get_effective_capacity_project()
-    sprint_label = str(sprint_name or '').replace('"', '\\"')
-    if team_names:
-        clauses = []
-        for name in team_names:
-            cleaned = str(name).replace('"', '\\"').strip()
-            if not cleaned:
-                continue
-            phrase = f'\\"Team info {sprint_label} - {cleaned}\\"'
-            clauses.append(f'summary ~ "{phrase}"')
-        if clauses:
-            return f'project = "{capacity_project}" AND ({ " OR ".join(clauses) })'
-    phrase = f'\\"Team info {sprint_label} -\\"'
-    return f'project = "{capacity_project}" AND summary ~ "{phrase}"'
+    return _capacity_service.build_capacity_jql(
+        sprint_name,
+        team_names,
+        capacity_project=get_effective_capacity_project(),
+    )
 
 
 def fetch_capacity_for_sprint(sprint_name, headers, debug=False, team_names=None):
-    if not get_effective_capacity_project():
-        return {
-            'enabled': False,
-            'capacities': {}
-        }, None
-
-    capacity_field_id = resolve_capacity_field_id(headers)
-    if not capacity_field_id:
-        return {
-            'enabled': False,
-            'capacities': {},
-            'message': 'Missing Team capacity field ID'
-        }, None
-
-    capacities = {}
-    debug_items = []
-    issues = []
-    jqls = []
-    chunk_size = 20
-    team_chunks = [team_names[i:i + chunk_size] for i in range(0, len(team_names or []), chunk_size)]
-    if not team_chunks:
-        team_chunks = [None]
-
-    for chunk in team_chunks:
-        jql = build_capacity_jql(sprint_name, chunk)
-        jqls.append(jql)
-        payload = {
-            'jql': jql,
-            'maxResults': 200,
-            'fields': ['summary', capacity_field_id]
-        }
-        response = jira_search_request(payload)
-        if response.status_code != 200:
-            return None, response.text
-        data = response.json() or {}
-        issues.extend(data.get('issues') or [])
-    pattern = re.compile(rf'^Team info\s+{re.escape(str(sprint_name))}\s*-\s*(.+)$', re.IGNORECASE)
-    for issue in issues:
-        fields = issue.get('fields') or {}
-        summary = str(fields.get('summary') or '').strip()
-        match = pattern.match(summary)
-        if not match:
-            continue
-        short_name = normalize_capacity_team_name(match.group(1))
-        if not short_name:
-            continue
-        raw_capacity = fields.get(capacity_field_id)
-        if debug:
-            debug_items.append({
-                'summary': summary,
-                'rawCapacity': raw_capacity
-            })
-        try:
-            capacity_value = float(raw_capacity)
-        except (TypeError, ValueError):
-            continue
-        capacities[short_name] = capacity_value
-
-    response_payload = {
-        'enabled': True,
-        'sprint': sprint_name,
-        'capacities': capacities
-    }
-    if debug:
-        response_payload['debug'] = {
-            'jql': jqls if len(jqls) > 1 else jqls[0],
-            'issueCount': len(issues),
-            'matched': debug_items[:20],
-            'fieldId': capacity_field_id
-        }
-    return response_payload, None
+    return _capacity_service.fetch_capacity_for_sprint(
+        sprint_name,
+        headers,
+        debug=debug,
+        team_names=team_names,
+        capacity_project=get_effective_capacity_project(),
+        resolve_capacity_field_id=resolve_capacity_field_id,
+        search_request=jira_search_request,
+        build_capacity_jql_fn=build_capacity_jql,
+        normalize_capacity_team_name_fn=normalize_capacity_team_name,
+    )
 
 
 def fetch_watchers_count(issue_key):
     """Fetch watchers count for an issue (fallback if watches field is missing)."""
-    if not issue_key:
-        return None
-    try:
-        response = current_jira_get(f'/rest/api/3/issue/{issue_key}/watchers', timeout=20)
-        if response.status_code != 200:
-            log_warning(f'Watchers fetch failed: status={response.status_code}')
-            return None
-        data = response.json() or {}
-        if isinstance(data.get('watchCount'), int):
-            return data['watchCount']
-        watchers = data.get('watchers') or []
-        return len(watchers)
-    except Exception as e:
-        logger.exception('Watchers fetch exception')
-        return None
+    return _capacity_service.fetch_watchers_count(
+        issue_key,
+        current_jira_get=current_jira_get,
+        log_warning_fn=log_warning,
+        logger=logger,
+    )
 
 
 def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
     """Fetch team sizes from Jira capacity issues (watchers count)."""
-    if not get_effective_capacity_project() or not sprint_name:
-        return {}, {}
-
-    issues = []
-    jqls = []
-    chunk_size = 20
-    team_chunks = [team_names[i:i + chunk_size] for i in range(0, len(team_names or []), chunk_size)]
-    if not team_chunks:
-        team_chunks = [None]
-
-    for chunk in team_chunks:
-        jql = build_capacity_jql(sprint_name, chunk)
-        jqls.append(jql)
-        payload = {
-            'jql': jql,
-            'maxResults': 200,
-            'fields': ['summary', 'watches', 'reporter']
-        }
-        response = jira_search_request(payload)
-        if response.status_code != 200:
-            log_warning(f'Capacity size fetch failed: status={response.status_code}')
-            continue
-        data = response.json() or {}
-        issues.extend(data.get('issues') or [])
-
-    sizes = {}
-    details = {}
-    pattern = re.compile(rf'^Team info\s+{re.escape(str(sprint_name))}\s*-\s*(.+)$', re.IGNORECASE)
-    for issue in issues:
-        fields = issue.get('fields') or {}
-        summary = str(fields.get('summary') or '').strip()
-        match = pattern.match(summary)
-        if not match:
-            continue
-        short_name = normalize_capacity_team_name(match.group(1))
-        if not short_name:
-            continue
-        watch_count = None
-        watches = fields.get('watches') or {}
-        if isinstance(watches, dict):
-            watch_count = watches.get('watchCount')
-        if watch_count is None:
-            watch_count = fetch_watchers_count(issue.get('key'))
-        if watch_count is None:
-            continue
-        try:
-            count = int(watch_count)
-            sizes[short_name] = count
-            reporter_name = (fields.get('reporter') or {}).get('displayName')
-            details[short_name] = {
-                'watchers': count,
-                'issue_key': issue.get('key'),
-                'reporter': reporter_name
-            }
-            if issue.get('key'):
-                log_debug(f'Capacity size resolved team={short_name} watchers={count} reporter={reporter_name}')
-        except (TypeError, ValueError):
-            continue
-
-    return sizes, details
+    return _capacity_service.fetch_capacity_team_sizes(
+        sprint_name,
+        headers,
+        team_names=team_names,
+        capacity_project=get_effective_capacity_project(),
+        search_request=jira_search_request,
+        fetch_watchers_count=fetch_watchers_count,
+        build_capacity_jql_fn=build_capacity_jql,
+        normalize_capacity_team_name_fn=normalize_capacity_team_name,
+        log_warning_fn=log_warning,
+        log_debug_fn=log_debug,
+    )
 
 
 # Cache helper functions
 def load_sprints_cache():
     """Load sprints from cache file"""
-    try:
-        if os.path.exists(SPRINTS_CACHE_FILE):
-            with open(SPRINTS_CACHE_FILE, 'r') as f:
-                cache_data = json.load(f)
-                return cache_data
-        return None
-    except Exception as e:
-        log_warning(f'Failed to load cache: {e}')
-        return None
+    return _sprints_service.load_sprints_cache(
+        SPRINTS_CACHE_FILE,
+        log_warning_fn=log_warning,
+    )
 
 
 def save_sprints_cache(sprints):
     """Save sprints to cache file"""
-    try:
-        cache_data = {
-            'timestamp': datetime.now().isoformat(),
-            'boardId': get_effective_board_id(),
-            'sprints': sprints
-        }
-        with open(SPRINTS_CACHE_FILE, 'w') as f:
-            json.dump(cache_data, f, indent=2)
-        log_info(f'Cached {len(sprints)} sprints to {SPRINTS_CACHE_FILE}')
-        return True
-    except Exception as e:
-        log_warning(f'Failed to save cache: {e}')
-        return False
+    return _sprints_service.save_sprints_cache(
+        sprints,
+        cache_file=SPRINTS_CACHE_FILE,
+        board_id=get_effective_board_id(),
+        now_fn=datetime.now,
+        log_info_fn=log_info,
+        log_warning_fn=log_warning,
+    )
 
 
 def is_cache_valid():
     """Check if cache exists, is not expired, and matches the current board config"""
     cache_data = load_sprints_cache()
-    if not cache_data or 'timestamp' not in cache_data:
-        return False
-
-    try:
-        # Invalidate if board config changed since cache was built
-        cached_board = str(cache_data.get('boardId') or '').strip()
-        current_board = get_effective_board_id()
-        if cached_board != current_board:
-            log_info(f'Cache invalidated: board changed ({cached_board!r} → {current_board!r})')
-            return False
-
-        cache_time = datetime.fromisoformat(cache_data['timestamp'])
-        expiry_time = cache_time + timedelta(hours=CACHE_EXPIRY_HOURS)
-        is_valid = datetime.now() < expiry_time
-
-        if is_valid:
-            hours_old = (datetime.now() - cache_time).total_seconds() / 3600
-            log_debug(f'Cache is valid (age: {hours_old:.1f} hours)')
-        else:
-            log_info(f'Cache expired (age: {(datetime.now() - cache_time).total_seconds() / 3600:.1f} hours)')
-
-        return is_valid
-    except Exception as e:
-        log_warning(f'Failed to validate cache: {e}')
-        return False
+    return _sprints_service.is_sprints_cache_valid(
+        cache_data,
+        current_board_id=get_effective_board_id(),
+        cache_expiry_hours=CACHE_EXPIRY_HOURS,
+        now_fn=datetime.now,
+        log_info_fn=log_info,
+        log_debug_fn=log_debug,
+        log_warning_fn=log_warning,
+    )
 
 
 def load_stats_cache():
     """Load stats cache from disk."""
-    try:
-        if os.path.exists(STATS_CACHE_FILE):
-            with open(STATS_CACHE_FILE, 'r') as f:
-                return json.load(f)
-        return {}
-    except Exception as e:
-        log_warning(f'Failed to load stats cache: {e}')
-        return {}
+    return _stats_cache_service.load_stats_cache(STATS_CACHE_FILE, log_warning_fn=log_warning)
 
 
 def save_stats_cache(cache_data):
     """Persist stats cache to disk."""
-    try:
-        with open(STATS_CACHE_FILE, 'w') as f:
-            json.dump(cache_data, f, indent=2)
-        return True
-    except Exception as e:
-        log_warning(f'Failed to save stats cache: {e}')
-        return False
+    return _stats_cache_service.save_stats_cache(
+        cache_data,
+        cache_file=STATS_CACHE_FILE,
+        log_warning_fn=log_warning,
+    )
 
 
 def build_stats_cache_key(sprint_name, base_jql, team_ids, group_id=None):
-    raw = f"{sprint_name}::{base_jql}::{','.join(team_ids or [])}::{STATS_JQL_ORDER_BY}::{group_id or ''}"
-    digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
-    return f"sprint:{sprint_name}:{digest}"
+    return _stats_cache_service.build_stats_cache_key(
+        sprint_name,
+        base_jql,
+        team_ids,
+        order_by=STATS_JQL_ORDER_BY,
+        group_id=group_id,
+    )
 
 
 def strip_sprint_clause(jql):
@@ -1801,10 +1527,29 @@ def _load_dashboard_config_json():
     return _json_config_repository().load_dashboard_config()
 
 
-def load_dashboard_config():
+def _normalize_dashboard_config_source(source):
+    value = str(source or 'auto').strip().lower()
+    if value in {'auto', 'jsonfile', 'db'}:
+        return value
+    raise ConfigStorageError('dashboard config source must be auto, jsonfile, or db')
+
+
+def _current_dashboard_config_context_or_error():
+    if has_request_context():
+        return current_request_auth_context()
+    raise ConfigStorageError(
+        'CONFIG_STORAGE_BACKEND=db requires request context for dashboard config; '
+        'pass source="jsonfile" for explicit legacy JSON access'
+    )
+
+
+def load_dashboard_config(*, source='auto'):
     """Load the unified dashboard config."""
-    if config_storage_db_enabled() and has_request_context():
-        context = current_request_auth_context()
+    source = _normalize_dashboard_config_source(source)
+    if source == 'jsonfile':
+        return _load_dashboard_config_json()
+    if source == 'db' or config_storage_db_enabled():
+        context = _current_dashboard_config_context_or_error()
         return build_db_config_repository().load_dashboard_config(
             context,
             fallback_loader=_load_dashboard_config_json,
@@ -1816,10 +1561,13 @@ def _save_dashboard_config_json(config):
     return _config_store.save_dashboard_config(config, resolve_dashboard_config_path())
 
 
-def save_dashboard_config(config):
+def save_dashboard_config(config, *, source='auto'):
     """Write the unified dashboard config."""
-    if config_storage_db_enabled() and has_request_context():
-        context = current_request_auth_context()
+    source = _normalize_dashboard_config_source(source)
+    if source == 'jsonfile':
+        return _save_dashboard_config_json(config)
+    if source == 'db' or config_storage_db_enabled():
+        context = _current_dashboard_config_context_or_error()
         return build_db_config_repository().save_dashboard_config(context, config)
     return _save_dashboard_config_json(config)
 
@@ -1851,7 +1599,7 @@ def migrate_team_catalog_from_config():
     catalog_path = resolve_team_catalog_path()
     if os.path.exists(catalog_path):
         return  # Already migrated or manually created
-    dashboard_config = load_dashboard_config()
+    dashboard_config = load_dashboard_config(source='jsonfile')
     if not dashboard_config:
         return
     team_groups = dashboard_config.get('teamGroups')
@@ -1954,9 +1702,9 @@ def get_capacity_config():
     }
 
 
-def get_board_config():
+def get_board_config(*, source='auto'):
     """Return dashboard Jira board config, falling back to env var."""
-    config = load_dashboard_config()
+    config = load_dashboard_config(source=source)
     if config and 'board' in config:
         board = config.get('board') or {}
         return {
@@ -1971,8 +1719,8 @@ def get_board_config():
     }
 
 
-def get_effective_board_id():
-    return get_board_config().get('boardId', '').strip()
+def get_effective_board_id(*, source='auto'):
+    return get_board_config(source=source).get('boardId', '').strip()
 
 
 def build_epm_home_projects_cache_key(epm_scope):
@@ -1998,11 +1746,7 @@ def clear_epm_caches():
 
 
 def invalidate_stats_cache():
-    try:
-        if os.path.exists(STATS_CACHE_FILE):
-            os.remove(STATS_CACHE_FILE)
-    except Exception as exc:
-        log_warning(f'Failed to invalidate stats cache file: {exc}')
+    return _stats_cache_service.invalidate_stats_cache(STATS_CACHE_FILE, log_warning_fn=log_warning)
 
 
 def clear_auth_sensitive_caches(reason='auth_context_change'):
@@ -2043,9 +1787,10 @@ def clear_auth_sensitive_caches(reason='auth_context_change'):
 register_service_integration_cache_invalidator(clear_auth_sensitive_caches)
 
 
-def build_epm_projects_dependencies(context=None):
+def build_epm_projects_dependencies(context=None, epm_config_override=None):
     auth_context = context if context is not None else (current_request_auth_context() if has_request_context() else None)
     fetch_context = auth_context if auth_context is not None and not jira_home_process_cache_enabled(auth_context) else None
+    get_config = (lambda: epm_config_override) if epm_config_override is not None else get_epm_config
     return epm_projects.EpmProjectsDependencies(
         fetch_epm_home_projects=(
             lambda epm_scope: fetch_epm_home_projects(epm_scope, context=fetch_context)
@@ -2059,7 +1804,7 @@ def build_epm_projects_dependencies(context=None):
         cache_lock=_epm_cache_lock,
         cache_ttl_seconds=EPM_PROJECTS_CACHE_TTL_SECONDS,
         home_project_limit=epm_home.HOME_MAX_PROJECTS_PER_GOAL,
-        get_epm_config=get_epm_config,
+        get_epm_config=get_config,
         abort_not_found=abort,
         context=auth_context,
     )
@@ -2095,17 +1840,24 @@ def build_jira_headers():
     }
 
 
-def build_epm_fields_list():
+_FIELD_ID_NOT_PROVIDED = object()
+
+
+def _resolve_epm_field_id(field_id, getter):
+    return getter() if field_id is _FIELD_ID_NOT_PROVIDED else field_id
+
+
+def build_epm_fields_list(story_points_field_id=_FIELD_ID_NOT_PROVIDED):
     fields_list = ['summary', 'status', 'assignee', 'priority', 'issuetype', 'parent', 'labels', 'created', 'updated']
-    story_points_field = get_story_points_field_id()
+    story_points_field = _resolve_epm_field_id(story_points_field_id, get_story_points_field_id)
     if story_points_field and story_points_field not in fields_list:
         fields_list.append(story_points_field)
     return fields_list
 
 
-def build_epm_rollup_fields_list(epic_link_field_id=None, team_field_id=None):
-    fields_list = build_epm_fields_list()
-    sprint_field_id = get_sprint_field_id()
+def build_epm_rollup_fields_list(epic_link_field_id=None, team_field_id=None, story_points_field_id=_FIELD_ID_NOT_PROVIDED, sprint_field_id=_FIELD_ID_NOT_PROVIDED):
+    fields_list = build_epm_fields_list(story_points_field_id=story_points_field_id)
+    sprint_field_id = _resolve_epm_field_id(sprint_field_id, get_sprint_field_id)
     if sprint_field_id and sprint_field_id not in fields_list:
         fields_list.append(sprint_field_id)
     if epic_link_field_id and epic_link_field_id not in fields_list:
@@ -2115,8 +1867,8 @@ def build_epm_rollup_fields_list(epic_link_field_id=None, team_field_id=None):
     return fields_list
 
 
-def shape_epm_issue_payload(issues, team_field_id=None, include_card_fields=False):
-    story_points_field = get_story_points_field_id() if include_card_fields else None
+def shape_epm_issue_payload(issues, team_field_id=None, include_card_fields=False, story_points_field_id=_FIELD_ID_NOT_PROVIDED):
+    story_points_field = _resolve_epm_field_id(story_points_field_id, get_story_points_field_id) if include_card_fields else None
     team_field_id = team_field_id or (get_team_field_id() if include_card_fields else None)
     slim_issues = []
     epic_details = {}
@@ -2157,9 +1909,9 @@ def shape_epm_issue_payload(issues, team_field_id=None, include_card_fields=Fals
     return slim_issues, epic_details
 
 
-def shape_epm_rollup_issue_payload(issues, epic_link_field_id=None, team_field_id=None):
-    slim_issues, epic_details = shape_epm_issue_payload(issues, team_field_id=team_field_id, include_card_fields=True)
-    sprint_field_id = get_sprint_field_id()
+def shape_epm_rollup_issue_payload(issues, epic_link_field_id=None, team_field_id=None, story_points_field_id=_FIELD_ID_NOT_PROVIDED, sprint_field_id=_FIELD_ID_NOT_PROVIDED):
+    slim_issues, epic_details = shape_epm_issue_payload(issues, team_field_id=team_field_id, include_card_fields=True, story_points_field_id=story_points_field_id)
+    sprint_field_id = _resolve_epm_field_id(sprint_field_id, get_sprint_field_id)
     for raw_issue, slim_issue in zip(issues or [], slim_issues):
         fields = raw_issue.get('fields') or {}
         if not slim_issue.get('parentKey') and epic_link_field_id:
@@ -2175,101 +1927,11 @@ def shape_epm_rollup_issue_payload(issues, epic_link_field_id=None, team_field_i
     return slim_issues, epic_details
 
 
-def dedupe_issues_by_key(issues):
-    seen = set()
-    deduped = []
-    for issue in issues or []:
-        key = issue.get('key')
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        deduped.append(issue)
-    return deduped
-
-
-def validate_epm_tab_sprint(tab, sprint):
-    if should_apply_epm_sprint(tab):
-        if not sprint:
-            return {'error': 'sprint_required'}, 400
-        if not sprint.isdigit():
-            return {'error': 'sprint_not_numeric'}, 400
-    return None
-
-
-def normalize_epm_issue_type_sets(issue_types):
-    issue_types = issue_types if isinstance(issue_types, dict) else {}
-    normalized = {}
-    for bucket, defaults in DEFAULT_EPM_ISSUE_TYPES.items():
-        values = issue_types.get(bucket)
-        if not isinstance(values, list):
-            values = defaults
-        normalized[bucket] = {normalize_epm_text(value).lower() for value in values if normalize_epm_text(value)}
-    return normalized
-
-
-def build_empty_epm_rollup_payload(project, metadata_only=False, empty_rollup=False):
-    return {
-        'project': project,
-        'metadataOnly': metadata_only,
-        'emptyRollup': empty_rollup,
-        'truncated': False,
-        'truncatedQueries': [],
-        'initiatives': {},
-        'rootEpics': {},
-        'orphanStories': [],
-    }
-
-
-def build_epm_rollup_hierarchy(issues, issue_types):
-    type_sets = normalize_epm_issue_type_sets(issue_types)
-    initiative_types = type_sets['initiative']
-    epic_types = type_sets['epic']
-    initiatives = {}
-    root_epics = {}
-
-    for issue in issues or []:
-        issue_key = issue.get('key')
-        issue_type = normalize_epm_text(issue.get('issueType')).lower()
-        if issue_key and issue_type in initiative_types:
-            initiatives[issue_key] = {'issue': issue, 'epics': {}, 'looseStories': []}
-
-    for issue in issues or []:
-        issue_key = issue.get('key')
-        issue_type = normalize_epm_text(issue.get('issueType')).lower()
-        if not issue_key or issue_type not in epic_types:
-            continue
-        parent_key = issue.get('parentKey') or ''
-        if parent_key in initiatives:
-            initiatives[parent_key]['epics'][issue_key] = {'issue': issue, 'stories': []}
-        else:
-            root_epics[issue_key] = {'issue': issue, 'stories': []}
-
-    epic_containers = {}
-    for initiative in initiatives.values():
-        for epic_key, epic in initiative['epics'].items():
-            epic_containers[epic_key] = epic
-    for epic_key, epic in root_epics.items():
-        epic_containers[epic_key] = epic
-
-    orphan_stories = []
-    for issue in issues or []:
-        issue_key = issue.get('key')
-        issue_type = normalize_epm_text(issue.get('issueType')).lower()
-        if not issue_key or issue_type in initiative_types or issue_type in epic_types:
-            continue
-        parent_key = issue.get('parentKey') or ''
-        if parent_key in epic_containers:
-            epic_containers[parent_key]['stories'].append(issue)
-        elif parent_key in initiatives:
-            initiatives[parent_key]['looseStories'].append(issue)
-        else:
-            orphan_stories.append(issue)
-
-    return {
-        'initiatives': initiatives,
-        'rootEpics': root_epics,
-        'orphanStories': orphan_stories,
-    }
+dedupe_issues_by_key = epm_payload.dedupe_issues_by_key
+validate_epm_tab_sprint = epm_payload.validate_epm_tab_sprint
+normalize_epm_issue_type_sets = epm_payload.normalize_epm_issue_type_sets
+build_empty_epm_rollup_payload = epm_payload.build_empty_epm_rollup_payload
+build_epm_rollup_hierarchy = epm_payload.build_epm_rollup_hierarchy
 
 
 def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_queries, context=None):
@@ -2287,16 +1949,22 @@ def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_quer
 
 def build_epm_rollup_dependencies(sub_goal_keys=None):
     auth_context = current_request_auth_context() if has_request_context() else None
+    epm_config_snapshot = get_epm_config()
+    base_jql_snapshot = build_base_jql()
+    story_points_field_id_snapshot = get_story_points_field_id()
+    sprint_field_id_snapshot = get_sprint_field_id()
+    team_field_id_snapshot = get_team_field_id()
     return EpmRollupDependencies(
         find_epm_project_or_404=lambda project_id: find_epm_project_or_404(
             project_id,
             sub_goal_keys=sub_goal_keys,
             context=auth_context,
+            epm_config_override=epm_config_snapshot,
         ),
         normalize_epm_text=normalize_epm_text,
         validate_epm_tab_sprint=validate_epm_tab_sprint,
         build_empty_epm_rollup_payload=build_empty_epm_rollup_payload,
-        build_base_jql=build_base_jql,
+        build_base_jql=lambda: base_jql_snapshot,
         add_clause_to_jql=add_clause_to_jql,
         build_jira_headers=(
             (lambda: {}) if auth_context is not None and auth_context.auth_mode != AUTH_MODE_BASIC
@@ -2307,19 +1975,26 @@ def build_epm_rollup_dependencies(sub_goal_keys=None):
             if auth_context is not None
             else resolve_epic_link_field_id(headers)
         ),
-        resolve_team_field_id=(
-            lambda headers: resolve_team_field_id(headers, context=auth_context)
-            if auth_context is not None
-            else resolve_team_field_id(headers)
+        resolve_team_field_id=lambda headers: team_field_id_snapshot,
+        build_epm_rollup_fields_list=lambda epic_link_field_id=None, team_field_id=None: build_epm_rollup_fields_list(
+            epic_link_field_id,
+            team_field_id if team_field_id is not None else team_field_id_snapshot,
+            story_points_field_id=story_points_field_id_snapshot,
+            sprint_field_id=sprint_field_id_snapshot,
         ),
-        build_epm_rollup_fields_list=build_epm_rollup_fields_list,
-        get_epm_config=get_epm_config,
+        get_epm_config=lambda: epm_config_snapshot,
         normalize_epm_issue_type_sets=normalize_epm_issue_type_sets,
         fetch_epm_rollup_query=(
             lambda jql, query_name, headers, fields_list, truncated_queries:
             fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_queries, context=auth_context)
         ),
-        shape_epm_rollup_issue_payload=shape_epm_rollup_issue_payload,
+        shape_epm_rollup_issue_payload=lambda issues, epic_link_field_id=None, team_field_id=None: shape_epm_rollup_issue_payload(
+            issues,
+            epic_link_field_id=epic_link_field_id,
+            team_field_id=team_field_id,
+            story_points_field_id=story_points_field_id_snapshot,
+            sprint_field_id=sprint_field_id_snapshot,
+        ),
         dedupe_issues_by_key=dedupe_issues_by_key,
         build_epm_rollup_hierarchy=build_epm_rollup_hierarchy,
         cache=EPM_ROLLUP_CACHE,
@@ -2372,128 +2047,34 @@ def filter_epm_projects_for_tab(projects, tab, now=None):
     return epm_projects.filter_epm_projects_for_tab(projects, tab, now=now)
 
 
-def _epm_collection_values(collection):
-    if isinstance(collection, dict):
-        return list(collection.values())
-    if isinstance(collection, list):
-        return collection
-    return []
-
-
 def collect_epm_rollup_issue_keys(rollup):
-    keys = []
-    seen = set()
-
-    def add_issue(issue):
-        issue_key = normalize_epm_text((issue or {}).get('key'))
-        if not issue_key or issue_key in seen:
-            return
-        seen.add(issue_key)
-        keys.append(issue_key)
-
-    for initiative in _epm_collection_values((rollup or {}).get('initiatives')):
-        add_issue((initiative or {}).get('issue'))
-        for epic in _epm_collection_values((initiative or {}).get('epics')):
-            add_issue((epic or {}).get('issue'))
-            for story in _epm_collection_values((epic or {}).get('stories')):
-                add_issue(story)
-        for story in _epm_collection_values((initiative or {}).get('looseStories')):
-            add_issue(story)
-    for epic in _epm_collection_values((rollup or {}).get('rootEpics')):
-        add_issue((epic or {}).get('issue'))
-        for story in _epm_collection_values((epic or {}).get('stories')):
-            add_issue(story)
-    for story in _epm_collection_values((rollup or {}).get('orphanStories')):
-        add_issue(story)
-    return keys
+    return epm_aggregate.collect_epm_rollup_issue_keys(rollup, normalize_epm_text)
 
 
 def build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=None):
-    started = time.perf_counter()
-    tab = normalize_epm_text(tab or 'active').lower()
-    sprint = normalize_epm_text(sprint)
-    validation_error = validate_epm_tab_sprint(tab, sprint)
-    if validation_error:
-        error_payload, status = validation_error
-        return error_payload, status, {}
-
-    epm_config = get_epm_config()
-    projects_started = time.perf_counter()
-    projects_payload = build_epm_projects_payload(epm_config, tab=tab, sub_goal_keys=sub_goal_keys)
-    projects_ms = round((time.perf_counter() - projects_started) * 1000, 1)
-    visible_projects = filter_epm_projects_for_tab(projects_payload.get('projects') or [], tab)
-    dependencies = build_epm_rollup_dependencies(sub_goal_keys=sub_goal_keys)
-    entries_by_project_id = {}
-    issue_memberships = {}
-
-    def build_entry(project):
-        project_id = get_epm_project_payload_identity(project)
-        if tab == 'archived' or not normalize_epm_text(project.get('label')):
-            return project_id, {
-                'project': project,
-                'rollup': build_empty_epm_rollup_payload(project, metadata_only=True),
-            }
-        rollup, status, _headers = build_per_project_rollup(project_id, tab, sprint, dependencies)
-        if status != 200:
-            rollup = build_empty_epm_rollup_payload(project, metadata_only=True)
-        return project_id, {'project': project, 'rollup': rollup}
-
-    labeled_projects = [] if tab == 'archived' else [project for project in visible_projects if normalize_epm_text(project.get('label'))]
-    for project in visible_projects:
-        if tab == 'archived' or not normalize_epm_text(project.get('label')):
-            project_id, entry = build_entry(project)
-            entries_by_project_id[project_id] = entry
-
-    rollups_started = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        future_to_project = {executor.submit(build_entry, project): project for project in labeled_projects}
-        for future in as_completed(future_to_project):
-            project_id, entry = future.result()
-            entries_by_project_id[project_id] = entry
-    rollups_ms = round((time.perf_counter() - rollups_started) * 1000, 1)
-
-    ordered_entries = []
-    for project in visible_projects:
-        project_id = get_epm_project_payload_identity(project)
-        entry = entries_by_project_id.get(project_id)
-        if not entry:
-            continue
-        ordered_entries.append(entry)
-        for issue_key in collect_epm_rollup_issue_keys(entry['rollup']):
-            issue_memberships.setdefault(issue_key, []).append(project_id)
-
-    duplicates = {
-        issue_key: project_ids
-        for issue_key, project_ids in issue_memberships.items()
-        if len(project_ids) > 1
-    }
-    payload = {
-        'projects': ordered_entries,
-        'duplicates': duplicates,
-        'truncated': any(bool((entry.get('rollup') or {}).get('truncated')) for entry in ordered_entries),
-        'fallback': True,
-    }
-    total_ms = round((time.perf_counter() - started) * 1000, 1)
-    logger.info(
-        "EPM all-projects rollup timing tab=%s sprint=%s projects=%d visible=%d labeled=%d home_projects_ms=%s rollups_ms=%s total_ms=%s",
+    return epm_aggregate.build_all_epm_projects_rollup(
         tab,
-        sprint or '',
-        len(projects_payload.get('projects') or []),
-        len(visible_projects),
-        len(labeled_projects),
-        projects_ms,
-        rollups_ms,
-        total_ms,
+        sprint,
+        epm_aggregate.EpmAggregateDependencies(
+            normalize_epm_text=normalize_epm_text,
+            validate_epm_tab_sprint=validate_epm_tab_sprint,
+            get_epm_config=get_epm_config,
+            build_epm_projects_payload=build_epm_projects_payload,
+            filter_epm_projects_for_tab=filter_epm_projects_for_tab,
+            build_epm_rollup_dependencies=build_epm_rollup_dependencies,
+            get_epm_project_payload_identity=get_epm_project_payload_identity,
+            build_empty_epm_rollup_payload=build_empty_epm_rollup_payload,
+            build_per_project_rollup=build_per_project_rollup,
+            logger=logger,
+        ),
+        sub_goal_keys=sub_goal_keys,
     )
-    return payload, 200, {
-        'Server-Timing': f'home-projects;dur={projects_ms}, epm-rollups;dur={rollups_ms}, total;dur={total_ms}'
-    }
 
 
-def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None):
+def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None, epm_config_override=None):
     requested_sub_goal_keys = epm_projects.normalize_epm_sub_goal_keys(sub_goal_keys)
     if requested_sub_goal_keys:
-        epm_config = get_epm_config()
+        epm_config = epm_config_override if epm_config_override is not None else get_epm_config()
         projects_payload = build_epm_projects_payload(
             epm_config,
             sub_goal_keys=requested_sub_goal_keys,
@@ -2507,7 +2088,10 @@ def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None):
             if normalize_epm_text(project_id) in candidates:
                 return project
         abort(404)
-    return epm_projects.find_epm_project_or_404(project_id, build_epm_projects_dependencies(context=context))
+    return epm_projects.find_epm_project_or_404(
+        project_id,
+        build_epm_projects_dependencies(context=context, epm_config_override=epm_config_override),
+    )
 
 
 def get_epm_project_payload_identity(project):
@@ -2534,112 +2118,14 @@ def parse_epm_sub_goal_keys_param(value):
     return normalize_epm_sub_goal_keys(raw_values)
 
 
-DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_'
-
-DEFAULT_EPM_ISSUE_TYPES = {
-    'initiative': ['Initiative'],
-    'epic': ['Epic'],
-    'leaf': ['Story', 'Task', 'Sub-task', 'Subtask', 'Bug'],
-}
-
-
-def normalize_epm_scope(payload):
-    scope = payload.get('scope') if isinstance(payload, dict) else {}
-    if not isinstance(scope, dict):
-        scope = {}
-    sub_goal_keys = normalize_epm_sub_goal_keys(scope.get('subGoalKeys'))
-    if not sub_goal_keys:
-        sub_goal_keys = normalize_epm_sub_goal_keys(scope.get('subGoalKey'))
-    return {
-        'rootGoalKey': normalize_epm_upper_text(scope.get('rootGoalKey')),
-        'subGoalKeys': sub_goal_keys,
-    }
-
-
-def normalize_epm_issue_types(payload):
-    types = payload.get('issueTypes') if isinstance(payload, dict) else {}
-    if not isinstance(types, dict):
-        types = {}
-    normalized = {}
-    for bucket, defaults in DEFAULT_EPM_ISSUE_TYPES.items():
-        values = types.get(bucket)
-        if isinstance(values, list):
-            cleaned = [normalize_epm_text(value) for value in values]
-            cleaned = [value for value in cleaned if value]
-        else:
-            cleaned = []
-        normalized[bucket] = cleaned or list(defaults)
-    return normalized
-
-
-def is_epm_v2_config(payload):
-    if not isinstance(payload, dict):
-        return False
-    if 'version' in payload:
-        return payload.get('version') == 2
-    return 'labelPrefix' in payload
-
-
-def normalize_epm_project_row(project_id, row, is_v2=False):
-    if not isinstance(row, dict):
-        return None
-    if is_v2:
-        normalized = {
-            'id': normalize_epm_text(row.get('id')),
-            'name': normalize_epm_text(row.get('name')),
-            'label': normalize_epm_text(row.get('label')),
-        }
-        home_project_id = normalize_epm_text(row.get('homeProjectId'))
-        if home_project_id:
-            normalized['homeProjectId'] = home_project_id
-        return normalized
-
-    home_project_id = normalize_epm_text(row.get('homeProjectId'))
-    if home_project_id:
-        return {
-            'id': home_project_id,
-            'homeProjectId': home_project_id,
-            'name': normalize_epm_text(row.get('customName')) or normalize_epm_text(row.get('name')),
-            'label': normalize_epm_text(row.get('jiraLabel')) or normalize_epm_text(row.get('label')),
-        }
-    return {
-        'id': normalize_epm_text(row.get('id')),
-        'name': normalize_epm_text(row.get('customName')) or normalize_epm_text(row.get('name')),
-        'label': normalize_epm_text(row.get('jiraLabel')) or normalize_epm_text(row.get('label')),
-    }
-
-
-def normalize_epm_project_output_key(project_id, normalized_row, is_v2=False):
-    if is_v2:
-        return project_id
-    home_project_id = normalize_epm_text(normalized_row.get('homeProjectId'))
-    if home_project_id:
-        return home_project_id
-    return project_id
-
-
-def normalize_epm_config(payload):
-    is_v2 = is_epm_v2_config(payload)
-    projects = payload.get('projects') if isinstance(payload, dict) else {}
-    normalized_projects = {}
-    if isinstance(projects, dict):
-        for project_id, row in projects.items():
-            normalized_row = normalize_epm_project_row(project_id, row, is_v2=is_v2)
-            if normalized_row is None:
-                continue
-            normalized_projects[normalize_epm_project_output_key(project_id, normalized_row, is_v2=is_v2)] = normalized_row
-    label_prefix = (
-        normalize_epm_text(payload.get('labelPrefix'))
-        if isinstance(payload, dict) and 'labelPrefix' in payload
-        else DEFAULT_EPM_LABEL_PREFIX
-    )
-    return {
-        'version': 2,
-        'labelPrefix': label_prefix,
-        'scope': normalize_epm_scope(payload),
-        'issueTypes': normalize_epm_issue_types(payload),
-        'projects': normalized_projects,
-    }
+DEFAULT_EPM_LABEL_PREFIX = epm_config.DEFAULT_EPM_LABEL_PREFIX
+DEFAULT_EPM_ISSUE_TYPES = epm_config.DEFAULT_EPM_ISSUE_TYPES
+normalize_epm_scope = epm_config.normalize_epm_scope
+normalize_epm_issue_types = epm_config.normalize_epm_issue_types
+is_epm_v2_config = epm_config.is_epm_v2_config
+normalize_epm_project_row = epm_config.normalize_epm_project_row
+normalize_epm_project_output_key = epm_config.normalize_epm_project_output_key
+normalize_epm_config = epm_config.normalize_epm_config
 
 
 def get_epm_config():
@@ -2752,75 +2238,38 @@ def get_configured_issue_types():
 
 
 def normalize_priority_weight_name(name):
-    key = str(name or '').strip().lower()
-    return PRIORITY_WEIGHT_NAME_ALIASES.get(key, key)
+    return _priority_weights_service.normalize_priority_weight_name(
+        name,
+        PRIORITY_WEIGHT_NAME_ALIASES,
+    )
 
 
 def build_priority_weight_defaults():
-    return [dict(item) for item in PRIORITY_WEIGHT_DEFAULTS]
+    return _priority_weights_service.build_priority_weight_defaults(PRIORITY_WEIGHT_DEFAULTS)
 
 
 def normalize_priority_weight_rows(rows):
-    """Validate and normalize weight rows into canonical list format."""
-    if not isinstance(rows, list):
-        raise ValueError('weights must be an array')
-    normalized = []
-    seen = set()
-    for item in rows:
-        if not isinstance(item, dict):
-            raise ValueError('each weight entry must be an object')
-        priority = str(item.get('priority', '') or '').strip()
-        if not priority:
-            raise ValueError('priority is required')
-        norm_name = normalize_priority_weight_name(priority)
-        if norm_name in seen:
-            raise ValueError(f'duplicate priority: {priority}')
-        raw_weight = item.get('weight', None)
-        try:
-            weight = float(raw_weight)
-        except (TypeError, ValueError):
-            raise ValueError(f'invalid weight for {priority}')
-        if weight < 0:
-            raise ValueError(f'weight must be non-negative for {priority}')
-        seen.add(norm_name)
-        normalized.append({'priority': priority, 'weight': weight})
-    return normalized
+    return _priority_weights_service.normalize_priority_weight_rows(
+        rows,
+        PRIORITY_WEIGHT_NAME_ALIASES,
+    )
 
 
 def parse_stats_priority_weights_env(raw):
-    if not raw:
-        return None
-    rows = []
-    for chunk in str(raw).split(','):
-        token = chunk.strip()
-        if not token:
-            continue
-        if ':' not in token:
-            raise ValueError(f'invalid STATS_PRIORITY_WEIGHTS token: {token}')
-        name, weight = token.split(':', 1)
-        rows.append({'priority': name.strip(), 'weight': weight.strip()})
-    return normalize_priority_weight_rows(rows)
+    return _priority_weights_service.parse_stats_priority_weights_env(
+        raw,
+        PRIORITY_WEIGHT_NAME_ALIASES,
+    )
 
 
 def get_priority_weights_config():
-    """Return effective stats priority weights with source metadata."""
-    config = load_dashboard_config()
-    if config and 'statsPriorityWeights' in config:
-        try:
-            rows = normalize_priority_weight_rows(config.get('statsPriorityWeights') or [])
-            return {'weights': rows, 'source': 'config'}
-        except ValueError as e:
-            log_warning(f'Invalid statsPriorityWeights in dashboard config; falling back: {e}')
-
-    if STATS_PRIORITY_WEIGHTS:
-        try:
-            rows = parse_stats_priority_weights_env(STATS_PRIORITY_WEIGHTS)
-            if rows:
-                return {'weights': rows, 'source': 'env'}
-        except ValueError as e:
-            log_warning(f'Invalid STATS_PRIORITY_WEIGHTS env; using defaults: {e}')
-
-    return {'weights': build_priority_weight_defaults(), 'source': 'default'}
+    return _priority_weights_service.build_priority_weights_config(
+        dashboard_config=load_dashboard_config(),
+        env_value=STATS_PRIORITY_WEIGHTS,
+        defaults=PRIORITY_WEIGHT_DEFAULTS,
+        name_aliases=PRIORITY_WEIGHT_NAME_ALIASES,
+        log_warning_fn=log_warning,
+    )
 
 
 def get_effective_capacity_project():
@@ -2829,262 +2278,81 @@ def get_effective_capacity_project():
 
 
 def parse_groups_config_env():
-    if not TEAM_GROUPS_JSON:
-        return None
-    try:
-        return json.loads(TEAM_GROUPS_JSON)
-    except Exception as e:
-        log_warning(f'Failed to parse TEAM_GROUPS_JSON: {e}')
-        return None
+    return _group_config_service.parse_groups_config_env(
+        TEAM_GROUPS_JSON,
+        log_warning_fn=log_warning,
+    )
 
 
 def invalidate_sprints_cache():
-    try:
-        if os.path.exists(SPRINTS_CACHE_FILE):
-            os.remove(SPRINTS_CACHE_FILE)
-    except Exception as e:
-        log_warning(f'Failed to invalidate sprints cache file: {e}')
+    return _sprints_service.invalidate_sprints_cache(
+        SPRINTS_CACHE_FILE,
+        log_warning_fn=log_warning,
+    )
 
 
 def run_git_command(args):
-    try:
-        result = subprocess.run(
-            ['git'] + args,
-            cwd=os.path.dirname(os.path.abspath(__file__)),
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode != 0:
-            return None, (result.stderr or result.stdout or '').strip()
-        return result.stdout.strip(), None
-    except Exception as e:
-        return None, str(e)
+    return _update_check_service.run_git_command(
+        args,
+        repo_dir=os.path.dirname(os.path.abspath(__file__)),
+    )
 
 
 def load_release_info():
-    if not UPDATE_CHECK_RELEASE_INFO:
-        return None
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), UPDATE_CHECK_RELEASE_INFO)
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, 'r') as handle:
-            data = json.load(handle)
-        if not isinstance(data, dict):
-            return None
-        return data
-    except Exception as e:
-        log_warning(f'Failed to read release info: {e}')
-        return None
+    return _update_check_service.load_release_info(
+        UPDATE_CHECK_RELEASE_INFO,
+        base_dir=os.path.dirname(os.path.abspath(__file__)),
+        log_warning_fn=log_warning,
+    )
 
 
 def build_update_check_payload():
-    local_hash, local_err = run_git_command(['rev-parse', 'HEAD'])
-    local_branch, _ = run_git_command(['rev-parse', '--abbrev-ref', 'HEAD'])
-    local_source = 'git'
-    if local_err:
-        release_info = load_release_info() or {}
-        release_hash = str(release_info.get('hash') or '').strip()
-        if release_hash:
-            local_hash = release_hash
-            local_branch = str(release_info.get('tag') or release_info.get('branch') or 'release').strip()
-            local_source = 'release'
-            local_err = None
-        else:
-            return {
-                'enabled': True,
-                'error': f'Failed to read local git state: {local_err}'
-            }
-
-    remote_output, remote_err = run_git_command(['ls-remote', UPDATE_CHECK_REMOTE, f'refs/heads/{UPDATE_CHECK_BRANCH}'])
-    if remote_err:
-        return {
-            'enabled': True,
-            'local': {
-                'hash': local_hash,
-                'short': local_hash[:7] if local_hash else '',
-                'branch': local_branch or ''
-            },
-            'error': f'Failed to check remote: {remote_err}'
-        }
-
-    remote_hash = ''
-    if remote_output:
-        remote_hash = remote_output.split()[0].strip()
-
-    update_available = bool(local_hash and remote_hash and local_hash != remote_hash)
-    return {
-        'enabled': True,
-        'local': {
-            'hash': local_hash,
-            'short': local_hash[:7] if local_hash else '',
-            'branch': local_branch or '',
-            'source': local_source
-        },
-        'remote': {
-            'hash': remote_hash,
-            'short': remote_hash[:7] if remote_hash else '',
-            'branch': UPDATE_CHECK_BRANCH,
-            'remote': UPDATE_CHECK_REMOTE
-        },
-        'updateAvailable': update_available,
-        'checkedAt': utc_now_iso()
-    }
+    return _update_check_service.build_update_check_payload(
+        remote=UPDATE_CHECK_REMOTE,
+        branch=UPDATE_CHECK_BRANCH,
+        run_git_command_fn=run_git_command,
+        load_release_info_fn=load_release_info,
+        now_iso_fn=utc_now_iso,
+    )
 
 
 def normalize_team_catalog(raw):
-    catalog = {}
-    if isinstance(raw, list):
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            team_id = str(item.get('id') or '').strip()
-            name = str(item.get('name') or '').strip()
-            if not team_id or not name:
-                continue
-            catalog[team_id] = {'id': team_id, 'name': name}
-    elif isinstance(raw, dict):
-        for key, value in raw.items():
-            if isinstance(value, dict):
-                team_id = str(value.get('id') or key or '').strip()
-                name = str(value.get('name') or '').strip()
-            else:
-                team_id = str(key or '').strip()
-                name = str(value or '').strip()
-            if not team_id or not name:
-                continue
-            catalog[team_id] = {'id': team_id, 'name': name}
-    return catalog
+    return _team_catalog_service.normalize_team_catalog(raw)
 
 
 def normalize_team_catalog_meta(raw):
-    if not isinstance(raw, dict):
-        return {}
-    meta = {}
-    for key in ('updatedAt', 'sprintId', 'sprintName', 'source', 'resolvedAt'):
-        value = raw.get(key)
-        if value is None:
-            continue
-        meta[key] = str(value)
-    return meta
+    return _team_catalog_service.normalize_team_catalog_meta(raw)
 
 
 def normalize_group_team_labels(raw, team_ids):
-    if not isinstance(raw, dict):
-        return {}
-    allowed_ids = set(normalize_team_ids(team_ids or []))
-    labels = {}
-    for raw_team_id, raw_label in raw.items():
-        team_id = str(raw_team_id or '').strip()
-        label = str(raw_label or '').strip()
-        if not team_id or not label or team_id not in allowed_ids:
-            continue
-        labels[team_id] = label
-    return labels
+    return _team_catalog_service.normalize_group_team_labels(
+        raw,
+        team_ids,
+        normalize_team_ids_fn=normalize_team_ids,
+    )
 
 
 def validate_groups_config(payload, allow_empty=False):
-    errors = []
-    warnings = []
-    if not isinstance(payload, dict):
-        errors.append('Config must be an object.')
-        return None, errors, warnings
-
-    groups_raw = payload.get('groups')
-    if not isinstance(groups_raw, list):
-        errors.append('groups must be a list.')
-        return None, errors, warnings
-
-    normalized_groups = []
-    seen_ids = set()
-    seen_names = set()
-    for idx, group in enumerate(groups_raw):
-        if not isinstance(group, dict):
-            errors.append(f'Group at index {idx} must be an object.')
-            continue
-        group_id = str(group.get('id') or '').strip()
-        name = str(group.get('name') or '').strip()
-        if not group_id:
-            errors.append(f'Group at index {idx} is missing id.')
-            continue
-        if not name:
-            errors.append(f'Group "{group_id}" is missing name.')
-            continue
-        if group_id.lower() in seen_ids:
-            errors.append(f'Duplicate group id "{group_id}".')
-            continue
-        if name.lower() in seen_names:
-            errors.append(f'Duplicate group name "{name}".')
-            continue
-        seen_ids.add(group_id.lower())
-        seen_names.add(name.lower())
-
-        team_ids = normalize_team_ids(group.get('teamIds') or [])
-        if not team_ids and not allow_empty:
-            errors.append(f'Group "{name}" must include at least one team.')
-        if len(team_ids) > GROUPS_MAX_TEAMS:
-            errors.append(f'Group "{name}" exceeds {GROUPS_MAX_TEAMS} teams.')
-        raw_components = group.get('missingInfoComponents')
-        if isinstance(raw_components, list):
-            missing_info_components = [str(c).strip() for c in raw_components if str(c).strip()]
-        elif isinstance(raw_components, str) and raw_components.strip():
-            missing_info_components = [raw_components.strip()]
-        else:
-            # Backwards compat: accept old singular field
-            old_single = str(group.get('missingInfoComponent') or '').strip()
-            missing_info_components = [old_single] if old_single else []
-        raw_excluded_epics = group.get('excludedCapacityEpics')
-        if isinstance(raw_excluded_epics, list):
-            excluded_capacity_epics = normalize_epic_keys(raw_excluded_epics)
-        elif isinstance(raw_excluded_epics, str) and raw_excluded_epics.strip():
-            excluded_capacity_epics = normalize_epic_keys([raw_excluded_epics.strip()])
-        else:
-            excluded_capacity_epics = []
-        team_labels = normalize_group_team_labels(group.get('teamLabels') or {}, team_ids)
-        normalized_groups.append({
-            'id': group_id,
-            'name': name,
-            'teamIds': team_ids,
-            'missingInfoComponents': missing_info_components,
-            'excludedCapacityEpics': excluded_capacity_epics,
-            'teamLabels': team_labels
-        })
-
-    default_group_id = str(payload.get('defaultGroupId') or '').strip()
-    if default_group_id:
-        if default_group_id not in {g['id'] for g in normalized_groups}:
-            errors.append('defaultGroupId must reference an existing group.')
-
-    normalized = {
-        'version': payload.get('version') or GROUPS_CONFIG_VERSION,
-        'groups': normalized_groups,
-        'defaultGroupId': default_group_id,
-    }
-    return normalized, errors, warnings
+    return _group_config_service.validate_groups_config(
+        payload,
+        allow_empty=allow_empty,
+        groups_config_version=GROUPS_CONFIG_VERSION,
+        groups_max_teams=GROUPS_MAX_TEAMS,
+        normalize_team_ids_fn=normalize_team_ids,
+        normalize_epic_keys_fn=normalize_epic_keys,
+        normalize_group_team_labels_fn=normalize_group_team_labels,
+    )
 
 
 def build_default_groups_config():
-    warnings = []
-    team_ids = normalize_team_ids(extract_team_ids_from_jql(build_base_jql()))
-    if len(team_ids) > GROUPS_MAX_TEAMS:
-        warnings.append(f'Found more than {GROUPS_MAX_TEAMS} teams in JQL_QUERY; truncated to first {GROUPS_MAX_TEAMS}.')
-        team_ids = team_ids[:GROUPS_MAX_TEAMS]
-    if not team_ids:
-        warnings.append('No teams found in JQL_QUERY. Default group is empty; add teams manually.')
-
-    config = {
-        'version': GROUPS_CONFIG_VERSION,
-        'groups': [{
-            'id': 'default',
-            'name': 'Default',
-            'teamIds': team_ids,
-            'missingInfoComponents': [MISSING_INFO_COMPONENT] if MISSING_INFO_COMPONENT else [],
-            'excludedCapacityEpics': []
-        }],
-        'defaultGroupId': 'default',
-    }
-    return config, warnings
+    return _group_config_service.build_default_groups_config(
+        base_jql=build_base_jql(),
+        missing_info_component=MISSING_INFO_COMPONENT,
+        groups_config_version=GROUPS_CONFIG_VERSION,
+        groups_max_teams=GROUPS_MAX_TEAMS,
+        normalize_team_ids_fn=normalize_team_ids,
+        extract_team_ids_from_jql_fn=extract_team_ids_from_jql,
+    )
 
 
 def apply_team_ids_to_template(team_ids):
@@ -3126,211 +2394,37 @@ def fetch_board_sprint_ids(board_id, headers):
     """Fetch the set of sprint IDs that originated on a specific board.
     Uses originBoardId to exclude cross-board sprints that Jira includes
     in the board API response."""
-    sprint_ids = set()
-    start_at = 0
-    try:
-        while True:
-            response = current_jira_get(
-                f'/rest/agile/1.0/board/{board_id}/sprint',
-                params={'maxResults': 100, 'startAt': start_at, 'state': 'active,future,closed'},
-                timeout=30
-            )
-            if response.status_code != 200:
-                break
-            data = response.json()
-            for sprint in data.get('values', []):
-                sid = sprint.get('id')
-                origin = sprint.get('originBoardId')
-                # Only include sprints that originated on this board
-                if sid and (origin is None or str(origin) == str(board_id)):
-                    sprint_ids.add(sid)
-            if data.get('isLast', False) or not data.get('values'):
-                break
-            start_at += len(data['values'])
-    except AuthError:
-        raise
-    except Exception as e:
-        log_warning(f'Failed to fetch board sprint IDs for board {board_id}: {e}')
-    return sprint_ids
+    return _sprints_service.fetch_board_sprint_ids(
+        board_id,
+        jira_get=current_jira_get,
+        auth_error_class=AuthError,
+        log_warning_fn=log_warning,
+    )
 
 
 def deduplicate_sprints_by_name(sprints, board_sprint_ids=None):
     """When multiple sprints share a name, keep the one on the configured board.
     If neither or both are on the board, prefer active > closed > future."""
-    STATE_PRIORITY = {'active': 0, 'closed': 1, 'future': 2}
-    by_name = {}
-    for sprint in sprints:
-        name = sprint.get('name', '')
-        prev = by_name.get(name)
-        if prev is None:
-            by_name[name] = sprint
-            continue
-        # Prefer the sprint that belongs to the configured board
-        if board_sprint_ids:
-            prev_on_board = prev['id'] in board_sprint_ids
-            curr_on_board = sprint['id'] in board_sprint_ids
-            if curr_on_board and not prev_on_board:
-                by_name[name] = sprint
-                continue
-            if prev_on_board and not curr_on_board:
-                continue
-        # Tie-break by state priority
-        prev_prio = STATE_PRIORITY.get((prev.get('state') or '').lower(), 9)
-        curr_prio = STATE_PRIORITY.get((sprint.get('state') or '').lower(), 9)
-        if curr_prio < prev_prio:
-            by_name[name] = sprint
-    return list(by_name.values())
+    return _sprints_service.deduplicate_sprints_by_name(sprints, board_sprint_ids)
 
 
 def fetch_sprints_from_jira():
     """Fetch sprints from Jira (not from cache)"""
-    headers = None
-    formatted_sprints = []
-    effective_board_id = get_effective_board_id()
-    board_sprint_ids = None  # lazily fetched when needed for dedup/filtering
-
-    # Method 1: Try to get sprints from board (if JIRA_BOARD_ID is set)
-    if effective_board_id:
-        try:
-            log_info(f'Fetching sprints from board {effective_board_id}')
-            start_at = 0
-            while True:
-                response = current_jira_get(
-                    f'/rest/agile/1.0/board/{effective_board_id}/sprint',
-                    params={'maxResults': 100, 'startAt': start_at, 'state': 'active,future,closed'},
-                    timeout=30
-                )
-
-                if response.status_code != 200:
-                    log_warning(f'Board API returned {response.status_code}, trying alternative method')
-                    break
-
-                data = response.json()
-                sprints = data.get('values', [])
-
-                for sprint in sprints:
-                    name = sprint.get('name', '')
-                    sprint_id = sprint.get('id')
-                    state = sprint.get('state', '')
-                    origin = sprint.get('originBoardId')
-
-                    # Skip sprints that originated on a different board
-                    if origin is not None and str(origin) != str(effective_board_id):
-                        continue
-
-                    if re.match(r'^\d{4}Q[1-4]$', name):
-                        formatted_sprints.append({
-                            'id': sprint_id,
-                            'name': name,
-                            'state': state,
-                            'startDate': sprint.get('startDate'),
-                            'endDate': sprint.get('endDate'),
-                        })
-
-                if data.get('isLast', False) or not sprints:
-                    break
-
-                start_at += len(sprints)
-
-            if formatted_sprints:
-                # All sprints from Method 1 belong to this board by definition
-                board_sprint_ids = {s['id'] for s in formatted_sprints}
-                log_info(f'Found {len(formatted_sprints)} sprints from board')
-            else:
-                log_warning(f'Board API returned {response.status_code}, trying alternative method')
-        except AuthError:
-            raise
-        except Exception as board_error:
-            log_warning(f'Board API failed: {board_error}, trying alternative method')
-
-    # Method 2: If board method failed or found no sprints, get sprints from issues
-    if len(formatted_sprints) == 0:
-        log_info('Fetching sprints from issues (alternative method)')
-
-        # Build JQL query without sprint filter to get all issues
-        base_jql = STATS_JQL_BASE or f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")'
-        # Remove any existing sprint filters from the query
-        base_jql = strip_sprint_clause(base_jql)
-
-        def collect_sprints_by_jql(jql_query, sprints_dict):
-            total_issues = 0
-            next_page_token = None
-            while True:
-                payload = {
-                    'jql': jql_query,
-                    'maxResults': 200,  # Reduced from 1000 for better performance
-                    'fields': [get_sprint_field_id()]  # Only get sprint field
-                }
-                if next_page_token:
-                    payload['nextPageToken'] = next_page_token
-
-                response = jira_search_request(payload)
-                if response.status_code != 200:
-                    break
-
-                data = response.json()
-                issues = data.get('issues', [])
-
-                for issue in issues:
-                    sprint_field = issue.get('fields', {}).get(get_sprint_field_id(), [])
-                    if sprint_field and isinstance(sprint_field, list):
-                        for sprint in sprint_field:
-                            if sprint and isinstance(sprint, dict):
-                                name = sprint.get('name', '')
-                                sprint_id = sprint.get('id')
-                                state = sprint.get('state', '')
-
-                                if re.match(r'^\d{4}Q[1-4]$', name) and sprint_id:
-                                    sprints_dict[sprint_id] = {
-                                        'id': sprint_id,
-                                        'name': name,
-                                        'state': state,
-                                        'startDate': sprint.get('startDate'),
-                                        'endDate': sprint.get('endDate'),
-                                    }
-
-                total_issues += len(issues)
-                next_page_token = data.get('nextPageToken')
-                if data.get('isLast', not next_page_token) or not next_page_token:
-                    break
-
-            return total_issues
-
-        sprints_dict = {}
-        issues_count = collect_sprints_by_jql(base_jql, sprints_dict)
-        closed_jql = add_clause_to_jql(base_jql, 'Sprint in closedSprints()')
-        issues_count += collect_sprints_by_jql(closed_jql, sprints_dict)
-        future_jql = add_clause_to_jql(base_jql, 'Sprint in futureSprints()')
-        issues_count += collect_sprints_by_jql(future_jql, sprints_dict)
-        open_jql = add_clause_to_jql(base_jql, 'Sprint in openSprints()')
-        issues_count += collect_sprints_by_jql(open_jql, sprints_dict)
-
-        formatted_sprints = list(sprints_dict.values())
-        log_info(f'Found {len(formatted_sprints)} unique sprints from {issues_count} issues')
-
-        # Board-scope: filter out cross-board sprints when a board is configured
-        if effective_board_id:
-            board_sprint_ids = fetch_board_sprint_ids(effective_board_id, headers)
-            if board_sprint_ids:
-                before_count = len(formatted_sprints)
-                formatted_sprints = [s for s in formatted_sprints if s['id'] in board_sprint_ids]
-                filtered_count = before_count - len(formatted_sprints)
-                if filtered_count:
-                    log_info(f'Filtered out {filtered_count} cross-board sprints (board {effective_board_id})')
-
-    # Deduplicate sprints that share a name (e.g. same quarter on different boards)
-    if effective_board_id and board_sprint_ids is None:
-        board_sprint_ids = fetch_board_sprint_ids(effective_board_id, headers)
-    before_dedup = len(formatted_sprints)
-    formatted_sprints = deduplicate_sprints_by_name(formatted_sprints, board_sprint_ids)
-    dedup_removed = before_dedup - len(formatted_sprints)
-    if dedup_removed:
-        log_info(f'Deduplicated {dedup_removed} sprints with duplicate names')
-
-    # Sort sprints by name (latest first)
-    formatted_sprints.sort(key=lambda x: x['name'], reverse=True)
-
-    return formatted_sprints
+    return _sprints_service.fetch_sprints_from_jira(
+        board_id=get_effective_board_id(),
+        stats_jql_base=STATS_JQL_BASE,
+        product_project=JIRA_PRODUCT_PROJECT,
+        tech_project=JIRA_TECH_PROJECT,
+        jira_get=current_jira_get,
+        jira_search_request=jira_search_request,
+        get_sprint_field_id=get_sprint_field_id,
+        strip_sprint_clause=strip_sprint_clause,
+        add_clause_to_jql=add_clause_to_jql,
+        auth_error_class=AuthError,
+        fetch_board_sprint_ids_fn=fetch_board_sprint_ids,
+        log_info_fn=log_info,
+        log_warning_fn=log_warning,
+    )
 
 
 def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
@@ -4195,57 +3289,25 @@ def fetch_tasks(include_team_name=False):
 
 def fetch_issues_by_keys(keys, fields_list, context=None):
     """Fetch issues by keys in batches."""
-    if not keys:
-        return []
-
-    results = []
-    batch_size = 100
-    for i in range(0, len(keys), batch_size):
-        batch = keys[i:i + batch_size]
-        quoted_keys = ','.join(f'"{k}"' for k in batch)
-        jql = f'key in ({quoted_keys})'
-        payload = {
-            'jql': jql,
-            'maxResults': batch_size,
-            'fields': fields_list
-        }
-        response = jira_search_request(payload, context=context)
-        if response.status_code != 200:
-            log_warning(f'Dependencies fetch error: status={response.status_code}')
-            continue
-        data = response.json() or {}
-        results.extend(data.get('issues', []) or [])
-    return results
+    return _jira_client.fetch_issues_by_keys(
+        keys,
+        fields_list,
+        search_request=jira_search_request,
+        context=context,
+        log_warning_fn=log_warning,
+    )
 
 
 def fetch_issues_by_jql(jql, fields_list, max_results=500, context=None):
     """Fetch issues by JQL with pagination."""
-    results = []
-    next_page_token = None
-    page_size = 100
-    while len(results) < max_results:
-        remaining = max_results - len(results)
-        page_limit = min(page_size, remaining)
-        payload = {
-            'jql': jql,
-            'maxResults': page_limit,
-            'fields': fields_list
-        }
-        if next_page_token:
-            payload['nextPageToken'] = next_page_token
-        response = jira_search_request(payload, context=context)
-        if response.status_code != 200:
-            log_warning(f'Scenario fetch error: status={response.status_code}')
-            break
-        data = response.json() or {}
-        issues = data.get('issues', []) or []
-        if not issues:
-            break
-        results.extend(issues)
-        next_page_token = data.get('nextPageToken')
-        if data.get('isLast', not next_page_token) or not next_page_token:
-            break
-    return results
+    return _jira_client.fetch_issues_by_jql(
+        jql,
+        fields_list,
+        max_results=max_results,
+        search_request=jira_search_request,
+        context=context,
+        log_warning_fn=log_warning,
+    )
 
 
 def build_scenario_jql(filters):
@@ -6556,38 +5618,6 @@ ISSUE_TYPES_CACHE = {'data': None, 'timestamp': 0}
 ISSUE_TYPES_CACHE_TTL = 60 * 60  # 1 hour
 
 
-def get_capacity():
-    """Get estimated team capacity for a sprint."""
-    sprint_name = request.args.get('sprint', '').strip()
-    debug = request.args.get('debug', '').lower() in ('1', 'true', 'yes')
-    team_param = request.args.get('teams', '').strip()
-    team_names = [s.strip() for s in team_param.split(',') if s.strip()]
-    if not sprint_name:
-        return jsonify({'error': 'Sprint name is required'}), 400
-
-    if not get_effective_capacity_project():
-        return jsonify({
-            'enabled': False,
-            'capacities': {}
-        })
-
-    try:
-        payload, error_message = fetch_capacity_for_sprint(sprint_name, None, debug=debug, team_names=team_names)
-        if error_message:
-            return jsonify({'error': error_message}), 500
-        return jsonify(payload)
-    except AuthError:
-        payload, status = oauth_auth_required_payload()
-        return jsonify(payload), status
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-def get_planned_capacity():
-    """Alias endpoint for planned capacity."""
-    return get_capacity()
-
-
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -6843,7 +5873,7 @@ def main():
         log_info(f'   Auth mode: {JIRA_AUTH_MODE}')
         if JIRA_AUTH_MODE == AUTH_MODE_BASIC:
             log_info(f'   Email: {JIRA_EMAIL}')
-        effective_board_id = get_effective_board_id()
+        effective_board_id = get_effective_board_id(source='jsonfile')
         if effective_board_id:
             log_info(f'   Board: {effective_board_id}')
         if GROUPS_CONFIG_PATH and os.path.exists(GROUPS_CONFIG_PATH):

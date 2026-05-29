@@ -7,6 +7,7 @@ DOC_PATHS = [
     REPO_ROOT / ".env.example",
     REPO_ROOT / "README.md",
     REPO_ROOT / "INSTALL.md",
+    REPO_ROOT / "QUICKSTART_ENV.txt",
     REPO_ROOT / "docs" / "SUPPORT-atlassian-oauth-setup.md",
     REPO_ROOT / "docs" / "plans" / "README.md",
     REPO_ROOT / "AGENTS.md",

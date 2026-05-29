@@ -14,11 +14,17 @@ import EmptyState from './ui/EmptyState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
+import { buildDependencyFocusPayload, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
 import EngView from './eng/EngView.jsx';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
+import PlanningActionBar from './eng/PlanningActionBar.jsx';
+import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
+import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam } from './eng/engTaskUtils.js';
+import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
+import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
 import {
     aggregateCohortSummary,
     buildCohortGridModel,
@@ -104,7 +110,24 @@ import {
     fetchEpmScope,
     fetchEpmGoals,
     fetchEpmConfigurationProjects,
+    saveEpmConfig as requestSaveEpmConfig,
 } from './api/epmApi.js';
+import {
+    buildScenarioDraftEventsStreamUrl,
+    fetchScenarioDraft as requestScenarioDraft,
+    fetchScenarioDraftVersion as requestScenarioDraftVersion,
+    fetchScenarioRun as requestScenarioRun,
+    pollScenarioDraftEvents as requestScenarioDraftEvents,
+    postScenarioRealtimeJson as requestScenarioRealtimeJson,
+    reloadScenarioDraftFromJira as requestReloadScenarioDraftFromJira,
+    rollbackScenarioDraft as requestRollbackScenarioDraft,
+    saveScenarioDraftVersion as requestSaveScenarioDraftVersion,
+} from './api/scenarioApi.js';
+import {
+    fetchBurnoutStats as requestBurnoutStats,
+    fetchEpicCohortStats as requestEpicCohortStats,
+} from './api/statsApi.js';
+import { fetchIssuesLookup as requestIssuesLookup } from './api/issuesApi.js';
 import {
     fetchJiraLabels as requestJiraLabels,
     fetchTeamCatalog as requestTeamCatalog,
@@ -998,20 +1021,7 @@ import {
                 setGroupDraftError('');
                 try {
                     const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraft);
-                    const { csrfToken } = await fetchCsrfToken(BACKEND_URL);
-                    const response = await fetch(`${BACKEND_URL}/api/epm/config`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'jira-execution-planner',
-                            'X-CSRF-Token': csrfToken || ''
-                        },
-                        body: JSON.stringify(normalizedDraft)
-                    });
-                    if (!response.ok) {
-                        throw new Error(`Failed to save EPM config: ${response.status}`);
-                    }
-                    const payload = await response.json();
+                    const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft);
                     const nextConfig = normalizeEpmConfigDraft(payload);
                     applySavedEpmConfig(nextConfig);
                     updateEpmSettingsProjectRowsAfterSave(nextConfig);
@@ -5412,17 +5422,8 @@ import {
             const fetchScenarioCsrfToken = () =>
                 fetchCsrfToken(BACKEND_URL).then(({ csrfToken }) => csrfToken || '');
 
-            const fetchScenarioDraft = async (scopeKey, signal) => {
-                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts?scope_key=${encodeURIComponent(scopeKey)}`, {
-                    cache: 'no-cache',
-                    signal
-                });
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.message || errorData.error || `Scenario draft error ${response.status}`);
-                }
-                return response.json();
-            };
+            const fetchScenarioDraft = (scopeKey, signal) =>
+                requestScenarioDraft(BACKEND_URL, scopeKey, { signal });
 
             const fetchScenarioRealtimeCsrfToken = async (forceRefresh = false) => {
                 if (!forceRefresh && scenarioRealtimeCsrfRef.current) {
@@ -5443,24 +5444,7 @@ import {
 
             const postScenarioRealtimeJson = async (draftId, path, payload) => {
                 const postWithToken = async (csrfToken) => {
-                    const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}${path}`, {
-                        method: 'POST',
-                        cache: 'no-cache',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'jira-execution-planner',
-                            'X-CSRF-Token': csrfToken
-                        },
-                        body: JSON.stringify(payload)
-                    });
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({}));
-                        const error = new Error(errorData.message || errorData.error || `Scenario realtime error ${response.status}`);
-                        error.payload = errorData;
-                        error.status = response.status;
-                        throw error;
-                    }
-                    return response.json();
+                    return requestScenarioRealtimeJson(BACKEND_URL, draftId, path, payload, { csrfToken });
                 };
                 try {
                     return await postWithToken(await fetchScenarioRealtimeCsrfToken(false));
@@ -5599,21 +5583,8 @@ import {
                 });
             };
 
-            const pollScenarioDraftEvents = async (draftId, sinceEventNumber, signal) => {
-                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/events?since=${encodeURIComponent(sinceEventNumber || 0)}`, {
-                    cache: 'no-cache',
-                    signal
-                });
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.message || errorData.error || `Scenario draft events error ${response.status}`);
-                }
-                const data = await response.json();
-                return {
-                    events: Array.isArray(data.events) ? data.events : [],
-                    nextSince: Number(data.nextSince || 0)
-                };
-            };
+            const pollScenarioDraftEvents = (draftId, sinceEventNumber, signal) =>
+                requestScenarioDraftEvents(BACKEND_URL, draftId, sinceEventNumber, { signal });
 
             const saveScenarioDraftVersion = async (scopeKey, name, baseDraftRevision, scope, overrides) => {
                 const payload = {
@@ -5625,24 +5596,7 @@ import {
                     overrides: normalizeScenarioDraftOverrides(overrides)
                 };
                 const postScenarioDraft = async (csrfToken) => {
-                    const response = await fetch(`${BACKEND_URL}/api/scenario/drafts`, {
-                        method: 'POST',
-                        cache: 'no-cache',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'jira-execution-planner',
-                            'X-CSRF-Token': csrfToken
-                        },
-                        body: JSON.stringify(payload)
-                    });
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({}));
-                        const error = new Error(errorData.message || errorData.error || `Scenario draft save error ${response.status}`);
-                        error.payload = errorData;
-                        error.status = response.status;
-                        throw error;
-                    }
-                    return response.json();
+                    return requestSaveScenarioDraftVersion(BACKEND_URL, payload, { csrfToken });
                 };
                 const csrfToken = await fetchScenarioCsrfToken();
                 try {
@@ -5661,65 +5615,32 @@ import {
                 }
             };
 
-            const fetchScenarioDraftVersion = async (draftId, versionNumber, signal) => {
-                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/versions/${encodeURIComponent(versionNumber)}`, {
-                    cache: 'no-cache',
-                    signal
-                });
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.message || errorData.error || `Scenario draft version error ${response.status}`);
-                }
-                return response.json();
-            };
+            const fetchScenarioDraftVersion = (draftId, versionNumber, signal) =>
+                requestScenarioDraftVersion(BACKEND_URL, draftId, versionNumber, { signal });
 
             const rollbackScenarioDraft = async (draftId, targetVersionNumber, baseDraftRevision, signal) => {
                 const csrfToken = await fetchScenarioCsrfToken();
-                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/rollback`, {
-                    method: 'POST',
-                    cache: 'no-cache',
-                    signal,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'jira-execution-planner',
-                        'X-CSRF-Token': csrfToken
-                    },
-                    body: JSON.stringify({
+                return requestRollbackScenarioDraft(
+                    BACKEND_URL,
+                    draftId,
+                    {
                         targetVersionNumber,
                         baseDraftRevision
-                    })
-                });
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    const error = new Error(errorData.message || errorData.error || `Scenario draft rollback error ${response.status}`);
-                    error.payload = errorData;
-                    throw error;
-                }
-                return response.json();
+                    },
+                    { csrfToken, signal }
+                );
             };
 
             const reloadScenarioDraftFromJira = async (draftId, baseDraftRevision, signal) => {
                 const csrfToken = await fetchScenarioCsrfToken();
-                const response = await fetch(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(draftId)}/reload-from-jira`, {
-                    method: 'POST',
-                    cache: 'no-cache',
-                    signal,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'jira-execution-planner',
-                        'X-CSRF-Token': csrfToken
-                    },
-                    body: JSON.stringify({
+                return requestReloadScenarioDraftFromJira(
+                    BACKEND_URL,
+                    draftId,
+                    {
                         baseDraftRevision
-                    })
-                });
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    const error = new Error(errorData.message || errorData.error || `Scenario draft reload error ${response.status}`);
-                    error.payload = errorData;
-                    throw error;
-                }
-                return response.json();
+                    },
+                    { csrfToken, signal }
+                );
             };
 
             const buildScenarioDraftScope = () => ({
@@ -5783,20 +5704,9 @@ import {
                 setScenarioError('');
                 const controller = registerSprintFetch();
                 try {
-                    const response = await fetch(`${BACKEND_URL}/api/scenario`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'jira-execution-planner'
-                        },
-                        body: JSON.stringify(buildScenarioPayload()),
+                    const data = await requestScenarioRun(BACKEND_URL, buildScenarioPayload(), {
                         signal: controller.signal
                     });
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({}));
-                        throw new Error(errorData.error || `Scenario error ${response.status}`);
-                    }
-                    const data = await response.json();
                     const scopePayload = buildScenarioDraftScope();
                     setScenarioOverrides({});
                     setScenarioDraftEvents([]);
@@ -6459,21 +6369,16 @@ import {
                     setBurnoutLoading(true);
                     setBurnoutError('');
                     try {
-                        const response = await fetch(`${BACKEND_URL}/api/stats/burnout`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-Requested-With': 'jira-execution-planner'
-                            },
-                            cache: 'no-cache',
-                            signal: controller.signal,
-                            body: JSON.stringify({
+                        const response = await requestBurnoutStats(
+                            BACKEND_URL,
+                            {
                                 sprint: sprintLabel,
                                 teamIds: burnoutScopedTeamIds,
                                 issueKeys: burnoutIssueKeys,
                                 includePostSprintClosures: isCompletedSprintSelected
-                            })
-                        });
+                            },
+                            { signal: controller.signal }
+                        );
                         if (!response.ok) {
                             const err = await response.json().catch(() => ({}));
                             throw new Error(err.error || err.message || `Burndown fetch failed (${response.status})`);
@@ -6585,21 +6490,16 @@ import {
                     setCohortLoading(true);
                     setCohortError('');
                     try {
-                        const response = await fetch(`${BACKEND_URL}/api/stats/epic-cohort`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-Requested-With': 'jira-execution-planner'
-                            },
-                            cache: 'no-cache',
-                            signal: controller.signal,
-                            body: JSON.stringify({
+                        const response = await requestEpicCohortStats(
+                            BACKEND_URL,
+                            {
                                 startQuarter: startQuarter,
                                 teamIds: burnoutScopedTeamIds,
                                 components: activeGroupMissingComponents,
                                 refresh: false
-                            })
-                        });
+                            },
+                            { signal: controller.signal }
+                        );
                         if (!response.ok) {
                             const err = await response.json().catch(() => ({}));
                             throw new Error(err.error || err.message || `Lead times fetch failed (${response.status})`);
@@ -7308,7 +7208,7 @@ import {
                 if (!scenarioActiveDraftReady) return undefined;
                 const sseEnabled = window.SCENARIO_DRAFT_SSE_ENABLED === true;
                 if (!sseEnabled || typeof window.EventSource !== 'function') return undefined;
-                const source = new window.EventSource(`${BACKEND_URL}/api/scenario/drafts/${encodeURIComponent(scenarioActiveDraftId)}/events/stream?since=${encodeURIComponent(scenarioDraftLastEventNumber || 0)}`);
+                const source = new window.EventSource(buildScenarioDraftEventsStreamUrl(BACKEND_URL, scenarioActiveDraftId, scenarioDraftLastEventNumber));
                 const expectedDraftId = scenarioActiveDraftId;
                 const handleStreamMessage = (message) => {
                     if (scenarioActiveDraftIdRef.current !== expectedDraftId) return;
@@ -10173,10 +10073,10 @@ import {
                 () => selectedView === 'epm' ? epmDependencyTasks : [...loadedProductTasks, ...loadedTechTasks],
                 [selectedView, epmDependencyTasks, loadedProductTasks, loadedTechTasks]
             );
-            const dependencyKeySignature = React.useMemo(() => {
-                const keys = Array.from(new Set(dependencyTasks.map(task => task.key).filter(Boolean)));
-                return keys.sort().join('|');
-            }, [dependencyTasks]);
+            const dependencyKeySignature = React.useMemo(
+                () => buildDependencyKeySignature(dependencyTasks),
+                [dependencyTasks]
+            );
 
             useEffect(() => {
                 if (!showDependencies && !showBlockedAlert) {
@@ -10204,15 +10104,10 @@ import {
                 }
             }, [showDependencies]);
 
-            const issueByKey = React.useMemo(() => {
-                const map = new Map();
-                dependencyTasks.forEach(task => {
-                    if (task.key) {
-                        map.set(task.key, task);
-                    }
-                });
-                return map;
-            }, [dependencyTasks]);
+            const issueByKey = React.useMemo(
+                () => buildIssueByKey(dependencyTasks),
+                [dependencyTasks]
+            );
 
             const activeDependencyFocus = dependencyFocus || dependencyHover;
             const focusRelatedSet = React.useMemo(() => {
@@ -10346,70 +10241,6 @@ import {
                 setDismissedAlertKeys(prev => (prev.includes(taskKey) ? prev : [...prev, taskKey]));
             };
 
-            const getDependencyKeys = React.useCallback((taskKey, action) => {
-                if (!taskKey) return [];
-                const entries = (dependencyData[taskKey] || [])
-                    .filter(dep => dep.key && dep.category === 'dependency');
-                const direction = action === 'dependents' ? 'inward' : 'outward';
-                const seen = new Set();
-                return entries
-                    .filter(dep => dep.direction === direction)
-                    .filter(dep => {
-                        const key = `${dep.key}-${dep.direction}`;
-                        if (seen.has(key)) return false;
-                        seen.add(key);
-                        return true;
-                    })
-                    .map(dep => dep.key)
-                    .filter(Boolean);
-            }, [dependencyData]);
-
-            const getBlockLinkBuckets = (entries, taskKey) => {
-                const blockedBy = [];
-                const blocks = [];
-                (entries || []).forEach(dep => {
-                    if (!dep?.key || !taskKey) return;
-                    const otherKey = dep.key !== taskKey
-                        ? dep.key
-                        : (dep.prereqKey === taskKey ? dep.dependentKey : dep.prereqKey);
-                    if (!otherKey) return;
-                    if (dep.dependentKey === taskKey) {
-                        blockedBy.push(otherKey);
-                        return;
-                    }
-                    if (dep.prereqKey === taskKey) {
-                        blocks.push(otherKey);
-                        return;
-                    }
-                    if (dep.direction === 'inward') {
-                        blockedBy.push(otherKey);
-                        return;
-                    }
-                    if (dep.direction === 'outward') {
-                        blocks.push(otherKey);
-                    }
-                });
-                return {
-                    blockedBy: Array.from(new Set(blockedBy)),
-                    blocks: Array.from(new Set(blocks))
-                };
-            };
-
-            const getBlockKeys = React.useCallback((taskKey, action) => {
-                if (!taskKey) return [];
-                const entries = (dependencyData[taskKey] || [])
-                    .filter(dep => dep.key && dep.category === 'block');
-                const { blockedBy, blocks } = getBlockLinkBuckets(entries, taskKey);
-                return action === 'blocks' ? blocks : blockedBy;
-            }, [dependencyData]);
-
-            const getFocusKeys = React.useCallback((taskKey, action) => {
-                if (action === 'blocked-by' || action === 'blocks') {
-                    return getBlockKeys(taskKey, action);
-                }
-                return getDependencyKeys(taskKey, action);
-            }, [getBlockKeys, getDependencyKeys]);
-
             const handleDependencyFocusClick = (event) => {
                 const button = event.target.closest('button[data-dep-chip]');
                 if (button) {
@@ -10421,16 +10252,12 @@ import {
                         setDependencyFocus(null);
                         return;
                     }
-                    const dependencyKeys = getFocusKeys(taskKey, action);
-                    const relatedKeys = Array.from(new Set([taskKey, ...dependencyKeys]));
-                    const missingKeys = dependencyKeys.filter(key => !issueByKey.has(key));
-                    setDependencyFocus({
+                    setDependencyFocus(buildDependencyFocusPayload({
                         taskKey,
                         action,
-                        relatedKeys,
-                        dependencyKeys,
-                        missingKeys
-                    });
+                        dependencyData,
+                        issueByKey
+                    }));
                     return;
                 }
                 if (dependencyFocus && !event.target.closest('.task-item')) {
@@ -10441,14 +10268,12 @@ import {
             const handleDependencyHoverEnter = (taskKey, action) => {
                 if (!taskKey || !action) return;
                 if (dependencyFocus) return;
-                const dependencyKeys = getFocusKeys(taskKey, action);
-                const relatedKeys = Array.from(new Set([taskKey, ...dependencyKeys]));
-                setDependencyHover({
+                setDependencyHover(buildDependencyFocusPayload({
                     taskKey,
                     action,
-                    relatedKeys,
-                    dependencyKeys
-                });
+                    dependencyData,
+                    issueByKey
+                }));
             };
 
             const handleDependencyHoverLeave = (taskKey, action) => {
@@ -10486,10 +10311,7 @@ import {
                 const fetchLookup = async () => {
                     setDependencyLookupLoading(true);
                     try {
-                        const response = await fetch(
-                            `${BACKEND_URL}/api/issues/lookup?keys=${encodeURIComponent(missingKeys.join(','))}`,
-                            { signal: controller.signal }
-                        );
+                        const response = await requestIssuesLookup(BACKEND_URL, missingKeys, { signal: controller.signal });
                         if (!response.ok) {
                             console.error('Dependency lookup failed:', response.status);
                             return;
@@ -10662,125 +10484,32 @@ import {
 
             const selectedPlanningTasksList = React.useMemo(() => {
                 if (!showPlanning) return [];
-                return selectedTasksList.filter(task => {
-                    const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
-                    return !excludedEpicSet.has(epicKey);
-                });
+                return buildSelectedPlanningTasksList(selectedTasksList, excludedEpicSet, normalizeEpicKey);
             }, [showPlanning, selectedTasksList, excludedEpicSet]);
             const selectedSP = React.useMemo(() => {
                 if (!showPlanning) return 0;
-                return selectedTasksList.reduce((sum, task) => {
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    return sum + (Number.isNaN(sp) ? 0 : sp);
-                }, 0);
+                return sumPlanningStoryPoints(selectedTasksList);
             }, [showPlanning, selectedTasksList]);
             const selectedCount = showPlanning ? selectedTasksList.length : 0;
 
-            const getCapacityStatus = (selected, capacity) => {
-                if (!capacity) {
-                    return { label: '', text: '', status: '', title: '' };
-                }
-                const ratio = capacity > 0 ? selected / capacity : 0;
-                const overPercent = Math.max(0, (ratio - 1) * 100);
-                const underPercent = Math.max(0, (1 - ratio) * 100);
-                const status = ratio > 1.2 ? 'over' : ratio < 0.9 ? 'under' : '';
-                const suffix = ratio >= 1
-                    ? `${overPercent.toFixed(0)}% over`
-                    : `${underPercent.toFixed(0)}% under`;
-                const shortLabel = ratio >= 1
-                    ? `${overPercent.toFixed(0)}% over`
-                    : `${underPercent.toFixed(0)}% under`;
-                const minToRemove = ratio > 1.2 ? (ratio - 1.2) * capacity : 0;
-                const minToAdd = ratio < 0.9 ? (0.9 - ratio) * capacity : 0;
-                const title = ratio > 1.2
-                    ? `Please remove at least ${minToRemove.toFixed(1)} SP to reach 120%.`
-                    : ratio < 0.9
-                        ? `Please add at least ${minToAdd.toFixed(1)} SP to reach 90%.`
-                        : '';
-                return {
-                    label: shortLabel,
-                    text: `${selected.toFixed(1)} selected | ${capacity.toFixed(1)} capacity | ${suffix}`,
-                    status,
-                    title
-                };
-            };
-
-            const getTeamCapacityMeta = (selected, capacity) => {
-                if (!capacity) return { text: '', status: '', title: '' };
-                const delta = selected - capacity;
-                if (delta <= 0) {
-                    return {
-                        text: `${Math.abs(delta).toFixed(1)} SP left`,
-                        status: '',
-                        title: ''
-                    };
-                }
-                const pct = capacity > 0 ? (delta / capacity) * 100 : 0;
-                const status = pct >= 20 ? 'over' : '';
-                return {
-                    text: `↑ ${delta.toFixed(1)} SP · ${pct.toFixed(0)}%`,
-                    status,
-                    title: 'Please remove some story points or add capacity.'
-                };
-            };
-
-
             const selectedTeamStats = React.useMemo(() => {
                 if (!showPlanning) return {};
-                return selectedTasksList.reduce((acc, task) => {
-                    const teamInfo = getTeamInfo(task);
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    if (!acc[teamInfo.id]) {
-                        acc[teamInfo.id] = { name: teamInfo.name, storyPoints: 0 };
-                    }
-                    acc[teamInfo.id].storyPoints += Number.isNaN(sp) ? 0 : sp;
-                    return acc;
-                }, {});
+                return buildSelectedTeamStats(selectedTasksList, getTeamInfo);
             }, [showPlanning, selectedTasksList]);
 
             const selectedProjectStats = React.useMemo(() => {
                 if (!showPlanning) return {};
-                return selectedPlanningTasksList.reduce((acc, task) => {
-                    const pk = task.fields?.projectKey || task.key.split('-')[0];
-                    const bucket = techProjectKeys.has(pk) ? 'TECH' : 'PRODUCT';
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    if (!acc[bucket]) {
-                        acc[bucket] = 0;
-                    }
-                    acc[bucket] += Number.isNaN(sp) ? 0 : sp;
-                    return acc;
-                }, {});
+                return buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys);
             }, [showPlanning, selectedPlanningTasksList, techProjectKeys]);
 
             const selectedTeamProjectStats = React.useMemo(() => {
                 if (!showPlanning) return {};
-                return selectedPlanningTasksList.reduce((acc, task) => {
-                    const teamInfo = getTeamInfo(task);
-                    const pk = task.fields?.projectKey || task.key.split('-')[0];
-                    const bucket = techProjectKeys.has(pk) ? 'tech' : 'product';
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    if (!acc[teamInfo.id]) {
-                        acc[teamInfo.id] = { product: 0, tech: 0 };
-                    }
-                    acc[teamInfo.id][bucket] += Number.isNaN(sp) ? 0 : sp;
-                    return acc;
-                }, {});
+                return buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys);
             }, [showPlanning, selectedPlanningTasksList, techProjectKeys]);
 
             const excludedProjectStats = React.useMemo(() => {
                 if (!showPlanning) return {};
-                return selectedTasksList.reduce((acc, task) => {
-                    const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
-                    if (!excludedEpicSet.has(epicKey)) return acc;
-                    const pk = task.fields?.projectKey || task.key.split('-')[0];
-                    const projectKey = techProjectKeys.has(pk) ? 'TECH' : 'PRODUCT';
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    if (!acc[projectKey]) {
-                        acc[projectKey] = 0;
-                    }
-                    acc[projectKey] += Number.isNaN(sp) ? 0 : sp;
-                    return acc;
-                }, {});
+                return buildExcludedProjectStats(selectedTasksList, excludedEpicSet, techProjectKeys, normalizeEpicKey);
             }, [showPlanning, selectedTasksList, excludedEpicSet, techProjectKeys]);
 
             const capacitySplit = React.useMemo(() => ({ product: 0.7, tech: 0.3 }), []);
@@ -10793,53 +10522,18 @@ import {
                         : 1;
 
             const teamCapacityStats = React.useMemo(() => {
-                if (!showPlanning || !capacityEnabled) return {};
-                return capacityTasks.reduce((acc, task) => {
-                    const status = normalizeStatus(task.fields.status?.name);
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    if (!sp) {
-                        return acc;
-                    }
-
-                    const teamInfo = getTeamInfo(task);
-                    if (!acc[teamInfo.id]) {
-                        acc[teamInfo.id] = {
-                            name: teamInfo.name,
-                            product: { todoPending: 0, accepted: 0, postponed: 0 },
-                            tech: { todoPending: 0, accepted: 0, postponed: 0 }
-                        };
-                    }
-
-                    const pk = task.fields?.projectKey || task.key.split('-')[0];
-                    const bucket = techProjectKeys.has(pk) ? 'tech' : 'product';
-                    if (status === 'to do' || status === 'pending') {
-                        acc[teamInfo.id][bucket].todoPending += sp;
-                    }
-                    if (status === 'accepted') {
-                        acc[teamInfo.id][bucket].accepted += sp;
-                    }
-                    if (status === 'postponed') {
-                        acc[teamInfo.id][bucket].postponed += sp;
-                    }
-
-                    return acc;
-                }, {});
+                return buildTeamCapacityStats({
+                    showPlanning,
+                    capacityEnabled,
+                    capacityTasks,
+                    normalizeStatus,
+                    getTeamInfo,
+                    techProjectKeys
+                });
             }, [showPlanning, capacityEnabled, capacityTasks, techProjectKeys]);
 
             const teamCapacityEntries = React.useMemo(() => {
-                return Object.entries(teamCapacityStats)
-                    .map(([id, info]) => ({
-                        id,
-                        name: info.name,
-                        product: info.product,
-                        tech: info.tech,
-                        total: {
-                            todoPending: info.product.todoPending + info.tech.todoPending,
-                            accepted: info.product.accepted + info.tech.accepted,
-                            postponed: info.product.postponed + info.tech.postponed
-                        }
-                    }))
-                    .sort((a, b) => a.name.localeCompare(b.name));
+                return buildTeamCapacityEntries(teamCapacityStats);
             }, [teamCapacityStats]);
 
             const displayedTeamCapacityEntries = React.useMemo(() => {
@@ -10849,21 +10543,16 @@ import {
             }, [teamCapacityEntries, isAllTeamsSelected, selectedTeamSet]);
 
             const teamSpTotals = React.useMemo(() => {
-                const totals = {};
-                for (const task of capacityTasks) {
-                    const sp = parseFloat(task.fields?.customfield_10004 || 0);
-                    if (!sp) continue;
-                    const tid = getTeamInfo(task).id;
-                    totals[tid] = (totals[tid] || 0) + sp;
-                }
-                return totals;
+                return buildTeamSpTotals(capacityTasks, getTeamInfo);
             }, [capacityTasks]);
 
             const displayedTeamOptions = React.useMemo(() => {
-                const base = !isAllTeamsSelected
-                    ? teamOptions.filter(team => team.id !== 'all' && selectedTeamSet.has(team.id))
-                    : teamOptions.filter(team => team.id !== 'all');
-                return base.filter(team => (teamSpTotals[team.id] || 0) > 0);
+                return buildDisplayedTeamOptions({
+                    teamOptions,
+                    isAllTeamsSelected,
+                    selectedTeamSet,
+                    teamSpTotals
+                });
             }, [teamOptions, isAllTeamsSelected, selectedTeamSet, teamSpTotals]);
 
             const capacityTeamNames = React.useMemo(() => {
@@ -10898,16 +10587,14 @@ import {
             };
 
             const excludedCapacityByTeamId = React.useMemo(() => {
-                if (!capacityEnabled || !showPlanning) return {};
-                return capacityTasks.reduce((acc, task) => {
-                    const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
-                    if (!excludedEpicSet.has(epicKey)) return acc;
-                    const teamInfo = getTeamInfo(task);
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    if (Number.isNaN(sp)) return acc;
-                    acc[teamInfo.id] = (acc[teamInfo.id] || 0) + sp;
-                    return acc;
-                }, {});
+                return buildExcludedCapacityByTeamId({
+                    capacityEnabled,
+                    showPlanning,
+                    capacityTasks,
+                    excludedEpicSet,
+                    normalizeEpicKey,
+                    getTeamInfo
+                });
             }, [capacityEnabled, showPlanning, capacityTasks, excludedEpicSet]);
 
             const getTeamNetCapacity = (team) => {
@@ -10918,21 +10605,13 @@ import {
             };
 
             const capacityTotalsSummary = React.useMemo(() => {
-                const totalCapacityBase = capacityEnabled
-                    ? displayedTeamOptions.reduce((sum, team) => sum + getTeamCapacity(team.name), 0)
-                    : 0;
-                const excludedCapacityTotal = capacityEnabled
-                    ? displayedTeamOptions.reduce((sum, team) => sum + (excludedCapacityByTeamId[team.id] || 0), 0)
-                    : 0;
-                const estimatedCapacityRaw = Math.max(0, totalCapacityBase - excludedCapacityTotal);
-                return {
-                    totalCapacityBase,
-                    excludedCapacityTotal,
-                    estimatedCapacityRaw,
-                    totalCapacityAdjusted: totalCapacityBase * capacityMultiplier,
-                    estimatedCapacityAdjusted: estimatedCapacityRaw * capacityMultiplier,
-                    excludedCapacityAdjusted: excludedCapacityTotal * capacityMultiplier
-                };
+                return buildCapacityTotalsSummary({
+                    capacityEnabled,
+                    displayedTeamOptions,
+                    getTeamCapacity,
+                    excludedCapacityByTeamId,
+                    capacityMultiplier
+                });
             }, [capacityEnabled, displayedTeamOptions, excludedCapacityByTeamId, capacityMultiplier, capacityByTeam]);
             const totalCapacityBase = capacityTotalsSummary.totalCapacityBase;
             const excludedCapacityTotal = capacityTotalsSummary.excludedCapacityTotal;
@@ -10959,26 +10638,16 @@ import {
             };
 
             const projectCapacity = React.useMemo(() => {
-                if (!showPlanning || !capacityEnabled) {
-                    return { PRODUCT: 0, TECH: 0 };
-                }
-                const totals = displayedTeamOptions.reduce((acc, team) => {
-                    const teamPlanningCapacity = getTeamNetCapacity(team);
-                    if (!teamPlanningCapacity) return acc;
-                    const stats = selectedTeamProjectStats[team.id] || { product: 0, tech: 0 };
-                    const totalSelected = stats.product + stats.tech;
-                    const techHeavy = totalSelected > 0 ? stats.tech >= stats.product : false;
-                    const split = techHeavy ? { product: 0.2, tech: 0.8 } : capacitySplit;
-                    acc.PRODUCT += teamPlanningCapacity * split.product;
-                    acc.TECH += teamPlanningCapacity * split.tech;
-                    return acc;
-                }, {
-                    PRODUCT: 0,
-                    TECH: 0
+                return buildProjectCapacity({
+                    showPlanning,
+                    capacityEnabled,
+                    displayedTeamOptions,
+                    selectedTeamProjectStats,
+                    getTeamNetCapacity,
+                    capacitySplit,
+                    showProduct,
+                    showTech
                 });
-                if (!showProduct) totals.PRODUCT = 0;
-                if (!showTech) totals.TECH = 0;
-                return totals;
             }, [
                 showPlanning,
                 capacityEnabled,
@@ -10992,35 +10661,24 @@ import {
             ]);
 
             const selectedProjectEntries = React.useMemo(() => {
-                if (!showPlanning) return [];
-                return Object.entries(selectedProjectStats)
-                    .map(([id, storyPoints]) => ({
-                        id,
-                        name: id,
-                        storyPoints,
-                        capacity: capacityEnabled ? (projectCapacity[id] || 0) : null
-                    }))
-                    .sort((a, b) => {
-                        const order = (key) => {
-                            if (key === 'PRODUCT') return 0;
-                            if (key === 'TECH') return 1;
-                            return 99;
-                        };
-                        const diff = order(a.id) - order(b.id);
-                        if (diff !== 0) return diff;
-                        return a.name.localeCompare(b.name);
-                    });
+                return buildSelectedProjectEntries({
+                    showPlanning,
+                    selectedProjectStats,
+                    capacityEnabled,
+                    projectCapacity
+                });
             }, [showPlanning, selectedProjectStats, capacityEnabled, projectCapacity]);
 
             const selectedTeamEntries = React.useMemo(() => {
-                if (!showPlanning) return [];
-                return displayedTeamOptions.map((team) => ({
-                    id: team.id,
-                    name: team.name,
-                    storyPoints: selectedTeamStats[team.id]?.storyPoints || 0,
-                    teamCapacity: capacityEnabled ? getTeamCapacity(team.name) * capacityMultiplier : null,
-                    planningCapacity: capacityEnabled ? getTeamNetCapacity(team) * capacityMultiplier : null
-                }));
+                return buildSelectedTeamEntries({
+                    showPlanning,
+                    displayedTeamOptions,
+                    selectedTeamStats,
+                    capacityEnabled,
+                    getTeamCapacity,
+                    getTeamNetCapacity,
+                    capacityMultiplier
+                });
             }, [
                 showPlanning,
                 displayedTeamOptions,
@@ -11032,28 +10690,10 @@ import {
             ]);
 
             const capacityTotals = React.useMemo(() => {
-                if (!showPlanning || !capacityEnabled) {
-                    return {
-                        product: { todoPending: 0, accepted: 0, postponed: 0 },
-                        tech: { todoPending: 0, accepted: 0, postponed: 0 },
-                        total: { todoPending: 0, accepted: 0, postponed: 0 }
-                    };
-                }
-                return displayedTeamCapacityEntries.reduce((acc, info) => {
-                    acc.product.todoPending += info.product.todoPending;
-                    acc.product.accepted += info.product.accepted;
-                    acc.product.postponed += info.product.postponed;
-                    acc.tech.todoPending += info.tech.todoPending;
-                    acc.tech.accepted += info.tech.accepted;
-                    acc.tech.postponed += info.tech.postponed;
-                    acc.total.todoPending += info.total.todoPending;
-                    acc.total.accepted += info.total.accepted;
-                    acc.total.postponed += info.total.postponed;
-                    return acc;
-                }, {
-                    product: { todoPending: 0, accepted: 0, postponed: 0 },
-                    tech: { todoPending: 0, accepted: 0, postponed: 0 },
-                    total: { todoPending: 0, accepted: 0, postponed: 0 }
+                return buildCapacityTotals({
+                    showPlanning,
+                    capacityEnabled,
+                    displayedTeamCapacityEntries
                 });
             }, [showPlanning, capacityEnabled, displayedTeamCapacityEntries]);
 
@@ -14551,121 +14191,36 @@ import {
                     {selectedView === 'eng' && showPlanning && (
                     <div ref={planningPanelRef} className={`planning-panel ${showPlanning ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`}>
                         {/* --- Planning Actions (top of panel) --- */}
-                        <div className="planning-actions">
-                            <button
-                                className={`planning-action-button ${isAcceptedIncluded ? 'active' : ''}`}
-                                onClick={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
-                                disabled={visibleTasks.length === 0}
-                                title="Include all Accepted and In Progress stories for the current view"
-                            >
-                                Accepted
-                            </button>
-                            <button
-                                className={`planning-action-button ${isTodoIncluded ? 'active' : ''}`}
-                                onClick={() => toggleIncludeByStatus(['To Do', 'Pending'])}
-                                disabled={visibleTasks.length === 0}
-                                title="Include all To Do / Pending stories for the current view"
-                            >
-                                To Do
-                            </button>
-                            <button
-                                className={`planning-action-button ${isPostponedIncluded ? 'active' : ''}`}
-                                onClick={() => toggleIncludeByStatus(['Postponed'])}
-                                disabled={planningPostponedTasks.length === 0}
-                                title="Include all Postponed stories for the current view"
-                            >
-                                Postponed
-                            </button>
-                            <button
-                                className={`planning-action-button ${isAwaitingValidationIncluded ? 'active' : ''}`}
-                                onClick={() => toggleIncludeByStatus(['Awaiting Validation'])}
-                                disabled={planningAwaitingValidationTasks.length === 0}
-                                title="Include all Awaiting Validation stories for the current view"
-                            >
-                                Awaiting Val.
-                            </button>
-                            <button
-                                className={`planning-action-button ${areAllVisiblePlanningTasksSelected ? 'active' : ''}`}
-                                onClick={selectAllVisiblePlanningTasks}
-                                disabled={visibleTasksForList.length === 0}
-                                title="Select every task currently visible in the planning list"
-                            >
-                                Select All
-                            </button>
-                            <button
-                                className="uncheck-button"
-                                onClick={clearSelectedTasks}
-                                disabled={selectedCount === 0}
-                                title="Clear all selected tasks"
-                            >
-                                Clear Selected
-                            </button>
-                            <button
-                                className="planning-action-button planning-icon-button"
-                                onClick={openSelectedInJira}
-                                disabled={selectedCount === 0 || !jiraUrl}
-                                title="Open selected stories in Jira (tip: bulk move them to Accepted)"
-                                aria-label="Open selected stories in Jira"
-                            >
-                                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                                    <path d="M10 2h4v4h-1.5V4.56L8.53 8.53l-1.06-1.06L11.44 3.5H10V2z" />
-                                    <path d="M13 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4v1.5H3.5v8h8V9H13z" />
-                                </svg>
-                            </button>
-                        </div>
+                        <PlanningActionBar
+                            isAcceptedIncluded={isAcceptedIncluded}
+                            isTodoIncluded={isTodoIncluded}
+                            isPostponedIncluded={isPostponedIncluded}
+                            isAwaitingValidationIncluded={isAwaitingValidationIncluded}
+                            areAllVisiblePlanningTasksSelected={areAllVisiblePlanningTasksSelected}
+                            hasVisibleTasks={visibleTasks.length > 0}
+                            hasVisiblePlanningTasks={visibleTasksForList.length > 0}
+                            hasPostponedTasks={planningPostponedTasks.length > 0}
+                            hasAwaitingValidationTasks={planningAwaitingValidationTasks.length > 0}
+                            selectedCount={selectedCount}
+                            jiraUrl={jiraUrl}
+                            onToggleAccepted={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
+                            onToggleTodo={() => toggleIncludeByStatus(['To Do', 'Pending'])}
+                            onTogglePostponed={() => toggleIncludeByStatus(['Postponed'])}
+                            onToggleAwaitingValidation={() => toggleIncludeByStatus(['Awaiting Validation'])}
+                            onSelectAllVisible={selectAllVisiblePlanningTasks}
+                            onClearSelected={clearSelectedTasks}
+                            onOpenSelectedInJira={openSelectedInJira}
+                        />
                         {/* --- Capacity Bar Graph --- */}
-                        {capacityEnabled && totalCapacityAdjusted > 0 ? (() => {
-                            const scale = Math.max(totalCapacityAdjusted, selectedSP) * 1.15;
-                            const toPct = (v) => Math.min(100, (v / scale) * 100);
-                            const selectedPct = toPct(selectedSP);
-                            const planningPct = toPct(estimatedCapacityAdjusted);
-                            const teamCapPct = toPct(totalCapacityAdjusted);
-                            const showPlanningMarker = Math.abs(estimatedCapacityAdjusted - totalCapacityAdjusted) > 0.05;
-                            const isOver = capacitySummary.status === 'over';
-                            const isUnder = capacitySummary.status === 'under';
-                            const varianceOverPct = isOver ? selectedPct - teamCapPct : 0;
-                            return (
-                                <div className="capacity-bar-graph">
-                                    <div className="capacity-bar-track">
-                                        {/* Excluded zone */}
-                                        {excludedCapacityAdjusted > 0 && (
-                                            <div className="capacity-bar-excluded-zone" style={{ left: `${planningPct}%`, width: `${teamCapPct - planningPct}%` }} />
-                                        )}
-                                        {/* Variance overshoot zone (always visible when over) */}
-                                        {varianceOverPct > 0 && (
-                                            <div className="capacity-bar-variance-zone visible" style={{ left: `${teamCapPct}%`, width: `${varianceOverPct}%` }} />
-                                        )}
-                                        {/* Under-capacity gap zone (visible when under) */}
-                                        {isUnder && (
-                                            <div className="capacity-bar-variance-zone under-zone" style={{ left: `${selectedPct}%`, width: `${teamCapPct - selectedPct}%` }} />
-                                        )}
-                                        {/* Selected fill — clip at teamCap when over so variance zone is visible */}
-                                        <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}${(isOver ? teamCapPct : selectedPct) < 20 ? ' narrow' : ''}`} style={{ width: `${isOver ? teamCapPct : selectedPct}%` }} data-tooltip={`Total story points from ${selectedCount} selected tasks.`}>
-                                            <span className="capacity-bar-fill-label">{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>
-                                        </div>
-                                        {/* Planning marker */}
-                                        {showPlanningMarker && (
-                                            <div className="capacity-bar-marker planning" style={{ left: `${planningPct}%` }} data-tooltip="Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.).">
-                                                <div className="capacity-bar-marker-line dashed" />
-                                                <div className="capacity-bar-marker-label">Planning<br/>{estimatedCapacityAdjusted.toFixed(1)}</div>
-                                            </div>
-                                        )}
-                                        {/* Team cap marker */}
-                                        <div className="capacity-bar-marker teamcap" style={{ left: `${teamCapPct}%` }} data-tooltip="Estimated total team capacity for the quarter.">
-                                            <div className="capacity-bar-marker-line" />
-                                            <div className="capacity-bar-marker-label">Team Cap<br/>{totalCapacityAdjusted.toFixed(1)}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })() : (
-                            <div className="planning-stats">
-                                <div className="planning-stat">
-                                    <span className="planning-stat-label">Selected:</span>
-                                    <span className="planning-stat-value">{selectedCount} · {selectedSP.toFixed(1)} SP</span>
-                                </div>
-                            </div>
-                        )}
+                        <PlanningCapacityBar
+                            capacityEnabled={capacityEnabled}
+                            totalCapacityAdjusted={totalCapacityAdjusted}
+                            estimatedCapacityAdjusted={estimatedCapacityAdjusted}
+                            excludedCapacityAdjusted={excludedCapacityAdjusted}
+                            selectedCount={selectedCount}
+                            selectedSP={selectedSP}
+                            capacitySummary={capacitySummary}
+                        />
 
                         {/* --- Team MicroBar tiles --- */}
                         {selectedTeamEntries.length > 0 && (() => {
@@ -14729,64 +14284,10 @@ import {
                         })()}
 
                         {/* --- Project Split Bar --- */}
-                        <div className="planning-stats compact" style={{ marginTop: '0.35rem' }}>
-                            <div className="planning-stat">
-                                <span className="planning-stat-label" data-tooltip="Planning capacity split: 70% Product / 30% Tech (tech-heavy teams may aim for 10% / 90%). Selected effort excludes excluded epics.">Selected SP by Project:</span>
-                            </div>
-                        </div>
-                        {(() => {
-                            const projectTotal = selectedProjectEntries.reduce((sum, e) => sum + e.storyPoints, 0);
-                            const productEntry = selectedProjectEntries.find(e => e.id === 'PRODUCT');
-                            const techEntry = selectedProjectEntries.find(e => e.id === 'TECH');
-                            const productSP = productEntry ? productEntry.storyPoints : 0;
-                            const techSP = techEntry ? techEntry.storyPoints : 0;
-                            const productPct = projectTotal > 0 ? (productSP / projectTotal) * 100 : 0;
-                            const techPct = projectTotal > 0 ? (techSP / projectTotal) * 100 : 0;
-                            const excludedProduct = excludedProjectStats['PRODUCT'] || 0;
-                            const excludedTech = excludedProjectStats['TECH'] || 0;
-                            const excludedTotal = excludedProduct + excludedTech;
-                            const targetPct = 70;
-                            if (projectTotal === 0 && excludedTotal === 0) {
-                                return (
-                                    <div className="planning-stat" style={{ marginTop: '0.3rem' }}>
-                                        <span className="planning-stat-value">No tasks selected</span>
-                                    </div>
-                                );
-                            }
-                            return (
-                                <div className="project-bar-graph">
-                                    <div className="capacity-bar-track">
-                                        {/* Product fill */}
-                                        <div
-                                            className="project-bar-fill product"
-                                            style={{ width: `${productPct}%`, borderRadius: techPct > 0 ? '6px 0 0 6px' : '6px' }}
-                                            data-tooltip={`Product: ${productSP.toFixed(1)} SP (${productPct.toFixed(0)}% of selected).${excludedProduct > 0 ? ` Excluded: ${excludedProduct.toFixed(1)} SP.` : ''}`}
-                                        >
-                                            {productPct > 15 && (
-                                                <span className="capacity-bar-fill-label">Product {productPct.toFixed(0)}% · {productSP.toFixed(1)} SP</span>
-                                            )}
-                                        </div>
-                                        {/* Tech fill */}
-                                        {techPct > 0 && (
-                                        <div
-                                            className="project-bar-fill tech"
-                                            style={{ left: `${productPct}%`, width: `${techPct}%` }}
-                                            data-tooltip={`Tech: ${techSP.toFixed(1)} SP (${techPct.toFixed(0)}% of selected).${excludedTech > 0 ? ` Excluded: ${excludedTech.toFixed(1)} SP.` : ''}`}
-                                        >
-                                            {techPct > 15 && (
-                                                <span className="capacity-bar-fill-label">Tech {techPct.toFixed(0)}% · {techSP.toFixed(1)} SP</span>
-                                            )}
-                                        </div>
-                                        )}
-                                        {/* 70% target marker */}
-                                        <div className="capacity-bar-marker" style={{ left: `${targetPct}%` }}>
-                                            <div className="capacity-bar-marker-line dashed" />
-                                            <div className="capacity-bar-marker-label">Target<br/>{targetPct}% / {100 - targetPct}%</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })()}
+                        <PlanningProjectSplitBar
+                            selectedProjectEntries={selectedProjectEntries}
+                            excludedProjectStats={excludedProjectStats}
+                        />
                     </div>
                     )}
                     {!isLeadTimesFocusMode && (

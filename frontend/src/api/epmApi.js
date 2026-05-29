@@ -23,6 +23,23 @@ function getEpmJson(url, label, options = {}) {
 export const fetchEpmConfig = (backendUrl) =>
     getJson(`${backendUrl}/api/epm/config`, 'EPM config', { cache: 'no-cache' });
 
+export async function saveEpmConfig(backendUrl, draftConfig) {
+    const { csrfToken } = await fetchCsrfToken(backendUrl);
+    const response = await fetch(`${backendUrl}/api/epm/config`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'jira-execution-planner',
+            'X-CSRF-Token': csrfToken || ''
+        },
+        body: JSON.stringify(draftConfig || {})
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to save EPM config: ${response.status}`);
+    }
+    return response.json();
+}
+
 export const fetchEpmScope = (backendUrl) =>
     getJson(`${backendUrl}/api/epm/scope`, 'EPM scope', { cache: 'no-cache' });
 

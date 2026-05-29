@@ -7,6 +7,7 @@ const path = require('node:path');
 const repoRoot = path.join(__dirname, '..');
 const frontendSrcPath = path.join(repoRoot, 'frontend', 'src');
 const dashboardPath = path.join(frontendSrcPath, 'dashboard.jsx');
+const scenarioApiPath = path.join(frontendSrcPath, 'api', 'scenarioApi.js');
 const legacyScenarioOverridesRoute = ['/api', 'scenario', 'overrides'].join('/');
 
 function listSourceFiles(root) {
@@ -46,7 +47,7 @@ test('frontend source has no legacy scenario overrides route strings', () => {
 
 test('scenario draft polling helper returns data without mutating realtime state', () => {
     const dashboardSource = readSource(dashboardPath);
-    const helperMatch = dashboardSource.match(/const pollScenarioDraftEvents = async[\s\S]*?\n\s*\};\n\n\s*const saveScenarioDraftVersion/);
+    const helperMatch = dashboardSource.match(/const pollScenarioDraftEvents = [\s\S]*?requestScenarioDraftEvents[\s\S]*?;\n\n\s*const saveScenarioDraftVersion/);
     const pollingEffectMatch = dashboardSource.match(/React\.useEffect\(\(\) => \{\n\s*if \(!scenarioActiveDraftReady\)[\s\S]*?window\.setInterval\(poll, 5000\);[\s\S]*?\n\s*\}, \[scenarioActiveDraftReady, scenarioActiveDraftId, scenarioScopeKey, scenarioDraftLastEventNumber\]\);/);
 
     assert.ok(helperMatch, 'Expected pollScenarioDraftEvents helper to exist.');
@@ -117,7 +118,7 @@ test('generated frontend dist changes require frontend source changes', () => {
 test('dirty scenario draft reruns are blocked before loading new scenario data', () => {
     const dashboardSource = readSource(dashboardPath);
     const dirtyGuardIndex = dashboardSource.indexOf('if (scenarioHasUnsavedChanges) {');
-    const scenarioFetchIndex = dashboardSource.indexOf('fetch(`${BACKEND_URL}/api/scenario`,');
+    const scenarioFetchIndex = dashboardSource.indexOf('requestScenarioRun(BACKEND_URL, buildScenarioPayload(),');
     const setScenarioDataIndex = dashboardSource.indexOf('setScenarioData(data);');
 
     assert.ok(dirtyGuardIndex > -1, 'Expected runScenario to guard any dirty draft changes with derived dirty state.');
@@ -181,6 +182,7 @@ test('discarding scenario overrides preserves loaded draft metadata', () => {
 
 test('draft save route sends csrf and baseDraftRevision', () => {
     const dashboardSource = readSource(dashboardPath);
+    const scenarioApiSource = readSource(scenarioApiPath);
     const saveHelperMatch = dashboardSource.match(/const saveScenarioDraftVersion = async[\s\S]*?\n\s*\};\n\n\s*const fetchScenarioDraftVersion/);
     const saveCallerMatch = dashboardSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
 
@@ -190,7 +192,8 @@ test('draft save route sends csrf and baseDraftRevision', () => {
     const saveCallerSource = saveCallerMatch[0];
 
     assert.ok(saveHelperSource.includes('fetchScenarioCsrfToken()'), 'Draft save helper must fetch a CSRF token.');
-    assert.ok(saveHelperSource.includes("'X-CSRF-Token': csrfToken"), 'Draft save helper must send the CSRF header.');
+    assert.ok(saveHelperSource.includes('requestSaveScenarioDraftVersion(BACKEND_URL, payload, { csrfToken })'), 'Draft save helper must send the CSRF token through the API wrapper.');
+    assert.ok(scenarioApiSource.includes("'X-CSRF-Token': csrfToken"), 'Scenario API wrapper must send the CSRF header.');
     assert.ok(saveHelperSource.includes('baseDraftRevision,'), 'Draft save payload must include baseDraftRevision.');
     assert.ok(saveHelperSource.includes('scenarioOverrides: normalizeScenarioDraftOverrides(overrides)'), 'Draft save payload must include scenarioOverrides.');
     assert.ok(saveCallerSource.includes('scenarioDraftMeta.baseDraftRevision'), 'Draft save caller must pass the loaded baseDraftRevision.');
@@ -381,6 +384,7 @@ test('draft save retries csrf_required once and preserves failed local edits', (
 
 test('history reload and rollback use inline dialog controls and guarded rollback writes', () => {
     const dashboardSource = readSource(dashboardPath);
+    const scenarioApiSource = readSource(scenarioApiPath);
     const historyActionMatch = dashboardSource.match(/const requestScenarioHistoryAction = \(type, versionNumber\) => \{[\s\S]*?\n\s*\};\n\n\s*const scenarioLaneForIssue/);
     const rollbackHelperMatch = dashboardSource.match(/const rollbackScenarioDraft = async[\s\S]*?\n\s*\};\n\n\s*const buildScenarioDraftScope/);
     const historyRenderIndex = dashboardSource.indexOf('{scenarioDraftMeta.historyOpen && (');
@@ -422,8 +426,9 @@ test('history reload and rollback use inline dialog controls and guarded rollbac
     assert.ok(historyActionSource.includes("err.payload?.error === 'scenario_draft_conflict'"), 'Rollback conflicts must use canonical stale-draft conflict UI.');
 
     assert.ok(rollbackHelperSource.includes('fetchScenarioCsrfToken()'), 'Rollback helper must fetch CSRF token.');
-    assert.ok(rollbackHelperSource.includes("'X-Requested-With': 'jira-execution-planner'"), 'Rollback helper must send requested-with header.');
-    assert.ok(rollbackHelperSource.includes("'X-CSRF-Token': csrfToken"), 'Rollback helper must send CSRF header.');
+    assert.ok(rollbackHelperSource.includes('requestRollbackScenarioDraft('), 'Rollback helper must delegate endpoint construction to the API wrapper.');
+    assert.ok(scenarioApiSource.includes("'X-Requested-With': 'jira-execution-planner'"), 'Scenario API wrapper must send requested-with header.');
+    assert.ok(scenarioApiSource.includes("'X-CSRF-Token': csrfToken"), 'Scenario API wrapper must send CSRF header.');
     assert.ok(rollbackHelperSource.includes('targetVersionNumber,'), 'Rollback payload must send targetVersionNumber.');
     assert.ok(rollbackHelperSource.includes('baseDraftRevision'), 'Rollback payload must send baseDraftRevision.');
 });

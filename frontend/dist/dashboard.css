@@ -1,4 +1,4 @@
-/* frontend/src/styles/dashboard.css */
+/* frontend/src/styles/base.css */
 * {
   margin: 0;
   padding: 0;
@@ -573,6 +573,8 @@ h1 {
 .sprint-dropdown-option + .sprint-dropdown-option {
   border-top: 1px dashed var(--border);
 }
+
+/* frontend/src/styles/settings.css */
 .epm-project-dropdown {
   --sprint-dropdown-min-width: 10rem;
   --sprint-dropdown-max-width: min(26rem, calc(100vw - 2rem));
@@ -2098,6 +2100,8 @@ select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* frontend/src/styles/eng.css */
 .team-dropdown {
   position: relative;
   display: block;
@@ -3712,6 +3716,8 @@ button.toggle.initiative-toggle.active {
     width: 100%;
   }
 }
+
+/* frontend/src/styles/stats-summary.css */
 .stats {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -3916,6 +3922,8 @@ button.toggle.initiative-toggle.active {
   overflow: visible;
   box-shadow: 0 8px 24px rgba(26, 26, 26, 0.08);
 }
+
+/* frontend/src/styles/scenario.css */
 .scenario-panel {
   background: transparent;
   border: 1px solid transparent;
@@ -4829,6 +4837,8 @@ button.toggle.initiative-toggle.active {
 .scenario-tooltip-note {
   color: rgba(255, 255, 255, 0.7);
 }
+
+/* frontend/src/styles/stats.css */
 .stats-controls {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -6317,6 +6327,8 @@ button.toggle.initiative-toggle.active {
   opacity: 1;
   color: var(--accent);
 }
+
+/* frontend/src/styles/planning.css */
 .capacity-bar-graph {
   margin-bottom: 0.3rem;
 }
@@ -6991,6 +7003,8 @@ button.toggle.initiative-toggle.active {
   font-weight: bold;
   line-height: 1;
 }
+
+/* frontend/src/styles/epm.css */
 :root {
   --epm-project-accent: #0747a6;
   --epm-project-accent-surface: rgba(7, 71, 166, 0.08);
@@ -7706,3 +7720,5 @@ button.toggle.initiative-toggle.active {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* frontend/src/styles/dashboard.css */

@@ -2,11 +2,8 @@
 
 from flask import Blueprint
 
-from backend.auth.cache_policy import (
-    build_jira_home_process_cache_key,
-    jira_home_partitioned_process_cache_enabled,
-)
 from backend.auth.jira_auth import AuthError
+from backend.epm import issues as epm_issues
 
 from . import bind_server_globals
 
@@ -38,6 +35,33 @@ def _home_user_token_required_payload(error):
 
 def _home_user_token_required_response(error):
     return jsonify(_home_user_token_required_payload(error)), 409
+
+
+def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_keys=None):
+    auth_context = current_request_auth_context()
+    deps = epm_issues.EpmIssuesDependencies(
+        find_epm_project_or_404=lambda project_id: find_epm_project_or_404(
+            project_id,
+            sub_goal_keys=sub_goal_keys,
+            context=auth_context,
+        ),
+        validate_epm_tab_sprint=validate_epm_tab_sprint,
+        build_epm_scope_clause=build_epm_scope_clause,
+        build_base_jql=build_base_jql,
+        add_clause_to_jql=add_clause_to_jql,
+        fetch_issues_by_jql=(
+            lambda jql, fields_list, context=None:
+            fetch_issues_by_jql(jql, fields_list, context=auth_context)
+        ),
+        build_epm_fields_list=build_epm_fields_list,
+        shape_epm_issue_payload=shape_epm_issue_payload,
+        dedupe_issues_by_key=dedupe_issues_by_key,
+        cache=EPM_ISSUES_CACHE,
+        cache_lock=_epm_cache_lock,
+        cache_ttl_seconds=EPM_ISSUES_CACHE_TTL_SECONDS,
+        context=auth_context,
+    )
+    return epm_issues.build_epm_project_issues_payload(home_project_id, tab, sprint, deps)
 
 
 @bp.route('/api/epm/config', methods=['GET'])
@@ -151,64 +175,29 @@ def get_all_epm_projects_rollup_endpoint():
     return response, status
 
 
-@bp.route('/api/epm/projects/<home_project_id>/issues', methods=['GET'])
+@bp.route('/api/epm/projects/<path:home_project_id>/issues', methods=['GET'])
 def get_epm_project_issues_endpoint(home_project_id):
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
-    validation_error = validate_epm_tab_sprint(tab, sprint)
-    if validation_error:
-        error_payload, status = validation_error
-        return jsonify(error_payload), status
-
     sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
     try:
-        project = find_epm_project_or_404(home_project_id, sub_goal_keys=sub_goal_keys)
+        payload, status, headers = build_epm_project_issues_response(
+            home_project_id,
+            tab,
+            sprint,
+            sub_goal_keys=sub_goal_keys,
+        )
     except AuthError as exc:
         if _is_home_user_token_required(exc):
             return _home_user_token_required_response(exc)
         raise
-    linkage = project['resolvedLinkage']
-    scope_clause = build_epm_scope_clause(linkage)
-    if not scope_clause:
-        return jsonify({'project': project, 'issues': [], 'epics': {}, 'metadataOnly': True})
-
-    base_jql = build_base_jql()
-    auth_context = current_request_auth_context()
-    cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
-    cache_key = build_jira_home_process_cache_key(
-        auth_context,
-        f"{home_project_id}::{tab}::{sprint}::{base_jql}::{json.dumps(linkage, sort_keys=True)}",
-    )
-    cached = None
-    if cache_enabled:
-        with _epm_cache_lock:
-            cached = EPM_ISSUES_CACHE.get(cache_key)
-    if cache_enabled and cached and (time.time() - cached['timestamp']) < EPM_ISSUES_CACHE_TTL_SECONDS:
-        response = jsonify(cached['data'])
-        response.headers['Server-Timing'] = 'cache;dur=1'
-        return response
-
-    started = time.perf_counter()
-    jql = add_clause_to_jql(base_jql, scope_clause)
-    if should_apply_epm_sprint(tab):
-        jql = add_clause_to_jql(jql, f'Sprint = {sprint}')
-    issues = fetch_issues_by_jql(jql, build_epm_fields_list(), context=auth_context)
-    slim_issues, epic_details = shape_epm_issue_payload(issues)
-    payload = {
-        'project': project,
-        'issues': dedupe_issues_by_key(slim_issues),
-        'epics': epic_details,
-        'metadataOnly': False,
-    }
-    if cache_enabled:
-        with _epm_cache_lock:
-            EPM_ISSUES_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
     response = jsonify(payload)
-    response.headers['Server-Timing'] = f'jira-search;dur={round((time.perf_counter() - started) * 1000, 1)}'
-    return response
+    for key, value in headers.items():
+        response.headers[key] = value
+    return response, status
 
 
-@bp.route('/api/epm/projects/<project_id>/rollup', methods=['GET'])
+@bp.route('/api/epm/projects/<path:project_id>/rollup', methods=['GET'])
 def get_epm_project_rollup_endpoint(project_id):
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()

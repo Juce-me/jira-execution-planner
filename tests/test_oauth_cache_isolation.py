@@ -11,6 +11,7 @@ from backend.auth.cache_policy import (
 )
 from backend.auth.context import RequestAuthContext
 from backend.epm.projects import EpmProjectsDependencies, build_epm_home_projects_state
+from backend.epm.issues import EpmIssuesDependencies, build_epm_project_issues_payload
 from backend.epm.rollup import EpmRollupDependencies, build_per_project_rollup
 
 
@@ -136,6 +137,51 @@ class TestOauthCacheIsolation(unittest.TestCase):
         self.assertEqual(headers, {'Server-Timing': 'cache;dur=1'})
         self.assertEqual(cache[raw_key]['data'], {'project': {'id': 'other-context'}})
 
+    def test_oauth_epm_project_issues_uses_user_token_partitioned_cache(self):
+        auth_context = context('atlassian_oauth')
+        project = {'id': 'project-1', 'resolvedLinkage': {'labels': ['synthetic_label'], 'epicKeys': []}}
+        base_jql = 'project = SYN'
+        linkage_key = '{"epicKeys": [], "labels": ["synthetic_label"]}'
+        raw_key = f"project-1::active::42::{base_jql}::{linkage_key}"
+        partitioned_key = build_jira_home_process_cache_key(auth_context, raw_key)
+        cached_payload = {
+            'project': project,
+            'issues': [{'key': 'SYN-CACHED'}],
+            'epics': {},
+            'metadataOnly': False,
+        }
+        cache = {
+            raw_key: {'timestamp': 1000, 'data': {'project': {'id': 'other-context'}}},
+            partitioned_key: {'timestamp': 1000, 'data': cached_payload},
+        }
+
+        def unexpected_call(*_args, **_kwargs):
+            raise AssertionError('cache hit should not query Jira')
+
+        deps = EpmIssuesDependencies(
+            find_epm_project_or_404=lambda _project_id: project,
+            validate_epm_tab_sprint=lambda _tab, _sprint: None,
+            build_epm_scope_clause=lambda _linkage: '(labels in ("synthetic_label"))',
+            build_base_jql=lambda: base_jql,
+            add_clause_to_jql=unexpected_call,
+            fetch_issues_by_jql=unexpected_call,
+            build_epm_fields_list=unexpected_call,
+            shape_epm_issue_payload=unexpected_call,
+            dedupe_issues_by_key=unexpected_call,
+            cache=cache,
+            cache_lock=threading.Lock(),
+            cache_ttl_seconds=300,
+            context=auth_context,
+            now=lambda: 1001,
+        )
+
+        payload, status, headers = build_epm_project_issues_payload('project-1', 'active', '42', deps)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, cached_payload)
+        self.assertEqual(headers, {'Server-Timing': 'cache;dur=1'})
+        self.assertEqual(cache[raw_key]['data'], {'project': {'id': 'other-context'}})
+
     def test_rollup_project_lookup_keeps_oauth_context_outside_request_thread(self):
         epm_config = {
             'version': 2,
@@ -209,7 +255,7 @@ class TestOauthCacheIsolation(unittest.TestCase):
                 'EPIC_LINK_FIELD_CACHE',
                 'CAPACITY_FIELD_CACHE',
             ],
-            'backend/routes/epm_routes.py': ['EPM_ISSUES_CACHE'],
+            'backend/epm/issues.py': ['cache_key'],
             'backend/epm/home.py': ['_CLOUD_ID_CACHE', '_GOAL_BY_KEY_CACHE'],
             'backend/epm/projects.py': ['build_epm_home_projects_cache_key'],
             'backend/epm/rollup.py': ['cache_key'],
@@ -227,9 +273,9 @@ class TestOauthCacheIsolation(unittest.TestCase):
     def test_epm_cache_modules_partition_oauth_cache_keys(self):
         for path in (
             'backend/epm/projects.py',
+            'backend/epm/issues.py',
             'backend/epm/rollup.py',
             'backend/epm/home.py',
-            'backend/routes/epm_routes.py',
         ):
             source = (REPO_ROOT / path).read_text()
             self.assertIn('build_jira_home_process_cache_key', source, path)

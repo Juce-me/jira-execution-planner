@@ -5,16 +5,36 @@ This directory contains automated tests for the Jira Execution Planner.
 ## Test Organization
 
 - `test_planning.py` - Unit tests for scheduling logic (dependencies, capacity, priority)
-- `test_scheduler_product_33712_active_sprint.py` - Regression test for PRODUCT-33712 Active Sprint anchor bug (**LOCAL ONLY**)
+- `test_scheduler_active_sprint_anchor.py` - Regression test for the Active Sprint anchor behavior
 - `test_date_parsing.py` - Unit tests for date parsing utilities
 - `fixtures/` - Test data files (see `fixtures/README.md` for security policy)
 - `ui/` - UI/integration tests (Playwright or similar)
 
 ## Running Tests
 
+Run the local CI-style verification path:
+```bash
+make verify
+```
+
 Run all tests:
 ```bash
 python3 -m unittest discover -s tests
+```
+
+Run endpoint security tests:
+```bash
+make test-security
+```
+
+Run frontend unit/source-guard tests:
+```bash
+npm run test:frontend:unit
+```
+
+Run Playwright UI tests:
+```bash
+npm run test:frontend:ui
 ```
 
 Run specific test file:
@@ -37,11 +57,16 @@ Fast, isolated tests for individual functions/modules:
 
 ### Integration Tests
 Tests that use fixtures or test multiple components:
-- `test_scheduler_product_33712_active_sprint.py` (requires fixture)
+- `test_scheduler_active_sprint_anchor.py` (uses the sanitized fixture when local real data is absent)
 
 ### UI Tests
 Browser-based tests (Playwright):
-- `ui/scenario_product_33712_focus_positions.spec.js` (requires Playwright setup)
+- `ui/*.spec.js` (requires Playwright setup and the local app target used by the spec)
+
+### Source Guard Tests
+Node tests that keep extracted frontend ownership boundaries from regressing:
+- `test_*_source_guards.js`
+- focused frontend utility tests such as `test_stats_utils.js`, `test_epm_project_utils.js`, and `test_scenario_lane_utils.js`
 
 ## Security Guidelines
 

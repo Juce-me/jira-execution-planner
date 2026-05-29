@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from tests.auth_mode_test_utils import force_basic_auth_mode
+
 try:
     import jira_server
     _IMPORT_ERROR = None
@@ -43,6 +45,9 @@ class TestCreateStoriesAlertConfig(unittest.TestCase):
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestCreateStoriesAlertPayloads(unittest.TestCase):
+    def setUp(self):
+        force_basic_auth_mode(self, jira_server)
+
     def test_fetch_tasks_preserves_sprint_fields_for_story_matching(self):
         app = jira_server.app
         app.testing = True
@@ -244,6 +249,7 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestCreateStoriesAlertApi(unittest.TestCase):
     def setUp(self):
+        force_basic_auth_mode(self, jira_server)
         jira_server.LABELS_CACHE['data'] = None
         jira_server.LABELS_CACHE['timestamp'] = 0
 

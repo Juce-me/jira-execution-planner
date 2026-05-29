@@ -1,7 +1,11 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from flask import has_request_context
+
+from backend.auth.context import RequestAuthContext
 from backend.auth.jira_auth import AuthError
+from backend.config.repository import ConfigStorageError
 import jira_server
 from tests.auth_mode_test_utils import force_basic_auth_mode
 
@@ -54,6 +58,22 @@ def collect_hierarchy_issue_keys(payload):
         keys.extend(story['key'] for story in epic['stories'])
     keys.extend(story['key'] for story in payload['orphanStories'])
     return keys
+
+
+def make_auth_context():
+    return RequestAuthContext(
+        auth_mode='atlassian_oauth',
+        user_id='user-1',
+        stable_subject='account-1',
+        atlassian_account_id='account-1',
+        workspace_id='workspace-1',
+        auth_connection_id='connection-1',
+        cloud_id='cloud-1',
+        site_url='https://example.atlassian.net',
+        token_version='7',
+        account_status='active',
+        is_admin=False,
+    )
 
 
 class TestEpmRollupApi(unittest.TestCase):
@@ -530,6 +550,97 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertIn('epm-rollups;dur=', server_timing)
         self.assertIn('total;dur=', server_timing)
 
+    def test_all_projects_rollup_worker_fetch_uses_captured_request_context(self):
+        context = make_auth_context()
+        projects = [
+            {
+                'id': 'active-one',
+                'displayName': 'Active One',
+                'label': 'synthetic_one',
+                'resolvedLinkage': {'labels': ['synthetic_one'], 'epicKeys': []},
+                'matchState': 'home-linked',
+                'tabBucket': 'active',
+            },
+        ]
+
+        def rollup_side_effect(project_id, tab, sprint, deps):
+            deps.fetch_epm_rollup_query(
+                'project = SYN',
+                'q1',
+                {},
+                ['summary'],
+                [],
+            )
+            return deps.build_empty_epm_rollup_payload(projects[0], metadata_only=False), 200, {}
+
+        with self.app.test_request_context('/api/epm/projects/rollup/all?tab=active&sprint=42'), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
+             patch.object(jira_server, 'get_epm_config', return_value={'version': 2}), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': projects}), \
+             patch.object(jira_server, 'build_per_project_rollup', side_effect=rollup_side_effect), \
+             patch.object(jira_server, 'fetch_issues_by_jql', return_value=[]) as mock_fetch:
+            payload, status, _headers = jira_server.build_all_epm_projects_rollup('active', '42')
+
+        self.assertEqual(status, 200)
+        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['active-one'])
+        mock_fetch.assert_called_once()
+        self.assertIs(mock_fetch.call_args.kwargs.get('context'), context)
+
+    def test_all_projects_rollup_workers_use_captured_dashboard_config_in_db_mode(self):
+        context = make_auth_context()
+        project = {
+            'id': 'active-one',
+            'displayName': 'Active One',
+            'label': 'synthetic_one',
+            'resolvedLinkage': {'labels': ['synthetic_one'], 'epicKeys': []},
+            'matchState': 'home-linked',
+            'tabBucket': 'active',
+        }
+        dashboard_config = {
+            'version': 1,
+            'projects': {'selected': ['SYN']},
+            'teamGroups': {},
+            'sprintField': {'fieldId': 'customfield_sprint', 'fieldName': 'Sprint'},
+            'storyPointsField': {'fieldId': 'customfield_story_points', 'fieldName': 'Story Points'},
+            'teamField': {'fieldId': 'customfield_team', 'fieldName': 'Team[Team]'},
+            'epm': {
+                'projects': [
+                    {'homeProjectId': 'active-one', 'jiraLabel': 'synthetic_one'},
+                ],
+            },
+        }
+        load_contexts = []
+
+        def load_dashboard_config(*, source='auto'):
+            load_contexts.append(has_request_context())
+            if not has_request_context():
+                raise ConfigStorageError('dashboard config read escaped request context')
+            return dashboard_config
+
+        issue = make_issue('SYN-1', 'Story', labels=['synthetic_one'], sprint=[{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
+        issue['fields']['customfield_story_points'] = 5
+        issue['fields']['customfield_team'] = {'id': 'team-a', 'name': 'Team A'}
+
+        with self.app.test_request_context('/api/epm/projects/rollup/all?tab=active&sprint=42'), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
+             patch.object(jira_server, 'load_dashboard_config', side_effect=load_dashboard_config), \
+             patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': [project]}), \
+             patch.object(jira_server, 'find_epm_project_or_404', return_value=project), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value=None), \
+             patch.object(jira_server, 'fetch_issues_by_jql', return_value=[issue]):
+            payload, status, _headers = jira_server.build_all_epm_projects_rollup('active', '42')
+
+        self.assertEqual(status, 200)
+        self.assertEqual([entry['project']['id'] for entry in payload['projects']], ['active-one'])
+        story = payload['projects'][0]['rollup']['orphanStories'][0]
+        self.assertEqual(story['storyPoints'], 5)
+        self.assertEqual(story['teamName'], 'Team A')
+        self.assertEqual(story['sprint'], [{'id': 42, 'name': 'Sprint 42', 'state': 'ACTIVE'}])
+        self.assertTrue(load_contexts)
+        self.assertTrue(all(load_contexts))
+
     def test_active_labeled_epic_fetches_all_selected_sprint_stories_under_epic(self):
         project = {
             'id': 'project-1',
@@ -644,6 +755,7 @@ class TestEpmRollupApi(unittest.TestCase):
         patches = self.patch_common(project, [q1, q2])
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], \
              patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_10004'), \
+             patch.object(jira_server, 'get_team_field_id', return_value='customfield_team'), \
              patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'):
             response = self.client.get('/api/epm/projects/project-1/rollup?tab=active&sprint=42')
 

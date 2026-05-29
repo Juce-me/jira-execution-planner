@@ -122,8 +122,8 @@ These Home/Townsquare-backed API routes are DB/OAuth-ready only after the signed
 /api/epm/projects/configuration
 /api/epm/projects/preview
 /api/epm/projects/rollup/all
-/api/epm/projects/<home_project_id>/issues
-/api/epm/projects/<project_id>/rollup
+/api/epm/projects/<path:home_project_id>/issues
+/api/epm/projects/<path:project_id>/rollup
 ```
 
 Home/Townsquare access still cannot use the user's Jira OAuth access token while this gate fails. In DB-backed OAuth runs, use the explicit user Home token connection instead. Local JSON-backed legacy runs may still have their own service credential path, but that is not the DB/OAuth EPM read path.

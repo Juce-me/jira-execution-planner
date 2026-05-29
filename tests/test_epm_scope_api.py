@@ -5,6 +5,7 @@ import jira_server
 from backend.auth.context import RequestAuthContext
 from backend.auth.home_credentials import HomeCredential
 from backend.auth.jira_auth import AuthError
+from tests.auth_mode_test_utils import force_basic_auth_mode
 
 
 def _oauth_context():
@@ -38,6 +39,7 @@ def _home_credential():
 
 class TestEpmScopeApi(unittest.TestCase):
     def setUp(self):
+        force_basic_auth_mode(self, jira_server)
         self.app = jira_server.app
         self.app.testing = True
         self.client = self.app.test_client()

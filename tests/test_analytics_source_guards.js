@@ -13,6 +13,16 @@ function read(relativePath) {
     return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
+function jsSetValues(source, setName) {
+    const match = source.match(new RegExp(`const ${setName} = new Set\\(\\[([\\s\\S]*?)\\]\\);`));
+    assert.ok(match, `${setName} must be declared as a Set literal`);
+    return new Set(Array.from(match[1].matchAll(/'([^']+)'/g), ([, value]) => value));
+}
+
+function yamlValues(source, key) {
+    return new Set(Array.from(source.matchAll(new RegExp(`${key}: "([^"]+)"`, 'g')), ([, value]) => value));
+}
+
 test('app analytics source never sends direct gtag events', () => {
     for (const relativePath of analyticsFiles) {
         const source = read(relativePath);
@@ -62,5 +72,31 @@ test('analytics event allowlist excludes forbidden parameter names and unsafe sn
             false,
             `events.js must not allow ${snippet}`
         );
+    }
+});
+
+test('GA4 MCP YAML dataLayer variables match the app analytics allowlist', () => {
+    const analyticsSource = read('frontend/src/analytics/events.js');
+    const yamlSource = read('docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml');
+    const appParams = jsSetValues(analyticsSource, 'EVENT_PARAMS');
+    const appFields = jsSetValues(analyticsSource, 'DATA_LAYER_FIELDS');
+    const appDataLayerKeys = new Set([...appParams, ...appFields]);
+    appDataLayerKeys.delete('event');
+
+    const yamlDataLayerKeys = yamlValues(yamlSource, 'data_layer_variable_name');
+    assert.deepEqual(
+        [...yamlDataLayerKeys].sort(),
+        [...appDataLayerKeys].sort(),
+        'MCP Data Layer Variables must match app-supported dataLayer keys'
+    );
+
+    const yamlCustomDefinitions = yamlValues(yamlSource, 'parameter_name');
+    for (const key of yamlCustomDefinitions) {
+        assert.ok(appParams.has(key), `MCP custom definition ${key} must be accepted by the app analytics allowlist`);
+    }
+
+    const yamlTagParams = new Set(Array.from(yamlSource.matchAll(/^\s{8}([a-z0-9_]+): "\{\{DLV - /gm), ([, value]) => value));
+    for (const key of yamlTagParams) {
+        assert.ok(appParams.has(key), `MCP tag parameter ${key} must be accepted by the app analytics allowlist`);
     }
 });

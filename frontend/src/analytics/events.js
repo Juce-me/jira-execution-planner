@@ -27,6 +27,7 @@ const EVENT_PARAMS = new Set([
     'connection_type',
     'content_id',
     'content_type',
+    'conflict_count',
     'conflict_count_bucket',
     'conflict_state',
     'dashboard_view',

@@ -68,6 +68,7 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("login", "/login", PUBLIC_METHODS, "auth_flow"),
     EndpointPolicy("auth-dev-home-probe", "/api/auth/dev/home-graphql-oauth-probe", PUBLIC_METHODS, "dev_local"),
     EndpointPolicy("auth-api", "/api/auth/", frozenset({"GET", "POST"}), "auth_flow", "prefix", ("/api/auth/dev/",)),
+    EndpointPolicy("analytics-context", "/api/analytics/context", PUBLIC_METHODS, "public_context"),
     EndpointPolicy("admin-api", "/api/admin/", frozenset({"GET", "POST", "PATCH", "DELETE"}), "tool_admin", "prefix"),
     EndpointPolicy("user-views-api", "/api/me/views", frozenset({"GET", "POST", "PATCH"}), "user_write", "prefix"),
     EndpointPolicy("user-connections-api", "/api/me/connections/", frozenset({"GET", "POST", "DELETE"}), "user_write", "prefix"),

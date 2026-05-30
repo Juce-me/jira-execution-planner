@@ -8,6 +8,7 @@ from tests.oauth_test_helpers import install_oauth_session
 
 SECURITY_SAMPLES = {
     "public_page": [("GET", "/health"), ("GET", "/jira-dashboard.html")],
+    "public_context": [("GET", "/api/analytics/context")],
     "authenticated_read": [
         ("GET", "/api/config"),
         ("GET", "/api/projects/selected"),
@@ -56,6 +57,23 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
                 with self.subTest(path=path):
                     response = self._request(method, path)
                     self.assertLess(response.status_code, 400, response.get_data(as_text=True))
+
+    def test_analytics_context_is_readable_in_basic_and_oauth_modes(self):
+        with patch.dict("os.environ", {"GA4_ENABLED": "false"}, clear=False):
+            for method, path in SECURITY_SAMPLES["public_context"]:
+                with self.subTest(mode="basic", path=path):
+                    response = self._request(method, path)
+                    self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+                with self._oauth_mode():
+                    with self.subTest(mode="oauth_unauthenticated", path=path):
+                        response = self._request(method, path)
+                        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+                    install_oauth_session(self.client, account_id="account-123")
+                    with self.subTest(mode="oauth_authenticated", path=path):
+                        response = self._request(method, path)
+                        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
 
     def test_anonymous_oauth_requests_cannot_read_or_write_app_data(self):
         protected_classes = [

@@ -1,3 +1,5 @@
+import { trackedFetch } from './http.js';
+
 async function scenarioJson(response, label) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -19,10 +21,10 @@ const scenarioDraftUrl = (backendUrl, draftId, path = '') =>
     `${backendUrl}/api/scenario/drafts/${encodeURIComponent(draftId)}${path}`;
 
 export const fetchScenarioDraft = (backendUrl, scopeKey, { signal } = {}) =>
-    fetch(`${backendUrl}/api/scenario/drafts?scope_key=${encodeURIComponent(scopeKey)}`, {
+    trackedFetch('scenario_drafts', `${backendUrl}/api/scenario/drafts?scope_key=${encodeURIComponent(scopeKey)}`, {
         cache: 'no-cache',
         signal
-    }).then(response => scenarioJson(response, 'Scenario draft'));
+    }, { featureName: 'scenario' }).then(response => scenarioJson(response, 'Scenario draft'));
 
 export const postScenarioRealtimeJson = (backendUrl, draftId, path, payload, { csrfToken = '' } = {}) =>
     fetch(scenarioDraftUrl(backendUrl, draftId, path), {
@@ -42,12 +44,12 @@ export const pollScenarioDraftEvents = (backendUrl, draftId, sinceEventNumber, {
     }));
 
 export const saveScenarioDraftVersion = (backendUrl, payload, { csrfToken = '' } = {}) =>
-    fetch(`${backendUrl}/api/scenario/drafts`, {
+    trackedFetch('scenario_drafts', `${backendUrl}/api/scenario/drafts`, {
         method: 'POST',
         cache: 'no-cache',
         headers: scenarioPostHeaders(csrfToken),
         body: JSON.stringify(payload)
-    }).then(response => scenarioJson(response, 'Scenario draft save'));
+    }, { featureName: 'scenario' }).then(response => scenarioJson(response, 'Scenario draft save'));
 
 export const fetchScenarioDraftVersion = (backendUrl, draftId, versionNumber, { signal } = {}) =>
     fetch(scenarioDraftUrl(backendUrl, draftId, `/versions/${encodeURIComponent(versionNumber)}`), {
@@ -74,7 +76,7 @@ export const reloadScenarioDraftFromJira = (backendUrl, draftId, payload, { csrf
     }).then(response => scenarioJson(response, 'Scenario draft reload'));
 
 export const fetchScenarioRun = (backendUrl, payload, { signal } = {}) =>
-    fetch(`${backendUrl}/api/scenario`, {
+    trackedFetch('scenario', `${backendUrl}/api/scenario`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -82,7 +84,7 @@ export const fetchScenarioRun = (backendUrl, payload, { signal } = {}) =>
         },
         body: JSON.stringify(payload),
         signal
-    }).then(response => scenarioJson(response, 'Scenario'));
+    }, { featureName: 'scenario' }).then(response => scenarioJson(response, 'Scenario'));
 
 export const buildScenarioDraftEventsStreamUrl = (backendUrl, draftId, sinceEventNumber = 0) =>
     scenarioDraftUrl(backendUrl, draftId, `/events/stream?since=${encodeURIComponent(sinceEventNumber || 0)}`);

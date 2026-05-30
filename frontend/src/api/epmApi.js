@@ -1,4 +1,4 @@
-import { getJson, postJson } from './http.js';
+import { getJson, postJson, trackedFetch } from './http.js';
 
 const fetchCsrfToken = (backendUrl) =>
     getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' });
@@ -17,7 +17,11 @@ async function epmJson(response, label) {
 }
 
 function getEpmJson(url, label, options = {}) {
-    return fetch(url, options).then(response => epmJson(response, label));
+    const { analytics, ...fetchOptions } = options;
+    const request = analytics
+        ? trackedFetch(analytics.apiSurface, url, fetchOptions, analytics)
+        : fetch(url, fetchOptions);
+    return request.then(response => epmJson(response, label));
 }
 
 export const fetchEpmConfig = (backendUrl) =>
@@ -25,7 +29,7 @@ export const fetchEpmConfig = (backendUrl) =>
 
 export async function saveEpmConfig(backendUrl, draftConfig) {
     const { csrfToken } = await fetchCsrfToken(backendUrl);
-    const response = await fetch(`${backendUrl}/api/epm/config`, {
+    const response = await trackedFetch('settings_save', `${backendUrl}/api/epm/config`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -33,7 +37,7 @@ export async function saveEpmConfig(backendUrl, draftConfig) {
             'X-CSRF-Token': csrfToken || ''
         },
         body: JSON.stringify(draftConfig || {})
-    });
+    }, { featureName: 'settings' });
     if (!response.ok) {
         throw new Error(`Failed to save EPM config: ${response.status}`);
     }
@@ -79,7 +83,16 @@ export const fetchEpmProjects = (backendUrl, { tab, subGoalKeys } = {}) => {
     appendEpmSubGoalKeysParam(params, subGoalKeys);
     const query = params.toString();
     const url = query ? `${backendUrl}/api/epm/projects?${query}` : `${backendUrl}/api/epm/projects`;
-    return getJson(url, 'EPM projects', { cache: 'no-cache' });
+    return getJson(url, 'EPM projects', {
+        cache: 'no-cache',
+        analytics: {
+            apiSurface: 'epm_projects',
+            featureName: 'epm',
+            epmTab: tab || 'active',
+            projectScope: 'all',
+            subgoalScope: (subGoalKeys || []).length ? 'selected' : 'all',
+        },
+    });
 };
 
 export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {}) {
@@ -100,7 +113,16 @@ export const fetchEpmProjectRollup = (backendUrl, projectId, { tab, sprint, subG
         params.set('sprint', String(sprint));
     }
     appendEpmSubGoalKeysParam(params, subGoalKeys);
-    return getEpmJson(`${backendUrl}/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}`, 'EPM rollup', { cache: 'no-cache' });
+    return getEpmJson(`${backendUrl}/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}`, 'EPM rollup', {
+        cache: 'no-cache',
+        analytics: {
+            apiSurface: 'epm_rollup',
+            featureName: 'epm',
+            epmTab: effectiveTab,
+            projectScope: 'single',
+            subgoalScope: (subGoalKeys || []).length ? 'selected' : 'all',
+        },
+    });
 };
 
 export const fetchEpmAllProjectsRollup = (backendUrl, { tab, sprint, subGoalKeys } = {}) => {
@@ -110,5 +132,14 @@ export const fetchEpmAllProjectsRollup = (backendUrl, { tab, sprint, subGoalKeys
         params.set('sprint', String(sprint));
     }
     appendEpmSubGoalKeysParam(params, subGoalKeys);
-    return getEpmJson(`${backendUrl}/api/epm/projects/rollup/all?${params.toString()}`, 'EPM all-projects rollup', { cache: 'no-cache' });
+    return getEpmJson(`${backendUrl}/api/epm/projects/rollup/all?${params.toString()}`, 'EPM all-projects rollup', {
+        cache: 'no-cache',
+        analytics: {
+            apiSurface: 'epm_rollup',
+            featureName: 'epm',
+            epmTab: effectiveTab,
+            projectScope: 'all',
+            subgoalScope: (subGoalKeys || []).length ? 'selected' : 'all',
+        },
+    });
 };

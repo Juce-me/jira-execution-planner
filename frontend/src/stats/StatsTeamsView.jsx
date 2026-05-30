@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { buildJiraIssueListLinkAnalytics } from '../analytics/externalLinks.js';
+import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 
 function StatsTeamsView({
     open,
@@ -10,6 +12,24 @@ function StatsTeamsView({
     formatPercent,
     getRateClass
 }) {
+    const renderStatsLink = (href, count, title, ariaLabel) => (
+        <TrackedExternalLink
+            className="stats-link"
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={title}
+            aria-label={ariaLabel}
+            analyticsMeta={buildJiraIssueListLinkAnalytics({
+                issueKind: 'story',
+                issueCount: count,
+                sourceSurface: 'stats'
+            })}
+        >
+            ↗
+        </TrackedExternalLink>
+    );
+
     return (
         <div className={`stats-view ${open ? 'open' : ''}`}>
             <div className="stats-bars" style={{ '--stats-bar-columns': statsBarColumns }}>
@@ -99,16 +119,7 @@ function StatsTeamsView({
                                 <div className="postponed-cell">
                                     <span>{team.straight.done}</span>
                                     {totalDoneLink && (
-                                        <a
-                                            className="stats-link"
-                                            href={totalDoneLink}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            title="View done stories for this team in Jira"
-                                            aria-label="Open done stories in Jira"
-                                        >
-                                            ↗
-                                        </a>
+                                        renderStatsLink(totalDoneLink, team.straight.done, 'View done stories for this team in Jira', 'Open done stories in Jira')
                                     )}
                                 </div>
                             </td>
@@ -116,16 +127,7 @@ function StatsTeamsView({
                                 <div className="postponed-cell">
                                     <span>{team.straight.incomplete}</span>
                                     {totalIncompleteLink && (
-                                        <a
-                                            className="stats-link"
-                                            href={totalIncompleteLink}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            title="View incomplete stories for this team in Jira"
-                                            aria-label="Open incomplete stories in Jira"
-                                        >
-                                            ↗
-                                        </a>
+                                        renderStatsLink(totalIncompleteLink, team.straight.incomplete, 'View incomplete stories for this team in Jira', 'Open incomplete stories in Jira')
                                     )}
                                 </div>
                             </td>
@@ -135,16 +137,7 @@ function StatsTeamsView({
                                 <div className="postponed-cell">
                                     <span>{team.product.done}</span>
                                     {productDoneLink && (
-                                        <a
-                                            className="stats-link"
-                                            href={productDoneLink}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            title="View done product stories for this team in Jira"
-                                            aria-label="Open done product stories in Jira"
-                                        >
-                                            ↗
-                                        </a>
+                                        renderStatsLink(productDoneLink, team.product.done, 'View done product stories for this team in Jira', 'Open done product stories in Jira')
                                     )}
                                 </div>
                             </td>
@@ -152,16 +145,7 @@ function StatsTeamsView({
                                 <div className="postponed-cell">
                                     <span>{team.product.incomplete}</span>
                                     {productIncompleteLink && (
-                                        <a
-                                            className="stats-link"
-                                            href={productIncompleteLink}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            title="View incomplete product stories for this team in Jira"
-                                            aria-label="Open incomplete product stories in Jira"
-                                        >
-                                            ↗
-                                        </a>
+                                        renderStatsLink(productIncompleteLink, team.product.incomplete, 'View incomplete product stories for this team in Jira', 'Open incomplete product stories in Jira')
                                     )}
                                 </div>
                             </td>
@@ -171,16 +155,7 @@ function StatsTeamsView({
                                 <div className="postponed-cell">
                                     <span>{team.tech.done}</span>
                                     {techDoneLink && (
-                                        <a
-                                            className="stats-link"
-                                            href={techDoneLink}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            title="View done tech stories for this team in Jira"
-                                            aria-label="Open done tech stories in Jira"
-                                        >
-                                            ↗
-                                        </a>
+                                        renderStatsLink(techDoneLink, team.tech.done, 'View done tech stories for this team in Jira', 'Open done tech stories in Jira')
                                     )}
                                 </div>
                             </td>
@@ -188,16 +163,7 @@ function StatsTeamsView({
                                 <div className="postponed-cell">
                                     <span>{team.tech.incomplete}</span>
                                     {techIncompleteLink && (
-                                        <a
-                                            className="stats-link"
-                                            href={techIncompleteLink}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            title="View incomplete tech stories for this team in Jira"
-                                            aria-label="Open incomplete tech stories in Jira"
-                                        >
-                                            ↗
-                                        </a>
+                                        renderStatsLink(techIncompleteLink, team.tech.incomplete, 'View incomplete tech stories for this team in Jira', 'Open incomplete tech stories in Jira')
                                     )}
                                 </div>
                             </td>

@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { trackExternalLinkOpened } from '../analytics/analytics.js';
+import { buildJiraIssueListLinkAnalytics } from '../analytics/externalLinks.js';
 import { normalizeJiraExportKeys, openJiraIssueSearch } from '../jiraExportUtils.mjs';
 
 function pluralize(count, singular, plural) {
@@ -11,6 +13,7 @@ export default function JiraExportButton({
     storyKeys = [],
     className = '',
     opener,
+    sourceSurface = 'dashboard',
 }) {
     const [isOpen, setIsOpen] = React.useState(false);
     const [warning, setWarning] = React.useState('');
@@ -56,12 +59,19 @@ export default function JiraExportButton({
     const openKind = (issueKind) => {
         const keys = keyMap[issueKind];
         if (!keys.length) return;
-        openJiraIssueSearch({
+        const result = openJiraIssueSearch({
             jiraUrl,
             keys,
             opener,
             onOverflow: showOverflowWarning
         });
+        if (result.opened) {
+            trackExternalLinkOpened(buildJiraIssueListLinkAnalytics({
+                issueKind: issueKind === 'epics' ? 'epic' : 'story',
+                issueCount: result.keyCount,
+                sourceSurface
+            }));
+        }
         setIsOpen(false);
     };
 

@@ -6,11 +6,11 @@ from flask import request
 def _content_security_policy():
     return "; ".join([
         "default-src 'self'",
-        "script-src 'self'",
+        "script-src 'self' https://*.googletagmanager.com",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com data:",
-        "img-src 'self' data:",
-        "connect-src 'self'",
+        "img-src 'self' data: https://*.google-analytics.com https://*.googletagmanager.com",
+        "connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com",
         "frame-ancestors 'self'",
         "base-uri 'self'",
         "form-action 'self'",

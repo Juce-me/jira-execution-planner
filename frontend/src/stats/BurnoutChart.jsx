@@ -21,7 +21,8 @@ function BurnoutChart({
     setBurnoutTaskFilter,
     formatBurndownValue,
     resolveBurnoutPointer,
-    buildBurnoutTaskFilter
+    buildBurnoutTaskFilter,
+    onAnalyticsAction
 }) {
     return (
         <div className={`stats-view ${open ? 'open' : ''}`}>
@@ -31,7 +32,13 @@ function BurnoutChart({
                     <select
                         className="scenario-input"
                         value={burnoutAssigneeFilter}
-                        onChange={(event) => setBurnoutAssigneeFilter(event.target.value)}
+                        onChange={(event) => {
+                            onAnalyticsAction?.('filter_changed', {
+                                filter_type: 'assignee',
+                                selection_count_bucket: event.target.value === 'all' ? '0' : '1_5'
+                            });
+                            setBurnoutAssigneeFilter(event.target.value);
+                        }}
                     >
                         {burnoutAssigneeOptions.map((item) => (
                             <option key={item.value} value={item.value}>
@@ -47,7 +54,13 @@ function BurnoutChart({
                     <select
                         className="scenario-input"
                         value={burndownMetric}
-                        onChange={(event) => setBurndownMetric(event.target.value)}
+                        onChange={(event) => {
+                            onAnalyticsAction?.('stats_action', {
+                                workflow_action: 'metric_change',
+                                metric: event.target.value === 'storyPoints' ? 'story_points' : 'issue_count'
+                            });
+                            setBurndownMetric(event.target.value);
+                        }}
                     >
                         <option value="storyPoints">Story Points</option>
                         <option value="issueCount">Issue Count</option>
@@ -96,7 +109,13 @@ function BurnoutChart({
                         type="button"
                         className="stats-toggle"
                         style={{ marginLeft: '0.6rem' }}
-                        onClick={() => setBurnoutTaskFilter(null)}
+                        onClick={() => {
+                            onAnalyticsAction?.('chart_action', {
+                                workflow_action: 'filter_clear',
+                                chart_id: 'burnout'
+                            });
+                            setBurnoutTaskFilter(null);
+                        }}
                     >
                         Clear
                     </button>
@@ -234,6 +253,11 @@ function BurnoutChart({
                                         if (!point) return;
                                         const nextFilter = buildBurnoutTaskFilter(point.row.date, point.hoveredTeamKey);
                                         if (!nextFilter) return;
+                                        onAnalyticsAction?.('chart_action', {
+                                            workflow_action: 'select_point',
+                                            chart_id: 'burnout',
+                                            point_bucket: point.hoveredTeamKey ? 'team' : 'all'
+                                        });
                                         setBurnoutTaskFilter((prev) => {
                                             if (!prev) return nextFilter;
                                             if (prev.dateKey === nextFilter.dateKey && prev.teamKey === nextFilter.teamKey) {

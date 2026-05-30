@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-> **Gate status:** Blocked. Checked on 2026-05-29. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+> **Gate status:** Blocked. Checked on 2026-05-30. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,7 +15,7 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-05-29 |
+| Checked on | 2026-05-30 |
 | Last result | FAIL insufficient_home_write_probe_input |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
@@ -127,6 +127,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-05-30: Startup sweep reviewed the gate while executing the GA4 instrumentation plan. `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` are not present in the local environment, and this analytics implementation adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-05-29: Startup sweep reviewed the gate while refreshing recently implemented plan statuses. `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` are not present in the local environment, and this docs-only status cleanup adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-05-28: Startup sweep ran the documented write probe without execute credentials while executing the codebase operability verification slice; result was `FAIL insufficient_home_write_probe_input`. This slice adds no Home write route, mutation UI, auth behavior, DB behavior, Home metadata behavior, or EPM route behavior. No real Home write probe pass is recorded in the repo. Keep blocked.
 - 2026-05-28: Startup sweep reviewed the gate while implementing a read-only EPM project progress bar. `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` are not present in the local environment, and this UI change adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.

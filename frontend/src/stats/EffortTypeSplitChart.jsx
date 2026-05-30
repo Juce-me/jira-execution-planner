@@ -63,6 +63,7 @@ export default function EffortTypeSplitChart({
     metric,
     visibleBuckets,
     onToggleBucket,
+    onAnalyticsAction,
     formatExcludedPoints,
     formatPercent
 }) {
@@ -90,7 +91,15 @@ export default function EffortTypeSplitChart({
                             type="button"
                             className={`effort-type-split-legend-item ${bucket.key} ${isActive ? 'active' : 'dimmed'}`}
                             aria-pressed={isActive}
-                            onClick={() => onToggleBucket?.(bucket.key)}
+                            onClick={() => {
+                                onAnalyticsAction?.('chart_action', {
+                                    workflow_action: 'toggle_series',
+                                    chart_id: 'effort_split',
+                                    series_type: bucket.key === 'excludedCapacity' ? 'excluded_capacity' : bucket.key,
+                                    value_state: isActive ? 'off' : 'on'
+                                });
+                                onToggleBucket?.(bucket.key);
+                            }}
                         >
                             <span className="effort-type-split-swatch" />
                             {bucket.label}
@@ -144,7 +153,14 @@ export default function EffortTypeSplitChart({
                                                 onMouseLeave={() => setHovered(null)}
                                                 onFocus={(event) => setHovered(readoutFromElement(event, readout))}
                                                 onBlur={() => setHovered(null)}
-                                                onClick={(event) => setHovered(readoutFromElement(event, readout))}
+                                                onClick={(event) => {
+                                                    onAnalyticsAction?.('chart_action', {
+                                                        workflow_action: 'readout_open',
+                                                        chart_id: 'effort_split',
+                                                        series_type: bucket.key === 'excludedCapacity' ? 'excluded_capacity' : bucket.key
+                                                    });
+                                                    setHovered(readoutFromElement(event, readout));
+                                                }}
                                                 aria-label={`${row.teamName} ${bucket.label}: ${valueText}`}
                                             >
                                                 {width > 0 && <span>{labelText}</span>}

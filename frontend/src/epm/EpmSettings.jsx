@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { trackExternalLinkOpened } from '../analytics/analytics.js';
+import { buildJiraHomeLinkAnalytics } from '../analytics/externalLinks.js';
 import IconButton from '../ui/IconButton.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import { getEpmSubGoalDisplayParts } from './epmProjectUtils.mjs';
@@ -485,6 +487,10 @@ export default function EpmSettings(props) {
                                                                                 href={project.homeUrl}
                                                                                 target="_blank"
                                                                                 rel="noopener noreferrer"
+                                                                                onClick={() => trackExternalLinkOpened(buildJiraHomeLinkAnalytics({
+                                                                                    linkType: 'jira_home_project',
+                                                                                    sourceSurface: 'settings'
+                                                                                }))}
                                                                                 title="Open Jira Home project"
                                                                                 aria-label={`Open Jira Home project for ${project.displayName || project.homeName || project.id}`}
                                                                                 style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '1.75rem', height: '1.75rem', border: '1px solid var(--border)', borderRadius: '999px', background: '#fff', color: 'var(--accent)', textDecoration: 'none' }}

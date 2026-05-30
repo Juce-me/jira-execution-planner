@@ -1,21 +1,21 @@
 # Analytics Contract
 
-Status: planned
+Status: implemented in app code; GA4/GTM operator setup remains deployment-gated
 Type: product analytics contract
 
-This is the durable source of truth for Jira Execution Planner analytics after the GA4 implementation ships. While `docs/plans/EXEC-ga4-instrumentation.md` is still active, that plan owns implementation sequencing; this document owns the product contract future feature work must keep current.
+This is the durable source of truth for Jira Execution Planner analytics. While `docs/plans/EXEC-ga4-instrumentation.md` is still active, that plan owns implementation sequencing; this document owns the product contract future feature work must keep current.
 
 ## Scope
 
 - Analytics vendor: Google Analytics 4.
-- Active architecture: Google Tag Manager web container with `GA4_ENABLED`-gated loading and a stable two-event `dataLayer` contract.
+- Active architecture: Google Tag Manager web container with `GA4_ENABLED`-gated loading, periodic context refresh for open tabs, and a stable two-event `dataLayer` contract.
 - Not in scope: server-side GTM, Measurement Protocol, Google Ads, remarketing, audiences, Google Signals, or ad personalization.
 - GTM schema policy: app code may push only `event=pageview` or `event=userevent` to `window.dataLayer`. GTM owns exactly two app-owned Custom Event triggers: one for `pageview`, one for `userevent`.
 - Page-view policy: logical app views are measured through `dataLayer.push({ event: 'pageview', ... })`; GTM maps that to GA4 `page_view` with the fixed pageview property map.
 - Enhanced Measurement policy: GA4-managed `scroll` may fire when analytics is enabled. `view_search_results`, `file_download`, `form_start`, and `form_submit` may fire only after the runbook's managed-metadata safety gate proves their automatic parameters cannot expose Jira/Home/auth URLs, callback data, raw app-search terms, JQL, issue keys, tokens, local paths, or user-entered text. Outbound-click Enhanced Measurement stays off in v1 unless operator configuration and tests prove Atlassian/Jira/Home `link_url` values cannot be sent, because Jira issue-list links can expose URLs, JQL, and issue keys through managed click metadata. App code must not recreate reserved names as custom sends.
 - Privacy floor for app-owned events: no raw email, name, phone, free text, token, raw user agent, full IP address, Atlassian account id, workspace id, cloud id, Jira/Home URL, issue key, team/group/project/sprint name, Jira label, JQL, draft id, version id, local path, or config payload is sent as an app-owned GA4 event parameter or user property.
 - GA4 defaults: when analytics is enabled, GA4-managed page URL/title metadata is allowed for the web stream. Managed file/form/search/link metadata is allowed only when the runbook safety gate or operator configuration proves sensitive values cannot be sent. Browser GTM/GA4 cannot app-truncate the network source IP before Google receives it; this contract relies on GA4's documented IP handling and forbids full IP addresses in app-owned payloads. If a named internal report later needs IP-derived context, send only a server-generated truncated prefix such as `xxx.yyy.zzz.---`, never a full IP value.
-- Internal analytics decision: this is an internal employee tool, so there is no in-app analytics consent UI, consent localStorage key, or grant/revoke flow. `GA4_ENABLED=false` sends zero GTM/GA4 requests; `GA4_ENABLED=true` measures employee usage under internal policy.
+- Internal analytics decision: this is an internal employee tool, so there is no in-app analytics consent UI, consent localStorage key, or grant/revoke flow. `GA4_ENABLED=false` is the single deployment kill switch: new page loads do not load GTM, app-owned sends stop, and already-open tabs re-check the server switch every 60 seconds. `GA4_ENABLED=true` measures employee usage under internal policy.
 
 ## Future Feature Rule
 
@@ -153,7 +153,7 @@ Initial event-scoped metrics:
 
 ## Privacy Rules
 
-- Analytics disabled sends zero third-party analytics requests.
+- Analytics disabled sends zero third-party analytics requests. Operators shut collection down with `GA4_ENABLED=false`; no other GA4/GTM env vars need to be cleared.
 - Analytics enabled sends employee product analytics under internal tool policy. Do not add an in-app analytics consent UI, consent localStorage key, or grant/revoke flow in v1.
 - Basic/local shared auth sends no GA4 User-ID.
 - App-owned page/view tracking uses only `event=pageview`; app code must not push direct GA4 `page_view` events or ad hoc page event names.
@@ -194,6 +194,6 @@ CI or focused source-guard tests must fail when:
 - GA4 setup runbook: `docs/plans/SUPPORT-ga4-user-configuration.md`
 - GA4/GTM MCP dry-run spec: `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml` (requires a custom write-capable MCP; the official Google Analytics MCP server is read-only)
 - GA4 web stream Measurement ID: `G-6QERX19WB0`
-- GTM container: configured by `GTM_CONTAINER_ID`
+- GTM container: `GTM-NZJW2CFN`, configured by `GTM_CONTAINER_ID`
 - Measurement Protocol secret: none in v1
 - GA4 deletion workflow: out of scope for this implementation

@@ -1,4 +1,6 @@
 import React from 'react';
+import { buildJiraBrowseLinkAnalytics } from '../analytics/externalLinks.js';
+import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 import { getEpmProjectDisplayName } from './epmProjectUtils.mjs';
 
 export function EpmRollupIssue({ issue, jiraUrl, extraClassName = '' }) {
@@ -14,14 +16,31 @@ export function EpmRollupIssue({ issue, jiraUrl, extraClassName = '' }) {
             <div className="task-header">
                 <div className="task-headline">
                     <h3 className="task-title">
-                        <a href={issueHref} target="_blank" rel="noopener noreferrer">
+                        <TrackedExternalLink
+                            href={issueHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            analyticsMeta={buildJiraBrowseLinkAnalytics({
+                                issueKind: issue.issueType === 'Epic' ? 'epic' : 'story',
+                                sourceSurface: 'epm'
+                            })}
+                        >
                             {issue.summary || issue.key}
-                        </a>
+                        </TrackedExternalLink>
                     </h3>
                     <span className="task-inline-meta">
-                        <a className="task-key-link" href={issueHref} target="_blank" rel="noopener noreferrer">
+                        <TrackedExternalLink
+                            className="task-key-link"
+                            href={issueHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            analyticsMeta={buildJiraBrowseLinkAnalytics({
+                                issueKind: issue.issueType === 'Epic' ? 'epic' : 'story',
+                                sourceSurface: 'epm'
+                            })}
+                        >
                             {issue.key}
-                        </a>
+                        </TrackedExternalLink>
                         {issue.issueType && (
                             <span className="task-inline-sp">{issue.issueType}</span>
                         )}
@@ -60,14 +79,18 @@ export function EpmInitiativeNode({ initiativeNode, jiraUrl, InitiativeIcon }) {
                 <InitiativeIcon className="initiative-header-icon" />
                 <div className="initiative-label">
                     <span className="initiative-label-name">{initiativeNode.issue.summary || initiativeNode.issue.key}</span>
-                    <a
+                    <TrackedExternalLink
                         className="initiative-label-key"
                         href={jiraUrl ? `${jiraUrl}/browse/${initiativeNode.issue.key}` : '#'}
                         target="_blank"
                         rel="noopener noreferrer"
+                        analyticsMeta={buildJiraBrowseLinkAnalytics({
+                            issueKind: 'initiative',
+                            sourceSurface: 'epm'
+                        })}
                     >
                         {initiativeNode.issue.key} ↗
-                    </a>
+                    </TrackedExternalLink>
                     <span className="initiative-divider" />
                 </div>
             </div>

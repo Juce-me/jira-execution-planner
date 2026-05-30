@@ -174,6 +174,19 @@ The dashboard can run with Atlassian OAuth 2.0 (3LO) for user Jira access instea
 
 Jira still receives Atlassian OAuth tokens, not Microsoft Entra tokens. Direct Microsoft access tokens cannot be used as Jira REST API bearer tokens.
 
+### Optional GA4/GTM analytics
+
+Product analytics are disabled by default. To enable the internal employee analytics path for a deployment, set:
+
+```bash
+GA4_ENABLED=true
+GTM_CONTAINER_ID=GTM-NZJW2CFN
+GA4_MEASUREMENT_ID=G-6QERX19WB0
+GA4_USER_ID_PEPPER=<deployment-secret>
+```
+
+`GA4_ENABLED=false` is the deployment kill switch. It prevents GTM from loading on new page loads, disables app-owned analytics sends, and open dashboard tabs re-check the server switch every 60 seconds so collection stops without clearing the GTM ID, measurement ID, or pepper variables. `GA4_DEBUG_MODE=true` adds GA4 DebugView metadata for validation only; leave it false outside controlled testing. The event contract and forbidden payload rules are in [docs/README_ANALYTICS.md](docs/README_ANALYTICS.md), and the GA4/GTM operator runbook is [docs/plans/SUPPORT-ga4-user-configuration.md](docs/plans/SUPPORT-ga4-user-configuration.md).
+
 ### Step 5: Open the dashboard
 
 Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`).

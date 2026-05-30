@@ -1,8 +1,8 @@
-import { getJson } from './http.js';
+import { getJson, trackedFetch } from './http.js';
 
-const postJsonWithCsrf = (backendUrl, path, payload) =>
+const postJsonWithCsrf = (backendUrl, path, payload, analytics) =>
     getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' }).then(({ csrfToken }) =>
-        fetch(`${backendUrl}${path}`, {
+        trackedFetch(analytics?.apiSurface || 'settings_save', `${backendUrl}${path}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -10,7 +10,7 @@ const postJsonWithCsrf = (backendUrl, path, payload) =>
                 'X-CSRF-Token': csrfToken || '',
             },
             body: JSON.stringify(payload)
-        })
+        }, { featureName: analytics?.featureName || 'settings' })
     );
 
 export const normalizeAppConfig = (config) => {
@@ -26,7 +26,9 @@ export const normalizeAppConfig = (config) => {
 };
 
 export const fetchAppConfig = (backendUrl) =>
-    getJson(`${backendUrl}/api/config?includeViewConfig=true`, 'Config').then(normalizeAppConfig);
+    getJson(`${backendUrl}/api/config?includeViewConfig=true`, 'Config', {
+        analytics: { apiSurface: 'config_bootstrap', featureName: 'config' },
+    }).then(normalizeAppConfig);
 
 export const fetchVersionInfo = (backendUrl) =>
     getJson(`${backendUrl}/api/version`, 'Version', { cache: 'no-cache' });
@@ -42,7 +44,7 @@ export const fetchGroupsConfig = (backendUrl) =>
     });
 
 export const saveGroupsConfig = (backendUrl, payload) =>
-    postJsonWithCsrf(backendUrl, '/api/groups-config', payload);
+    postJsonWithCsrf(backendUrl, '/api/groups-config', payload, { apiSurface: 'settings_save' });
 
 export const fetchSelectedProjects = (backendUrl) =>
     fetch(`${backendUrl}/api/projects/selected`, {
@@ -52,7 +54,7 @@ export const fetchSelectedProjects = (backendUrl) =>
     });
 
 export const saveSelectedProjects = (backendUrl, selected) =>
-    postJsonWithCsrf(backendUrl, '/api/projects/selected', { selected });
+    postJsonWithCsrf(backendUrl, '/api/projects/selected', { selected }, { apiSurface: 'settings_save' });
 
 export const fetchBoardConfig = (backendUrl) =>
     fetch(`${backendUrl}/api/board-config`, {
@@ -62,7 +64,7 @@ export const fetchBoardConfig = (backendUrl) =>
     });
 
 export const saveBoardConfig = (backendUrl, payload) =>
-    postJsonWithCsrf(backendUrl, '/api/board-config', payload);
+    postJsonWithCsrf(backendUrl, '/api/board-config', payload, { apiSurface: 'settings_save' });
 
 export const fetchPriorityWeightsConfig = (backendUrl) =>
     fetch(`${backendUrl}/api/stats/priority-weights-config`, {
@@ -72,7 +74,7 @@ export const fetchPriorityWeightsConfig = (backendUrl) =>
     });
 
 export const savePriorityWeightsConfig = (backendUrl, weights) =>
-    postJsonWithCsrf(backendUrl, '/api/stats/priority-weights-config', { weights });
+    postJsonWithCsrf(backendUrl, '/api/stats/priority-weights-config', { weights }, { apiSurface: 'settings_save' });
 
 export const fetchCapacityConfig = (backendUrl) =>
     fetch(`${backendUrl}/api/capacity/config`, {
@@ -82,7 +84,7 @@ export const fetchCapacityConfig = (backendUrl) =>
     });
 
 export const saveCapacityConfig = (backendUrl, payload) =>
-    postJsonWithCsrf(backendUrl, '/api/capacity/config', payload);
+    postJsonWithCsrf(backendUrl, '/api/capacity/config', payload, { apiSurface: 'settings_save' });
 
 export const fetchFieldConfig = (backendUrl, endpoint) =>
     fetch(`${backendUrl}/api/${endpoint}/config`, {
@@ -92,7 +94,7 @@ export const fetchFieldConfig = (backendUrl, endpoint) =>
     });
 
 export const saveFieldConfig = (backendUrl, endpoint, payload) =>
-    postJsonWithCsrf(backendUrl, `/api/${endpoint}/config`, payload);
+    postJsonWithCsrf(backendUrl, `/api/${endpoint}/config`, payload, { apiSurface: 'settings_save' });
 
 export const fetchIssueTypesConfig = (backendUrl) =>
     fetch(`${backendUrl}/api/issue-types/config`, {
@@ -102,7 +104,7 @@ export const fetchIssueTypesConfig = (backendUrl) =>
     });
 
 export const saveIssueTypesConfig = (backendUrl, issueTypes) =>
-    postJsonWithCsrf(backendUrl, '/api/issue-types/config', { issueTypes });
+    postJsonWithCsrf(backendUrl, '/api/issue-types/config', { issueTypes }, { apiSurface: 'settings_save' });
 
 export const fetchAvailableIssueTypes = (backendUrl) =>
     fetch(`${backendUrl}/api/issue-types`, {

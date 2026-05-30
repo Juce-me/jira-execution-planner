@@ -1,5 +1,6 @@
 import * as React from 'react';
 
+import { trackEvent } from '../analytics/analytics.js';
 import {
     connectHomeTokenConnection,
     deleteHomeTokenConnection,
@@ -19,6 +20,20 @@ function connectionStatus(connection) {
 
 function errorMessage(error) {
     return error?.message || 'Connection update failed.';
+}
+
+function trackConnectionAction(workflowAction, result) {
+    try {
+        trackEvent('connection_action', {
+            feature_name: 'settings',
+            connection_type: 'home_townsquare',
+            workflow_action: workflowAction,
+            ...(result ? { result } : {}),
+            source_surface: 'settings'
+        });
+    } catch (err) {
+        console.warn('Analytics event skipped:', err.message);
+    }
 }
 
 export default function UserConnectionsSettings({ backendUrl, onConnectionChange }) {
@@ -49,10 +64,12 @@ export default function UserConnectionsSettings({ backendUrl, onConnectionChange
             onConnectionChange?.(nextConnection);
             setProfileEmail(authEmail);
             setEmail(connectedEmail || authEmail);
+            trackConnectionAction('status', nextConnection?.connected ? 'success' : 'failure');
         }).catch((loadError) => {
             if (cancelled) return;
             setConnection({ connected: false });
             setError(errorMessage(loadError));
+            trackConnectionAction('status', 'failure');
         }).finally(() => {
             if (!cancelled) setLoading(false);
         });
@@ -65,6 +82,7 @@ export default function UserConnectionsSettings({ backendUrl, onConnectionChange
         setSaving(true);
         setMessage('');
         setError('');
+        trackConnectionAction(connection?.connected ? 'reconnect' : 'connect');
         try {
             const nextConnection = await connectHomeTokenConnection(backendUrl, {
                 email,
@@ -75,9 +93,11 @@ export default function UserConnectionsSettings({ backendUrl, onConnectionChange
             setEmail(String(nextConnection?.credentialSubject || email || profileEmail || '').trim());
             setApiToken('');
             setMessage('Connection saved.');
+            trackConnectionAction(connection?.connected ? 'reconnect_result' : 'connect_result', 'success');
         } catch (connectError) {
             setApiToken('');
             setError(errorMessage(connectError));
+            trackConnectionAction(connection?.connected ? 'reconnect_result' : 'connect_result', 'failure');
         } finally {
             setSaving(false);
         }
@@ -87,6 +107,7 @@ export default function UserConnectionsSettings({ backendUrl, onConnectionChange
         setSaving(true);
         setMessage('');
         setError('');
+        trackConnectionAction('revoke');
         try {
             const nextConnection = await deleteHomeTokenConnection(backendUrl);
             const normalizedConnection = nextConnection || { connected: false };
@@ -95,9 +116,11 @@ export default function UserConnectionsSettings({ backendUrl, onConnectionChange
             setApiToken('');
             setEmail(profileEmail || '');
             setMessage('Connection revoked.');
+            trackConnectionAction('revoke_result', 'success');
         } catch (revokeError) {
             setApiToken('');
             setError(errorMessage(revokeError));
+            trackConnectionAction('revoke_result', 'failure');
         } finally {
             setSaving(false);
         }

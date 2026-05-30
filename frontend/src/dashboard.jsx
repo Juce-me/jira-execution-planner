@@ -13,11 +13,13 @@ import LoadingRows from './ui/LoadingRows.jsx';
 import EmptyState from './ui/EmptyState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
+import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
 import EngView from './eng/EngView.jsx';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
+import EngModeControl from './eng/EngModeControl.jsx';
 import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
@@ -143,6 +145,7 @@ import {
     fetchFields as requestJiraFields,
 } from './api/jiraCatalogApi.js';
 import { EpmControls } from './epm/EpmControls.jsx';
+import EpmProjectCollapseAllButton from './epm/EpmProjectCollapseAllButton.jsx';
 import { EpmView } from './epm/EpmView.jsx';
 import EpmSettings from './epm/EpmSettings.jsx';
 import SettingsModal from './settings/SettingsModal.jsx';
@@ -150,6 +153,7 @@ import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';
 import JiraFieldSettings from './settings/JiraFieldSettings.jsx';
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
 import { fetchCsrfToken, fetchHomeTokenConnection } from './api/authApi.js';
+import { analyticsToken, bucketCount, exposeAnalyticsForTests, useDashboardAnalytics } from './analytics/dashboardAnalytics.js';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     DEFAULT_EPM_PROJECT_SORT,
@@ -178,6 +182,7 @@ import {
 
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
+        exposeAnalyticsForTests();
         const EMPTY_OBJECT = Object.freeze({});
         const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';
         const EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY = 3;
@@ -879,6 +884,11 @@ import {
             useEffect(() => {
                 void refreshHomeTokenConnectionStatus();
             }, [refreshHomeTokenConnectionStatus]);
+            const {
+                currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
+                trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
+                trackSettingsAction, trackSortChanged, trackStatsAction,
+            } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, serverConnectionError });
             useEffect(() => {
                 if (!homeTokenConnectionLoaded) return;
                 if (showEpmNavigation) {
@@ -1019,6 +1029,7 @@ import {
             const saveEpmConfig = async () => {
                 setEpmConfigSaving(true);
                 setGroupDraftError('');
+                trackSettingsAction('epm', 'save', { dirty_state: isEpmConfigDirty ? 'dirty' : 'clean', project_count_bucket: bucketCount(epmConfigDraft?.projects?.length || 0) });
                 try {
                     const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraft);
                     const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft);
@@ -1033,10 +1044,12 @@ import {
                         setEpmSettingsProjects([]);
                         setEpmSettingsProjectsLoaded(false);
                     }
+                    trackSettingsAction('epm', 'save_result', { result: 'success' });
                 } catch (err) {
                     const message = err?.message || 'Failed to save EPM settings.';
                     setGroupDraftError(message);
                     console.error('Failed to save EPM config:', err);
+                    trackSettingsAction('epm', 'save_result', { result: 'failure' });
                     throw err;
                 } finally {
                     setEpmConfigSaving(false);
@@ -1764,7 +1777,6 @@ import {
                 priorityHoverIndex
             ]);
 
-
             const normalizeStatus = (status) => {
                 return (status || '').toLowerCase().replace(/\s+/g, ' ').trim();
             };
@@ -1776,7 +1788,6 @@ import {
                 const normalized = (status || '').toLowerCase().replace(/\s+/g, ' ').trim();
                 return normalized === 'done' || normalized === 'killed' || normalized === 'incomplete';
             }, []);
-
 
             const normalizeGroupsConfig = (config) => {
                 const rawGroups = Array.isArray(config?.groups) ? config.groups : [];
@@ -2521,6 +2532,7 @@ import {
                 if (!canEditEpmConfiguration) {
                     return;
                 }
+                trackSettingsAction('epm', 'open', { source_surface: 'epm' });
                 resetEpmSettingsProjectRows();
                 setShowGroupManage(true);
                 setGroupManageTab('epm');
@@ -2528,6 +2540,7 @@ import {
             };
 
             const openUserConnectionsSettings = () => {
+                trackSettingsAction('connections', 'open');
                 setShowGroupManage(true);
                 setGroupManageTab('connections');
             };
@@ -2966,6 +2979,7 @@ import {
             const testGroupsConfigConnection = async () => {
                 setGroupTesting(true);
                 setGroupTestMessage('');
+                trackSettingsAction(groupManageTab, 'test');
                 try {
                     const response = await testJiraConnection(BACKEND_URL);
                     const payload = await response.json().catch(() => ({}));
@@ -2973,8 +2987,10 @@ import {
                         throw new Error(payload.error || `Test failed (${response.status})`);
                     }
                     setGroupTestMessage(payload.message || 'Connection to Jira API looks good.');
+                    trackSettingsAction(groupManageTab, 'test_result', { result: 'success' });
                 } catch (error) {
                     setGroupTestMessage(error?.message || 'Connection test failed.');
+                    trackSettingsAction(groupManageTab, 'test_result', { result: 'failure' });
                 } finally {
                     setGroupTesting(false);
                 }
@@ -2984,10 +3000,12 @@ import {
                 if (!groupDraft) return;
                 if (groupConfigValidationErrors.length > 0) {
                     setGroupDraftError(groupConfigValidationErrors[0]);
+                    trackSettingsAction(groupManageTab, 'save_result', { result: 'failure', validation_count_bucket: bucketCount(groupConfigValidationErrors.length) });
                     return;
                 }
                 setGroupSaving(true);
                 setGroupDraftError('');
+                trackSettingsAction(groupManageTab, 'save', { dirty_state: isGroupDraftDirty ? 'dirty' : 'clean', validation_count_bucket: bucketCount(groupConfigValidationErrors.length) });
                 try {
                     if (canEditEpmConfiguration && isEpmConfigDirty) {
                         await saveEpmConfig();
@@ -3103,8 +3121,10 @@ import {
                     }
 
                     closeGroupManage();
+                    trackSettingsAction(groupManageTab, 'save_result', { result: 'success' });
                 } catch (err) {
                     setGroupDraftError(err.message || 'Failed to save groups.');
+                    trackSettingsAction(groupManageTab, 'save_result', { result: 'failure' });
                 } finally {
                     setGroupSaving(false);
                 }
@@ -4777,7 +4797,6 @@ import {
                 planningHydratedScopeRef.current = planningScopeKey;
             }, [planningScopeKey, activeGroupId, selectedSprint, activeGroupTeamIds.join('|')]);
 
-
             useEffect(() => {
                 if (!showPlanning) {
                     setPlanningOffset(0);
@@ -5250,7 +5269,6 @@ import {
                 setScenarioError('');
             }, [selectedSprint, selectedTeams]);
 
-
             const loadSprints = async (forceRefresh = false) => {
                 setSprintsLoading(true);
                 try {
@@ -5373,6 +5391,7 @@ import {
                 setReadyToCloseProductEpicsInScope,
                 setReadyToCloseTechEpicsInScope,
                 onServerConnectionFailure: reportServerConnectionError,
+                onAuthRecoveryRequired: () => trackAppError('auth', 'auth_required', 'reauth'),
             });
 
             const fetchDependencies = async (keys) => {
@@ -5396,7 +5415,6 @@ import {
                     cleanupSprintFetch(controller);
                 }
             };
-
 
             const normalizeScenarioDraftOverrides = (overrides) => {
                 const normalized = {};
@@ -5683,12 +5701,15 @@ import {
             });
 
             const runScenario = async () => {
+                trackScenarioAction('compute', { lane_mode: analyticsToken(scenarioLaneMode), team_count_bucket: bucketCount(scenarioTeamIds.length) });
                 if (!selectedSprint) {
                     setScenarioError('Select a sprint to build a scenario.');
+                    trackScenarioAction('compute_result', { result: 'failure', blocking_reason: 'missing_sprint' });
                     return;
                 }
                 if (isCompletedSprintSelected) {
                     setScenarioError('Scenario planner is disabled for completed sprints.');
+                    trackScenarioAction('compute_result', { result: 'failure', blocking_reason: 'completed_sprint' });
                     return;
                 }
                 if (scenarioHasUnsavedChanges) {
@@ -5698,6 +5719,7 @@ import {
                         error: ''
                     }));
                     setScenarioError('Save or discard scenario draft changes before reloading scenario data.');
+                    trackScenarioAction('compute_result', { result: 'failure', blocking_reason: 'dirty_draft' });
                     return;
                 }
                 setScenarioLoading(true);
@@ -5737,6 +5759,7 @@ import {
                     if (scenarioTimelineRef.current) {
                         scenarioTimelineRef.current.scrollTop = 0;
                     }
+                    trackScenarioAction('compute_result', { result: 'success', issue_count_bucket: bucketCount((data?.issues || []).length) });
                     // Load the active draft for this scope unless the user has dirty edits from another scope.
                     if (scenarioScopeKey) {
                         try {
@@ -5812,6 +5835,7 @@ import {
                         return;
                     }
                     setScenarioError(err.message || 'Failed to run scenario.');
+                    trackScenarioAction('compute_result', { result: 'failure' });
                 } finally {
                     cleanupSprintFetch(controller);
                     setScenarioLoading(false);
@@ -5820,6 +5844,7 @@ import {
 
             const toggleScenarioEditMode = () => {
                 setScenarioEditMode(prev => {
+                    trackScenarioAction(prev ? 'edit_stop' : 'edit_start', { dirty_state: scenarioHasUnsavedChanges ? 'dirty' : 'clean' });
                     if (!prev) {
                         // Entering edit mode — clear epic focus (edit operates on flat bars)
                         setScenarioEpicFocus(null);
@@ -6001,7 +6026,6 @@ import {
                 activeGroupTeamIds.join('|')
             ]);
 
-
             const effectivePriorityWeightMap = React.useMemo(
                 () => buildPriorityWeightMap(effectivePriorityWeightsRows),
                 [effectivePriorityWeightsRows]
@@ -6176,10 +6200,10 @@ import {
                 return Array.from(selectedTeamSet);
             }, [isAllTeamsSelected, selectedTeamSet, teamOptions]);
 
-
             const toggleTeamSelection = (teamId) => {
                 if (teamId === 'all') {
                     setSelectedTeams(['all']);
+                    trackFilterChanged('team', { selection_count_bucket: '0' });
                     return;
                 }
                 setSelectedTeams((prev) => {
@@ -6189,6 +6213,7 @@ import {
                     } else {
                         next.add(teamId);
                     }
+                    trackFilterChanged('team', { selection_count_bucket: bucketCount(next.size) });
                     return next.size ? Array.from(next) : ['all'];
                 });
             };
@@ -6796,6 +6821,7 @@ import {
                 const loadExcludedCapacity = async () => {
                     setExcludedCapacityLoading(true);
                     setExcludedCapacityError('');
+                    const analyticsStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
                     try {
                         const result = await loadExcludedCapacityStatsSourceChunks(excludedCapacitySprintIds, fetchSprintChunk, {
                             maxConcurrent: EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY,
@@ -6818,6 +6844,7 @@ import {
                         });
                         excludedCapacityCacheRef.current[rangeCacheKey] = data;
                         setExcludedCapacityData(data);
+                        trackApiResult('stats_source', { featureName: 'stats', method: 'POST', status: 200, durationMs: (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - analyticsStartedAt, cacheState: forceRefresh ? 'refresh' : 'unknown' });
                     } catch (err) {
                         if (cancelled) return;
                         if (err?.name === 'AbortError') {
@@ -6826,6 +6853,7 @@ import {
                             setExcludedCapacityError(String(err?.message || err || 'Failed to load excluded capacity data.'));
                         }
                         setExcludedCapacityData(null);
+                        trackApiResult('stats_source', { featureName: 'stats', method: 'POST', status: 500, durationMs: (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - analyticsStartedAt, cacheState: forceRefresh ? 'refresh' : 'unknown' });
                     } finally {
                         if (!cancelled) setExcludedCapacityLoading(false);
                     }
@@ -7621,6 +7649,7 @@ import {
             const saveScenarioDraft = async () => {
                 const saveScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
                 if (!saveScopeKey || !scenarioCanSaveDraft) return;
+                trackScenarioAction('draft_save', { dirty_state: scenarioHasUnsavedChanges ? 'dirty' : 'clean', override_count_bucket: bucketCount(Object.keys(normalizeScenarioDraftOverrides(scenarioOverrides)).length) });
                 setScenarioDraftMeta(prev => ({
                     ...prev,
                     saving: true,
@@ -7657,6 +7686,7 @@ import {
                         message: 'Scenario draft saved.',
                         error: ''
                     }));
+                    trackScenarioAction('draft_save_result', { result: 'success' });
                 } catch (err) {
                     const conflict = err.payload?.error === 'scenario_draft_conflict' && err.payload?.conflict
                         ? {
@@ -7682,6 +7712,7 @@ import {
                             error: err.message || 'Failed to save scenario draft.'
                         };
                     });
+                    trackScenarioAction('draft_save_result', { result: 'failure', conflict_state: conflict ? 'conflict_remote' : 'none' });
                 }
             };
 
@@ -7702,6 +7733,7 @@ import {
             };
 
             const openScenarioDraftHistory = async () => {
+                trackScenarioAction('history_open');
                 const historyScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
                 const historyDraftId = scenarioDraftMeta.activeDraft?.draftId || '';
                 if (scenarioHistoryRefreshControllerRef.current) {
@@ -8009,6 +8041,7 @@ import {
             const previewScenarioDraftWriteback = async () => {
                 const draftId = scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.conflict?.activeDraft?.draftId;
                 if (!draftId) return;
+                trackScenarioAction('writeback_preview');
                 const expectedScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
                 setScenarioDraftMeta(prev => ({
                     ...prev,
@@ -8031,6 +8064,7 @@ import {
                         error: '',
                         message: ''
                     }));
+                    trackScenarioAction('writeback_preview_result', { result: 'success', selected_count_bucket: bucketCount(Array.isArray(preview?.changes) ? preview.changes.length : 0) });
                 } catch (err) {
                     if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
                         return;
@@ -8040,12 +8074,14 @@ import {
                         writebackPreviewing: false,
                         error: err.message || 'Failed to preview Jira write-back.'
                     }));
+                    trackScenarioAction('writeback_preview_result', { result: 'failure' });
                 }
             };
 
             const checkScenarioDraftWritebackGate = async () => {
                 const draftId = scenarioDraftMeta.activeDraft?.draftId || scenarioDraftMeta.conflict?.activeDraft?.draftId;
                 if (!draftId) return;
+                trackScenarioAction('writeback_gate');
                 const expectedScopeKey = scenarioDraftMeta.scopeKey || scenarioScopeKey;
                 setScenarioDraftMeta(prev => ({
                     ...prev,
@@ -8066,6 +8102,7 @@ import {
                         message: 'Jira write-back gate unexpectedly allowed the request.',
                         error: ''
                     }));
+                    trackScenarioAction('writeback_gate_result', { result: 'success' });
                 } catch (err) {
                     if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
                         return;
@@ -8079,6 +8116,7 @@ import {
                         writebackBlocked: blocked,
                         error: blocked ? '' : (err.message || 'Failed to check Jira write-back gate.')
                     }));
+                    trackScenarioAction('writeback_gate_result', { result: blocked ? 'blocked' : 'failure', blocking_reason: blocked ? 'migration_gate' : 'unknown' });
                 }
             };
 
@@ -9005,14 +9043,12 @@ import {
                 return [...context, ...inside];
             }, [scenarioEpicFocus, scenarioEdgeCandidates, scenarioFocusIssueKeys, scenarioFocusContextKeys]);
 
-
             const toggleScenarioLane = (lane) => {
                 setScenarioCollapsedLanes(prev => ({
                     ...prev,
                     [lane]: !prev?.[lane]
                 }));
             };
-
 
 
             const areScenarioEdgeRendersEqual = (prev, next) => {
@@ -9603,6 +9639,9 @@ import {
                     return true;
                 });
             }, [baseFilteredTasks, statusFilter]);
+            useEffect(() => {
+                trackSearch(searchQuery, visibleTasks.length);
+            }, [searchQuery, visibleTasks.length, trackSearch]);
             const visibleTasksForList = React.useMemo(() => {
                 if (!burnoutTaskFilter || !Array.isArray(burnoutTaskFilter.issueKeys)) {
                     return visibleTasks;
@@ -10350,45 +10389,43 @@ import {
             }, [dependencyFocus, dependencyLookupCache]);
 
             const toggleTaskSelection = (taskKey) => {
-                setSelectedTasks(prev => {
-                    const newSelected = { ...prev };
-                    if (newSelected[taskKey]) {
-                        delete newSelected[taskKey];
-                    } else {
-                        newSelected[taskKey] = true;
-                    }
-                    return newSelected;
-                });
+                const newSelected = { ...selectedTasks };
+                if (newSelected[taskKey]) {
+                    delete newSelected[taskKey];
+                } else {
+                    newSelected[taskKey] = true;
+                }
+                setSelectedTasks(newSelected);
+                trackPlanningSelection('toggle_task', newSelected, selectionTasks);
             };
 
             const clearSelectedTasks = () => {
                 setSelectedTasks({});
+                trackPlanningSelection('clear_selection', {}, selectionTasks);
             };
 
             const selectAllVisiblePlanningTasks = () => {
-                setSelectedTasks(() => {
-                    const next = {};
-                    visibleTasksForList.forEach(task => {
-                        if (task?.key) {
-                            next[task.key] = true;
-                        }
-                    });
-                    return next;
+                const next = {};
+                visibleTasksForList.forEach(task => {
+                    if (task?.key) {
+                        next[task.key] = true;
+                    }
                 });
+                setSelectedTasks(next);
+                trackPlanningSelection('select_all_visible', next, selectionTasks);
             };
 
             const selectPlanningTasksByStatus = (statuses) => {
                 const allowed = new Set((statuses || []).map(normalizeStatus));
-                setSelectedTasks(() => {
-                    const next = {};
-                    selectionTasks.forEach(task => {
-                        const status = normalizeStatus(task.fields.status?.name);
-                        if (allowed.has(status)) {
-                            next[task.key] = true;
-                        }
-                    });
-                    return next;
+                const next = {};
+                selectionTasks.forEach(task => {
+                    const status = normalizeStatus(task.fields.status?.name);
+                    if (allowed.has(status)) {
+                        next[task.key] = true;
+                    }
                 });
+                setSelectedTasks(next);
+                trackPlanningSelection('select_status', next, selectionTasks);
             };
 
             const includePlanningTasksByStatus = (statuses) => {
@@ -10407,21 +10444,20 @@ import {
 
             const toggleIncludeByStatus = (statuses) => {
                 const allowed = new Set((statuses || []).map(normalizeStatus));
-                setSelectedTasks(prev => {
-                    const next = { ...prev };
-                    const matching = selectionTasks.filter(task =>
-                        allowed.has(normalizeStatus(task.fields.status?.name))
-                    );
-                    const allSelected = matching.length > 0 && matching.every(task => prev[task.key]);
-                    matching.forEach(task => {
-                        if (allSelected) {
-                            delete next[task.key];
-                        } else {
-                            next[task.key] = true;
-                        }
-                    });
-                    return next;
+                const next = { ...selectedTasks };
+                const matching = selectionTasks.filter(task =>
+                    allowed.has(normalizeStatus(task.fields.status?.name))
+                );
+                const allSelected = matching.length > 0 && matching.every(task => selectedTasks[task.key]);
+                matching.forEach(task => {
+                    if (allSelected) {
+                        delete next[task.key];
+                    } else {
+                        next[task.key] = true;
+                    }
                 });
+                setSelectedTasks(next);
+                trackPlanningSelection(allSelected ? 'exclude_status' : 'include_status', next, selectionTasks);
             };
 
             // Calculate sum of Story Points for selected tasks
@@ -11478,7 +11514,6 @@ import {
                 };
             }, []);
 
-
             useEffect(() => {
                 const node = headerRef.current;
                 if (!node) return;
@@ -11601,6 +11636,7 @@ import {
             };
             const showGroupControl = (groupsConfig.groups || []).length > 1;
             const searchActive = Boolean(String(searchInput || searchQuery || '').trim());
+            const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
 
             const renderSearchControl = (surface, extraClassName = '') => (
                 <ControlField label="Search" className={`control-search ${searchActive ? 'active-filter' : ''} ${extraClassName}`.trim()}>
@@ -11640,6 +11676,7 @@ import {
                         value={showEpmNavigation ? selectedView : 'eng'}
                         onChange={(nextView) => {
                             if (nextView === 'epm' && !showEpmNavigation) return;
+                            trackSelectContent('dashboard_view', nextView, { from_view: currentDashboardView() });
                             setSelectedView(nextView);
                         }}
                         options={options}
@@ -11656,37 +11693,18 @@ import {
                         : 'catch-up';
             const applyEngMode = (mode) => {
                 const nextMode = String(mode || 'catch-up');
+                trackSelectContent('eng_mode', nextMode, { from_mode: analyticsToken(activeEngMode), dashboard_view: 'eng' });
                 setShowPlanning(nextMode === 'planning');
                 setShowStats(nextMode === 'statistics');
                 setShowScenario(nextMode === 'scenario');
             };
             const renderEngModeControl = () => (
-                <SegmentedControl
-                    className="eng-mode-control"
-                    ariaLabel="ENG view mode"
-                    value={activeEngMode}
+                <EngModeControl
+                    activeMode={activeEngMode}
+                    isCompletedSprintSelected={isCompletedSprintSelected}
+                    isFutureSprintSelected={isFutureSprintSelected}
                     onChange={applyEngMode}
-                    options={[
-                        { value: 'catch-up', label: 'Catch Up', title: 'Return to default state' },
-                        {
-                            value: 'planning',
-                            label: 'Planning',
-                            disabled: !selectedSprint || isCompletedSprintSelected,
-                            title: 'Show sprint planning panel'
-                        },
-                        {
-                            value: 'statistics',
-                            label: 'Statistics',
-                            disabled: isFutureSprintSelected,
-                            title: 'Show sprint statistics'
-                        },
-                        {
-                            value: 'scenario',
-                            label: 'Scenario',
-                            disabled: !selectedSprint || isCompletedSprintSelected,
-                            title: 'Show scenario planner'
-                        }
-                    ]}
+                    selectedSprint={selectedSprint}
                 />
             );
 
@@ -11694,7 +11712,10 @@ import {
                 <EpmControls
                     selectedView={selectedView}
                     epmTab={epmTab}
-                    setEpmTab={setEpmTab}
+                    setEpmTab={(nextTab) => {
+                        trackEpmAction('tab_change', { epm_tab: analyticsToken(nextTab) });
+                        setEpmTab(nextTab);
+                    }}
                     surface={surface}
                     showProjectPicker={showProjectPicker}
                     showStateControl={showStateControl}
@@ -11709,16 +11730,26 @@ import {
                     epmProjectSearch={epmProjectSearch}
                     setEpmProjectSearch={setEpmProjectSearch}
                     epmProjectSort={epmProjectSort}
-                    setEpmProjectSort={setEpmProjectSort}
+                    setEpmProjectSort={(nextSort) => {
+                        trackSortChanged('projects', nextSort);
+                        setEpmProjectSort(nextSort);
+                    }}
                     showEpmSortDropdown={showEpmSortDropdown}
                     setShowEpmSortDropdown={setShowEpmSortDropdown}
                     epmSortDropdownRefs={epmSortDropdownRefs}
-                    setEpmSelectedProjectId={setEpmSelectedProjectId}
+                    setEpmSelectedProjectId={(projectId) => {
+                        trackFilterChanged('project', { feature_name: 'epm', project_scope: projectId ? 'single' : 'all', source_surface: 'epm' });
+                        setEpmSelectedProjectId(projectId);
+                    }}
                     setShowEpmProjectDropdown={setShowEpmProjectDropdown}
                     savedEpmSubGoalKeys={savedEpmSubGoalKeys}
                     epmSubGoalOptions={epmSubGoals}
                     selectedEpmSubGoalKeys={epmSelectedSubGoalKeys}
-                    setEpmSelectedSubGoalKeys={setEpmSelectedSubGoalKeys}
+                    setEpmSelectedSubGoalKeys={(nextKeys) => {
+                        const count = Array.isArray(nextKeys) ? nextKeys.length : 0;
+                        trackFilterChanged('subgoal', { feature_name: 'epm', subgoal_scope: count > 1 ? 'multiple' : (count === 1 ? 'single' : 'all'), selection_count_bucket: bucketCount(count), source_surface: 'epm' });
+                        setEpmSelectedSubGoalKeys(nextKeys);
+                    }}
                     showEpmSubGoalDropdown={showEpmSubGoalFilterDropdown}
                     setShowEpmSubGoalDropdown={setShowEpmSubGoalFilterDropdown}
                     epmSubGoalFilterDropdownRefs={epmSubGoalFilterDropdownRefs}
@@ -11726,42 +11757,9 @@ import {
                 />
             );
 
-            const renderEpmProjectCollapseAllButton = (_surface) => {
-                if (!showEpmProjectCollapseAllButton) return null;
-                return (
-                    <button
-                        className="group-gear-button epm-project-collapse-all-button"
-                        onClick={toggleAllVisibleEpmProjectsCollapsed}
-                        title={epmProjectCollapseAllLabel}
-                        aria-label={epmProjectCollapseAllLabel}
-                        aria-pressed={allVisibleEpmProjectsCollapsed}
-                        type="button"
-                    >
-                        <svg className="epm-project-collapse-all-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <g className="epm-project-collapse-all-stack">
-                                <rect x="4.25" y="4.35" width="9.6" height="3.5" rx="1.1"/>
-                                <rect x="4.25" y="10.25" width="9.6" height="3.5" rx="1.1"/>
-                                <rect x="4.25" y="16.15" width="9.6" height="3.5" rx="1.1"/>
-                            </g>
-                            {allVisibleEpmProjectsCollapsed ? (
-                                <g className="epm-project-collapse-all-arrows">
-                                    <path d="M18 10.15V4.85"/>
-                                    <path d="M15.6 7.25 18 4.85l2.4 2.4"/>
-                                    <path d="M18 13.85v5.3"/>
-                                    <path d="M15.6 16.75 18 19.15l2.4-2.4"/>
-                                </g>
-                            ) : (
-                                <g className="epm-project-collapse-all-arrows">
-                                    <path d="M18 4.85v5.3"/>
-                                    <path d="M15.6 7.75 18 10.15l2.4-2.4"/>
-                                    <path d="M18 19.15v-5.3"/>
-                                    <path d="M15.6 16.25 18 13.85l2.4 2.4"/>
-                                </g>
-                            )}
-                        </svg>
-                    </button>
-                );
-            };
+            const renderEpmProjectCollapseAllButton = (_surface) => showEpmProjectCollapseAllButton ? (
+                <EpmProjectCollapseAllButton label={epmProjectCollapseAllLabel} onClick={toggleAllVisibleEpmProjectsCollapsed} pressed={allVisibleEpmProjectsCollapsed} />
+            ) : null;
 
             const renderSprintControl = (surface) => (
                 <ControlField label="Sprint">
@@ -11814,6 +11812,7 @@ import {
                                                     className="sprint-dropdown-option"
                                                     data-sprint-id={sprint.id}
                                                     onClick={() => {
+                                                        trackFilterChanged('sprint', { sprint_selection_state: analyticsToken(state || 'unknown'), source_surface: currentDashboardView(), scope_type: currentDashboardView() });
                                                         setSelectedSprint(sprint.id);
                                                         setSprintName(sprint.name);
                                                         setShowSprintDropdown(false);
@@ -11872,6 +11871,7 @@ import {
                                                     key={group.id}
                                                     className="group-dropdown-option"
                                                     onClick={() => {
+                                                        trackFilterChanged('group', { group_count_bucket: bucketCount(group?.teamIds?.length || 0), scope_type: currentDashboardView() });
                                                         setActiveGroupId(group.id);
                                                         setShowGroupDropdown(false);
                                                     }}
@@ -12122,12 +12122,18 @@ import {
                 {
                     id: 'admin',
                     label: 'Admin',
-                    onClick: () => setGroupManageTab(adminSettingsTab)
+                    onClick: () => {
+                        trackSettingsAction('admin', 'tab_change');
+                        setGroupManageTab(adminSettingsTab);
+                    }
                 },
                 {
                     id: 'departments',
                     label: 'Departments',
-                    onClick: () => setGroupManageTab(activeDepartmentSettingsTab)
+                    onClick: () => {
+                        trackSettingsAction('departments', 'tab_change');
+                        setGroupManageTab(activeDepartmentSettingsTab);
+                    }
                 },
                 {
                     id: 'connections',
@@ -12148,6 +12154,14 @@ import {
             const settingsSaveHandler = groupManageTab === 'epm'
                 ? () => { void saveEpmConfig().catch(() => {}); }
                 : saveGroupsConfig;
+            const settingsCancelHandler = () => {
+                trackSettingsAction(groupManageTab, 'cancel', { dirty_state: isGroupDraftDirty ? 'dirty' : 'clean' });
+                requestCloseGroupManage();
+            };
+            const setTrackedEpmSettingsProjectSort = (sortKey) => {
+                trackSortChanged('epm_settings_projects', sortKey, { sort_direction: 'asc', source_surface: 'epm_settings' });
+                setEpmSettingsProjectSort(sortKey);
+            };
             const settingsShowsSave = groupManageTab !== 'connections';
             const settingsSaveDisabled = groupManageTab === 'epm'
                 ? (!canEditEpmConfiguration || epmConfigLoading || epmConfigSaving)
@@ -12186,6 +12200,7 @@ import {
                                         epicKeys={activeJiraExportEpicKeys}
                                         storyKeys={activeJiraExportStoryKeys}
                                         className="jira-export-header"
+                                        sourceSurface={selectedView === 'epm' ? 'epm' : (showScenario ? 'scenario' : showStats ? 'stats' : showPlanning ? 'planning' : 'catch_up')}
                                     />
                                     <IconButton
                                         variant="secondary compact"
@@ -12247,10 +12262,11 @@ import {
                                 {selectedView === 'eng' && (
                                     <button
                                         className="group-gear-button"
-                                        onClick={(event) => {
-                                            event.stopPropagation();
-                                            openGroupManage();
-                                        }}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        trackSettingsAction('teams', 'open', { source_surface: 'dashboard' });
+                                        openGroupManage();
+                                    }}
                                         disabled={groupsLoading}
                                         title="Manage team groups"
                                         aria-label="Manage team groups"
@@ -12313,17 +12329,7 @@ import {
                         )}
                     </div>
 
-                    {serverConnectionError && (
-                        <div className="server-unavailable-banner" role="alert">
-                            <div>
-                                <div className="server-unavailable-title">Server is not responding</div>
-                                <p>{serverConnectionError}</p>
-                            </div>
-                            <button type="button" onClick={retryServerConnection}>
-                                Retry connection
-                            </button>
-                        </div>
-                    )}
+                    <ServerUnavailableBanner message={serverConnectionError} onRetry={retryServerConnection} />
 
                     {selectedView === 'eng' && !isCompletedSprintSelected && (
                         <div className={`capacity-panel ${showPlanning ? 'open' : ''}`}>
@@ -12730,7 +12736,10 @@ import {
                                     className="eng-mode-control stats-view-toggle"
                                     ariaLabel="Statistics view"
                                     value={statsView}
-                                    onChange={setStatsView}
+                                    onChange={(nextView) => {
+                                        trackStatsAction('stats_action', nextView, { workflow_action: 'view_change' });
+                                        setStatsView(nextView);
+                                    }}
                                     options={[
                                         { value: 'teams', label: 'Teams' },
                                         { value: 'priority', label: 'Priority' },
@@ -12797,6 +12806,7 @@ import {
                                     formatBurndownValue={formatBurndownValue}
                                     resolveBurnoutPointer={resolveBurnoutPointer}
                                     buildBurnoutTaskFilter={buildBurnoutTaskFilter}
+                                    onAnalyticsAction={trackStatsAnalyticsAction}
                                 />
                                 <div className={`stats-view ${statsView === 'excludedCapacity' ? 'open' : ''}`}>
                                     <div className="stats-controls excluded-capacity-controls excluded-capacity-filter-controls">
@@ -12908,7 +12918,14 @@ import {
                                         <SegmentedControl
                                             ariaLabel="Series mode"
                                             value={excludedCapacityChartMode}
-                                            onChange={setExcludedCapacityChartMode}
+                                            onChange={(nextMode) => {
+                                                trackStatsAnalyticsAction('chart_action', {
+                                                    workflow_action: 'mode_change',
+                                                    chart_id: 'excluded_capacity',
+                                                    series_type: analyticsToken(nextMode)
+                                                });
+                                                setExcludedCapacityChartMode(nextMode);
+                                            }}
                                             options={[
                                                 { value: 'teams', label: 'Teams' },
                                                 { value: 'group', label: 'Group' }
@@ -12917,7 +12934,13 @@ import {
                                         <SegmentedControl
                                             ariaLabel="Metric"
                                             value={excludedCapacityMetric}
-                                            onChange={setExcludedCapacityMetric}
+                                            onChange={(nextMetric) => {
+                                                trackStatsAnalyticsAction('stats_action', {
+                                                    workflow_action: 'metric_change',
+                                                    metric: nextMetric === 'storyPoints' ? 'story_points' : 'percent'
+                                                });
+                                                setExcludedCapacityMetric(nextMetric);
+                                            }}
                                             options={[
                                                 { value: 'percent', label: 'Percentage' },
                                                 { value: 'storyPoints', label: 'Story Points' }
@@ -12986,6 +13009,7 @@ import {
                                                     metric={excludedCapacityMetric}
                                                     visibleBuckets={effortSplitVisibleBuckets}
                                                     onToggleBucket={toggleEffortSplitBucket}
+                                                    onAnalyticsAction={trackStatsAnalyticsAction}
                                                     formatExcludedPoints={formatExcludedPoints}
                                                     formatPercent={formatPercent}
                                                 />
@@ -12999,6 +13023,7 @@ import {
                                                     mode={excludedCapacityLineSeries.mode}
                                                     isolatedSeriesId={excludedCapacityIsolatedTeam}
                                                     onSelectSeries={setExcludedCapacityIsolatedTeam}
+                                                    onAnalyticsAction={trackStatsAnalyticsAction}
                                                     resolveTeamColor={resolveTeamColor}
                                                     formatExcludedPoints={formatExcludedPoints}
                                                     formatPercent={formatPercent}
@@ -13113,6 +13138,7 @@ import {
                                                     mode="teams"
                                                     isolatedSeriesId={excludedCapacityIsolatedTeam}
                                                     onSelectSeries={setExcludedCapacityIsolatedTeam}
+                                                    onAnalyticsAction={trackStatsAnalyticsAction}
                                                     resolveTeamColor={resolveTeamColor}
                                                     formatExcludedPoints={formatExcludedPoints}
                                                     formatPercent={formatPercent}
@@ -14451,7 +14477,7 @@ import {
                             testConfigurationDisabled={groupTesting}
                             testConfigurationLabel={groupTesting ? 'Testing...' : 'Test configuration'}
                             testConfigurationMessage={groupTestMessage}
-                            onCancel={requestCloseGroupManage}
+                            onCancel={settingsCancelHandler}
                             cancelLabel={groupManageTab === 'connections' ? 'Close' : 'Cancel'}
                             onSave={settingsSaveHandler}
                             showSave={settingsShowsSave}
@@ -14724,7 +14750,7 @@ import {
                                         epmSettingsProjectsLoaded,
                                         epmSettingsProjectRows,
                                         epmSettingsProjectSort,
-                                        setEpmSettingsProjectSort,
+                                        setEpmSettingsProjectSort: setTrackedEpmSettingsProjectSort,
                                         epmSettingsProjects,
                                         getEpmLabelRowKey,
                                         getEpmLabelSearchResults,

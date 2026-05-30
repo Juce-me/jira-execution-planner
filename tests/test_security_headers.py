@@ -14,11 +14,29 @@ class SecurityHeaderTests(unittest.TestCase):
         self.assertEqual(response.headers.get("Referrer-Policy"), "same-origin")
         self.assertIn("frame-ancestors 'self'", response.headers.get("Content-Security-Policy", ""))
 
-    def test_script_csp_does_not_allow_inline_javascript(self):
+    def test_script_csp_allows_gtm_without_inline_javascript(self):
         response = self.client.get("/health")
         csp = response.headers.get("Content-Security-Policy", "")
         script_policy = next((part.strip() for part in csp.split(";") if part.strip().startswith("script-src")), "")
-        self.assertEqual(script_policy, "script-src 'self'")
+        self.assertEqual(script_policy, "script-src 'self' https://*.googletagmanager.com")
+        self.assertNotIn("'unsafe-inline'", script_policy)
+
+    def test_csp_allows_gtm_and_ga4_collection_endpoints(self):
+        response = self.client.get("/health")
+        csp = response.headers.get("Content-Security-Policy", "")
+        directives = {
+            part.strip().split(" ", 1)[0]: part.strip()
+            for part in csp.split(";")
+            if part.strip()
+        }
+        self.assertEqual(
+            directives.get("img-src"),
+            "img-src 'self' data: https://*.google-analytics.com https://*.googletagmanager.com",
+        )
+        self.assertEqual(
+            directives.get("connect-src"),
+            "connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com",
+        )
 
     def test_api_response_has_no_store_cache_header(self):
         response = self.client.get("/api/auth/status")

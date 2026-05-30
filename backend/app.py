@@ -33,6 +33,7 @@ def create_app(import_name='jira_server'):
 
 def register_blueprints(flask_app):
     from backend.routes.admin_routes import bp as admin_bp
+    from backend.routes.analytics_routes import bp as analytics_bp
     from backend.routes.auth_routes import bp as auth_bp
     from backend.routes.capacity_routes import bp as capacity_bp
     from backend.routes.dev_routes import bp as dev_bp
@@ -48,6 +49,7 @@ def register_blueprints(flask_app):
     from backend.routes.views_routes import bp as views_bp
 
     flask_app.register_blueprint(auth_bp)
+    flask_app.register_blueprint(analytics_bp)
     flask_app.register_blueprint(user_connection_bp)
     flask_app.register_blueprint(views_bp)
     flask_app.register_blueprint(scenario_bp)

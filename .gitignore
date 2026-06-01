@@ -4,6 +4,8 @@
 .env.backup*
 .oauth-token-store.json
 .oauth-token-store.json.tmp
+secrets/
+.secrets/
 
 # Python
 __pycache__/

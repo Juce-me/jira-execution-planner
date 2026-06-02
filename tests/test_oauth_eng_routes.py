@@ -1,4 +1,5 @@
 import base64
+import os
 import threading
 import time
 import unittest
@@ -76,6 +77,12 @@ class OAuthEngRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
+        self._env_patcher = patch.dict(os.environ, {
+            "CONFIG_STORAGE_BACKEND": "jsonfile",
+            "DATABASE_URL": "",
+            "TEST_DATABASE_URL": "",
+        }, clear=False)
+        self._env_patcher.start()
         self.client = jira_server.app.test_client()
         install_oauth_session(self.client)
 
@@ -87,6 +94,7 @@ class OAuthEngRouteTests(unittest.TestCase):
             jira_server.MISSING_INFO_CACHE.clear()
         if hasattr(jira_server, "DEPENDENCIES_CACHE"):
             jira_server.DEPENDENCIES_CACHE.clear()
+        self._env_patcher.stop()
 
     def test_tasks_route_is_oauth_ready(self):
         issue = _synthetic_issue()
@@ -417,7 +425,16 @@ class BasicEngRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
+        self._env_patcher = patch.dict(os.environ, {
+            "CONFIG_STORAGE_BACKEND": "jsonfile",
+            "DATABASE_URL": "",
+            "TEST_DATABASE_URL": "",
+        }, clear=False)
+        self._env_patcher.start()
         self.client = jira_server.app.test_client()
+
+    def tearDown(self):
+        self._env_patcher.stop()
 
     def test_tasks_with_team_name_basic_uses_jira_url_basic_auth_without_csrf_header(self):
         calls = []

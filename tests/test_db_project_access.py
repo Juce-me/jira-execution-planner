@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import patch
 
@@ -28,12 +29,19 @@ def auth_context(*, project_access):
 class TestProjectAccess(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
+        self._env_patcher = patch.dict(os.environ, {
+            'CONFIG_STORAGE_BACKEND': 'jsonfile',
+            'DATABASE_URL': '',
+            'TEST_DATABASE_URL': '',
+        }, clear=False)
+        self._env_patcher.start()
         self.client = jira_server.app.test_client()
         install_oauth_session(self.client)
 
     def tearDown(self):
         jira_server.OAUTH_TOKEN_STORE.clear()
         jira_server.OAUTH_REFRESH_LOCKS.clear()
+        self._env_patcher.stop()
 
     def _allowed_response(self, project_type):
         other_type = 'tech' if project_type == 'product' else 'product'

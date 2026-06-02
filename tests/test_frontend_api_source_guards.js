@@ -30,9 +30,10 @@ function loadHttpHelpers() {
     const helperPath = path.join(frontendSrcPath, 'api', 'http.js');
     assert.ok(fs.existsSync(helperPath), 'Expected frontend/src/api/http.js to exist');
     const source = readSource(helperPath)
+        .replace(/import\s+\{[^}]+\}\s+from\s+'\.\.\/analytics\/analytics\.js';\n?/, '')
         .replaceAll('export async function ', 'async function ')
         .replaceAll('export function ', 'function ');
-    return new Function(`${source}; return { json, getJson, postJson };`)();
+    return new Function('trackApiResult', `${source}; return { json, getJson, postJson, trackedFetch };`)(() => {});
 }
 
 function loadApiModule(fileName, exportNames, dependencies = {}) {
@@ -43,8 +44,12 @@ function loadApiModule(fileName, exportNames, dependencies = {}) {
         .replaceAll('export async function ', 'async function ')
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
-    const names = Object.keys(dependencies);
-    const values = Object.values(dependencies);
+    const mergedDependencies = {
+        trackedFetch: (_apiSurface, url, options) => fetch(url, options),
+        ...dependencies,
+    };
+    const names = Object.keys(mergedDependencies);
+    const values = Object.values(mergedDependencies);
     return new Function(...names, `${source}; return { ${exportNames.join(', ')} };`)(...values);
 }
 
@@ -167,7 +172,7 @@ test('shared API HTTP helpers preserve caller options and headers', async () => 
         const getOptions = { cache: 'no-cache' };
         await getJson('/api/example', 'GET example', getOptions);
         assert.equal(calls[0].url, '/api/example');
-        assert.equal(calls[0].options, getOptions);
+        assert.deepEqual(calls[0].options, getOptions);
 
         await postJson('/api/example', { id: 1 }, 'POST example', {
             cache: 'no-cache',

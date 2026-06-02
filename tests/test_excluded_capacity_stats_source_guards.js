@@ -129,7 +129,7 @@ test('effort split legend is the bucket control surface', () => {
         'Expected legend buttons to expose selected bucket state'
     );
     assert.ok(
-        effortSplitChartSource.includes('onClick={() => onToggleBucket?.(bucket.key)}'),
+        effortSplitChartSource.includes('onToggleBucket?.(bucket.key);'),
         'Expected legend buttons to control bucket visibility'
     );
     assert.ok(
@@ -259,7 +259,8 @@ test('effort split chart exposes keyboard and screen-reader values', () => {
         'Expected effort split readouts to appear on keyboard focus'
     );
     assert.ok(
-        effortSplitChartSource.includes('onClick={(event) => setHovered(readoutFromElement(event, readout))}'),
+        effortSplitChartSource.includes('onClick={(event) => {') &&
+            effortSplitChartSource.includes('setHovered(readoutFromElement(event, readout));'),
         'Expected effort split readouts to be available to click/touch users'
     );
     assert.ok(

@@ -2516,6 +2516,7 @@ import {
 
             const requestCloseGroupManage = () => {
                 if (groupSaving) return;
+                trackSettingsAction(groupManageTab, 'cancel', { dirty_state: isGroupDraftDirty ? 'dirty' : 'clean' });
                 if (isGroupDraftDirty) {
                     setShowGroupDiscardConfirm(true);
                     return;
@@ -5391,7 +5392,7 @@ import {
                 setReadyToCloseProductEpicsInScope,
                 setReadyToCloseTechEpicsInScope,
                 onServerConnectionFailure: reportServerConnectionError,
-                onAuthRecoveryRequired: () => trackAppError('auth', 'auth_required', 'reauth'),
+                onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
             });
 
             const fetchDependencies = async (keys) => {
@@ -12154,10 +12155,6 @@ import {
             const settingsSaveHandler = groupManageTab === 'epm'
                 ? () => { void saveEpmConfig().catch(() => {}); }
                 : saveGroupsConfig;
-            const settingsCancelHandler = () => {
-                trackSettingsAction(groupManageTab, 'cancel', { dirty_state: isGroupDraftDirty ? 'dirty' : 'clean' });
-                requestCloseGroupManage();
-            };
             const setTrackedEpmSettingsProjectSort = (sortKey) => {
                 trackSortChanged('epm_settings_projects', sortKey, { sort_direction: 'asc', source_surface: 'epm_settings' });
                 setEpmSettingsProjectSort(sortKey);
@@ -14477,7 +14474,7 @@ import {
                             testConfigurationDisabled={groupTesting}
                             testConfigurationLabel={groupTesting ? 'Testing...' : 'Test configuration'}
                             testConfigurationMessage={groupTestMessage}
-                            onCancel={settingsCancelHandler}
+                            onCancel={requestCloseGroupManage}
                             cancelLabel={groupManageTab === 'connections' ? 'Close' : 'Cancel'}
                             onSave={settingsSaveHandler}
                             showSave={settingsShowsSave}

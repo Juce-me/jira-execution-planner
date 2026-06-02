@@ -80,10 +80,11 @@ test('compact EPM sticky controls keep project picker but omit settings and stat
 test('dashboard source wires EPM rollup loading and metadata-only rendering', () => {
     assert.ok(fs.existsSync(epmViewDataPath), 'Expected useEpmViewData.js to own EPM view data state');
     assert.ok(epmViewDataSource.includes("if (selectedView !== 'epm') return;"), 'Expected EPM-only project loading effect in useEpmViewData.js');
-    assert.ok(epmViewDataSource.includes('fetchEpmProjects(backendUrl, { tab, subGoalKeys: runtimeEpmSubGoalKeys });'), 'Expected EPM hook to load EPM projects through tab and sub-goal scoped wrapper');
+    assert.ok(epmViewDataSource.includes('const payload = await fetchEpmProjects(backendUrl, { tab, subGoalKeys: runtimeEpmSubGoalKeys });'), 'Expected EPM hook to load EPM projects through tab and sub-goal scoped wrapper');
     assert.ok(epmApiSource.includes('const query = params.toString();'), 'Expected EPM projects wrapper to build tab query string');
     assert.ok(epmApiSource.includes('const url = query ? `${backendUrl}/api/epm/projects?${query}` : `${backendUrl}/api/epm/projects`;'), 'Expected EPM projects wrapper to preserve scoped and unscoped project URLs');
-    assert.ok(epmApiSource.includes("getJson(url, 'EPM projects', { cache: 'no-cache' })"), 'Expected EPM projects fetch to use the tab-scoped wrapper URL');
+    assert.ok(epmApiSource.includes("getJson(url, 'EPM projects', {"), 'Expected EPM projects fetch to use the tab-scoped wrapper URL');
+    assert.ok(epmApiSource.includes("apiSurface: 'epm_projects'"), 'Expected EPM projects fetch to keep analytics scoped to the API wrapper');
     assert.ok(epmApiSource.includes('export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {}) {'), 'Expected EPM configuration project loader');
     assert.ok(epmApiSource.includes('const refreshParam = forceRefresh ? \'?refresh=true\' : \'\';'), 'Expected project configuration refresh query support');
     assert.ok(epmApiSource.includes('postJson(`${backendUrl}/api/epm/projects/configuration${refreshParam}`'), 'Expected configuration fetch endpoint');

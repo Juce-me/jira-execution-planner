@@ -4,6 +4,7 @@ import {
     sanitizeAnalyticsParams,
     validateAnalyticsPayload
 } from './events.js';
+import { fetchAnalyticsContext as defaultFetchContext } from '../api/analyticsApi.js';
 
 let initialized = false;
 let enabled = false;
@@ -90,17 +91,6 @@ function startContextRefreshTimer(intervalMs) {
         refreshAnalyticsContext().catch(() => {});
     }, refreshMs);
     contextRefreshTimer.unref?.();
-}
-
-async function defaultFetchContext() {
-    const response = await fetch('/api/analytics/context', {
-        credentials: 'same-origin',
-        headers: { 'X-Requested-With': 'jira-execution-planner' }
-    });
-    if (!response.ok) {
-        return { enabled: false };
-    }
-    return response.json();
 }
 
 function applyAnalyticsContext(context = {}) {

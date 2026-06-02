@@ -60,6 +60,14 @@ class EndpointPolicyInventoryTests(unittest.TestCase):
         names = [policy.name for policy in ENDPOINT_POLICIES]
         self.assertEqual(sorted(names), sorted(set(names)))
 
+    def test_analytics_context_route_has_exactly_one_policy(self):
+        from backend.security.policy import matching_policies
+
+        matches = matching_policies("/api/analytics/context", ["GET"], "analytics_routes.analytics_context")
+
+        self.assertEqual([policy.name for policy in matches], ["analytics-context"])
+        self.assertEqual(matches[0].policy_class, "public_context")
+
     def test_dynamic_routes_have_security_samples(self):
         from backend.security.policy import routes_requiring_samples
         from tests.endpoint_security_samples import ROUTE_SAMPLES

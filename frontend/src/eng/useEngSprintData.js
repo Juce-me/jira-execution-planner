@@ -79,6 +79,7 @@ export function useEngSprintData({
     setReadyToCloseProductEpicsInScope,
     setReadyToCloseTechEpicsInScope,
     onServerConnectionFailure,
+    onAuthRecoveryRequired,
 }) {
     const fetchTasks = async (project, options = {}) => {
         const useLoading = options.useLoading !== false;
@@ -159,6 +160,9 @@ export function useEngSprintData({
             const handledServerConnection = onServerConnectionFailure?.(err) === true;
             if (setErrors) {
                 setError(handledServerConnection ? '' : taskLoadErrorMessage(err, backendUrl));
+            }
+            if (authRecoveryLoginUrl(err)) {
+                onAuthRecoveryRequired?.();
             }
             redirectToAuthRecovery(err);
             if (!handledServerConnection) {

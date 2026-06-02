@@ -12,7 +12,9 @@ const epmViewPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmVie
 const epmSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmSettings.jsx');
 const epmRollupPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupPanel.jsx');
 const epmRollupTreePath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupTree.jsx');
+const epmProjectCollapseAllButtonPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmProjectCollapseAllButton.jsx');
 const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngView.jsx');
+const engModeControlPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngModeControl.jsx');
 const issueCardPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'IssueCard.jsx');
 const issueDependenciesPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'IssueDependencies.jsx');
 const engSprintDataPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngSprintData.js');
@@ -41,7 +43,9 @@ const epmViewSource = fs.existsSync(epmViewPath) ? fs.readFileSync(epmViewPath, 
 const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
 const epmRollupPanelSource = fs.existsSync(epmRollupPanelPath) ? fs.readFileSync(epmRollupPanelPath, 'utf8') : '';
 const epmRollupTreeSource = fs.existsSync(epmRollupTreePath) ? fs.readFileSync(epmRollupTreePath, 'utf8') : '';
+const epmProjectCollapseAllButtonSource = fs.existsSync(epmProjectCollapseAllButtonPath) ? fs.readFileSync(epmProjectCollapseAllButtonPath, 'utf8') : '';
 const engViewSource = fs.existsSync(engViewPath) ? fs.readFileSync(engViewPath, 'utf8') : '';
+const engModeControlSource = fs.existsSync(engModeControlPath) ? fs.readFileSync(engModeControlPath, 'utf8') : '';
 const issueCardSource = fs.existsSync(issueCardPath) ? fs.readFileSync(issueCardPath, 'utf8') : '';
 const issueDependenciesSource = fs.existsSync(issueDependenciesPath) ? fs.readFileSync(issueDependenciesPath, 'utf8') : '';
 const engSprintDataSource = fs.existsSync(engSprintDataPath) ? fs.readFileSync(engSprintDataPath, 'utf8') : '';
@@ -218,8 +222,8 @@ test('dashboard source keeps the ENG and EPM switch contract', () => {
     assert.ok(dashboardSource.includes('selectedView'), 'Expected selectedView state in dashboard.jsx');
     assert.ok(dashboardSource.includes('epmTab'), 'Expected epmTab state in dashboard.jsx');
     assert.ok(dashboardSource.includes('renderEngModeControl'), 'Expected ENG mode control renderer in dashboard.jsx');
-    assert.ok(dashboardSource.includes('ariaLabel="ENG view mode"'), 'Expected ENG modes to use a segmented radiogroup');
-    assert.ok(dashboardSource.includes('className="eng-mode-control"'), 'Expected ENG modes to keep their control class');
+    assert.ok(engModeControlSource.includes('ariaLabel="ENG view mode"'), 'Expected ENG modes to use a segmented radiogroup');
+    assert.ok(engModeControlSource.includes('className="eng-mode-control"'), 'Expected ENG modes to keep their control class');
     assert.ok(!dashboardSource.includes('mode-switch-button'), 'Expected ENG modes to avoid independent toggle buttons');
     assert.ok(!dashboardSource.includes('view-switch'), 'Did not expect view-switch in dashboard.jsx');
 });
@@ -375,11 +379,12 @@ test('dashboard source keeps EPM settings access in the main header only', () =>
 
 test('dashboard uses a project-stack icon for the EPM collapse-all control', () => {
     assert.ok(dashboardSource.includes('renderEpmProjectCollapseAllButton'), 'Expected shared EPM collapse-all header control');
-    assert.ok(dashboardSource.includes('className="group-gear-button epm-project-collapse-all-button"'), 'Expected compact icon-sized collapse-all button');
-    assert.ok(dashboardSource.includes('aria-label={epmProjectCollapseAllLabel}'), 'Expected collapse-all button to use the current action label');
-    assert.ok(dashboardSource.includes('className="epm-project-collapse-all-icon"'), 'Expected a dedicated EPM collapse-all icon');
-    assert.ok(dashboardSource.includes('className="epm-project-collapse-all-stack"'), 'Expected collapse-all icon to show project board stack');
-    assert.ok(dashboardSource.includes('className="epm-project-collapse-all-arrows"'), 'Expected collapse-all icon to show collapse/expand direction');
+    assert.ok(dashboardSource.includes("import EpmProjectCollapseAllButton from './epm/EpmProjectCollapseAllButton.jsx';"), 'Expected dashboard to import the collapse-all button component');
+    assert.ok(epmProjectCollapseAllButtonSource.includes('className="group-gear-button epm-project-collapse-all-button"'), 'Expected compact icon-sized collapse-all button');
+    assert.ok(epmProjectCollapseAllButtonSource.includes('aria-label={label}'), 'Expected collapse-all button to use the current action label');
+    assert.ok(epmProjectCollapseAllButtonSource.includes('className="epm-project-collapse-all-icon"'), 'Expected a dedicated EPM collapse-all icon');
+    assert.ok(epmProjectCollapseAllButtonSource.includes('className="epm-project-collapse-all-stack"'), 'Expected collapse-all icon to show project board stack');
+    assert.ok(epmProjectCollapseAllButtonSource.includes('className="epm-project-collapse-all-arrows"'), 'Expected collapse-all icon to show collapse/expand direction');
     assert.ok(dashboardCssSource.includes('.epm-project-collapse-all-button .epm-project-collapse-all-icon'), 'Expected collapse-all icon sizing override');
     assert.ok(!dashboardSource.includes('<path d="M5 12h14"'), 'Did not expect the old divider-only collapse glyph');
 

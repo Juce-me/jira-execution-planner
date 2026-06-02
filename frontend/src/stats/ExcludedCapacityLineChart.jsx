@@ -50,6 +50,7 @@ function ExcludedCapacityLineChart({
     mode,
     isolatedSeriesId,
     onSelectSeries,
+    onAnalyticsAction,
     resolveTeamColor,
     formatPercent,
     formatExcludedPoints,
@@ -317,7 +318,14 @@ function ExcludedCapacityLineChart({
                             type="button"
                             key={entry.seriesId}
                             className={`excluded-capacity-line-legend-item${isIsolated ? ' is-isolated' : ''}${isDimmed ? ' dimmed' : ''}`}
-                            onClick={() => onSelectSeries && onSelectSeries(isIsolated ? null : entry.seriesId)}
+                            onClick={() => {
+                                onAnalyticsAction?.('chart_action', {
+                                    workflow_action: isIsolated ? 'show_all_series' : 'isolate_series',
+                                    chart_id: 'excluded_capacity',
+                                    series_type: mode === 'group' ? 'group' : 'team'
+                                });
+                                onSelectSeries && onSelectSeries(isIsolated ? null : entry.seriesId);
+                            }}
                             aria-label={isIsolated ? 'Show all teams' : `Show only ${entry.label}`}
                         >
                             <i className="burnout-color" style={{ background: color }} />
@@ -329,7 +337,14 @@ function ExcludedCapacityLineChart({
                     <button
                         type="button"
                         className="excluded-capacity-line-legend-reset"
-                        onClick={() => onSelectSeries && onSelectSeries(null)}
+                        onClick={() => {
+                            onAnalyticsAction?.('chart_action', {
+                                workflow_action: 'show_all_series',
+                                chart_id: 'excluded_capacity',
+                                series_type: mode === 'group' ? 'group' : 'team'
+                            });
+                            onSelectSeries && onSelectSeries(null);
+                        }}
                     >
                         Show all
                     </button>

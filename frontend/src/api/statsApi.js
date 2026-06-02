@@ -1,3 +1,5 @@
+import { trackedFetch } from './http.js';
+
 const statsPostOptions = (payload, signal) => ({
     method: 'POST',
     headers: {
@@ -10,7 +12,7 @@ const statsPostOptions = (payload, signal) => ({
 });
 
 export const fetchBurnoutStats = (backendUrl, payload, { signal } = {}) =>
-    fetch(`${backendUrl}/api/stats/burnout`, statsPostOptions(payload, signal));
+    trackedFetch('stats_source', `${backendUrl}/api/stats/burnout`, statsPostOptions(payload, signal), { featureName: 'stats' });
 
 export const fetchEpicCohortStats = (backendUrl, payload, { signal } = {}) =>
-    fetch(`${backendUrl}/api/stats/epic-cohort`, statsPostOptions(payload, signal));
+    trackedFetch('stats_source', `${backendUrl}/api/stats/epic-cohort`, statsPostOptions(payload, signal), { featureName: 'stats' });

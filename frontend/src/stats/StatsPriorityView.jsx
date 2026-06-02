@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { buildJiraIssueListLinkAnalytics } from '../analytics/externalLinks.js';
+import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 
 function StatsPriorityView({
     open,
@@ -12,6 +14,24 @@ function StatsPriorityView({
     formatPercent,
     resolveTeamColor
 }) {
+    const renderStatsLink = (href, count, title, ariaLabel) => (
+        <TrackedExternalLink
+            className="stats-link"
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={title}
+            aria-label={ariaLabel}
+            analyticsMeta={buildJiraIssueListLinkAnalytics({
+                issueKind: 'story',
+                issueCount: count,
+                sourceSurface: 'stats'
+            })}
+        >
+            ↗
+        </TrackedExternalLink>
+    );
+
     return (
         <div className={`stats-view ${open ? 'open' : ''}`}>
             {priorityRadar.series.length > 0 && (
@@ -158,16 +178,7 @@ function StatsPriorityView({
                                     <div className="postponed-cell">
                                         <span>{row.points.toFixed(1)}</span>
                                         {pointsLink && (
-                                            <a
-                                                className="stats-link"
-                                                href={pointsLink}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                title="View stories for this priority in Jira"
-                                                aria-label="Open stories in Jira"
-                                            >
-                                                ↗
-                                            </a>
+                                            renderStatsLink(pointsLink, row.points, 'View stories for this priority in Jira', 'Open stories in Jira')
                                         )}
                                     </div>
                                 </td>
@@ -175,16 +186,7 @@ function StatsPriorityView({
                                     <div className="postponed-cell">
                                         <span>{row.done}</span>
                                         {doneLink && (
-                                            <a
-                                                className="stats-link"
-                                                href={doneLink}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                title="View done stories for this priority in Jira"
-                                                aria-label="Open done stories in Jira"
-                                            >
-                                                ↗
-                                            </a>
+                                            renderStatsLink(doneLink, row.done, 'View done stories for this priority in Jira', 'Open done stories in Jira')
                                         )}
                                     </div>
                                 </td>
@@ -192,16 +194,7 @@ function StatsPriorityView({
                                     <div className="postponed-cell">
                                         <span>{row.incomplete}</span>
                                         {incompleteLink && (
-                                            <a
-                                                className="stats-link"
-                                                href={incompleteLink}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                title="View incomplete stories for this priority in Jira"
-                                                aria-label="Open incomplete stories in Jira"
-                                            >
-                                                ↗
-                                            </a>
+                                            renderStatsLink(incompleteLink, row.incomplete, 'View incomplete stories for this priority in Jira', 'Open incomplete stories in Jira')
                                         )}
                                     </div>
                                 </td>

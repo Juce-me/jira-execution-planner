@@ -49,6 +49,7 @@ from backend.auth.key_provider import key_provider_from_env
 from backend.auth.local_oauth_store import LocalOAuthStoreConfig, LocalOAuthTokenStore
 from backend.auth.project_access import project_access_denied_response
 from backend.auth.service_integrations import register_service_integration_cache_invalidator
+from backend.analytics.config import AnalyticsConfigError, validate_analytics_startup_config
 from backend.config.repository import (
     ConfigStorageError,
     config_storage_db_enabled,
@@ -755,6 +756,10 @@ def validate_local_token_store_allowed():
 def validate_startup_auth_config():
     validate_auth_config(current_auth_config())
     validate_local_token_store_allowed()
+    try:
+        validate_analytics_startup_config()
+    except AnalyticsConfigError as error:
+        raise AuthError('analytics_config_invalid', str(error))
     try:
         validate_config_storage_startup()
     except ConfigStorageError as error:

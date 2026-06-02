@@ -1,4 +1,7 @@
 import React, { useContext } from 'react';
+import { trackEvent } from '../analytics/analytics.js';
+import { buildJiraBrowseLinkAnalytics, buildJiraHomeLinkAnalytics } from '../analytics/externalLinks.js';
+import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 import IssueCard, { IssueCardContext } from '../issues/IssueCard.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import LoadingState from '../ui/LoadingState.jsx';
@@ -26,6 +29,19 @@ export function EpmRollupPanel({
 }) {
     const issueCardContext = useContext(IssueCardContext);
     const activeCollapsedProjectIds = collapsedProjectIds instanceof Set ? collapsedProjectIds : new Set();
+    const trackEpmAction = (workflowAction) => {
+        try {
+            trackEvent('epm_action', {
+                feature_name: 'epm',
+                workflow_action: workflowAction,
+                epm_tab: epmTab,
+                project_scope: selectedEpmProject ? 'single' : 'all',
+                source_surface: 'epm'
+            });
+        } catch (err) {
+            console.warn('Analytics event skipped:', err.message);
+        }
+    };
 
     const getProjectKey = (project) => project?.id || getEpmProjectDisplayName(project) || '';
     const isCollapsed = (project) => activeCollapsedProjectIds.has(getProjectKey(project));
@@ -58,6 +74,7 @@ export function EpmRollupPanel({
         if (willExpand && onProjectExpand) {
             onProjectExpand(project);
         }
+        trackEpmAction(willExpand ? 'expand' : 'collapse');
     };
 
     const renderChevron = () => (
@@ -146,14 +163,18 @@ export function EpmRollupPanel({
             );
             if (updateHref) {
                 return (
-                    <a
+                    <TrackedExternalLink
                         className="epm-project-board-update-meta epm-project-board-update-meta-link"
                         href={updateHref}
                         target="_blank"
                         rel="noopener noreferrer"
+                        analyticsMeta={buildJiraHomeLinkAnalytics({
+                            linkType: 'jira_home_update',
+                            sourceSurface: 'epm'
+                        })}
                     >
                         {metaContent}
-                    </a>
+                    </TrackedExternalLink>
                 );
             }
             return (
@@ -172,9 +193,18 @@ export function EpmRollupPanel({
                         <span className="epm-project-board-update-copy">{updateLine.message || updateLine.text}</span>
                     )}
                     {updateHref && (
-                        <a className="epm-project-board-update-more" href={updateHref} target="_blank" rel="noopener noreferrer">
+                        <TrackedExternalLink
+                            className="epm-project-board-update-more"
+                            href={updateHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            analyticsMeta={buildJiraHomeLinkAnalytics({
+                                linkType: 'jira_home_update',
+                                sourceSurface: 'epm'
+                            })}
+                        >
                             More details
-                        </a>
+                        </TrackedExternalLink>
                     )}
                 </article>
             </div>
@@ -305,14 +335,18 @@ export function EpmRollupPanel({
                             <span className="epm-project-board-home-icon" aria-hidden="true">{getProjectIcon(project)}</span>
                             <h3 className="epm-project-board-name">
                                 {project?.homeUrl ? (
-                                    <a
+                                    <TrackedExternalLink
                                         className="epm-project-board-name-link"
                                         href={project.homeUrl}
                                         target="_blank"
                                         rel="noopener noreferrer"
+                                        analyticsMeta={buildJiraHomeLinkAnalytics({
+                                            linkType: 'jira_home_project',
+                                            sourceSurface: 'epm'
+                                        })}
                                     >
                                         {projectName}
-                                    </a>
+                                    </TrackedExternalLink>
                                 ) : (
                                     projectName
                                 )}
@@ -423,9 +457,17 @@ export function EpmRollupPanel({
                                 <ul>
                                     {cluster.issues.map((key) => (
                                         <li key={key}>
-                                            <a href={jiraUrl ? `${jiraUrl}/browse/${key}` : '#'} target="_blank" rel="noopener noreferrer">
+                                            <TrackedExternalLink
+                                                href={jiraUrl ? `${jiraUrl}/browse/${key}` : '#'}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                analyticsMeta={buildJiraBrowseLinkAnalytics({
+                                                    issueKind: 'mixed',
+                                                    sourceSurface: 'epm'
+                                                })}
+                                            >
                                                 {key} ↗
-                                            </a>
+                                            </TrackedExternalLink>
                                         </li>
                                     ))}
                                 </ul>
@@ -444,7 +486,17 @@ export function EpmRollupPanel({
                 {updateLine || 'No updates yet'}
             </div>
             {project?.homeUrl && (
-                <a href={project.homeUrl} target="_blank" rel="noopener noreferrer">Open in Jira Home</a>
+                <TrackedExternalLink
+                    href={project.homeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    analyticsMeta={buildJiraHomeLinkAnalytics({
+                        linkType: 'jira_home_project',
+                        sourceSurface: 'epm'
+                    })}
+                >
+                    Open in Jira Home
+                </TrackedExternalLink>
             )}
             <div className="group-field-helper">Add a Jira label in Settings {'->'} EPM to pull Jira work into this view.</div>
             <button
@@ -505,15 +557,19 @@ export function EpmRollupPanel({
                                 </svg>
                             </span>
                             {key !== 'NO_EPIC' ? (
-                                <a
+                                <TrackedExternalLink
                                     className="epic-link"
                                     href={jiraUrl ? `${jiraUrl}/browse/${key}` : '#'}
                                     target="_blank"
                                     rel="noopener noreferrer"
+                                    analyticsMeta={buildJiraBrowseLinkAnalytics({
+                                        issueKind: 'epic',
+                                        sourceSurface: 'epm'
+                                    })}
                                 >
                                     <span className="epic-name">{epicTitle}</span>
                                     <span className="epic-key">{key}</span>
-                                </a>
+                                </TrackedExternalLink>
                             ) : (
                                 <>
                                     <span className="epic-name">{epicTitle}</span>
@@ -594,9 +650,18 @@ export function EpmRollupPanel({
                         <InitiativeIcon className="initiative-header-icon" />
                         <div className="initiative-label">
                             <span className="initiative-label-name">{initiativeNode.issue.summary || initiativeNode.issue.key}</span>
-                            <a className="initiative-label-key" href={jiraUrl ? `${jiraUrl}/browse/${initiativeNode.issue.key}` : '#'} target="_blank" rel="noopener noreferrer">
+                            <TrackedExternalLink
+                                className="initiative-label-key"
+                                href={jiraUrl ? `${jiraUrl}/browse/${initiativeNode.issue.key}` : '#'}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                analyticsMeta={buildJiraBrowseLinkAnalytics({
+                                    issueKind: 'initiative',
+                                    sourceSurface: 'epm'
+                                })}
+                            >
                                 {initiativeNode.issue.key} ↗
-                            </a>
+                            </TrackedExternalLink>
                             <span className="initiative-divider" />
                         </div>
                     </div>

@@ -1,4 +1,4 @@
-import { getJson } from './http.js';
+import { getJson, trackedFetch } from './http.js';
 
 export const fetchMissingPlanningInfo = (backendUrl, { sprintId, teamIds = [], components = [], signal } = {}) => {
     const params = new URLSearchParams({ sprint: String(sprintId), t: Date.now().toString() });
@@ -70,14 +70,14 @@ export const fetchEngTasks = (backendUrl, { project, sprint, groupId, teamIds = 
             params.set('epicKeys', uniqueEpicKeys.join(','));
         }
     }
-    return fetch(`${backendUrl}/api/tasks-with-team-name?${params.toString()}`, {
+    return trackedFetch('eng_tasks', `${backendUrl}/api/tasks-with-team-name?${params.toString()}`, {
         method: 'GET',
         headers: {
             'Content-Type': 'application/json',
         },
         cache: 'no-cache',
         signal
-    });
+    }, { featureName: 'eng' });
 };
 
 export const fetchBacklogEpics = (backendUrl, { project, teamIds = [] } = {}) => {

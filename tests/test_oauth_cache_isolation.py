@@ -1,3 +1,4 @@
+import os
 import threading
 import unittest
 from pathlib import Path
@@ -35,6 +36,17 @@ def context(auth_mode):
 
 
 class TestOauthCacheIsolation(unittest.TestCase):
+    def setUp(self):
+        self._env_patcher = patch.dict(os.environ, {
+            'CONFIG_STORAGE_BACKEND': 'jsonfile',
+            'DATABASE_URL': '',
+            'TEST_DATABASE_URL': '',
+        }, clear=False)
+        self._env_patcher.start()
+
+    def tearDown(self):
+        self._env_patcher.stop()
+
     def test_basic_mode_allows_process_caches(self):
         self.assertTrue(jira_home_process_cache_enabled(context('basic')))
 

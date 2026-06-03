@@ -100,3 +100,11 @@ test('GA4 MCP YAML dataLayer variables match the app analytics allowlist', () =>
         assert.ok(appParams.has(key), `MCP tag parameter ${key} must be accepted by the app analytics allowlist`);
     }
 });
+
+test('ENG story subtask expand does not add a separate app-owned event', () => {
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    assert.ok(analyticsDoc.includes('### No-Event Allowlist'));
+    assert.ok(analyticsDoc.includes('ENG story subtask expand/collapse'));
+    assert.ok(analyticsDoc.includes('api_surface=eng_subtasks'));
+    assert.ok(!analyticsDoc.includes('eng_action'));
+});

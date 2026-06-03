@@ -31,6 +31,7 @@ APP_ROUTE_EPM_PATTERN = re.compile(
 ENG_ROUTE_PATHS = (
     "/api/dependencies",
     "/api/issues/lookup",
+    "/api/issues/subtasks",
     "/api/missing-info",
     "/api/tasks",
     "/api/tasks-with-team-name",

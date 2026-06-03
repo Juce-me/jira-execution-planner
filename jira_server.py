@@ -91,6 +91,7 @@ from backend.services import update_check as _update_check_service
 from backend.services import priority_weights as _priority_weights_service
 from backend.services import team_catalog as _team_catalog_service
 from backend.services import group_config as _group_config_service
+from backend.services.eng_subtasks import build_embedded_subtask_summary
 from backend.epm import projects as epm_projects
 from backend.security.policy import (
     is_oauth_ready_api_path as policy_is_oauth_ready_api_path,
@@ -3005,7 +3006,8 @@ def fetch_tasks(include_team_name=False):
                 'updated',
                 get_story_points_field_id(),  # Story Points
                 'parent',
-                'project'
+                'project',
+                'subtasks'
             ]
         if sprint_field_id and sprint_field_id not in fields_list:
             fields_list.append(sprint_field_id)
@@ -3214,7 +3216,7 @@ def fetch_tasks(include_team_name=False):
                     }
                 })
             else:
-                slim_issues.append({
+                slim_issue = {
                     'id': issue.get('id'),
                     'key': issue.get('key'),
                     'fields': {
@@ -3234,7 +3236,11 @@ def fetch_tasks(include_team_name=False):
                         'projectKey': project_field.get('key', ''),
                         'projectName': project_field.get('name', '')
                     }
-                })
+                }
+                subtask_summary = build_embedded_subtask_summary(fields.get('subtasks'))
+                if subtask_summary.get('total', 0) > 0:
+                    slim_issue['fields']['subtaskSummary'] = subtask_summary
+                slim_issues.append(slim_issue)
         record_timing('build_response', slim_build_started)
 
         data['issues'] = slim_issues

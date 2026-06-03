@@ -80,6 +80,7 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("eng-api-missing-info", "/api/missing-info", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("eng-api-dependencies", "/api/dependencies", frozenset({"POST"}), "authenticated_read"),
     EndpointPolicy("eng-api-issue-lookup", "/api/issues/lookup", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("eng-api-story-subtasks", "/api/issues/subtasks", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-config-read", "/api/config", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-version", "/api/version", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-groups-read", "/api/groups-config", PUBLIC_METHODS, "authenticated_read"),

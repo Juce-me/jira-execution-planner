@@ -5,11 +5,21 @@ import time
 from flask import Blueprint
 
 from backend.auth.cache_policy import build_jira_home_process_cache_key, jira_home_partitioned_process_cache_enabled
+from backend.services.eng_subtasks import (
+    SUBTASK_FIELDS,
+    SubtasksFetchError,
+    build_subtasks_jql,
+    fetch_subtask_issues_by_jql,
+    normalize_sprint_id,
+    shape_subtasks_payload,
+)
 
 from . import bind_server_globals
 
 
 bp = Blueprint("eng_routes", __name__)
+SUBTASKS_CACHE = {}
+SUBTASKS_CACHE_TTL_SECONDS = 300
 
 
 @bp.before_request
@@ -125,6 +135,83 @@ def lookup_issues():
     except Exception as e:
         logger.exception('Issue lookup error')
         return jsonify({'error': 'Failed to lookup issues', 'message': str(e)}), 500
+
+
+@bp.route('/api/issues/subtasks', methods=['GET'])
+def get_story_subtasks():
+    """Fetch selected-sprint subtasks for one parent story."""
+    try:
+        parent_key = (request.args.get('parentKey') or '').strip()
+        sprint = (request.args.get('sprint') or '').strip()
+        refresh = str(request.args.get('refresh') or '').strip().lower() == 'true'
+        if not parent_key:
+            return jsonify({'error': 'missing_parent_key'}), 400
+        if not sprint:
+            return jsonify({'error': 'missing_sprint'}), 400
+        try:
+            sprint_id = normalize_sprint_id(sprint)
+        except ValueError:
+            return jsonify({'error': 'invalid_sprint'}), 400
+
+        started_at = time.perf_counter()
+        auth_context = current_request_auth_context()
+        cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
+        cache_key = build_jira_home_process_cache_key(
+            auth_context,
+            'story-subtasks',
+            parent_key.upper(),
+            sprint_id,
+        )
+        if cache_enabled and not refresh:
+            with _cache_lock:
+                cached_entry = SUBTASKS_CACHE.get(cache_key)
+            if cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < SUBTASKS_CACHE_TTL_SECONDS:
+                response = jsonify(shape_subtasks_payload(
+                    parent_key,
+                    sprint_id,
+                    cached_entry.get('issues') or [],
+                    cached=True,
+                ))
+                response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+                response.headers['Pragma'] = 'no-cache'
+                response.headers['Expires'] = '0'
+                response.headers['Server-Timing'] = 'cache;dur=1'
+                response.headers['X-Cache'] = 'HIT'
+                return response
+
+        issues = fetch_subtask_issues_by_jql(
+            build_subtasks_jql(parent_key, sprint_id),
+            SUBTASK_FIELDS,
+            search_request=jira_search_request,
+            context=auth_context,
+            max_results=500,
+            log_warning_fn=log_warning,
+        )
+        if cache_enabled:
+            with _cache_lock:
+                SUBTASKS_CACHE[cache_key] = {
+                    'timestamp': time.time(),
+                    'issues': issues,
+                }
+
+        response = jsonify(shape_subtasks_payload(parent_key, sprint_id, issues, cached=False))
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        response.headers['Server-Timing'] = f'jira-search;dur={round((time.perf_counter() - started_at) * 1000, 1)}'
+        response.headers['X-Cache'] = 'MISS'
+        return response
+    except AuthError as error:
+        if error.code == "auth_required":
+            payload, status = oauth_auth_required_payload()
+            return jsonify(payload), status
+        raise
+    except SubtasksFetchError:
+        logger.exception('Story subtasks Jira fetch failed')
+        return jsonify({'error': 'subtasks_fetch_failed', 'message': 'Failed to fetch subtasks from Jira.'}), 502
+    except Exception:
+        logger.exception('Story subtasks endpoint error')
+        return jsonify({'error': 'subtasks_fetch_failed', 'message': 'Failed to fetch subtasks from Jira.'}), 502
 
 
 @bp.route('/api/missing-info', methods=['GET'])

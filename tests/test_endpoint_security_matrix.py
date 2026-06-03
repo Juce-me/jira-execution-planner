@@ -13,6 +13,7 @@ SECURITY_SAMPLES = {
         ("GET", "/api/config"),
         ("GET", "/api/projects/selected"),
         ("GET", "/api/tasks"),
+        ("GET", "/api/issues/subtasks?parentKey=PROD-1&sprint=42"),
         ("GET", "/api/epm/projects"),
         ("GET", "/api/epm/projects/home-project-1/issues"),
         ("GET", "/api/stats"),

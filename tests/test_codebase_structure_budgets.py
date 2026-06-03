@@ -5,8 +5,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 LEGACY_ENTRYPOINT_LINE_BUDGETS = {
-    "jira_server.py": 5900,
-    "frontend/src/dashboard.jsx": 15050,
+    # EXEC-eng-story-subtasks adds minimal route/payload and hook wiring while feature logic lives in focused helper modules.
+    "jira_server.py": 5905,
+    "frontend/src/dashboard.jsx": 15061,
 }
 
 

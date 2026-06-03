@@ -96,6 +96,14 @@ Every app-owned `userevent` requires `feature_name`. Every app-owned pageview re
 | `api_result` | `feature_name`, `api_surface`, `method`, `status_bucket`, `result`, `duration_bucket`, `cache_state`; for EPM APIs use `feature_name=epm` and also include `epm_tab`, `project_scope`, `subgoal_scope` when known | Browser-observed allowlisted API response completes | `frontend/src/api/*` | browser | API reliability |
 | `app_error_shown` | `error_area`, `error_code`, `recoverable_state`, `source_surface` | User-visible server/auth/config unavailable state appears | `frontend/src/dashboard.jsx`, `frontend/src/eng/useEngSprintData.js` | browser | Reliability and recovery |
 
+### No-Event Allowlist
+
+These user-visible changes intentionally do not add a new app-owned `userevent`; the reason is documented here so future feature reviews do not re-add duplicate or sensitive analytics.
+
+| Feature action | Primary anchors | Reason | Reviewed on |
+| --- | --- | --- | --- |
+| ENG story subtask expand/collapse | `frontend/src/issues/IssueCard.jsx`, `frontend/src/api/engApi.js` | No separate `userevent`; the only networked action is the on-demand subtask load, covered by existing `api_result` with `feature_name=eng` and `api_surface=eng_subtasks`. The event sends no issue keys, summaries, assignee names, sprint names, JQL, or Jira URLs. | 2026-06-03 |
+
 Do not use reserved GA4 event names such as `click`, `error`, `page_view`, `scroll`, `session_start`, `user_engagement`, `view_search_results`, `file_download`, `form_start`, or `form_submit` through `event=userevent`. GA4 `page_view` is allowed only through the `event=pageview` GTM trigger, and GA4 may emit the allowed Enhanced Measurement names automatically when analytics is enabled. Do not emit Universal Analytics-style `event_category`, `event_action`, or `event_label`.
 
 Do not add one GTM trigger per event. Adding a new app event name that uses existing property keys requires code, schema, tests, and this contract to change, but it must continue to use the existing `userevent` GTM trigger. GTM changes are needed only for a new dataLayer property key, a new destination, or changed transport behavior.

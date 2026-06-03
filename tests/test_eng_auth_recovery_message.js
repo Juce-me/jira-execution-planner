@@ -9,7 +9,7 @@ function loadUseEngSprintData(fetchEngTasks) {
     const source = fs.readFileSync(sourcePath, 'utf8')
         .replace(/import\s+\{[\s\S]*?\}\s+from\s+'..\/api\/engApi\.js';\n/, '')
         .replace(/import\s+\{[\s\S]*?\}\s+from\s+'.\/engTaskUtils\.js';\n/, '')
-        .replace('export function useEngSprintData', 'function useEngSprintData');
+        .replaceAll('export function ', 'function ');
 
     const dependencies = {
         requestBacklogEpics: async () => ({ epics: [] }),

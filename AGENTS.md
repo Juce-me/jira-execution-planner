@@ -323,6 +323,10 @@ When the user corrects your approach, append a one-line rule here before ending 
 - When preparing PRs, keep feature commits on the feature branch; never merge feature work into local `main` just to create or test the PR branch.
 - When frontend source changes, run `npm run build` and commit generated `frontend/dist` output if `.github/workflows/verify-frontend-build.yml` requires a clean post-build diff; do not hand-edit dist.
 - Startup paths that read dashboard config before a Flask request exists must pass `source="jsonfile"` explicitly in DB config mode.
+- In ENG story subtask rows, keep desktop columns table-aligned and drop low-priority mobile cells instead of cramming every column into narrow cards.
+- Place ENG story subtask controls after the story Last Update meta on desktop; do not use title-row chips or status-stack placement.
+- Keep expanded ENG story subtask lists compact and visually quiet; constrain desktop width instead of stretching rows across the whole card.
+- Map ENG subtask workflow statuses such as Analysis and Release to colored progress chips, and keep story meta rows vertically centered.
 
 ---
 

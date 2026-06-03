@@ -2,6 +2,7 @@ import * as React from 'react';
 import StatusPill from '../ui/StatusPill.jsx';
 import { getIssueStatusClassName, getIssueTeamLabel, normalizeIssueStatus } from './issueViewUtils.js';
 import IssueDependencies, { buildIssueDependencyViewModel } from './IssueDependencies.jsx';
+import { buildStorySubtaskProgress, formatSubtaskUpdatedDate } from './subtaskProgressUtils.js';
 
 export const IssueCardContext = React.createContext({});
 
@@ -19,12 +20,47 @@ export default function IssueCard({
     onRemove,
     shouldRenderIssueDependencies = false,
     dependencyContext = {},
+    subtaskState = null,
+    onToggleSubtasks,
+    onRetrySubtasks,
 }) {
     const statusName = task.fields.status?.name;
     const isKilled = statusName === 'Killed';
     const isDone = statusName === 'Done';
     const isIncomplete = normalizeIssueStatus(statusName) === 'incomplete';
     const canSelect = showPlanning || allowSelection;
+    const embeddedSubtaskSummary = task.fields.subtaskSummary || null;
+    const activeSubtaskSummary = subtaskState?.summary || embeddedSubtaskSummary;
+    const subtaskProgress = buildStorySubtaskProgress(activeSubtaskSummary);
+    const showSubtaskControl = subtaskProgress.total > 0 || subtaskState?.expanded || subtaskState?.loading;
+    const subtaskPanelId = `story-subtasks-${task.key}`;
+    const subtaskCountLabel = `${subtaskProgress.total} ${subtaskProgress.total === 1 ? 'subtask' : 'subtasks'}`;
+    const subtaskToggle = showSubtaskControl ? (
+        <button
+            type="button"
+            className={`story-subtasks-toggle${subtaskState?.expanded ? ' is-expanded' : ''}`}
+            onClick={(event) => {
+                event.stopPropagation();
+                onToggleSubtasks?.(task);
+            }}
+            aria-expanded={!!subtaskState?.expanded}
+            aria-controls={subtaskPanelId}
+            aria-label={`${subtaskState?.expanded ? 'Hide' : 'Show'} subtasks for ${task.key}`}
+        >
+            <span className="story-subtasks-count">{subtaskCountLabel}</span>
+            <span className="story-subtasks-progress" aria-hidden="true">
+                <span className="story-subtasks-progress-track">
+                    {subtaskProgress.hasDone && (
+                        <span className="story-subtasks-progress-segment story-subtasks-progress-done" style={{ width: subtaskProgress.doneWidth }} />
+                    )}
+                    {subtaskProgress.hasInProgress && (
+                        <span className="story-subtasks-progress-segment story-subtasks-progress-in-progress" style={{ width: subtaskProgress.inProgressWidth }} />
+                    )}
+                </span>
+                <span className="story-subtasks-progress-percent">{subtaskProgress.percentLabel}</span>
+            </span>
+        </button>
+    ) : null;
     const dependencyModel = buildIssueDependencyViewModel({
         task,
         shouldRender: shouldRenderIssueDependencies,
@@ -126,6 +162,11 @@ export default function IssueCard({
                         Last Update: {new Date(task.fields.updated).toLocaleDateString('en-CA')}
                     </span>
                 )}
+                {subtaskToggle && (
+                    <span className="task-subtask-meta">
+                        {subtaskToggle}
+                    </span>
+                )}
             </div>
             <IssueDependencies
                 task={task}
@@ -136,6 +177,55 @@ export default function IssueCard({
                 onHoverEnter={dependencyContext.onHoverEnter}
                 onHoverLeave={dependencyContext.onHoverLeave}
             />
+            {subtaskState?.expanded && (
+                <div id={subtaskPanelId} className="story-subtasks-panel" aria-live="polite">
+                    {subtaskState.loading ? (
+                        <div className="story-subtasks-message">Loading subtasks...</div>
+                    ) : subtaskState.error ? (
+                        <div className="story-subtasks-message story-subtasks-error">
+                            <span>{subtaskState.error}</span>
+                            <button
+                                type="button"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    onRetrySubtasks?.(task);
+                                }}
+                            >
+                                Retry
+                            </button>
+                        </div>
+                    ) : (subtaskState.items || []).length === 0 ? (
+                        <div className="story-subtasks-message">No subtasks in selected sprint.</div>
+                    ) : (
+                        <div className="story-subtasks-rows">
+                            {subtaskState.items.map((subtask) => (
+                                <div key={subtask.key || subtask.id} className="story-subtask-row">
+                                    <a
+                                        className="story-subtask-name"
+                                        href={jiraUrl ? `${jiraUrl}/browse/${subtask.key}` : '#'}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        {subtask.summary || subtask.key}
+                                    </a>
+                                    <StatusPill
+                                        className={getIssueStatusClassName(subtask.status?.name)}
+                                        label={subtask.status?.name || 'Unknown'}
+                                    />
+                                    <span className="story-subtask-assignee">{subtask.assignee?.displayName || 'Unassigned'}</span>
+                                    {subtask.updated ? (
+                                        <time className="story-subtask-updated" dateTime={subtask.updated}>
+                                            {formatSubtaskUpdatedDate(subtask.updated)}
+                                        </time>
+                                    ) : (
+                                        <span className="story-subtask-updated">No update</span>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

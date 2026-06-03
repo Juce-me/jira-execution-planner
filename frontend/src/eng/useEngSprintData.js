@@ -12,7 +12,7 @@ import {
 
 const OAUTH_ROUTE_NOT_READY_TASKS_MESSAGE = 'OAuth login succeeded, but this dashboard data route has not been migrated to Atlassian OAuth yet.';
 
-function authRecoveryLoginUrl(err) {
+export function authRecoveryLoginUrl(err) {
     const loginUrl = String(err.loginUrl || '').trim();
     if (!loginUrl.startsWith('/login')) {
         return '';
@@ -23,7 +23,7 @@ function authRecoveryLoginUrl(err) {
     return loginUrl;
 }
 
-function redirectToAuthRecovery(err) {
+export function redirectToAuthRecovery(err) {
     const loginUrl = authRecoveryLoginUrl(err);
     if (!loginUrl) {
         return;

@@ -277,6 +277,37 @@ test('ENG API module owns ENG task, backlog, and dependency endpoint constructio
     assert.ok(dashboardSource.includes("from './api/engApi.js'"), 'Expected dashboard to import ENG API wrappers');
 });
 
+test('ENG API wrapper builds story subtask request with tracked analytics surface', async () => {
+    const calls = [];
+    const engApi = loadApiModule('engApi.js', [
+        'fetchStorySubtasks',
+    ], {
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            calls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ subtasks: [] });
+        },
+    });
+
+    await engApi.fetchStorySubtasks('http://backend', {
+        parentKey: 'PROD-1',
+        sprint: '42',
+        refresh: true,
+    });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].apiSurface, 'eng_subtasks');
+    assert.deepEqual(calls[0].analyticsParams, { featureName: 'eng' });
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, '/api/issues/subtasks');
+    assert.equal(url.searchParams.get('parentKey'), 'PROD-1');
+    assert.equal(url.searchParams.get('sprint'), '42');
+    assert.equal(url.searchParams.get('refresh'), 'true');
+    assert.ok(url.searchParams.get('t'));
+    assert.equal(calls[0].options.method, 'GET');
+    assert.equal(calls[0].options.cache, 'no-cache');
+    assertJsonHeader(calls[0].options);
+});
+
 test('settings config API module owns config request endpoint construction', () => {
     const configApiPath = path.join(frontendSrcPath, 'api', 'configApi.js');
     assert.ok(fs.existsSync(configApiPath), 'Expected frontend/src/api/configApi.js to exist');

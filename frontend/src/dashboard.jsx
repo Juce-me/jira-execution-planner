@@ -17,6 +17,7 @@ import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
+import { useStorySubtasks } from './issues/useStorySubtasks.js';
 import EngView from './eng/EngView.jsx';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
 import EngModeControl from './eng/EngModeControl.jsx';
@@ -1444,6 +1445,7 @@ import {
                 setMissingInfoEpics([]);
                 setBacklogProductEpics([]);
                 setBacklogTechEpics([]);
+                clearStorySubtasks();
                 burnoutCacheRef.current = {};
                 cohortCacheRef.current = {};
                 excludedCapacityCacheRef.current = {};
@@ -5392,6 +5394,17 @@ import {
                 setReadyToCloseProductEpicsInScope,
                 setReadyToCloseTechEpicsInScope,
                 onServerConnectionFailure: reportServerConnectionError,
+                onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
+            });
+
+            const {
+                storySubtasksByKey,
+                clearStorySubtasks,
+                toggleStorySubtasks,
+                retryStorySubtasks,
+            } = useStorySubtasks({
+                backendUrl: BACKEND_URL,
+                selectedSprint,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
             });
 
@@ -12104,6 +12117,9 @@ import {
                                             onRemove={removeTask}
                                             shouldRenderIssueDependencies={shouldRenderIssueDependencies}
                                             dependencyContext={issueDependencyContext}
+                                            subtaskState={storySubtasksByKey[task.key] || null}
+                                            onToggleSubtasks={toggleStorySubtasks}
+                                            onRetrySubtasks={retryStorySubtasks}
                                         />
                                     );
                                 })}

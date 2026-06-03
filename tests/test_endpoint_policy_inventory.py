@@ -68,6 +68,14 @@ class EndpointPolicyInventoryTests(unittest.TestCase):
         self.assertEqual([policy.name for policy in matches], ["analytics-context"])
         self.assertEqual(matches[0].policy_class, "public_context")
 
+    def test_story_subtasks_route_has_authenticated_read_policy(self):
+        from backend.security.policy import matching_policies
+
+        matches = matching_policies("/api/issues/subtasks", ["GET"], "eng_routes.get_story_subtasks")
+
+        self.assertEqual([policy.name for policy in matches], ["eng-api-story-subtasks"])
+        self.assertEqual(matches[0].policy_class, "authenticated_read")
+
     def test_dynamic_routes_have_security_samples(self):
         from backend.security.policy import routes_requiring_samples
         from tests.endpoint_security_samples import ROUTE_SAMPLES

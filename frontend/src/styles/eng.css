@@ -806,7 +806,7 @@
         .task-item {
             background: var(--bg-secondary);
             border-left: 3px solid rgba(224, 221, 215, 0.7);
-            padding: 1.25rem 1.5rem;
+            padding: 1rem 1.25rem;
             margin-bottom: 0.9rem;
             transition: box-shadow 0.2s ease, border-left-color 0.2s ease, opacity 0.14s ease, background-color 0.14s ease, outline 0.14s ease, outline-offset 0.14s ease;
             position: relative;
@@ -1029,6 +1029,86 @@
             font-weight: 600;
         }
 
+        .story-subtasks-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            min-height: 24px;
+            margin: 0;
+            padding: 0.15rem 0.38rem;
+            border: 1px solid rgba(89, 126, 247, 0.22);
+            border-radius: 8px;
+            background: #f7f9ff;
+            color: var(--text-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.62rem;
+            line-height: 1;
+            letter-spacing: 0;
+            text-transform: none;
+            white-space: nowrap;
+        }
+
+        .story-subtasks-toggle:hover,
+        .story-subtasks-toggle.is-expanded {
+            background: #eef4ff;
+            border-color: rgba(89, 126, 247, 0.42);
+            color: var(--text-primary);
+            box-shadow: none;
+            transform: none;
+        }
+
+        .story-subtasks-count {
+            font-weight: 600;
+        }
+
+        .story-subtasks-progress {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .story-subtasks-progress-track {
+            display: flex;
+            width: 3.9rem;
+            height: 0.36rem;
+            overflow: hidden;
+            border-radius: 999px;
+            background: #e8edf7;
+            flex-shrink: 0;
+        }
+
+        .story-subtasks-progress-segment {
+            display: block;
+            height: 100%;
+            flex-shrink: 0;
+        }
+
+        .story-subtasks-progress-done {
+            background: #52c41a;
+        }
+
+        .story-subtasks-progress-in-progress {
+            background: linear-gradient(90deg, #69c0ff 0%, #2f80ed 50%, #69c0ff 100%);
+            background-size: 200% 100%;
+            animation: storySubtasksProgressShimmer 1.6s linear infinite;
+        }
+
+        .story-subtasks-progress-percent {
+            min-width: 1.6rem;
+            color: var(--text-muted);
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
+        @keyframes storySubtasksProgressShimmer {
+            from {
+                background-position: 0% 0;
+            }
+            to {
+                background-position: 200% 0;
+            }
+        }
+
         .task-headline .task-checkbox {
             margin-left: 0.2rem;
         }
@@ -1108,7 +1188,8 @@
 
         .task-meta {
             display: flex;
-            gap: 1rem;
+            align-items: center;
+            gap: 0.75rem 1rem;
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.7rem;
             color: var(--text-secondary);
@@ -1130,6 +1211,15 @@
             align-items: center;
             gap: 0.3rem;
             color: var(--text-secondary);
+        }
+
+        .task-subtask-meta {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .task-subtask-meta .story-subtasks-toggle {
+            min-height: 22px;
         }
 
         .task-assignee-icon {
@@ -1339,6 +1429,145 @@
             font-weight: 600;
         }
 
+        .story-subtasks-panel {
+            margin-top: 0.45rem;
+            padding-top: 0.35rem;
+            border-top: 1px solid rgba(224, 221, 215, 0.45);
+            width: 100%;
+            min-width: 0;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        .story-subtasks-message {
+            color: var(--text-secondary);
+            font-size: 0.68rem;
+            line-height: 1.35;
+        }
+
+        .story-subtasks-error {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+            color: #b91c1c;
+        }
+
+        .story-subtasks-error button {
+            margin: 0;
+            padding: 0.25rem 0.55rem;
+            border: 1px solid rgba(185, 28, 28, 0.28);
+            border-radius: 6px;
+            background: #fff1f0;
+            color: #b91c1c;
+            font-size: 0.62rem;
+            letter-spacing: 0;
+            text-transform: none;
+        }
+
+        .story-subtasks-error button:hover {
+            background: #ffe4e3;
+            box-shadow: none;
+            transform: none;
+        }
+
+        .story-subtasks-rows {
+            display: grid;
+            gap: 0;
+        }
+
+        .story-subtask-row {
+            display: grid;
+            grid-template-columns: 5.8rem minmax(0, 1fr);
+            grid-template-areas:
+                "name name"
+                "status updated";
+            align-items: center;
+            gap: 0.2rem 0.45rem;
+            min-height: 2.25rem;
+            padding: 0.26rem 0;
+            border-bottom: 1px solid rgba(224, 221, 215, 0.38);
+            font-size: 0.6rem;
+            line-height: 1.25;
+            color: var(--text-secondary);
+        }
+
+        .story-subtask-row:last-child {
+            border-bottom: 0;
+        }
+
+        .story-subtask-name {
+            grid-area: name;
+            min-width: 0;
+            color: var(--text-secondary);
+            text-decoration: none;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .story-subtask-name:hover {
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .story-subtask-row .task-status {
+            grid-area: status;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 5.8rem;
+            box-sizing: border-box;
+            padding: 0.14rem 0.38rem;
+            font-size: 0.56rem;
+            line-height: 1.1;
+            white-space: nowrap;
+        }
+
+        .story-subtask-assignee,
+        .story-subtask-updated {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .story-subtask-assignee {
+            grid-area: assignee;
+            display: none;
+            color: var(--text-muted);
+        }
+
+        .story-subtask-updated {
+            grid-area: updated;
+            justify-self: end;
+            color: var(--text-muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        @media (min-width: 761px) {
+            .story-subtasks-panel {
+                width: min(100%, 48rem);
+            }
+
+            .story-subtask-row {
+                grid-template-columns: minmax(12rem, 1fr) 5.8rem minmax(7rem, 9rem) 5.3rem;
+                grid-template-areas: "name status assignee updated";
+                gap: 0.55rem;
+                min-height: 1.7rem;
+                padding: 0.18rem 0;
+            }
+
+            .story-subtask-assignee {
+                display: block;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .story-subtasks-progress-in-progress {
+                animation: none;
+                background-position: 0 0;
+            }
+        }
 
         .epic-header {
             display: flex;
@@ -1636,6 +1865,7 @@
             padding: 0.2rem 0.6rem;
             border-radius: 2px;
             font-weight: 500;
+            white-space: nowrap;
         }
 
         .task-status.killed {
@@ -1650,6 +1880,17 @@
 
         .task-status.in-progress {
             background: #69c0ff;
+            color: white;
+        }
+
+        .task-status.analysis {
+            background: #69c0ff;
+            color: white;
+        }
+
+        .task-status.release,
+        .task-status.waiting-for-release {
+            background: #13c2c2;
             color: white;
         }
 
@@ -1823,5 +2064,12 @@
             .server-unavailable-banner button {
                 width: 100%;
             }
-        }
 
+            .story-subtasks-toggle {
+                max-width: 100%;
+            }
+
+            .story-subtasks-progress-track {
+                width: 3.2rem;
+            }
+        }

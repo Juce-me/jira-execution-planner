@@ -80,6 +80,23 @@ export const fetchEngTasks = (backendUrl, { project, sprint, groupId, teamIds = 
     }, { featureName: 'eng' });
 };
 
+export const fetchStorySubtasks = (backendUrl, { parentKey, sprint, refresh = false, signal } = {}) => {
+    const params = new URLSearchParams({
+        parentKey: String(parentKey || ''),
+        sprint: String(sprint || ''),
+        t: Date.now().toString()
+    });
+    if (refresh) {
+        params.set('refresh', 'true');
+    }
+    return trackedFetch('eng_subtasks', `${backendUrl}/api/issues/subtasks?${params.toString()}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-cache',
+        signal
+    }, { featureName: 'eng' });
+};
+
 export const fetchBacklogEpics = (backendUrl, { project, teamIds = [] } = {}) => {
     const params = new URLSearchParams({
         t: Date.now().toString(),

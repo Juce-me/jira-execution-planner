@@ -67,12 +67,16 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Completed Frontend Structure
 
-1. `DONE-statistics-module-extraction.md`
+1. `EXEC-eng-story-subtasks.md`
+   - Active implementation plan for lightweight ENG story subtask visibility.
+   - Expected output: existing ENG task fetch includes a cheap embedded subtask summary, exact subtask rows load only after a user expands the story subtask control, no startup subtask fan-out is introduced, and count-based progress uses done/in-progress subtask counts rather than story points.
+
+2. `DONE-statistics-module-extraction.md`
    - Completed Statistics module extraction. Use for audit and prerequisite evidence; do not execute as active work.
    - Supersedes the stale root-level `statistics_module_extraction_plan.md` from `origin/plan/statistics-module-extraction`.
    - Output: remaining legacy Statistics Teams, Priority, and Burndown utilities/components extracted from `frontend/src/dashboard.jsx` into the existing `frontend/src/stats/` package, with source guards, focused Node tests, full unit verification, Playwright smoke coverage, regenerated frontend dist output, and shared bounded hover positioning for stats chart readouts.
 
-2. `DONE-epm-project-reading-experience.md`
+3. `DONE-epm-project-reading-experience.md`
    - Completed EPM project reading experience plan in PR #41 (`94b759b`). Use for audit and prerequisite evidence; do not execute as active work.
    - Output: Home update freshness classification, stale/missing/unknown badges, stale date styling, visual fixture coverage, and freshness source guards for the EPM project board.
 

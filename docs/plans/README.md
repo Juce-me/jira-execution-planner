@@ -82,130 +82,134 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Codebase Structure And Operability
 
-1. `DONE-codebase-operability-verification.md`
+1. `EXEC-application-hosting-readiness.md`
+   - Active implementation plan for internal container-app hosting readiness.
+   - Expected output: DB/OAuth works without local OAuth token files, hosted mode avoids local mutable JSON/cache state, frontend APIs default to same-origin behind ingress, Docker/Gunicorn packaging exists, and docs expose the runtime contract without secrets.
+
+2. `DONE-codebase-operability-verification.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: local frontend unit/UI npm scripts, `make verify` for build/Python/security/Node/dist checks, and refreshed test-command documentation.
 
-2. `DONE-codebase-operability-startup-preflight.md`
+3. `DONE-codebase-operability-startup-preflight.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: operator preflight for runtime/auth/DB/encryption/migrations plus unified DB storage aliases.
 
-3. `FUTURE-codebase-operability-improvements.md`
+4. `FUTURE-codebase-operability-improvements.md`
    - Deferred structural review and prioritized backlog for packaging, local verification, startup preflight, backend service extraction, frontend feature ownership, and source guards.
    - Do not execute directly. Convert each chosen slice into a separate `EXEC-*` plan before implementation.
 
-4. `2026-05-01-codebase-structure-optimization.md`
+5. `2026-05-01-codebase-structure-optimization.md`
    - Support/history context for earlier structure extraction work. Do not execute directly.
 
-5. `DONE-codebase-operability-doc-cleanup.md`
+6. `DONE-codebase-operability-doc-cleanup.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: refreshed quickstart/setup docs, May 1 plan support/history status, and current README structure snapshot.
 
-6. `DONE-codebase-operability-packaging-contract.md`
+7. `DONE-codebase-operability-packaging-contract.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: explicit release-zip runnable-package contract and tests guarding the release zip shape.
 
-7. `DONE-codebase-operability-import-safe-startup.md`
+8. `DONE-codebase-operability-import-safe-startup.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: import-safe `jira_server`, explicit Flask app creation, and launch-path startup validation.
 
-8. `DONE-codebase-operability-request-context-guardrails.md`
+9. `DONE-codebase-operability-request-context-guardrails.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: tests guarding explicit request auth context propagation through worker fan-out.
 
-9. `DONE-codebase-operability-epm-aggregate-extraction.md`
+10. `DONE-codebase-operability-epm-aggregate-extraction.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: all-project EPM rollup orchestration moved to `backend/epm/aggregate.py` with `jira_server.py` shims preserved.
 
-10. `DONE-codebase-operability-frontend-api-boundary.md`
+11. `DONE-codebase-operability-frontend-api-boundary.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: remaining Scenario, stats, issue lookup, and EPM config endpoint construction moved out of `frontend/src/dashboard.jsx` into `frontend/src/api/*` modules.
 
-11. `DONE-codebase-operability-config-repository-selection.md`
+12. `DONE-codebase-operability-config-repository-selection.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: dashboard config load/save wrappers require explicit JSON selection when DB mode is active without request context.
 
-12. `DONE-codebase-operability-epm-config-extraction.md`
+13. `DONE-codebase-operability-epm-config-extraction.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: EPM config defaults and normalization helpers move into `backend/epm/config.py` with `jira_server.py` compatibility aliases preserved.
 
-13. `DONE-codebase-operability-structural-budgets.md`
+14. `DONE-codebase-operability-structural-budgets.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: source guard budgets prevent `jira_server.py` and `frontend/src/dashboard.jsx` from growing while extraction work continues, with ceilings ratcheted after follow-up extraction slices.
 
-14. `DONE-codebase-operability-epm-issues-extraction.md`
+15. `DONE-codebase-operability-epm-issues-extraction.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: EPM project issues endpoint orchestration moved to `backend/epm/issues.py` with the Flask route reduced to request parsing, dependency wiring, and JSON response handling.
 
-15. `DONE-codebase-operability-local-oauth-store-extraction.md`
+16. `DONE-codebase-operability-local-oauth-store-extraction.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: local OAuth token-store persistence, TTL cleanup, and refresh-lock mechanics moved to `backend/auth/local_oauth_store.py` with `jira_server.py` compatibility wrappers preserved.
 
-16. `DONE-codebase-operability-css-split.md`
+17. `DONE-codebase-operability-css-split.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: `frontend/src/styles/dashboard.css` becomes an ordered import entrypoint over feature-owned partials while esbuild still produces one bundled `frontend/dist/dashboard.css`.
 
-17. `DONE-codebase-operability-epm-payload-helpers.md`
+18. `DONE-codebase-operability-epm-payload-helpers.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: pure EPM issue payload helpers moved to `backend/epm/payload.py` with `jira_server.py` compatibility aliases preserved.
 
-18. `DONE-codebase-operability-eng-planning-capacity-utils.md`
+19. `DONE-codebase-operability-eng-planning-capacity-utils.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: pure ENG Planning capacity status, team metadata, total capacity, and project-capacity split helpers moved to `frontend/src/eng/planningCapacityUtils.js` while Planning state and rendering remain in `frontend/src/dashboard.jsx`.
 
-19. `DONE-codebase-operability-jira-issue-fetch-helpers.md`
+20. `DONE-codebase-operability-jira-issue-fetch-helpers.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: Jira issue key-batch and JQL pagination helpers moved to `backend/jira_client.py` with `jira_server.py` patchable wrappers preserved.
 
-20. `DONE-codebase-operability-eng-planning-selection-stats.md`
+21. `DONE-codebase-operability-eng-planning-selection-stats.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: pure selected Planning task filtering and selected story-point/team/project aggregation helpers moved to `frontend/src/eng/planningSelectionStats.js` while Planning state and rendering remain in `frontend/src/dashboard.jsx`.
 
-21. `DONE-codebase-operability-eng-planning-capacity-aggregates.md`
+22. `DONE-codebase-operability-eng-planning-capacity-aggregates.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: pure Planning capacity table aggregation and entry-shaping helpers moved to `frontend/src/eng/planningCapacityUtils.js` while capacity fetching, Planning state, and rendering remain in `frontend/src/dashboard.jsx`.
 
-22. `DONE-codebase-operability-capacity-service-extraction.md`
+23. `DONE-codebase-operability-capacity-service-extraction.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: Jira capacity JQL construction, capacity issue parsing, watcher fallback, and capacity route response handling moved out of `jira_server.py` into a backend service and route adapter while compatibility wrappers remain patchable.
 
-23. `DONE-codebase-operability-dependency-focus-utils.md`
+24. `DONE-codebase-operability-dependency-focus-utils.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: pure dependency focus/key helpers shared by `dashboard.jsx` and issue dependency rendering move into `frontend/src/issues/dependencyFocusUtils.js` while dependency chip UI and lookup fetching remain unchanged.
 
-24. `DONE-codebase-operability-sprint-service-extraction.md`
+25. `DONE-codebase-operability-sprint-service-extraction.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: sprint cache, board sprint loading, JQL fallback sprint discovery, and sprint de-duplication logic moved to `backend/services/sprints.py` while `jira_server.py` compatibility wrappers remain patchable.
 
-25. `DONE-codebase-operability-planning-action-bar.md`
+26. `DONE-codebase-operability-planning-action-bar.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: the ENG Planning action button row moved to `frontend/src/eng/PlanningActionBar.jsx` while Planning state, handlers, capacity math, and persistence stay in `dashboard.jsx`.
 
-26. `DONE-codebase-operability-stats-cache-service.md`
+27. `DONE-codebase-operability-stats-cache-service.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: completed-sprint stats file-cache load/save/invalidation and cache-key construction moved to `backend/services/stats_cache.py` while `jira_server.py` compatibility wrappers remain patchable.
 
-27. `DONE-codebase-operability-planning-capacity-bar.md`
+28. `DONE-codebase-operability-planning-capacity-bar.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: the ENG Planning capacity bar and selected-summary fallback moved to `frontend/src/eng/PlanningCapacityBar.jsx` while Planning state, capacity math inputs, team microbars, and project split bars stay in `dashboard.jsx`.
 
-28. `DONE-codebase-operability-update-check-service.md`
+29. `DONE-codebase-operability-update-check-service.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: `/api/version` git command, release-info fallback, and update payload construction moved to `backend/services/update_check.py` while `jira_server.py` compatibility wrappers remain patchable.
 
-29. `DONE-codebase-operability-planning-project-split-bar.md`
+30. `DONE-codebase-operability-planning-project-split-bar.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: the ENG Planning selected-SP-by-project bar moved to `frontend/src/eng/PlanningProjectSplitBar.jsx` while selected project stat derivation, excluded capacity math, and Planning state stay in `dashboard.jsx`.
 
-30. `DONE-codebase-operability-priority-weights-service.md`
+31. `DONE-codebase-operability-priority-weights-service.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: stats priority weight normalization, env parsing, and effective config selection moved to `backend/services/priority_weights.py` while `jira_server.py` compatibility wrappers remain patchable.
 
-31. `DONE-codebase-operability-team-catalog-service.md`
+32. `DONE-codebase-operability-team-catalog-service.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: team catalog, catalog metadata, and group team-label normalization moved to `backend/services/team_catalog.py` while `jira_server.py` compatibility wrappers remain patchable.
 
-32. `DONE-codebase-operability-group-config-service.md`
+33. `DONE-codebase-operability-group-config-service.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: team-group env parsing, validation, and default construction moved to `backend/services/group_config.py` while `jira_server.py` compatibility wrappers remain patchable.
 

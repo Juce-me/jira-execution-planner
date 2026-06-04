@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-> **Gate status:** Blocked. Checked on 2026-06-03. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+> **Gate status:** Blocked. Checked on 2026-06-04. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,7 +15,7 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-06-03 |
+| Checked on | 2026-06-04 |
 | Last result | FAIL insufficient_home_write_probe_input |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
@@ -127,6 +127,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-06-04: Startup sweep reviewed the gate while creating the application hosting readiness execution plan. `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` are not present in the local environment, and this hosting plan adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-06-03: Startup sweep reviewed the gate while reviewing the ENG story subtasks implementation plan. `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` are not present in the local environment, and this plan adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-05-30: Startup sweep reviewed the gate while executing the GA4 instrumentation plan. `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` are not present in the local environment, and this analytics implementation adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-05-29: Startup sweep reviewed the gate while refreshing recently implemented plan statuses. `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` are not present in the local environment, and this docs-only status cleanup adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.

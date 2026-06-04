@@ -110,7 +110,7 @@ test('first-run department selection blocks group-scoped task loads until prefer
     const calls = await mockFirstRunDashboard(page);
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByRole('dialog', { name: 'Choose departments' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Choose department groups' })).toBeVisible();
     await page.waitForTimeout(900);
     await page.screenshot({ path: `${screenshotDir}/first-run-selection.png`, fullPage: true });
     await expect(page.getByLabel('Platform')).toBeChecked();
@@ -119,7 +119,7 @@ test('first-run department selection blocks group-scoped task loads until prefer
 
     await page.getByRole('button', { name: 'Continue' }).click();
 
-    await expect(page.getByRole('dialog', { name: 'Choose departments' })).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Choose department groups' })).toHaveCount(0);
     await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name').length).toBeGreaterThanOrEqual(2);
     const preferenceSave = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-preferences');
     expect(preferenceSave).toBeTruthy();

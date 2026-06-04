@@ -55,10 +55,10 @@ Empty and small-list states:
 
 - **No shared groups:** show the first-run popup as an empty Departments state with an Add group action for authenticated users, because there is no valid group to choose. Dashboard group-scoped requests stay paused until a group exists and the user saves at least one selected group. If the user closes the app and returns before a group exists, the popup appears again.
 - **One shared group:** show the popup with the single group selected and Continue enabled. The user still confirms the first preference row explicitly.
-- **Many shared groups:** show a compact checkbox list with search/filter when the list is long. Continue remains disabled until at least one group is selected.
+- **Many shared groups:** show a compact checkbox list sorted by group name, with search/filter available whenever shared groups exist. Continue remains disabled until at least one group is selected.
 - **Hidden or deleted active group after first-run:** reset active group to shared default, then first visible group, then `null` only if no groups exist. If all selected groups are later deleted and shared groups remain, show the same department-selection popup again.
 
-The implementation should use short, direct modal wording. Primary user-visible labels: `Choose department groups`, `Select at least one group to show in controls`, `Show in my controls`, `Continue`, `Add group`, and the existing `Groups`/`Departments` labels.
+The implementation should use short, direct modal wording. Primary user-visible labels: `Choose department groups`, `Select at least one group to show in controls`, `Search groups`, `Show in my controls`, `Continue`, `Add group`, and the existing `Groups`/`Departments` labels.
 
 ## Data Ownership And Compatibility Contract
 

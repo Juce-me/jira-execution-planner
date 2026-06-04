@@ -111,6 +111,8 @@ test('first-run department selection blocks group-scoped task loads until prefer
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByRole('dialog', { name: 'Choose department groups' })).toBeVisible();
+    await expect(page.getByLabel('Search groups')).toBeVisible();
+    await expect(page.locator('.department-first-run-option-name')).toHaveText(['Growth', 'Platform']);
     await page.waitForTimeout(900);
     await page.screenshot({ path: `${screenshotDir}/first-run-selection.png`, fullPage: true });
     await expect(page.getByLabel('Platform')).toBeChecked();

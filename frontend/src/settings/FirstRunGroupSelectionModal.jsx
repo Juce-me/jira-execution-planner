@@ -14,10 +14,17 @@ export default function FirstRunGroupSelectionModal(props) {
     const selectedSet = React.useMemo(() => new Set(selectedGroupIds || []), [selectedGroupIds]);
     const selectedCount = selectedGroupIds.length;
     const trimmedQuery = query.trim().toLowerCase();
+    const sortedGroups = React.useMemo(() => {
+        return [...groups].sort((a, b) => {
+            const aName = String(a?.name || a?.id || '').toLowerCase();
+            const bName = String(b?.name || b?.id || '').toLowerCase();
+            return aName.localeCompare(bName);
+        });
+    }, [groups]);
     const visibleGroups = React.useMemo(() => {
-        if (!trimmedQuery) return groups;
-        return groups.filter(group => String(group?.name || group?.id || '').toLowerCase().includes(trimmedQuery));
-    }, [groups, trimmedQuery]);
+        if (!trimmedQuery) return sortedGroups;
+        return sortedGroups.filter(group => String(group?.name || group?.id || '').toLowerCase().includes(trimmedQuery));
+    }, [sortedGroups, trimmedQuery]);
 
     return (
         <div className="department-first-run-backdrop" role="dialog" aria-modal="true" aria-labelledby="department-first-run-title">
@@ -29,7 +36,7 @@ export default function FirstRunGroupSelectionModal(props) {
                     </div>
                     <div className="department-first-run-count">{selectedCount} selected</div>
                 </div>
-                {groups.length > 4 && (
+                {groups.length > 0 && (
                     <input
                         type="text"
                         className="group-filter-input"

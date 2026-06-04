@@ -244,6 +244,23 @@ Run the local CI-style verification path before preparing a PR:
 make verify
 ```
 
+## Internal Hosting Pre-SRE Checklist
+
+This repo now ships a GitLab CI skeleton for verification and container image build only. It does not include production registry push, release, or deployment automation.
+
+Can prepare now:
+- Build the container from `Dockerfile`, keep `frontend/dist` current, run startup preflight, and expose `/health` as shallow liveness.
+- Run GitLab verify/container stages that install backend/frontend dependencies, run tests/builds, and tag the image with `CI_COMMIT_SHA`.
+- Keep runtime env ownership explicit: app secrets, Atlassian OAuth settings, DB URL, token encryption, GA4 toggles, and local defaults remain outside the image.
+
+Needs SRE ownership or confirmation:
+- GitLab project path, registry/image path, runner container-build method, branch/tag policy, and when `PUSH_IMAGE=true` may be enabled.
+- Hosted HTTPS origin, Atlassian OAuth redirect/callback registration, OAuth2 Proxy boundary, TLS termination, secure cookie settings, and `APP_ALLOWED_ORIGINS`.
+- PostgreSQL provisioning, migration owner, persistence/backups, log retention, resource limits, and production readiness probe policy.
+
+Blocked until deployment reference:
+- Production registry credentials/path, secret references, migration release strategy, Helm or Kubernetes values, namespace/routing/VPN/proxy details, TLS secret names, and real release jobs.
+
 ## 🔧 How it works
 
 1. **Backend** (`jira_server.py`):

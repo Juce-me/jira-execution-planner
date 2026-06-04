@@ -191,7 +191,24 @@ DB/OAuth EPM separates three storage concerns:
 
 Do not seed a Home/Townsquare service integration for the DB/OAuth EPM read path. The EPM tab appears only after the signed-in user connects their own Home token.
 
-## 8. Common Failures
+## 8. Internal Hosting Pre-SRE Checklist
+
+The repository provides a handoff skeleton for GitLab verification and container build. It deliberately does not ship production registry push, Helm values, Kubernetes manifests, or deployment jobs.
+
+Can prepare now:
+- Build the image with `docker build -t "$IMAGE_NAME:$CI_COMMIT_SHA" .` or the GitLab `container` stage, using the committed `Dockerfile`.
+- Run backend/frontend verification in CI: Python dependencies, editable install, `python -m unittest discover -s tests`, `npm ci`, `npm run build`, frontend unit tests, and the committed `frontend/dist` check.
+- Keep hosted env values owned by the runtime platform: app secrets, Atlassian OAuth settings, token encryption, DB URL, allowed origins, and optional GA4 values.
+
+Needs SRE ownership or confirmation:
+- GitLab group/repo path, registry/image path, runner build method, default branch/tag policy, and the exact point when image push may be enabled with `PUSH_IMAGE=true`.
+- Internal hostname, TLS/proxy termination, OAuth2 Proxy policy, Atlassian redirect/callback URL registration, secure cookie settings, and `APP_ALLOWED_ORIGINS`.
+- PostgreSQL provisioning, migration execution owner, durable persistence, log retention, backup/restore ownership, resource limits, and readiness/liveness probe policy.
+
+Blocked until deployment reference:
+- Production registry credentials/path, secret references, migration release strategy, Helm or Kubernetes values, namespace/routing/VPN/proxy details, TLS secret names, and real release jobs.
+
+## 9. Common Failures
 
 `DATABASE_URL is required when CONFIG_STORAGE_BACKEND=db`
 
